@@ -1,0 +1,33 @@
+Lycia Player includes lyrics-related code and adaptations based on the
+AMLL project (Apple Music-like Lyrics).
+
+Upstream project:
+https://github.com/amll-dev/applemusic-like-lyrics
+
+License notice:
+- This repository is distributed under the GNU Affero General Public
+  License v3.0. See LICENSE for the full text.
+- The lyrics-related implementation, including the AMLL integration and
+  local patches under src/lib/amll/, is kept under AGPL-3.0-compatible
+  terms to preserve upstream copyleft obligations.
+- If you convey modified versions of this software, you must also make
+  the corresponding source code available under the same license terms.
+
+Additional attribution:
+- AMLL project authors and contributors retain copyright over their
+  original work.
+- Lycia Player-specific modifications remain identified in this
+  repository and should keep existing attribution and license notices.
+
+中文说明：
+Lycia Player 的歌词相关实现使用并改编了 AMLL（Apple Music-like Lyrics）
+项目的部分代码与设计思路。
+
+上游项目地址：
+https://github.com/amll-dev/applemusic-like-lyrics
+
+许可说明：
+- 本仓库整体按 GNU Affero General Public License v3.0 发布，完整文本见 LICENSE。
+- 与歌词相关的 AMLL 集成及本地补丁代码（例如 src/lib/amll/）按 AGPL-3.0
+  兼容要求保留版权声明与传染性条款。
+- 重新分发或发布修改版本时，应同时提供对应源代码并继续遵循相同许可要求。

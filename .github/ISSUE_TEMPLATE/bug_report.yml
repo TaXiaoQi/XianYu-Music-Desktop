@@ -1,0 +1,107 @@
+name: Bug 反馈
+description: 反馈软件运行中的错误、崩溃、显示异常、播放异常等问题。
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题。请尽量填写完整的信息，这能帮助我更快定位问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请简单描述你遇到了什么问题。
+      placeholder: 例如：播放本地音乐时，封面无法显示。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写出如何触发这个问题。
+      placeholder: |
+        1. 打开软件
+        2. 导入本地音乐
+        3. 点击播放
+        4. 发现封面没有显示
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你原本认为软件应该怎么表现？
+      placeholder: 例如：应该正常显示歌曲封面。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么？
+      placeholder: 例如：封面区域为空白，控制台没有明显报错。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: device
+    attributes:
+      label: 设备环境
+      description: 请填写设备型号、CPU、内存、显卡、音频设备等与问题相关的信息。
+      placeholder: |
+        例如：
+        设备：台式机 / 笔记本 / 其他
+        CPU：Intel i5-12400
+        内存：16 GB
+        显卡：NVIDIA RTX 3060
+        音频设备：Realtek / 蓝牙耳机 / USB 声卡
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      description: 请填写你使用的软件版本，可从关于页面或安装包文件名获取。
+      placeholder: 例如：v1.3.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 如果问题涉及界面、播放状态、报错弹窗或歌词显示，请上传截图或录屏。
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 报错信息
+      description: 如果有控制台报错或日志，请粘贴到这里。
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充
+      description: 可以补充出现频率、是否稳定复现、是否只在特定歌曲或目录中出现。

@@ -1,0 +1,69 @@
+name: 使用问题 / 提问
+description: 询问安装、配置、使用方式、导入音乐、歌词等问题。
+title: "[Question] "
+labels: ["question"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量描述你卡在哪一步，能帮助我更准确回答。
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+      description: 请直接描述你想问什么。
+      placeholder: 例如：我导入音乐文件夹后没有看到歌曲，应该检查哪里？
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 你已经尝试过什么？
+      description: 写出你已经试过的操作，避免重复沟通。
+      placeholder: 例如：已经重启软件、重新选择音乐文件夹。
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: 问题分类
+      options:
+        - 安装或启动
+        - 音乐库导入
+        - 播放控制
+        - 歌词或桌面歌词
+        - 文件工具箱
+        - 主题或界面
+        - 构建或开发
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      description: 请填写你使用的软件版本。
+      placeholder: 例如：v1.3.4
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充
+      description: 可以上传截图或补充说明。

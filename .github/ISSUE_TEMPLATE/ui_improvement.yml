@@ -1,0 +1,102 @@
+name: 界面优化
+description: 反馈界面布局、视觉层级、交互路径、主题适配、窗口尺寸等体验问题。
+title: "[UI] "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量上传截图或录屏，并说明问题出现在哪个页面或操作路径中。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请描述当前界面或交互哪里影响使用。
+      placeholder: 例如：播放页歌词和封面距离太近，小窗口下按钮容易遮挡文字。
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: 出现位置
+      description: 请填写页面、弹窗、按钮、列表或具体操作路径。
+      placeholder: 例如：播放页 / 设置页 / 桌面歌词 / 文件工具箱。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写出如何看到这个界面问题。
+      placeholder: |
+        1. 打开软件
+        2. 进入播放页
+        3. 将窗口宽度调整到 900 px
+        4. 观察到按钮遮挡歌曲名
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望效果
+      description: 你希望界面或交互如何调整？
+      placeholder: 例如：窗口变窄时按钮应换行，歌曲名仍能完整阅读。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: device
+    attributes:
+      label: 设备环境
+      description: 请填写设备类型、屏幕尺寸、分辨率、缩放比例、主题模式等信息。
+      placeholder: |
+        例如：
+        设备：笔记本
+        屏幕：14 英寸
+        分辨率：2560x1600
+        系统缩放：150%
+        主题：深色 / 浅色
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      description: 请填写你使用的软件版本，可从关于页面或安装包文件名获取。
+      placeholder: 例如：v1.3.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 请上传截图、录屏或标注图，便于确认位置和显示效果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充
+      description: 可以补充参考软件、设计草图或你能接受的调整方式。

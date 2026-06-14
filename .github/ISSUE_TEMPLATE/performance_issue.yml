@@ -1,0 +1,115 @@
+name: 性能问题
+description: 反馈卡顿、启动慢、内存占用高、CPU 占用高、歌词或列表滚动不流畅等问题。
+title: "[Performance] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量提供可复现的操作路径和设备环境，性能问题需要这些信息才能稳定定位。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请描述具体的卡顿、变慢、资源占用或响应异常。
+      placeholder: 例如：导入 3000 首本地音乐后，切换到播放页会卡住 3 秒。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写出如何触发这个性能问题。
+      placeholder: |
+        1. 打开软件
+        2. 导入包含 3000 首歌曲的目录
+        3. 点击播放页
+        4. 观察到页面卡顿
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望表现
+      description: 你认为正常情况下应该达到什么响应速度或资源占用？
+      placeholder: 例如：切换页面应在 1 秒内完成，播放不应中断。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际表现
+      description: 请填写实际耗时、CPU 占用、内存占用、卡顿频率等可观察结果。
+      placeholder: 例如：切换页面约 3 秒，任务管理器显示内存占用从 300 MB 上升到 900 MB。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: device
+    attributes:
+      label: 设备环境
+      description: 请填写设备型号、CPU、内存、显卡、硬盘类型、音频设备等与性能相关的信息。
+      placeholder: |
+        例如：
+        设备：笔记本
+        CPU：AMD Ryzen 7 5800H
+        内存：16 GB
+        显卡：RTX 3060 Laptop
+        硬盘：SSD
+        音频设备：蓝牙耳机
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      description: 请填写你使用的软件版本，可从关于页面或安装包文件名获取。
+      placeholder: 例如：v1.3.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 请上传任务管理器、性能监视器、卡顿画面或录屏。
+
+  - type: textarea
+    id: data_size
+    attributes:
+      label: 数据规模
+      description: 请填写音乐文件数量、歌单数量、歌词数量、目录大小等信息。
+      placeholder: 例如：本地音乐 3000 首，歌词文件 2500 个，音乐目录约 120 GB。
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 报错信息
+      description: 如果有控制台报错或日志，请粘贴到这里。
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充
+      description: 可以补充是否稳定复现、是否和特定歌曲格式或目录有关。
