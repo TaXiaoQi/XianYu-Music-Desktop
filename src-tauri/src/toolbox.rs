@@ -465,6 +465,29 @@ pub async fn download_update_file(
 }
 
 #[tauri::command]
+pub async fn fetch_announcement() -> Result<String, String> {
+    let url = "https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json";
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("XY-Music-Updater")
+        .build()
+        .map_err(|e| format!("创建请求客户端失败: {e}"))?;
+
+    client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("请求公告接口失败: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("公告接口返回错误状态: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("读取公告数据失败: {e}"))
+}
+
+#[tauri::command]
 pub fn run_installer(path: String) -> Result<(), String> {
     use std::process::Command;
     
