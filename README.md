@@ -12,11 +12,10 @@
   [![Rust](https://img.shields.io/badge/Rust-Stable-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
   [![Tailwind](https://img.shields.io/badge/TailwindCSS-v4.0-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
   
-  [![Dev Last Commit](https://img.shields.io/github/last-commit//LyciaMusic/dev?style=flat-square&logo=git&logoColor=white&label=dev%20last%20commit)](https://github.com//LyciaMusic/commits/dev)
-  [![Stars](https://img.shields.io/github/stars//LyciaMusic?style=flat-square&logo=github&label=stars)](https://github.com//LyciaMusic/stargazers)
-  [![Contributors](https://img.shields.io/github/contributors//LyciaMusic?style=flat-square&color=blueviolet)](https://github.com//LyciaMusic/graphs/contributors)
+  [![Dev Last Commit](https://img.shields.io/github/last-commit/TaXiaoQi/XY-Music-Desktop/dev?style=flat-square&logo=git&logoColor=white&label=dev%20last%20commit)](https://github.com/TaXiaoQi/XY-Music-Desktop/commits/dev)
+  [![Stars](https://img.shields.io/github/stars//LyciaMusic?style=flat-square&logo=github&label=stars)](https://github.com/TaXiaoQi/XY-Music-Desktop/stargazers)
+  [![Contributors](https://img.shields.io/github/contributors//LyciaMusic?style=flat-square&color=blueviolet)](https://github.com/TaXiaoQi/XY-Music_Desktop/graphs/contributors)
   [![License](https://img.shields.io/badge/License-AGPL--3.0-orange?style=flat-square)](./LICENSE)
-  [![QQ Group](https://img.shields.io/badge/QQ%E7%BE%A4-1085716541-df3e3e?style=flat-square&logo=tencent-qq&logoColor=white)](https://qm.qq.com/cgi-bin/qm/qr?k=xxxx)
 </div>
 
 ---
