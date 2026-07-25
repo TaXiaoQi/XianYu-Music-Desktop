@@ -2,7 +2,7 @@
   "id": "2024-01-01",
   "enabled": true,
   "title": "欢迎使用 XY Music",
-  "content": "感谢你使用 XY Music 桌面版！\n如有问题或建议，欢迎前往 GitHub 提交 Issue。",
+  "content": "感谢你使用 XY Music 桌建议，欢迎前往 GitHub 提交 Issue。",
   "type": "info",
   "date": "2024-01-01",
   "actionUrl": "https://github.com/TaXiaoQi/XY-Music-Desktop/issues",
