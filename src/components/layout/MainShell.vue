@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue';
+import { defineAsyncComponent, ref, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
+import {
+  fetchAnnouncement,
+  isAnnouncementDismissed,
+  dismissAnnouncement,
+  type Announcement,
+} from '../../utils/announcement';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
@@ -15,6 +21,7 @@ const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.v
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
+const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
 
 const {
   isMiniMode,
@@ -39,6 +46,30 @@ const { isSongInfoVisible, currentSongInfo, closeSongInfo } = useSongInfoDialog(
 const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(useUiStore());
 
 useDesktopLyricsWindowBridge();
+
+// Announcement logic
+const announcementVisible = ref(false);
+const currentAnnouncement = ref<Announcement | null>(null);
+
+onMounted(async () => {
+  const announcement = await fetchAnnouncement();
+  if (announcement && !isAnnouncementDismissed(announcement.id)) {
+    currentAnnouncement.value = announcement;
+    announcementVisible.value = true;
+  }
+});
+
+function closeAnnouncement() {
+  if (currentAnnouncement.value) {
+    dismissAnnouncement(currentAnnouncement.value.id);
+  }
+  announcementVisible.value = false;
+}
+
+function handleAnnouncementAction(url: string) {
+  window.open(url, '_blank');
+  closeAnnouncement();
+}
 </script>
 
 <template>
@@ -186,6 +217,14 @@ useDesktopLyricsWindowBridge();
       :visible="isSongInfoVisible"
       :song="currentSongInfo"
       @close="closeSongInfo"
+    />
+
+    <AnnouncementModal
+      v-if="!isMiniMode"
+      :visible="announcementVisible"
+      :announcement="currentAnnouncement"
+      @close="closeAnnouncement"
+      @action="handleAnnouncementAction"
     />
 
     <Toast />
