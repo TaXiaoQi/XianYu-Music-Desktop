@@ -18,6 +18,7 @@ src-tauri/bin/
 # --- 🔧 IDE 与 编辑器配置 ---
 .vscode/
 .idea/
+.vs/
 *.suo
 *.ntvs
 *.njsproj
