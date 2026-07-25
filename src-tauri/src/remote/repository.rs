@@ -3,7 +3,7 @@ use rusqlite::{params, OptionalExtension};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-const REMOTE_KEYRING_SERVICE: &str = "LyciaMusic WebDAV";
+const REMOTE_KEYRING_SERVICE: &str = "XY-Music WebDAV";
 
 fn keyring_entry(source_id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(REMOTE_KEYRING_SERVICE, source_id).map_err(|error| error.to_string())

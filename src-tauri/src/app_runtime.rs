@@ -125,6 +125,7 @@ fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) {
 fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     let _tray = TrayIconBuilder::with_id("tray")
         .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("XY-Music")
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {

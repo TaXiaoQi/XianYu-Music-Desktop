@@ -167,7 +167,7 @@ const handleOpenStatisticsView = () => {
 </script>
 
 <template>
-  <aside class="w-48 bg-transparent flex flex-col border-r border-transparent h-full select-none overflow-hidden relative transition-colors duration-600">
+  <aside class="w-48 bg-transparent flex flex-col border-r border-black/10 dark:border-white/10 h-full select-none overflow-hidden relative transition-colors duration-600">
     <SidebarBrand />
 
     <nav class="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4" @click="handleBackgroundClick">

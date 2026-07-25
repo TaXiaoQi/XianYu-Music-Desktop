@@ -250,7 +250,7 @@ async function ensureTaskbarPlayerWindow() {
       // 预创建时的默认虚拟定位，展示时会被 updatePosition 进行秒级精准对齐纠正
       const windowInstance = new WebviewWindow(TASKBAR_PLAYER_WINDOW_LABEL, {
         url: '/',
-        title: 'Lycia Taskbar Player',
+        title: 'XY-Music Taskbar Player',
         width: TASKBAR_PLAYER_WINDOW_WIDTH,
         height: TASKBAR_PLAYER_WINDOW_HEIGHT,
         minWidth: TASKBAR_PLAYER_WINDOW_WIDTH,

@@ -320,7 +320,7 @@ onUnmounted(() => {
           <transition name="fade">
             <div v-if="showLyrics" class="absolute inset-0 flex items-center justify-center px-4 overflow-hidden pointer-events-none" data-tauri-drag-region>
               <div class="text-xs whitespace-nowrap text-[#EC4141] font-medium" :class="{ 'marquee': lyricText && lyricText.length > 20 }">
-                <span>{{ lyricText || (currentSong ? currentSong.title : 'Lycia Player') }}</span>
+                <span>{{ lyricText || (currentSong ? currentSong.title : 'XY-Music') }}</span>
               </div>
             </div>
           </transition>

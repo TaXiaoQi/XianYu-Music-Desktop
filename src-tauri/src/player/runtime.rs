@@ -198,8 +198,8 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
                     let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
 
                     let config = PlatformConfig {
-                        dbus_name: "my_cloud_music",
-                        display_name: "My Cloud Music",
+                        dbus_name: "xy_music",
+                        display_name: "XY-Music",
                         hwnd: Some(hwnd),
                     };
 

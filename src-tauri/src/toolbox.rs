@@ -254,7 +254,7 @@ pub fn file_exists(path: String) -> bool {
     std::path::Path::new(&path).is_file()
 }
 
-const APP_IDENTIFIER: &str = "com.lover.lyciaplayer";
+const APP_IDENTIFIER: &str = "com.xymusic.desktop";
 const GPU_CONFIG_FILE: &str = "gpu_config.json";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -361,13 +361,13 @@ pub async fn check_update_by_rust(
     let url = match source {
         UpdateSource::Official => "https://lycia.prettyboy.fun/latest.json",
         UpdateSource::Github => {
-            "https://api.github.com/repos/Billy636/LyciaMusic/releases/latest"
+            "https://api.github.com/repos/TaXiaoQi/XY-Music-Desktop/releases/latest"
         }
     };
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("LyciaPlayer-Updater")
+        .user_agent("XY-Music-Updater")
         .build()
         .map_err(|e| format!("创建更新请求失败: {e}"))?;
 
@@ -404,7 +404,7 @@ pub async fn download_update_file(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
-        .user_agent("LyciaPlayer-Updater")
+        .user_agent("XY-Music-Updater")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
 
