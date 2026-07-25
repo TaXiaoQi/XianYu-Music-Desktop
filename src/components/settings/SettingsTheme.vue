@@ -201,7 +201,7 @@ const {
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ FLOW_TEXT.panelTitle }}</div>
-                  <div class="text-xs text-gray-600 dark:text-white/60">Lycia Flow</div>
+                  <div class="text-xs text-gray-600 dark:text-white/60">XY-Music Flow</div>
                 </div>
                 <div class="rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-medium text-[#EC4141]">
                   {{ theme.flowColorBoost }} / {{ theme.flowDepth }} / {{ theme.flowSpeed }} / {{ theme.flowTexture }}

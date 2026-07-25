@@ -142,7 +142,7 @@ async function ensureMiniPlayerWindow() {
       const bounds = await normalizeMiniPlayerBounds(readMiniPlayerBounds());
       const windowInstance = new WebviewWindow(MINI_PLAYER_WINDOW_LABEL, {
         url: '/',
-        title: 'Lycia Mini Player',
+        title: 'XY-Music Mini Player',
         width: MINI_PLAYER_WINDOW_WIDTH,
         height: MINI_PLAYER_WINDOW_BASE_HEIGHT,
         minWidth: MINI_PLAYER_WINDOW_WIDTH,

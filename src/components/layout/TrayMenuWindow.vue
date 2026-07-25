@@ -40,7 +40,7 @@ let unlistenCloseRequested: UnlistenFn | null = null;
 
 const trackLabel = computed(() => {
   const song = currentSong.value;
-  if (!song) return 'Lycia Player';
+  if (!song) return 'XY-Music';
 
   const title = song.title || song.name.replace(/\.[^/.]+$/, '');
   return song.artist ? `${title} - ${song.artist}` : title;

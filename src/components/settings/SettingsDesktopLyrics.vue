@@ -45,7 +45,7 @@ const COLOR_SCHEME_OPTIONS: Array<{
   hint: string;
   color?: string;
 }> = [
-  { value: 'default', label: '经典红', hint: '使用 Lycia 的默认红色方案', color: '#EC4141' },
+  { value: 'default', label: '经典红', hint: '使用 XY-Music 的默认红色方案', color: '#EC4141' },
   { value: 'pink', label: '柔粉', hint: '偏柔和、偏梦幻的粉色搭配', color: '#f472b6' },
   { value: 'blue', label: '澄蓝', hint: '更冷静的蓝色高亮', color: '#60a5fa' },
   { value: 'green', label: '青绿', hint: '更清爽的绿色高亮', color: '#34d399' },

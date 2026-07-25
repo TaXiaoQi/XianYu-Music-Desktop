@@ -221,7 +221,7 @@ export function createDesktopLyricsWindowOptions({
 }) {
   return {
     url: '/',
-    title: 'Lycia Desktop Lyrics',
+    title: 'XY-Music Desktop Lyrics',
     width: DESKTOP_LYRICS_WINDOW_DEFAULT_WIDTH,
     height: DESKTOP_LYRICS_WINDOW_DEFAULT_HEIGHT,
     minWidth: DESKTOP_LYRICS_WINDOW_MIN_WIDTH,

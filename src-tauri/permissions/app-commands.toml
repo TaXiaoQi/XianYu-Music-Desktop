@@ -1,6 +1,6 @@
 [[permission]]
 identifier = "allow-app-commands"
-description = "Allows Lycia Player application commands used by the frontend."
+description = "Allows XY-Music application commands used by the frontend."
 commands.allow = [
   "scan_music_folder",
   "parse_audio_files",

@@ -56,7 +56,7 @@ async function ensureTrayMenuWindow() {
     resolveTrayMenuReady = null;
     const windowInstance = new WebviewWindow(TRAY_MENU_WINDOW_LABEL, {
       url: '/',
-      title: 'Lycia Tray Menu',
+      title: 'XY-Music Tray Menu',
       width: TRAY_MENU_WINDOW_WIDTH,
       height: TRAY_MENU_WINDOW_HEIGHT,
       minWidth: TRAY_MENU_WINDOW_WIDTH,

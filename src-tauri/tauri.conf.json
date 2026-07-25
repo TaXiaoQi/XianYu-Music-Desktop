@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Lycia Player",
-  "version": "1.3.9",
-  "identifier": "com.lover.lyciaplayer",
+  "productName": "XY-Music-Desktop",
+  "version": "1.0.1",
+  "identifier": "com.xymusic.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Lycia Player",
+        "title": "XY-Music",
         "width": 1200,
         "height": 800,
         "minWidth": 960,
@@ -36,8 +36,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "copyright": "Copyright © 2025 Lycia Player Team",
+    "targets": ["nsis"],
+    "copyright": "Copyright © 2026 XY-Music-Desktop Team",
     "shortDescription": "A beautiful local music player powered by Tauri.",
     "license": "AGPL-3.0-only",
     "fileAssociations": [
@@ -55,8 +55,8 @@
           "ogg",
           "wav"
         ],
-        "name": "Lycia Audio",
-        "description": "Lycia Player Audio File",
+        "name": "XY-Music Audio",
+        "description": "XY-Music Audio File",
         "role": "Viewer"
       }
     ],

@@ -29,7 +29,7 @@ const tabs = [
 
 <template>
   <div class="flex h-full flex-1 overflow-hidden transition-colors duration-500">
-    <aside class="z-10 flex w-[220px] shrink-0 flex-col border-r border-white/20 p-4 dark:border-white/5 md:w-[240px]">
+    <aside class="z-10 flex w-[220px] shrink-0 flex-col border-r border-black/10 p-4 dark:border-white/10 md:w-[240px]">
       <nav class="custom-scrollbar flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
         <button
           v-for="tab in tabs"
