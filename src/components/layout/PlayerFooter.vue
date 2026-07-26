@@ -480,7 +480,7 @@ onUnmounted(() => {
           <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
             :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
           >
-            <div class="text-[10px] font-bold select-none transition-colors"
+            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
               :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
             >{{ volume }}%</div>
             <div ref="volumeBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]" 

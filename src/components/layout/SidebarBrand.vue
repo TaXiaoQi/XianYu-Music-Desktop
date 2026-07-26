@@ -25,9 +25,9 @@ const toggleEasterEgg = () => {
       <img
         src="/logo.png"
         alt="Logo"
-        class="object-contain drop-shadow-sm opacity-80 w-[29px] h-[29px] mr-[7px] dark:invert pointer-events-none"
+        class="object-contain drop-shadow-sm opacity-80 w-[29px] h-[29px] dark:invert pointer-events-none shrink-0 translate-x-[-14px] translate-y-[11px]"
       />
-      <h1 class="font-medium tracking-wide text-[17px] text-[#353A3E] dark:text-white/80 pointer-events-none">
+      <h1 class="font-medium tracking-wide text-[18px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-3px] translate-y-[12px]">
         弦予音乐
       </h1>
     </div>
@@ -37,7 +37,7 @@ const toggleEasterEgg = () => {
       :class="isEasterEgg ? 'opacity-100' : 'opacity-0 pointer-events-none'"
       @click.stop="toggleEasterEgg"
     >
-      <h1 class="font-black tracking-wider text-[17px] text-[#353A3E] dark:text-white/80 pointer-events-none">
+      <h1 class="font-black tracking-wider text-[19px] text-[#353A3E] dark:text-white/80 pointer-events-none translate-x-[-12px] translate-y-[15px]">
         XY Music
       </h1>
     </div>
