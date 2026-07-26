@@ -1,16 +1,11 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref, onMounted } from 'vue';
+import { defineAsyncComponent, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
-import {
-  fetchAnnouncement,
-  isAnnouncementDismissed,
-  dismissAnnouncement,
-  type Announcement,
-} from '../../utils/announcement';
+import { useAnnouncement } from '../../composables/useAnnouncement';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
@@ -48,28 +43,17 @@ const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(us
 useDesktopLyricsWindowBridge();
 
 // Announcement logic
-const announcementVisible = ref(false);
-const currentAnnouncement = ref<Announcement | null>(null);
+const {
+  announcementVisible,
+  currentAnnouncement,
+  checkAnnouncement,
+  closeAnnouncement,
+  handleAnnouncementAction,
+} = useAnnouncement();
 
-onMounted(async () => {
-  const announcement = await fetchAnnouncement();
-  if (announcement && !isAnnouncementDismissed(announcement.id)) {
-    currentAnnouncement.value = announcement;
-    announcementVisible.value = true;
-  }
+onMounted(() => {
+  checkAnnouncement();
 });
-
-function closeAnnouncement() {
-  if (currentAnnouncement.value) {
-    dismissAnnouncement(currentAnnouncement.value.id);
-  }
-  announcementVisible.value = false;
-}
-
-function handleAnnouncementAction(url: string) {
-  window.open(url, '_blank');
-  closeAnnouncement();
-}
 </script>
 
 <template>

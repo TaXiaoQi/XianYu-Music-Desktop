@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Moon, Sun } from 'lucide-vue-next';
+import { Moon, Sun, Bell } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window'; 
 import { useSettings } from '../../features/settings/useSettings';
 
@@ -13,6 +14,7 @@ const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
 const { settings } = useSettings();
 const { isDarkTheme, toggleThemeMode } = useThemeSettings();
+const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const rotation = ref(0); // For settings icon animation
 const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
 const isSettingsRoute = computed(() => route.path === '/settings');
@@ -128,6 +130,16 @@ const goBack = () => { router.back(); };
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
+      </button>
+      <button
+        type="button"
+        class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
+        :class="{ 'opacity-50 pointer-events-none': isFetchingAnnouncement }"
+        title="公告"
+        aria-label="查看公告"
+        @click.stop="manualCheckAnnouncement"
+      >
+        <Bell class="h-5 w-5" :stroke-width="2" />
       </button>
       <button
         type="button"

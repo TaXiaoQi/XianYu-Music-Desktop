@@ -466,25 +466,45 @@ pub async fn download_update_file(
 
 #[tauri::command]
 pub async fn fetch_announcement() -> Result<String, String> {
-    let url = "https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json";
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    let urls = [
+        format!("https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json?_t={}", timestamp),
+        format!("https://gh-proxy.com/https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json?_t={}", timestamp),
+        format!("https://cdn.jsdelivr.net/gh/TaXiaoQi/XY-Music-Desktop@main/announcement.json?_t={}", timestamp),
+    ];
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(5))
         .user_agent("XY-Music-Updater")
+        .no_proxy()
         .build()
         .map_err(|e| format!("创建请求客户端失败: {e}"))?;
 
-    client
-        .get(url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("请求公告接口失败: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("公告接口返回错误状态: {e}"))?
-        .text()
-        .await
-        .map_err(|e| format!("读取公告数据失败: {e}"))
+    let mut last_error = String::new();
+    for url in &urls {
+        match client
+            .get(url)
+            .header("Accept", "application/json")
+            .header("Cache-Control", "no-cache")
+            .send()
+            .await
+        {
+            Ok(resp) => match resp.error_for_status() {
+                Ok(resp) => match resp.text().await {
+                    Ok(text) => return Ok(text),
+                    Err(e) => last_error = format!("读取公告数据失败: {e}"),
+                },
+                Err(e) => last_error = format!("公告接口返回错误状态: {e}"),
+            },
+            Err(e) => last_error = format!("请求公告接口失败: {e}"),
+        }
+    }
+
+    Err(last_error)
 }
 
 #[tauri::command]
