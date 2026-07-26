@@ -1,0 +1,69 @@
+name: Release
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+        type: string
+      run_id:
+        description: "Build workflow run ID to download artifacts from"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Validate release inputs
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          BUILD_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          git fetch --force --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          git rev-parse "refs/tags/$RELEASE_TAG"
+      - name: Download all build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.run_id }}
+          path: ./release-assets
+          merge-multiple: true
+      - name: Generate aggregate checksums
+        run: node scripts/generate-release-metadata.cjs ./release-assets
+      - name: Attest release bundle
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ./release-assets/*
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "$PRERELEASE" == "true" ]]; then PRERELEASE_FLAG="--prerelease"; fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" ./release-assets/* --clobber
+          else
+            gh release create "$RELEASE_TAG" ./release-assets/* --title "$RELEASE_TAG" --generate-notes --verify-tag $PRERELEASE_FLAG
+          fi
