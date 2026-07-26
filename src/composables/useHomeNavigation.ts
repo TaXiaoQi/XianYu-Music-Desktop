@@ -13,7 +13,8 @@ type AppNavigationTarget =
   | { section: 'favorites' }
   | { section: 'recent' }
   | { section: 'plugins' }
-  | { section: 'settings' };
+  | { section: 'settings' }
+  | { section: 'auth' };
 
 const buildHomeLocation = (target: HomeNavigationTarget): RouteLocationRaw => {
   switch (target.view) {
@@ -75,6 +76,8 @@ export const buildAppLocation = (target: AppNavigationTarget): RouteLocationRaw 
       return { path: '/plugins' };
     case 'settings':
       return { path: '/settings' };
+    case 'auth':
+      return { path: '/auth' };
     default:
       return { path: '/' };
   }
@@ -130,6 +133,9 @@ export function useHomeNavigation(router: Router) {
   const openSettings = (options?: { replace?: boolean }) =>
     openApp({ section: 'settings' }, options);
 
+  const openAuth = (options?: { replace?: boolean }) =>
+    openApp({ section: 'auth' }, options);
+
   return {
     openApp,
     openHome,
@@ -145,5 +151,6 @@ export function useHomeNavigation(router: Router) {
     openRecent,
     openPlugins,
     openSettings,
+    openAuth,
   };
 }

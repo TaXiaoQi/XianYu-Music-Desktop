@@ -8,6 +8,7 @@ const Artists = () => import('../views/Artists.vue');
 const Albums = () => import('../views/Albums.vue');
 const Plugins = () => import('../views/Plugins.vue');
 const Settings = () => import('../views/Settings.vue');
+const Auth = () => import('../views/Auth.vue');
 
 const routes: Array<RouteRecordRaw> = [
   { path: '/', name: 'Home', component: Home, meta: { keepAlive: true } },
@@ -17,6 +18,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/albums', name: 'Albums', component: Albums },
   { path: '/plugins', name: 'Plugins', component: Plugins },
   { path: '/settings', name: 'Settings', component: Settings },
+  { path: '/auth', name: 'Auth', component: Auth },
 ];
 
 const router = createRouter({

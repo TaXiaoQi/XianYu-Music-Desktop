@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Moon, Sun, Bell } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useAnnouncement } from '../../composables/useAnnouncement';
-import { getCurrentWindow } from '@tauri-apps/api/window'; 
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../../features/settings/useSettings';
+import { useAuthStore } from '../../features/auth/store';
 
 const router = useRouter();
 const route = useRoute();
@@ -15,9 +16,11 @@ const appWindow = getCurrentWindow();
 const { settings } = useSettings();
 const { isDarkTheme, toggleThemeMode } = useThemeSettings();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
+const authStore = useAuthStore();
 const rotation = ref(0); // For settings icon animation
 const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
 const isSettingsRoute = computed(() => route.path === '/settings');
+const isAuthRoute = computed(() => route.path === '/auth');
 const themeToggleTitle = computed(() => (isDarkTheme.value ? '切换浅色' : '切换深色'));
 
 const rotateSettings = () => {
@@ -35,10 +38,18 @@ const toggleSettingsPage = async () => {
   await router.push('/settings');
 };
 
+const openAccountPage = async () => {
+  if (isAuthRoute.value) {
+    await router.push(lastNonSettingsRoute.value || '/');
+    return;
+  }
+  await router.push('/auth');
+};
+
 watch(
   () => route.fullPath,
   (fullPath) => {
-    if (route.path !== '/settings') {
+    if (route.path !== '/settings' && route.path !== '/auth') {
       lastNonSettingsRoute.value = fullPath;
     }
   },
@@ -51,7 +62,7 @@ const minimize = async () => {
 };
 
 // 最大化/还原
-const toggleMaximize = async () => { 
+const toggleMaximize = async () => {
   const isMax = await appWindow.isMaximized();
   if (isMax) {
     await appWindow.unmaximize();
@@ -61,7 +72,7 @@ const toggleMaximize = async () => {
 };
 
 // 关闭
-const closeWindow = async () => { 
+const closeWindow = async () => {
   if (settings.value.closeToTray) {
     await appWindow.hide();
   } else {
@@ -71,6 +82,13 @@ const closeWindow = async () => {
 
 const handleInput = (e: Event) => { setSearch((e.target as HTMLInputElement).value); };
 const goBack = () => { router.back(); };
+
+onMounted(() => {
+  // 启动时尝试恢复登录态（非阻塞）
+  if (!authStore.initialized) {
+    void authStore.restoreSession();
+  }
+});
 </script>
 
 <template>
@@ -150,6 +168,40 @@ const goBack = () => { router.back(); };
       >
         <Sun v-if="isDarkTheme" class="h-5 w-5" :stroke-width="2" />
         <Moon v-else class="h-5 w-5" :stroke-width="2" />
+      </button>
+      <button
+        type="button"
+        class="p-1 rounded-md transition-colors cursor-pointer relative"
+        :class="isAuthRoute
+          ? 'text-[#EC4141] dark:text-[#ff8b8b]'
+          : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
+        :title="authStore.isLoggedIn ? (authStore.user?.nickname || authStore.user?.username || '个人中心') : '登录 / 注册'"
+        :aria-label="authStore.isLoggedIn ? '个人中心' : '登录 / 注册'"
+        @click.stop="openAccountPage"
+      >
+        <img
+          v-if="authStore.isLoggedIn && authStore.user?.avatar"
+          :src="authStore.user.avatar"
+          alt=""
+          class="h-6 w-6 rounded-full object-cover"
+        />
+        <span
+          v-else-if="authStore.isLoggedIn"
+          class="grid h-6 w-6 place-items-center rounded-full bg-[#EC4141] text-white text-[11px] font-bold"
+        >
+          {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
+        </span>
+        <svg
+          v-else
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-5 w-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
       </button>
       <div class="h-4 w-px bg-gray-400/30 mx-2"></div>
       <div class="flex items-center gap-1">

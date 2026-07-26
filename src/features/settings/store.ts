@@ -98,6 +98,7 @@ export const defaultSidebarSettings: SidebarSettings = {
   showRecent: true,
   showFolders: true,
   showStatistics: true,
+  showAccount: true,
 };
 
 export const defaultAudioSettings: AudioSettings = {
