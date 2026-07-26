@@ -31,7 +31,7 @@ const { settings } = useSettings();
         </div>
 
         <!-- Artists -->
-        <div 
+        <div
               @click="settings.sidebar.showArtists = !settings.sidebar.showArtists"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >
@@ -47,7 +47,7 @@ const { settings } = useSettings();
         </div>
 
         <!-- Albums -->
-        <div 
+        <div
               @click="settings.sidebar.showAlbums = !settings.sidebar.showAlbums"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >

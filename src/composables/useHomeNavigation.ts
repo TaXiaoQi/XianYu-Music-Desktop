@@ -16,6 +16,13 @@ type AppNavigationTarget =
 
 const buildHomeLocation = (target: HomeNavigationTarget): RouteLocationRaw => {
   switch (target.view) {
+    case 'all':
+      return {
+        path: '/',
+        query: {
+          view: 'all',
+        },
+      };
     case 'artist':
     case 'album':
     case 'playlist':
@@ -41,9 +48,7 @@ const buildHomeLocation = (target: HomeNavigationTarget): RouteLocationRaw => {
     case 'statistics':
       return {
         path: '/',
-        query: {
-          view: 'statistics',
-        },
+        query: {},
       };
     default:
       return {

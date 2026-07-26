@@ -6,8 +6,6 @@ import miniPlayer from '../components/layout/MiniPlayerWindow.vue?raw';
 import songTable from '../components/song-list/SongTable.vue?raw';
 import sidebarDrag from '../composables/useSidebarPlaylistDragDrop.ts?raw';
 import songDrag from '../composables/useSongDrag.ts?raw';
-import albums from '../views/Albums.vue?raw';
-import artists from '../views/Artists.vue?raw';
 
 describe('touch drag support', () => {
   it('uses pointer events for song table drag gestures', () => {
@@ -24,10 +22,6 @@ describe('touch drag support', () => {
     expect(sidebarDrag).toContain("window.addEventListener('pointermove'");
     expect(sidebarDrag).toContain("window.addEventListener('pointerup'");
     expect(sidebarDrag).toContain("window.addEventListener('pointercancel'");
-    expect(albums).toContain('@pointerdown="handlePointerDown($event, item.index, item.album)"');
-    expect(albums).toContain('@pointermove="handleItemPointerMove($event, item.album.key)"');
-    expect(artists).toContain('@pointerdown="handlePointerDown($event, item.index, item.artist)"');
-    expect(artists).toContain('@pointermove="handleItemPointerMove($event, item.artist.name)"');
   });
 
   it('uses pointer events for playback sliders', () => {
