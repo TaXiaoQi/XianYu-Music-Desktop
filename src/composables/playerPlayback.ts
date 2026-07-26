@@ -39,6 +39,9 @@ let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
 let isSeeking = false;
+// duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
+let lastRawProgress = -1;
+let stalledProgressTicks = 0;
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
@@ -229,6 +232,26 @@ export const createPlayerPlayback = ({
         if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
           reanchorPlaybackClock(adjustedTime);
         }
+
+        // 播放结束兜底检测：后端进度连续两轮（≥2s）停滞且已播放过则视为结束
+        // - duration 未知：直接视为结束
+        // - duration 已知：仅当进度已接近 duration（相差 ≤3s）时视为结束，
+        //   避免中段缓冲（如远程流）造成误判；同时弥补 metadata 时长略大于实际
+        //   音频时长导致 currentTime 被 reanchor 拉回、永远到不了 duration 的问题
+        const song = currentSong.value;
+        if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
+          stalledProgressTicks += 1;
+          const unknownDuration = !song.duration || song.duration <= 0;
+          const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
+          if (stalledProgressTicks >= 2 && (unknownDuration || nearEnd)) {
+            stalledProgressTicks = 0;
+            handleAutoNext();
+            return;
+          }
+        } else {
+          stalledProgressTicks = 0;
+        }
+        lastRawProgress = rawTime;
       } catch {}
     }, 1000);
   };
@@ -344,6 +367,8 @@ export const createPlayerPlayback = ({
     reanchorPlaybackClock(resumeTime);
     accumulatedTime = 0;
     sessionStartTime = null;
+    lastRawProgress = -1;
+    stalledProgressTicks = 0;
 
     addToHistory(song);
 
@@ -453,7 +478,11 @@ export const createPlayerPlayback = ({
     isSeeking = true;
     stopPlaybackRuntime();
     const trackDuration = currentSong.value.duration;
-    const targetTime = Math.max(0, Math.min(newTime, trackDuration));
+    // duration 未知/为 0 时不对上限进行 clamp，否则 seekTo 任意时间都会被压缩到 0
+    // 导致点击歌词从头播放
+    const targetTime = trackDuration > 0
+      ? Math.max(0, Math.min(newTime, trackDuration))
+      : Math.max(0, newTime);
     const requestId = ++latestSeekRequestId;
     reanchorPlaybackClock(targetTime);
 
