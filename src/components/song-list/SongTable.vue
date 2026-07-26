@@ -122,6 +122,22 @@ const getSongComment = (song: Song) => (
 
 const hasVisibleSongComment = (song: Song) => settings.value.showSongComments && getSongComment(song).length > 0;
 
+const extractExtension = (value: string | undefined) => {
+  if (!value) {
+    return '';
+  }
+
+  const fileName = value.split(/[\\/]/).pop() ?? '';
+  const matched = /\.([A-Za-z0-9]+)$/.exec(fileName);
+  return matched?.[1] ?? '';
+};
+
+// 扩展名列：优先用扫描写入的 format 字段，缺失时回退到文件名/路径后缀
+const getSongExtension = (song: Song) => {
+  const raw = song.format?.trim() || extractExtension(song.name) || extractExtension(song.path);
+  return raw ? raw.replace(/^\./, '').toUpperCase() : '';
+};
+
 const loadVisibleSongComments = (songs: Song[]) => {
   if (!settings.value.showSongComments) {
     return;
@@ -710,6 +726,10 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 
           <div class="flex-1 min-w-0 truncate text-xs text-gray-900 dark:text-gray-100">
             {{ song.album }}
+          </div>
+
+          <div class="w-14 shrink-0 truncate text-center text-xs font-mono text-gray-500 dark:text-white/50" :title="getSongExtension(song)">
+            {{ getSongExtension(song) }}
           </div>
 
           <div class="shrink-0 flex items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'opacity-20 pointer-events-none': dragSession.active }">
