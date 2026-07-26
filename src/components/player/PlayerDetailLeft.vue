@@ -8,6 +8,11 @@ import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 
 const props = defineProps<{
   isExpanded?: boolean;
+  coverHidden?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'toggle-cover'): void;
 }>();
 
 const {
@@ -156,23 +161,31 @@ const onBigCoverError = () => {
 
 const detailCoverRef = ref<HTMLElement | null>(null);
 defineExpose({ detailCoverRef });
+
+const handleCoverClick = (event: MouseEvent) => {
+  event.stopPropagation();
+  emit('toggle-cover');
+};
 </script>
 
 <template>
   <div class="pointer-events-none" @contextmenu="handleContextMenu">
     
     <!-- Album Art -->
-    <div 
+    <div
       ref="detailCoverRef"
-      class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-50 will-change-transform pointer-events-auto"
-      :class="props.isExpanded ? 'top-[45%] left-[calc(75px+18%)] -translate-x-1/2 -translate-y-1/2 w-[clamp(220px,45vh,580px)] rounded-2xl' : 'top-[calc(100vh-64px)] left-[16px] translate-x-0 translate-y-0 w-12 rounded-lg pointer-events-none'"
-      :style="{ 
+      class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-[70] will-change-transform"
+      :class="[
+        props.isExpanded ? 'top-[45%] left-[calc(75px+18%)] -translate-x-1/2 -translate-y-1/2 w-[clamp(220px,45vh,580px)] rounded-2xl' : 'top-[calc(100vh-64px)] left-[16px] translate-x-0 translate-y-0 w-12 rounded-lg',
+        props.coverHidden ? 'opacity-0 pointer-events-none' : (props.isExpanded ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'),
+      ]"
+      :style="{
         boxShadow: props.isExpanded && isPlaying
-          ? `0 30px 60px -12px rgba(0,0,0,0.6), 0 18px 36px -18px rgba(0,0,0,0.7), 0 0 80px -20px ${dominantColors[0]}44` 
+          ? `0 30px 60px -12px rgba(0,0,0,0.6), 0 18px 36px -18px rgba(0,0,0,0.7), 0 0 80px -20px ${dominantColors[0]}44`
           : (props.isExpanded ? `0 10px 20px -5px rgba(0,0,0,0.4)` : 'none'),
         transform: props.isExpanded ? (isPlaying ? 'scale(1)' : 'scale(1)') : 'scale(1)',
-        opacity: 1,
       }"
+      @click="handleCoverClick"
     >
       <!-- Main Cover Container -->
       <div class="w-full h-full rounded-[inherit] overflow-hidden relative isolate z-20">

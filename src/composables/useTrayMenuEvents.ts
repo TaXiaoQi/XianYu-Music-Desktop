@@ -215,7 +215,7 @@ export function useTrayMenuEvents(router: Router) {
   let unlistenTrayMenu: UnlistenFn | null = null;
   let unlistenTrayMenuOpen: UnlistenFn | null = null;
   let unlistenTrayMenuReady: UnlistenFn | null = null;
-  let trayMenuPrewarmTimer: ReturnType<typeof window.setTimeout> | null = null;
+  let trayMenuPrewarmTimer: number | null = null;
 
   const createTrayMenuState = (): TrayMenuStatePayload => ({
     currentSong: currentSong.value,

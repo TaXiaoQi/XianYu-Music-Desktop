@@ -36,7 +36,7 @@ const queuedBackgroundFullPaths = new Set<string>();
 let activeBackgroundFullPreloadCount = 0;
 let backgroundPreloadTimer: ReturnType<typeof setTimeout> | null = null;
 let backgroundPreloadIdleId: number | null = null;
-let cachePruneTimer: ReturnType<typeof setTimeout> | null = null;
+let cachePruneTimer: number | null = null;
 let hasRegisteredVisibilityCleanup = false;
 const cacheEpochs: Record<CoverKind, number> = {
   thumbnail: 0,
@@ -148,7 +148,7 @@ const pruneCache = (
 
 const scheduleCachePrune = () => {
   if (cachePruneTimer) {
-    clearTimeout(cachePruneTimer);
+    window.clearTimeout(cachePruneTimer);
     cachePruneTimer = null;
   }
 
@@ -709,7 +709,7 @@ export function useCoverCache() {
     activeBackgroundFullPreloadCount = 0;
     cancelBackgroundPreload();
     if (cachePruneTimer) {
-      clearTimeout(cachePruneTimer);
+      window.clearTimeout(cachePruneTimer);
       cachePruneTimer = null;
     }
   };

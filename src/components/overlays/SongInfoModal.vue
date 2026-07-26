@@ -69,8 +69,8 @@ const isLyricsEditorExpanded = ref(false);
 const pendingSongInfoExpanded = ref<boolean | null>(null);
 const pendingLyricsExpanded = ref<boolean | null>(null);
 let detailRequestId = 0;
-let songInfoExpandTimer: ReturnType<typeof window.setTimeout> | null = null;
-let lyricsExpandTimer: ReturnType<typeof window.setTimeout> | null = null;
+let songInfoExpandTimer: number | null = null;
+let lyricsExpandTimer: number | null = null;
 
 const clearSongInfoExpandTimers = () => {
   if (songInfoExpandTimer !== null) {
