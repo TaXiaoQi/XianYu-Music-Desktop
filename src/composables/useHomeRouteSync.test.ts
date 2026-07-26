@@ -196,7 +196,7 @@ describe('useHomeRouteSync', () => {
 
     await nextTick();
 
-    expect(currentViewMode.value).toBe('all');
+    expect(currentViewMode.value).toBe('statistics');
     expect(filterCondition.value).toBe('');
     expect(currentFolderFilter.value).toBe('/music/root-a/live');
     expect(activeRootPath.value).toBe('/music/root-a');

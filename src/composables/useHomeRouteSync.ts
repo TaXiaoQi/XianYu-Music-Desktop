@@ -45,11 +45,13 @@ const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
   const folder = readQueryString(query.folder);
 
   switch (view) {
+    case 'all':
+      return { viewMode: 'all', filter: '', folder: '' };
     case 'artist':
     case 'album':
     case 'playlist':
       if (!filter) {
-        return { viewMode: 'all', filter: '', folder: '' };
+        return { viewMode: 'statistics', filter: '', folder: '' };
       }
       return { viewMode: view, filter, folder: '' };
     case 'folder':
@@ -57,7 +59,7 @@ const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
     case 'statistics':
       return { viewMode: 'statistics', filter: '', folder: '' };
     default:
-      return { viewMode: 'all', filter: '', folder: '' };
+      return { viewMode: 'statistics', filter: '', folder: '' };
   }
 };
 
@@ -83,12 +85,14 @@ const buildHomeRouteQuery = (
   currentFolderFilter: string,
 ): LocationQueryRaw => {
   switch (currentViewMode) {
+    case 'all':
+      return { view: 'all' };
     case 'artist':
     case 'album':
     case 'playlist':
       return filterCondition ? { view: currentViewMode, filter: filterCondition } : {};
     case 'statistics':
-      return { view: 'statistics' };
+      return {};
     case 'folder':
       return currentFolderFilter ? { view: 'folder', folder: currentFolderFilter } : { view: 'folder' };
     default:
@@ -112,7 +116,7 @@ export function useHomeRouteSync({
   folderTree,
 }: UseHomeRouteSyncOptions) {
   const resetToDefaultHomeState = () => {
-    currentViewMode.value = 'all';
+    currentViewMode.value = 'statistics';
     filterCondition.value = '';
   };
 

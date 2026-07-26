@@ -92,8 +92,8 @@ export const defaultThemeSettings: ThemeSettings = {
 
 export const defaultSidebarSettings: SidebarSettings = {
   showLocalMusic: true,
-  showArtists: true,
-  showAlbums: true,
+  showArtists: false,
+  showAlbums: false,
   showFavorites: true,
   showRecent: true,
   showFolders: true,
