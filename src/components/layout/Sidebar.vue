@@ -51,6 +51,7 @@ const {
   openAlbums,
   openFavorites,
   openRecent,
+  openPlugins,
 } = useHomeNavigation(router);
 const { preloadCovers, loadCover } = useCoverCache();
 
@@ -164,6 +165,10 @@ const handleOpenRecentView = () => {
 const handleOpenFolderView = () => {
   void openHomeFolder(currentFolderFilter.value || undefined);
 };
+
+const handleOpenPluginsView = () => {
+  void openPlugins();
+};
 </script>
 
 <template>
@@ -183,6 +188,7 @@ const handleOpenFolderView = () => {
         @openFavorites="handleOpenFavoritesView"
         @openRecent="handleOpenRecentView"
         @openFolder="handleOpenFolderView"
+        @openPlugins="handleOpenPluginsView"
         @hoverArtists="handleHoverArtists"
         @hoverAlbums="handleHoverAlbums"
       />
