@@ -21,13 +21,13 @@ interface Props {
 const props = defineProps<Props>();
 
 defineEmits<{
+  (event: 'openHome'): void;
   (event: 'openAll'): void;
   (event: 'openArtists'): void;
   (event: 'openAlbums'): void;
   (event: 'openFavorites'): void;
   (event: 'openRecent'): void;
   (event: 'openFolder'): void;
-  (event: 'openStatistics'): void;
   (event: 'hoverArtists'): void;
   (event: 'hoverAlbums'): void;
 }>();
@@ -54,6 +54,16 @@ const hoverClasses = 'bg-black/5 dark:bg-white/5 text-black dark:text-white tran
 
 <template>
   <ul class="space-y-1 transition-all duration-200" :class="{ 'opacity-30 grayscale pointer-events-none': isDragActive }">
+    <li
+      @click="$emit('openHome')"
+      @mouseenter="handleItemEnter('home')"
+      @mouseleave="handleItemLeave()"
+      :class="[baseNavClasses, (props.currentViewMode === 'statistics' && props.currentPath === '/') ? activeNavClasses : idleClasses, hoveredItem === 'home' && !(props.currentViewMode === 'statistics' && props.currentPath === '/') ? hoverClasses : '']"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+      <span>首页</span>
+    </li>
+
     <template v-if="props.sidebar.showLocalMusic">
       <li
         @click="$emit('openAll')"
@@ -123,18 +133,6 @@ const hoverClasses = 'bg-black/5 dark:bg-white/5 text-black dark:text-white tran
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
         <span>文件夹</span>
-      </li>
-    </template>
-
-    <template v-if="props.sidebar.showStatistics">
-      <li
-        @click="$emit('openStatistics')"
-        @mouseenter="handleItemEnter('statistics')"
-        @mouseleave="handleItemLeave()"
-        :class="[baseNavClasses, (props.currentViewMode === 'statistics' && props.currentPath === '/') ? activeNavClasses : idleClasses, hoveredItem === 'statistics' && !(props.currentViewMode === 'statistics' && props.currentPath === '/') ? hoverClasses : '']"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-        <span>统计</span>
       </li>
     </template>
   </ul>

@@ -141,6 +141,10 @@ const handleOpenAllView = () => {
   void openHomeAll();
 };
 
+const handleOpenHomeView = () => {
+  void openHomeStatistics();
+};
+
 const handleOpenArtistsView = () => {
   void openArtists();
 };
@@ -160,10 +164,6 @@ const handleOpenRecentView = () => {
 const handleOpenFolderView = () => {
   void openHomeFolder(currentFolderFilter.value || undefined);
 };
-
-const handleOpenStatisticsView = () => {
-  void openHomeStatistics();
-};
 </script>
 
 <template>
@@ -176,13 +176,13 @@ const handleOpenStatisticsView = () => {
         :currentViewMode="currentViewMode"
         :currentPath="route.path"
         :isDragActive="dragSession.active"
+        @openHome="handleOpenHomeView"
         @openAll="handleOpenAllView"
         @openArtists="handleOpenArtistsView"
         @openAlbums="handleOpenAlbumsView"
         @openFavorites="handleOpenFavoritesView"
         @openRecent="handleOpenRecentView"
         @openFolder="handleOpenFolderView"
-        @openStatistics="handleOpenStatisticsView"
         @hoverArtists="handleHoverArtists"
         @hoverAlbums="handleHoverAlbums"
       />

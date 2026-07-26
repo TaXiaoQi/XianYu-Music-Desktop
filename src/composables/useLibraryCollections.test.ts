@@ -83,7 +83,9 @@ describe('library collections domain', () => {
     expect(collectionsStore.playlists).toEqual([]);
     expect(router.replace).toHaveBeenCalledWith({
       path: '/',
-      query: {},
+      query: {
+        view: 'all',
+      },
     });
   });
 
