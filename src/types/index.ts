@@ -247,6 +247,7 @@ export interface SidebarSettings {
   showRecent: boolean;
   showFolders: boolean;
   showStatistics: boolean;
+  showAccount: boolean;
 }
 
 export type LyricsPlayerAlignment = 'left' | 'center' | 'right';

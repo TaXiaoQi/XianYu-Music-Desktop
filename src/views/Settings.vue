@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import SettingsAbout from "../components/settings/SettingsAbout.vue";
+import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
 import SettingsGeneral from "../components/settings/SettingsGeneral.vue";
 import SettingsLibrary from "../components/settings/SettingsLibrary.vue";
@@ -11,7 +12,7 @@ import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'shortcuts' | 'about'>('general');
+const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'shortcuts' | 'account' | 'about'>('general');
 
 const tabs = [
   { id: 'general', name: '常规' },
@@ -23,6 +24,7 @@ const tabs = [
   { id: 'library', name: '本地音乐库' },
   { id: 'remoteLibrary', name: '远程音乐库' },
   { id: 'shortcuts', name: '快捷键' },
+  { id: 'account', name: '账号' },
   { id: 'about', name: '关于' },
 ];
 </script>
@@ -58,6 +60,7 @@ const tabs = [
         <SettingsLibrary v-else-if="activeTab === 'library'" />
         <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" />
         <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
+        <SettingsAccount v-else-if="activeTab === 'account'" />
         <SettingsAbout v-else-if="activeTab === 'about'" />
 
         <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
