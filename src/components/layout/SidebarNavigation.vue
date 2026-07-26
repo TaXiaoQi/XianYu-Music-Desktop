@@ -9,6 +9,7 @@ interface SidebarSettings {
   showRecent: boolean;
   showFolders: boolean;
   showStatistics: boolean;
+  showAccount: boolean;
 }
 
 interface Props {
@@ -29,6 +30,7 @@ defineEmits<{
   (event: 'openRecent'): void;
   (event: 'openFolder'): void;
   (event: 'openPlugins'): void;
+  (event: 'openAccount'): void;
   (event: 'hoverArtists'): void;
   (event: 'hoverAlbums'): void;
 }>();
@@ -146,5 +148,17 @@ const hoverClasses = 'bg-black/5 dark:bg-white/5 text-black dark:text-white tran
       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" /></svg>
       <span>插件管理</span>
     </li>
+
+    <template v-if="props.sidebar.showAccount">
+      <li
+        @click="$emit('openAccount')"
+        @mouseenter="handleItemEnter('account')"
+        @mouseleave="handleItemLeave()"
+        :class="[baseNavClasses, props.currentPath === '/auth' ? activeNavClasses : idleClasses, hoveredItem === 'account' && props.currentPath !== '/auth' ? hoverClasses : '']"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+        <span>账号</span>
+      </li>
+    </template>
   </ul>
 </template>

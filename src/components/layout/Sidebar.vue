@@ -52,6 +52,7 @@ const {
   openFavorites,
   openRecent,
   openPlugins,
+  openAuth,
 } = useHomeNavigation(router);
 const { preloadCovers, loadCover } = useCoverCache();
 
@@ -169,6 +170,10 @@ const handleOpenFolderView = () => {
 const handleOpenPluginsView = () => {
   void openPlugins();
 };
+
+const handleOpenAccountView = () => {
+  void openAuth();
+};
 </script>
 
 <template>
@@ -189,6 +194,7 @@ const handleOpenPluginsView = () => {
         @openRecent="handleOpenRecentView"
         @openFolder="handleOpenFolderView"
         @openPlugins="handleOpenPluginsView"
+        @openAccount="handleOpenAccountView"
         @hoverArtists="handleHoverArtists"
         @hoverAlbums="handleHoverAlbums"
       />
