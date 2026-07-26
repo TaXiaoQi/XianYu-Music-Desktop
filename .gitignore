@@ -19,6 +19,7 @@ src-tauri/bin/
 .vscode/
 .idea/
 .vs/
+*.iml
 *.suo
 *.ntvs
 *.njsproj
