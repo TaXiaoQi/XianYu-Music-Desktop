@@ -1,7 +1,10 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 
-const ANNOUNCEMENT_URL =
-  'https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json';
+const ANNOUNCEMENT_URLS = [
+  'https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json',
+  'https://cdn.jsdelivr.net/gh/TaXiaoQi/XY-Music-Desktop@main/announcement.json',
+];
 
 const DISMISSED_KEY = 'announcement_dismissed_id';
 
@@ -22,11 +25,22 @@ export async function fetchAnnouncement(): Promise<Announcement | null> {
     if (isTauri()) {
       raw = await invoke<string>('fetch_announcement');
     } else {
-      const response = await fetch(ANNOUNCEMENT_URL, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) return null;
-      raw = await response.text();
+      raw = '';
+      for (const url of ANNOUNCEMENT_URLS) {
+        try {
+          const response = await fetch(url, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (response.ok) {
+            raw = await response.text();
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!raw) return null;
     }
 
     const data = JSON.parse(raw);
@@ -49,7 +63,8 @@ export async function fetchAnnouncement(): Promise<Announcement | null> {
       actionUrl: data.actionUrl,
       actionText: data.actionText,
     };
-  } catch {
+  } catch (error) {
+    console.error('[Announcement] 获取公告失败:', error);
     return null;
   }
 }
