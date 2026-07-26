@@ -1,0 +1,132 @@
+import type { Configuration } from "webpack";
+import path from "path";
+import webpack from "webpack";
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+const postcssNestingModule = require("postcss-nesting");
+const postcssNesting = postcssNestingModule.default ?? postcssNestingModule;
+
+import { sourceRules } from "./webpack.rules";
+import { plugins } from "./webpack.plugins";
+
+const isProduction = process.env.NODE_ENV === "production";
+const styleLoader = { loader: "style-loader" };
+
+const rendererRules: NonNullable<Configuration["module"]>["rules"] = [
+    ...sourceRules,
+    {
+        test: /\.module\.css$/,
+        use: [
+            styleLoader,
+            {
+                loader: "css-loader",
+                options: {
+                    modules: {
+                        localIdentName: "[name]__[local]--[hash:base64:5]",
+                        namedExport: false,
+                    },
+                },
+            },
+            {
+                loader: "postcss-loader",
+                options: {
+                    postcssOptions: {
+                        plugins: [postcssNesting],
+                    },
+                },
+            },
+        ],
+    },
+    {
+        test: /\.css$/,
+        exclude: /\.module\.css$/,
+        use: [
+            styleLoader,
+            { loader: "css-loader" },
+            {
+                loader: "postcss-loader",
+                options: {
+                    postcssOptions: {
+                        plugins: [postcssNesting],
+                    },
+                },
+            },
+        ],
+    },
+    {
+        test: /\.scss$/,
+        use: [
+            styleLoader,
+            { loader: "css-loader" },
+            { loader: "sass-loader" },
+        ],
+    },
+    {
+        test: /\.(woff|woff2|eot|ttf|otf)$/i,
+        type: "asset/resource",
+    },
+    {
+        test: /\.(png|jpg|jpeg|gif)$/i,
+        type: "asset/resource",
+    },
+    {
+        test: /\.svg$/,
+        use: [
+            {
+                loader: "@svgr/webpack",
+                options: {
+                    prettier: false,
+                    svgo: false,
+                    svgoConfig: {
+                        plugins: [{ removeViewBox: false }],
+                    },
+                    titleProp: true,
+                    ref: true,
+                },
+            },
+        ],
+    },
+];
+
+export const rendererConfig: Configuration = {
+    // Forge's asset-relocator runtime computes an asset base with `__dirname`.
+    // Renderers no longer have Node globals, so Webpack must provide its inert
+    // web mock even though application code never consumes that base.
+    node: {
+        __dirname: true,
+    },
+    devtool: isProduction
+        ? false
+        : "inline-source-map",
+    module: {
+        rules: rendererRules,
+    },
+    plugins: [
+        ...plugins,
+        new webpack.BannerPlugin({
+            banner: "const __dirname = \"/\";",
+            entryOnly: true,
+            raw: true,
+        }),
+        new webpack.DefinePlugin({
+            "import.meta.env.DEV": JSON.stringify(process.env.NODE_ENV !== "production"),
+        }),
+    ],
+    resolve: {
+        extensions: [".js", ".ts", ".jsx", ".tsx", ".css", ".scss"],
+        modules: [path.resolve(__dirname, "../node_modules"), "node_modules"],
+        alias: {
+            "@": path.join(__dirname, "../src"),
+            "@renderer": path.join(__dirname, "../src/renderer"),
+            "@renderer-lrc": path.join(__dirname, "../src/renderer-lrc"),
+            "@shared": path.join(__dirname, "../src/shared"),
+            "@amll-core": path.resolve(__dirname, "../src/amll-core"),
+            "#interfaces": path.resolve(__dirname, "../src/amll-core/interfaces.ts"),
+            "#utils": path.resolve(__dirname, "../src/amll-core/utils"),
+            "#styles": path.resolve(__dirname, "../src/amll-core/styles"),
+            "#lyric": path.resolve(__dirname, "../src/amll-core/lyric-player"),
+            "#bg": path.resolve(__dirname, "../src/amll-core/bg-render"),
+        },
+    },
+    externals: process.platform !== "darwin" ? ["fsevents"] : undefined,
+};
