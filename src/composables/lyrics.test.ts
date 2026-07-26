@@ -6,13 +6,9 @@ vi.stubGlobal('localStorage', {
 });
 
 vi.mock('@applemusic-like-lyrics/lyric/pkg/amll_lyric.js', async () => {
-  // @ts-expect-error Vitest runs in Node, but this repo does not ship @types/node.
   const fs = await import('node:fs/promises');
-  // @ts-expect-error Vitest runs in Node, but this repo does not ship @types/node.
   const os = await import('node:os');
-  // @ts-expect-error Vitest runs in Node, but this repo does not ship @types/node.
   const path = await import('node:path');
-  // @ts-expect-error Vitest runs in Node, but this repo does not ship @types/node.
   const { pathToFileURL } = await import('node:url');
   const cwd = (globalThis as any).process?.cwd?.() ?? '.';
 
