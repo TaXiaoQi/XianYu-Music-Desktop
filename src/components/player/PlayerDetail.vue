@@ -65,6 +65,46 @@ const applyImmersiveFullscreen = async (enter: boolean) => {
   isFullscreen.value = result;
 };
 
+// 沉浸模式下鼠标 2 秒无操作隐藏指针，移动/点击恢复
+const CURSOR_IDLE_HIDE_DELAY = 2000;
+const isCursorHidden = ref(false);
+let cursorIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearCursorIdleTimer = () => {
+  if (cursorIdleTimer) {
+    clearTimeout(cursorIdleTimer);
+    cursorIdleTimer = null;
+  }
+};
+
+const scheduleCursorHide = () => {
+  clearCursorIdleTimer();
+  cursorIdleTimer = setTimeout(() => {
+    isCursorHidden.value = true;
+    cursorIdleTimer = null;
+  }, CURSOR_IDLE_HIDE_DELAY);
+};
+
+const handleCursorActivity = () => {
+  if (isCursorHidden.value) {
+    isCursorHidden.value = false;
+  }
+  scheduleCursorHide();
+};
+
+const enableCursorAutoHide = () => {
+  window.addEventListener('mousemove', handleCursorActivity);
+  window.addEventListener('mousedown', handleCursorActivity);
+  scheduleCursorHide();
+};
+
+const disableCursorAutoHide = () => {
+  window.removeEventListener('mousemove', handleCursorActivity);
+  window.removeEventListener('mousedown', handleCursorActivity);
+  clearCursorIdleTimer();
+  isCursorHidden.value = false;
+};
+
 // 统一过渡编排：仅做防连点
 const runWindowTransition = async (action: () => Promise<void>, onError: string) => {
   if (windowTransitioning) {
@@ -84,15 +124,17 @@ const runWindowTransition = async (action: () => Promise<void>, onError: string)
 const toggleFullscreen = () =>
   runWindowTransition(async () => {
     if (isFullscreen.value) {
-      // 退出全屏：先播内容收缩动画，再让窗口硬跳回小窗，最后恢复内容
+      // 退出全屏：先停鼠标自动隐藏，再播内容收缩动画、硬跳回小窗
+      disableCursorAutoHide();
       isCollapsing.value = true;
       await sleep(200);
       await applyImmersiveFullscreen(false);
       await sleep(20);
       isCollapsing.value = false;
     } else {
-      // 进入全屏：系统最大化动画已丝滑，前端不介入
+      // 进入全屏：系统最大化动画已丝滑，前端不介入；启用鼠标静止自动隐藏
       await applyImmersiveFullscreen(true);
+      enableCursorAutoHide();
     }
   }, '切换全屏失败');
 
@@ -100,6 +142,7 @@ const toggleMaximize = () =>
   runWindowTransition(async () => {
     // 全屏态下点最大化：退出全屏，placement 会一步恢复到进全屏前的状态（通常是最大化）
     if (isFullscreen.value) {
+      disableCursorAutoHide();
       await applyImmersiveFullscreen(false);
       return;
     }
@@ -154,6 +197,7 @@ watch(showPlayerDetail, (visible) => {
   isTopChromeVisible.value = false;
   currentSongDetail.value = null;
   clearSongDetailCache();
+  disableCursorAutoHide();
 });
 
 watch([showPlayerDetail, () => currentSong.value?.path ?? ''], async ([visible, path]) => {
@@ -190,6 +234,7 @@ watch([showPlayerDetail, () => currentSong.value?.path ?? ''], async ([visible, 
 
 onBeforeUnmount(() => {
   clearTopChromeHideTimer();
+  disableCursorAutoHide();
 });
 
 const formatFileSize = (size: number | undefined) => {
@@ -372,6 +417,7 @@ const handleChangeLyrics = async () => {
     :class="[
       showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
       isCollapsing ? 'bg-[#0a0a0a]' : '',
+      isCursorHidden ? 'cursor-hidden' : '',
     ]"
     @contextmenu.prevent="handleContextMenu"
   >
@@ -542,6 +588,12 @@ const handleChangeLyrics = async () => {
 </template>
 
 <style scoped>
+/* 沉浸模式鼠标静止时隐藏指针，覆盖所有子元素（按钮等自带 cursor 的也要隐藏） */
+.cursor-hidden,
+.cursor-hidden :deep(*) {
+  cursor: none !important;
+}
+
 /* 退出全屏时内容向内收缩，盖住无边框窗窗口硬跳缩小的瞬间。
    不使用 opacity（会让详情页半透明、透出底层统计页），改用不透明底色兜住 scale 缩进后露出的边缘 */
 .fs-collapsing {
