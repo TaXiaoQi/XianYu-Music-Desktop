@@ -52,6 +52,13 @@
     "opener:default",
     "dialog:default",
     "window-state:default",
-    "allow-app-commands"
+    "allow-app-commands",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://**" },
+        { "url": "http://**" }
+      ]
+    }
   ]
 }
