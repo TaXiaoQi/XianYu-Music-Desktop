@@ -417,8 +417,11 @@ const handleChangeLyrics = async () => {
         <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
 
         <div
-          class="flex h-full min-h-0 flex-1 flex-col justify-center pt-0 pb-0 pointer-events-auto"
-          :class="[coverHidden ? 'px-[8%] lyrics-force-center' : 'pl-2 pr-8']"
+          class="flex h-full min-h-0 flex-1 flex-col justify-center pt-0 pb-0"
+          :class="[
+            coverHidden ? 'px-[8%] lyrics-force-center' : 'pl-2 pr-8',
+            showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
+          ]"
           :style="staggerStyle(2, 'X', 20)"
         >
           <transition name="fade-scale" mode="out-in">
