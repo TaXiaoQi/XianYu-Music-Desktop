@@ -81,6 +81,11 @@ const closeWindow = async () => {
 };
 
 const handleInput = (e: Event) => { setSearch((e.target as HTMLInputElement).value); };
+const handleSearchEnter = () => {
+  const query = searchQuery.value.trim();
+  if (!query) return;
+  void router.push('/search');
+};
 const goBack = () => { router.back(); };
 
 onMounted(() => {
@@ -118,6 +123,7 @@ onMounted(() => {
         class="bg-transparent outline-none min-w-0 w-full placeholder-gray-700 dark:placeholder-gray-300 text-gray-800 dark:text-gray-100 text-sm font-medium"
         :value="searchQuery"
         @input="handleInput"
+        @keydown.enter="handleSearchEnter"
       />
       <button v-if="searchQuery" @click="setSearch('')" class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-2 shrink-0 cursor-pointer">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

@@ -163,65 +163,65 @@ const hourLabels = computed(() => {
       </div>
 
       <!-- Main content -->
-      <div v-else-if="stats && behaviorStats" class="space-y-6 md:space-y-8">
+      <div v-else-if="stats && behaviorStats" class="space-y-[clamp(1rem,2vw,2rem)]">
         <!-- 总听歌时长 + 右侧三个小分支 -->
-        <section class="px-8 py-8 md:px-12 md:py-10 animate-fade-in-up">
-          <div class="flex items-end justify-between gap-6 md:gap-10 flex-wrap">
+        <section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1.25rem,2.5vw,2.5rem)] animate-fade-in-up">
+          <div class="flex items-end justify-between gap-[clamp(1rem,2vw,2.5rem)] flex-wrap">
             <!-- 左：总听歌时长 -->
             <div class="shrink-0">
-              <p class="text-black dark:text-white text-base md:text-lg font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-              <p class="text-black dark:text-white text-3xl md:text-4xl font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
+              <p class="text-black dark:text-white text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
+              <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
             </div>
             <!-- 右：三个小分支，均匀分布 -->
-            <div class="flex-1 grid grid-cols-3 gap-4 md:gap-8 min-w-0">
+            <div class="flex-1 grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,2rem)] min-w-0">
               <div>
-                <p class="text-black/70 dark:text-white/70 text-xs md:text-sm font-light tracking-wider mb-1">{{ TEXT.songTotalDuration }}</p>
-                <p class="text-black dark:text-white text-lg md:text-xl font-black tracking-tight leading-none">{{ formatDuration(stats.total_duration) }}</p>
+                <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.songTotalDuration }}</p>
+                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatDuration(stats.total_duration) }}</p>
               </div>
               <div>
-                <p class="text-black/70 dark:text-white/70 text-xs md:text-sm font-light tracking-wider mb-1">{{ TEXT.librarySize }}</p>
-                <p class="text-black dark:text-white text-lg md:text-xl font-black tracking-tight leading-none">{{ formatFileSize(stats.total_file_size) }}</p>
+                <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.librarySize }}</p>
+                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatFileSize(stats.total_file_size) }}</p>
               </div>
               <div>
-                <p class="text-black/70 dark:text-white/70 text-xs md:text-sm font-light tracking-wider mb-1">{{ TEXT.losslessRatio }}</p>
-                <p class="text-black dark:text-white text-lg md:text-xl font-black tracking-tight leading-none">{{ losslessRatio }}%</p>
+                <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.losslessRatio }}</p>
+                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ losslessRatio }}%</p>
               </div>
             </div>
           </div>
         </section>
 
         <!-- 总歌曲 + 播放次数 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <section class="px-8 py-6 md:px-10 md:py-8 animate-fade-in-up" style="animation-delay: 100ms;">
-            <p class="text-black dark:text-white text-sm md:text-base font-light tracking-wider mb-2">{{ TEXT.totalSongs }}</p>
-            <p class="text-black dark:text-white text-2xl md:text-3xl font-black tracking-tight leading-none">{{ stats.total_songs }}</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-[clamp(1rem,2vw,1.5rem)]">
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 100ms;">
+            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.totalSongs }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ stats.total_songs }}</p>
           </section>
 
-          <section class="px-8 py-6 md:px-10 md:py-8 animate-fade-in-up" style="animation-delay: 200ms;">
-            <p class="text-black dark:text-white text-sm md:text-base font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
-            <p class="text-black dark:text-white text-2xl md:text-3xl font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 200ms;">
+            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
           </section>
         </div>
 
         <!-- 最长播放 -->
-        <section v-if="longestPlayed" class="px-8 py-6 md:px-12 md:py-8 animate-fade-in-up" style="animation-delay: 300ms;">
-          <p class="text-black dark:text-white text-sm md:text-base font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
-          <p class="text-black dark:text-white text-lg md:text-xl font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
-          <p class="text-black/70 dark:text-white/70 text-sm md:text-base font-medium">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
+        <section v-if="longestPlayed" class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 300ms;">
+          <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
+          <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
+          <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
         </section>
 
         <!-- 24小时播放分布 -->
-        <section class="px-8 py-6 md:px-12 md:py-8 animate-fade-in-up" style="animation-delay: 400ms;">
-          <p class="text-black dark:text-white text-sm md:text-base font-light tracking-wider mb-6">{{ TEXT.hourlyDistribution }}</p>
-          <div class="flex items-end gap-1 md:gap-2 h-28 md:h-32">
+        <section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 400ms;">
+          <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-[clamp(1rem,1.5vw,1.5rem)]">{{ TEXT.hourlyDistribution }}</p>
+          <div class="flex items-end gap-[clamp(0.125rem,0.3vw,0.5rem)] h-[clamp(6rem,12vw,8rem)]">
             <div
               v-for="(count, hour) in hourDistribution"
               :key="hour"
-              class="flex-1 rounded-t-md md:rounded-t-lg transition-all duration-300 bg-black dark:bg-white"
+              class="flex-1 rounded-t-md transition-all duration-300 bg-black dark:bg-white"
               :style="{ height: `${Math.max((count / maxHourCount) * 100, 3)}%`, opacity: count > 0 ? 1 : 0.15 }"
             ></div>
           </div>
-          <div class="flex justify-between mt-3 text-black/60 dark:text-white/60 text-xs md:text-sm font-medium">
+          <div class="flex justify-between mt-3 text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.875rem)] font-medium">
             <span v-for="label in hourLabels" :key="label">{{ label }}</span>
           </div>
         </section>
