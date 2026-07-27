@@ -22,43 +22,23 @@
         </button>
       </div>
 
-      <!-- 第二层：插件选择 + 搜索关键词提示 -->
+      <!-- 第二层：来源横向选择 + 搜索关键词提示 -->
       <div class="flex items-center justify-between gap-4 py-3">
-        <!-- 插件选择下拉 -->
-        <div class="flex items-center gap-2">
-          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50">来源</span>
-          <div class="relative">
-            <button
-              type="button"
-              class="flex items-center gap-2 px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
-              @click="pluginDropdownOpen = !pluginDropdownOpen"
-            >
-              <span>{{ activePlugin?.name ?? '请选择插件' }}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            <Transition name="dropdown">
-              <div
-                v-if="pluginDropdownOpen"
-                class="absolute z-50 mt-1 left-0 min-w-[160px] bg-white dark:bg-neutral-800 border border-black/10 dark:border-white/10 rounded-lg shadow-lg overflow-hidden"
-                @mouseleave="pluginDropdownOpen = false"
-              >
-                <button
-                  v-for="plugin in enabledPlugins"
-                  :key="plugin.id"
-                  type="button"
-                  class="block w-full text-left px-3 py-2 text-[clamp(0.8rem,1vw,0.9rem)] transition-colors cursor-pointer"
-                  :class="activePluginId === plugin.id
-                    ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
-                    : 'text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/5'"
-                  @click="handleSelectPlugin(plugin.id)"
-                >
-                  {{ plugin.name }}
-                </button>
-              </div>
-            </Transition>
-          </div>
+        <!-- 来源横向平铺选择 -->
+        <div class="flex items-center gap-1 flex-wrap">
+          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1">来源</span>
+          <button
+            v-for="plugin in enabledPlugins"
+            :key="plugin.id"
+            type="button"
+            class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
+            :class="activePluginId === plugin.id
+              ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
+              : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
+            @click="handleSelectPlugin(plugin.id)"
+          >
+            {{ plugin.name }}
+          </button>
         </div>
 
         <!-- 搜索关键词 + 结果数 -->
@@ -236,7 +216,6 @@ const trackResults = ref<PluginTrack[]>([]);
 const artistResults = ref<PluginArtist[]>([]);
 const albumResults = ref<PluginAlbum[]>([]);
 const playlistResults = ref<PluginPlaylist[]>([]);
-const pluginDropdownOpen = ref(false);
 
 // 选中的歌曲集合（SongTable 用）
 const selectedPaths = ref<Set<string>>(new Set());
@@ -320,7 +299,6 @@ const performSearch = async () => {
 // 切换插件时重新搜索
 const handleSelectPlugin = (pluginId: string) => {
   pluginsStore.setActivePlugin(pluginId);
-  pluginDropdownOpen.value = false;
 };
 
 // 切换搜索类型
@@ -400,14 +378,4 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 插件下拉菜单动画 */
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
 </style>
