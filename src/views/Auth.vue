@@ -63,11 +63,14 @@ const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
   { key: 'history_count', label: '历史' },
 ];
 
-const displayStats = computed(() => ({
+const displayStats = computed((): ProfileStats => ({
   favorite_count: stats.value?.favorite_count ?? collectionsStore.favoritePaths.length,
   playlist_count: stats.value?.playlist_count ?? collectionsStore.playlists.length,
   starred_count: stats.value?.starred_count ?? 0,
   history_count: stats.value?.history_count ?? collectionsStore.recentSongs.length,
+  listening_count: stats.value?.listening_count ?? 0,
+  revision: stats.value?.revision ?? 0,
+  updated_at: stats.value?.updated_at ?? null,
 }));
 
 const title = computed(() =>
