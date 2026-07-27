@@ -369,7 +369,10 @@ const handleChangeLyrics = async () => {
 <template>
   <div
     class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
-    :class="showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none'"
+    :class="[
+      showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
+      isCollapsing ? 'bg-[#0a0a0a]' : '',
+    ]"
     @contextmenu.prevent="handleContextMenu"
   >
     <div
@@ -539,12 +542,13 @@ const handleChangeLyrics = async () => {
 </template>
 
 <style scoped>
-/* 退出全屏时内容向内收缩+淡出，盖住无边框窗窗口硬跳缩小的瞬间 */
+/* 退出全屏时内容向内收缩，盖住无边框窗窗口硬跳缩小的瞬间。
+   不使用 opacity（会让详情页半透明、透出底层统计页），改用不透明底色兜住 scale 缩进后露出的边缘 */
 .fs-collapsing {
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
-  transform: scale(0.92);
-  opacity: 0.6;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.96);
   transform-origin: center center;
+  background-color: #0a0a0a;
 }
 
 .fade-scale-enter-active,
