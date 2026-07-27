@@ -1,5 +1,87 @@
+use std::collections::BTreeSet;
+
+/// 字体样式修饰词。Windows 注册表里的字体名是 "face name"（含粗细/斜体等修饰），
+/// 而 CSS `font-family` 需要的是 "family name"。选中带修饰词的 face name 会导致
+/// 浏览器匹配失败并回退到默认字体，因此需要把这些尾部修饰词剥离掉。
+const FONT_STYLE_WORDS: &[&str] = &[
+    "thin",
+    "hairline",
+    "extralight",
+    "ultralight",
+    "light",
+    "semilight",
+    "demilight",
+    "regular",
+    "normal",
+    "book",
+    "medium",
+    "semibold",
+    "demibold",
+    "bold",
+    "extrabold",
+    "ultrabold",
+    "black",
+    "heavy",
+    "italic",
+    "oblique",
+];
+
+/// 从单个 face name 中剥离尾部的样式修饰词，得到 family name。
+/// 例如 "Microsoft YaHei UI Bold" -> "Microsoft YaHei UI"，
+/// "Calibri Light Italic" -> "Calibri"。
+/// 若剥离后为空（整名都是样式词），则回退为原始名。
+fn strip_style_words(face_name: &str) -> String {
+    let words: Vec<&str> = face_name.split_whitespace().collect();
+    let mut end = words.len();
+
+    while end > 1 {
+        let last = words[end - 1].to_ascii_lowercase();
+        if FONT_STYLE_WORDS.contains(&last.as_str()) {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+
+    words[..end].join(" ")
+}
+
+/// 把注册表里的一个字体项名解析为一个或多个 CSS 可用的 family name。
+/// 处理：去除 "@" 前缀、去除尾部 " (TrueType)" 之类的后缀、
+/// 按 " & " 拆分合并项、剥离每个 face 的样式修饰词。
+fn sanitize_font_names(value: &str, out: &mut BTreeSet<String>) {
+    let trimmed = value.trim().trim_start_matches('@').trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let without_suffix = match trimmed.rfind(" (") {
+        Some(index) if trimmed.ends_with(')') => &trimmed[..index],
+        _ => trimmed,
+    }
+    .trim();
+
+    if without_suffix.is_empty() {
+        return;
+    }
+
+    for face in without_suffix.split(" & ") {
+        let face = face.trim();
+        if face.is_empty() {
+            continue;
+        }
+
+        let family = strip_style_words(face);
+        let family = family.trim();
+        if !family.is_empty() {
+            out.insert(family.to_string());
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod imp {
+    use super::sanitize_font_names;
     use std::collections::BTreeSet;
     use std::ptr::null_mut;
     use windows_sys::Win32::Foundation::{
@@ -17,25 +99,6 @@ mod imp {
 
     fn to_wide(value: &str) -> Vec<u16> {
         value.encode_utf16().chain(std::iter::once(0)).collect()
-    }
-
-    fn sanitize_font_name(value: &str) -> Option<String> {
-        let trimmed = value.trim().trim_start_matches('@').trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        let without_suffix = match trimmed.rfind(" (") {
-            Some(index) if trimmed.ends_with(')') => &trimmed[..index],
-            _ => trimmed,
-        }
-        .trim();
-
-        if without_suffix.is_empty() {
-            None
-        } else {
-            Some(without_suffix.to_string())
-        }
     }
 
     fn collect_fonts_from_key(
@@ -93,9 +156,7 @@ mod imp {
                 }
 
                 let name = String::from_utf16_lossy(&name_buf[..name_len as usize]);
-                if let Some(font_name) = sanitize_font_name(&name) {
-                    fonts.insert(font_name);
-                }
+                sanitize_font_names(&name, fonts);
                 index += 1;
                 break;
             }
@@ -124,4 +185,74 @@ mod imp {
 #[tauri::command]
 pub fn get_system_fonts() -> Result<Vec<String>, String> {
     imp::get_system_fonts()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(value: &str) -> Vec<String> {
+        let mut out = BTreeSet::new();
+        sanitize_font_names(value, &mut out);
+        out.into_iter().collect()
+    }
+
+    #[test]
+    fn strips_truetype_suffix() {
+        assert_eq!(parse("Consolas (TrueType)"), vec!["Consolas"]);
+    }
+
+    #[test]
+    fn strips_trailing_style_words() {
+        assert_eq!(parse("Arial Bold (TrueType)"), vec!["Arial"]);
+        assert_eq!(parse("Calibri Light Italic (TrueType)"), vec!["Calibri"]);
+        assert_eq!(
+            parse("Comic Sans MS Bold Italic (TrueType)"),
+            vec!["Comic Sans MS"]
+        );
+    }
+
+    #[test]
+    fn splits_merged_entries() {
+        assert_eq!(
+            parse("SimSun & NSimSun (TrueType)"),
+            vec!["NSimSun".to_string(), "SimSun".to_string()]
+        );
+    }
+
+    #[test]
+    fn splits_and_strips_merged_styled_entries() {
+        // "Microsoft YaHei Bold & Microsoft YaHei UI Bold" 应规整为两个 family
+        assert_eq!(
+            parse("Microsoft YaHei Bold & Microsoft YaHei UI Bold (TrueType)"),
+            vec![
+                "Microsoft YaHei".to_string(),
+                "Microsoft YaHei UI".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn strips_at_prefix() {
+        // "@" 前缀用于竖排字体变体
+        assert_eq!(parse("@Microsoft YaHei (TrueType)"), vec!["Microsoft YaHei"]);
+    }
+
+    #[test]
+    fn keeps_name_when_all_words_are_styles() {
+        // 整名都是样式词时至少保留最后一个词，避免产出空串
+        assert_eq!(parse("Black (TrueType)"), vec!["Black"]);
+    }
+
+    #[test]
+    fn ignores_empty() {
+        assert!(parse("   ").is_empty());
+        assert!(parse("").is_empty());
+    }
+
+    #[test]
+    fn preserves_plain_family_names() {
+        assert_eq!(parse("SimHei (TrueType)"), vec!["SimHei"]);
+        assert_eq!(parse("KaiTi (TrueType)"), vec!["KaiTi"]);
+    }
 }
