@@ -5,6 +5,7 @@ import type {
   AppSettings,
   AudioSettings,
   DesktopLyricsSettings,
+  DownloadSettings,
   EqualizerPreset,
   ImportedLyricsFont,
   LyricsSettings,
@@ -45,9 +46,10 @@ export type AudioSettingsPatch = Partial<Omit<AudioSettings, 'volumeBalance'>> &
   volumeBalance?: LegacyVolumeBalanceSettingsPatch | boolean;
 };
 export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
+export type DownloadSettingsPatch = Partial<DownloadSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
@@ -55,6 +57,7 @@ export interface AppSettingsPatch
   desktopLyrics?: DesktopLyricsSettingsPatch;
   audio?: AudioSettingsPatch;
   customLyricsFonts?: ImportedLyricsFontsPatch;
+  download?: DownloadSettingsPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -117,6 +120,16 @@ export const defaultAudioSettings: AudioSettings = {
   showEqualizerInFooter: true,
 };
 
+export const defaultDownloadSettings: DownloadSettings = {
+  downloadPath: '',
+  format: 'mp3',
+  quality: 'high',
+  downloadLyrics: true,
+  lyricsFormat: 'lrc',
+  overwriteExisting: false,
+  keepSourceFilename: false,
+};
+
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
   showDesktopLyrics: false,
@@ -141,6 +154,7 @@ export const defaultAppSettings: AppSettings = {
   taskbarPlayerCanDrag: false,
   gpuAcceleration: true,
   writeArtistAvatarToTags: false,
+  download: defaultDownloadSettings,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -165,6 +179,39 @@ export const createDefaultAudioSettings = (): AudioSettings => ({
   },
 });
 
+export const createDefaultDownloadSettings = (): DownloadSettings => ({
+  ...defaultDownloadSettings,
+});
+
+const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
+const VALID_DOWNLOAD_QUALITIES: DownloadSettings['quality'][] = ['lossless', 'high', 'standard'];
+const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
+
+export const mergeDownloadSettings = (
+  base: DownloadSettings,
+  patch: DownloadSettingsPatch,
+): DownloadSettings => {
+  const format = patch.format && VALID_DOWNLOAD_FORMATS.includes(patch.format)
+    ? patch.format
+    : base.format;
+  const quality = patch.quality && VALID_DOWNLOAD_QUALITIES.includes(patch.quality)
+    ? patch.quality
+    : base.quality;
+  const lyricsFormat = patch.lyricsFormat && VALID_LYRICS_FORMATS.includes(patch.lyricsFormat)
+    ? patch.lyricsFormat
+    : base.lyricsFormat;
+
+  return {
+    downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
+    format,
+    quality,
+    downloadLyrics: typeof patch.downloadLyrics === 'boolean' ? patch.downloadLyrics : base.downloadLyrics,
+    lyricsFormat,
+    overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
+    keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
+  };
+};
+
 export const normalizeLibraryMinDurationSeconds = (
   value: number | null | undefined,
 ): number => {
@@ -185,6 +232,7 @@ export const createDefaultAppSettings = (): AppSettings => ({
   theme: createDefaultThemeSettings(),
   sidebar: createDefaultSidebarSettings(),
   shortcuts: createDefaultShortcutSettings(),
+  download: createDefaultDownloadSettings(),
 });
 
 export const mergeThemeSettings = (
@@ -294,6 +342,7 @@ export const mergeAppSettings = (
     theme: mergeThemeSettings(base.theme, patch.theme ?? {}),
     sidebar: mergeSidebarSettings(base.sidebar, patch.sidebar ?? {}),
     shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
+    download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
   };
 };
 
