@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useLyrics, loadLyrics } from '../../composables/lyrics';
+import { loadLyrics } from '../../composables/lyrics';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { useToast } from '../../composables/toast';
@@ -30,7 +30,7 @@ const {
 
 const { settings } = useSettings();
 
-const { parsedLyrics } = useLyrics();
+
 const { staggerPhase } = useSharedTransition();
 const { loadCover, loadFullCover, clearCoverCaches } = useCoverCache();
 const { showToast } = useToast();
@@ -553,7 +553,7 @@ const handleChangeLyrics = async () => {
 
       <PlayerDetailLeft :isExpanded="showPlayerDetail" :coverHidden="coverHidden" @toggle-cover="handleToggleCover" />
 
-      <div class="relative z-50 flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
+      <div class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
         <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
 
         <div
@@ -570,22 +570,7 @@ const handleChangeLyrics = async () => {
               class="h-full rounded-2xl border border-white/5 bg-black/10 p-4 shadow-xl backdrop-blur-sm"
             />
 
-            <LyricsView v-else-if="parsedLyrics.length > 0" class="h-full" />
-
-            <div
-              v-else
-              class="flex h-full flex-col items-center justify-center opacity-80"
-              style="text-shadow: 0 2px 10px rgba(0,0,0,0.4);"
-            >
-              <div
-                v-for="(info, index) in metaInfo"
-                :key="index"
-                class="mb-4 flex items-center text-xl font-medium tracking-wider sm:text-2xl"
-              >
-                <span class="mr-4 text-white/40">{{ info.label }}</span>
-                <span class="text-white drop-shadow-md">{{ info.value }}</span>
-              </div>
-            </div>
+            <LyricsView v-else :meta-info="metaInfo" class="h-full" />
           </transition>
         </div>
       </div>
