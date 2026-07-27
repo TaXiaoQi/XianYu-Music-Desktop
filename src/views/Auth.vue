@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 
 import { useAuthStore } from '../features/auth/store';
 import { useToast } from '../composables/toast';
+import { useUiStore } from '../shared/stores/ui';
 import {
   changePassword,
   getProfile,
@@ -22,6 +23,7 @@ import {
 const router = useRouter();
 const authStore = useAuthStore();
 const { showToast } = useToast();
+const uiStore = useUiStore();
 
 const mode = ref<AuthMode>('login');
 const form = ref({ username: '', email: '', password: '', code: '' });
@@ -302,6 +304,9 @@ function enterForgot() {
 }
 
 onMounted(async () => {
+  // 进入账号页面时强制关闭播放器详情页：PlayerDetail 是 fixed + h-[100vh] 全屏覆盖层，
+  // 当 showPlayerDetail=true 时会拦截整个视口的鼠标事件（包括滚轮），导致页面无法滚动
+  uiStore.showPlayerDetail = false;
   if (!authStore.initialized) {
     await authStore.restoreSession();
   }
