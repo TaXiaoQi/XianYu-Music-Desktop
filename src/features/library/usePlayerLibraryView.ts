@@ -78,7 +78,6 @@ export function usePlayerLibraryView() {
   });
 
   const collectionSelectors = useLibraryCollectionSelectors({
-    canonicalSongPaths,
     favoritePaths,
     playlists,
     recentSongs,

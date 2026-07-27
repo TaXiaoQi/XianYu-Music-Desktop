@@ -14,7 +14,6 @@ import {
 } from './playerLibraryViewShared';
 
 interface UseLibraryCollectionSelectorsOptions {
-  canonicalSongPaths: Ref<string[]>;
   favoritePaths: Ref<string[]>;
   playlists: Ref<Playlist[]>;
   recentSongs: Ref<HistoryItem[]>;
@@ -22,7 +21,6 @@ interface UseLibraryCollectionSelectorsOptions {
 }
 
 export function useLibraryCollectionSelectors({
-  canonicalSongPaths,
   favoritePaths,
   playlists,
   recentSongs,
@@ -38,8 +36,7 @@ export function useLibraryCollectionSelectors({
   let recentPlaylistRequestId = 0;
 
   const favoriteSongPaths = computed(() => {
-    const favoritePathSet = new Set(favoritePaths.value);
-    return canonicalSongPaths.value.filter(path => favoritePathSet.has(path) && songLookup.value.has(path));
+    return favoritePaths.value.filter(path => songLookup.value.has(path));
   });
 
   const favoriteSongList = computed(() =>

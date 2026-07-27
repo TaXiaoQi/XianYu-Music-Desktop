@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useAuthStore } from '../features/auth/store';
+import { useCollectionsStore } from '../features/collections/store';
 import { useToast } from '../composables/toast';
 import { useUiStore } from '../shared/stores/ui';
 import {
@@ -22,6 +23,7 @@ import {
 
 const router = useRouter();
 const authStore = useAuthStore();
+const collectionsStore = useCollectionsStore();
 const { showToast } = useToast();
 const uiStore = useUiStore();
 
@@ -60,6 +62,13 @@ const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
   { key: 'starred_count', label: '星标' },
   { key: 'history_count', label: '历史' },
 ];
+
+const displayStats = computed(() => ({
+  favorite_count: stats.value?.favorite_count ?? collectionsStore.favoritePaths.length,
+  playlist_count: stats.value?.playlist_count ?? collectionsStore.playlists.length,
+  starred_count: stats.value?.starred_count ?? 0,
+  history_count: stats.value?.history_count ?? collectionsStore.recentSongs.length,
+}));
 
 const title = computed(() =>
   mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码',
@@ -644,7 +653,7 @@ onMounted(async () => {
             <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-[clamp(1rem,2vw,2rem)] min-w-0">
               <div v-for="item in meterItems" :key="item.key">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ item.label }}</p>
-                <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ stats?.[item.key] ?? '—' }}</p>
+                <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ displayStats[item.key] }}</p>
               </div>
             </div>
           </div>
