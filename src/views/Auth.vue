@@ -331,26 +331,26 @@ onMounted(async () => {
 
 <template>
   <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
-    <div class="px-6 py-12 md:px-10 md:py-16 max-w-6xl mx-auto">
+    <div class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
 
       <!-- 未登录：登录/注册 -->
       <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
         <!-- 顶部标题区 -->
-        <header class="px-8 py-8 md:px-14 md:py-12">
-          <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider mb-3">{{ headerLabel }}</p>
-          <h2 class="text-black dark:text-white text-4xl md:text-5xl font-black tracking-tight leading-none">{{ title }}</h2>
-          <p class="text-black/60 dark:text-white/60 text-base md:text-lg font-light mt-4 max-w-xl">{{ subtitle }}</p>
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2.5vw,3rem)]">
+          <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-3">{{ headerLabel }}</p>
+          <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2>
+          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-4 max-w-xl">{{ subtitle }}</p>
         </header>
 
         <!-- 模式切换 -->
-        <nav class="px-8 md:px-14">
+        <nav class="px-[clamp(1.5rem,2.8vw,3.5rem)]">
           <div
             v-if="mode !== 'forgot'"
             class="flex items-center gap-2 mb-4 border-b border-black/10 dark:border-white/10"
           >
             <button
               type="button"
-              class="relative px-7 py-3 text-lg font-medium tracking-wide transition-colors cursor-pointer"
+              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer"
               :class="mode === 'login'
                 ? 'text-[#EC4141]'
                 : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -364,7 +364,7 @@ onMounted(async () => {
             </button>
             <button
               type="button"
-              class="relative px-7 py-3 text-lg font-medium tracking-wide transition-colors cursor-pointer"
+              class="relative px-7 py-3 text-[clamp(1rem,1.3vw,1.125rem)] font-medium tracking-wide transition-colors cursor-pointer"
               :class="mode === 'register'
                 ? 'text-[#EC4141]'
                 : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
@@ -395,31 +395,31 @@ onMounted(async () => {
           <form
             v-if="mode === 'forgot'"
             key="forgot"
-            class="px-8 md:px-14 py-8 grid gap-7 max-w-2xl"
+            class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">注册邮箱</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">注册邮箱</span>
               <input
                 v-model="forgotForm.email"
                 type="email"
                 placeholder="name@example.com"
                 autocomplete="email"
                 required
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
             <div class="grid grid-cols-[1fr_auto] items-end gap-4">
               <label class="grid gap-3">
-                <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">邮箱验证码</span>
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
                 <input
                   v-model="forgotForm.code"
                   type="text"
                   placeholder="填写验证码"
                   autocomplete="one-time-code"
                   required
-                  class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                 />
               </label>
               <button
@@ -433,26 +433,26 @@ onMounted(async () => {
             </div>
 
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span>
               <input
                 v-model="forgotForm.newPassword"
                 type="password"
                 placeholder="至少 6 位"
                 autocomplete="new-password"
                 required
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">确认新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span>
               <input
                 v-model="forgotForm.confirmPassword"
                 type="password"
                 placeholder="再次输入新密码"
                 autocomplete="new-password"
                 required
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
@@ -478,44 +478,44 @@ onMounted(async () => {
           <form
             v-else
             :key="mode"
-            class="px-8 md:px-14 py-8 grid gap-7 max-w-2xl"
+            class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">用户名</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">用户名</span>
               <input
                 v-model="form.username"
                 type="text"
                 placeholder="输入用户名"
                 autocomplete="username"
                 required
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
             <template v-if="mode === 'register'">
               <label class="grid gap-3">
-                <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">邮箱</span>
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
                 <input
                   v-model="form.email"
                   type="email"
                   placeholder="name@example.com"
                   autocomplete="email"
                   required
-                  class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                 />
               </label>
 
               <div class="grid grid-cols-[1fr_auto] items-end gap-4">
                 <label class="grid gap-3">
-                  <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">邮箱验证码</span>
+                  <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱验证码</span>
                   <input
                     v-model="form.code"
                     type="text"
                     placeholder="填写验证码"
                     autocomplete="one-time-code"
                     required
-                    class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                   />
                 </label>
                 <button
@@ -530,14 +530,14 @@ onMounted(async () => {
             </template>
 
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">密码</span>
               <input
                 v-model="form.password"
                 type="password"
                 placeholder="请输入密码"
                 :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
                 required
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
@@ -571,7 +571,7 @@ onMounted(async () => {
         <!-- 消息条 -->
         <div
           v-if="message"
-          class="px-8 md:px-14 mt-4"
+          class="px-[clamp(1.5rem,2.8vw,3.5rem)] mt-4"
         >
           <p
             class="text-base font-medium"
@@ -585,15 +585,15 @@ onMounted(async () => {
       </div>
 
       <!-- 已登录：个人中心 -->
-      <div v-else class="space-y-8 md:space-y-12">
+      <div v-else class="space-y-[clamp(1.5rem,3vw,3rem)]">
         <!-- 顶部标题区 -->
-        <header class="px-8 py-8 md:px-14 md:py-12 flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
           <div>
-            <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider mb-3">个人中心</p>
-            <h2 class="text-black dark:text-white text-4xl md:text-5xl font-black tracking-tight leading-none">
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-3">个人中心</p>
+            <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">
               {{ authStore.user?.nickname || authStore.user?.username }}
             </h2>
-            <p class="text-black/60 dark:text-white/60 text-base md:text-lg font-light mt-4">
+            <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-4">
               @{{ authStore.user?.username }} · {{ authStore.user?.email }}
             </p>
           </div>
@@ -617,17 +617,17 @@ onMounted(async () => {
         </header>
 
         <!-- 头像 + 统计 -->
-        <section class="px-8 py-8 md:px-14 md:py-10 animate-fade-in-up" style="animation-delay: 100ms;">
-          <div class="flex items-end justify-between gap-8 md:gap-14 flex-wrap">
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 100ms;">
+          <div class="flex items-end justify-between gap-[clamp(1.5rem,2.5vw,3.5rem)] flex-wrap">
             <!-- 左：头像 -->
             <div class="shrink-0 grid gap-4">
-              <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">头像</p>
+              <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">头像</p>
               <div class="flex items-center gap-5">
-                <div class="grid h-24 w-24 md:h-28 md:w-28 shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-4xl md:text-5xl font-black">
+                <div class="grid h-[clamp(5rem,8vw,7rem)] w-[clamp(5rem,8vw,7rem)] shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.75rem,4vw,3rem)] font-black">
                   <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
                   <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
                 </div>
-                <label class="inline-flex items-center h-11 px-5 rounded-full border border-black/15 dark:border-white/15 text-base font-medium text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:border-[#EC4141]/40 cursor-pointer transition-colors">
+                <label class="inline-flex items-center h-[clamp(2.5rem,3.5vw,2.75rem)] px-5 rounded-full border border-black/15 dark:border-white/15 text-[clamp(0.875rem,1.1vw,1rem)] font-medium text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:border-[#EC4141]/40 cursor-pointer transition-colors">
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
@@ -641,27 +641,27 @@ onMounted(async () => {
             </div>
 
             <!-- 右：统计 -->
-            <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 min-w-0">
+            <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-[clamp(1rem,2vw,2rem)] min-w-0">
               <div v-for="item in meterItems" :key="item.key">
-                <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider mb-2">{{ item.label }}</p>
-                <p class="text-black dark:text-white text-3xl md:text-4xl font-black tracking-tight leading-none">{{ stats?.[item.key] ?? '—' }}</p>
+                <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ item.label }}</p>
+                <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ stats?.[item.key] ?? '—' }}</p>
               </div>
             </div>
           </div>
         </section>
 
         <!-- 个人信息 -->
-        <section class="px-8 py-8 md:px-14 md:py-10 animate-fade-in-up" style="animation-delay: 200ms;">
-          <p class="text-black dark:text-white text-xl md:text-2xl font-light tracking-wider mb-6">个人信息</p>
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 200ms;">
+          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-6">个人信息</p>
           <div class="grid gap-7 max-w-2xl">
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">昵称</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">昵称</span>
               <input
                 v-model="nicknameDraft"
                 type="text"
                 placeholder="显示名称"
                 maxlength="64"
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
             <div>
@@ -678,38 +678,38 @@ onMounted(async () => {
         </section>
 
         <!-- 修改密码 -->
-        <section class="px-8 py-8 md:px-14 md:py-10 animate-fade-in-up" style="animation-delay: 300ms;">
-          <p class="text-black dark:text-white text-xl md:text-2xl font-light tracking-wider mb-3">修改密码</p>
-          <p class="text-black/60 dark:text-white/60 text-base md:text-lg font-light mb-6">修改成功后需要重新登录</p>
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 300ms;">
+          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-3">修改密码</p>
+          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mb-6">修改成功后需要重新登录</p>
           <div class="grid gap-7 max-w-2xl">
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">当前密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">当前密码</span>
               <input
                 v-model="passwordForm.oldPassword"
                 type="password"
                 placeholder="输入当前密码"
                 autocomplete="current-password"
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span>
               <input
                 v-model="passwordForm.newPassword"
                 type="password"
                 placeholder="输入新密码"
                 autocomplete="new-password"
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">确认新密码</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span>
               <input
                 v-model="passwordForm.confirmPassword"
                 type="password"
                 placeholder="再次输入新密码"
                 autocomplete="new-password"
-                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
             <div>
@@ -726,8 +726,8 @@ onMounted(async () => {
         </section>
 
         <!-- 快捷入口 -->
-        <section class="px-8 py-8 md:px-14 md:py-10 animate-fade-in-up" style="animation-delay: 400ms;">
-          <p class="text-black dark:text-white text-xl md:text-2xl font-light tracking-wider mb-6">快捷入口</p>
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 400ms;">
+          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-6">快捷入口</p>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
             <button
               v-for="item in personalShortcuts"
