@@ -41,6 +41,12 @@ import AmlLyricPlayer from './AmlLyricPlayer.vue';
 import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
 import LightLyricPlayer from './LightLyricPlayer.vue';
 
+const props = withDefaults(defineProps<{
+  metaInfo?: Array<{ label: string; value: string }>;
+}>(), {
+  metaInfo: () => [],
+});
+
 const {
   parsedLyrics,
   lyricsSettings,
@@ -518,7 +524,6 @@ onUnmounted(() => {
 <template>
   <div class="group/lyrics-view relative h-full min-h-0 w-full min-w-0">
     <div
-      v-show="amllLines.length > 0"
       ref="fontPanelRef"
       class="pointer-events-none absolute right-[100%] mr-[14vw] 2xl:mr-[22vw] top-2 bottom-12 z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
       style="width: min(320px, calc(34vw - 24px));"
@@ -904,6 +909,21 @@ onUnmounted(() => {
           :album="currentSong?.album"
           @line-click="handleLightLineClick"
         />
+      </div>
+    </div>
+
+    <div
+      v-else-if="props.metaInfo.length > 0"
+      class="flex h-full flex-col items-center justify-center opacity-80"
+      style="text-shadow: 0 2px 10px rgba(0,0,0,0.4);"
+    >
+      <div
+        v-for="(info, index) in props.metaInfo"
+        :key="index"
+        class="mb-4 flex items-center text-xl font-medium tracking-wider sm:text-2xl"
+      >
+        <span class="mr-4 text-white/40">{{ info.label }}</span>
+        <span class="text-white drop-shadow-md">{{ info.value }}</span>
       </div>
     </div>
 
