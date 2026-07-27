@@ -392,7 +392,9 @@ onUnmounted(() => {
         <!-- State B: Player Detail View (Progress) -->
         <div 
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
-          :class="showPlayerDetail ? 'opacity-100 translate-y-0 text-white/90' : 'opacity-0 -translate-y-4 pointer-events-none'"
+          :class="showPlayerDetail
+            ? (isIdle ? 'opacity-0 translate-y-4 pointer-events-none text-white/90' : 'opacity-100 translate-y-0 text-white/90')
+            : 'opacity-0 -translate-y-4 pointer-events-none'"
         >
           <div class="text-[12px] font-semibold tabular-nums cursor-default tracking-wide">
             {{ currentTimeStr }} <span class="opacity-50 mx-1">/</span> {{ totalTimeStr }}
