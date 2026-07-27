@@ -1,21 +1,30 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useLyrics } from '../../composables/lyrics';
+import { open } from '@tauri-apps/plugin-dialog';
+import { useLyrics, loadLyrics } from '../../composables/lyrics';
+import { useCoverCache } from '../../composables/useCoverCache';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
+import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
+import { useLibraryStore } from '../../features/library/store';
 import type { SongDetail } from '../../types';
+import { tauriInvoke } from '../../services/tauri/invoke';
 import LyricsView from './LyricsView.vue';
 import PlayerDetailBackground from './PlayerDetailBackground.vue';
 import PlayerDetailLeft from './PlayerDetailLeft.vue';
 import QueueList from './QueueList.vue';
+import PlayerDetailContextMenu from '../overlays/PlayerDetailContextMenu.vue';
 
 const {
   showPlayerDetail,
   showQueue,
   currentSong,
+  currentCover,
+  currentCoverFull,
   closePlayerDetail,
 } = usePlaybackController();
 
@@ -23,6 +32,9 @@ const { settings } = useSettings();
 
 const { parsedLyrics } = useLyrics();
 const { staggerPhase } = useSharedTransition();
+const { loadCover, loadFullCover, clearCoverCaches } = useCoverCache();
+const { showToast } = useToast();
+const libraryStore = useLibraryStore();
 const { loadSongDetail, clearSongDetailCache } = useSongDetailCache();
 
 const TOP_CHROME_HIDE_DELAY = 2500;
@@ -173,12 +185,137 @@ const metaInfo = computed(() => {
     detail?.file_size ? { label: '大小', value: formatFileSize(detail.file_size) } : null,
   ].filter((item): item is { label: string; value: string } => Boolean(item?.value));
 });
+
+// 右键菜单
+const contextMenuVisible = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const isCoverUpdating = ref(false);
+const isLyricsUpdating = ref(false);
+
+// 封面隐藏模式（点击封面切换为纯字幕居中）
+const coverHidden = ref(false);
+
+const handleToggleCover = () => {
+  coverHidden.value = !coverHidden.value;
+};
+
+const handleContextMenu = (e: MouseEvent) => {
+  if (!currentSong.value || !showPlayerDetail.value) return;
+  e.preventDefault();
+  contextMenuX.value = e.clientX;
+  contextMenuY.value = e.clientY;
+  contextMenuVisible.value = true;
+};
+
+const closeContextMenu = () => {
+  contextMenuVisible.value = false;
+};
+
+const handleMenuAction = (action: 'changeCover' | 'changeLyrics') => {
+  if (action === 'changeCover') {
+    void handleChangeCover();
+  } else if (action === 'changeLyrics') {
+    void handleChangeLyrics();
+  }
+};
+
+const handleChangeCover = async () => {
+  const song = currentSong.value;
+  const songPath = song?.path;
+  if (!song || !songPath || isCoverUpdating.value) return;
+
+  isCoverUpdating.value = true;
+  try {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: '选择歌曲封面',
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+    });
+    if (!selected || Array.isArray(selected)) return;
+
+    // 用现有歌曲信息填充 payload，仅更新 coverPath
+    const result = await tauriInvoke('save_song_info', {
+      path: songPath,
+      payload: {
+        title: song.title || song.name,
+        artist: song.artist,
+        album: song.album,
+        trackNumber: song.track_number ?? null,
+        discNumber: song.disc_number ?? null,
+        year: song.year ?? null,
+        coverPath: selected,
+      },
+    });
+
+    libraryStore.setSongRecord(result.song);
+
+    // 清缓存并刷新当前封面
+    await tauriInvoke('clear_cover_cache');
+    clearCoverCaches();
+    const [thumb, full] = await Promise.all([
+      loadCover(songPath),
+      loadFullCover(songPath),
+    ]);
+    currentCover.value = thumb || '';
+    currentCoverFull.value = full || '';
+
+    showToast('封面已更新', 'success');
+  } catch (error) {
+    showToast(`更新封面失败: ${String(error)}`, 'error');
+  } finally {
+    isCoverUpdating.value = false;
+  }
+};
+
+const handleChangeLyrics = async () => {
+  const song = currentSong.value;
+  const songPath = song?.path;
+  if (!song || !songPath || isLyricsUpdating.value) return;
+
+  isLyricsUpdating.value = true;
+  try {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: '选择 LRC 歌词文件',
+      filters: [{ name: '歌词', extensions: ['lrc', 'txt'] }],
+    });
+    if (!selected || Array.isArray(selected)) return;
+
+    // 通过 convertFileSrc 读取本地文本文件
+    const url = convertFileSrc(selected);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`无法读取文件 (HTTP ${response.status})`);
+    }
+    const lyricsText = await response.text();
+
+    await tauriInvoke('save_song_lyrics', {
+      path: songPath,
+      lyrics: lyricsText,
+      source: 'sidecar',
+      sourcePath: null,
+    });
+
+    // 重新加载歌词
+    await loadLyrics();
+
+    showToast('字幕已更新', 'success');
+  } catch (error) {
+    showToast(`更新字幕失败: ${String(error)}`, 'error');
+  } finally {
+    isLyricsUpdating.value = false;
+  }
+};
 </script>
 
 <template>
   <div
     class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
     :class="showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none'"
+    @contextmenu.prevent="handleContextMenu"
   >
     <div class="relative flex h-[100vh] w-full flex-col pt-[calc(100vh-100%)]">
       <div
@@ -223,13 +360,21 @@ const metaInfo = computed(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
+            <button
+              v-if="coverHidden"
+              title="显示封面"
+              class="ml-1 rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
+              @click="handleToggleCover"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+            </button>
           </div>
 
-          <div class="pointer-events-none flex-1 truncate px-4 text-center text-sm font-medium text-white/80 drop-shadow-md">
-            {{ currentSong?.title || currentSong?.name }}
-            <span v-if="currentSong?.artist" class="mx-1 opacity-60">-</span>
-            <span class="opacity-60">{{ currentSong?.artist }}</span>
-          </div>
+          <div class="flex-1"></div>
 
           <div class="relative z-10 flex w-1/4 items-center justify-end gap-2">
             <button class="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white" @click="minimize">
@@ -251,13 +396,29 @@ const metaInfo = computed(() => {
         </div>
       </div>
 
-      <PlayerDetailLeft :isExpanded="showPlayerDetail" />
+      <!-- 歌名（始终显示，位于顶部工具栏下方） -->
+      <div
+        v-if="currentSong"
+        class="pointer-events-none relative z-[55] flex items-baseline justify-center gap-3 px-6 pb-4 text-center transition-opacity duration-500"
+        :class="showPlayerDetail ? 'opacity-100' : 'opacity-0'"
+        :style="staggerStyle(1, 'Y', -6)"
+      >
+        <span class="truncate text-xl font-semibold tracking-wide text-white drop-shadow-md sm:text-2xl">
+          {{ currentSong.title || currentSong.name }}
+        </span>
+        <span v-if="currentSong.artist" class="truncate text-sm text-white/60 sm:text-base">
+          - {{ currentSong.artist }}
+        </span>
+      </div>
 
-      <div class="relative z-50 flex min-h-0 flex-1 pl-8 pr-0 pb-22">
-        <div class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
+      <PlayerDetailLeft :isExpanded="showPlayerDetail" :coverHidden="coverHidden" @toggle-cover="handleToggleCover" />
+
+      <div class="relative z-50 flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
+        <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
 
         <div
-          class="flex h-full min-h-0 flex-1 flex-col justify-center pt-0 pb-0 pl-2 pr-8"
+          class="flex h-full min-h-0 flex-1 flex-col justify-center pt-0 pb-0 pointer-events-auto"
+          :class="[coverHidden ? 'px-[8%] lyrics-force-center' : 'pl-2 pr-8']"
           :style="staggerStyle(2, 'X', 20)"
         >
           <transition name="fade-scale" mode="out-in">
@@ -286,6 +447,14 @@ const metaInfo = computed(() => {
         </div>
       </div>
     </div>
+
+    <PlayerDetailContextMenu
+      :visible="contextMenuVisible"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      @close="closeContextMenu"
+      @action="handleMenuAction"
+    />
   </div>
 </template>
 
@@ -303,5 +472,13 @@ const metaInfo = computed(() => {
 
 .text-shadow-sm {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 封面隐藏时强制歌词居中 */
+.lyrics-force-center :deep(.lyrics-align-left),
+.lyrics-force-center :deep(.lyrics-align-right) {
+  --lyrics-text-align: center;
+  --lyrics-line-transform-origin: 50%;
+  --light-align-items: center;
 }
 </style>

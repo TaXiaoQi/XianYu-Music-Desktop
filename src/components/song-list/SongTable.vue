@@ -81,7 +81,7 @@ const displayedCoverUrls = reactive(new Map<string, string>());
 const songCommentCache = reactive(new Map<string, string>());
 const loadingSongCommentPaths = new Set<string>();
 let visibleCoverPaths = new Set<string>();
-let scrollbarActiveTimer: ReturnType<typeof window.setTimeout> | null = null;
+let scrollbarActiveTimer: number | null = null;
 const resolveListRoutePath = (path: string) =>
   ['/', '/favorites', '/recent'].includes(path) ? path : '/';
 const listRoutePath = ref(resolveListRoutePath(route.path));
