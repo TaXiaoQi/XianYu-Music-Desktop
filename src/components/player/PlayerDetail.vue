@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -54,6 +54,27 @@ const toggleMaximize = async () => {
     return;
   }
   await appWindow.maximize();
+};
+
+const isFullscreen = ref(false);
+
+const syncFullscreenState = async () => {
+  try {
+    isFullscreen.value = await appWindow.isFullscreen();
+  } catch {
+    // 查询失败时保持上一次状态，避免按钮图标闪烁
+  }
+};
+
+const toggleFullscreen = async () => {
+  try {
+    const next = !(await appWindow.isFullscreen());
+    await appWindow.setFullscreen(next);
+    isFullscreen.value = next;
+  } catch {
+    showToast('切换全屏失败', 'error');
+    void syncFullscreenState();
+  }
 };
 const closeApp = async () => {
   if (settings.value.closeToTray) {
@@ -133,8 +154,20 @@ watch([showPlayerDetail, () => currentSong.value?.path ?? ''], async ([visible, 
   }
 }, { immediate: true });
 
+// 外部触发的全屏变化（F11、系统手势等）也要让按钮图标跟上
+let unlistenResized: (() => void) | null = null;
+
+onMounted(async () => {
+  await syncFullscreenState();
+  unlistenResized = await appWindow.onResized(() => {
+    void syncFullscreenState();
+  });
+});
+
 onBeforeUnmount(() => {
   clearTopChromeHideTimer();
+  unlistenResized?.();
+  unlistenResized = null;
 });
 
 const formatFileSize = (size: number | undefined) => {
@@ -350,10 +383,10 @@ const handleChangeLyrics = async () => {
         >
           <div class="absolute inset-0" data-tauri-drag-region></div>
 
-          <div class="relative z-10 flex w-1/4 items-center">
+          <div class="pointer-events-none relative z-10 flex w-1/4 items-center">
             <button
               title="收起详情页"
-              class="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
+              class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
               @click="handleClose"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -363,7 +396,7 @@ const handleChangeLyrics = async () => {
             <button
               v-if="coverHidden"
               title="显示封面"
-              class="ml-1 rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
+              class="pointer-events-auto ml-1 rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
               @click="handleToggleCover"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -374,20 +407,39 @@ const handleChangeLyrics = async () => {
             </button>
           </div>
 
-          <div class="flex-1"></div>
+          <div class="pointer-events-none flex-1"></div>
 
-          <div class="relative z-10 flex w-1/4 items-center justify-end gap-2">
-            <button class="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white" @click="minimize">
+          <div class="pointer-events-none relative z-10 flex w-1/4 items-center justify-end gap-2">
+            <button
+              :title="isFullscreen ? '退出全屏' : '全屏'"
+              :aria-label="isFullscreen ? '退出全屏' : '全屏'"
+              :aria-pressed="isFullscreen"
+              class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
+              @click="toggleFullscreen"
+            >
+              <svg v-if="isFullscreen" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 3v6H3M21 9h-6V3M3 15h6v6M15 21v-6h6" />
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+              </svg>
+            </button>
+            <button
+              title="最小化"
+              aria-label="最小化"
+              class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
+              @click="minimize"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M5 12h14" />
               </svg>
             </button>
-            <button class="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white" @click="toggleMaximize">
+            <button class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white" @click="toggleMaximize">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
               </svg>
             </button>
-            <button class="rounded-lg p-2 text-white/50 transition hover:bg-red-500 hover:text-white" @click="closeApp">
+            <button class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-red-500 hover:text-white" @click="closeApp">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
