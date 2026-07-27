@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import { watch, onMounted } from 'vue';
 
 import MainShell from './components/layout/MainShell.vue';
@@ -8,6 +9,7 @@ import TrayMenuWindow from './components/layout/TrayMenuWindow.vue';
 import DesktopLyricsWindow from './components/player/DesktopLyricsWindow.vue';
 import TaskbarControlWindow from './components/layout/TaskbarControlWindow.vue';
 import { registerImportedLyricsFonts } from './composables/lyrics';
+import { useToast } from './composables/toast';
 import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared';
 import { MINI_PLAYER_WINDOW_LABEL } from './features/miniPlayer/shared';
 import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
@@ -35,7 +37,16 @@ watch(
 );
 
 if (currentWindowLabel === 'main') {
+  const { showToast } = useToast();
+
   onMounted(async () => {
+    try {
+      const version = await getVersion();
+      showToast(`欢迎使用弦予音乐，当前版本 v${version}`, 'info');
+    } catch (error) {
+      console.error('Failed to get version for welcome toast:', error);
+    }
+
     await getCurrentWindow().onCloseRequested(async (event) => {
       if (settings.value.closeToTray) {
         event.preventDefault();
