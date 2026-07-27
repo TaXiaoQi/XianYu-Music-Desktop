@@ -122,7 +122,7 @@ function handleLogout() {
         后端地址
       </h2>
       <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        登录、注册、个人资料等接口的根地址。默认沿用 BakaMusic 的服务端；如自建后端可在此覆盖。
+        登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。
       </p>
       <div class="flex items-stretch gap-2 flex-wrap">
         <input

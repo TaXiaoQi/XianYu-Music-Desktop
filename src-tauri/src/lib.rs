@@ -97,6 +97,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
         .setup(|app| setup_app(app))
         .invoke_handler(tauri::generate_handler![
             scan_music_folder,

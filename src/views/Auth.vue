@@ -10,11 +10,13 @@ import {
   login,
   logout,
   register,
+  resetPassword,
   sendEmailCode,
   updateProfile,
   uploadAvatar,
   type AuthMode,
   type ProfileStats,
+  type VerifyCodeType,
 } from '../services/auth/authService';
 
 const router = useRouter();
@@ -23,6 +25,7 @@ const { showToast } = useToast();
 
 const mode = ref<AuthMode>('login');
 const form = ref({ username: '', email: '', password: '', code: '' });
+const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
 const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
 const loading = ref(false);
@@ -56,11 +59,18 @@ const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
   { key: 'history_count', label: '历史' },
 ];
 
-const title = computed(() => (mode.value === 'login' ? '欢迎回来' : '创建你的账号'));
+const title = computed(() =>
+  mode.value === 'login' ? '欢迎回来' : mode.value === 'register' ? '创建你的账号' : '找回密码',
+);
 const subtitle = computed(() =>
   mode.value === 'login'
     ? '登录后可同步个人资料到云端服务器。'
-    : '注册需要邮箱验证码，之后即可登录使用。',
+    : mode.value === 'register'
+      ? '注册需要邮箱验证码，之后即可登录使用。'
+      : '通过注册邮箱验证码重置你的登录密码。',
+);
+const headerLabel = computed(() =>
+  mode.value === 'login' ? '登录账号' : mode.value === 'register' ? '注册账号' : '找回密码',
 );
 
 function showMessage(text: string, tone: 'error' | 'success' = 'error') {
@@ -69,6 +79,10 @@ function showMessage(text: string, tone: 'error' | 'success' = 'error') {
 }
 
 async function onSubmit() {
+  if (mode.value === 'forgot') {
+    await handleResetPassword();
+    return;
+  }
   loading.value = true;
   message.value = '';
   try {
@@ -109,15 +123,55 @@ async function onSubmit() {
   }
 }
 
+async function handleResetPassword() {
+  const { email, code, newPassword, confirmPassword } = forgotForm.value;
+  if (!email) {
+    showMessage('请先填写注册邮箱');
+    return;
+  }
+  if (!code) {
+    showMessage('请输入邮箱验证码');
+    return;
+  }
+  if (!newPassword || newPassword.length < 6) {
+    showMessage('新密码至少 6 位');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showMessage('两次输入的新密码不一致');
+    return;
+  }
+  loading.value = true;
+  message.value = '';
+  try {
+    const result = await resetPassword(email, code, newPassword);
+    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
+    showMessage(result.message || '密码修改成功', 'success');
+    showToast(result.message || '密码修改成功，请使用新密码登录', 'success');
+    mode.value = 'login';
+    form.value.username = email;
+    form.value.password = '';
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '重置密码失败';
+    showMessage(tip);
+    showToast(tip, 'error');
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function handleSendCode() {
-  if (!form.value.email) {
+  const isForgot = mode.value === 'forgot';
+  const email = isForgot ? forgotForm.value.email : form.value.email;
+  if (!email) {
     showMessage('请先填写邮箱');
     return;
   }
+  const type: VerifyCodeType = isForgot ? 'reset_password' : 'register';
   codeLoading.value = true;
   message.value = '';
   try {
-    const result = await sendEmailCode(form.value.email);
+    const result = await sendEmailCode(email, type);
     showMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
   } catch (error) {
@@ -198,7 +252,6 @@ async function handleChangePassword() {
     await changePassword(
       passwordForm.value.oldPassword,
       passwordForm.value.newPassword,
-      passwordForm.value.confirmPassword,
     );
     await logout();
     authStore.reset();
@@ -239,6 +292,13 @@ function navigateShortcut(to: string) {
 function switchMode(next: AuthMode) {
   mode.value = next;
   message.value = '';
+  if (next !== 'forgot') {
+    forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
+  }
+}
+
+function enterForgot() {
+  switchMode('forgot');
 }
 
 onMounted(async () => {
@@ -272,14 +332,17 @@ onMounted(async () => {
       <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
         <!-- 顶部标题区 -->
         <header class="px-8 py-8 md:px-14 md:py-12">
-          <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider mb-3">{{ mode === 'login' ? '登录账号' : '注册账号' }}</p>
+          <p class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider mb-3">{{ headerLabel }}</p>
           <h2 class="text-black dark:text-white text-4xl md:text-5xl font-black tracking-tight leading-none">{{ title }}</h2>
           <p class="text-black/60 dark:text-white/60 text-base md:text-lg font-light mt-4 max-w-xl">{{ subtitle }}</p>
         </header>
 
         <!-- 模式切换 -->
         <nav class="px-8 md:px-14">
-          <div class="flex items-center gap-2 mb-4 border-b border-black/10 dark:border-white/10">
+          <div
+            v-if="mode !== 'forgot'"
+            class="flex items-center gap-2 mb-4 border-b border-black/10 dark:border-white/10"
+          >
             <button
               type="button"
               class="relative px-7 py-3 text-lg font-medium tracking-wide transition-colors cursor-pointer"
@@ -309,11 +372,110 @@ onMounted(async () => {
               ></span>
             </button>
           </div>
+          <div v-else class="flex items-center mb-4">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer"
+              @click="switchMode('login')"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+              返回登录
+            </button>
+          </div>
         </nav>
 
         <!-- 表单区（带切换动画） -->
         <Transition name="auth-mode" mode="out-in">
-          <form :key="mode" class="px-8 md:px-14 py-8 grid gap-7 max-w-2xl" @submit.prevent="onSubmit">
+          <!-- 找回密码表单 -->
+          <form
+            v-if="mode === 'forgot'"
+            key="forgot"
+            class="px-8 md:px-14 py-8 grid gap-7 max-w-2xl"
+            @submit.prevent="onSubmit"
+          >
+            <label class="grid gap-3">
+              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">注册邮箱</span>
+              <input
+                v-model="forgotForm.email"
+                type="email"
+                placeholder="name@example.com"
+                autocomplete="email"
+                required
+                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+              />
+            </label>
+
+            <div class="grid grid-cols-[1fr_auto] items-end gap-4">
+              <label class="grid gap-3">
+                <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">邮箱验证码</span>
+                <input
+                  v-model="forgotForm.code"
+                  type="text"
+                  placeholder="填写验证码"
+                  autocomplete="one-time-code"
+                  required
+                  class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                />
+              </label>
+              <button
+                type="button"
+                class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="codeLoading"
+                @click="handleSendCode"
+              >
+                {{ codeLoading ? '发送中…' : '发送验证码' }}
+              </button>
+            </div>
+
+            <label class="grid gap-3">
+              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">新密码</span>
+              <input
+                v-model="forgotForm.newPassword"
+                type="password"
+                placeholder="至少 6 位"
+                autocomplete="new-password"
+                required
+                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+              />
+            </label>
+
+            <label class="grid gap-3">
+              <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">确认新密码</span>
+              <input
+                v-model="forgotForm.confirmPassword"
+                type="password"
+                placeholder="再次输入新密码"
+                autocomplete="new-password"
+                required
+                class="h-14 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-lg text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+              />
+            </label>
+
+            <div class="pt-4 flex items-center gap-5 flex-wrap">
+              <button
+                type="submit"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full text-base font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                :disabled="loading"
+              >
+                {{ loading ? '提交中…' : '重置密码' }}
+              </button>
+              <button
+                type="button"
+                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer"
+                @click="switchMode('login')"
+              >
+                返回登录
+              </button>
+            </div>
+          </form>
+
+          <!-- 登录 / 注册表单 -->
+          <form
+            v-else
+            :key="mode"
+            class="px-8 md:px-14 py-8 grid gap-7 max-w-2xl"
+            @submit.prevent="onSubmit"
+          >
             <label class="grid gap-3">
               <span class="text-black/70 dark:text-white/70 text-base md:text-lg font-light tracking-wider">用户名</span>
               <input
@@ -374,7 +536,7 @@ onMounted(async () => {
               />
             </label>
 
-            <div class="pt-4 flex items-center gap-5">
+            <div class="pt-4 flex items-center gap-5 flex-wrap">
               <button
                 type="submit"
                 class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full text-base font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
@@ -388,6 +550,14 @@ onMounted(async () => {
                 @click="switchMode(mode === 'login' ? 'register' : 'login')"
               >
                 {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+              </button>
+              <button
+                v-if="mode === 'login'"
+                type="button"
+                class="text-black/60 dark:text-white/60 hover:text-[#EC4141] text-base font-medium transition cursor-pointer ml-auto"
+                @click="enterForgot"
+              >
+                忘记密码？
               </button>
             </div>
           </form>
