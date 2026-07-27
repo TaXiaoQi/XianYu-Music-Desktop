@@ -5,8 +5,8 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import ModernModal from '../common/ModernModal.vue';
 import { compareVersions, fetchLatestRelease } from '../../utils/update';
 
-const REPO_OWNER = 'TaXiaoQi';
-const REPO_NAME = 'XY-Music-Desktop';
+const REPO_OWNER = 'ShenYichenCN';
+const REPO_NAME = 'XianYu-Music-Desktop';
 const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 const RELEASES_URL = `${REPO_URL}/releases`;
 
