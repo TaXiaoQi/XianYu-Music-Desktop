@@ -51,6 +51,15 @@ export const useCollectionsStore = defineStore('collections', () => {
     return beforeLength !== playlists.value.length;
   };
 
+  const renamePlaylist = (id: string, name: string) => {
+    const playlist = getPlaylistById(id);
+    if (playlist && name.trim()) {
+      playlist.name = name.trim();
+      return true;
+    }
+    return false;
+  };
+
   const getPlaylistById = (playlistId: string) =>
     playlists.value.find(item => item.id === playlistId);
 
@@ -183,6 +192,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     setRecentSongs,
     createPlaylist,
     deletePlaylist,
+    renamePlaylist,
     getPlaylistById,
     addToPlaylist,
     removeFromPlaylist,

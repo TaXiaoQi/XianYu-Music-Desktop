@@ -13,7 +13,23 @@ const { settings } = useSettings();
         侧边栏管理
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden">
-        
+
+        <!-- Home (Locked) -->
+        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 opacity-70 cursor-not-allowed">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            </div>
+            <div>
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">首页</div>
+              <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">核心功能 (不可隐藏)</div>
+            </div>
+          </div>
+          <div class="relative inline-flex h-6 w-11 items-center rounded-full bg-[#EC4141] opacity-50">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
+          </div>
+        </div>
+
         <!-- Local Music (Locked/Checked) -->
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 opacity-70 cursor-not-allowed">
           <div class="flex items-center gap-3">
@@ -63,7 +79,7 @@ const { settings } = useSettings();
         </div>
 
         <!-- Favorites -->
-        <div 
+        <div
               @click="settings.sidebar.showFavorites = !settings.sidebar.showFavorites"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >
@@ -79,7 +95,7 @@ const { settings } = useSettings();
         </div>
 
         <!-- Recent -->
-        <div 
+        <div
               @click="settings.sidebar.showRecent = !settings.sidebar.showRecent"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >
@@ -95,7 +111,7 @@ const { settings } = useSettings();
         </div>
 
         <!-- Folders -->
-        <div 
+        <div
               @click="settings.sidebar.showFolders = !settings.sidebar.showFolders"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >
@@ -110,19 +126,19 @@ const { settings } = useSettings();
           </button>
         </div>
 
-        <!-- Statistics -->
+        <!-- Plugins -->
         <div
-              @click="settings.sidebar.showStatistics = !settings.sidebar.showStatistics"
+              @click="settings.sidebar.showPlugins = !settings.sidebar.showPlugins"
           class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
         >
           <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showStatistics ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showPlugins ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" /></svg>
             </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">统计</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">插件管理</div>
           </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showStatistics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showStatistics ? 'translate-x-6' : 'translate-x-1'" />
+              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showPlugins ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showPlugins ? 'translate-x-6' : 'translate-x-1'" />
           </button>
         </div>
 
