@@ -28,23 +28,23 @@
         <div class="flex items-center gap-1 flex-wrap">
           <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1">来源</span>
           <button
-            v-for="plugin in enabledPlugins"
-            :key="plugin.id"
+            v-for="source in lxSourceList"
+            :key="source.id"
             type="button"
             class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
-            :class="activePluginId === plugin.id
+            :class="selectedLxSource === source.id
               ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
               : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
-            @click="handleSelectPlugin(plugin.id)"
+            @click="handleSelectSource(source.id)"
           >
-            {{ plugin.name }}
+            {{ source.name }}
           </button>
         </div>
 
         <!-- 搜索关键词 + 结果数 -->
         <div class="flex items-center gap-2 min-w-0">
           <span v-if="searchQuery.trim()" class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 truncate">
-            “{{ searchQuery }}” · {{ resultCount }} 个结果
+            "{{ searchQuery }}" · {{ resultCount }} 个结果
           </span>
         </div>
       </div>
@@ -53,14 +53,23 @@
     <!-- 搜索结果列表 -->
     <div class="flex-1 flex overflow-hidden relative">
       <section class="flex-1 flex overflow-hidden">
+        <!-- 非音乐类型提示 -->
+        <div v-if="activeSearchType !== 'track'" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+          <p class="text-base font-medium">{{ searchTabs.find(t => t.type === activeSearchType)?.label }}搜索</p>
+          <p class="text-sm mt-1">该类型搜索功能开发中</p>
+        </div>
+
         <!-- 加载中 -->
-        <div v-if="searching" class="flex-1 flex items-center justify-center">
+        <div v-else-if="searching" class="flex-1 flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <p class="text-sm">正在从 {{ activePlugin?.name }} 搜索…</p>
+            <p class="text-sm">正在从 {{ selectedSourceName }} 搜索…</p>
           </div>
         </div>
 
@@ -70,97 +79,87 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <p class="text-base font-medium">在上方搜索框输入关键词</p>
-          <p class="text-sm mt-1">结果来自 {{ activePlugin?.name ?? '插件' }}</p>
+          <p class="text-sm mt-1">结果来自 {{ selectedSourceName }}</p>
         </div>
 
         <!-- 无结果 -->
-        <div v-else-if="resultCount === 0" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
+        <div v-else-if="lxSearchResults.length === 0" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p class="text-base font-medium">没有找到与“{{ searchQuery }}”相关的内容</p>
-          <p class="text-sm mt-1">试试更换插件或调整关键词</p>
+          <p class="text-base font-medium">没有找到与"{{ searchQuery }}"相关的内容</p>
+          <p class="text-sm mt-1">试试更换音源或调整关键词</p>
         </div>
 
-        <!-- 音乐结果列表 -->
-        <SongTable
-          v-else-if="activeSearchType === 'track'"
-          ref="songTableRef"
-          :songs="trackSongs"
-          :isBatchMode="false"
-          :selectedPaths="selectedPaths"
-          memoryScopeKey="plugin-search-view"
-          @play="handlePlaySong"
-          @contextmenu="handleContextMenu"
-          @update:selectedPaths="selectedPaths = $event"
-        />
-
-        <!-- 作者结果网格 -->
-        <div v-else-if="activeSearchType === 'artist'" class="flex-1 overflow-y-auto custom-scrollbar p-6">
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-5">
-            <div
-              v-for="artist in artistResults"
-              :key="artist.id"
-              class="flex flex-col items-center gap-3 p-4 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handleArtistClick(artist)"
-            >
-              <div class="h-28 w-28 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden grid place-items-center text-[#EC4141] text-3xl font-black">
-                <img v-if="artist.avatarUrl" :src="artist.avatarUrl" alt="" class="h-full w-full object-cover" />
-                <span v-else>{{ artist.name.slice(0, 1) }}</span>
-              </div>
-              <div class="text-center min-w-0 w-full">
-                <p class="text-sm font-medium text-black dark:text-white truncate">{{ artist.name }}</p>
-                <p class="text-xs text-black/50 dark:text-white/50 mt-0.5">{{ artist.songCount ?? 0 }} 首歌曲</p>
-              </div>
-            </div>
+        <!-- 搜索结果列表 -->
+        <div
+          v-else
+          ref="resultsScrollRef"
+          class="flex-1 overflow-y-auto custom-scrollbar"
+          @scroll="handleScroll"
+        >
+          <table class="w-full text-left">
+            <thead class="sticky top-0 z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md">
+              <tr class="border-b border-black/5 dark:border-white/5 text-xs text-black/40 dark:text-white/40">
+                <th class="w-10 py-2 px-4 text-center font-normal">#</th>
+                <th class="w-14 py-2 px-2 font-normal"></th>
+                <th class="py-2 px-2 font-normal">歌曲</th>
+                <th class="py-2 px-2 font-normal">歌手</th>
+                <th class="py-2 px-2 font-normal">专辑</th>
+                <th class="w-16 py-2 px-4 text-right font-normal">时长</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(item, index) in lxSearchResults"
+                :key="`${item.source}-${item.songmid}-${index}`"
+                class="group border-b border-black/5 dark:border-white/5 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                @click="handlePlaySong(item)"
+                @contextmenu="handleContextMenu($event, item)"
+              >
+                <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
+                  {{ index + 1 }}
+                </td>
+                <td class="py-2 px-2">
+                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+                    <img
+                      v-if="item.img"
+                      :src="item.img"
+                      class="w-full h-full object-cover"
+                      alt=""
+                      loading="lazy"
+                      @error="handleImgError(item)"
+                    />
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                  </div>
+                </td>
+                <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
+                  {{ item.name }}
+                </td>
+                <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
+                  {{ item.singer }}
+                </td>
+                <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
+                  {{ item.albumName }}
+                </td>
+                <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
+                  {{ item.interval }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <!-- 加载更多指示器 -->
+          <div v-if="loadingMore" class="flex items-center justify-center py-4 text-black/40 dark:text-white/40">
+            <svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-sm">加载更多…</span>
           </div>
-        </div>
-
-        <!-- 专辑结果网格 -->
-        <div v-else-if="activeSearchType === 'album'" class="flex-1 overflow-y-auto custom-scrollbar p-6">
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
-            <div
-              v-for="album in albumResults"
-              :key="album.id"
-              class="flex flex-col gap-3 p-3 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handleAlbumClick(album)"
-            >
-              <div class="aspect-square rounded-xl bg-black/10 dark:bg-white/10 overflow-hidden grid place-items-center text-[#EC4141] text-4xl font-black">
-                <img v-if="album.coverUrl" :src="album.coverUrl" alt="" class="h-full w-full object-cover" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-              </div>
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-black dark:text-white truncate">{{ album.name }}</p>
-                <p class="text-xs text-black/50 dark:text-white/50 mt-0.5 truncate">{{ album.artist }} · {{ album.year ?? '' }}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 歌单结果网格 -->
-        <div v-else-if="activeSearchType === 'playlist'" class="flex-1 overflow-y-auto custom-scrollbar p-6">
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5">
-            <div
-              v-for="playlist in playlistResults"
-              :key="playlist.id"
-              class="flex flex-col gap-3 p-3 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handlePlaylistClick(playlist)"
-            >
-              <div class="aspect-square rounded-xl bg-gradient-to-br from-[#EC4141]/20 to-[#EC4141]/5 dark:from-[#EC4141]/30 dark:to-[#EC4141]/10 overflow-hidden grid place-items-center text-[#EC4141] text-5xl font-black">
-                <img v-if="playlist.coverUrl" :src="playlist.coverUrl" alt="" class="h-full w-full object-cover" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-black dark:text-white truncate">{{ playlist.name }}</p>
-                <p class="text-xs text-black/50 dark:text-white/50 mt-0.5 truncate">
-                  by {{ playlist.creator ?? '未知' }} · {{ playlist.songCount ?? 0 }} 首
-                </p>
-              </div>
-            </div>
+          <div v-else-if="!hasMore && lxSearchResults.length > 0" class="flex items-center justify-center py-4 text-xs text-black/30 dark:text-white/30">
+            没有更多了
           </div>
         </div>
       </section>
@@ -181,45 +180,65 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { Song } from '../types';
-import type { PluginAlbum, PluginArtist, PluginPlaylist, PluginSearchType, PluginTrack } from '../types/plugin';
-import { usePluginsStore } from '../features/plugins/store';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useUiStore } from '../shared/stores/ui';
 import { useNavigationStore } from '../shared/stores/navigation';
-import { pluginApi } from '../services/tauri/pluginApi';
-import { pluginTrackToSong } from '../utils/pluginSong';
+import {
+  lxSearch,
+  lxGetPic,
+  LX_SOURCE_NAMES,
+  type LxSearchResultItem,
+  type LxSourceId,
+} from '../services/lxMusicSdk';
 
-import SongTable from '../components/song-list/SongTable.vue';
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 
-const pluginsStore = usePluginsStore();
-const { enabledPlugins, activePlugin, activePluginId, activeSearchType } = storeToRefs(pluginsStore);
 const { playSong } = usePlaybackController();
 const uiStore = useUiStore();
 const navigationStore = useNavigationStore();
 const { searchQuery } = storeToRefs(navigationStore);
 
-const searchTabs: { type: PluginSearchType; label: string }[] = [
+// ==================== 内容类型切换 ====================
+type SearchTypeKey = 'track' | 'artist' | 'album' | 'playlist';
+const activeSearchType = ref<SearchTypeKey>('track');
+const searchTabs: { type: SearchTypeKey; label: string }[] = [
   { type: 'track', label: '音乐' },
   { type: 'artist', label: '作者' },
   { type: 'album', label: '专辑' },
   { type: 'playlist', label: '歌单' },
 ];
 
-// 搜索状态
-const searching = ref(false);
-const trackResults = ref<PluginTrack[]>([]);
-const artistResults = ref<PluginArtist[]>([]);
-const albumResults = ref<PluginAlbum[]>([]);
-const playlistResults = ref<PluginPlaylist[]>([]);
+const handleSearchTypeChange = (type: SearchTypeKey) => {
+  activeSearchType.value = type;
+};
 
-// 选中的歌曲集合（SongTable 用）
-const selectedPaths = ref<Set<string>>(new Set());
-const songTableRef = ref<any>(null);
+// ==================== 来源列表 ====================
+const lxSourceList = Object.entries(LX_SOURCE_NAMES).map(([id, name]) => ({
+  id: id as LxSourceId,
+  name,
+}));
+const selectedLxSource = ref<LxSourceId>('kw');
+
+const selectedSourceName = computed(
+  () => LX_SOURCE_NAMES[selectedLxSource.value] ?? '未知音源',
+);
+
+// ==================== 搜索状态 ====================
+const searching = ref(false);
+const loadingMore = ref(false);
+const hasMore = ref(false);
+const currentPage = ref(1);
+const lxSearchResults = shallowRef<LxSearchResultItem[]>([]);
+const resultsScrollRef = ref<HTMLElement | null>(null);
+
+// 封面加载任务版本号，用于在新搜索时取消旧任务
+let coverLoadVersion = 0;
+
+// 右键菜单
 const showContextMenu = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
@@ -228,35 +247,20 @@ const contextMenuTargetSong = ref<Song | null>(null);
 // 是否有搜索关键词
 const hasQuery = computed(() => searchQuery.value.trim().length > 0);
 
-// 音乐结果转 Song 列表
-const trackSongs = computed<Song[]>(() =>
-  trackResults.value.map(track => pluginTrackToSong(track, activePluginId.value || 'unknown')),
-);
-
-// 当前插件 ID（非空，用于搜索请求）
-const currentPluginId = computed(() => activePluginId.value || '');
-
 // 当前类型的结果数量
 const resultCount = computed(() => {
-  switch (activeSearchType.value) {
-    case 'track': return trackResults.value.length;
-    case 'artist': return artistResults.value.length;
-    case 'album': return albumResults.value.length;
-    case 'playlist': return playlistResults.value.length;
-    default: return 0;
-  }
+  if (activeSearchType.value === 'track') return lxSearchResults.value.length;
+  return 0;
 });
 
-// 执行搜索
+// ==================== 搜索逻辑 ====================
 let searchAbortController: AbortController | null = null;
 
 const performSearch = async () => {
   const query = searchQuery.value.trim();
-  if (!query || !currentPluginId.value) {
-    trackResults.value = [];
-    artistResults.value = [];
-    albumResults.value = [];
-    playlistResults.value = [];
+  if (!query) {
+    lxSearchResults.value = [];
+    hasMore.value = false;
     return;
   }
 
@@ -266,28 +270,22 @@ const performSearch = async () => {
   }
   searchAbortController = new AbortController();
 
+  // 重置分页
+  currentPage.value = 1;
+  hasMore.value = false;
   searching.value = true;
   try {
-    const response = await pluginApi.pluginSearch({
-      pluginId: currentPluginId.value,
-      query,
-      type: activeSearchType.value,
-      page: 1,
-      pageSize: 30,
-    });
+    const result = await lxSearch(selectedLxSource.value, query, 1);
     // 若已被后续搜索取消，丢弃结果
     if (searchAbortController.signal.aborted) return;
-    trackResults.value = response.tracks;
-    artistResults.value = response.artists;
-    albumResults.value = response.albums;
-    playlistResults.value = response.playlists;
+    lxSearchResults.value = result.list;
+    hasMore.value = result.list.length >= result.limit;
+    // 异步批量加载封面（kw/kg 搜索结果 img=null）
+    triggerCoverLoading();
   } catch (err) {
     if (!searchAbortController.signal.aborted) {
-      console.warn('Plugin search failed:', err);
-      trackResults.value = [];
-      artistResults.value = [];
-      albumResults.value = [];
-      playlistResults.value = [];
+      console.warn('[LX Search] failed:', err);
+      lxSearchResults.value = [];
     }
   } finally {
     if (!searchAbortController.signal.aborted) {
@@ -296,14 +294,112 @@ const performSearch = async () => {
   }
 };
 
-// 切换插件时重新搜索
-const handleSelectPlugin = (pluginId: string) => {
-  pluginsStore.setActivePlugin(pluginId);
+/** 加载下一页 */
+const loadMore = async () => {
+  if (loadingMore.value || !hasMore.value || searching.value) return;
+  const query = searchQuery.value.trim();
+  if (!query) return;
+
+  loadingMore.value = true;
+  const nextPage = currentPage.value + 1;
+  try {
+    const result = await lxSearch(selectedLxSource.value, query, nextPage);
+    if (result.list.length > 0) {
+      currentPage.value = nextPage;
+      lxSearchResults.value = [...lxSearchResults.value, ...result.list];
+      hasMore.value = result.list.length >= result.limit;
+      // 为新加载的项目加载封面
+      triggerCoverLoading();
+    } else {
+      hasMore.value = false;
+    }
+  } catch (err) {
+    console.warn('[LX Search] loadMore failed:', err);
+    hasMore.value = false;
+  } finally {
+    loadingMore.value = false;
+  }
 };
 
-// 切换搜索类型
-const handleSearchTypeChange = (type: PluginSearchType) => {
-  pluginsStore.setActiveSearchType(type);
+/** 滚动事件：接近底部时自动加载更多 */
+const handleScroll = () => {
+  const el = resultsScrollRef.value;
+  if (!el || loadingMore.value || !hasMore.value) return;
+  const { scrollTop, scrollHeight, clientHeight } = el;
+  // 距离底部 200px 时触发加载
+  if (scrollHeight - scrollTop - clientHeight < 200) {
+    loadMore();
+  }
+};
+
+/** 触发封面加载（滑动窗口并发版） */
+function triggerCoverLoading() {
+  const version = ++coverLoadVersion;
+  // 只处理还没有封面（img 为 null）的项目，已失败的（''）不再重试
+  const items = lxSearchResults.value.filter(item => item.img === null);
+  if (items.length === 0) return;
+
+  // 滑动窗口并发：始终保持 N 个请求在飞行中，一个完成立刻取下一个
+  const CONCURRENCY = 8;
+  let nextIdx = 0;
+  let hasUpdate = false;
+
+  const worker = async () => {
+    while (nextIdx < items.length) {
+      if (version !== coverLoadVersion) return; // 新搜索来了，停止旧任务
+      const item = items[nextIdx++];
+      try {
+        // 每个请求最多等 8 秒，超时直接跳过
+        const picUrl = await Promise.race([
+          lxGetPic(item),
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 8000)),
+        ]);
+        if (version !== coverLoadVersion) return;
+        if (picUrl) {
+          item.img = picUrl;
+          hasUpdate = true;
+        } else {
+          item.img = ''; // 标记为已尝试，避免重复请求
+        }
+      } catch {
+        item.img = '';
+      }
+    }
+  };
+
+  // 启动 N 个 worker 并发消费队列
+  const workers = Array.from({ length: CONCURRENCY }, () => worker());
+
+  // 定时把已更新的封面刷到视图（500ms 一次，减少不必要的渲染）
+  const uiTimer = setInterval(() => {
+    if (version !== coverLoadVersion) {
+      clearInterval(uiTimer);
+      return;
+    }
+    if (hasUpdate) {
+      hasUpdate = false;
+      lxSearchResults.value = [...lxSearchResults.value];
+    }
+  }, 500);
+
+  // 全部完成后做最后一次刷新并清理定时器
+  Promise.all(workers).then(() => {
+    clearInterval(uiTimer);
+    if (version === coverLoadVersion && hasUpdate) {
+      lxSearchResults.value = [...lxSearchResults.value];
+    }
+  });
+}
+
+/** 封面加载失败时，清除 img 以显示占位符 */
+const handleImgError = (item: LxSearchResultItem) => {
+  item.img = '';
+  lxSearchResults.value = [...lxSearchResults.value];
+};
+
+// 切换来源
+const handleSelectSource = (sourceId: LxSourceId) => {
+  selectedLxSource.value = sourceId;
 };
 
 // 监听关键词变化（防抖）
@@ -315,32 +411,57 @@ watch(searchQuery, () => {
   }, 400);
 });
 
-// 监听插件 / 搜索类型变化，立即重新搜索
-watch([activePluginId, activeSearchType], () => {
+// 监听来源变化，立即重新搜索
+watch(selectedLxSource, () => {
   performSearch();
 });
 
 // 播放搜索到的歌曲
-const handlePlaySong = (song: Song) => {
+const handlePlaySong = (item: LxSearchResultItem) => {
+  // 构造 Song 对象，使用 lx:// 协议
+  const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
+  const song: Song = {
+    name: item.name,
+    title: item.name,
+    path: `lx://${item.source}/${item.songmid}`,
+    artist: item.singer || '未知歌手',
+    artist_names: artistNames,
+    effective_artist_names: artistNames,
+    album: item.albumName || '未知专辑',
+    album_artist: item.singer || '未知歌手',
+    album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: 0,
+    cover_thumb_path: item.img || '',
+    source_type: 'remote',
+    remote_source_id: `lx://${item.source}/${item.songmid}`,
+  };
   void playSong(song, { insertAfterCurrent: true });
-  // 进入歌曲详情页
   uiStore.showPlayerDetail = true;
 };
 
-// 作者/专辑/歌单点击（预留入口，后续接入详情页）
-const handleArtistClick = (_artist: PluginArtist) => {
-  // TODO: 进入插件作者详情页
-};
-const handleAlbumClick = (_album: PluginAlbum) => {
-  // TODO: 进入插件专辑详情页
-};
-const handlePlaylistClick = (_playlist: PluginPlaylist) => {
-  // TODO: 进入插件歌单详情页
-};
-
 // 右键菜单
-const handleContextMenu = (e: MouseEvent, song: Song) => {
-  contextMenuTargetSong.value = song;
+const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
+  e.preventDefault();
+  const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
+  contextMenuTargetSong.value = {
+    name: item.name,
+    title: item.name,
+    path: `lx://${item.source}/${item.songmid}`,
+    artist: item.singer || '未知歌手',
+    artist_names: artistNames,
+    effective_artist_names: artistNames,
+    album: item.albumName || '未知专辑',
+    album_artist: item.singer || '未知歌手',
+    album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: 0,
+    cover_thumb_path: item.img || '',
+    source_type: 'remote',
+    remote_source_id: `lx://${item.source}/${item.songmid}`,
+  };
   contextMenuX.value = e.clientX;
   contextMenuY.value = e.clientY;
   showContextMenu.value = true;
@@ -348,16 +469,12 @@ const handleContextMenu = (e: MouseEvent, song: Song) => {
 
 const openAddToPlaylistSelection = () => {
   const songPaths = contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : [];
-  // 复用现有添加到歌单对话框（插件歌曲的 path 是虚拟路径，需后端支持）
-  console.warn('Add plugin song to playlist - path:', songPaths);
+  console.warn('Add lx song to playlist - path:', songPaths);
 };
 
-// 初始化：加载插件列表
-onMounted(async () => {
-  // 进入搜索页面时强制关闭 PlayerDetail，避免覆盖层拦截滚动
+// 初始化
+onMounted(() => {
   uiStore.showPlayerDetail = false;
-  await pluginsStore.loadPlugins();
-  // 默认选中音乐类型和第一个已启用插件（store 内已处理默认值）
   if (!hasQuery.value) return;
   performSearch();
 });
@@ -377,5 +494,4 @@ onMounted(async () => {
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
 }
-
 </style>

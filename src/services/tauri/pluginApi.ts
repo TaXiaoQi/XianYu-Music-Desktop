@@ -172,9 +172,25 @@ export async function getPluginTrackUrl(pluginId: string, trackId: string): Prom
   return invoke<string>('get_plugin_track_url', { pluginId, trackId });
 }
 
+/**
+ * 通用 HTTP 请求 —— 通过 Tauri 后端代理发起网络请求，绕过 CORS
+ * 后端 command: plugin_http_request
+ */
+export async function pluginHttpRequest(
+  method: string,
+  url: string,
+  headers?: Record<string, string>,
+  body?: string,
+  timeout?: number,
+  follow?: number,
+): Promise<{ status: number; url: string; headers: Record<string, string>; body: string }> {
+  return invoke('plugin_http_request', { method, url, headers: headers ?? null, body: body ?? null, timeout: timeout ?? null, follow: follow ?? null });
+}
+
 export const pluginApi = {
   getInstalledPlugins,
   pluginSearch,
   setPluginEnabled,
   getPluginTrackUrl,
+  pluginHttpRequest,
 };
