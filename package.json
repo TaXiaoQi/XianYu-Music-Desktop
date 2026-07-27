@@ -1,7 +1,7 @@
 {
   "name": "lycia-music",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -52,6 +52,8 @@
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.11.4",
+    "@types/blueimp-md5": "^2.18.2",
+    "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.4.23",
     "eslint": "^10.0.3",

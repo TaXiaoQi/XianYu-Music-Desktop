@@ -1,6 +1,6 @@
 [package]
 name = "lycia_music"
-version = "1.0.2"
+version = "1.0.3"
 description = "A beautiful local music player powered by Tauri."
 authors = ["lyc"]
 license = "AGPL-3.0-only"
@@ -61,6 +61,7 @@ keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
 wasapi = "0.23"
 
 [patch.crates-io]

@@ -367,6 +367,7 @@ export interface TauriCommandMap {
     response: StatisticsImportResult;
   };
   set_mini_boundary_enabled: { payload: { enabled: boolean }; response: void };
+  set_immersive_fullscreen: { payload: { enter: boolean }; response: boolean };
   set_dark_mode_for_window: { payload: { dark: boolean }; response: void };
   get_window_material_capabilities: {
     payload: undefined;
