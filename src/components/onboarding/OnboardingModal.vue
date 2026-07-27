@@ -1,0 +1,1241 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+
+import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import { useToast } from '../../composables/toast';
+import { useSettings } from '../../features/settings/useSettings';
+import {
+  areShortcutBindingsEqual,
+  createDefaultShortcutSettings,
+  formatShortcutBinding,
+  getShortcutBindingFromEvent,
+  isSystemReservedShortcutEvent,
+  shortcutActionLabels,
+  shortcutActionOrder,
+} from '../../features/settings/shortcuts';
+import type { ShortcutActionId } from '../../types';
+import { useAuthStore } from '../../features/auth/store';
+import {
+  login,
+  register,
+  sendEmailCode,
+  type AuthMode,
+  type VerifyCodeType,
+} from '../../services/auth/authService';
+
+type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'account';
+
+const props = defineProps<{
+  visible: boolean;
+}>();
+
+const emit = defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'complete'): void;
+}>();
+
+const { settings } = useSettings();
+const { showToast } = useToast();
+const authStore = useAuthStore();
+const {
+  colorScheme,
+  materialMode,
+  setColorScheme,
+  toggleWindowMaterial,
+  isWindowMaterialButtonDisabled,
+  isWindows11,
+} = useSettingsThemeControls();
+
+const SPLASH_DURATION = 3000;
+const SPLASH_HINT_DELAY = 800;
+
+const step = ref<Step>('splash');
+const splashVisible = ref(true);
+const splashHintVisible = ref(false);
+const splashTimer = ref<any>(null);
+
+// --- 快捷键录入 ---
+type ShortcutScope = 'local' | 'global';
+interface CapturingTarget {
+  actionId: ShortcutActionId;
+  scope: ShortcutScope;
+}
+const capturingTarget = ref<CapturingTarget | null>(null);
+
+const steps: { key: Step; label: string }[] = [
+  { key: 'theme', label: '主题' },
+  { key: 'material', label: '材质' },
+  { key: 'shortcuts', label: '快捷键' },
+  { key: 'account', label: '账号' },
+];
+
+const currentStepIndex = computed(() =>
+  step.value === 'splash' ? 0 : steps.findIndex(s => s.key === step.value) + 1,
+);
+
+const totalSteps = steps.length;
+
+const shortcutRows = computed(() =>
+  shortcutActionOrder.map(actionId => ({
+    actionId,
+    label: shortcutActionLabels[actionId],
+    localBinding: settings.value.shortcuts.local[actionId],
+    globalBinding: settings.value.shortcuts.global[actionId],
+  })),
+);
+
+const isCapturing = (scope: ShortcutScope, actionId: ShortcutActionId) =>
+  capturingTarget.value?.scope === scope && capturingTarget.value.actionId === actionId;
+
+const startCapture = (scope: ShortcutScope, actionId: ShortcutActionId) => {
+  capturingTarget.value = { scope, actionId };
+};
+
+const stopCapture = () => {
+  capturingTarget.value = null;
+};
+
+const restoreDefaultShortcuts = () => {
+  settings.value.shortcuts = createDefaultShortcutSettings();
+  stopCapture();
+  showToast('已恢复默认快捷键', 'success');
+};
+
+const updateShortcut = (
+  scope: ShortcutScope,
+  actionId: ShortcutActionId,
+  nextBinding: ReturnType<typeof getShortcutBindingFromEvent>,
+) => {
+  settings.value.shortcuts[scope][actionId] = nextBinding;
+};
+
+const handleShortcutCapture = (
+  scope: ShortcutScope,
+  actionId: ShortcutActionId,
+  event: KeyboardEvent,
+) => {
+  if (!isCapturing(scope, actionId)) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === 'Escape') {
+    stopCapture();
+    return;
+  }
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    updateShortcut(scope, actionId, null);
+    stopCapture();
+    return;
+  }
+  if (isSystemReservedShortcutEvent(event)) {
+    showToast('Win 组合键由系统保留，不能作为快捷键', 'error');
+    return;
+  }
+
+  const nextBinding = getShortcutBindingFromEvent(event);
+  if (!nextBinding) return;
+
+  const conflictActionId = shortcutActionOrder.find(
+    candidate =>
+      candidate !== actionId &&
+      areShortcutBindingsEqual(settings.value.shortcuts[scope][candidate], nextBinding),
+  );
+
+  if (conflictActionId) {
+    showToast(
+      `${shortcutActionLabels[conflictActionId]} 已使用 ${formatShortcutBinding(nextBinding)}`,
+      'error',
+    );
+    return;
+  }
+
+  updateShortcut(scope, actionId, nextBinding);
+  stopCapture();
+};
+
+// --- 步骤切换 ---
+const goToStep = (next: Step) => {
+  if (next === step.value) return;
+  step.value = next;
+};
+
+const nextStep = () => {
+  const order: Step[] = ['splash', 'theme', 'material', 'shortcuts', 'account'];
+  const idx = order.indexOf(step.value);
+  if (idx < order.length - 1) {
+    goToStep(order[idx + 1]);
+  } else {
+    handleComplete();
+  }
+};
+
+const prevStep = () => {
+  const order: Step[] = ['theme', 'material', 'shortcuts', 'account'];
+  const idx = order.indexOf(step.value);
+  if (idx > 0) goToStep(order[idx - 1]);
+};
+
+const skipRest = () => handleComplete();
+
+// --- 完成时的未登录二次确认 ---
+const showLoginConfirm = ref(false);
+
+const handleComplete = () => {
+  // 账号步骤：检测是否已登录，未登录弹出二次确认
+  if (step.value === 'account' && !authStore.isLoggedIn) {
+    showLoginConfirm.value = true;
+    return;
+  }
+  emit('complete');
+  emit('update:visible', false);
+};
+
+const confirmSkipLogin = () => {
+  showLoginConfirm.value = false;
+  emit('complete');
+  emit('update:visible', false);
+};
+
+const cancelSkipLogin = () => {
+  showLoginConfirm.value = false;
+};
+
+// --- 默认材质按钮：切回 none ---
+const setMaterialToNone = () => {
+  if (materialMode.value !== 'none') {
+    toggleWindowMaterial(materialMode.value as 'acrylic' | 'mica' | 'blur');
+  }
+};
+
+// --- 点击"自定义"主题：暂不支持，弹提示 ---
+const showCustomUnsupported = ref(false);
+
+const handleCustomThemeClick = () => {
+  showCustomUnsupported.value = true;
+};
+
+// --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
+const authMode = ref<AuthMode>('login');
+const authForm = ref({ username: '', email: '', password: '', code: '' });
+const authLoading = ref(false);
+const codeLoading = ref(false);
+const authMessage = ref('');
+const authMessageTone = ref<'error' | 'success'>('error');
+
+const authTitle = computed(() =>
+  authMode.value === 'login' ? '欢迎回来' : '创建你的账号',
+);
+const authSubtitle = computed(() =>
+  authMode.value === 'login'
+    ? '登录后可同步个人资料到云端服务器。'
+    : '注册需要邮箱验证码，之后即可登录使用。',
+);
+const authHeaderLabel = computed(() =>
+  authMode.value === 'login' ? '登录账号' : '注册账号',
+);
+
+const switchAuthMode = (m: AuthMode) => {
+  authMode.value = m;
+  authMessage.value = '';
+};
+
+const showAuthMessage = (text: string, tone: 'error' | 'success' = 'error') => {
+  authMessageTone.value = tone;
+  authMessage.value = text;
+};
+
+const handleSendCode = async () => {
+  const email = authForm.value.email;
+  if (!email) {
+    showAuthMessage('请先填写邮箱');
+    return;
+  }
+  const type: VerifyCodeType = 'register';
+  codeLoading.value = true;
+  authMessage.value = '';
+  try {
+    const result = await sendEmailCode(email, type);
+    showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
+    showToast(result.message || '验证码已发送到邮箱', 'success');
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '验证码发送失败';
+    showAuthMessage(tip);
+    showToast(tip, 'error');
+  } finally {
+    codeLoading.value = false;
+  }
+};
+
+const handleAuthSubmit = async () => {
+  authLoading.value = true;
+  authMessage.value = '';
+  try {
+    const result =
+      authMode.value === 'login'
+        ? await login(authForm.value.username, authForm.value.password)
+        : await register(
+            authForm.value.username || authForm.value.email.split('@')[0] || '用户',
+            authForm.value.password,
+            authForm.value.email,
+            authForm.value.code,
+          );
+
+    authStore.setAuth(result);
+    authForm.value = { username: '', email: '', password: '', code: '' };
+    showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
+    showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
+    // 登录成功后稍作停留再完成
+    setTimeout(() => {
+      handleComplete();
+    }, 600);
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '登录/注册失败，请检查后端接口';
+    showAuthMessage(tip);
+    showToast(tip, 'error');
+  } finally {
+    authLoading.value = false;
+  }
+};
+
+// --- 启动画面计时 ---
+const startSplashTimers = () => {
+  splashTimer.value = setTimeout(() => {
+    splashVisible.value = false;
+    setTimeout(() => {
+      step.value = 'theme';
+      splashVisible.value = true;
+    }, 400);
+  }, SPLASH_DURATION);
+
+  setTimeout(() => {
+    splashHintVisible.value = true;
+  }, SPLASH_HINT_DELAY);
+};
+
+const clearSplashTimers = () => {
+  if (splashTimer.value) {
+    clearTimeout(splashTimer.value);
+    splashTimer.value = null;
+  }
+};
+
+watch(
+  () => props.visible,
+  val => {
+    if (val) {
+      step.value = 'splash';
+      splashVisible.value = true;
+      splashHintVisible.value = false;
+      startSplashTimers();
+    } else {
+      clearSplashTimers();
+    }
+  },
+);
+
+onMounted(() => {
+  if (props.visible) startSplashTimers();
+});
+
+onUnmounted(() => {
+  clearSplashTimers();
+});
+</script>
+
+<template>
+  <Teleport to="body">
+    <transition name="onboarding-fade">
+      <div
+        v-if="visible"
+        class="fixed inset-0 z-[9998] flex flex-col overflow-hidden bg-white dark:bg-[#0a0a0a]"
+      >
+        <!-- 启动画面 -->
+        <transition name="splash-fade">
+          <div
+            v-if="step === 'splash'"
+            class="absolute inset-0 flex flex-col items-center justify-center text-center px-[clamp(1.5rem,4vw,4rem)]"
+          >
+            <transition name="splash-title">
+              <div v-if="splashVisible" class="flex flex-col items-center">
+                <h1
+                  class="font-black tracking-tight text-black dark:text-white leading-none"
+                  style="font-size: clamp(64px, 10vw, 160px);"
+                >
+                  弦予音乐
+                </h1>
+                <div
+                  class="mt-6 font-light tracking-[0.5em] text-black/50 dark:text-white/50 uppercase"
+                  style="font-size: clamp(28px, 3.5vw, 48px);"
+                >
+                  XY Music
+                </div>
+                <div
+                  class="mt-[clamp(2.5rem,5vh,4rem)] font-light text-black/75 dark:text-white/75"
+                  style="font-size: clamp(28px, 2.8vw, 40px);"
+                >
+                  将音乐给予你
+                </div>
+              </div>
+            </transition>
+
+            <transition name="splash-hint">
+              <div
+                v-if="splashHintVisible"
+                class="absolute flex flex-col items-center gap-3"
+                style="bottom: clamp(40px, 8vh, 80px);"
+              >
+                <div
+                  class="text-black/60 dark:text-white/60 font-light tracking-wide"
+                  style="font-size: clamp(20px, 1.6vw, 26px);"
+                >
+                  初次启动，我们需要进行一些设置
+                </div>
+                <div class="flex gap-1.5">
+                  <span
+                    v-for="i in 3"
+                    :key="i"
+                    class="w-1.5 h-1.5 rounded-full bg-black/20 dark:bg-white/20 animate-pulse"
+                    :style="{ animationDelay: `${i * 0.2}s` }"
+                  ></span>
+                </div>
+              </div>
+            </transition>
+          </div>
+        </transition>
+
+        <!-- 步骤内容 -->
+        <transition name="step-fade" mode="out-in">
+          <div
+            v-if="step !== 'splash'"
+            :key="step"
+            class="relative w-full h-full flex flex-col"
+          >
+            <!-- 顶部栏：左上角品牌 + 右上角进度 -->
+            <header
+              class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.5rem,3vh,2.5rem)]"
+            >
+              <div class="flex items-center gap-3">
+                <span
+                  class="font-black tracking-tight text-black dark:text-white"
+                  style="font-size: clamp(18px, 1.5vw, 22px);"
+                >
+                  弦予音乐
+                </span>
+                <span class="text-black/20 dark:text-white/20">/</span>
+                <span
+                  class="text-black/50 dark:text-white/50 font-light tracking-wide"
+                  style="font-size: clamp(13px, 1vw, 15px);"
+                >
+                  初次设置
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <template v-for="s in steps" :key="s.key">
+                  <div
+                    class="rounded-full transition-all duration-500"
+                    :class="s.key === step
+                      ? 'w-8 bg-[#EC4141]'
+                      : steps.findIndex(x => x.key === step) > steps.findIndex(x => x.key === s.key)
+                        ? 'w-3 bg-[#EC4141]/40'
+                        : 'w-3 bg-black/10 dark:bg-white/10'"
+                    style="height: 3px;"
+                  ></div>
+                </template>
+                <span
+                  class="ml-3 text-black/40 dark:text-white/40 tabular-nums font-light"
+                  style="font-size: clamp(11px, 0.9vw, 13px);"
+                >
+                  {{ currentStepIndex }} / {{ totalSteps }}
+                </span>
+              </div>
+            </header>
+
+            <!-- 主内容区：垂直居中 -->
+            <main class="flex-1 overflow-y-auto custom-scrollbar">
+              <div class="max-w-6xl mx-auto h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center">
+
+                <!-- 步骤 1: 主题 -->
+                <transition name="step-content" mode="out-in">
+                  <div v-if="step === 'theme'" key="theme" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center">
+                    <header>
+                      <p
+                        class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
+                        style="font-size: clamp(14px, 1.2vw, 18px);"
+                      >
+                        外观主题
+                      </p>
+                      <h2
+                        class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
+                        style="font-size: clamp(48px, 7vw, 96px);"
+                      >
+                        选择<br />主题
+                      </h2>
+                      <p
+                        class="mt-6 text-black/50 dark:text-white/50 font-light max-w-md"
+                        style="font-size: clamp(14px, 1.1vw, 17px);"
+                      >
+                        可在设置中随时更改。深色模式护眼沉浸，浅色模式明亮清新，自定义支持个性化皮肤。
+                      </p>
+                    </header>
+
+                    <div class="grid grid-cols-3 gap-[clamp(0.75rem,1.5vw,1.5rem)]">
+                      <button
+                        v-for="opt in [
+                          { value: 'dark', label: '深色模式', desc: '护眼沉浸' },
+                          { value: 'light', label: '浅色模式', desc: '明亮清新' },
+                          { value: 'custom', label: '自定义', desc: '个性化皮肤' },
+                        ]"
+                        :key="opt.value"
+                        type="button"
+                        class="group relative flex flex-col items-start gap-[clamp(1rem,2vh,1.5rem)] pb-[clamp(1rem,2vh,1.5rem)] transition-all text-left"
+                        :class="colorScheme === opt.value
+                          ? 'border-b-2 border-[#EC4141]'
+                          : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50'"
+                        @click="opt.value === 'custom' ? handleCustomThemeClick() : setColorScheme(opt.value as 'dark' | 'light')"
+                      >
+                        <div
+                          class="w-[clamp(56px,7vw,84px)] h-[clamp(56px,7vw,84px)] rounded-2xl flex items-center justify-center transition-transform group-hover:scale-105 border border-black/10 dark:border-white/10"
+                          :class="opt.value === 'dark'
+                            ? 'bg-black dark:bg-white'
+                            : opt.value === 'light'
+                              ? 'bg-white dark:bg-black'
+                              : 'bg-black dark:bg-white'"
+                        >
+                          <svg
+                            v-if="opt.value === 'dark'"
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-[clamp(28px,3.5vw,42px)] w-[clamp(28px,3.5vw,42px)] text-white dark:text-black"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                          ><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                          <svg
+                            v-else-if="opt.value === 'light'"
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-[clamp(28px,3.5vw,42px)] w-[clamp(28px,3.5vw,42px)] text-black dark:text-white"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                          ><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                          <svg
+                            v-else
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-[clamp(28px,3.5vw,42px)] w-[clamp(28px,3.5vw,42px)] text-white dark:text-black"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                          ><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg>
+                        </div>
+                        <div>
+                          <div
+                            class="font-semibold"
+                            :class="colorScheme === opt.value ? 'text-[#EC4141]' : 'text-black dark:text-white'"
+                            style="font-size: clamp(16px, 1.4vw, 22px);"
+                          >
+                            {{ opt.label }}
+                          </div>
+                          <div
+                            class="text-black/40 dark:text-white/40 font-light mt-1"
+                            style="font-size: clamp(11px, 0.9vw, 14px);"
+                          >
+                            {{ opt.desc }}
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 步骤 2: 窗口材质 -->
+                  <div v-else-if="step === 'material'" key="material" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center">
+                    <header>
+                      <p
+                        class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
+                        style="font-size: clamp(14px, 1.2vw, 18px);"
+                      >
+                        窗口材质
+                      </p>
+                      <h2
+                        class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
+                        style="font-size: clamp(48px, 7vw, 96px);"
+                      >
+                        选择<br />材质
+                      </h2>
+                      <p
+                        class="mt-6 text-black/50 dark:text-white/50 font-light max-w-md"
+                        style="font-size: clamp(14px, 1.1vw, 17px);"
+                      >
+                        影响窗口背景的视觉效果，可在设置中随时更改。Mica 与 Acrylic 仅 Windows 11 可用。
+                      </p>
+                    </header>
+
+                    <div class="grid grid-cols-2 gap-[clamp(1rem,2vw,2rem)]">
+                      <button
+                        type="button"
+                        class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
+                        :class="materialMode === 'none'
+                          ? 'border-b-2 border-[#EC4141]'
+                          : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50'"
+                        @click="setMaterialToNone"
+                      >
+                        <div
+                          class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center transition-transform group-hover:scale-105"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-[clamp(24px,3vw,36px)] w-[clamp(24px,3vw,36px)] text-black/60 dark:text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>
+                        </div>
+                        <div>
+                          <div
+                            class="font-semibold"
+                            :class="materialMode === 'none' ? 'text-[#EC4141]' : 'text-black dark:text-white'"
+                            style="font-size: clamp(18px, 1.5vw, 24px);"
+                          >
+                            默认
+                          </div>
+                          <div
+                            class="text-black/40 dark:text-white/40 font-light mt-1"
+                            style="font-size: clamp(12px, 1vw, 14px);"
+                          >
+                            无透明效果
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
+                        :class="[
+                          materialMode === 'mica'
+                            ? 'border-b-2 border-[#EC4141]'
+                            : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
+                          isWindowMaterialButtonDisabled('mica') ? 'opacity-30 cursor-not-allowed' : '',
+                        ]"
+                        :disabled="isWindowMaterialButtonDisabled('mica')"
+                        @click="toggleWindowMaterial('mica')"
+                      >
+                        <div
+                          class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-[clamp(24px,3vw,36px)] w-[clamp(24px,3vw,36px)] text-black/70 dark:text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+                        </div>
+                        <div>
+                          <div
+                            class="font-semibold"
+                            :class="materialMode === 'mica' ? 'text-[#EC4141]' : 'text-black dark:text-white'"
+                            style="font-size: clamp(18px, 1.5vw, 24px);"
+                          >
+                            Mica
+                          </div>
+                          <div
+                            class="text-black/40 dark:text-white/40 font-light mt-1"
+                            style="font-size: clamp(12px, 1vw, 14px);"
+                          >
+                            {{ isWindows11 ? '云母材质' : '仅 Win11' }}
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
+                        :class="[
+                          materialMode === 'acrylic'
+                            ? 'border-b-2 border-[#EC4141]'
+                            : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
+                          isWindowMaterialButtonDisabled('acrylic') ? 'opacity-30 cursor-not-allowed' : '',
+                        ]"
+                        :disabled="isWindowMaterialButtonDisabled('acrylic')"
+                        @click="toggleWindowMaterial('acrylic')"
+                      >
+                        <div
+                          class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-md flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-[clamp(24px,3vw,36px)] w-[clamp(24px,3vw,36px)] text-black/70 dark:text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </div>
+                        <div>
+                          <div
+                            class="font-semibold"
+                            :class="materialMode === 'acrylic' ? 'text-[#EC4141]' : 'text-black dark:text-white'"
+                            style="font-size: clamp(18px, 1.5vw, 24px);"
+                          >
+                            Acrylic
+                          </div>
+                          <div
+                            class="text-black/40 dark:text-white/40 font-light mt-1"
+                            style="font-size: clamp(12px, 1vw, 14px);"
+                          >
+                            {{ isWindows11 ? '亚克力半透明' : '仅 Win11' }}
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
+                        :class="[
+                          materialMode === 'blur'
+                            ? 'border-b-2 border-[#EC4141]'
+                            : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
+                          isWindowMaterialButtonDisabled('blur') ? 'opacity-30 cursor-not-allowed' : '',
+                        ]"
+                        :disabled="isWindowMaterialButtonDisabled('blur')"
+                        @click="toggleWindowMaterial('blur')"
+                      >
+                        <div
+                          class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-lg flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-[clamp(24px,3vw,36px)] w-[clamp(24px,3vw,36px)] text-black/70 dark:text-white/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>
+                        </div>
+                        <div>
+                          <div
+                            class="font-semibold"
+                            :class="materialMode === 'blur' ? 'text-[#EC4141]' : 'text-black dark:text-white'"
+                            style="font-size: clamp(18px, 1.5vw, 24px);"
+                          >
+                            Blur
+                          </div>
+                          <div
+                            class="text-black/40 dark:text-white/40 font-light mt-1"
+                            style="font-size: clamp(12px, 1vw, 14px);"
+                          >
+                            高斯模糊背景
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 步骤 3: 快捷键 -->
+                  <div v-else-if="step === 'shortcuts'" key="shortcuts" class="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[clamp(2rem,5vw,5rem)] items-start">
+                    <header>
+                      <p
+                        class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
+                        style="font-size: clamp(14px, 1.2vw, 18px);"
+                      >
+                        快捷键
+                      </p>
+                      <h2
+                        class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
+                        style="font-size: clamp(40px, 6vw, 80px);"
+                      >
+                        修改<br />快捷键
+                      </h2>
+                      <p
+                        class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
+                        style="font-size: clamp(13px, 1vw, 16px);"
+                      >
+                        点击按钮后按键录入，Esc 取消，Backspace 清空。
+                      </p>
+                      <button
+                        type="button"
+                        class="mt-6 text-black/50 dark:text-white/50 hover:text-[#EC4141] font-medium tracking-wide transition"
+                        style="font-size: clamp(12px, 1vw, 14px);"
+                        @click="restoreDefaultShortcuts"
+                      >
+                        恢复默认
+                      </button>
+                    </header>
+
+                    <div class="border-t border-black/10 dark:border-white/10">
+                      <div
+                        class="py-3 grid grid-cols-[minmax(0,1.2fr)_minmax(120px,1fr)_minmax(120px,1fr)] gap-4 text-black/40 dark:text-white/40 font-light uppercase tracking-wider border-b border-black/10 dark:border-white/10"
+                        style="font-size: clamp(10px, 0.85vw, 12px);"
+                      >
+                        <div>功能</div>
+                        <div>窗口内</div>
+                        <div>全局</div>
+                      </div>
+
+                      <div
+                        v-for="row in shortcutRows"
+                        :key="row.actionId"
+                        class="py-[clamp(0.75rem,1.5vh,1.25rem)] border-b border-black/5 dark:border-white/5 last:border-0 grid grid-cols-[minmax(0,1.2fr)_minmax(120px,1fr)_minmax(120px,1fr)] gap-4 items-center"
+                      >
+                        <div
+                          class="font-medium text-black dark:text-white truncate"
+                          style="font-size: clamp(14px, 1.1vw, 17px);"
+                        >
+                          {{ row.label }}
+                        </div>
+                        <button
+                          type="button"
+                          @click="startCapture('local', row.actionId)"
+                          @blur="isCapturing('local', row.actionId) && stopCapture()"
+                          @keydown="handleShortcutCapture('local', row.actionId, $event)"
+                          class="w-full text-left border-b transition-all bg-transparent"
+                          :class="isCapturing('local', row.actionId)
+                            ? 'border-[#EC4141] text-[#EC4141]'
+                            : 'border-black/10 dark:border-white/10 text-black/70 dark:text-white/70 hover:border-[#EC4141]/50'"
+                          style="font-size: clamp(13px, 1vw, 15px); padding: 8px 4px;"
+                        >
+                          {{ isCapturing('local', row.actionId) ? '按下新键…' : (formatShortcutBinding(row.localBinding) || '未设置') }}
+                        </button>
+                        <button
+                          type="button"
+                          @click="startCapture('global', row.actionId)"
+                          @blur="isCapturing('global', row.actionId) && stopCapture()"
+                          @keydown="handleShortcutCapture('global', row.actionId, $event)"
+                          class="w-full text-left border-b transition-all bg-transparent"
+                          :class="isCapturing('global', row.actionId)
+                            ? 'border-[#EC4141] text-[#EC4141]'
+                            : 'border-black/10 dark:border-white/10 text-black/70 dark:text-white/70 hover:border-[#EC4141]/50'"
+                          style="font-size: clamp(13px, 1vw, 15px); padding: 8px 4px;"
+                        >
+                          {{ isCapturing('global', row.actionId) ? '按下新键…' : (formatShortcutBinding(row.globalBinding) || '未设置') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 步骤 4: 账号（搬自 Auth.vue 登录注册 UI）-->
+                  <div v-else-if="step === 'account'" key="account" class="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-[clamp(2rem,5vw,5rem)] items-start">
+                    <header>
+                      <p
+                        class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
+                        style="font-size: clamp(14px, 1.2vw, 18px);"
+                      >
+                        账号
+                      </p>
+                      <h2
+                        class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
+                        style="font-size: clamp(40px, 6vw, 80px);"
+                      >
+                        登录<br />账号
+                      </h2>
+                      <p
+                        class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
+                        style="font-size: clamp(14px, 1.1vw, 17px);"
+                      >
+                        登录账号可将您的歌单、插件实时同步，多设备无缝切换。
+                      </p>
+                    </header>
+
+                    <div class="w-full">
+                      <!-- 顶部标签 -->
+                      <div class="mb-6">
+                        <p
+                          class="text-black/70 dark:text-white/70 font-light tracking-wider mb-3"
+                          style="font-size: clamp(13px, 1.1vw, 16px);"
+                        >
+                          {{ authHeaderLabel }}
+                        </p>
+                        <h3
+                          class="text-black dark:text-white font-black tracking-tight leading-none"
+                          style="font-size: clamp(28px, 3.5vw, 44px);"
+                        >
+                          {{ authTitle }}
+                        </h3>
+                        <p
+                          class="mt-3 text-black/60 dark:text-white/60 font-light max-w-xl"
+                          style="font-size: clamp(13px, 1vw, 15px);"
+                        >
+                          {{ authSubtitle }}
+                        </p>
+                      </div>
+
+                      <!-- 模式切换 -->
+                      <nav class="mb-6">
+                        <div class="flex items-center gap-2 border-b border-black/10 dark:border-white/10">
+                          <button
+                            type="button"
+                            class="relative px-7 py-3 font-medium tracking-wide transition-colors cursor-pointer"
+                            :class="authMode === 'login'
+                              ? 'text-[#EC4141]'
+                              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
+                            style="font-size: clamp(15px, 1.3vw, 18px);"
+                            @click="switchAuthMode('login')"
+                          >
+                            登录
+                            <span
+                              class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out"
+                              :class="authMode === 'login' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+                            ></span>
+                          </button>
+                          <button
+                            type="button"
+                            class="relative px-7 py-3 font-medium tracking-wide transition-colors cursor-pointer"
+                            :class="authMode === 'register'
+                              ? 'text-[#EC4141]'
+                              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'"
+                            style="font-size: clamp(15px, 1.3vw, 18px);"
+                            @click="switchAuthMode('register')"
+                          >
+                            注册
+                            <span
+                              class="absolute left-1/2 -translate-x-1/2 -bottom-px h-1 w-12 bg-[#EC4141] rounded-full origin-center transition-all duration-300 ease-out"
+                              :class="authMode === 'register' ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'"
+                            ></span>
+                          </button>
+                        </div>
+                      </nav>
+
+                      <!-- 表单 -->
+                      <Transition name="auth-mode" mode="out-in">
+                        <form
+                          :key="authMode"
+                          class="grid gap-7 max-w-xl"
+                          @submit.prevent="handleAuthSubmit"
+                        >
+                          <label class="grid gap-3">
+                            <span
+                              class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                              style="font-size: clamp(13px, 1.1vw, 16px);"
+                            >用户名</span>
+                            <input
+                              v-model="authForm.username"
+                              type="text"
+                              placeholder="输入用户名"
+                              autocomplete="username"
+                              required
+                              class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                              style="font-size: clamp(15px, 1.3vw, 18px);"
+                            />
+                          </label>
+
+                          <template v-if="authMode === 'register'">
+                            <label class="grid gap-3">
+                              <span
+                                class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                                style="font-size: clamp(13px, 1.1vw, 16px);"
+                              >邮箱</span>
+                              <input
+                                v-model="authForm.email"
+                                type="email"
+                                placeholder="name@example.com"
+                                autocomplete="email"
+                                required
+                                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                                style="font-size: clamp(15px, 1.3vw, 18px);"
+                              />
+                            </label>
+
+                            <div class="grid grid-cols-[1fr_auto] items-end gap-4">
+                              <label class="grid gap-3">
+                                <span
+                                  class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                                  style="font-size: clamp(13px, 1.1vw, 16px);"
+                                >邮箱验证码</span>
+                                <input
+                                  v-model="authForm.code"
+                                  type="text"
+                                  placeholder="填写验证码"
+                                  autocomplete="one-time-code"
+                                  required
+                                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                                  style="font-size: clamp(15px, 1.3vw, 18px);"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                class="h-[clamp(2.75rem,4vw,3.5rem)] px-6 whitespace-nowrap font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                style="font-size: clamp(14px, 1.1vw, 16px);"
+                                :disabled="codeLoading"
+                                @click="handleSendCode"
+                              >
+                                {{ codeLoading ? '发送中…' : '发送验证码' }}
+                              </button>
+                            </div>
+                          </template>
+
+                          <label class="grid gap-3">
+                            <span
+                              class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                              style="font-size: clamp(13px, 1.1vw, 16px);"
+                            >密码</span>
+                            <input
+                              v-model="authForm.password"
+                              type="password"
+                              placeholder="请输入密码"
+                              :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
+                              required
+                              class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                              style="font-size: clamp(15px, 1.3vw, 18px);"
+                            />
+                          </label>
+
+                          <!-- 消息条 -->
+                          <div
+                            v-if="authMessage"
+                            class="px-4 py-2 rounded-md text-sm font-medium"
+                            :class="authMessageTone === 'error'
+                              ? 'bg-red-50 dark:bg-red-500/10 text-[#EC4141]'
+                              : 'bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400'"
+                            style="font-size: clamp(12px, 1vw, 14px);"
+                          >
+                            {{ authMessage }}
+                          </div>
+
+                          <div class="pt-2 flex items-center gap-5 flex-wrap">
+                            <button
+                              type="submit"
+                              class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                              style="font-size: clamp(14px, 1.1vw, 16px);"
+                              :disabled="authLoading"
+                            >
+                              {{ authLoading ? '提交中…' : authMode === 'login' ? '登录' : '注册' }}
+                            </button>
+                            <button
+                              type="button"
+                              class="text-black/60 dark:text-white/60 hover:text-[#EC4141] font-medium transition cursor-pointer"
+                              style="font-size: clamp(13px, 1vw, 15px);"
+                              @click="switchAuthMode(authMode === 'login' ? 'register' : 'login')"
+                            >
+                              {{ authMode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+                            </button>
+                          </div>
+                        </form>
+                      </Transition>
+                    </div>
+                  </div>
+                </transition>
+              </div>
+            </main>
+
+            <!-- 底部操作栏 -->
+            <footer
+              class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)] border-t border-black/10 dark:border-white/10"
+            >
+              <!-- 左下角：始终是"暂不进行初始化设置" -->
+              <button
+                type="button"
+                class="text-black/70 dark:text-white/70 hover:text-[#EC4141] font-medium tracking-wide transition"
+                style="font-size: clamp(14px, 1.1vw, 17px);"
+                @click="skipRest"
+              >
+                暂不进行初始化设置
+              </button>
+
+              <!-- 右下角：上一步 + 下一步/完成 -->
+              <div class="flex items-center gap-[clamp(1rem,2vw,2rem)]">
+                <button
+                  v-if="step !== 'theme'"
+                  type="button"
+                  class="text-black/70 dark:text-white/70 hover:text-black dark:hover:text-white font-semibold tracking-wide transition px-2 py-1"
+                  style="font-size: clamp(14px, 1.1vw, 17px);"
+                  @click="prevStep"
+                >
+                  上一步
+                </button>
+                <button
+                  v-if="step !== 'account'"
+                  type="button"
+                  class="px-[clamp(1.75rem,2.5vw,2.75rem)] py-[clamp(0.75rem,1.2vh,1rem)] bg-[#EC4141] text-white font-medium tracking-wide hover:bg-red-600 transition"
+                  style="font-size: clamp(14px, 1.1vw, 17px); border-radius: 999px;"
+                  @click="nextStep"
+                >
+                  下一步
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="px-[clamp(2.25rem,3vw,3.25rem)] py-[clamp(0.75rem,1.2vh,1rem)] bg-[#EC4141] text-white font-medium tracking-wide hover:bg-red-600 transition"
+                  style="font-size: clamp(15px, 1.2vw, 18px); border-radius: 999px;"
+                  @click="handleComplete"
+                >
+                  完成
+                </button>
+              </div>
+            </footer>
+
+            <!-- 未登录二次确认对话框 -->
+            <transition name="confirm-fade">
+              <div
+                v-if="showLoginConfirm"
+                class="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                @click.self="cancelSkipLogin"
+              >
+                <div
+                  class="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+                >
+                  <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093M12 17h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3
+                    class="font-bold text-black dark:text-white mb-2"
+                    style="font-size: clamp(17px, 1.4vw, 21px);"
+                  >
+                    您尚未登陆账号，是否继续？
+                  </h3>
+                  <p
+                    class="text-black/50 dark:text-white/50 font-light mb-6"
+                    style="font-size: clamp(12px, 1vw, 14px);"
+                  >
+                    未登录将无法同步您的歌单和插件配置
+                  </p>
+                  <div class="flex gap-3 justify-center">
+                    <button
+                      type="button"
+                      class="px-6 py-2.5 rounded-full border border-black/15 dark:border-white/15 text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5 font-medium tracking-wide transition"
+                      style="font-size: clamp(13px, 1vw, 15px);"
+                      @click="confirmSkipLogin"
+                    >
+                      暂不登录
+                    </button>
+                    <button
+                      type="button"
+                      class="px-7 py-2.5 rounded-full bg-[#EC4141] text-white font-medium tracking-wide hover:bg-red-600 transition shadow-sm"
+                      style="font-size: clamp(13px, 1vw, 15px);"
+                      @click="cancelSkipLogin"
+                    >
+                      登录
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </transition>
+          </div>
+        </transition>
+
+        <!-- "暂不支持自定义"提示弹窗 -->
+        <transition name="confirm-fade">
+          <div
+            v-if="showCustomUnsupported"
+            class="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            @click.self="showCustomUnsupported = false"
+          >
+            <div
+              class="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+            >
+              <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3
+                class="font-bold text-black dark:text-white mb-2"
+                style="font-size: clamp(17px, 1.4vw, 21px);"
+              >
+                暂不支持此选项
+              </h3>
+              <p
+                class="text-black/50 dark:text-white/50 font-light mb-6"
+                style="font-size: clamp(13px, 1vw, 15px);"
+              >
+                请前往 设置 → 外观 自行修改
+              </p>
+              <div class="flex gap-3 justify-center">
+                <button
+                  type="button"
+                  class="px-7 py-2.5 rounded-full bg-[#EC4141] text-white font-medium tracking-wide hover:bg-red-600 transition shadow-sm"
+                  style="font-size: clamp(13px, 1vw, 15px);"
+                  @click="showCustomUnsupported = false"
+                >
+                  知道了
+                </button>
+              </div>
+            </div>
+          </div>
+        </transition>
+      </div>
+    </transition>
+  </Teleport>
+</template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 整体淡入 */
+.onboarding-fade-enter-active,
+.onboarding-fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+.onboarding-fade-enter-from,
+.onboarding-fade-leave-to {
+  opacity: 0;
+}
+
+/* 启动画面淡入淡出 */
+.splash-fade-enter-active,
+.splash-fade-leave-active {
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.splash-fade-enter-from,
+.splash-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.splash-title-enter-active {
+  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.splash-title-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.splash-hint-enter-active {
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.splash-hint-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* 步骤切换 */
+.step-fade-enter-active,
+.step-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.step-fade-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.step-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+/* 步骤内容切换 */
+.step-content-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.step-content-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.step-content-leave-active {
+  transition: opacity 0.2s ease;
+}
+.step-content-leave-to {
+  opacity: 0;
+}
+
+/* 登录/注册表单切换动画 */
+.auth-mode-enter-active,
+.auth-mode-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.auth-mode-enter-from {
+  opacity: 0;
+  transform: translateX(10px);
+}
+.auth-mode-leave-to {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+/* 未登录二次确认对话框 */
+.confirm-fade-enter-active,
+.confirm-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.confirm-fade-enter-from,
+.confirm-fade-leave-to {
+  opacity: 0;
+}
+.confirm-fade-enter-active > div,
+.confirm-fade-leave-active > div {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+.confirm-fade-enter-from > div,
+.confirm-fade-leave-to > div {
+  opacity: 0;
+  transform: scale(0.92);
+}
+</style>

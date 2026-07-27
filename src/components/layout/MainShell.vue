@@ -6,6 +6,7 @@ import { useAppShell } from '../../composables/useAppShell';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
+import { useOnboarding } from '../../composables/useOnboarding';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
@@ -17,6 +18,7 @@ const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToP
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
+const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
 
 const {
   isMiniMode,
@@ -51,8 +53,17 @@ const {
   handleAnnouncementAction,
 } = useAnnouncement();
 
+// --- 首次启动引导 ---
+const { showOnboarding, completeOnboarding } = useOnboarding();
+
+const handleOnboardingComplete = () => {
+  completeOnboarding();
+};
+
 onMounted(() => {
-  checkAnnouncement();
+  if (!showOnboarding.value) {
+    checkAnnouncement();
+  }
 });
 </script>
 
@@ -209,6 +220,13 @@ onMounted(() => {
       :announcement="currentAnnouncement"
       @close="closeAnnouncement"
       @action="handleAnnouncementAction"
+    />
+
+    <OnboardingModal
+      v-if="!isMiniMode"
+      :visible="showOnboarding"
+      @update:visible="showOnboarding = $event"
+      @complete="handleOnboardingComplete(); checkAnnouncement()"
     />
 
     <Toast />
