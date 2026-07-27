@@ -18,6 +18,9 @@ export function useLibraryCollections() {
   const createPlaylist = (name: string, initialSongs: string[] = []) =>
     collectionsStore.createPlaylist(name, initialSongs);
 
+  const renamePlaylist = (id: string, name: string) =>
+    collectionsStore.renamePlaylist(id, name);
+
   const deletePlaylist = (id: string) => {
     const deleted = collectionsStore.deletePlaylist(id);
     const currentRoute = router.currentRoute.value;
@@ -120,6 +123,7 @@ export function useLibraryCollections() {
   return {
     ...collectionsRefs,
     createPlaylist,
+    renamePlaylist,
     deletePlaylist,
     addToPlaylist,
     removeFromPlaylist,

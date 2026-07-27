@@ -2,9 +2,9 @@
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import ModernInputModal from '../common/ModernInputModal.vue';
 import ModernModal from '../common/ModernModal.vue';
 import PlaylistContextMenu from '../overlays/PlaylistContextMenu.vue';
+import PlaylistModal from '../overlays/PlaylistModal.vue';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -35,8 +35,8 @@ const {
   playlists,
   createPlaylist,
   deletePlaylist,
-  viewPlaylist,
   reorderPlaylists,
+  viewPlaylist,
   getSongsFromPlaylist,
 } = useLibraryCollections();
 
@@ -57,7 +57,7 @@ const {
 const { preloadCovers, loadCover } = useCoverCache();
 
 const isPlaylistOpen = ref(true);
-const showCreateModal = ref(false);
+const showPlaylistModal = ref(false);
 
 const handleHoverArtists = () => {
   if (artistList.value.length > 0) {
@@ -130,13 +130,18 @@ const { playlistCoverCacheVersion, getPlaylistCover } = useSidebarPlaylistCovers
 });
 
 const handleCreatePlaylist = () => {
-  showCreateModal.value = true;
+  showPlaylistModal.value = true;
 };
 
 const confirmCreatePlaylist = (name: string) => {
   if (name) {
     createPlaylist(name);
   }
+};
+
+const confirmImportPlaylist = (payload: { pluginId: string; playlistInput: string; rename?: string }) => {
+  // TODO: 接入后端 plugin_import_playlist command
+  console.log('Import playlist:', payload);
 };
 
 const handleOpenAllView = () => {
@@ -239,12 +244,11 @@ const handleOpenAccountView = () => {
       @confirm="confirmDeletePlaylist"
     />
 
-    <ModernInputModal
-      v-model:visible="showCreateModal"
-      title="新建播放列表"
-      placeholder="请输入播放列表名称"
-      confirm-text="创建"
-      @confirm="confirmCreatePlaylist"
+    <PlaylistModal
+      v-model:visible="showPlaylistModal"
+      :playlists="playlists"
+      @create="confirmCreatePlaylist"
+      @import="confirmImportPlaylist"
     />
   </aside>
 </template>
@@ -262,5 +266,15 @@ const handleOpenAccountView = () => {
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.create-menu-enter-active,
+.create-menu-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.create-menu-enter-from,
+.create-menu-leave-to {
+  opacity: 0;
+  transform: translateX(-100%) translateY(-4px);
 }
 </style>
