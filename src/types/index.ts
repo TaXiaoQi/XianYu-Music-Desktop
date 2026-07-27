@@ -27,8 +27,9 @@ export interface SongCore {
   disc_number?: string;
   added_at?: number;
   file_modified_at?: number;
-  source_type?: 'local' | 'remote';
+  source_type?: 'local' | 'remote' | 'plugin';
   remote_source_id?: string;
+  plugin_id?: string;
   cue_source_path?: string;
   cue_start_offset?: number;
   cue_end_offset?: number;
@@ -247,6 +248,7 @@ export interface SidebarSettings {
   showRecent: boolean;
   showFolders: boolean;
   showStatistics: boolean;
+  showPlugins: boolean;
   showAccount: boolean;
 }
 
