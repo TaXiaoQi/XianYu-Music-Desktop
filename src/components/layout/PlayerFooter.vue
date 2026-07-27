@@ -251,18 +251,33 @@ const handleWindowClick = (e: MouseEvent) => {
 };
 
 // --- Idle State for Auto-Hide ---
-const isPinned = ref(localStorage.getItem('footer_pinned') === 'true');
+// 主底栏与播放详情页底栏使用各自独立的 pinned 状态，互不影响
+const isPinnedFooter = ref(localStorage.getItem('footer_pinned') === 'true');
+const isPinnedDetail = ref(localStorage.getItem('footer_pinned_detail') === 'true');
+// 根据当前是否处于播放详情页，选择生效的 pinned 状态
+const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : isPinnedFooter.value);
 const isIdle = ref(false);
 let idleTimer: any = null;
 
 const togglePin = () => {
-  isPinned.value = !isPinned.value;
-  localStorage.setItem('footer_pinned', isPinned.value.toString());
-  if (!isPinned.value) {
-    startIdleTimer();
+  if (showPlayerDetail.value) {
+    isPinnedDetail.value = !isPinnedDetail.value;
+    localStorage.setItem('footer_pinned_detail', isPinnedDetail.value.toString());
+    if (!isPinnedDetail.value) {
+      startIdleTimer();
+    } else {
+      isIdle.value = false;
+      if (idleTimer) clearTimeout(idleTimer);
+    }
   } else {
-    isIdle.value = false;
-    if (idleTimer) clearTimeout(idleTimer);
+    isPinnedFooter.value = !isPinnedFooter.value;
+    localStorage.setItem('footer_pinned', isPinnedFooter.value.toString());
+    if (!isPinnedFooter.value) {
+      startIdleTimer();
+    } else {
+      isIdle.value = false;
+      if (idleTimer) clearTimeout(idleTimer);
+    }
   }
 };
 
