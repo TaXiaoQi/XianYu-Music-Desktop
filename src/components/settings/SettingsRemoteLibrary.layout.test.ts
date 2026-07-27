@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error Vitest runs in Node, but this repo does not ship @types/node.
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./SettingsRemoteLibrary.vue', import.meta.url), 'utf8');

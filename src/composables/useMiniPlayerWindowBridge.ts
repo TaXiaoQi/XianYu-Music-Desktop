@@ -35,7 +35,7 @@ let resolveMiniPlayerReady: (() => void) | null = null;
 let resolveMiniPlayerStateApplied: (() => void) | null = null;
 
 const MINI_PLAYER_PREWARM_DELAY_MS = 3_200;
-let miniPlayerPrewarmTimer: ReturnType<typeof window.setTimeout> | null = null;
+let miniPlayerPrewarmTimer: number | null = null;
 
 function clearMiniPlayerPrewarmTimer() {
   if (miniPlayerPrewarmTimer !== null) {
