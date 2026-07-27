@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -232,9 +232,14 @@ watch([showPlayerDetail, () => currentSong.value?.path ?? ''], async ([visible, 
   }
 }, { immediate: true });
 
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown);
+});
+
 onBeforeUnmount(() => {
   clearTopChromeHideTimer();
   disableCursorAutoHide();
+  window.removeEventListener('keydown', handleKeydown);
 });
 
 const formatFileSize = (size: number | undefined) => {
@@ -268,6 +273,15 @@ const staggerStyle = (phase: number, translateDir: 'Y' | 'X' = 'Y', distance = 2
 
 const handleClose = () => {
   closePlayerDetail();
+};
+
+const handleKeydown = (e: KeyboardEvent) => {
+  if (e.key !== 'Escape') return;
+  if (isFullscreen.value) {
+    void toggleFullscreen();
+    return;
+  }
+  handleClose();
 };
 
 const metaInfo = computed(() => {

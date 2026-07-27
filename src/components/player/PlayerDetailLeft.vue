@@ -169,7 +169,7 @@ const handleCoverClick = (event: MouseEvent) => {
 </script>
 
 <template>
-  <div class="pointer-events-none" @contextmenu="handleContextMenu">
+  <div class="pointer-events-none" @contextmenu.stop="handleContextMenu">
     
     <!-- Album Art -->
     <div
