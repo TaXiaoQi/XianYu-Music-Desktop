@@ -1,10 +1,10 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
-import { getCurrentLyricDisplayLines, semanticLineToLyricLine } from './converters';
+import { getCurrentLyricDisplayLines } from './converters';
 import type {
   CurrentLyricDisplayState,
   DesktopLyricsSettings,
@@ -65,6 +65,7 @@ export const desktopLyricsSettings = createSettingsProxy<DesktopLyricsSettings>(
 );
 
 export async function loadLyrics() {
+  ensureSongPathWatcher();
   const requestId = ++loadRequestId;
   const playbackStore = usePlaybackStore();
   const song = playbackStore.currentSong;
@@ -85,6 +86,28 @@ export async function loadLyrics() {
   parsedLyrics.value = [];
 
   try {
+    // If the song carries pre-fetched lyrics (e.g. from network music API),
+    // parse them directly instead of looking up by file path.
+    if (song.lyrics_raw) {
+      const payload = await invoke<LyricsPayload>('parse_lyrics_text', { text: song.lyrics_raw });
+
+      if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
+
+      rawLyrics.value = song.lyrics_raw;
+      lyricDocument.value = payload?.document ?? null;
+      semanticLyrics.value = payload?.semanticLines ?? [];
+      // [修复]: 不再生成假逐字时间，直接使用后端解析的真实逐字时间
+      // 如果歌词没有逐字时间（普通 LRC），words 为 undefined，整行高亮
+      parsedLyrics.value = (payload?.displayLines ?? []).map((line) => ({
+        ...line,
+        translation: line.translation || '',
+        romaji: line.romaji || '',
+        secondary: line.secondary ? [...line.secondary] : undefined,
+      })) as LyricLine[];
+      lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
+      return;
+    }
+
     const lyricsPath = song.cue_source_path || song.path;
     const payload = await invoke<LyricsPayload>('get_song_lyrics_payload', { path: lyricsPath });
 
@@ -93,71 +116,11 @@ export async function loadLyrics() {
     rawLyrics.value = payload?.rawLyrics || '';
     lyricDocument.value = payload?.document ?? null;
     semanticLyrics.value = payload?.semanticLines ?? [];
-
-    let sourceLines: LyricLine[] = [];
-
-    // 如果是 ttml 格式，直接走前端原生 AMLL 识别路径，绕过不稳定的启发式分类逻辑
-    if (rawLyrics.value.includes('<tt')) {
-      try {
-        const { parseTTML } = await import('@applemusic-like-lyrics/lyric/pkg/amll_lyric.js');
-        const ttmlDoc = parseTTML(rawLyrics.value);
-        if (ttmlDoc && Array.isArray(ttmlDoc.lines) && ttmlDoc.lines.length > 0) {
-          sourceLines = ttmlDoc.lines.map((line: any) => {
-            const words = Array.isArray(line.words) && line.words.length > 0
-              ? line.words.map((w: any) => ({
-                  text: w.word || '',
-                  start: (w.startTime || 0) / 1000,
-                  end: (w.endTime || 0) / 1000,
-                  romaji: w.romanWord || '',
-                }))
-              : undefined;
-
-            const text = words
-              ? words.map((w: any) => w.text).join('')
-              : '';
-
-            const romajiWords = words && words.some((w: any) => w.romaji)
-              ? words.map((w: any) => ({
-                  text: w.romaji,
-                  start: w.start,
-                  end: w.end,
-                }))
-              : undefined;
-
-            return {
-              time: (line.startTime || 0) / 1000,
-              endTime: (line.endTime || 0) / 1000,
-              text: text || line.text || '',
-              translation: line.translatedLyric || '',
-              romaji: line.romanLyric || '',
-              words,
-              romajiWords,
-            } as LyricLine;
-          });
-        }
-      } catch (e) {
-        console.error('Failed to parse ttml natively in frontend:', e);
-      }
-    }
-
-    if (sourceLines.length === 0) {
-      sourceLines = semanticLyrics.value.length > 0
-        ? semanticLyrics.value.map((line) => semanticLineToLyricLine(line))
-        : (payload?.displayLines ?? []);
-    }
-
-    parsedLyrics.value = sourceLines.map((line) => ({
+    // [修复]: 不再生成假逐字时间，直接使用后端解析的真实逐字时间
+    parsedLyrics.value = (payload?.displayLines ?? []).map((line) => ({
       ...line,
       translation: line.translation || '',
       romaji: line.romaji || '',
-      words: line.words?.map((word) => ({
-        ...word,
-        romaji: word.romaji || '',
-      })),
-      romajiWords: line.romajiWords?.map((word) => ({
-        ...word,
-        romaji: word.romaji || '',
-      })),
       secondary: line.secondary ? [...line.secondary] : undefined,
     })) as LyricLine[];
     lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
@@ -171,6 +134,26 @@ export async function loadLyrics() {
     lyricsStatus.value = 'error';
     console.error('Failed to load lyrics:', error);
   }
+}
+
+// [修复防御]: 监听当前歌曲路径变化，自动刷新歌词
+// 解决切歌时 loadLyrics() 未被调用或读取到旧 song 对象导致歌词不更新的问题
+// 延迟注册 watcher，避免模块导入时 Pinia 尚未初始化导致 getActivePinia() 报错
+let lastWatchedSongPath: string | null = null;
+let songPathWatcherInitialized = false;
+
+function ensureSongPathWatcher() {
+  if (songPathWatcherInitialized) return;
+  songPathWatcherInitialized = true;
+  watch(
+    () => usePlaybackStore().currentSong?.path ?? null,
+    (newPath) => {
+      if (newPath !== lastWatchedSongPath) {
+        lastWatchedSongPath = newPath;
+        void loadLyrics();
+      }
+    },
+  );
 }
 
 function findLyricIndexByTime(lines: LyricLine[], targetTime: number): number {
@@ -195,6 +178,8 @@ export const currentLyricIndex = computed(() => {
   if (parsedLyrics.value.length === 0) return -1;
 
   const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay;
+  // [修复防御]: 未开始播放（targetTime < 0）时不匹配任何歌词行
+  if (targetTime < 0) return -1;
   return findLyricIndexByTime(parsedLyrics.value, targetTime);
 });
 
@@ -239,6 +224,13 @@ export const currentLyricLine = computed<CurrentLyricDisplayState>(() => {
       lines: displayLines.map((line) => line.text),
       displayLines,
     };
+  }
+
+  // [修复防御]: index === -1 时区分"未开始播放"和"歌词间隙"
+  const targetTime = usePlaybackStore().currentTime - useSettingsStore().audioDelay;
+  if (targetTime < 0 || parsedLyrics.value.length === 0) {
+    const placeholder = '···';
+    return { text: placeholder, lines: [placeholder], displayLines: [{ kind: 'main', text: placeholder }] };
   }
 
   const first = parsedLyrics.value[0];

@@ -399,6 +399,12 @@ pub async fn get_song_lyrics(path: String, db_state: State<'_, DbState>) -> Resu
     Ok(read_song_lyrics_raw_for_path(&path, &db_state).await)
 }
 
+/// 直接解析歌词文本（用于网络音乐的预获取歌词）
+#[tauri::command]
+pub async fn parse_lyrics_text(text: String) -> Result<StructuredLyricsPayload, String> {
+    Ok(build_structured_lyrics_payload(text))
+}
+
 #[tauri::command]
 pub async fn get_song_lyrics_payload(
     path: String,
