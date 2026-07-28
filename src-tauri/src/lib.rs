@@ -60,9 +60,9 @@ use taskbar::{
     setup_taskbar_window, uninstall_taskbar_zorder_guard,
 };
 use toolbox::{
-    apply_rename, check_update_by_rust, download_update_file, fetch_announcement, file_exists,
-    open_external_program, preview_rename, refresh_folder_songs, run_installer,
-    set_gpu_acceleration,
+    apply_rename, check_update_by_rust, download_online_song, download_update_file,
+    fetch_announcement, file_exists, open_external_program, preview_rename, refresh_folder_songs,
+    run_installer, save_download_bytes, save_download_lyrics, set_gpu_acceleration,
 };
 
 #[cfg(target_os = "windows")]
@@ -221,6 +221,9 @@ read_plugin_file,
             set_gpu_acceleration,
             check_update_by_rust,
             download_update_file,
+            download_online_song,
+            save_download_bytes,
+            save_download_lyrics,
             run_installer,
             fetch_announcement
         ])

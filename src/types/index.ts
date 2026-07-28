@@ -406,6 +406,7 @@ export interface DownloadSettings {
   lyricsFormat: 'lrc' | 'txt';
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
+  rememberDownloadPath: boolean;
 }
 
 export interface SaveArtistAvatarResponse {
