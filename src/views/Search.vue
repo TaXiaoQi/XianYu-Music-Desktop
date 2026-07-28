@@ -193,6 +193,7 @@ import {
   type LxSearchResultItem,
   type LxSourceId,
 } from '../services/lxMusicSdk';
+import { cacheLxSong } from '../services/lxSongCache';
 
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
@@ -418,6 +419,8 @@ watch(selectedLxSource, () => {
 
 // 播放搜索到的歌曲
 const handlePlaySong = (item: LxSearchResultItem) => {
+  // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
+  cacheLxSong(item);
   // 构造 Song 对象，使用 lx:// 协议
   const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
   const song: Song = {
@@ -436,7 +439,13 @@ const handlePlaySong = (item: LxSearchResultItem) => {
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
-  };
+  } as any;
+  // 传递 LX 解析所需的元信息
+  (song as any)._hash = item.hash;
+  (song as any)._types = item._types;
+  (song as any)._copyrightId = item.copyrightId;
+  (song as any)._songmid = item.songmid;
+  (song as any)._source = item.source;
   void playSong(song, { insertAfterCurrent: true });
   uiStore.showPlayerDetail = true;
 };
@@ -461,7 +470,12 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
-  };
+    _hash: item.hash,
+    _types: item._types,
+    _copyrightId: item.copyrightId,
+    _songmid: item.songmid,
+    _source: item.source,
+  } as any;
   contextMenuX.value = e.clientX;
   contextMenuY.value = e.clientY;
   showContextMenu.value = true;

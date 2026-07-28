@@ -799,3 +799,137 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
       return null;
   }
 }
+
+// ==================== Get Music URL ====================
+
+/**
+ * 获取落雪 LX 音源的实际播放 URL
+ * 使用公共 API 代理服务解析音频链接，与 lx-music-desktop 的 api-test.js 一致
+ */
+export async function lxGetMusicUrl(
+  songInfo: LxSearchResultItem,
+  type: string = '320k',
+): Promise<{ type: string; url: string }> {
+  const source = songInfo.source;
+  let id: string;
+
+  // 各音源使用不同的标识符（与 lx-music-desktop api-test.js 一致）
+  switch (source) {
+    case 'kw':
+    case 'tx':
+    case 'wy':
+      id = songInfo.songmid;
+      break;
+    case 'kg':
+      // KG 使用 hash 而非 songmid
+      id = songInfo._types[type]?.hash || songInfo.hash || songInfo.songmid;
+      break;
+    case 'mg':
+      // MG 使用 copyrightId 而非 songmid
+      id = songInfo.copyrightId || songInfo.songmid;
+      break;
+    default:
+      throw new Error(`Unsupported source: ${source}`);
+  }
+
+  const url = `https://lxmusicapi.onrender.com/url/${source}/${id}/${type}`;
+  console.log(`[LxMusicSdk] getMusicUrl: ${url}`);
+
+  try {
+    const resp = await httpFetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': 'lx-music request' },
+    });
+    if (resp.status === 429) throw new Error('请求过于频繁，请稍后再试');
+    const body = JSON.parse(resp.body);
+    if (body.code === 0 && body.data) {
+      return { type, url: body.data };
+    }
+    throw new Error(body.msg || `获取播放链接失败 (code=${body.code})`);
+  } catch (e: any) {
+    // 备用 API
+    console.warn(`[LxMusicSdk] 主API失败，尝试备用: ${e.message}`);
+    const fallbackUrl = `http://ts.tempmusics.tk/url/${source}/${id}/${type}`;
+    try {
+      const resp2 = await httpFetch(fallbackUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': 'lx-music request' },
+      });
+      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试');
+      const body2 = JSON.parse(resp2.body);
+      if (body2.code === 0 && body2.data) {
+        return { type, url: body2.data };
+      }
+      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`);
+    } catch (e2: any) {
+      throw new Error(`获取播放链接失败: ${e2.message}`);
+    }
+  }
+}
+
+// ==================== Get Lyrics ====================
+
+/**
+ * 通过公共 LX API 获取歌词
+ */
+export async function lxGetLyric(songInfo: LxSearchResultItem): Promise<{ lyric: string; tlyric: string | null } | null> {
+  const source = songInfo.source;
+  let id: string;
+
+  switch (source) {
+    case 'kw':
+    case 'tx':
+    case 'wy':
+      id = songInfo.songmid;
+      break;
+    case 'kg':
+      id = songInfo.hash || songInfo.songmid;
+      break;
+    case 'mg':
+      id = songInfo.copyrightId || songInfo.songmid;
+      break;
+    default:
+      return null;
+  }
+
+  const url = `https://lxmusicapi.onrender.com/lrc/${source}/${id}`;
+  console.log(`[LxMusicSdk] getLyric: ${url}`);
+
+  try {
+    const resp = await httpFetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': 'lx-music request' },
+    });
+    if (resp.status === 429) throw new Error('请求过于频繁');
+    const body = JSON.parse(resp.body);
+    if (body.code === 0 && body.data) {
+      const data = body.data;
+      return {
+        lyric: data.lyric || data.lrc || '',
+        tlyric: data.tlyric || data.translate || null,
+      };
+    }
+    return null;
+  } catch (e: any) {
+    console.warn(`[LxMusicSdk] 歌词主API失败，尝试备用: ${e.message}`);
+    const fallbackUrl = `http://ts.tempmusics.tk/lrc/${source}/${id}`;
+    try {
+      const resp2 = await httpFetch(fallbackUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': 'lx-music request' },
+      });
+      if (resp2.status === 429) throw new Error('请求过于频繁');
+      const body2 = JSON.parse(resp2.body);
+      if (body2.code === 0 && body2.data) {
+        const data = body2.data;
+        return {
+          lyric: data.lyric || data.lrc || '',
+          tlyric: data.tlyric || data.translate || null,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+}

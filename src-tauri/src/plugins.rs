@@ -1,5 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 #[derive(Serialize)]
@@ -82,4 +84,29 @@ pub async fn plugin_http_request(
         headers: response_headers,
         body,
     })
+}
+
+/// 读取本地插件 JS 文件内容
+#[tauri::command]
+pub fn read_plugin_file(path: String) -> Result<String, String> {
+    let path_obj = Path::new(&path);
+    if !path_obj.is_file() {
+        return Err("Plugin file does not exist".to_string());
+    }
+
+    let ext = path_obj
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(ext.as_str(), "js" | "json" | "txt") {
+        return Err("Only .js plugin files are supported".to_string());
+    }
+
+    let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
+    if metadata.len() > 5 * 1024 * 1024 {
+        return Err("Plugin file is larger than 5 MB".to_string());
+    }
+
+    fs::read_to_string(path_obj).map_err(|error| error.to_string())
 }

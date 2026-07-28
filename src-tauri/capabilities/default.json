@@ -52,6 +52,7 @@
     "global-shortcut:allow-unregister-all",
     "opener:default",
     "dialog:default",
+    "dialog:allow-confirm",
     "window-state:default",
     "allow-app-commands",
     {

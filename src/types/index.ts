@@ -399,3 +399,42 @@ export interface SaveArtistAvatarResponse {
   taskId?: string;
 }
 
+// ==================== 插件系统类型 ====================
+
+/** 插件格式枚举 */
+export type PluginFormat = 'lx' | 'musicfree' | 'unknown';
+
+/** 插件条目（存储中的完整描述） */
+export interface PluginSource {
+  /** SHA-256 哈希作为插件 ID */
+  id: string;
+  /** 插件显示名称 */
+  name: string;
+  /** 插件格式 */
+  format: PluginFormat;
+  /** 插件版本 */
+  version: string;
+  /** 作者 */
+  author: string;
+  /** 描述 */
+  description: string;
+  /** 文件路径或 URL */
+  filePath: string;
+  /** 导入时间 */
+  importedAt: number;
+  /** 是否启用 */
+  enabled: boolean;
+  /** 支持的音源列表 */
+  sources: string[];
+  /** 是否为内置插件 */
+  isBuiltin?: boolean;
+}
+
+/** 插件 HTTP 响应 */
+export interface PluginHttpResponse {
+  status: number;
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
