@@ -84,7 +84,7 @@ const handleEnterBatchMode = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
         <button @click="emit('batchPlay')" class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 py-1.5 rounded-full text-sm transition flex items-center gap-1 active:scale-95 shadow-sm">

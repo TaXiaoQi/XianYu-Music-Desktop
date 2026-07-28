@@ -314,6 +314,15 @@ const handleToggleCover = () => {
   coverHidden.value = !coverHidden.value;
 };
 
+// 退出详情页时重置纯歌词模式。
+// 详情页封面与底栏封面是同一个元素（靠 isExpanded 切换位置/大小），
+// 若不重置，收起后该元素仍带着 opacity-0，会导致底栏封面也看不见。
+watch(showPlayerDetail, (visible) => {
+  if (!visible) {
+    coverHidden.value = false;
+  }
+});
+
 const handleContextMenu = (e: MouseEvent) => {
   if (!currentSong.value || !showPlayerDetail.value) return;
   e.preventDefault();
@@ -451,19 +460,19 @@ const handleChangeLyrics = async () => {
       </div>
 
       <div
-        class="relative z-[60] h-[clamp(40px,7vh,96px)]"
+        class="relative z-[60] h-16"
         :style="staggerStyle(1, 'Y', -10)"
         @mouseenter="showTopChrome"
         @mousemove="showTopChrome"
         @mouseleave="handleTopChromeLeave"
       >
         <div
-          class="absolute inset-x-0 top-0 h-[clamp(40px,7vh,96px)]"
+          class="absolute inset-x-0 top-0 h-16"
           :class="showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none'"
         ></div>
 
         <div
-          class="relative flex h-[clamp(40px,7vh,56px)] items-center justify-between px-6 transition-all duration-500 ease-out"
+          class="relative flex h-14 items-center justify-between px-6 transition-all duration-500 ease-out"
           :class="[
             isTopChromeVisible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0',
             showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
@@ -539,7 +548,7 @@ const handleChangeLyrics = async () => {
       <!-- 歌名（始终显示，位于顶部工具栏下方） -->
       <div
         v-if="currentSong"
-        class="pointer-events-none relative z-[55] mt-[clamp(-14px,-1.2vh,-2px)] flex min-w-0 items-baseline justify-center gap-[clamp(4px,1vw,12px)] px-6 pb-[clamp(0px,0.8vh,16px)] text-center transition-opacity duration-500"
+        class="pointer-events-none relative z-[55] flex min-w-0 items-baseline justify-center gap-3 px-6 pb-[clamp(2px,1vh,16px)] text-center transition-opacity duration-500"
         :class="showPlayerDetail ? 'opacity-100' : 'opacity-0'"
         :style="staggerStyle(1, 'Y', -6)"
       >
