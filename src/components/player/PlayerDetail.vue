@@ -451,19 +451,19 @@ const handleChangeLyrics = async () => {
       </div>
 
       <div
-        class="relative z-[60] h-24"
+        class="relative z-[60] h-[clamp(40px,7vh,96px)]"
         :style="staggerStyle(1, 'Y', -10)"
         @mouseenter="showTopChrome"
         @mousemove="showTopChrome"
         @mouseleave="handleTopChromeLeave"
       >
         <div
-          class="absolute inset-x-0 top-0 h-24"
+          class="absolute inset-x-0 top-0 h-[clamp(40px,7vh,96px)]"
           :class="showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none'"
         ></div>
 
         <div
-          class="relative flex h-14 items-center justify-between px-6 transition-all duration-500 ease-out"
+          class="relative flex h-[clamp(40px,7vh,56px)] items-center justify-between px-6 transition-all duration-500 ease-out"
           :class="[
             isTopChromeVisible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0',
             showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
@@ -539,14 +539,14 @@ const handleChangeLyrics = async () => {
       <!-- 歌名（始终显示，位于顶部工具栏下方） -->
       <div
         v-if="currentSong"
-        class="pointer-events-none relative z-[55] flex items-baseline justify-center gap-3 px-6 pb-4 text-center transition-opacity duration-500"
+        class="pointer-events-none relative z-[55] mt-[clamp(-14px,-1.2vh,-2px)] flex min-w-0 items-baseline justify-center gap-[clamp(4px,1vw,12px)] px-6 pb-[clamp(0px,0.8vh,16px)] text-center transition-opacity duration-500"
         :class="showPlayerDetail ? 'opacity-100' : 'opacity-0'"
         :style="staggerStyle(1, 'Y', -6)"
       >
-        <span class="truncate text-xl font-semibold tracking-wide text-white drop-shadow-md sm:text-2xl">
+        <span class="truncate text-[clamp(15px,2.2vh,24px)] font-semibold tracking-wide text-white drop-shadow-md">
           {{ currentSong.title || currentSong.name }}
         </span>
-        <span v-if="currentSong.artist" class="truncate text-sm text-white/60 sm:text-base">
+        <span v-if="currentSong.artist" class="truncate text-[clamp(11px,1.5vh,16px)] text-white/60">
           - {{ currentSong.artist }}
         </span>
       </div>
