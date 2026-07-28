@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useAuthStore } from '../../features/auth/store';
+import { useSettingsStore } from '../../features/settings/store';
 import { useToast } from '../../composables/toast';
 import {
   DEFAULT_AUTH_BASE_URL,
@@ -11,6 +12,7 @@ import {
 } from '../../services/auth/authService';
 
 const authStore = useAuthStore();
+const settingsStore = useSettingsStore();
 const { showToast } = useToast();
 const router = useRouter();
 
@@ -43,6 +45,23 @@ function handleOpenAccount() {
 function handleLogout() {
   authStore.reset();
   showToast('已退出登录', 'info');
+}
+
+// 上传选项
+const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [
+  { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
+  { key: 'history', label: '播放历史', desc: '同步播放记录到云端' },
+  { key: 'favorites', label: '收藏', desc: '同步收藏的歌曲' },
+  { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
+];
+
+function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
+  settingsStore.patchSettings({
+    upload: {
+      ...settingsStore.settings.upload,
+      [key]: !settingsStore.settings.upload[key],
+    },
+  });
 }
 </script>
 
@@ -152,5 +171,129 @@ function handleLogout() {
         默认地址：<code class="font-mono">{{ DEFAULT_AUTH_BASE_URL }}</code>
       </p>
     </section>
+
+    <!-- 上传选项 -->
+    <section class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        上传
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
+        选择需要同步到云端的数据类型，关闭后该项数据将仅保留在本地。
+      </p>
+      <div class="grid gap-2">
+        <div
+          v-for="item in uploadItems"
+          :key="item.key"
+          class="upload-item"
+        >
+          <div class="upload-copy">
+            <div class="upload-label">{{ item.label }}</div>
+            <div class="upload-desc">{{ item.desc }}</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="settingsStore.settings.upload[item.key]"
+            class="upload-switch"
+            :class="{ 'is-on': settingsStore.settings.upload[item.key] }"
+            @click="toggleUpload(item.key)"
+          >
+            <span class="upload-switch-thumb"></span>
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
+
+<style scoped>
+.upload-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.upload-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(236, 65, 65, 0.18);
+}
+
+:global(.dark) .upload-item {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .upload-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(236, 65, 65, 0.3);
+}
+
+.upload-copy {
+  min-width: 0;
+}
+
+.upload-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  margin-bottom: 2px;
+}
+
+:global(.dark) .upload-label {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.upload-desc {
+  font-size: 0.72rem;
+  color: var(--text-secondary, #6b7280);
+  line-height: 1.4;
+}
+
+:global(.dark) .upload-desc {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.upload-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.25);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.25s ease;
+}
+
+:global(.dark) .upload-switch {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.upload-switch.is-on {
+  background: #EC4141;
+}
+
+.upload-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.upload-switch.is-on .upload-switch-thumb {
+  transform: translateX(18px);
+}
+</style>
