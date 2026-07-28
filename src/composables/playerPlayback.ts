@@ -584,15 +584,45 @@ export const createPlayerPlayback = ({
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
-      if (isNetworkAudio) {
-        // [落雪] 网络音频走 HTML5 Audio 元素播放（与 YinDongMusic 一致）
-        // 1. 停止后端播放
-        try { await playbackApi.pauseAudio(); } catch {}
-        // 2. 停止上一个网络音频
-        stopNetworkAudio();
+      // [Rust 播放收尾] 本地文件与在线直链走 Rust 成功后共用的收尾逻辑：
+      // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
+      const finishRustPlaybackStart = () => {
+        isSongLoaded.value = true;
+        sessionStartTime = Date.now();
+        loadLyrics();
+        startPlaybackRuntime();
 
+        void currentThumbnailLoad
+          .then(async ([cover, coverPath]) => {
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+              return;
+            }
+
+            const normalizedCover = cover || '';
+            const normalizedCoverPath = coverPath || '';
+            currentCover.value = normalizedCover;
+            if (!currentCoverFull.value) {
+              currentCoverFull.value = normalizedCover;
+            }
+
+            await playbackApi.updatePlaybackMetadata({
+              title: getSmtcTitle(song),
+              artist: song.artist || 'Unknown Artist',
+              album: song.album || 'Unknown Album',
+              cover: normalizedCoverPath,
+              duration: Math.floor(song.duration),
+              isPlaying: isPlaying.value,
+            }).catch(() => {});
+          })
+          .catch(() => {});
+      };
+
+      // [在线 H5 回退] 原 HTML5 Audio 播放逻辑，作为在线走 Rust 失败时的兜底。
+      // 返回是否成功起播（被切歌作废时返回 true 表示无需继续）。
+      const playOnlineViaHtml5 = async (): Promise<void> => {
         // [IDM 兼容模式] 开启后先在 Worker 线程把整首音频拉成本地 blob 再播放，
         // 这样主线程不会直接请求音频直链，可避免被 IDM 等下载器劫持导致播放异常。
+        // 注意：走 Rust 主路径时不需要它；此处仅在 Rust 回退到 H5 时生效。
         let playbackSource = audioFilePath;
         if (settingsStore.settings.audio.idmCompatMode) {
           try {
@@ -715,6 +745,91 @@ export const createPlayerPlayback = ({
             }).catch(() => {});
           })
           .catch(() => {});
+      };
+
+      // [在线走 Rust] 用后端 rodio + HTTP Range 流播放在线直链。
+      // 成功返回 true；抛错（403 防盗链 / 不支持 Range / 解码失败）返回 false 由调用方回退 H5。
+      const tryPlayOnlineViaRust = async (): Promise<boolean> => {
+        try {
+          await playbackApi.playAudio({
+            path: audioFilePath,
+            title: getSmtcTitle(song),
+            artist: song.artist || 'Unknown Artist',
+            album: song.album || 'Unknown Album',
+            cover: cachedCoverPath,
+            duration: Math.floor(song.duration),
+            outputMode: settingsStore.settings.audio.outputMode,
+            startOffsetMs: startOffsetMs || undefined,
+            songId: song.id ?? undefined,
+            volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
+            gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
+            preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
+          });
+        } catch (e: any) {
+          console.warn('[Audio] 在线直链 playAudio 调用失败，回退 HTML5:', e?.message || e);
+          return false;
+        }
+
+        // [起播探测] play_audio 是异步投递命令：调用立即返回，真正的取流/解码/播放在后台线程进行。
+        // 若远程取流失败（防盗链 403 / 不支持 Range / 解码失败），后端不会抛错，需前端探测。
+        //
+        // 判定就绪的主信号：getPlaybackReady()（sample_rate>0，即 Decoder::new 成功）。
+        // - 对支持 Range 的流：解码器读到文件头即就绪，通常很快。
+        // - 对不支持 Range 的直链：后端会整曲下载到内存后才解码，可能耗时数秒到十几秒，
+        //   因此给较长超时；只要期间 ready 变 true 就算成功，不误判为失败。
+        // 就绪后再要求进度真实推进一点，排除"就绪但立刻卡死"的极端情况。
+        const READY_TIMEOUT_MS = 20000;
+        const PROBE_INTERVAL_MS = 200;
+        const ADVANCE_THRESHOLD = 0.3;
+        const probeStart = Date.now();
+        let ready = false;
+        let firstProgress: number | null = null;
+        while (Date.now() - probeStart < READY_TIMEOUT_MS) {
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+            return true; // 已被新切歌请求接管，无需回退
+          }
+          try {
+            // 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时
+            if (await playbackApi.getPlaybackStartFailed()) {
+              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错），立即回退 HTML5');
+              return false;
+            }
+            if (!ready) {
+              ready = await playbackApi.getPlaybackReady();
+            }
+            if (ready) {
+              const progress = await playbackApi.getPlaybackProgress();
+              if (progress > 0) {
+                if (firstProgress === null) firstProgress = progress;
+                if (progress - firstProgress >= ADVANCE_THRESHOLD) return true;
+              }
+            }
+          } catch { /* ignore, keep probing */ }
+          await new Promise(resolve => setTimeout(resolve, PROBE_INTERVAL_MS));
+        }
+
+        console.warn('[Audio] 在线直链走 Rust 起播探测失败（未就绪或进度未推进），回退 HTML5');
+        return false;
+      };
+
+      if (isNetworkAudio) {
+        // [在线播放] 先停掉可能残留的网络音频，再优先走 Rust 后端播放（可视化/均衡器/响度均衡生效，
+        // 且请求由 Rust 进程发起，规避 IDM 劫持）；Rust 失败时回退到 HTML5 播放。
+        stopNetworkAudio();
+
+        const rustOk = await tryPlayOnlineViaRust();
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+        if (rustOk) {
+          // 确保后端已接管，音量同步到后端（H5 分支靠 audio.volume，Rust 分支靠 setVolume）
+          try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
+          finishRustPlaybackStart();
+        } else {
+          // 回退：彻底停掉后端半启动的播放（stop 会 sink.stop + 清空 sink + 重置进度，
+          // 而 pause 只暂停不清理，可能与随后的 H5 播放抢占音频设备或双重出声），再走 HTML5
+          try { await playbackApi.stopAudio(); } catch {}
+          await playOnlineViaHtml5();
+        }
       } else {
         // 本地音频走 Rust 后端播放
         // [修复] 先彻底停掉可能残留的网络音频，否则从在线歌切到本地歌时，
