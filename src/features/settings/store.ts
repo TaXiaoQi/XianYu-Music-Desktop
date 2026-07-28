@@ -128,6 +128,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   lyricsFormat: 'lrc',
   overwriteExisting: false,
   keepSourceFilename: false,
+  rememberDownloadPath: false,
 };
 
 export const defaultAppSettings: AppSettings = {
@@ -209,6 +210,7 @@ export const mergeDownloadSettings = (
     lyricsFormat,
     overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
+    rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
   };
 };
 

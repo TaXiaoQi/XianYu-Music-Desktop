@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { AudioLines, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
+import DownloadDialog from '../player/DownloadDialog.vue';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
+import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { useSettings } from '../../features/settings/useSettings';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import type { RemoteDownloadProgress } from '../../types';
@@ -29,6 +31,14 @@ const handleOpenDetail = () => {
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
+
+// --- 下载功能 ---
+const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
+const showDownloadDialog = ref(false);
+const handleDownloadClick = () => {
+  if (!isOnlineSong.value) return;
+  showDownloadDialog.value = true;
+};
 
 // --- Context Menu State ---
 const showContextMenu = ref(false);
@@ -453,6 +463,19 @@ onUnmounted(() => {
       <button
         v-if="showPlayerDetail"
         @mousedown.stop
+        @click.stop="handleDownloadClick"
+        class="flex items-center justify-center transition-colors"
+        :class="isOnlineSong
+          ? 'text-white/60 hover:text-white cursor-pointer'
+          : 'text-white/30 cursor-not-allowed'"
+        :title="isOnlineSong ? '下载歌曲' : '本地歌曲无法下载'"
+      >
+        <Download class="h-5 w-5" />
+      </button>
+
+      <button
+        v-if="showPlayerDetail"
+        @mousedown.stop
         @click.stop="toggleLyricsPlayerSettings"
         class="flex items-center justify-center text-base font-semibold tracking-[0.02em] transition-colors"
         :class="showLyricsPlayerSettingsPanel
@@ -673,6 +696,8 @@ onUnmounted(() => {
           @close="showContextMenu = false"
 
         />
+
+        <DownloadDialog v-model:visible="showDownloadDialog" :song="currentSong" />
 
       </footer>
 
