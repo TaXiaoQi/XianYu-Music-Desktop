@@ -580,6 +580,12 @@ export const createPlayerLifecycle = ({
       await restoreRecentHistory();
       refreshStateSongReferences();
 
+      // 恢复记忆播放的歌曲后，主动加载其歌词。否则重启后直接进入详情页会显示“无歌词”，
+      // 因为恢复流程只还原了 currentSong/封面，没有像正常播放那样触发 loadLyrics。
+      if (currentSong.value) {
+        void loadLyrics();
+      }
+
       const storedLastTime = playerStorage.readNumber(playerStorageKeys.lastTime);
       if (storedLastTime !== null) {
         currentTime.value = storedLastTime;

@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import SettingsAbout from "../components/settings/SettingsAbout.vue";
 import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
+import SettingsDownload from "../components/settings/SettingsDownload.vue";
 import SettingsGeneral from "../components/settings/SettingsGeneral.vue";
 import SettingsLibrary from "../components/settings/SettingsLibrary.vue";
 import SettingsRemoteLibrary from "../components/settings/SettingsRemoteLibrary.vue";
@@ -12,7 +13,7 @@ import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'shortcuts' | 'account' | 'about'>('general');
+const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'download' | 'shortcuts' | 'account' | 'about'>('general');
 
 const tabs = [
   { id: 'general', name: '常规' },
@@ -23,6 +24,7 @@ const tabs = [
   { id: 'toolbox', name: '工具箱' },
   { id: 'library', name: '本地音乐库' },
   { id: 'remoteLibrary', name: '远程音乐库' },
+  { id: 'download', name: '下载' },
   { id: 'shortcuts', name: '快捷键' },
   { id: 'account', name: '账号' },
   { id: 'about', name: '关于' },
@@ -59,6 +61,7 @@ const tabs = [
         <SettingsToolbox v-else-if="activeTab === 'toolbox'" />
         <SettingsLibrary v-else-if="activeTab === 'library'" />
         <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" />
+        <SettingsDownload v-else-if="activeTab === 'download'" />
         <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
         <SettingsAccount v-else-if="activeTab === 'account'" />
         <SettingsAbout v-else-if="activeTab === 'about'" />

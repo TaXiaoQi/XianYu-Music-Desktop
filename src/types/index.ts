@@ -391,6 +391,20 @@ export interface AppSettings {
   taskbarPlayerCanDrag: boolean;
   gpuAcceleration: boolean;
   writeArtistAvatarToTags: boolean;
+  download: DownloadSettings;
+}
+
+export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
+export type DownloadQuality = 'lossless' | 'high' | 'standard';
+
+export interface DownloadSettings {
+  downloadPath: string;
+  format: DownloadFormat;
+  quality: DownloadQuality;
+  downloadLyrics: boolean;
+  lyricsFormat: 'lrc' | 'txt';
+  overwriteExisting: boolean;
+  keepSourceFilename: boolean;
 }
 
 export interface SaveArtistAvatarResponse {
