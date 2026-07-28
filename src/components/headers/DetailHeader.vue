@@ -119,7 +119,7 @@ const handlePlayAll = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-4 h-auto justify-start">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
     
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">

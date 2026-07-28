@@ -13,6 +13,12 @@ const formatPlaylistDate = () => {
 export const useCollectionsStore = defineStore('collections', () => {
   const RECENT_SONG_LIMIT = 200;
   const favoritePaths = ref<string[]>([]);
+  /**
+   * 在线收藏歌曲的完整元信息（path → Song）。
+   * 在线歌曲不在本地音乐库/数据库中，仅存 path 无法还原歌曲信息，
+   * 因此收藏时额外保存一份元信息用于列表展示与播放。
+   */
+  const favoriteSongMeta = ref<Record<string, Song>>({});
   const playlists = ref<Playlist[]>([]);
   const recentSongs = ref<HistoryItem[]>([]);
   const playlistSortMode = ref<PlaylistSortMode>('custom');
@@ -147,6 +153,31 @@ export const useCollectionsStore = defineStore('collections', () => {
     return true;
   };
 
+  /** 保存在线收藏歌曲的完整元信息 */
+  const setFavoriteSongMeta = (path: string, song: Song) => {
+    if (!path || !song) {
+      return;
+    }
+
+    favoriteSongMeta.value = { ...favoriteSongMeta.value, [path]: song };
+  };
+
+  /** 移除某首在线收藏歌曲的元信息 */
+  const removeFavoriteSongMeta = (path: string) => {
+    if (!path || !(path in favoriteSongMeta.value)) {
+      return;
+    }
+
+    const next = { ...favoriteSongMeta.value };
+    delete next[path];
+    favoriteSongMeta.value = next;
+  };
+
+  /** 整体替换在线收藏元信息（启动恢复时用） */
+  const setFavoriteSongMetaMap = (map: Record<string, Song>) => {
+    favoriteSongMeta.value = map ?? {};
+  };
+
   const removeFavoritePaths = (paths: string[]) => {
     if (paths.length === 0) {
       return;
@@ -154,10 +185,23 @@ export const useCollectionsStore = defineStore('collections', () => {
 
     const blocked = new Set(paths);
     favoritePaths.value = favoritePaths.value.filter(path => !blocked.has(path));
+
+    const nextMeta = { ...favoriteSongMeta.value };
+    let metaChanged = false;
+    paths.forEach((path) => {
+      if (path in nextMeta) {
+        delete nextMeta[path];
+        metaChanged = true;
+      }
+    });
+    if (metaChanged) {
+      favoriteSongMeta.value = nextMeta;
+    }
   };
 
   const clearFavorites = () => {
     favoritePaths.value = [];
+    favoriteSongMeta.value = {};
   };
 
   const addRecentSong = (song: Song) => {
@@ -184,6 +228,7 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   return {
     favoritePaths,
+    favoriteSongMeta,
     playlists,
     recentSongs,
     playlistSortMode,
@@ -201,6 +246,9 @@ export const useCollectionsStore = defineStore('collections', () => {
     getSongsFromPlaylist,
     isFavoritePath,
     toggleFavoritePath,
+    setFavoriteSongMeta,
+    removeFavoriteSongMeta,
+    setFavoriteSongMetaMap,
     removeFavoritePaths,
     clearFavorites,
     addRecentSong,

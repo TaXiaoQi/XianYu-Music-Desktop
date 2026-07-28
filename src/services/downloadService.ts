@@ -17,7 +17,7 @@ export type LxQuality = '128k' | '320k' | 'flac' | 'flac24bit';
  * IDM 等下载器对 WebView2 的拦截主要作用于主线程，Worker 线程的请求通常能逃过。
  * 返回音频字节；失败（含被拦截、CORS、网络异常）时抛错，由调用方回退到 Rust 下载。
  */
-function fetchViaWorker(
+export function fetchViaWorker(
   url: string,
   onProgress?: (percent: number) => void,
 ): Promise<Uint8Array> {

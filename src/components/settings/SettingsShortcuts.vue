@@ -128,19 +128,19 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
           </div>
         </div>
 
-        <div class="px-4 py-3 grid grid-cols-[minmax(0,1.1fr)_minmax(180px,1fr)_minmax(180px,1fr)] gap-4 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45 border-b border-white/30 dark:border-white/5">
-          <div>功能说明</div>
-          <div>快捷键</div>
-          <div>全局快捷键</div>
+        <div class="px-4 py-3 grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45 border-b border-white/30 dark:border-white/5">
+          <div class="truncate">功能说明</div>
+          <div class="truncate">快捷键</div>
+          <div class="truncate">全局快捷键</div>
         </div>
 
         <div
           v-for="row in shortcutRows"
           :key="row.actionId"
-          class="px-4 py-3 border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors grid grid-cols-[minmax(0,1.1fr)_minmax(180px,1fr)_minmax(180px,1fr)] gap-4 items-center"
+          class="px-4 py-3 border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center"
         >
           <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
+            <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200" :title="row.label">
               {{ row.label }}
             </div>
           </div>
@@ -151,7 +151,8 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
             @click="startCapture('local', row.actionId)"
             @blur="isCapturing('local', row.actionId) && stopCapture()"
             @keydown="handleShortcutCapture('local', row.actionId, $event)"
-            class="w-full rounded-full border px-4 py-3 text-left text-sm transition-all backdrop-blur-md"
+            :title="formatShortcutBinding(row.localBinding)"
+            class="w-full min-w-0 truncate whitespace-nowrap rounded-full border px-4 py-3 text-left text-sm transition-all backdrop-blur-md"
             :class="isCapturing('local', row.actionId)
               ? 'border-[#EC4141] bg-red-500/10 text-[#EC4141] dark:bg-red-500/20 shadow-[0_0_12px_rgba(236,65,65,0.2)]'
               : 'border-white/30 bg-white/40 text-gray-800 shadow-sm hover:border-[#EC4141] hover:text-[#EC4141] hover:bg-white/50 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20 dark:hover:border-[#EC4141]'"
@@ -165,7 +166,8 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
             @click="startCapture('global', row.actionId)"
             @blur="isCapturing('global', row.actionId) && stopCapture()"
             @keydown="handleShortcutCapture('global', row.actionId, $event)"
-            class="w-full rounded-full border px-4 py-3 text-left text-sm transition-all backdrop-blur-md"
+            :title="formatShortcutBinding(row.globalBinding)"
+            class="w-full min-w-0 truncate whitespace-nowrap rounded-full border px-4 py-3 text-left text-sm transition-all backdrop-blur-md"
             :class="isCapturing('global', row.actionId)
               ? 'border-[#EC4141] bg-red-500/10 text-[#EC4141] dark:bg-red-500/20 shadow-[0_0_12px_rgba(236,65,65,0.2)]'
               : occupiedActionIdSet.has(row.actionId)
@@ -193,13 +195,13 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
 
       <div class="flex flex-col rounded-xl overflow-hidden">
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div>
+          <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用窗口内快捷键</div>
             <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">关闭后将不再响应当前窗口内的所有快捷键</div>
           </div>
           <button
             @click="settings.shortcuts.enabled = !settings.shortcuts.enabled"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.shortcuts.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
           >
             <span
@@ -210,13 +212,13 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         </div>
 
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div>
+          <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用全局快捷键</div>
             <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">开启后在后台也可响应上方设置的全局快捷键，默认关闭</div>
           </div>
           <button
             @click="settings.shortcuts.globalEnabled = !settings.shortcuts.globalEnabled"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.shortcuts.globalEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
           >
             <span
@@ -227,11 +229,11 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors opacity-70 cursor-not-allowed">
-          <div>
+          <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">使用系统媒体快捷键</div>
             <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">播放/暂停、上一首、下一首等系统级媒体键入口已预留</div>
           </div>
-          <div class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 dark:bg-gray-700">
+          <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-gray-300 dark:bg-gray-700">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1 shadow-sm" />
           </div>
         </div>

@@ -240,6 +240,17 @@ export interface ThemeSettings {
   }
 }
 
+/** 可排序的侧边栏项标识（"首页"固定置顶，不参与排序） */
+export type SidebarItemKey =
+  | 'localMusic'
+  | 'artists'
+  | 'albums'
+  | 'favorites'
+  | 'recent'
+  | 'folders'
+  | 'plugins'
+  | 'account';
+
 export interface SidebarSettings {
   showLocalMusic: boolean;
   showArtists: boolean;
@@ -250,6 +261,8 @@ export interface SidebarSettings {
   showStatistics: boolean;
   showPlugins: boolean;
   showAccount: boolean;
+  /** 侧边栏项目的排列顺序 */
+  order: SidebarItemKey[];
 }
 
 export type LyricsPlayerAlignment = 'left' | 'center' | 'right';
@@ -337,6 +350,11 @@ export interface AudioSettings {
   };
   equalizer: EqualizerSettings;
   showEqualizerInFooter: boolean; // 运行态必选属性
+  /**
+   * IDM 兼容模式：在线歌曲改为在 Worker 线程拉取完整音频后用本地 blob 播放，
+   * 避免音频直链出现在主线程请求中被 IDM 等下载器劫持。
+   */
+  idmCompatMode: boolean;
 }
 
 export type ShortcutActionId =
@@ -444,6 +462,8 @@ export interface PluginSource {
   sources: string[];
   /** 是否为内置插件 */
   isBuiltin?: boolean;
+  /** 是否有可用更新（用于在插件列表显示“可更新”标记） */
+  updateAvailable?: boolean;
 }
 
 /** 插件 HTTP 响应 */

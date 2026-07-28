@@ -343,22 +343,22 @@ onMounted(async () => {
 
 <template>
   <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
-    <div class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
+    <div class="px-[clamp(1rem,2.2vw,2.5rem)] pt-[clamp(0.25rem,0.6vw,0.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
 
       <!-- 未登录：登录/注册 -->
       <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
         <!-- 顶部标题区 -->
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2.5vw,3rem)]">
-          <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-3">{{ headerLabel }}</p>
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.25rem,0.5vw,0.5rem)]">
+          <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ headerLabel }}</p>
           <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2>
-          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-4 max-w-xl">{{ subtitle }}</p>
+          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-2 max-w-xl">{{ subtitle }}</p>
         </header>
 
         <!-- 模式切换 -->
         <nav class="px-[clamp(1.5rem,2.8vw,3.5rem)]">
           <div
             v-if="mode !== 'forgot'"
-            class="flex items-center gap-2 mb-4 border-b border-black/10 dark:border-white/10"
+            class="flex items-center gap-2 border-b border-black/10 dark:border-white/10"
           >
             <button
               type="button"
@@ -407,7 +407,7 @@ onMounted(async () => {
           <form
             v-if="mode === 'forgot'"
             key="forgot"
-            class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-8 grid gap-7 max-w-2xl"
+            class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
@@ -490,7 +490,7 @@ onMounted(async () => {
           <form
             v-else
             :key="mode"
-            class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-8 grid gap-7 max-w-2xl"
+            class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
@@ -599,7 +599,7 @@ onMounted(async () => {
       <!-- 已登录：个人中心 -->
       <div v-else class="space-y-[clamp(1.5rem,3vw,3rem)]">
         <!-- 顶部标题区 -->
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1rem,1.6vw,2rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
           <div>
             <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-3">个人中心</p>
             <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">
