@@ -187,10 +187,19 @@ export async function pluginHttpRequest(
   return invoke('plugin_http_request', { method, url, headers: headers ?? null, body: body ?? null, timeout: timeout ?? null, follow: follow ?? null });
 }
 
+/**
+ * 读取本地插件 JS 文件内容
+ * 后端 command: read_plugin_file
+ */
+export async function readPluginFile(path: string): Promise<string> {
+  return invoke<string>('read_plugin_file', { path });
+}
+
 export const pluginApi = {
   getInstalledPlugins,
   pluginSearch,
   setPluginEnabled,
   getPluginTrackUrl,
   pluginHttpRequest,
+  readPluginFile,
 };

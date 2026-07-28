@@ -43,6 +43,11 @@ let isSeeking = false;
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
 
+// [落雪] HTML5 Audio 网络音频播放（与 YinDongMusic 一致）
+let networkAudio: HTMLAudioElement | null = null;
+let networkAudioTimeUpdateHandler: (() => void) | null = null;
+let networkAudioEndedHandler: (() => void) | null = null;
+
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
 
@@ -315,9 +320,13 @@ export const createPlayerPlayback = ({
     isPlaying.value = true;
     isSongLoaded.value = false;
     const coverLookupPath = song.cue_source_path || song.path;
+    // [落雪] lx:// 协议歌曲的 cover_thumb_path 是远程 URL，直接使用不走 convertFileSrc
+    const isLxSong = coverLookupPath.startsWith('lx://');
     const cachedCover = peekCoverUrl(coverLookupPath);
     const cachedCoverPath = peekCoverPath(coverLookupPath) || song.cover_thumb_path || '';
-    const persistedCover = primeCoverPath(coverLookupPath, song.cover_thumb_path);
+    const persistedCover = isLxSong
+      ? (song.cover_thumb_path || '')
+      : primeCoverPath(coverLookupPath, song.cover_thumb_path);
     const cachedFullCover = getFullCoverUrl(coverLookupPath);
     const immediateCover = cachedCover || persistedCover;
     if (immediateCover) {
@@ -326,7 +335,10 @@ export const createPlayerPlayback = ({
     }
     currentCoverFull.value = cachedFullCover || immediateCover || '';
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
-    const currentThumbnailLoad = Promise.all([loadCover(coverLookupPath), loadCoverPath(coverLookupPath)]);
+    // [落雪] lx:// 歌曲跳过本地封面加载（loadCover 会调用后端读取本地文件）
+    const currentThumbnailLoad = isLxSong
+      ? Promise.resolve([immediateCover || '', cachedCoverPath] as [string, string])
+      : Promise.all([loadCover(coverLookupPath), loadCoverPath(coverLookupPath)]);
     void currentThumbnailLoad
       .then(([cover]) => {
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
@@ -372,54 +384,209 @@ export const createPlayerPlayback = ({
 
     addToHistory(song);
 
-    const audioFilePath = song.cue_source_path || song.path;
+    let audioFilePath = song.cue_source_path || song.path;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
+    // [落雪] lx:// 协议需要通过落雪插件引擎解析真实播放 URL
+    // 完全对齐 YinDongMusic 的实现：getStoredPlugins → ensureLxPluginInstance → lxPluginGetMusicUrl
+    if (audioFilePath.startsWith('lx://')) {
+      const parts = audioFilePath.replace('lx://', '').split('/');
+      const lxSource = parts[0];
+      const songmid = parts.slice(1).join('/');
+      if (lxSource && songmid) {
+        try {
+          const { getStoredPlugins } = await import('../services/pluginEngine');
+          const { lxPluginGetMusicUrl, ensureLxPluginInstance } = await import('../services/lxPluginEngine');
+          const { getCachedLxSong } = await import('../services/lxSongCache');
+          // 从 localStorage 获取已启用的 LX 插件
+          const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
+          // 优先找到支持该音源的插件，否则用第一个
+          let matchedPlugin = lxPlugins.find(p => p.sources.includes(lxSource));
+          if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+          if (matchedPlugin) {
+            await ensureLxPluginInstance(matchedPlugin);
+            // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
+            const cachedInfo = getCachedLxSong(lxSource, songmid);
+            const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
+              songId: songmid,
+              name: song.name,
+              singer: song.artist,
+              albumName: song.album,
+              source: lxSource,
+              songmid,
+              // 传入缓存的完整元信息，某些 LX 插件需要这些字段才能正确解析 URL
+              hash: cachedInfo?.hash,
+              copyrightId: cachedInfo?.copyrightId,
+              strMediaMid: cachedInfo?.strMediaMid,
+              albumId: cachedInfo?.albumId,
+              albumMid: cachedInfo?.albumMid,
+              interval: cachedInfo?.interval,
+              _types: cachedInfo?._types,
+              types: cachedInfo?.types,
+            } as any, '320k');
+            const musicUrl = urlResult?.url;
+            if (musicUrl && /^https?:/.test(musicUrl)) {
+              audioFilePath = musicUrl;
+            } else {
+              console.warn(`[Audio] lxPluginGetMusicUrl returned empty/invalid URL for lx://${lxSource}/${songmid}`);
+            }
+          } else {
+            console.warn(`[Audio] No LX plugin available for lx://${lxSource}/${songmid}`);
+          }
+        } catch (e: any) {
+          console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${e?.message}`);
+        }
+      }
+    }
+
     try {
-      await playbackApi.playAudio({
-        path: audioFilePath,
-        title: getSmtcTitle(song),
-        artist: song.artist || 'Unknown Artist',
-        album: song.album || 'Unknown Album',
-        cover: cachedCoverPath,
-        duration: Math.floor(song.duration),
-        outputMode: settingsStore.settings.audio.outputMode,
-        startOffsetMs: startOffsetMs || undefined,
-        songId: song.id,
-        volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
-        gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
-        preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
-      });
-      if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+      const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
-      isSongLoaded.value = true;
-      sessionStartTime = Date.now();
-      loadLyrics();
-      startPlaybackRuntime();
+      if (isNetworkAudio) {
+        // [落雪] 网络音频走 HTML5 Audio 元素播放（与 YinDongMusic 一致）
+        // 1. 停止后端播放
+        try { await playbackApi.pauseAudio(); } catch {}
+        // 2. 停止上一个网络音频
+        if (networkAudio) {
+          networkAudio.pause();
+          if (networkAudioTimeUpdateHandler) networkAudio.removeEventListener('timeupdate', networkAudioTimeUpdateHandler);
+          if (networkAudioEndedHandler) networkAudio.removeEventListener('ended', networkAudioEndedHandler);
+          networkAudio.src = '';
+          networkAudio = null;
+        }
 
-      void currentThumbnailLoad
-        .then(async ([cover, coverPath]) => {
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            return;
+        const audio = new Audio();
+        audio.preload = 'auto';
+        // [修复 CORS] 不设置 crossOrigin，允许跨域音频播放
+        audio.volume = playbackStore.volume / 100;
+        audio.src = audioFilePath;
+        networkAudio = audio;
+
+        // 等待 canplay
+        await new Promise<void>((resolve, reject) => {
+          const onCanPlay = () => {
+            audio.removeEventListener('canplay', onCanPlay);
+            audio.removeEventListener('error', onError);
+            resolve();
+          };
+          const onError = () => {
+            audio.removeEventListener('canplay', onCanPlay);
+            audio.removeEventListener('error', onError);
+            reject(new Error(`Audio failed to load: ${audio.error?.code ?? 'unknown'}`));
+          };
+          audio.addEventListener('canplay', onCanPlay);
+          audio.addEventListener('error', onError);
+          audio.load();
+        });
+
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+          audio.pause();
+          return;
+        }
+
+        // 设置进度同步和播放结束处理器
+        networkAudioTimeUpdateHandler = () => {
+          if (!networkAudio || !isPlaying.value) return;
+          const newTime = networkAudio.currentTime;
+          if (Math.abs(newTime - currentTime.value) > 0.05) {
+            reanchorPlaybackClock(newTime);
           }
+        };
+        networkAudioEndedHandler = () => {
+          handleAutoNext();
+        };
+        audio.addEventListener('timeupdate', networkAudioTimeUpdateHandler);
+        audio.addEventListener('ended', networkAudioEndedHandler);
 
-          const normalizedCover = cover || '';
-          const normalizedCoverPath = coverPath || '';
-          currentCover.value = normalizedCover;
-          if (!currentCoverFull.value) {
-            currentCoverFull.value = normalizedCover;
+        audio.play().catch(() => {});
+        isSongLoaded.value = true;
+        sessionStartTime = Date.now();
+        loadLyrics();
+        startPlaybackRuntime();
+
+        // [修复] duration 未知时从 Audio 元素回退填充
+        if (currentSong.value && (!currentSong.value.duration || currentSong.value.duration <= 0)) {
+          const audioDuration = audio.duration;
+          if (audioDuration && audioDuration > 0 && isFinite(audioDuration)) {
+            currentSong.value = { ...currentSong.value, duration: Math.floor(audioDuration) };
           }
+        }
 
-          await playbackApi.updatePlaybackMetadata({
-            title: getSmtcTitle(song),
-            artist: song.artist || 'Unknown Artist',
-            album: song.album || 'Unknown Album',
-            cover: normalizedCoverPath,
-            duration: Math.floor(song.duration),
-            isPlaying: isPlaying.value,
-          }).catch(() => {});
-        })
-        .catch(() => {});
+        // 更新 SMTC 元数据
+        void playbackApi.updatePlaybackMetadata({
+          title: getSmtcTitle(song),
+          artist: song.artist || 'Unknown Artist',
+          album: song.album || 'Unknown Album',
+          cover: cachedCoverPath,
+          duration: Math.floor(song.duration),
+          isPlaying: true,
+        }).catch(() => {});
+
+        // 封面加载回调
+        void currentThumbnailLoad
+          .then(async ([cover, coverPath]) => {
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+            const normalizedCover = cover || '';
+            const normalizedCoverPath = coverPath || '';
+            currentCover.value = normalizedCover;
+            if (!currentCoverFull.value) currentCoverFull.value = normalizedCover;
+            await playbackApi.updatePlaybackMetadata({
+              title: getSmtcTitle(song),
+              artist: song.artist || 'Unknown Artist',
+              album: song.album || 'Unknown Album',
+              cover: normalizedCoverPath,
+              duration: Math.floor(song.duration),
+              isPlaying: isPlaying.value,
+            }).catch(() => {});
+          })
+          .catch(() => {});
+      } else {
+        // 本地音频走 Rust 后端播放
+        await playbackApi.playAudio({
+          path: audioFilePath,
+          title: getSmtcTitle(song),
+          artist: song.artist || 'Unknown Artist',
+          album: song.album || 'Unknown Album',
+          cover: cachedCoverPath,
+          duration: Math.floor(song.duration),
+          outputMode: settingsStore.settings.audio.outputMode,
+          startOffsetMs: startOffsetMs || undefined,
+          songId: song.id,
+          volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
+          gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
+          preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
+        });
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+        isSongLoaded.value = true;
+        sessionStartTime = Date.now();
+        loadLyrics();
+        startPlaybackRuntime();
+
+        void currentThumbnailLoad
+          .then(async ([cover, coverPath]) => {
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+              return;
+            }
+
+            const normalizedCover = cover || '';
+            const normalizedCoverPath = coverPath || '';
+            currentCover.value = normalizedCover;
+            if (!currentCoverFull.value) {
+              currentCoverFull.value = normalizedCover;
+            }
+
+            await playbackApi.updatePlaybackMetadata({
+              title: getSmtcTitle(song),
+              artist: song.artist || 'Unknown Artist',
+              album: song.album || 'Unknown Album',
+              cover: normalizedCoverPath,
+              duration: Math.floor(song.duration),
+              isPlaying: isPlaying.value,
+            }).catch(() => {});
+          })
+          .catch(() => {});
+      }
     } catch {
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
@@ -437,7 +604,11 @@ export const createPlayerPlayback = ({
     }
 
     isPlaying.value = false;
-    await playbackApi.pauseAudio();
+    if (networkAudio) {
+      networkAudio.pause();
+    } else {
+      await playbackApi.pauseAudio();
+    }
     stopPlaybackRuntime();
   };
 
@@ -450,7 +621,11 @@ export const createPlayerPlayback = ({
         sessionStartTime = null;
       }
 
-      await playbackApi.pauseAudio();
+      if (networkAudio) {
+        networkAudio.pause();
+      } else {
+        await playbackApi.pauseAudio();
+      }
       isPlaying.value = false;
       stopPlaybackRuntime();
       return;
@@ -458,6 +633,9 @@ export const createPlayerPlayback = ({
 
     if (!isSongLoaded.value) {
       await playSong(currentSong.value, { startTime: currentTime.value });
+    } else if (networkAudio) {
+      await networkAudio.play().catch(() => {});
+      sessionStartTime = Date.now();
     } else {
       await playbackApi.resumeAudio();
       sessionStartTime = Date.now();
@@ -485,6 +663,16 @@ export const createPlayerPlayback = ({
       : Math.max(0, newTime);
     const requestId = ++latestSeekRequestId;
     reanchorPlaybackClock(targetTime);
+
+    if (networkAudio) {
+      // [落雪] 网络音频直接操作 HTML5 Audio 元素
+      networkAudio.currentTime = targetTime;
+      isSeeking = false;
+      if (isPlaying.value) {
+        startPlaybackRuntime();
+      }
+      return;
+    }
 
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;

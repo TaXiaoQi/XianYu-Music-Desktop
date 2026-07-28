@@ -1,29 +1,19 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download } from 'lucide-vue-next';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../composables/toast';
-
-// 插件数据结构（预留接口，等后端实现）
-interface Plugin {
-  id: string;
-  name: string;
-  version: string;
-  author?: string;
-  platform: string; // 例如 "网易云音乐"、"QQ音乐"
-  description?: string;
-  enabled: boolean;
-  updateAvailable?: boolean;
-  srcUrl?: string;
-}
-
-// 订阅数据结构
-interface Subscription {
-  id: string;
-  name: string;
-  url: string;
-}
+import type { PluginSource } from '../../types';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins } from '../../services/pluginEngine';
+import { isLxPluginScript, loadLxPluginFromScript, parseLxScriptInfo } from '../../services/lxPluginEngine';
 
 const { showToast } = useToast();
+
+// 启动时加载已启用的插件
+onMounted(() => {
+  void loadPlugins();
+});
 
 // UI 状态
 const searchQuery = ref('');
@@ -31,19 +21,19 @@ const showSubscriptionPanel = ref(false);
 const showInstallFromUrlDialog = ref(false);
 const installUrl = ref('');
 
-// 模拟数据（等后端接入时移除）
-const plugins = ref<Plugin[]>([]);
-const subscriptions = ref<Subscription[]>([]);
+// 插件列表（从 localStorage 读取）
+const plugins = ref<PluginSource[]>(getStoredPlugins());
+const subscriptions = ref<{ id: string; name: string; url: string }[]>([]);
 
 const isPluginBusy = ref(false);
 
 const filteredPlugins = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
   if (!keyword) return plugins.value;
-  return plugins.value.filter((plugin) =>
-    plugin.name.toLowerCase().includes(keyword) ||
-    plugin.platform.toLowerCase().includes(keyword) ||
-    (plugin.author?.toLowerCase().includes(keyword) ?? false)
+  return plugins.value.filter((p) =>
+    p.name.toLowerCase().includes(keyword) ||
+    p.sources.join(',').toLowerCase().includes(keyword) ||
+    (p.author?.toLowerCase().includes(keyword) ?? false)
   );
 });
 
@@ -53,69 +43,126 @@ const pluginStatsLabel = computed(() => {
   return `共 ${total} 个插件，已启用 ${enabled} 个`;
 });
 
-// ==================== 预留接口（等后端实现） ====================
-
-// 从本地文件安装
-async function handleInstallFromFile() {
-  // TODO: 调用后端选择文件对话框并安装
-  // await invoke('install_plugin_from_file');
-  showToast('从本地文件安装：等待后端接入', 'info');
+function refreshPluginList() {
+  plugins.value = getStoredPlugins();
 }
 
-// 从网络 URL 安装
+// ==================== 从本地文件安装 ====================
+
+async function handleInstallFromFile() {
+  try {
+    const selected = await openDialog({
+      title: '选择插件文件',
+      filters: [{ name: 'JavaScript 插件', extensions: ['js'] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== 'string') return;
+
+    const filePath = selected as string;
+    isPluginBusy.value = true;
+
+    // 通过后端读取文件内容
+    const script = await invoke<string>('read_plugin_file', { path: filePath });
+    if (!script || script.trim().length === 0) {
+      showToast('插件文件为空', 'error');
+      return;
+    }
+
+    await installPluginFromScript(script, filePath);
+  } catch (e: any) {
+    showToast(`安装失败: ${e?.message || e}`, 'error');
+  } finally {
+    isPluginBusy.value = false;
+  }
+}
+
+// ==================== 从网络 URL 安装 ====================
+
 async function handleInstallFromUrl() {
   const url = installUrl.value.trim();
   if (!url) {
     showToast('请输入插件 URL', 'error');
     return;
   }
-  // TODO: 调用后端从 URL 下载并安装
-  // await invoke('install_plugin_from_url', { url });
-  showToast('从网络安装：等待后端接入', 'info');
-  installUrl.value = '';
-  showInstallFromUrlDialog.value = false;
-}
 
-// 更新全部插件
-async function handleUpdateAll() {
-  if (isPluginBusy.value) return;
   isPluginBusy.value = true;
   try {
-    // TODO: 调用后端批量更新
-    // await invoke('update_all_plugins');
-    showToast('更新全部：等待后端接入', 'info');
+    // 通过后端 HTTP 代理获取插件脚本
+    const { pluginApi } = await import('../../services/tauri/pluginApi');
+    const resp = await pluginApi.pluginHttpRequest('GET', url, {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': '*/*',
+    }, undefined, 15000);
+    if (resp.status < 200 || resp.status >= 300 || !resp.body) {
+      showToast(`下载失败: HTTP ${resp.status}`, 'error');
+      return;
+    }
+    await installPluginFromScript(resp.body, url);
+    installUrl.value = '';
+    showInstallFromUrlDialog.value = false;
+  } catch (e: any) {
+    showToast(`安装失败: ${e?.message || e}`, 'error');
   } finally {
     isPluginBusy.value = false;
   }
 }
 
-// 卸载全部插件
+// ==================== 核心安装逻辑 ====================
+
+async function installPluginFromScript(script: string, filePath: string) {
+  // 检测插件格式
+  if (isLxPluginScript(script)) {
+    // 落雪 LX 插件
+    const scriptInfo = parseLxScriptInfo(script);
+    showToast(`正在加载落雪插件: ${scriptInfo.name || filePath}…`, 'info');
+
+    const source = await loadLxPluginFromScript(script, filePath);
+    if (!source) {
+      showToast('插件加载失败', 'error');
+      return;
+    }
+    addPluginSource(source);
+    refreshPluginList();
+    showToast(`成功安装插件: ${source.name}`, 'success');
+  } else {
+    // 暂不支持 MusicFree 格式
+    showToast('暂不支持此插件格式，仅支持落雪(LX)插件', 'error');
+  }
+}
+
+// ==================== 插件管理 ====================
+
+async function handleUpdateAll() {
+  showToast('暂不支持批量更新，请重新导入插件', 'info');
+}
+
 async function handleUninstallAll() {
-  // TODO: 调用后端批量卸载
-  // await invoke('uninstall_all_plugins');
-  showToast('卸载全部：等待后端接入', 'info');
+  if (plugins.value.length === 0) return;
+  for (const p of [...plugins.value]) {
+    removePluginSource(p.id);
+  }
+  refreshPluginList();
+  showToast('已卸载全部插件', 'success');
 }
 
-// 切换插件启用状态
-function handleTogglePlugin(plugin: Plugin) {
-  // TODO: 调用后端更新启用状态
-  // await invoke('set_plugin_enabled', { id: plugin.id, enabled: !plugin.enabled });
-  plugin.enabled = !plugin.enabled;
-  showToast(`${plugin.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success');
+async function handleTogglePlugin(plugin: PluginSource) {
+  const result = await togglePlugin(plugin.id);
+  if (result.success) {
+    refreshPluginList();
+    showToast(`${result.enabled ? '已启用' : '已禁用'} ${plugin.name}`, 'success');
+  } else {
+    showToast(result.message || '操作失败', 'error');
+  }
 }
 
-// 更新单个插件
-async function handleUpdatePlugin(plugin: Plugin) {
-  // TODO: 调用后端更新单个插件
-  // await invoke('update_plugin', { id: plugin.id });
-  showToast(`更新 ${plugin.name}：等待后端接入`, 'info');
+async function handleUpdatePlugin(plugin: PluginSource) {
+  showToast(`请重新导入 ${plugin.name} 以更新`, 'info');
 }
 
-// 卸载单个插件
-async function handleUninstallPlugin(plugin: Plugin) {
-  // TODO: 调用后端卸载单个插件
-  // await invoke('uninstall_plugin', { id: plugin.id });
-  showToast(`卸载 ${plugin.name}：等待后端接入`, 'info');
+async function handleUninstallPlugin(plugin: PluginSource) {
+  removePluginSource(plugin.id);
+  refreshPluginList();
+  showToast(`已卸载 ${plugin.name}`, 'success');
 }
 
 // 打开订阅设置
@@ -366,7 +413,7 @@ function handleRemoveSubscription(sub: Subscription) {
                 <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
                   {{ plugin.name }}
                 </div>
-                <span class="settings-plugin-tag">{{ plugin.platform }}</span>
+                <span class="settings-plugin-tag">{{ plugin.sources.join(', ') || 'LX' }}</span>
                 <span
                   v-if="plugin.updateAvailable"
                   class="settings-plugin-tag settings-plugin-tag--accent"
@@ -375,7 +422,7 @@ function handleRemoveSubscription(sub: Subscription) {
                 </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
-                v{{ plugin.version }}
+                v{{ plugin.version }}{{ plugin.format === 'lx' ? ' · 落雪' : '' }}
                 <span v-if="plugin.author"> · {{ plugin.author }}</span>
                 <span v-if="plugin.description"> · {{ plugin.description }}</span>
               </div>

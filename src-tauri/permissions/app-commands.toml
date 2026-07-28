@@ -114,4 +114,5 @@ commands.allow = [
   "run_installer",
   "fetch_announcement",
   "plugin_http_request",
+  "read_plugin_file",
 ]
