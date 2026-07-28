@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { CircleAlert } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
+import ModernModal from '../common/ModernModal.vue';
 
 const { settings, patchSettings } = useSettings();
 
@@ -30,6 +32,38 @@ const toggleShowEqualizerInFooter = () => {
     },
   });
 };
+
+// IDM 兼容模式：每次「开启」时弹出原理说明
+const showIdmCompatDialog = ref(false);
+
+const toggleIdmCompatMode = () => {
+  const nextEnabled = !settings.value.audio.idmCompatMode;
+  patchSettings({
+    audio: {
+      ...settings.value.audio,
+      idmCompatMode: nextEnabled,
+    },
+  });
+
+  if (nextEnabled) {
+    showIdmCompatDialog.value = true;
+  }
+};
+
+const idmCompatDialogContent = [
+  '开启后，播放在线歌曲时不再让播放器直接请求音频链接，',
+  '而是先在后台的 Worker 线程把整首歌完整取回本地，再从本地内存播放。',
+  '',
+  '为什么这样能避开 IDM：',
+  'IDM 这类下载工具会监视页面发出的媒体请求，一旦发现音频链接就会接管下载，',
+  '导致播放器自己拿不到完整数据，出现无声、卡住或被反复劫持的问题。',
+  'Worker 线程发出的请求属于普通数据请求，通常不会被接管。',
+  '',
+  '代价：由于需要先取回整首歌，点击播放到出声会有短暂等待（通常 1~3 秒），',
+  '且不支持边下边播。若取回失败会自动回退为原来的直链播放方式。',
+  '',
+  '如果你没有安装 IDM 等下载工具，建议保持关闭以获得更快的起播速度。',
+].join('\n');
 </script>
 
 <template>
@@ -129,6 +163,38 @@ const toggleShowEqualizerInFooter = () => {
       </div>
     </section>
 
+    <!-- 在线播放兼容性 -->
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        在线播放
+      </h2>
+      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <div class="desktop-setting-row rounded-xl">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">IDM 兼容模式</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              若安装了 IDM 等下载工具且在线歌曲播放异常（无声、卡住、被弹出下载），可开启此项。
+              开启后会先把整首歌取回本地再播放，起播略慢。
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              :class="settings.audio.idmCompatMode ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleIdmCompatMode"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="settings.audio.idmCompatMode ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 均衡器配置区 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -196,6 +262,16 @@ const toggleShowEqualizerInFooter = () => {
         </div>
       </div>
     </section>
+
+    <!-- IDM 兼容模式：开启时的原理说明 -->
+    <ModernModal
+      v-model:visible="showIdmCompatDialog"
+      title="已开启 IDM 兼容模式"
+      :content="idmCompatDialogContent"
+      confirm-text="我知道了"
+      cancel-text="关闭"
+      type="info"
+    />
   </div>
 </template>
 

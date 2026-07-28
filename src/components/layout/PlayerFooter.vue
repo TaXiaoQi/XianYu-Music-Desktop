@@ -338,7 +338,7 @@ onUnmounted(() => {
 
 <template>
   <footer 
-    class="h-[clamp(60px,9vh,80px)] flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
+    class="h-20 flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
     @mouseenter="handleFooterMouseEnter"
     @mousemove="handleFooterMouseMove"
     @mouseleave="handleFooterMouseLeave"
@@ -399,7 +399,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="flex items-center w-1/3 min-w-[clamp(0px,14vw,150px)]" @contextmenu="handleContextMenu">
+    <div class="flex items-center w-1/3 min-w-[150px]" @contextmenu="handleContextMenu">
       <div 
         ref="footerCoverRef"
         data-footer-cover
@@ -457,7 +457,7 @@ onUnmounted(() => {
     </div>
 
     <div 
-      class="flex items-center justify-center flex-1 gap-[clamp(10px,2.2vw,24px)] transition-opacity duration-700"
+      class="flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     >
       <button
@@ -528,7 +528,7 @@ onUnmounted(() => {
     </div>
 
     <div 
-      class="flex items-center justify-end w-1/3 min-w-[clamp(0px,14vw,150px)] gap-2 pr-2 transition-opacity duration-700"
+      class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
       <!-- 音质选择按钮 -->

@@ -1,164 +1,290 @@
 <script setup lang="ts">
+import { computed, onUnmounted, ref } from 'vue';
+import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-vue-next';
+
 import { useSettings } from '../../features/settings/useSettings';
+import { useToast } from '../../composables/toast';
+import {
+  DEFAULT_SIDEBAR_ORDER,
+  SIDEBAR_ITEMS,
+  normalizeSidebarOrder,
+} from '../../features/settings/sidebarItems';
+import type { SidebarItemKey } from '../../types';
 
 const { settings } = useSettings();
+const { showToast } = useToast();
+
+/** 按当前顺序排列的可配置项（含元数据） */
+const orderedItems = computed(() => {
+  const order = normalizeSidebarOrder(settings.value.sidebar?.order);
+  return order
+    .map(key => SIDEBAR_ITEMS.find(item => item.key === key))
+    .filter((item): item is (typeof SIDEBAR_ITEMS)[number] => !!item);
+});
+
+const isVisible = (key: SidebarItemKey) => {
+  const item = SIDEBAR_ITEMS.find(i => i.key === key);
+  if (!item) return false;
+  return settings.value.sidebar[item.visibilityKey] === true;
+};
+
+const toggleVisible = (key: SidebarItemKey) => {
+  const item = SIDEBAR_ITEMS.find(i => i.key === key);
+  if (!item || item.lockedVisible) return;
+  const visibilityKey = item.visibilityKey as 'showArtists';
+  settings.value.sidebar[visibilityKey] = !settings.value.sidebar[visibilityKey];
+};
+
+/** 写回新顺序 */
+const applyOrder = (nextOrder: SidebarItemKey[]) => {
+  settings.value.sidebar.order = normalizeSidebarOrder(nextOrder);
+};
+
+const moveItem = (from: number, to: number) => {
+  const order = [...orderedItems.value.map(item => item.key)];
+  if (from < 0 || from >= order.length || to < 0 || to >= order.length || from === to) return;
+  const [moved] = order.splice(from, 1);
+  order.splice(to, 0, moved);
+  applyOrder(order);
+};
+
+const moveUp = (index: number) => moveItem(index, index - 1);
+const moveDown = (index: number) => moveItem(index, index + 1);
+
+const restoreDefaultOrder = () => {
+  applyOrder([...DEFAULT_SIDEBAR_ORDER]);
+  showToast('已恢复默认排列顺序', 'success');
+};
+
+// --- 拖拽排序（基于 pointer 事件）---
+// 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
+// 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
+const draggingIndex = ref<number | null>(null);
+const listRef = ref<HTMLElement | null>(null);
+
+/** 根据指针 Y 坐标推导应插入的目标索引 */
+const resolveTargetIndex = (clientY: number): number | null => {
+  const listEl = listRef.value;
+  if (!listEl) return null;
+
+  const rows = Array.from(
+    listEl.querySelectorAll<HTMLElement>('[data-sidebar-row]'),
+  );
+  if (rows.length === 0) return null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) {
+      return i;
+    }
+  }
+  return rows.length - 1;
+};
+
+const handlePointerMove = (event: PointerEvent) => {
+  if (draggingIndex.value === null) return;
+  event.preventDefault();
+
+  const target = resolveTargetIndex(event.clientY);
+  if (target === null || target === draggingIndex.value) return;
+
+  moveItem(draggingIndex.value, target);
+  // 实时重排后，被拖拽项已移动到新位置
+  draggingIndex.value = target;
+};
+
+const stopDragging = () => {
+  draggingIndex.value = null;
+  window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointerup', stopDragging);
+  window.removeEventListener('pointercancel', stopDragging);
+};
+
+const startDragging = (index: number, event: PointerEvent) => {
+  // 只响应主键/触摸
+  if (event.button !== 0) return;
+  event.preventDefault();
+
+  draggingIndex.value = index;
+  window.addEventListener('pointermove', handlePointerMove, { passive: false });
+  window.addEventListener('pointerup', stopDragging);
+  window.addEventListener('pointercancel', stopDragging);
+};
+
+onUnmounted(stopDragging);
 </script>
 
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <!-- Interface Layout (Sidebar Visibility) -->
     <section v-if="settings.sidebar" class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         侧边栏管理
       </h2>
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <p class="text-xs text-gray-500 dark:text-white/50">
+        拖动左侧手柄或使用上下箭头调整排列顺序，右侧开关控制是否在侧边栏显示。
+      </p>
 
-        <!-- Home (Locked) -->
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 opacity-70 cursor-not-allowed">
-          <div class="flex items-center gap-3">
+      <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden">
+        <!-- 首页：固定置顶，不可隐藏、不可排序 -->
+        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 opacity-70 cursor-not-allowed">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="w-4 shrink-0"></span>
             <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
             </div>
-            <div>
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">首页</div>
-              <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">核心功能 (不可隐藏)</div>
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">首页</div>
+              <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5 truncate">核心功能 (固定在顶部)</div>
             </div>
           </div>
-          <div class="relative inline-flex h-6 w-11 items-center rounded-full bg-[#EC4141] opacity-50">
+          <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-[#EC4141] opacity-50">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
           </div>
         </div>
 
-        <!-- Local Music (Locked/Checked) -->
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 opacity-70 cursor-not-allowed">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
-            </div>
-            <div>
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">本地音乐</div>
-              <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">核心功能 (不可隐藏)</div>
-            </div>
-          </div>
-          <div class="relative inline-flex h-6 w-11 items-center rounded-full bg-[#EC4141] opacity-50">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
-          </div>
-        </div>
-
-        <!-- Artists -->
+        <!-- 可排序项 -->
         <div
-              @click="settings.sidebar.showArtists = !settings.sidebar.showArtists"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
+          v-for="(item, index) in orderedItems"
+          :key="item.key"
+          data-sidebar-row
+          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 transition-colors"
+          :class="draggingIndex === index
+            ? 'bg-[#EC4141]/10 ring-1 ring-inset ring-[#EC4141]/30'
+            : 'hover:bg-white/40 dark:hover:bg-white/10'"
         >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showArtists ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌手</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showArtists ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showArtists ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
+          <div class="flex min-w-0 items-center gap-3">
+            <GripVertical
+              class="h-4 w-4 shrink-0 touch-none select-none text-gray-400 transition-colors hover:text-[#EC4141] dark:text-white/35"
+              :class="draggingIndex === index ? 'cursor-grabbing text-[#EC4141]' : 'cursor-grab'"
+              @pointerdown="startDragging(index, $event)"
+            />
 
-        <!-- Albums -->
-        <div
-              @click="settings.sidebar.showAlbums = !settings.sidebar.showAlbums"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
+            <div
+              class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0"
+              :class="isVisible(item.key) ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'"
+            >
+              <svg
+                v-if="item.iconKind === 'albums'"
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <circle cx="12" cy="12" r="10" stroke-width="2" />
+                <circle cx="12" cy="12" r="3" stroke-width="2" />
+              </svg>
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.iconPath" />
+              </svg>
+            </div>
+
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ item.label }}</div>
+              <div
+                v-if="item.description"
+                class="text-xs text-gray-600 dark:text-white/60 mt-0.5 truncate"
+              >
+                {{ item.description }}
+              </div>
+            </div>
+          </div>
+
+          <div class="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              class="settings-sidebar-move"
+              title="上移"
+              :disabled="index === 0"
+              @click.stop="moveUp(index)"
+            >
+              <ArrowUp class="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              class="settings-sidebar-move"
+              title="下移"
+              :disabled="index === orderedItems.length - 1"
+              @click.stop="moveDown(index)"
+            >
+              <ArrowDown class="h-3.5 w-3.5" />
+            </button>
+
+            <button
+              type="button"
+              class="relative ml-1.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              :class="[
+                isVisible(item.key) ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700',
+                item.lockedVisible ? 'opacity-50 cursor-not-allowed' : '',
+              ]"
+              :disabled="item.lockedVisible"
+              :title="item.lockedVisible ? '核心功能，不可隐藏' : (isVisible(item.key) ? '点击隐藏' : '点击显示')"
+              @click.stop="toggleVisible(item.key)"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="isVisible(item.key) ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 text-xs px-4 py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-full text-gray-600 dark:text-gray-300 hover:text-[#EC4141] hover:border-[#EC4141] transition"
+          @click="restoreDefaultOrder"
         >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showAlbums ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke-width="2" /><circle cx="12" cy="12" r="3" stroke-width="2" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">专辑</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showAlbums ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showAlbums ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
-        <!-- Favorites -->
-        <div
-              @click="settings.sidebar.showFavorites = !settings.sidebar.showFavorites"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showFavorites ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">我的收藏</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showFavorites ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showFavorites ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
-        <!-- Recent -->
-        <div
-              @click="settings.sidebar.showRecent = !settings.sidebar.showRecent"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showRecent ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">最近播放</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showRecent ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showRecent ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
-        <!-- Folders -->
-        <div
-              @click="settings.sidebar.showFolders = !settings.sidebar.showFolders"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showFolders ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">文件夹</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showFolders ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showFolders ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
-        <!-- Plugins -->
-        <div
-              @click="settings.sidebar.showPlugins = !settings.sidebar.showPlugins"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showPlugins ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">插件管理</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showPlugins ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showPlugins ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
-        <!-- Account -->
-        <div
-              @click="settings.sidebar.showAccount = !settings.sidebar.showAccount"
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors cursor-pointer"
-        >
-          <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center shrink-0" :class="settings.sidebar.showAccount ? 'text-[#EC4141] bg-red-100/50' : 'text-gray-500'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            </div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">账号</div>
-          </div>
-              <button class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.sidebar.showAccount ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-                <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.sidebar.showAccount ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
-        </div>
-
+          <RotateCcw class="h-3.5 w-3.5" />
+          恢复默认顺序
+        </button>
       </div>
     </section>
   </div>
 </template>
+
+<style scoped>
+.settings-sidebar-move {
+  display: inline-flex;
+  height: 26px;
+  width: 26px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: rgba(71, 85, 105, 0.85);
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.settings-sidebar-move:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.34);
+  background: rgba(236, 65, 65, 0.08);
+  color: #ec4141;
+}
+
+.settings-sidebar-move:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+:global(.dark) .settings-sidebar-move {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+:global(.dark) .settings-sidebar-move:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.16);
+  color: #ff8b8b;
+}
+</style>

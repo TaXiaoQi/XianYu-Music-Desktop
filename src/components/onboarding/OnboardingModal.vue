@@ -46,7 +46,6 @@ const {
   isWindows11,
 } = useSettingsThemeControls();
 
-const SPLASH_DURATION = 3000;
 const SPLASH_HINT_DELAY = 800;
 
 const step = ref<Step>('splash');
@@ -298,16 +297,9 @@ const handleAuthSubmit = async () => {
 };
 
 // --- 启动画面计时 ---
+// 不再自动跳转到下一步，改由用户点击"继续"按钮进入，这里只负责延迟显示提示与按钮
 const startSplashTimers = () => {
   splashTimer.value = setTimeout(() => {
-    splashVisible.value = false;
-    setTimeout(() => {
-      step.value = 'theme';
-      splashVisible.value = true;
-    }, 400);
-  }, SPLASH_DURATION);
-
-  setTimeout(() => {
     splashHintVisible.value = true;
   }, SPLASH_HINT_DELAY);
 };
@@ -390,14 +382,13 @@ onUnmounted(() => {
                 >
                   初次启动，我们需要进行一些设置
                 </div>
-                <div class="flex gap-1.5">
-                  <span
-                    v-for="i in 3"
-                    :key="i"
-                    class="w-1.5 h-1.5 rounded-full bg-black/20 dark:bg-white/20 animate-pulse"
-                    :style="{ animationDelay: `${i * 0.2}s` }"
-                  ></span>
-                </div>
+                <button
+                  type="button"
+                  class="mt-2 rounded-full bg-[#EC4141] px-8 py-2.5 text-base font-medium text-white shadow-lg shadow-red-500/20 transition active:scale-95 hover:bg-[#d13a3a] cursor-pointer"
+                  @click="nextStep"
+                >
+                  继续
+                </button>
               </div>
             </transition>
           </div>
@@ -563,13 +554,11 @@ onUnmounted(() => {
                     </header>
 
                     <div class="grid grid-cols-2 gap-[clamp(1rem,2vw,2rem)]">
-                      <button
-                        type="button"
+                      <div
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="materialMode === 'none'
                           ? 'border-b-2 border-[#EC4141]'
                           : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50'"
-                        @click="setMaterialToNone"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center transition-transform group-hover:scale-105"
@@ -591,19 +580,27 @@ onUnmounted(() => {
                             无透明效果
                           </div>
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer"
+                          :class="materialMode === 'none'
+                            ? 'bg-[#EC4141]/10 text-[#EC4141] cursor-default'
+                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
+                          :disabled="materialMode === 'none'"
+                          @click="setMaterialToNone"
+                        >
+                          {{ materialMode === 'none' ? '已生效' : '生效' }}
+                        </button>
+                      </div>
 
-                      <button
-                        type="button"
+                      <div
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'mica'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('mica') ? 'opacity-30 cursor-not-allowed' : '',
+                          isWindowMaterialButtonDisabled('mica') ? 'opacity-30' : '',
                         ]"
-                        :disabled="isWindowMaterialButtonDisabled('mica')"
-                        @click="toggleWindowMaterial('mica')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -625,19 +622,27 @@ onUnmounted(() => {
                             {{ isWindows11 ? '云母材质' : '仅 Win11' }}
                           </div>
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                          :class="materialMode === 'mica'
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
+                          :disabled="materialMode === 'mica' || isWindowMaterialButtonDisabled('mica')"
+                          @click="toggleWindowMaterial('mica')"
+                        >
+                          {{ materialMode === 'mica' ? '已生效' : '生效' }}
+                        </button>
+                      </div>
 
-                      <button
-                        type="button"
+                      <div
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'acrylic'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('acrylic') ? 'opacity-30 cursor-not-allowed' : '',
+                          isWindowMaterialButtonDisabled('acrylic') ? 'opacity-30' : '',
                         ]"
-                        :disabled="isWindowMaterialButtonDisabled('acrylic')"
-                        @click="toggleWindowMaterial('acrylic')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-md flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -659,19 +664,27 @@ onUnmounted(() => {
                             {{ isWindows11 ? '亚克力半透明' : '仅 Win11' }}
                           </div>
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                          :class="materialMode === 'acrylic'
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
+                          :disabled="materialMode === 'acrylic' || isWindowMaterialButtonDisabled('acrylic')"
+                          @click="toggleWindowMaterial('acrylic')"
+                        >
+                          {{ materialMode === 'acrylic' ? '已生效' : '生效' }}
+                        </button>
+                      </div>
 
-                      <button
-                        type="button"
+                      <div
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'blur'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('blur') ? 'opacity-30 cursor-not-allowed' : '',
+                          isWindowMaterialButtonDisabled('blur') ? 'opacity-30' : '',
                         ]"
-                        :disabled="isWindowMaterialButtonDisabled('blur')"
-                        @click="toggleWindowMaterial('blur')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-lg flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -693,7 +706,18 @@ onUnmounted(() => {
                             高斯模糊背景
                           </div>
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                          :class="materialMode === 'blur'
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
+                          :disabled="materialMode === 'blur' || isWindowMaterialButtonDisabled('blur')"
+                          @click="toggleWindowMaterial('blur')"
+                        >
+                          {{ materialMode === 'blur' ? '已生效' : '生效' }}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -792,17 +816,85 @@ onUnmounted(() => {
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(40px, 6vw, 80px);"
                       >
-                        登录<br />账号
+                        <template v-if="authStore.isLoggedIn">我的<br />账号</template>
+                        <template v-else>登录<br />账号</template>
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
                         style="font-size: clamp(14px, 1.1vw, 17px);"
                       >
-                        登录账号可将您的歌单、插件实时同步，多设备无缝切换。
+                        {{ authStore.isLoggedIn
+                          ? '账号已登录，歌单与插件将在多设备间保持同步。'
+                          : '登录账号可将您的歌单、插件实时同步，多设备无缝切换。' }}
                       </p>
                     </header>
 
                     <div class="w-full">
+                      <!-- 已登录：直接展示当前账号信息，不再显示登录/注册表单 -->
+                      <div v-if="authStore.isLoggedIn" class="w-full">
+                        <div class="mb-6">
+                          <p
+                            class="text-black/70 dark:text-white/70 font-light tracking-wider mb-3"
+                            style="font-size: clamp(13px, 1.1vw, 16px);"
+                          >
+                            当前账号
+                          </p>
+                          <h3
+                            class="text-black dark:text-white font-black tracking-tight leading-none"
+                            style="font-size: clamp(28px, 3.5vw, 44px);"
+                          >
+                            已登录
+                          </h3>
+                          <p
+                            class="mt-3 text-black/60 dark:text-white/60 font-light max-w-xl"
+                            style="font-size: clamp(13px, 1vw, 15px);"
+                          >
+                            您的歌单与插件将自动同步，可直接完成初始化设置。
+                          </p>
+                        </div>
+
+                        <div
+                          class="flex items-center gap-5 border-b border-black/10 dark:border-white/10 pb-6"
+                        >
+                          <img
+                            v-if="authStore.user?.avatar"
+                            :src="authStore.user.avatar"
+                            alt=""
+                            class="h-[clamp(56px,6vw,80px)] w-[clamp(56px,6vw,80px)] shrink-0 rounded-full object-cover"
+                          />
+                          <div
+                            v-else
+                            class="flex h-[clamp(56px,6vw,80px)] w-[clamp(56px,6vw,80px)] shrink-0 items-center justify-center rounded-full bg-[#EC4141]/10 font-black text-[#EC4141]"
+                            style="font-size: clamp(20px, 2.4vw, 32px);"
+                          >
+                            {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
+                          </div>
+
+                          <div class="min-w-0 flex-1">
+                            <div
+                              class="truncate font-bold text-black dark:text-white"
+                              style="font-size: clamp(18px, 1.8vw, 26px);"
+                            >
+                              {{ authStore.user?.nickname || authStore.user?.username }}
+                            </div>
+                            <div
+                              class="mt-1 truncate text-black/55 dark:text-white/55 font-light"
+                              style="font-size: clamp(12px, 1vw, 15px);"
+                            >
+                              @{{ authStore.user?.username }}
+                            </div>
+                            <div
+                              v-if="authStore.user?.email"
+                              class="mt-0.5 truncate text-black/45 dark:text-white/45 font-light"
+                              style="font-size: clamp(12px, 1vw, 15px);"
+                            >
+                              {{ authStore.user.email }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <template v-else>
                       <!-- 顶部标签 -->
                       <div class="mb-6">
                         <p
@@ -977,6 +1069,7 @@ onUnmounted(() => {
                           </div>
                         </form>
                       </Transition>
+                      </template>
                     </div>
                   </div>
                 </transition>

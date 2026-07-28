@@ -47,6 +47,41 @@ let stalledProgressTicks = 0;
 let networkAudio: HTMLAudioElement | null = null;
 let networkAudioTimeUpdateHandler: (() => void) | null = null;
 let networkAudioEndedHandler: (() => void) | null = null;
+/** IDM 兼容模式下为音频创建的 blob URL，需在切歌/停止时释放，避免内存泄漏 */
+let networkAudioBlobUrl: string | null = null;
+
+/**
+ * 彻底停止并清理 HTML5 网络音频。
+ *
+ * 播放本地歌曲（走 Rust 后端）之前必须调用，否则上一首在线歌的 Audio 实例会残留继续播放，
+ * 并且让 pause/seek 的通道判断误判到已失效的网络音频上（表现为"切歌失败/暂停错乱"）。
+ */
+const stopNetworkAudio = () => {
+  if (!networkAudio) return;
+
+  try {
+    networkAudio.pause();
+  } catch {
+    // ignore
+  }
+
+  if (networkAudioTimeUpdateHandler) {
+    networkAudio.removeEventListener('timeupdate', networkAudioTimeUpdateHandler);
+    networkAudioTimeUpdateHandler = null;
+  }
+  if (networkAudioEndedHandler) {
+    networkAudio.removeEventListener('ended', networkAudioEndedHandler);
+    networkAudioEndedHandler = null;
+  }
+
+  networkAudio.src = '';
+  networkAudio = null;
+
+  if (networkAudioBlobUrl) {
+    URL.revokeObjectURL(networkAudioBlobUrl);
+    networkAudioBlobUrl = null;
+  }
+};
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
@@ -85,8 +120,16 @@ export const createPlayerPlayback = ({
     playQueue,
     playMode,
     tempQueue,
+    volume,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
+
+  // 在线播放走 HTML5 audio，音量条只改了 Rust 后端音量，需同步到网络音频
+  watch(volume, (value) => {
+    if (networkAudio) {
+      networkAudio.volume = Math.min(1, Math.max(0, value / 100));
+    }
+  });
 
   const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) => {
     if (previousSong?.path === song.path) {
@@ -229,6 +272,17 @@ export const createPlayerPlayback = ({
     scheduleUpdate(update);
     syncIntervalId = setInterval(async () => {
       if (!isPlaying.value || isSeeking) return;
+
+      // [在线播放] 网络音频走 HTML5 audio，进度以 audio 自身为准。
+      // 不能用 Rust 后端的 getPlaybackProgress 校准——此时后端并未在播放，
+      // 会返回过时/为 0 的值，反复把进度拉回，导致进度条闪烁。
+      if (networkAudio) {
+        const audioTime = networkAudio.currentTime;
+        if (Number.isFinite(audioTime) && Math.abs(audioTime - currentTime.value) > 0.25) {
+          reanchorPlaybackClock(audioTime);
+        }
+        return;
+      }
 
       try {
         const rawTime = await playbackApi.getPlaybackProgress();
@@ -447,19 +501,32 @@ export const createPlayerPlayback = ({
         // 1. 停止后端播放
         try { await playbackApi.pauseAudio(); } catch {}
         // 2. 停止上一个网络音频
-        if (networkAudio) {
-          networkAudio.pause();
-          if (networkAudioTimeUpdateHandler) networkAudio.removeEventListener('timeupdate', networkAudioTimeUpdateHandler);
-          if (networkAudioEndedHandler) networkAudio.removeEventListener('ended', networkAudioEndedHandler);
-          networkAudio.src = '';
-          networkAudio = null;
+        stopNetworkAudio();
+
+        // [IDM 兼容模式] 开启后先在 Worker 线程把整首音频拉成本地 blob 再播放，
+        // 这样主线程不会直接请求音频直链，可避免被 IDM 等下载器劫持导致播放异常。
+        let playbackSource = audioFilePath;
+        if (settingsStore.settings.audio.idmCompatMode) {
+          try {
+            const { fetchViaWorker } = await import('../services/downloadService');
+            const bytes = await fetchViaWorker(audioFilePath);
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+            const blob = new Blob([bytes as BlobPart], { type: 'audio/mpeg' });
+            playbackSource = URL.createObjectURL(blob);
+            networkAudioBlobUrl = playbackSource;
+          } catch (e: any) {
+            // 拉取失败则回退到直链播放，保证可用性
+            console.warn('[Audio] IDM 兼容模式拉取失败，回退直链播放:', e?.message || e);
+            playbackSource = audioFilePath;
+          }
         }
 
         const audio = new Audio();
         audio.preload = 'auto';
         // [修复 CORS] 不设置 crossOrigin，允许跨域音频播放
         audio.volume = playbackStore.volume / 100;
-        audio.src = audioFilePath;
+        audio.src = playbackSource;
         networkAudio = audio;
 
         // 等待 canplay
@@ -480,7 +547,17 @@ export const createPlayerPlayback = ({
         });
 
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+          // [修复] 本次播放已被新的切歌请求作废：除了暂停，还要清理掉指针，
+          // 否则这个废弃实例会残留并影响后续 pause/seek 的通道判断
           audio.pause();
+          audio.src = '';
+          if (networkAudio === audio) {
+            networkAudio = null;
+          }
+          if (networkAudioBlobUrl === playbackSource) {
+            URL.revokeObjectURL(networkAudioBlobUrl);
+            networkAudioBlobUrl = null;
+          }
           return;
         }
 
@@ -488,7 +565,9 @@ export const createPlayerPlayback = ({
         networkAudioTimeUpdateHandler = () => {
           if (!networkAudio || !isPlaying.value) return;
           const newTime = networkAudio.currentTime;
-          if (Math.abs(newTime - currentTime.value) > 0.05) {
+          // 阈值放宽：让 rAF 平滑时钟主导，仅在明显漂移时才校正，
+          // 避免每次 timeupdate（~4Hz）都 reanchor 导致进度条来回抖动
+          if (Math.abs(newTime - currentTime.value) > 0.5) {
             reanchorPlaybackClock(newTime);
           }
         };
@@ -542,6 +621,10 @@ export const createPlayerPlayback = ({
           .catch(() => {});
       } else {
         // 本地音频走 Rust 后端播放
+        // [修复] 先彻底停掉可能残留的网络音频，否则从在线歌切到本地歌时，
+        // 上一首在线歌会继续播放，且 pause/seek 会误操作到它上面
+        stopNetworkAudio();
+
         await playbackApi.playAudio({
           path: audioFilePath,
           title: getSmtcTitle(song),
@@ -731,6 +814,8 @@ export const createPlayerPlayback = ({
   const dispose = () => {
     stopPlaybackRuntime();
     stopPowerModeWatcher();
+    // 防止销毁后残留的网络音频继续播放
+    stopNetworkAudio();
   };
 
   const stopPowerModeWatcher = watch(isMainWindowLowPower, () => {

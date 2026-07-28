@@ -24,6 +24,7 @@ import {
   mergeShortcutSettings,
   type ShortcutSettingsPatch,
 } from './shortcuts';
+import { DEFAULT_SIDEBAR_ORDER, normalizeSidebarOrder } from './sidebarItems';
 import { playerStorage } from '../../services/storage/playerStorage';
 
 const createUserPresetId = (): string =>
@@ -103,6 +104,7 @@ export const defaultSidebarSettings: SidebarSettings = {
   showStatistics: true,
   showPlugins: true,
   showAccount: true,
+  order: [...DEFAULT_SIDEBAR_ORDER],
 };
 
 export const defaultAudioSettings: AudioSettings = {
@@ -118,6 +120,7 @@ export const defaultAudioSettings: AudioSettings = {
     gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   showEqualizerInFooter: true,
+  idmCompatMode: false,
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -167,6 +170,8 @@ export const createDefaultThemeSettings = (): ThemeSettings => ({
 
 export const createDefaultSidebarSettings = (): SidebarSettings => ({
   ...defaultSidebarSettings,
+  // order 必须深拷贝，避免多处共享同一数组引用被就地修改
+  order: [...defaultSidebarSettings.order],
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({
@@ -262,6 +267,8 @@ export const mergeSidebarSettings = (
 ): SidebarSettings => ({
   ...base,
   ...patch,
+  // 归一化顺序：剔除非法项、去重、补齐缺失项，兼容旧配置（无 order 字段）
+  order: normalizeSidebarOrder(patch.order ?? base.order),
 });
 
 export const mergeAudioSettings = (
@@ -317,6 +324,9 @@ export const mergeAudioSettings = (
       currentPresetId: eqCurrentPresetId,
     },
     showEqualizerInFooter: patch.showEqualizerInFooter ?? base.showEqualizerInFooter ?? true,
+    idmCompatMode: typeof patch.idmCompatMode === 'boolean'
+      ? patch.idmCompatMode
+      : base.idmCompatMode ?? false,
   };
 };
 

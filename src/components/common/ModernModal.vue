@@ -80,7 +80,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
         <!-- Body -->
         <div class="px-6 pb-6 text-center">
-          <p class="text-sm text-gray-500 dark:text-gray-300 leading-relaxed">{{ content }}</p>
+          <p class="whitespace-pre-line text-sm text-gray-500 dark:text-gray-300 leading-relaxed">{{ content }}</p>
         </div>
 
         <!-- Footer -->
