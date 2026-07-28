@@ -411,6 +411,7 @@ export interface AppSettings {
   gpuAcceleration: boolean;
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;
+  upload: UploadSettings;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
@@ -425,6 +426,13 @@ export interface DownloadSettings {
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
   rememberDownloadPath: boolean;
+}
+
+export interface UploadSettings {
+  playlists: boolean;
+  history: boolean;
+  favorites: boolean;
+  plugins: boolean;
 }
 
 export interface SaveArtistAvatarResponse {
