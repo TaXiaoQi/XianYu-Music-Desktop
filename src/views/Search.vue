@@ -194,6 +194,7 @@ import {
   type LxSourceId,
 } from '../services/lxMusicSdk';
 import { cacheLxSong } from '../services/lxSongCache';
+import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
@@ -421,6 +422,21 @@ watch(selectedLxSource, () => {
 const handlePlaySong = (item: LxSearchResultItem) => {
   // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
   cacheLxSong(item);
+  // 同时缓存到 lxLyricFetcher（供歌词获取使用）
+  cacheLxSongInfo(item.source, item.songmid, {
+    songmid: item.songmid,
+    hash: item.hash,
+    name: item.name,
+    singer: item.singer,
+    albumName: item.albumName,
+    interval: item.interval,
+    songId: item.songId,
+    strMediaMid: item.strMediaMid,
+    albumMid: item.albumMid,
+    albumId: item.albumId,
+    copyrightId: item.copyrightId,
+    source: item.source,
+  });
   // 构造 Song 对象，使用 lx:// 协议
   const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
   const song: Song = {
