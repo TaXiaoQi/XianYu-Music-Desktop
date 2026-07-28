@@ -553,6 +553,15 @@ export const createPlayerLifecycle = ({
         playerStorage.readStringArray(playerStorageKeys.favorites) ?? [],
       );
 
+      // 恢复在线收藏歌曲的元信息，并写入额外歌曲池，
+      // 使收藏列表能反查出这些不在本地音乐库中的歌曲
+      const favoriteSongMeta = playerStorage.readFavoriteSongMeta();
+      collectionsStore.setFavoriteSongMetaMap(favoriteSongMeta);
+      const extraSongs = Object.values(favoriteSongMeta);
+      if (extraSongs.length > 0) {
+        libraryStore.setExtraSongs(extraSongs);
+      }
+
       collectionsStore.setPlaylists(playerStorage.readPlaylists());
 
       restoreSortSettings({

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
 import SortModeIcon from '../common/SortModeIcon.vue';
 
 defineProps<{
@@ -23,6 +24,8 @@ const {
   localSortMode,
   setLocalSortMode,
 } = usePlayerViewState();
+
+const pageTitle = useSearchAwareTitle('本地音乐');
 
 const sortLabelMap = {
   title: '\u6b4c\u66f2\u540d',
@@ -107,7 +110,7 @@ const handleEnterBatchMode = () => {
 
     <div v-else class="flex items-center justify-between">
       <div class="flex items-center gap-2 pb-1">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">&#26412;&#22320;&#38899;&#20048;</h2>
+        <h2 class="text-xl font-bold text-gray-900 dark:text-white">{{ pageTitle }}</h2>
       </div>
 
       <div class="flex items-center gap-2">

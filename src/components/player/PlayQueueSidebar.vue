@@ -3,7 +3,7 @@ import { nextTick, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { usePlayer } from '../../composables/player';
 import { useThemeSettings } from '../../composables/useThemeSettings';
-import { isRemoteSong } from '../../utils/remoteSong';
+import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';
 import ModernModal from '../common/ModernModal.vue';
 
 const {
@@ -145,7 +145,7 @@ watch(
                 <span
                   v-if="isRemoteSong(song)"
                   class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-                >远程</span>
+                >{{ getSongSourceLabel(song) }}</span>
               </div>
               <span
                 class="text-[11px] truncate mt-1 font-medium"
