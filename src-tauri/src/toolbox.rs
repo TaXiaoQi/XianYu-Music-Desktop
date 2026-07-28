@@ -464,6 +464,174 @@ pub async fn download_update_file(
     Ok(dest_path.to_string_lossy().to_string())
 }
 
+/// 在线歌曲下载进度事件负载。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SongDownloadProgress {
+    pub progress: f64,
+    pub downloaded: u64,
+    pub total: u64,
+    pub speed: f64,
+}
+
+/// 下载在线歌曲的真实音源直链到指定目标路径（流式写入 + 进度回报）。
+///
+/// 前端负责解析音源直链、计算最终目标文件路径（含扩展名与命名冲突处理），
+/// 此命令只负责下载与写盘，进度通过 `song-download-progress` 事件回报。
+#[tauri::command]
+pub async fn download_online_song(
+    app_handle: tauri::AppHandle,
+    url: String,
+    dest_path: String,
+) -> Result<String, String> {
+    use tauri::Emitter;
+    use tokio::fs::File;
+    use tokio::io::AsyncWriteExt;
+    use std::time::Instant;
+
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("无效的下载链接".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
+
+    // 模拟浏览器媒体流请求（Accept/Range），降低被下载器识别为“文件下载”的概率
+    let response = client
+        .get(&url)
+        .header(
+            "Accept",
+            "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5",
+        )
+        .header("Range", "bytes=0-")
+        .send()
+        .await
+        .map_err(|e| format!("发送下载请求失败: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("下载服务器返回错误状态: {}", response.status()));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+
+    let dest = PathBuf::from(&dest_path);
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建下载目录失败: {e}"))?;
+    }
+
+    let mut file = File::create(&dest)
+        .await
+        .map_err(|e| format!("创建目标文件失败: {e}"))?;
+    let mut downloaded: u64 = 0;
+    let start_time = Instant::now();
+    let mut last_emit = Instant::now();
+
+    let mut response = response;
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|e| format!("写入文件失败: {e}"))?;
+                downloaded += chunk.len() as u64;
+
+                let now = Instant::now();
+                if now.duration_since(last_emit).as_millis() >= 100 || downloaded == total_size {
+                    let elapsed = start_time.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
+                    let progress = if total_size > 0 {
+                        (downloaded as f64 / total_size as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+                    let payload = SongDownloadProgress {
+                        progress,
+                        downloaded,
+                        total: total_size,
+                        speed,
+                    };
+                    let _ = app_handle.emit("song-download-progress", payload);
+                    last_emit = now;
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                // 下载中断，清理不完整文件
+                drop(file);
+                let _ = tokio::fs::remove_file(&dest).await;
+                return Err(format!("下载数据分块失败: {e}"));
+            }
+        }
+    }
+
+    file.flush().await.map_err(|e| format!("刷新文件缓存失败: {e}"))?;
+    drop(file);
+
+    // 完整性校验：若服务器声明了文件大小但实际下载字节数不足，说明下载被中途干扰
+    // （例如 IDM 等下载器接管/拦截了同一链接，导致本进程连接被打断），
+    // 此时删除不完整文件并报错，避免留下“能双击但无法播放”的损坏文件。
+    if total_size > 0 && downloaded < total_size {
+        let _ = tokio::fs::remove_file(&dest).await;
+        return Err(format!(
+            "下载不完整（{downloaded}/{total_size} 字节），可能被其他下载器（如 IDM）拦截。请在下载器设置中排除本应用，或临时退出下载器后重试。"
+        ));
+    }
+
+    // 发送最终 100% 进度，确保前端收到完成状态
+    let elapsed = start_time.elapsed().as_secs_f64();
+    let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
+    let _ = app_handle.emit(
+        "song-download-progress",
+        SongDownloadProgress {
+            progress: 100.0,
+            downloaded,
+            total: if total_size > 0 { total_size } else { downloaded },
+            speed,
+        },
+    );
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// 保存歌词文本到指定文件（用于下载歌曲时一并保存歌词）。
+#[tauri::command]
+pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
+    let dest = PathBuf::from(&dest_path);
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建歌词目录失败: {e}"))?;
+    }
+    tokio::fs::write(&dest, content)
+        .await
+        .map_err(|e| format!("写入歌词文件失败: {e}"))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// 将前端已下载的字节数据写入目标文件（用于前端 fetch 下载音频后落盘）。
+///
+/// 前端在 WebView 中用 fetch 拉取音频数据（IDM 等下载器默认不接管 AJAX 请求，
+/// 可规避被拦截），再把字节交给此命令写盘。
+#[tauri::command]
+pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<String, String> {
+    if data.is_empty() {
+        return Err("下载数据为空".to_string());
+    }
+    let dest = PathBuf::from(&dest_path);
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建下载目录失败: {e}"))?;
+    }
+    tokio::fs::write(&dest, &data)
+        .await
+        .map_err(|e| format!("写入文件失败: {e}"))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub async fn fetch_announcement() -> Result<String, String> {
     let timestamp = std::time::SystemTime::now()

@@ -434,6 +434,7 @@ onScopeDispose(() => {
             settings.download.lyricsFormat = 'lrc';
             settings.download.overwriteExisting = false;
             settings.download.keepSourceFilename = false;
+            settings.download.rememberDownloadPath = false;
             showToast('已恢复默认下载设置', 'success');
           }"
         >
