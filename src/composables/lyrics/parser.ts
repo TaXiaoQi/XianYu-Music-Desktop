@@ -447,3 +447,156 @@ export async function prepareParsedLyrics(raw: string): Promise<ParsedLine[]> {
 
   return normalizeParsedLineEndTimes(prepared);
 }
+
+// ==================== lx-music-desktop lxlyric 转换 ====================
+
+/**
+ * 将毫秒数格式化为 mm:ss.xxx 时间戳字符串
+ */
+function msToTimestamp(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const millis = ms % 1000;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
+}
+
+/**
+ * lx-music-desktop 的 lxlyric 格式转换为 Enhanced LRC 格式
+ *
+ * lxlyric 格式: [mm:ss.ms]<offset,duration>word<offset,duration>word...
+ *   - offset: 相对于行首的偏移量（毫秒）
+ *   - duration: 该字的持续时间（毫秒）
+ *
+ * Enhanced LRC 格式: [mm:ss.ms]<mm:ss.ms>word<mm:ss.ms>word...<mm:ss.ms>
+ *   - 每个标记是绝对时间戳
+ *   - 最后一个标记是行结束时间（无文字跟在后面）
+ *
+ * @param lxlyric lx-music-desktop 格式的逐字歌词
+ * @returns Enhanced LRC 格式的逐字歌词，转换失败时返回空字符串
+ */
+export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
+  if (!lxlyric || !lxlyric.trim()) return '';
+
+  const lines = lxlyric.split('\n');
+  const result: string[] = [];
+
+  // lxlyric 词时间标记: <offset,duration>
+  const lxWordTimePattern = /<(\d+),(\d+)>/g;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // 尝试匹配行时间戳 [mm:ss.ms]
+    const lineMatch = LRC_LINE_TIMESTAMP_PATTERN.exec(line);
+    if (!lineMatch) {
+      // 非歌词行（如 [offset:0]）直接保留
+      result.push(line);
+      continue;
+    }
+
+    const lineStartStr = lineMatch[1];
+    const lineStartMs = parseTimestampToMs(lineStartStr);
+    if (lineStartMs === null) {
+      result.push(line);
+      continue;
+    }
+
+    const body = lineMatch[2];
+    const wordTimes = [...body.matchAll(lxWordTimePattern)];
+
+    if (wordTimes.length === 0) {
+      // 没有逐字时间标记，保留为普通 LRC 行
+      result.push(line);
+      continue;
+    }
+
+    // 重建 body，将 <offset,duration> 转为 <mm:ss.ms> 绝对时间戳
+    let convertedBody = '';
+    let lastEnd = 0;
+    let lastOffset = 0;
+    let lastDuration = 0;
+
+    for (const wt of wordTimes) {
+      const offset = parseInt(wt[1]);
+      const duration = parseInt(wt[2]);
+      const absoluteMs = lineStartMs + offset;
+      const timestampStr = msToTimestamp(absoluteMs);
+
+      // 添加标记之间的文字
+      const textBefore = body.substring(lastEnd, wt.index);
+      convertedBody += textBefore;
+
+      // 添加转换后的时间戳
+      convertedBody += `<${timestampStr}>`;
+
+      lastEnd = (wt.index ?? 0) + wt[0].length;
+      lastOffset = offset;
+      lastDuration = duration;
+    }
+
+    // 添加最后一个标记后的文字
+    convertedBody += body.substring(lastEnd);
+
+    // 添加行结束时间标记（无文字跟在后面）
+    const endTimeMs = lineStartMs + lastOffset + lastDuration;
+    const endTimeStr = msToTimestamp(endTimeMs);
+    convertedBody += `<${endTimeStr}>`;
+
+    result.push(`[${lineStartStr}]${convertedBody}`);
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * 构建用于存储到 lyrics_raw 的歌词文本
+ *
+ * 优先级：
+ * 1. 如果有 lxlyric（逐字歌词），转换为 Enhanced LRC 格式作为主歌词
+ * 2. 如果有 tlyric（翻译歌词），作为附加行追加
+ * 3. 如果有 rlyric（罗马音歌词），作为附加行追加
+ * 4. 如果没有 lxlyric，使用普通 lyric + tlyric + rlyric
+ *
+ * @param lyric 普通歌词
+ * @param tlyric 翻译歌词（可选）
+ * @param rlyric 罗马音歌词（可选）
+ * @param lxlyric 逐字歌词（可选，lx-music-desktop 格式）
+ * @returns 用于存储到 lyrics_raw 的歌词文本
+ */
+export function buildLyricsRaw(
+  lyric: string,
+  tlyric?: string | null,
+  rlyric?: string | null,
+  lxlyric?: string | null,
+): string {
+  // 如果有逐字歌词，优先使用
+  if (lxlyric && lxlyric.trim()) {
+    const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
+    if (enhancedLrc) {
+      // 追加翻译歌词（作为普通 LRC 行）
+      const parts = [enhancedLrc];
+      if (tlyric && tlyric.trim()) {
+        parts.push(tlyric.trim());
+      }
+      if (rlyric && rlyric.trim()) {
+        parts.push(rlyric.trim());
+      }
+      return parts.join('\n');
+    }
+  }
+
+  // 没有逐字歌词，使用普通歌词
+  const parts: string[] = [];
+  if (lyric && lyric.trim()) {
+    parts.push(lyric.trim());
+  }
+  if (tlyric && tlyric.trim()) {
+    parts.push(tlyric.trim());
+  }
+  if (rlyric && rlyric.trim()) {
+    parts.push(rlyric.trim());
+  }
+  return parts.join('\n');
+}
