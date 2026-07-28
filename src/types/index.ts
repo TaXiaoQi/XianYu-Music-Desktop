@@ -474,3 +474,41 @@ export interface PluginHttpResponse {
   body: string;
 }
 
+/** MusicFree 插件搜索结果 */
+export interface PluginSearchResult {
+  id: string;
+  title: string;
+  name?: string;
+  artist: string;
+  album: string;
+  coverUrl: string;
+  duration: number;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}
+
+/** MusicFree 插件音乐信息（含播放URL） */
+export interface PluginMusicInfo {
+  url: string;
+  lyric?: string;
+  tlyric?: string;
+  coverUrl?: string;
+  headers?: Record<string, string>;
+}
+
+/** MusicFree 插件歌单搜索结果 */
+export interface PluginPlaylistSearchResult {
+  id: string;
+  title: string;
+  coverUrl: string;
+  playCount?: number;
+  trackCount?: number;
+  artist?: string;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}
+
