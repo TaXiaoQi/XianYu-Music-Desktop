@@ -3,10 +3,10 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { LyricLine as AmlLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import { PatchedLyricPlayer } from '../../lib/amll/PatchedLyricPlayer';
 import { syncAmlLyricSeekLayout } from './amllSeekLayout';
+import { usePerformanceMode } from '../../composables/usePerformanceMode';
 
 const props = withDefaults(defineProps<{
   disabled?: boolean;
-  lowPower?: boolean;
   playing?: boolean;
   alignAnchor?: 'top' | 'bottom' | 'center';
   alignPosition?: number;
@@ -21,7 +21,6 @@ const props = withDefaults(defineProps<{
   layoutVersion?: string | number;
 }>(), {
   disabled: false,
-  lowPower: false,
   playing: true,
   alignAnchor: 'center',
   alignPosition: 0.5,
@@ -42,14 +41,12 @@ const emit = defineEmits<{
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
 
+const { isLowPerformance } = usePerformanceMode();
+
 let player: PatchedLyricPlayer | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let frameId = 0;
 let recoveryFrameId = 0;
-let queueRecoveryMaxAttempts = 0;
-let queueRecoveryAttempts = 0;
-let queueRecoveryReason = '';
-let pendingLowPowerRecoveryReason = '';
 
 function stopAnimationLoop() {
   if (frameId !== 0) {
@@ -61,13 +58,13 @@ function stopAnimationLoop() {
 function startAnimationLoop() {
   stopAnimationLoop();
 
-  if (props.disabled || props.lowPower) {
+  if (props.disabled || !props.playing) {
     return;
   }
 
   let lastTime = -1;
   const onFrame = (time: number) => {
-    if (!player || props.disabled || props.lowPower) {
+    if (!player || props.disabled || !props.playing) {
       frameId = 0;
       return;
     }
@@ -95,7 +92,12 @@ function applyPlayerProps() {
   player.setHidePassedLines(props.hidePassedLines);
   player.setWordFadeWidth(props.wordFadeWidth);
   player.setLineGap(props.lineGap);
-  player.setPlaybackPaused(!props.playing);
+
+  if (props.playing) {
+    player.resume();
+  } else {
+    player.pause();
+  }
 }
 
 function attachPlayer(nextPlayer: PatchedLyricPlayer) {
@@ -121,37 +123,23 @@ function detachPlayer() {
   player = null;
 }
 
-function queueRecovery(reason: string, options: { maxAttempts?: number } = {}) {
+function queueRecovery(reason: string) {
   if (!player) return;
 
-  if (props.lowPower) {
-    pendingLowPowerRecoveryReason = reason;
-    return;
+  if (recoveryFrameId !== 0) {
+    cancelAnimationFrame(recoveryFrameId);
   }
 
-  const maxAttempts = options.maxAttempts ?? 12;
-  queueRecoveryReason = reason;
-  queueRecoveryMaxAttempts = Math.max(queueRecoveryMaxAttempts, maxAttempts);
-
-  if (recoveryFrameId !== 0) return;
-
-  queueRecoveryAttempts = 0;
+  let attempts = 0;
   const runRecovery = () => {
-    if (!player) {
-      recoveryFrameId = 0;
-      queueRecoveryMaxAttempts = 0;
-      queueRecoveryAttempts = 0;
-      return;
-    }
+    if (!player) return;
 
-    player.recoverLayout(`${queueRecoveryReason}:${queueRecoveryAttempts}`);
-    if (queueRecoveryAttempts < queueRecoveryMaxAttempts) {
-      queueRecoveryAttempts += 1;
+    player.recoverLayout(`${reason}:${attempts}`);
+    if (attempts < 12) {
+      attempts += 1;
       recoveryFrameId = requestAnimationFrame(runRecovery);
     } else {
       recoveryFrameId = 0;
-      queueRecoveryMaxAttempts = 0;
-      queueRecoveryAttempts = 0;
     }
   };
 
@@ -176,7 +164,10 @@ onMounted(() => {
   const wrapper = wrapperRef.value;
   if (!wrapper) return;
 
-  attachPlayer(new PatchedLyricPlayer());
+  // [修复防御]: 低性能模式禁用歌词 blur filter，避免集显每帧 N 行 blur 触发软件渲染
+  const nextPlayer = new PatchedLyricPlayer();
+  nextPlayer.disableBlurFilter = isLowPerformance.value;
+  attachPlayer(nextPlayer);
   startAnimationLoop();
   queueRecovery('mounted');
 
@@ -192,10 +183,7 @@ onBeforeUnmount(() => {
   if (recoveryFrameId !== 0) {
     cancelAnimationFrame(recoveryFrameId);
     recoveryFrameId = 0;
-    queueRecoveryMaxAttempts = 0;
-    queueRecoveryAttempts = 0;
   }
-  pendingLowPowerRecoveryReason = '';
 
   resizeObserver?.disconnect();
   resizeObserver = null;
@@ -215,27 +203,16 @@ watch(() => props.disabled, (disabled) => {
   queueRecovery('disabled-toggle');
 });
 
-watch(() => props.lowPower, (lowPower) => {
-  if (lowPower) {
-    stopAnimationLoop();
-    if (recoveryFrameId !== 0) {
-      cancelAnimationFrame(recoveryFrameId);
-      recoveryFrameId = 0;
-      queueRecoveryMaxAttempts = 0;
-      queueRecoveryAttempts = 0;
-    }
-    return;
-  }
-
-  startAnimationLoop();
-  queueRecovery(pendingLowPowerRecoveryReason || 'low-power-toggle');
-  pendingLowPowerRecoveryReason = '';
-});
-
 watch(() => props.playing, (playing) => {
   if (!player) return;
 
-  player.setPlaybackPaused(!playing);
+  if (playing) {
+    player.resume();
+    startAnimationLoop();
+  } else {
+    player.pause();
+    stopAnimationLoop();
+  }
 });
 
 watch(() => props.alignAnchor, (value) => {
@@ -275,7 +252,7 @@ watch(() => props.wordFadeWidth, (value) => {
 
 watch(() => props.lineGap, (value) => {
   player?.setLineGap(value);
-  queueRecovery('line-gap', { maxAttempts: 0 });
+  queueRecovery('line-gap');
 });
 
 watch(() => props.layoutVersion, () => {

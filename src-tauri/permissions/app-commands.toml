@@ -117,5 +117,7 @@ commands.allow = [
   "run_installer",
   "fetch_announcement",
   "plugin_http_request",
+  "plugin_http_request_binary",
+  "parse_lyrics_text",
   "read_plugin_file",
 ]

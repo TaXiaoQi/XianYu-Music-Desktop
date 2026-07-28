@@ -1,11 +1,11 @@
 <div align="center">
   <img src="logo.png" width="120" height="120" alt="Lycia Player Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-# XY-Music (弦予·音乐播放器)
+# 弦予音乐
+(XianYue-Music)
 
-一款基于 **Tauri v2** 和 **Vue 3** 构建的现代化、高颜值本地音乐播放器，专为 Windows 平台打造，聚焦于良好的播放体验、歌词显示和系统整合。
+一款基于 **[Lycia Player](https://github.com/Billy636/LyciaMusic)** 修改构建的现代化、高颜值在线音乐播放框架，支持插件化在线音乐、本地音乐等播放功能,拥有良好的音乐播放体验。
 
-[](./README_EN.md)
  [](https://tauri.app/)
  [](https://vuejs.org/)
  [](https://www.typescriptlang.org/)
@@ -18,16 +18,6 @@
  [](./LICENSE)
 
 </div>
-
----
-
-> [!IMPORTANT]
-> **项目状态：开发阶段 (Alpha)**
-> 本项目基于个人兴趣开发。功能会优先围绕作者本人的本地音乐使用场景推进，部分功能测试覆盖仍有限，未经严格测试。如果您在日常使用中遇到问题，欢迎通过 [GitHub Issues](https://github.com/TaXiaoQi/XY-Music-Desktop/issues) 反馈。
-> 
-> 个人精力有限，开发节奏较慢。如果您是程序员，或者非常熟悉 AI 辅助编程（Vibe Coding），非常欢迎使用 AI 工具来扩展功能并提交 Pull Request（请优先针对 `dev` 分支进行提交，提交时请尽可能的审核代码，同时自己在本地进行测试确认无误）。
-
----
 
 ## ✨ 功能亮点
 
@@ -93,7 +83,7 @@
 
 ---
 
-## 🛠️ 使用源码运行
+## 🛠️ 使用源码构建运行
 
 ### 环境要求
 
@@ -174,36 +164,18 @@ graph TD
 
 ---
 
-## 💝 特别致谢 (Special Thanks)
+## 💝 特别致谢 
 
-- **[AMLL (Apple Music-like Lyrics)](https://github.com/Steve-xmh/Apple-Music-Like-Lyrics)**：本项目歌词部分的渲染与适配，深度参考并改编了 AMLL 项目的优秀实现。特此向其作者及所有贡献者致以最诚挚的谢意！
-
----
-
-## 👥 贡献排行与 Commit 统计
-
-感谢所有通过 Commit 提交、Issue 反馈为 Lycia Player 做出贡献的人！
-
-| 贡献者 | 头像  | 提交数 (Commits) |
-| --- | --- | --- |
-| **[Billy636](https://github.com/Billy636)** | ![](https://github.com/Billy636.png) | **586** |
-| **[Xiyue Cheng](https://github.com/silver-wolf-little-wife)** | ![](https://github.com/silver-wolf-little-wife.png) | **7** |
-
-*如果您提交了 Pull Request 并被合并，您的头像和 Commit 数量统计将会在下一次文档更新中在此体现。*
+- **[Lycia Player](https://github.com/Billy636/LyciaMusic)**：本项目的UI设计、基础技术框架、本地播放引擎均由原项目实现。特此向其作者及所有贡献者致以最诚挚的谢意！
 
 ---
 
-## 📈 Star 历史趋势 (Star History)
-
-[](https://star-history.com/#Billy636/LyciaMusic&Date)
-
----
 
 ## ⚖️ 许可与资产声明
 
 - **开源协议**：本项目基于 **AGPL-3.0-only** 许可协议开源，完整协议内容及歌词改编归属说明请分别参阅 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
-- **资产版权**：本项目内包含的所有视觉资产（包括但不限于应用 Logo、插图、截图等）均属作者个人所有。未经原作者明确授权，请勿将这些图片资产用于任何商业用途或二次分发。
+- **资产版权**：本项目内包含的所有视觉资产（包括但不限于应用 Logo、插图、截图等）均属原作者[Billy636](https://github.com/Billy636)个人及弦予开发团队（后称原团队）所有。未经原团队明确授权，请勿将这些图片资产用于任何商业用途或二次分发。
 
 ---
 
-*更新日期：2026-06-08*
+*更新日期：2026-07-28*
