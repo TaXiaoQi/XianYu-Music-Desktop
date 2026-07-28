@@ -101,6 +101,7 @@ export const LYRICS_FONT_OPTIONS = [
 export const defaultLyricsSettings: LyricsSettings = {
   showTranslation: true,
   showRomaji: false,
+  enableWordEffect: true,
   playerRenderMode: DEFAULT_PLAYER_RENDER_MODE,
   playerFontScale: DEFAULT_PLAYER_FONT_SCALE,
   playerLineGap: DEFAULT_PLAYER_LINE_GAP,
@@ -285,6 +286,9 @@ export function normalizeLyricsSettingsPatch(patch: Partial<LyricsSettings>): Ly
     showRomaji: typeof patch.showRomaji === 'boolean'
       ? patch.showRomaji
       : defaultLyricsSettings.showRomaji,
+    enableWordEffect: typeof patch.enableWordEffect === 'boolean'
+      ? patch.enableWordEffect
+      : defaultLyricsSettings.enableWordEffect,
     playerRenderMode: normalizeLyricsPlayerRenderMode(patch.playerRenderMode),
     playerFontScale: clampPlayerFontScale(patch.playerFontScale ?? DEFAULT_PLAYER_FONT_SCALE),
     playerLineGap: clampPlayerLineGap(patch.playerLineGap ?? DEFAULT_PLAYER_LINE_GAP),
