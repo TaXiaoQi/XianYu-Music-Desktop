@@ -69,9 +69,9 @@ pub async fn play_audio(
     let playback_id = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let mut selected_output_mode = output_mode;
     let source = if is_remote_uri(&path) {
-        match remote_playback_source(&db_state, &path)? {
-            RemotePlaybackSource::Cached { path } => AudioSource::LocalFile(path),
-            RemotePlaybackSource::Stream(stream) => {
+        match remote_playback_source(&db_state, &path) {
+            Ok(RemotePlaybackSource::Cached { path }) => AudioSource::LocalFile(path),
+            Ok(RemotePlaybackSource::Stream(stream)) => {
                 selected_output_mode = AudioOutputMode::Shared;
                 schedule_remote_cache_after_half(
                     app.clone(),
@@ -83,6 +83,16 @@ pub async fn play_audio(
                     duration,
                 );
                 AudioSource::RemoteWebDav(stream)
+            }
+            // [落雪] URL 不在数据库中（非 WebDAV 远程源），作为直接 HTTP 音频流播放
+            Err(_) => {
+                selected_output_mode = AudioOutputMode::Shared;
+                AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
+                    remote_uri: path.clone(),
+                    url: path.clone(),
+                    username: None,
+                    password: None,
+                })
             }
         }
     } else {
