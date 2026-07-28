@@ -1,11 +1,11 @@
 <div align="center">
   <img src="logo.png" width="120" height="120" alt="Lycia Player Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-# XY-Music (弦予·音乐播放器)
+# 弦予音乐
+(XianYue-Music)
 
-一款基于 **Tauri v2** 和 **Vue 3** 构建的现代化、高颜值本地音乐播放器，专为 Windows 平台打造，聚焦于良好的播放体验、歌词显示和系统整合。
+一款基于 **[Lycia Player](https://github.com/Billy636/LyciaMusic)** 修改构建的现代化、高颜值音乐播放器，拥有良好的本地播放体验。
 
-[](./README_EN.md)
  [](https://tauri.app/)
  [](https://vuejs.org/)
  [](https://www.typescriptlang.org/)
@@ -18,16 +18,6 @@
  [](./LICENSE)
 
 </div>
-
----
-
-> [!IMPORTANT]
-> **项目状态：开发阶段 (Alpha)**
-> 本项目基于个人兴趣开发。功能会优先围绕作者本人的本地音乐使用场景推进，部分功能测试覆盖仍有限，未经严格测试。如果您在日常使用中遇到问题，欢迎通过 [GitHub Issues](https://github.com/TaXiaoQi/XY-Music-Desktop/issues) 反馈。
-> 
-> 个人精力有限，开发节奏较慢。如果您是程序员，或者非常熟悉 AI 辅助编程（Vibe Coding），非常欢迎使用 AI 工具来扩展功能并提交 Pull Request（请优先针对 `dev` 分支进行提交，提交时请尽可能的审核代码，同时自己在本地进行测试确认无误）。
-
----
 
 ## ✨ 功能亮点
 
@@ -93,7 +83,7 @@
 
 ---
 
-## 🛠️ 使用源码运行
+## 🛠️ 使用源码构建
 
 ### 环境要求
 
@@ -180,24 +170,6 @@ graph TD
 
 ---
 
-## 👥 贡献排行与 Commit 统计
-
-感谢所有通过 Commit 提交、Issue 反馈为 Lycia Player 做出贡献的人！
-
-| 贡献者 | 头像  | 提交数 (Commits) |
-| --- | --- | --- |
-| **[Billy636](https://github.com/Billy636)** | ![](https://github.com/Billy636.png) | **586** |
-| **[Xiyue Cheng](https://github.com/silver-wolf-little-wife)** | ![](https://github.com/silver-wolf-little-wife.png) | **7** |
-
-*如果您提交了 Pull Request 并被合并，您的头像和 Commit 数量统计将会在下一次文档更新中在此体现。*
-
----
-
-## 📈 Star 历史趋势 (Star History)
-
-[](https://star-history.com/#Billy636/LyciaMusic&Date)
-
----
 
 ## ⚖️ 许可与资产声明
 
@@ -206,4 +178,4 @@ graph TD
 
 ---
 
-*更新日期：2026-06-08*
+*更新日期：2026-07-28*
