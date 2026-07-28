@@ -145,7 +145,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2 overflow-x-auto overflow-y-visible custom-scrollbar no-scrollbar py-2 pl-0 pr-4">
         <div

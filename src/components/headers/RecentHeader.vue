@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useSearchTitleSuffix } from '../../composables/useSearchAwareTitle';
 
 defineProps<{
   isBatchMode: boolean;
@@ -13,6 +14,8 @@ import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 const { 
   recentTab, 
 } = usePlayerViewState();
+
+const searchSuffix = useSearchTitleSuffix();
 
 // --- Tab Underline Logic ---
 const tabsContainer = ref<HTMLElement | null>(null);
@@ -58,7 +61,7 @@ const handleEnterBatchMode = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
@@ -110,6 +113,14 @@ const handleEnterBatchMode = () => {
           :style="underlineStyle"
         ></div>
       </div>
+
+      <!-- 搜索结果提示（仅搜索时显示） -->
+      <span
+        v-if="searchSuffix"
+        class="ml-1 shrink-0 truncate text-base font-medium text-gray-500 dark:text-gray-400"
+      >
+        {{ searchSuffix }}
+      </span>
 
       <!-- 右侧操作按钮 -->
       <div class="flex items-center gap-2">

@@ -21,9 +21,16 @@ const showSubscriptionPanel = ref(false);
 const showInstallFromUrlDialog = ref(false);
 const installUrl = ref('');
 
+/** 插件订阅源 */
+interface Subscription {
+  id: string;
+  name: string;
+  url: string;
+}
+
 // 插件列表（从 localStorage 读取）
 const plugins = ref<PluginSource[]>(getStoredPlugins());
-const subscriptions = ref<{ id: string; name: string; url: string }[]>([]);
+const subscriptions = ref<Subscription[]>([]);
 
 const isPluginBusy = ref(false);
 
@@ -132,10 +139,6 @@ async function installPluginFromScript(script: string, filePath: string) {
 
 // ==================== 插件管理 ====================
 
-async function handleUpdateAll() {
-  showToast('暂不支持批量更新，请重新导入插件', 'info');
-}
-
 async function handleUninstallAll() {
   if (plugins.value.length === 0) return;
   for (const p of [...plugins.value]) {
@@ -238,17 +241,6 @@ function handleRemoveSubscription(sub: Subscription) {
           </button>
 
           <div class="flex-1"></div>
-
-          <button
-            type="button"
-            class="settings-plugin-button settings-plugin-button--secondary"
-            :disabled="isPluginBusy || plugins.length === 0"
-            :class="{ 'settings-plugin-button--disabled': isPluginBusy || plugins.length === 0 }"
-            @click="handleUpdateAll"
-          >
-            <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': isPluginBusy }" />
-            更新全部
-          </button>
 
           <button
             type="button"

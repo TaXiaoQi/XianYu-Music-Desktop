@@ -36,6 +36,12 @@ const resolveSharedPaths = (paths: string[], existing: string[], sibling: string
 
 export const useLibraryStore = defineStore('library', () => {
   const songPool = new Map<string, LibrarySong>();
+  /**
+   * 额外歌曲元信息池：存放不属于本地音乐库、但需要长期可反查的歌曲
+   * （目前用于"已收藏的在线歌曲"）。
+   * 与 songPool 的关键区别：不受 pruneSongPool 清理，避免库更新时被删掉。
+   */
+  const extraSongPool = new Map<string, LibrarySong>();
   const songCatalogVersion = ref(0);
   const libraryDataVersion = ref(0);
   const stringPool = new Map<string, string>();
@@ -325,12 +331,49 @@ export const useLibraryStore = defineStore('library', () => {
     }
   };
 
+  /** 写入额外歌曲元信息（在线收藏歌曲用），不受库清理影响 */
+  const setExtraSong = (song: LibrarySong) => {
+    if (!song?.path) {
+      return;
+    }
+
+    extraSongPool.set(song.path, { ...song });
+    songCatalogVersion.value += 1;
+  };
+
+  /** 批量写入额外歌曲元信息（启动恢复时用） */
+  const setExtraSongs = (songs: LibrarySong[]) => {
+    let changed = false;
+    songs.forEach((song) => {
+      if (!song?.path) {
+        return;
+      }
+      extraSongPool.set(song.path, { ...song });
+      changed = true;
+    });
+
+    if (changed) {
+      songCatalogVersion.value += 1;
+    }
+  };
+
+  /** 移除额外歌曲元信息 */
+  const removeExtraSong = (path: string | null | undefined) => {
+    if (!path) {
+      return;
+    }
+
+    if (extraSongPool.delete(path)) {
+      songCatalogVersion.value += 1;
+    }
+  };
+
   const getSongByPath = (path: string | null | undefined, fallback?: Song | null) => {
     if (!path) {
       return fallback ?? null;
     }
 
-    return songPool.get(path) ?? fallback ?? null;
+    return songPool.get(path) ?? extraSongPool.get(path) ?? fallback ?? null;
   };
 
   const resolveSongsByPaths = (paths: string[], fallbackSongs: Song[] = []) => {
@@ -348,7 +391,18 @@ export const useLibraryStore = defineStore('library', () => {
 
   const songLookup = computed(() => {
     songCatalogVersion.value;
-    return songPool as Map<string, Song>;
+
+    // 无额外歌曲时直接复用 songPool，避免无谓的 Map 复制
+    if (extraSongPool.size === 0) {
+      return songPool as Map<string, Song>;
+    }
+
+    // 合并：额外歌曲（在线收藏）在下，本地库歌曲优先覆盖
+    const merged = new Map<string, Song>(extraSongPool as Map<string, Song>);
+    songPool.forEach((song, path) => {
+      merged.set(path, song);
+    });
+    return merged;
   });
 
   const canonicalSongs = computed<Song[]>({
@@ -527,6 +581,9 @@ export const useLibraryStore = defineStore('library', () => {
     getSongByPath,
     resolveSongsByPaths,
     setSongRecord,
+    setExtraSong,
+    setExtraSongs,
+    removeExtraSong,
     libraryFolders,
     libraryHierarchy,
     artistCatalog,
