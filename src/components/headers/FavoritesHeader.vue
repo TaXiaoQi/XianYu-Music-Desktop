@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
+
 defineProps<{
   isBatchMode: boolean;
   selectedCount?: number;
 }>();
 
 const emit = defineEmits(['update:isBatchMode', 'playAll', 'batchPlay', 'addToPlaylist', 'batchDelete', 'clearAll', 'addAllToQueue']);
+
+const pageTitle = useSearchAwareTitle('我的收藏');
 
 const handlePlayAll = () => { 
   emit('playAll');
@@ -20,7 +24,7 @@ const handleEnterBatchMode = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
@@ -44,7 +48,7 @@ const handleEnterBatchMode = () => {
     <div v-else class="flex items-center justify-between">
       <!-- 左侧标题 -->
       <div class="flex items-center gap-2 pb-1">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">我的收藏</h2>
+        <h2 class="text-xl font-bold text-gray-900 dark:text-white">{{ pageTitle }}</h2>
       </div>
 
       <!-- 右侧操作按钮 -->

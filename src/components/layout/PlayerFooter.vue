@@ -399,7 +399,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="flex items-center w-1/3 min-w-[200px]" @contextmenu="handleContextMenu">
+    <div class="flex items-center w-1/3 min-w-[150px]" @contextmenu="handleContextMenu">
       <div 
         ref="footerCoverRef"
         data-footer-cover
@@ -536,14 +536,14 @@ onUnmounted(() => {
         <button
           ref="qualityButtonRef"
           @click="toggleQualityMenu"
-          class="flex items-center gap-1 px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
+          class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
           :class="showQualityMenu
             ? 'text-[#EC4141] bg-[#EC4141]/10'
             : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
           title="音质选择"
         >
-          <Music class="h-3.5 w-3.5" :stroke-width="2.2" />
-          <span>{{ currentQuality }}</span>
+          <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
+          <span class="whitespace-nowrap">{{ currentQuality }}</span>
         </button>
 
         <transition name="fade-scale">
@@ -565,7 +565,7 @@ onUnmounted(() => {
                   ? 'text-[#EC4141] bg-[#EC4141]/8'
                   : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
               >
-                <span class="flex-1 text-left">{{ opt.label }}</span>
+                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
                 <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
               </button>
             </div>

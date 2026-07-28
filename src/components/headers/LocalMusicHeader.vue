@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
 import SortModeIcon from '../common/SortModeIcon.vue';
 
 defineProps<{
@@ -23,6 +24,8 @@ const {
   localSortMode,
   setLocalSortMode,
 } = usePlayerViewState();
+
+const pageTitle = useSearchAwareTitle('本地音乐');
 
 const sortLabelMap = {
   title: '\u6b4c\u66f2\u540d',
@@ -81,7 +84,7 @@ const handleEnterBatchMode = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
         <button @click="emit('batchPlay')" class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 py-1.5 rounded-full text-sm transition flex items-center gap-1 active:scale-95 shadow-sm">
@@ -107,7 +110,7 @@ const handleEnterBatchMode = () => {
 
     <div v-else class="flex items-center justify-between">
       <div class="flex items-center gap-2 pb-1">
-        <h2 class="text-xl font-bold text-gray-900 dark:text-white">&#26412;&#22320;&#38899;&#20048;</h2>
+        <h2 class="text-xl font-bold text-gray-900 dark:text-white">{{ pageTitle }}</h2>
       </div>
 
       <div class="flex items-center gap-2">

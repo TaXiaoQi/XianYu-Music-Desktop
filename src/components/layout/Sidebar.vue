@@ -17,6 +17,7 @@ import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlayl
 import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers';
 import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
 import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
+import type { SidebarItemKey } from '../../types';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';
@@ -179,6 +180,22 @@ const handleOpenPluginsView = () => {
 const handleOpenAccountView = () => {
   void openAuth();
 };
+
+/** 侧边栏项点击分发：侧边栏顺序可自定义，故统一用 key 派发到对应 handler */
+const sidebarSelectHandlers: Record<SidebarItemKey, () => void> = {
+  localMusic: handleOpenAllView,
+  artists: handleOpenArtistsView,
+  albums: handleOpenAlbumsView,
+  favorites: handleOpenFavoritesView,
+  recent: handleOpenRecentView,
+  folders: handleOpenFolderView,
+  plugins: handleOpenPluginsView,
+  account: handleOpenAccountView,
+};
+
+const handleSidebarSelect = (key: SidebarItemKey) => {
+  sidebarSelectHandlers[key]?.();
+};
 </script>
 
 <template>
@@ -192,14 +209,7 @@ const handleOpenAccountView = () => {
         :currentPath="route.path"
         :isDragActive="dragSession.active"
         @openHome="handleOpenHomeView"
-        @openAll="handleOpenAllView"
-        @openArtists="handleOpenArtistsView"
-        @openAlbums="handleOpenAlbumsView"
-        @openFavorites="handleOpenFavoritesView"
-        @openRecent="handleOpenRecentView"
-        @openFolder="handleOpenFolderView"
-        @openPlugins="handleOpenPluginsView"
-        @openAccount="handleOpenAccountView"
+        @select="handleSidebarSelect"
         @hoverArtists="handleHoverArtists"
         @hoverAlbums="handleHoverAlbums"
       />

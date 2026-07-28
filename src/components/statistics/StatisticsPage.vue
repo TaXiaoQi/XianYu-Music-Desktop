@@ -136,7 +136,7 @@ const hourLabels = computed(() => {
 
 <template>
   <div class="statistics-page h-full overflow-y-auto custom-scrollbar w-full select-none">
-    <div class="px-4 py-10 md:px-6 md:py-12 max-w-6xl mx-auto">
+    <div class="px-4 pt-[clamp(0.25rem,0.6vw,0.75rem)] pb-10 md:px-6 md:pb-12 max-w-6xl mx-auto">
       <!-- Loading state -->
       <div v-if="loading && !stats" class="space-y-8">
         <div class="h-40 rounded-3xl bg-gray-100/60 dark:bg-white/5 animate-pulse"></div>
@@ -165,7 +165,7 @@ const hourLabels = computed(() => {
       <!-- Main content -->
       <div v-else-if="stats && behaviorStats" class="space-y-[clamp(1rem,2vw,2rem)]">
         <!-- 总听歌时长 + 右侧三个小分支 -->
-        <section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1.25rem,2.5vw,2.5rem)] animate-fade-in-up">
+        <section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1rem,2vw,2rem)] animate-fade-in-up">
           <div class="flex items-end justify-between gap-[clamp(1rem,2vw,2.5rem)] flex-wrap">
             <!-- 左：总听歌时长 -->
             <div class="shrink-0">

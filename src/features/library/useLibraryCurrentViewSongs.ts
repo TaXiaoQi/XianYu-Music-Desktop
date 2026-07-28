@@ -78,6 +78,45 @@ export function useLibraryCurrentViewSongs({
   const { loadFolderViewSongPaths } = useLibraryFolderSongPathCache();
   const allViewSongPaths = ref<string[]>([]);
   const favoriteViewSongPaths = ref<string[]>([]);
+
+  /** 判断是否为在线歌曲路径（不在本地音乐库/数据库中） */
+  const isOnlineSongPath = (path: string) =>
+    path.startsWith('lx://') || path.startsWith('remote://') || path.startsWith('plugin://');
+
+  /**
+   * 后端收藏视图按数据库反查，会丢掉在线歌曲。
+   * 这里把仍能从 songLookup 反查到的在线收藏歌曲补回结果末尾，
+   * 并在有搜索词时按标题/歌手做前端过滤。
+   */
+  const appendMissingOnlineFavorites = (
+    backendPaths: string[],
+    allFavoritePaths: string[],
+    query: string,
+  ) => {
+    const existing = new Set(backendPaths);
+    const keyword = query.trim().toLowerCase();
+
+    const missingOnline = allFavoritePaths.filter((path) => {
+      if (existing.has(path) || !isOnlineSongPath(path)) {
+        return false;
+      }
+
+      const song = songLookup.value.get(path);
+      if (!song) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      const title = getSongTitleLabel(song).toLowerCase();
+      const artist = getSongArtistSearchText(song).toLowerCase();
+      return title.includes(keyword) || artist.includes(keyword);
+    });
+
+    return missingOnline.length > 0 ? [...backendPaths, ...missingOnline] : backendPaths;
+  };
   const recentViewSongPaths = ref<string[]>([]);
   const folderViewSongPaths = ref<string[]>([]);
   const localArtistFilterPaths = ref<string[]>([]);
@@ -226,7 +265,9 @@ export function useLibraryCurrentViewSongs({
           return;
         }
 
-        favoriteViewSongPaths.value = nextPaths;
+        // 后端按数据库反查收藏歌曲，在线歌曲（lx://、remote://、plugin://）不在库中会被丢弃。
+        // 这里把仍可从前端反查到的在线收藏歌曲补回列表末尾，避免它们在排序/搜索模式下消失。
+        favoriteViewSongPaths.value = appendMissingOnlineFavorites(nextPaths, paths, query);
       } catch {
         if (requestId !== favoriteViewRequestId) {
           return;

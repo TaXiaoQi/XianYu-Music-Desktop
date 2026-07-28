@@ -3,6 +3,9 @@ import type { Song } from '../../types';
 import { playerStorage } from '../../services/storage/playerStorage';
 import { historyApi } from '../../services/tauri/historyApi';
 import { useCollectionsStore } from './store';
+import { useLibraryStore } from '../library/store';
+import { isPluginSong } from '../../utils/pluginSong';
+import { isRemoteSong } from '../../utils/remoteSong';
 import router from '../../router';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useAddToPlaylistDialog } from './addToPlaylistDialog';
@@ -55,6 +58,15 @@ export function useLibraryCollections() {
     void openHomePlaylist(playlistId);
   };
 
+  /**
+   * 判断是否为在线歌曲（不在本地音乐库/数据库中）。
+   * 覆盖 remote://、plugin:// 以及落雪音源的 lx:// 协议。
+   */
+  const isOnlineSong = (song: Song) =>
+    isRemoteSong(song)
+    || isPluginSong(song)
+    || song.path?.startsWith('lx://') === true;
+
   const resolveSongPath = (target: Song | string | null | undefined) => {
     if (!target) {
       return null;
@@ -72,15 +84,36 @@ export function useLibraryCollections() {
       return false;
     }
 
-    return collectionsStore.toggleFavoritePath(path);
+    const isFavoriteNow = collectionsStore.toggleFavoritePath(path);
+    const song = typeof target === 'string' ? null : target;
+
+    // 在线歌曲（lx://、remote://、plugin://）不在本地音乐库/数据库中，
+    // 仅存 path 无法在收藏列表里还原歌曲信息，因此额外保存/清理其元信息。
+    if (song && isOnlineSong(song)) {
+      const libraryStore = useLibraryStore();
+      if (isFavoriteNow) {
+        collectionsStore.setFavoriteSongMeta(path, song);
+        libraryStore.setExtraSong(song);
+      } else {
+        collectionsStore.removeFavoriteSongMeta(path);
+        libraryStore.removeExtraSong(path);
+      }
+    }
+
+    return isFavoriteNow;
   };
 
   const removeFavoritePaths = (paths: string[]) => {
     collectionsStore.removeFavoritePaths(paths);
+    const libraryStore = useLibraryStore();
+    paths.forEach(path => libraryStore.removeExtraSong(path));
   };
 
   const clearFavorites = () => {
+    const removedPaths = Object.keys(collectionsStore.favoriteSongMeta);
     collectionsStore.clearFavorites();
+    const libraryStore = useLibraryStore();
+    removedPaths.forEach(path => libraryStore.removeExtraSong(path));
   };
 
   const addToHistory = async (song: Song) => {
