@@ -50,6 +50,93 @@ let networkAudioEndedHandler: (() => void) | null = null;
 /** IDM 兼容模式下为音频创建的 blob URL，需在切歌/停止时释放，避免内存泄漏 */
 let networkAudioBlobUrl: string | null = null;
 
+// --- 在线音频可视化（仅 IDM 兼容模式的本地 blob 可用；跨域直链受浏览器安全限制无法分析）---
+let networkAudioContext: AudioContext | null = null;
+let networkAnalyser: AnalyserNode | null = null;
+let networkAnalyserSource: MediaElementAudioSourceNode | null = null;
+let networkAnalyserBuffer: Uint8Array | null = null;
+const NETWORK_VISUALIZER_BANDS = 48;
+
+/**
+ * 为网络音频建立 Web Audio 分析链路（仅在本地 blob 播放时调用，跨域直链无法分析）。
+ *
+ * 关键点：
+ * - AudioContext 全局单例、只复用不 close。一旦对某个 <audio> 调用 createMediaElementSource，
+ *   该元素的音频就被路由进这个 context，必须保持 context running 否则会没声音/卡住。
+ * - 每首歌的 <audio> 是新实例，为它单独建 source（同一元素只能建一次，新元素没问题）。
+ */
+const setupNetworkAnalyser = async (audio: HTMLAudioElement) => {
+  try {
+    // 先断开上一首的 source（但不销毁 context）
+    try { networkAnalyserSource?.disconnect(); } catch { /* ignore */ }
+    networkAnalyserSource = null;
+
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!networkAudioContext) {
+      networkAudioContext = new AudioCtx();
+    }
+    // 自动播放策略可能让 context 处于 suspended。必须先等它恢复 running 再接入 source，
+    // 否则音频被路由进一个非 running 的 context 会没声音/卡住——宁可放弃可视化也不能影响播放
+    if (networkAudioContext.state === 'suspended') {
+      try { await networkAudioContext.resume(); } catch { /* ignore */ }
+    }
+    if (networkAudioContext.state !== 'running') {
+      return; // 无法恢复：不接入 source，保住正常播放
+    }
+
+    if (!networkAnalyser) {
+      networkAnalyser = networkAudioContext.createAnalyser();
+      networkAnalyser.fftSize = 256;
+      networkAnalyser.smoothingTimeConstant = 0.75;
+      networkAnalyser.connect(networkAudioContext.destination);
+      networkAnalyserBuffer = new Uint8Array(networkAnalyser.frequencyBinCount);
+    }
+
+    // 链路：source → analyser → destination（保证仍能听到声音）
+    networkAnalyserSource = networkAudioContext.createMediaElementSource(audio);
+    networkAnalyserSource.connect(networkAnalyser);
+  } catch (e: any) {
+    console.warn('[Audio] 网络音频可视化分析链路创建失败:', e?.message || e);
+    teardownNetworkAnalyser();
+  }
+};
+
+/** 断开当前歌曲的 source（保留复用 context/analyser 单例，避免反复创建销毁导致卡顿） */
+const teardownNetworkAnalyser = () => {
+  try { networkAnalyserSource?.disconnect(); } catch { /* ignore */ }
+  networkAnalyserSource = null;
+};
+
+/**
+ * 读取网络音频当前频谱，返回 0..1 的 48 个频段电平（与 Rust 后端可视化输出量级一致）。
+ * 无分析链路或频谱全为 0（context 未运行/静音）时返回空数组，调用方应回退到 Rust 数据源。
+ */
+export const getNetworkVisualizerLevels = (): number[] => {
+  if (!networkAnalyserSource || !networkAnalyser || !networkAnalyserBuffer) return [];
+  if (networkAudioContext?.state !== 'running') return [];
+
+  networkAnalyser.getByteFrequencyData(networkAnalyserBuffer);
+  const bins = networkAnalyserBuffer;
+  // 只取低到中频段（人耳音乐能量主要集中区），映射到 48 个频段
+  const usableBins = Math.floor(bins.length * 0.8);
+  const levels: number[] = new Array(NETWORK_VISUALIZER_BANDS);
+  let total = 0;
+  for (let i = 0; i < NETWORK_VISUALIZER_BANDS; i += 1) {
+    const start = Math.floor((i / NETWORK_VISUALIZER_BANDS) * usableBins);
+    const end = Math.max(start + 1, Math.floor(((i + 1) / NETWORK_VISUALIZER_BANDS) * usableBins));
+    let sum = 0;
+    for (let j = start; j < end; j += 1) sum += bins[j];
+    const level = sum / (end - start) / 255;
+    levels[i] = level;
+    total += level;
+  }
+  // 全 0（context 静音/未真正出数）时返回空，让调用方回退，避免频谱条贴底卡住
+  if (total <= 0) return [];
+  return levels;
+};
+
 /**
  * 彻底停止并清理 HTML5 网络音频。
  *
@@ -57,6 +144,7 @@ let networkAudioBlobUrl: string | null = null;
  * 并且让 pause/seek 的通道判断误判到已失效的网络音频上（表现为"切歌失败/暂停错乱"）。
  */
 const stopNetworkAudio = () => {
+  teardownNetworkAnalyser();
   if (!networkAudio) return;
 
   try {
@@ -578,6 +666,14 @@ export const createPlayerPlayback = ({
         audio.addEventListener('ended', networkAudioEndedHandler);
 
         audio.play().catch(() => {});
+
+        // [在线可视化] 仅在 IDM 兼容模式的本地 blob（同源）下建立 Web Audio 分析链路。
+        // 跨域直链受浏览器安全限制（tainted）无法取频谱；放到 play() 之后建立，
+        // 且分析链路创建失败/无法恢复 context 时不影响正常播放（内部已做保护）
+        if (networkAudioBlobUrl && networkAudioBlobUrl === playbackSource) {
+          void setupNetworkAnalyser(audio);
+        }
+
         isSongLoaded.value = true;
         sessionStartTime = Date.now();
         loadLyrics();
