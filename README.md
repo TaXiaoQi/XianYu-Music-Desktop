@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.png" width="120" height="120" alt="Lycia Player Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
+  <img src="logo.png" width="120" height="120" alt="XianYue Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
 # 弦予音乐
 (XianYue-Music)
