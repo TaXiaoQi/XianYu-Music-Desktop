@@ -270,6 +270,7 @@ export interface ImportedLyricsFont {
 export interface LyricsSettings {
   showTranslation: boolean;
   showRomaji: boolean;
+  enableWordEffect: boolean;
   playerRenderMode: LyricsPlayerRenderMode;
   playerFontScale: number;
   playerLineGap: number;

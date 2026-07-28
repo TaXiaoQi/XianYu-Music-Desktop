@@ -19,7 +19,7 @@ pub use covers::{clear_cover_cache, get_song_cover, get_song_cover_thumbnail, ru
 pub use files::{
     batch_move_music_files, create_folder, delete_folder, delete_music_file, get_song_detail,
     get_song_lyrics, get_song_lyrics_for_edit, get_song_lyrics_payload, is_directory,
-    move_file_to_folder, move_music_file, save_artist_avatar, save_song_info, save_song_lyrics, show_in_folder,
+    move_file_to_folder, move_music_file, parse_lyrics_text, save_artist_avatar, save_song_info, save_song_lyrics, show_in_folder,
 };
 pub use library::{
     add_library_folder, get_folder_children, get_library_album_catalog, get_library_artist_catalog,

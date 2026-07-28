@@ -12,6 +12,14 @@ pub struct PluginHttpResponse {
     pub body: String,
 }
 
+#[derive(Serialize)]
+pub struct PluginHttpBinaryResponse {
+    pub status: u16,
+    pub url: String,
+    pub headers: HashMap<String, String>,
+    pub body_base64: String,
+}
+
 /// 异步 HTTP 请求 —— 使用 reqwest 异步客户端，不阻塞主线程
 #[tauri::command]
 pub async fn plugin_http_request(
@@ -83,6 +91,79 @@ pub async fn plugin_http_request(
         url: final_url,
         headers: response_headers,
         body,
+    })
+}
+
+/// 异步二进制 HTTP 请求 —— 返回 base64 编码的 body，用于获取二进制歌词数据（如酷我 newlyric）
+#[tauri::command]
+pub async fn plugin_http_request_binary(
+    method: String,
+    url: String,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+    timeout: Option<u64>,
+    follow: Option<u32>,
+) -> Result<PluginHttpBinaryResponse, String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let method = reqwest::Method::from_bytes(method.trim().as_bytes())
+        .map_err(|error| error.to_string())?;
+
+    let redirect_limit = follow.unwrap_or(10);
+    let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
+        .timeout(request_timeout)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    let mut request = client.request(method, &url);
+    if let Some(headers) = headers {
+        for (key, value) in headers {
+            if key.trim().is_empty() || value.trim().is_empty() {
+                continue;
+            }
+            request = request.header(key, value);
+        }
+    }
+    if let Some(body) = body {
+        request = request.body(body);
+    }
+
+    let mut response = request.send().await.map_err(|error| error.to_string())?;
+    let status = response.status().as_u16();
+    let final_url = response.url().to_string();
+    let mut response_headers = HashMap::new();
+    for (key, value) in response.headers().iter() {
+        if let Ok(value) = value.to_str() {
+            response_headers.insert(key.as_str().to_string(), value.to_string());
+        }
+    }
+    const MAX_BODY_SIZE: usize = 50 * 1024 * 1024; // 50MB
+    let body_base64 = {
+        let mut buf = Vec::with_capacity(4096);
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if buf.len() + chunk.len() > MAX_BODY_SIZE {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk);
+                }
+                Ok(None) => break,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        general_purpose::STANDARD.encode(&buf)
+    };
+
+    Ok(PluginHttpBinaryResponse {
+        status,
+        url: final_url,
+        headers: response_headers,
+        body_base64,
     })
 }
 
