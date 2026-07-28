@@ -50,6 +50,14 @@ let networkAudioEndedHandler: (() => void) | null = null;
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
+// [修复防御] 本地音频后端进度 reanchor 漂移容忍度。
+// 对齐 YinDongMusic 的逐字歌词播放方法：默认信任 rAF 自增（performance.now() 墙钟），
+// 后端 samples_played 仅用于播放结束兜底检测与严重漂移纠正。
+// 旧阈值 0.05s 过严：后端 samples_played（音频设备实际拉取采样，见 types.rs TimedSource::next）
+// 天然滞后于 rAF 墙钟（音频缓冲、设备时钟漂移、歌曲开始解码器初始化），导致每秒 setInterval
+// 都触发 reanchor 把 currentTime 突变拉回后端滞后值，AMLL 逐字进度回退
+// → "前 3 个字来回循环" + 歌词行上下跳动。
+const LOCAL_AUDIO_DRIFT_TOLERANCE_SECONDS = 1.5;
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -223,42 +231,11 @@ export const createPlayerPlayback = ({
         return;
       }
 
-      scheduleUpdate(update);
+      progressFrameId = requestAnimationFrame(update);
     };
 
-    scheduleUpdate(update);
-    syncIntervalId = setInterval(async () => {
-      if (!isPlaying.value || isSeeking) return;
-
-      try {
-        const rawTime = await playbackApi.getPlaybackProgress();
-        const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-        const adjustedTime = Math.max(0, rawTime - offsetSec);
-        if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
-          reanchorPlaybackClock(adjustedTime);
-        }
-
-        // 播放结束兜底检测：后端进度连续两轮（≥2s）停滞且已播放过则视为结束
-        // - duration 未知：直接视为结束
-        // - duration 已知：仅当进度已接近 duration（相差 ≤3s）时视为结束，
-        //   避免中段缓冲（如远程流）造成误判；同时弥补 metadata 时长略大于实际
-        //   音频时长导致 currentTime 被 reanchor 拉回、永远到不了 duration 的问题
-        const song = currentSong.value;
-        if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
-          stalledProgressTicks += 1;
-          const unknownDuration = !song.duration || song.duration <= 0;
-          const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
-          if (stalledProgressTicks >= 2 && (unknownDuration || nearEnd)) {
-            stalledProgressTicks = 0;
-            handleAutoNext();
-            return;
-          }
-        } else {
-          stalledProgressTicks = 0;
-        }
-        lastRawProgress = rawTime;
-      } catch {}
-    }, 1000);
+    // All audio (local + network) uses HTML5 Audio timeupdate event for progress sync.
+    // No need for Tauri backend polling anymore.
   };
 
   const flushPlaySession = () => {
@@ -436,6 +413,60 @@ export const createPlayerPlayback = ({
         } catch (e: any) {
           console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${e?.message}`);
         }
+      }
+
+      // [落雪] 异步获取歌词（包括逐字歌词 lxlyric），不阻塞播放
+      if (!song.lyrics_raw) {
+        void (async () => {
+          let lyricResult: { lyric: string; tlyric?: string | null; rlyric?: string | null; lxlyric?: string | null } | null = null;
+          // 0. 优先直接从音乐平台 API 获取歌词（包括逐字歌词 lxlyric）
+          try {
+            const { fetchLxLyric, getCachedLxSongInfo } = await import('../services/lxLyricFetcher');
+            const cachedInfo = getCachedLxSongInfo(lxSource, songmid);
+            const result = await fetchLxLyric(lxSource as 'kw' | 'kg' | 'tx' | 'wy', cachedInfo ?? {
+              songmid, name: song.name, singer: song.artist,
+              albumName: song.album, source: lxSource,
+            });
+            if (result && (result.lyric || result.lxlyric)) lyricResult = result;
+          } catch { /* direct API fetch failed, try plugins */ }
+          // 1. [回退] 通过 LX 插件获取歌词
+          if (!lyricResult?.lyric && !lyricResult?.lxlyric) {
+            try {
+              const { lxPluginGetLyric, ensureLxPluginInstance } = await import('../services/lxPluginEngine');
+              const { getStoredPlugins } = await import('../services/pluginEngine');
+              const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
+              let matchedPlugin = lxPlugins.find(p => p.sources.includes(lxSource));
+              if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+              if (matchedPlugin) {
+                await ensureLxPluginInstance(matchedPlugin);
+                const lrcResult = await lxPluginGetLyric(matchedPlugin, lxSource, {
+                  songId: songmid, name: song.name, singer: song.artist,
+                  albumName: song.album, source: lxSource, songmid,
+                } as any);
+                if (lrcResult?.lyric) {
+                  lyricResult = lrcResult;
+                }
+              }
+            } catch { /* LX plugin may not support lyric action */ }
+          }
+          if (lyricResult?.lyric || lyricResult?.lxlyric) {
+            const { buildLyricsRaw } = await import('./lyrics/parser');
+            const lyricsText = buildLyricsRaw(
+              lyricResult.lyric,
+              lyricResult.tlyric ?? null,
+              lyricResult.rlyric ?? null,
+              lyricResult.lxlyric ?? null,
+            );
+            song.lyrics_raw = lyricsText;
+            const { loadLyrics } = await import('./lyrics/state');
+            const { usePlaybackStore } = await import('../features/playback/store');
+            const playbackStore = usePlaybackStore();
+            if (playbackStore.currentSong?.path === song.path) {
+              playbackStore.currentSong = { ...playbackStore.currentSong, lyrics_raw: lyricsText };
+              void loadLyrics();
+            }
+          }
+        })();
       }
     }
 

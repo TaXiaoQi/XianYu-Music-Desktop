@@ -1,0 +1,165 @@
+﻿cargo :     Blocking waiting for file lock on build directory
+所在位置 行:1 字符: 168
++ ... \11832\Desktop\1\XY-Music-Desktop\src-tauri; cargo check 2>&1 | Out-F ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling tauri-plugin v2.6.3
+   Compiling tauri-build v2.6.3
+    Checking webview2-com-sys v0.38.2
+   Compiling tauri-codegen v2.6.3
+    Checking tao v0.35.3
+    Checking av-scenechange v0.14.1
+    Checking bitstream-io v4.10.0
+    Checking profiling v1.0.18
+    Checking tokio-native-tls v0.3.1
+    Checking half v2.7.1
+    Checking libm v0.2.16
+    Checking av1-grain v0.2.5
+    Checking maybe-rayon v0.1.1
+    Checking itertools v0.14.0
+    Checking webpki-roots v1.0.9
+    Checking http-body-util v0.1.4
+    Checking raw-cpuid v11.6.0
+    Checking reborrow v0.5.5
+    Checking webview2-com v0.38.2
+    Checking new_debug_unreachable v1.0.6
+    Checking foldhash v0.2.0
+    Checking imgref v1.12.2
+    Checking extended v0.1.0
+    Checking ryu v1.0.23
+    Checking zune-core v0.5.1
+    Checking pulp-wasm-simd-flag v0.1.1
+    Checking serde_urlencoded v0.7.1
+    Checking pulp v0.22.3
+    Checking symphonia-format-riff v0.5.5
+    Checking zune-jpeg v0.5.15
+    Checking wry v0.55.1
+    Checking tauri-runtime v2.11.3
+    Checking rav1e v0.8.1
+    Checking loop9 v0.1.5
+    Checking hashbrown v0.16.1
+    Checking windows-future v0.3.2
+    Checking tauri-runtime-wry v2.11.4
+    Checking hyper-tls v0.6.0
+    Checking hyper-rustls v0.27.9
+    Checking tower-http v0.6.11
+    Checking cookie_store v0.22.1
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking windows-numerics v0.3.1
+    Checking windows-collections v0.3.2
+    Checking symphonia-format-isomp4 v0.5.5
+    Checking symphonia-format-ogg v0.5.5
+    Checking symphonia-bundle-flac v0.5.5
+    Checking symphonia-codec-vorbis v0.5.5
+    Checking symphonia-bundle-mp3 v0.5.5
+    Checking fdeflate v0.3.7
+    Checking zune-inflate v0.2.54
+    Checking symphonia-codec-alac v0.5.5
+    Checking symphonia-codec-aac v0.5.5
+    Checking symphonia-codec-pcm v0.5.5
+    Checking symphonia-codec-adpcm v0.5.5
+    Checking avif-serialize v0.8.9
+    Checking strength_reduce v0.2.4
+    Checking rgb v0.8.53
+    Checking color_quant v1.1.0
+    Checking dasp_sample v0.11.0
+    Checking lebe v0.5.3
+   Compiling tauri-plugin-fs v2.5.1
+   Compiling tauri-plugin-opener v2.5.4
+   Compiling tauri-plugin-window-state v2.4.1
+   Compiling tauri-plugin-http v2.5.9
+   Compiling tauri-plugin-dialog v2.7.2
+   Compiling tauri-plugin-global-shortcut v2.3.2
+    Checking fax v0.2.7
+    Checking bit_field v0.10.3
+    Checking pxfm v0.1.30
+    Checking byteorder-lite v0.1.0
+    Checking image-webp v0.2.4
+    Checking tiff v0.11.3
+    Checking exr v1.74.2
+    Checking cpal v0.15.3
+    Checking ravif v0.13.0
+    Checking gif v0.14.2
+    Checking symphonia v0.5.5
+    Checking transpose v0.2.3
+    Checking png v0.18.1
+    Checking windows v0.62.2
+    Checking moxcms v0.8.1
+    Checking digest v0.10.7
+    Checking reqwest v0.12.28
+    Checking libsqlite3-sys v0.36.0
+    Checking hashlink v0.11.1
+    Checking rfd v0.16.0
+    Checking global-hotkey v0.8.0
+    Checking primal-check v0.3.4
+    Checking open v5.4.0
+    Checking ogg_pager v0.6.1
+    Checking qoi v0.4.1
+    Checking quick-xml v0.38.4
+    Checking fallible-iterator v0.3.0
+    Checking data-url v0.3.2
+    Checking cpufeatures v0.2.17
+    Checking data-encoding v2.11.0
+    Checking fallible-streaming-iterator v0.1.9
+    Checking hound v3.5.1
+    Checking rusqlite v0.38.0
+    Checking lofty v0.21.1
+    Checking rodio v0.20.1 (C:\Users\11832\Desktop\1\XY-Music-Desktop\src-tauri\vendor\rodio-0.20.1)
+    Checking image v0.25.10
+    Checking amll-lyric v0.3.0
+    Checking sha2 v0.10.9
+    Checking rustfft v6.4.1
+    Checking souvlaki v0.7.3
+    Checking keyring v3.6.3
+    Checking id3 v1.17.0
+    Checking quick-xml v0.39.4
+    Checking hex v0.4.3
+   Compiling tauri v2.11.5
+   Compiling lycia_music v1.0.4 (C:\Users\11832\Desktop\1\XY-Music-Desktop\src-tauri)
+    Checking wasapi v0.23.0
+   Compiling tauri-macros v2.6.3
+    Checking tauri-plugin-single-instance v2.4.3
+error[E0432]: unresolved import `music::parse_lyrics_text`
+  --> src\lib.rs:34:5
+   |
+34 |     parse_lyrics_text, get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_fi
+les,
+   |     ^^^^^^^^^^^^^^^^^ no `parse_lyrics_text` in `music`
+
+error: this function depends on never type fallback being `()`
+   --> src\lib.rs:77:1
+    |
+ 77 | pub fn run() {
+    | ^^^^^^^^^^^^
+    |
+    = help: specify the types explicitly
+note: in edition 2024, the requirement `!: Deserialize<'_>` will fail
+   --> src\music\files.rs:403:1
+    |
+403 |   #[tauri::command]
+    |   ^^^^^^^^^^^^^^^^^
+    |
+   ::: src\lib.rs:106:25
+    |
+106 |           .invoke_handler(tauri::generate_handler![
+    |  _________________________-
+107 | |             scan_music_folder,
+108 | |             parse_audio_files,
+109 | |             scan_folder_as_playlists,
+...   |
+225 | |             fetch_announcement
+226 | |         ])
+    | |_________- in this macro invocation
+    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in Rus
+t 2024 and in a future release in all editions!
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/never-type-fallback.html>
+    = note: `#[deny(dependency_on_unit_never_type_fallback)]` (part of `#[deny(rust_2024_compatibility)]`) on by defaul
+t
+    = note: this error originates in the macro `__cmd__parse_lyrics_text` which comes from the expansion of the macro `
+tauri::generate_handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `lycia_music` (lib) due to 3 previous errors
