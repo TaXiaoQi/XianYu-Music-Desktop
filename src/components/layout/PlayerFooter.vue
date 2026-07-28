@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, Download, Eye, EyeOff, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -72,11 +72,8 @@ const QUALITY_OPTIONS = [
 
 const currentQuality = ref('标准');
 const showQualityMenu = ref(false);
-const qualityButtonRef = ref<HTMLElement | null>(null);
-const qualityMenuRef = ref<HTMLElement | null>(null);
 
-const toggleQualityMenu = (e: MouseEvent) => {
-  e.stopPropagation();
+const toggleQualityMenu = () => {
   showQualityMenu.value = !showQualityMenu.value;
 };
 
@@ -251,11 +248,6 @@ const handleWindowClick = (e: MouseEvent) => {
   if (showEqPanel.value && eqPanelRef.value && eqButtonRef.value) {
     if (!eqPanelRef.value.contains(target) && !eqButtonRef.value.contains(target)) {
       showEqPanel.value = false;
-    }
-  }
-  if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
-    if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
-      showQualityMenu.value = false;
     }
   }
 };
@@ -534,7 +526,6 @@ onUnmounted(() => {
       <!-- 音质选择按钮 -->
       <div class="relative flex items-center justify-center h-full z-[70]">
         <button
-          ref="qualityButtonRef"
           @click="toggleQualityMenu"
           class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
           :class="showQualityMenu
@@ -542,35 +533,8 @@ onUnmounted(() => {
             : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
           title="音质选择"
         >
-          <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
           <span class="whitespace-nowrap">{{ currentQuality }}</span>
         </button>
-
-        <transition name="fade-scale">
-          <div
-            v-if="showQualityMenu"
-            ref="qualityMenuRef"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
-          >
-            <div
-              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
-            >
-              <button
-                v-for="opt in QUALITY_OPTIONS"
-                :key="opt.value"
-                @click="selectQuality(opt.label)"
-                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="currentQuality === opt.label
-                  ? 'text-[#EC4141] bg-[#EC4141]/8'
-                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
-              >
-                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-              </button>
-            </div>
-          </div>
-        </transition>
       </div>
 
       <div 
@@ -701,6 +665,51 @@ onUnmounted(() => {
 
       </footer>
 
+      <!-- 音质选择弹窗 -->
+      <Teleport to="body">
+        <transition name="quality-modal">
+          <div
+            v-if="showQualityMenu"
+            class="fixed inset-0 z-[9999] flex items-center justify-center"
+            @click.self="showQualityMenu = false"
+          >
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+            <div
+              class="relative w-[300px] rounded-2xl border shadow-2xl p-2 transition-colors"
+              :class="showPlayerDetail
+                ? 'bg-[#1c1c1c]/95 border-white/10'
+                : 'bg-white/95 dark:bg-zinc-900/95 border-gray-100 dark:border-white/10'"
+            >
+              <div
+                class="px-3 py-2.5 text-[13px] font-semibold transition-colors"
+                :class="showPlayerDetail ? 'text-white/90' : 'text-gray-700 dark:text-white/90'"
+              >
+                音质选择
+              </div>
+              <div class="flex flex-col gap-1">
+                <button
+                  v-for="opt in QUALITY_OPTIONS"
+                  :key="opt.value"
+                  @click="selectQuality(opt.label)"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium rounded-lg transition-colors select-none"
+                  :class="currentQuality === opt.label
+                    ? 'text-[#EC4141] bg-[#EC4141]/10'
+                    : (showPlayerDetail
+                      ? 'text-white/75 hover:text-white hover:bg-white/8'
+                      : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+                >
+                  <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                  <span
+                    v-if="currentQuality === opt.label"
+                    class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"
+                  ></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </transition>
+      </Teleport>
+
     </template>
 
 <style scoped>
@@ -714,5 +723,27 @@ onUnmounted(() => {
 .fade-scale-leave-to {
   opacity: 0;
   transform: translateY(6px) scale(0.85);
+}
+
+/* 音质选择弹窗进入与离开动画：遮罩淡入 + 内容缩放放大 */
+.quality-modal-enter-active,
+.quality-modal-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.quality-modal-enter-active > div:last-child,
+.quality-modal-leave-active > div:last-child {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+
+.quality-modal-enter-from,
+.quality-modal-leave-to {
+  opacity: 0;
+}
+
+.quality-modal-enter-from > div:last-child,
+.quality-modal-leave-to > div:last-child {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 </style>
