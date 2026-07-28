@@ -23,6 +23,10 @@ use tauri::Emitter;
 
 const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready";
 
+/// 在线直链播放的默认 User-Agent（部分音源防盗链需要浏览器 UA）
+const DEFAULT_STREAM_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct RemoteLyricsCacheReadyPayload {
@@ -68,7 +72,20 @@ pub async fn play_audio(
 ) -> Result<(), String> {
     let playback_id = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let mut selected_output_mode = output_mode;
-    let source = if is_remote_uri(&path) {
+    let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
+    let source = if is_http_stream {
+        // [在线播放] 普通 http(s) 直链（多来自 lx:// 插件解析）走 Rust rodio HTTP Range 流播放，
+        // 请求由 Rust 进程发起、不经 WebView 主线程，从根源规避 IDM 等下载器劫持；
+        // 且可复用后端均衡器/响度/限幅/可视化处理链。
+        selected_output_mode = AudioOutputMode::Shared;
+        AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
+            remote_uri: path.clone(),
+            url: path.clone(),
+            // 部分音源防盗链需要浏览器 UA，给一个通用桌面浏览器 UA 兜底
+            user_agent: Some(DEFAULT_STREAM_USER_AGENT.to_string()),
+            ..Default::default()
+        })
+    } else if is_remote_uri(&path) {
         match remote_playback_source(&db_state, &path) {
             Ok(RemotePlaybackSource::Cached { path }) => AudioSource::LocalFile(path),
             Ok(RemotePlaybackSource::Stream(stream)) => {
@@ -90,8 +107,8 @@ pub async fn play_audio(
                 AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
                     remote_uri: path.clone(),
                     url: path.clone(),
-                    username: None,
-                    password: None,
+                    user_agent: Some(DEFAULT_STREAM_USER_AGENT.to_string()),
+                    ..Default::default()
                 })
             }
         }
@@ -357,6 +374,21 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
 
     let total_samples_per_sec = rate as u64 * channels as u64;
     samples as f64 / total_samples_per_sec as f64
+}
+
+/// 播放是否已就绪：sample_rate>0 表示解码器已成功初始化（Decoder::new 成功后立即写入）。
+/// 用于前端在线走 Rust 的「起播探测」：区分"仍在加载/下载中"（rate=0）与"已就绪"（rate>0），
+/// 避免不支持 Range 的直链整曲下载耗时被误判为失败而回退 H5。
+#[tauri::command]
+pub fn get_playback_ready(state: tauri::State<PlayerState>) -> bool {
+    state.progress.sample_rate.load(Ordering::Relaxed) > 0
+}
+
+/// 本次播放启动是否失败（远程取流 403 / 不支持 Range / 解码失败）。
+/// 供前端在线走 Rust 的起播探测快速感知硬失败，无需死等超时即可回退 H5。
+#[tauri::command]
+pub fn get_playback_start_failed(state: tauri::State<PlayerState>) -> bool {
+    state.progress.start_failed.load(Ordering::Relaxed)
 }
 
 #[tauri::command]

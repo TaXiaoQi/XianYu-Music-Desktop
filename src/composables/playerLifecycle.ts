@@ -562,6 +562,15 @@ export const createPlayerLifecycle = ({
         libraryStore.setExtraSongs(extraSongs);
       }
 
+      // 恢复队列/歌单中在线歌曲的元信息（含非收藏），写入额外歌曲池，
+      // 使 resolveSongsByPaths 能还原这些不在本地库的在线歌（含 duration），
+      // 否则非收藏在线歌重启后会从播放队列中整首丢失
+      const queueSongMeta = playerStorage.readQueueSongMeta();
+      const queueExtraSongs = Object.values(queueSongMeta);
+      if (queueExtraSongs.length > 0) {
+        libraryStore.setExtraSongs(queueExtraSongs);
+      }
+
       collectionsStore.setPlaylists(playerStorage.readPlaylists());
 
       restoreSortSettings({
