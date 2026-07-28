@@ -637,6 +637,7 @@ fn handle_seek(
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    remote_stream: Option<&RemoteStreamSource>,
 ) {
     let clamped_time = time.max(0.0);
     let jump_target = Duration::from_secs_f64(clamped_time);
@@ -661,67 +662,55 @@ fn handle_seek(
                 }
             }
             Err(_) => {
-                if !current_path.is_empty() {
-                    if let Some(output) = output {
-                        sink.stop();
-                        *current_sink = output.create_sink().ok();
+                // try_seek 失败（流式音频跳转到靠后位置时常见）：停掉旧 sink 并重建解码链，
+                // 用 skip_duration 跳到目标位置。
+                //
+                // 关键：远程流（在线直链/WebDAV）的 current_path 是 URL，不能用 File::open 打开，
+                // 必须用 RemoteRangeReader 重建；否则这里会静默失败，导致 sink 已停但没有新音源
+                // ——表现为"拖动进度条后没声音，进度条却继续走"。
+                sink.stop();
 
-                        if let Ok(file) = File::open(current_path) {
-                            let reader = BufReader::with_capacity(512 * 1024, file);
-                            if let Ok(source) = Decoder::new(reader) {
-                                let rate = source.sample_rate();
-                                let channels = source.channels();
-                                let samples_to_skip =
-                                    (clamped_time * rate as f64 * channels as f64).round() as u64;
-                                progress
-                                    .samples_played
-                                    .store(samples_to_skip, Ordering::Relaxed);
-
-                                let skipped_source =
-                                    source.convert_samples::<f32>().skip_duration(jump_target);
-
-                                // 1. VolumeNormalizer 音量平衡节点
-                                let (normalized_source, handle) = VolumeNormalizer::new(
-                                    skipped_source,
-                                    volume_balance_gain,
-                                    100, // ramp 100ms
-                                );
-                                *current_normalizer_handle = Some(handle);
-
-                                // 2. Equalizer 10段级联滤波器组
-                                let eq_source = crate::player::equalizer::Equalizer::new(
-                                    normalized_source,
-                                    equalizer_handle,
-                                );
-
-                                // 3. UserVolumeSource 自定义主音量节点
-                                let vol_source = crate::player::equalizer::UserVolumeSource::new(
-                                    eq_source,
-                                    user_volume,
-                                );
-
-                                // 4. ClipGuardSource 最终安全限幅源
-                                let clip_source =
-                                    crate::player::equalizer::ClipGuardSource::new(vol_source);
-
-                                // 5. TimedSource 可视化进度节点
-                                let timed_source = TimedSource::new(
-                                    clip_source,
-                                    progress.samples_played.clone(),
-                                    progress.visualizer.clone(),
-                                );
-
-                                if let Some(new_sink) = current_sink {
-                                    new_sink.set_volume(1.0); // 必须固定为 1.0
-                                    new_sink.append(timed_source);
-                                    if is_playing {
-                                        new_sink.play();
-                                    } else {
-                                        new_sink.pause();
-                                    }
-                                }
-                            }
+                // append_decoded_source 内部会重建 sink、装配处理链并开始播放
+                let start_offset = Some(jump_target);
+                if let Some(stream) = remote_stream.cloned() {
+                    match RemoteRangeReader::new(stream) {
+                        Ok(reader) => append_decoded_source(
+                            reader,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            user_volume,
+                        ),
+                        Err(e) => {
+                            eprintln!("[Audio][rust] seek 重建远程流失败: {e}");
                         }
+                    }
+                } else if !current_path.is_empty() {
+                    match File::open(current_path) {
+                        Ok(file) => append_decoded_source(
+                            file,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            user_volume,
+                        ),
+                        Err(e) => {
+                            eprintln!("[Audio][rust] seek 重建本地文件失败: {e}");
+                        }
+                    }
+                }
+
+                if !is_playing {
+                    if let Some(new_sink) = current_sink {
+                        new_sink.pause();
                     }
                 }
             }
@@ -777,6 +766,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
             .map(|output| output.active_device_name().to_string());
         let mut current_normalizer_handle: Option<VolumeNormalizerHandle> = None;
         let mut current_volume_balance_gain = 1.0;
+        // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
+        // 因为远程流的 current_path 是 URL，不能用 File::open 打开。
+        let mut current_remote_stream: Option<RemoteStreamSource> = None;
 
         if let Some(output) = &output {
             current_sink = output.create_sink().ok();
@@ -805,6 +797,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         current_volume_balance_gain = volume_balance_gain;
                         let source_is_remote = source.is_remote();
                         let display_path = source.display_path();
+                        // 记住当前远程流信息：seek 失败需要重建解码链时，远程流不能用
+                        // File::open(current_path)（那是 URL），必须用 RemoteRangeReader 重建
+                        current_remote_stream = match &source {
+                            AudioSource::RemoteWebDav(stream) => Some(stream.clone()),
+                            AudioSource::LocalFile(_) => None,
+                        };
 
                         if let Some(sink) = &current_sink {
                             sink.stop();
@@ -982,6 +980,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
+                            current_remote_stream.as_ref(),
                         )
                     }
                     AudioCommand::SetVolume(vol) => {
@@ -1413,6 +1412,51 @@ mod tests {
         let produced = decoder.take(1000).count();
         assert!(produced > 0, "解码器应产出音频样本");
         drop(handle);
+    }
+
+    /// 验证「seek 到靠后位置」时的重建路径：try_seek 失败后，handle_seek 会用
+    /// RemoteRangeReader 重新建流并 skip_duration 跳到目标位置。这里复现该路径，
+    /// 断言重建后仍能解码并产出音频样本。
+    ///
+    /// 回归的 bug：旧代码在 try_seek 失败后用 File::open(current_path) 重建，
+    /// 而远程流的 current_path 是 URL，必然失败 → sink 已停却无新音源，
+    /// 表现为「拖动进度条到靠后位置后没声音，进度条却继续走」。
+    fn assert_seek_rebuild_produces_audio(support_range: bool) {
+        // 10 秒音频，跳到第 8 秒（靠后位置）
+        let wav = build_wav(44_100, 2, 10);
+        let (url, handle) = spawn_mock_server(wav.clone(), support_range);
+        let source = RemoteStreamSource {
+            remote_uri: url.clone(),
+            url: url.clone(),
+            ..Default::default()
+        };
+
+        // 复现修复后的重建逻辑：新建 RemoteRangeReader + 解码 + skip 到目标位置
+        let reader = RemoteRangeReader::new(source).expect("重建 reader 应成功");
+        let buffered = BufReader::with_capacity(512 * 1024, reader);
+        let decoder = Decoder::new(buffered).expect("重建后应能解码");
+        assert_eq!(decoder.sample_rate(), 44_100);
+
+        let jump_target = Duration::from_secs(8);
+        let mut skipped = decoder.convert_samples::<f32>().skip_duration(jump_target);
+        // 跳转到靠后位置后仍应有音频样本产出（不是静默/立即结束）
+        let produced = (0..1000).filter_map(|_| skipped.next()).count();
+        assert!(
+            produced > 0,
+            "seek 到靠后位置重建后应仍能产出音频样本（support_range={support_range}）"
+        );
+
+        drop(handle);
+    }
+
+    #[test]
+    fn seek_rebuild_produces_audio_with_range_support() {
+        assert_seek_rebuild_produces_audio(true);
+    }
+
+    #[test]
+    fn seek_rebuild_produces_audio_when_range_ignored() {
+        assert_seek_rebuild_produces_audio(false);
     }
 
     #[test]

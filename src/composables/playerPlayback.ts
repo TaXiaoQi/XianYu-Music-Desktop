@@ -390,7 +390,16 @@ export const createPlayerPlayback = ({
           stalledProgressTicks += 1;
           const unknownDuration = !song.duration || song.duration <= 0;
           const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
-          if (stalledProgressTicks >= 2 && (unknownDuration || nearEnd)) {
+          // 在线歌（HTTP 流）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
+          // 若沿用 2 轮阈值会被误判为播放结束而自动切下一首——切歌时若 Rust 起播探测
+          // 失败又会回退 H5 用 WebView 请求直链，进而弹出 IDM。故对在线歌放宽阈值。
+          const isOnlineStream = !!song.path
+            && (song.path.startsWith('http://')
+              || song.path.startsWith('https://')
+              || song.path.startsWith('lx://')
+              || song.path.startsWith('remote://'));
+          const requiredStalledTicks = isOnlineStream ? 6 : 2;
+          if (stalledProgressTicks >= requiredStalledTicks && (unknownDuration || nearEnd)) {
             stalledProgressTicks = 0;
             handleAutoNext();
             return;
@@ -620,11 +629,14 @@ export const createPlayerPlayback = ({
       // [在线 H5 回退] 原 HTML5 Audio 播放逻辑，作为在线走 Rust 失败时的兜底。
       // 返回是否成功起播（被切歌作废时返回 true 表示无需继续）。
       const playOnlineViaHtml5 = async (): Promise<void> => {
-        // [IDM 兼容模式] 开启后先在 Worker 线程把整首音频拉成本地 blob 再播放，
-        // 这样主线程不会直接请求音频直链，可避免被 IDM 等下载器劫持导致播放异常。
-        // 注意：走 Rust 主路径时不需要它；此处仅在 Rust 回退到 H5 时生效。
+        // [避免 IDM 劫持] H5 回退路径一律先在 Worker 线程把整首音频拉成本地 blob 再播放。
+        // 主线程直接请求音频直链会被 IDM 等下载器拦截（弹出下载框、播放失败），而 Worker
+        // 线程的请求通常能逃过拦截。原先仅在用户开启「IDM 兼容模式」时才这么做，导致未开启
+        // 该设置的用户一旦走到 H5 回退就会弹出 IDM；这里改为回退时总是优先 blob，
+        // 拉取失败再退回直链保证可用性。
+        // 注意：Rust 主路径不经过此函数，因此「IDM 相关处理仅作用于 H5 回退」的边界不变。
         let playbackSource = audioFilePath;
-        if (settingsStore.settings.audio.idmCompatMode) {
+        {
           try {
             const { fetchViaWorker } = await import('../services/downloadService');
             const bytes = await fetchViaWorker(audioFilePath);
@@ -817,7 +829,10 @@ export const createPlayerPlayback = ({
         // 且请求由 Rust 进程发起，规避 IDM 劫持）；Rust 失败时回退到 HTML5 播放。
         stopNetworkAudio();
 
-        const rustOk = await tryPlayOnlineViaRust();
+        // [兼容模式逃生开关] 用户开启后跳过 Rust，直接走 HTML5 + Worker blob 播放。
+        // 供 Rust 内核在某些音源/环境下播放异常时使用（代价：无频谱/均衡器，起播略慢）。
+        const forceHtml5 = settingsStore.settings.audio.idmCompatMode;
+        const rustOk = forceHtml5 ? false : await tryPlayOnlineViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
         if (rustOk) {
@@ -825,8 +840,9 @@ export const createPlayerPlayback = ({
           try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
           finishRustPlaybackStart();
         } else {
-          // 回退：彻底停掉后端半启动的播放（stop 会 sink.stop + 清空 sink + 重置进度，
-          // 而 pause 只暂停不清理，可能与随后的 H5 播放抢占音频设备或双重出声），再走 HTML5
+          // 回退（或用户强制 H5）：彻底停掉后端可能半启动的播放
+          // （stop 会 sink.stop + 清空 sink + 重置进度，而 pause 只暂停不清理，
+          // 可能与随后的 H5 播放抢占音频设备或双重出声），再走 HTML5
           try { await playbackApi.stopAudio(); } catch {}
           await playOnlineViaHtml5();
         }
