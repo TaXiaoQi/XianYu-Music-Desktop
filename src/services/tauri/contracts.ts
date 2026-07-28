@@ -252,6 +252,8 @@ export interface TauriCommandMap {
   };
   set_volume: { payload: { volume: number }; response: void };
   get_playback_progress: { payload: undefined; response: number };
+  get_playback_ready: { payload: undefined; response: boolean };
+  get_playback_start_failed: { payload: undefined; response: boolean };
   get_audio_visualizer_samples: { payload: undefined; response: number[] };
   record_play: {
     payload: {
