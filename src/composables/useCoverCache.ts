@@ -610,7 +610,10 @@ export function useCoverCache() {
       return cachedValue;
     }
 
-    const finalUrl = convertFileSrc(rawPath);
+    // 在线歌曲的封面本身就是网络 URL，不能再经 convertFileSrc（那是给本地文件路径用的），
+    // 否则会被转成无效地址导致封面加载失败。
+    const isNetworkUrl = /^https?:\/\//i.test(rawPath);
+    const finalUrl = isNetworkUrl ? rawPath : convertFileSrc(rawPath);
     setCachedCover(path, 'thumbnail', finalUrl, rawPath);
     return finalUrl;
   };

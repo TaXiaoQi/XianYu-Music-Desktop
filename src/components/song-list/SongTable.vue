@@ -20,7 +20,7 @@ import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabe
 import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
 import { useLibraryStore } from '../../features/library/store';
 import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
-import { isRemoteSong } from '../../utils/remoteSong';
+import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 
 const { settings } = useSettings();
@@ -711,7 +711,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
               <span
                 v-if="isRemoteSong(song)"
                 class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-              >远程</span>
+              >{{ getSongSourceLabel(song) }}</span>
               <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">
                 <template v-for="(artistName, artistIndex) in getClickableArtistNames(song)" :key="`${song.path}-${artistName}`">
                   <button type="button" class="truncate hover:text-[#EC4141] transition-colors" @click.stop="handleArtistClick(artistName)">

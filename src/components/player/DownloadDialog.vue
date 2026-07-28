@@ -315,6 +315,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  /* 窗口很窄时避免文字被压成竖排 */
+  white-space: nowrap;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.72);
@@ -368,6 +370,7 @@ onUnmounted(() => {
   width: 100%;
   align-items: center;
   gap: 12px;
+  white-space: nowrap;
   border-radius: 10px;
   padding: 8px 10px;
   color: rgb(31 41 55);

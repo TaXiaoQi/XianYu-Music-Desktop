@@ -17,6 +17,7 @@ export const playerStorageKeys = {
   outputDeviceMode: 'player_output_device_mode',
   watchedFolders: 'player_watched_folders',
   favorites: 'player_favorites',
+  favoriteSongMeta: 'player_favorite_song_meta',
   playlists: 'player_custom_playlists',
   artistSortMode: 'player_artist_sort_mode',
   albumSortMode: 'player_album_sort_mode',
@@ -180,6 +181,22 @@ export const playerStorage = {
     });
   },
   
+  /** 读取在线收藏歌曲的元信息（path → Song） */
+  readFavoriteSongMeta(): Record<string, Song> {
+    const parsed = localStore.getJson<unknown>(playerStorageKeys.favoriteSongMeta);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const result: Record<string, Song> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([path, value]) => {
+      if (value && typeof value === 'object' && typeof (value as Song).path === 'string') {
+        result[path] = value as Song;
+      }
+    });
+    return result;
+  },
+
   writeEqualizerPresets(presets: EqualizerPreset[]) {
     localStore.setJson(playerStorageKeys.equalizerPresets, presets);
   },
@@ -192,6 +209,7 @@ export const playerStorage = {
     sourceSongPaths: string[];
     watchedFolders: string[];
     favoritePaths: string[];
+    favoriteSongMeta: Record<string, Song>;
     playlists: Playlist[];
     settings: AppSettings;
     playQueuePaths: string[];
@@ -203,6 +221,7 @@ export const playerStorage = {
     localStore.setJson(options.playlistPathKey, options.sourceSongPaths);
     localStore.setJson(playerStorageKeys.watchedFolders, options.watchedFolders);
     localStore.setJson(playerStorageKeys.favorites, options.favoritePaths);
+    localStore.setJson(playerStorageKeys.favoriteSongMeta, options.favoriteSongMeta);
     localStore.setJson(playerStorageKeys.playlists, options.playlists);
     localStore.setJson(playerStorageKeys.settings, options.settings);
     localStore.setJson(options.queuePathKey, options.playQueuePaths);
