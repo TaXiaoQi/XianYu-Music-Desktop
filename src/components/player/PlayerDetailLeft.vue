@@ -176,7 +176,7 @@ const handleCoverClick = (event: MouseEvent) => {
       ref="detailCoverRef"
       class="absolute aspect-square transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] z-[70] will-change-transform"
       :class="[
-        props.isExpanded ? 'top-[45%] left-[calc(75px+18%)] -translate-x-1/2 -translate-y-1/2 w-[clamp(220px,45vh,580px)] rounded-2xl' : 'top-[calc(100vh-64px)] left-[16px] translate-x-0 translate-y-0 w-12 rounded-lg',
+        props.isExpanded ? 'top-[45%] left-[calc(75px+18%)] -translate-x-1/2 -translate-y-1/2 w-[clamp(220px,45vh,580px)] rounded-2xl' : 'top-auto bottom-4 left-[16px] translate-x-0 translate-y-0 w-12 rounded-lg',
         props.coverHidden ? 'opacity-0 pointer-events-none' : (props.isExpanded ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'),
       ]"
       :style="{

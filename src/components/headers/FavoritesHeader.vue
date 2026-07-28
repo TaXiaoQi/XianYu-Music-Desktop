@@ -24,7 +24,7 @@ const handleEnterBatchMode = () => {
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-2 pb-3 h-auto justify-center">
+  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
