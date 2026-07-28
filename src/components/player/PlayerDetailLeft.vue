@@ -199,7 +199,12 @@ const handleCoverClick = (event: MouseEvent) => {
       <!-- Glass Table Reflection Layer -->
       <transition name="reflection-reveal" appear>
         <div v-if="props.isExpanded" class="absolute top-[calc(100%+2px)] left-0 w-full h-[65%] pointer-events-none z-10 reflection-wrapper rounded-[inherit] overflow-hidden">
-          <div class="absolute inset-0 reflection-glass rounded-[inherit] overflow-hidden">
+          <!-- 清晰层：中间清晰，四周淡出 -->
+          <div class="absolute inset-0 reflection-glass reflection-glass--sharp rounded-[inherit] overflow-hidden">
+            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" />
+          </div>
+          <!-- 模糊层：只在四周边缘显示，让边缘虚化 -->
+          <div class="absolute inset-0 reflection-glass reflection-glass--blur rounded-[inherit] overflow-hidden">
             <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" />
           </div>
         </div>
@@ -229,6 +234,7 @@ const handleCoverClick = (event: MouseEvent) => {
 }
 
 .reflection-glass {
+  /* 上下方向的淡出（垂直渐变），两层共用 */
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
@@ -241,6 +247,31 @@ const handleCoverClick = (event: MouseEvent) => {
     rgba(0, 0, 0, 0.5) 30%,
     transparent 85%
   );
+}
+
+/* 清晰层：中间清晰，靠近左右/底部边缘时淡出，把边缘让给模糊层 */
+.reflection-glass--sharp {
+  -webkit-mask-image:
+    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
+    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
+  mask-image:
+    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
+    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+/* 模糊层：整层模糊，用径向 mask 挖空中心，只在四周边缘可见，形成边缘虚化 */
+.reflection-glass--blur {
+  filter: blur(4px);
+  -webkit-mask-image:
+    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
+    radial-gradient(ellipse 62% 62% at 50% 45%, transparent 55%, black 100%);
+  mask-image:
+    linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.5) 30%, transparent 85%),
+    radial-gradient(ellipse 62% 62% at 50% 45%, transparent 55%, black 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
 
 .reflection-reveal-enter-active,

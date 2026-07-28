@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, Eye, EyeOff, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -51,6 +51,29 @@ const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled'
 const isProgressHidden = ref(readStoredProgressHidden(localStorage));
 const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
+
+// 音质选择（UI 占位，功能待后端开发完毕合并）
+const QUALITY_OPTIONS = [
+  { label: '标准', value: 'standard' },
+  { label: 'HQ', value: 'hq' },
+  { label: 'SQ', value: 'sq' },
+  { label: 'Hi-Res', value: 'hires' },
+] as const;
+
+const currentQuality = ref('标准');
+const showQualityMenu = ref(false);
+const qualityButtonRef = ref<HTMLElement | null>(null);
+const qualityMenuRef = ref<HTMLElement | null>(null);
+
+const toggleQualityMenu = (e: MouseEvent) => {
+  e.stopPropagation();
+  showQualityMenu.value = !showQualityMenu.value;
+};
+
+const selectQuality = (label: string) => {
+  currentQuality.value = label;
+  showQualityMenu.value = false;
+};
 
 const toggleVisualizer = () => {
   isVisualizerEnabled.value = !isVisualizerEnabled.value;
@@ -214,27 +237,47 @@ const toggleEqPanel = (e: MouseEvent) => {
 };
 
 const handleWindowClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement;
   if (showEqPanel.value && eqPanelRef.value && eqButtonRef.value) {
-    const target = e.target as HTMLElement;
     if (!eqPanelRef.value.contains(target) && !eqButtonRef.value.contains(target)) {
       showEqPanel.value = false;
+    }
+  }
+  if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
+    if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
+      showQualityMenu.value = false;
     }
   }
 };
 
 // --- Idle State for Auto-Hide ---
-const isPinned = ref(localStorage.getItem('footer_pinned') === 'true');
+// 主底栏与播放详情页底栏使用各自独立的 pinned 状态，互不影响
+const isPinnedFooter = ref(localStorage.getItem('footer_pinned') === 'true');
+const isPinnedDetail = ref(localStorage.getItem('footer_pinned_detail') === 'true');
+// 根据当前是否处于播放详情页，选择生效的 pinned 状态
+const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : isPinnedFooter.value);
 const isIdle = ref(false);
 let idleTimer: any = null;
 
 const togglePin = () => {
-  isPinned.value = !isPinned.value;
-  localStorage.setItem('footer_pinned', isPinned.value.toString());
-  if (!isPinned.value) {
-    startIdleTimer();
+  if (showPlayerDetail.value) {
+    isPinnedDetail.value = !isPinnedDetail.value;
+    localStorage.setItem('footer_pinned_detail', isPinnedDetail.value.toString());
+    if (!isPinnedDetail.value) {
+      startIdleTimer();
+    } else {
+      isIdle.value = false;
+      if (idleTimer) clearTimeout(idleTimer);
+    }
   } else {
-    isIdle.value = false;
-    if (idleTimer) clearTimeout(idleTimer);
+    isPinnedFooter.value = !isPinnedFooter.value;
+    localStorage.setItem('footer_pinned', isPinnedFooter.value.toString());
+    if (!isPinnedFooter.value) {
+      startIdleTimer();
+    } else {
+      isIdle.value = false;
+      if (idleTimer) clearTimeout(idleTimer);
+    }
   }
 };
 
@@ -465,6 +508,48 @@ onUnmounted(() => {
       class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
+      <!-- 音质选择按钮 -->
+      <div class="relative flex items-center justify-center h-full z-[70]">
+        <button
+          ref="qualityButtonRef"
+          @click="toggleQualityMenu"
+          class="flex items-center gap-1 px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
+          :class="showQualityMenu
+            ? 'text-[#EC4141] bg-[#EC4141]/10'
+            : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
+          title="音质选择"
+        >
+          <Music class="h-3.5 w-3.5" :stroke-width="2.2" />
+          <span>{{ currentQuality }}</span>
+        </button>
+
+        <transition name="fade-scale">
+          <div
+            v-if="showQualityMenu"
+            ref="qualityMenuRef"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+          >
+            <div
+              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+            >
+              <button
+                v-for="opt in QUALITY_OPTIONS"
+                :key="opt.value"
+                @click="selectQuality(opt.label)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                :class="currentQuality === opt.label
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="flex-1 text-left">{{ opt.label }}</span>
+                <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+          </div>
+        </transition>
+      </div>
+
       <div 
         class="relative flex items-center justify-center h-full z-[70]"
         @mouseenter="handleVolumeEnter"
