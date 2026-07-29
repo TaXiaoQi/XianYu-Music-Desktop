@@ -1057,13 +1057,22 @@ describe('lyrics settings normalization', async () => {
     expect(normalized.enableWordEffect).toBe(false);
   });
 
-  it('defaults desktop readability settings with independent disabled shadows', () => {
+  it('defaults desktop readability settings with outline disabled and independent disabled shadows', () => {
     const normalized = normalizeDesktopLyricsSettingsPatch({});
 
+    expect(normalized.enableTextOutline).toBe(false);
     expect(normalized.textOpacity).toBe(1);
     expect(normalized.textShadowColor).toBe('#000000');
     expect(normalized.firstLineTextShadowStrength).toBe(0);
     expect(normalized.secondLineTextShadowStrength).toBe(0);
+  });
+
+  it('restores the desktop text outline toggle from persisted values', () => {
+    const normalized = normalizeDesktopLyricsSettingsPatch({
+      enableTextOutline: true,
+    });
+
+    expect(normalized.enableTextOutline).toBe(true);
   });
 
   it('normalizes desktop readability settings from migrated values', () => {

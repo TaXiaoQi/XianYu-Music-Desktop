@@ -277,6 +277,7 @@ const previewWidgetStyle = computed(() => {
       : 'color-mix(in srgb, var(--desktop-accent-c) 28%, rgba(255, 255, 255, 0.76))',
     '--desktop-text-opacity': localSettings.value.textOpacity.toString(),
     '--desktop-text-shadow-color': hexToRgbTriplet(localSettings.value.textShadowColor),
+    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? '1.5px' : '0px',
     '--desktop-first-line-text-shadow-alpha': (localSettings.value.firstLineTextShadowStrength / 100).toString(),
     '--desktop-first-line-text-shadow-blur': `${Math.round(localSettings.value.firstLineTextShadowStrength * 0.24)}px`,
     '--desktop-second-line-text-shadow-alpha': (localSettings.value.secondLineTextShadowStrength / 100).toString(),
@@ -878,7 +879,18 @@ onUnmounted(() => {
           </span>
         </button>
 
-
+        <button
+          type="button"
+          class="desktop-setting-row"
+          @click="desktopLyricsSettings.enableTextOutline = !desktopLyricsSettings.enableTextOutline"
+        >
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词描边</div>
+          </div>
+          <span class="desktop-switch" :class="desktopLyricsSettings.enableTextOutline ? 'desktop-switch--on' : ''">
+            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.enableTextOutline ? 'translate-x-5' : ''" />
+          </span>
+        </button>
 
         <button
           type="button"
@@ -2560,7 +2572,9 @@ onUnmounted(() => {
   text-align: var(--lyrics-text-align, center);
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   opacity: var(--desktop-text-opacity, 1);
-  transition: opacity 220ms ease;
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  paint-order: stroke fill;
+  transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
 }
 
 .desktop-lyric-row {

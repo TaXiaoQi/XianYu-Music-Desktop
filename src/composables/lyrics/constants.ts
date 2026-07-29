@@ -118,6 +118,7 @@ export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
   autoHideWhenPaused: false,
   showDoubleLine: false,
   enableWordEffect: true,
+  enableTextOutline: false,
   isLocked: false,
   persistLock: false,
   centerHorizontally: false,
@@ -330,6 +331,9 @@ export function normalizeDesktopLyricsSettingsPatch(
     enableWordEffect: typeof patch.enableWordEffect === 'boolean'
       ? patch.enableWordEffect
       : defaultDesktopLyricsSettings.enableWordEffect,
+    enableTextOutline: typeof patch.enableTextOutline === 'boolean'
+      ? patch.enableTextOutline
+      : defaultDesktopLyricsSettings.enableTextOutline,
     isLocked: typeof patch.isLocked === 'boolean'
       ? patch.isLocked
       : defaultDesktopLyricsSettings.isLocked,
