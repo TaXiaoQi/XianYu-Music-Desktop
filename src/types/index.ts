@@ -34,6 +34,8 @@ export interface SongCore {
   cue_start_offset?: number;
   cue_end_offset?: number;
   comment?: string;
+  /** 原始歌词文本（在线歌曲或内嵌歌词加载时可直接解析） */
+  lyrics_raw?: string;
 }
 
 export interface Song extends SongCore {}
