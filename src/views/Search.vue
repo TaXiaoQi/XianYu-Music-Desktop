@@ -114,8 +114,8 @@
               <tr
                 v-for="(item, index) in lxSearchResults"
                 :key="`lx-${item.source}-${item.songmid}-${index}`"
-                class="group border-b border-black/5 dark:border-white/5 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @click="handlePlaySong(item)"
+                class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                @dblclick="handlePlaySong(item)"
                 @contextmenu="handleContextMenu($event, item)"
               >
                 <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
@@ -153,8 +153,8 @@
               <tr
                 v-for="(item, index) in pluginSearchResults"
                 :key="`mf-${item.platform}-${item.id}-${index}`"
-                class="group border-b border-black/5 dark:border-white/5 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @click="handlePlayMfSong(item)"
+                class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                @dblclick="handlePlayMfSong(item)"
                 @contextmenu="handleMfContextMenu($event, item)"
               >
                 <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
@@ -168,7 +168,7 @@
                       class="w-full h-full object-cover"
                       alt=""
                       loading="lazy"
-                      @error="handleMfImgError($event, item)"
+                      @error="handleMfImgError($event)"
                     />
                     <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
@@ -599,7 +599,7 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
   return item.coverUrl; // 先显示原图（可能 403），代理完成后刷新
 };
 
-const handleMfImgError = (e: Event, item: PluginSearchResult) => {
+const handleMfImgError = (e: Event) => {
   (e.target as HTMLImageElement).style.display = 'none';
 };
 

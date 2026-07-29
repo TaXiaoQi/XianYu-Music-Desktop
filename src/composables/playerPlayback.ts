@@ -34,6 +34,11 @@ let progressFrameId: number | null = null;
 let progressTimerId: ReturnType<typeof setTimeout> | null = null;
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let playRequestId = 0;
+// [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
+// togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
+// 随后 playSong 跑完又会把状态设回播放中并真的出声，表现为「点暂停没反应」。
+// 这里记录「哪个 playRequestId 已被用户取消」，playSong 在真正启动播放前后据此中止。
+let cancelledPlayRequestId = -1;
 let latestSeekRequestId = 0;
 let playbackAnchorTime = 0;
 let playbackStartOffset = 0;
@@ -444,6 +449,9 @@ export const createPlayerPlayback = ({
     const requestId = ++playRequestId;
     const previousSong = currentSong.value;
 
+    // 新的播放请求：清掉上一次可能残留的取消标记
+    cancelledPlayRequestId = -1;
+
     flushPlaySession();
     onBeforePlay?.(song, options);
 
@@ -765,6 +773,16 @@ export const createPlayerPlayback = ({
         audio.addEventListener('timeupdate', networkAudioTimeUpdateHandler);
         audio.addEventListener('ended', networkAudioEndedHandler);
 
+        // 用户在加载音频期间按了暂停：保留已就绪的 audio 元素（后续点播放可直接续播），
+        // 但不要出声，并停在暂停态
+        if (cancelledPlayRequestId === requestId) {
+          isSongLoaded.value = true;
+          isPlaying.value = false;
+          stopPlaybackRuntime();
+          loadLyrics();
+          return;
+        }
+
         audio.play().catch(() => {});
 
         // [在线可视化] 仅在 IDM 兼容模式的本地 blob（同源）下建立 Web Audio 分析链路。
@@ -893,6 +911,16 @@ export const createPlayerPlayback = ({
         const rustOk = forceHtml5 ? false : await tryPlayOnlineViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
+        // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态，不要继续出声
+        if (cancelledPlayRequestId === requestId) {
+          try { await playbackApi.stopAudio(); } catch {}
+          stopNetworkAudio();
+          isPlaying.value = false;
+          isSongLoaded.value = false;
+          stopPlaybackRuntime();
+          return;
+        }
+
         if (rustOk) {
           // 确保后端已接管，音量同步到后端（H5 分支靠 audio.volume，Rust 分支靠 setVolume）
           try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
@@ -925,6 +953,16 @@ export const createPlayerPlayback = ({
           preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
         });
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+        // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
+        if (cancelledPlayRequestId === requestId) {
+          isSongLoaded.value = true;
+          isPlaying.value = false;
+          stopPlaybackRuntime();
+          try { await playbackApi.pauseAudio(); } catch {}
+          loadLyrics();
+          return;
+        }
 
         isSongLoaded.value = true;
         sessionStartTime = Date.now();
@@ -971,6 +1009,12 @@ export const createPlayerPlayback = ({
       sessionStartTime = null;
     }
 
+    // 歌曲仍在起播过程中（在线歌曲解析直链期间）：标记本次请求已取消，
+    // 避免 playSong 拿到直链后继续出声
+    if (!isSongLoaded.value) {
+      cancelledPlayRequestId = playRequestId;
+    }
+
     isPlaying.value = false;
     if (networkAudio) {
       networkAudio.pause();
@@ -989,6 +1033,12 @@ export const createPlayerPlayback = ({
         sessionStartTime = null;
       }
 
+      // 若当前歌曲仍在起播过程中（在线歌曲解析直链期间），标记该次请求已被取消，
+      // 让 playSong 在拿到直链后不要继续出声。
+      if (!isSongLoaded.value) {
+        cancelledPlayRequestId = playRequestId;
+      }
+
       if (networkAudio) {
         networkAudio.pause();
       } else {
@@ -999,9 +1049,16 @@ export const createPlayerPlayback = ({
       return;
     }
 
+    // 用户重新点了播放，撤销之前的取消标记
+    cancelledPlayRequestId = -1;
+
     if (!isSongLoaded.value) {
+      // playSong 内部会自行设置 isPlaying / 启动播放时钟，这里直接返回避免重复
       await playSong(currentSong.value, { startTime: currentTime.value });
-    } else if (networkAudio) {
+      return;
+    }
+
+    if (networkAudio) {
       await networkAudio.play().catch(() => {});
       sessionStartTime = Date.now();
     } else {
