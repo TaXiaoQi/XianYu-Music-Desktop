@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, UploadCloud, FileCode2 } from 'lucide-vue-next';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, UploadCloud, FileCode2, Info, X, Copy } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -267,12 +267,19 @@ async function installPluginFromScript(script: string, filePath: string) {
 
 // ==================== 插件管理 ====================
 
-async function handleUninstallAll() {
+const showUninstallAllConfirm = ref(false);
+
+function handleUninstallAll() {
   if (plugins.value.length === 0) return;
+  showUninstallAllConfirm.value = true;
+}
+
+function confirmUninstallAll() {
   for (const p of [...plugins.value]) {
     removePluginSource(p.id);
   }
   refreshPluginList();
+  showUninstallAllConfirm.value = false;
   showToast('已卸载全部插件', 'success');
 }
 
@@ -381,6 +388,27 @@ function handleRemoveSubscription(sub: Subscription) {
   // TODO: 调用后端移除订阅
   subscriptions.value = subscriptions.value.filter((s) => s.id !== sub.id);
   showToast(`已移除订阅 ${sub.name}`, 'success');
+}
+
+// ==================== 插件详情弹窗 ====================
+const detailPlugin = ref<PluginSource | null>(null);
+
+function openPluginDetail(plugin: PluginSource) {
+  detailPlugin.value = plugin;
+}
+
+function closePluginDetail() {
+  detailPlugin.value = null;
+}
+
+async function copyPluginLink() {
+  if (!detailPlugin.value?.filePath) return;
+  try {
+    await navigator.clipboard.writeText(detailPlugin.value.filePath);
+    showToast('插件链接已复制', 'success');
+  } catch {
+    showToast('复制失败，请手动选择复制', 'error');
+  }
 }
 </script>
 
@@ -674,6 +702,14 @@ function handleRemoveSubscription(sub: Subscription) {
             <button
               type="button"
               class="settings-plugin-icon-button"
+              title="详情信息"
+              @click="openPluginDetail(plugin)"
+            >
+              <Info class="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              class="settings-plugin-icon-button"
               title="更新此插件"
               @click="handleUpdatePlugin(plugin)"
             >
@@ -701,6 +737,136 @@ function handleRemoveSubscription(sub: Subscription) {
         </div>
       </div>
     </section>
+
+    <!-- 卸载全部确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="plugin-detail">
+        <div
+          v-if="showUninstallAllConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showUninstallAllConfirm = false"
+        >
+          <div class="plugin-detail-card">
+            <div class="plugin-detail-header">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
+                  <Trash2 class="h-5 w-5" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载全部插件</div>
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="plugin-detail-close"
+                aria-label="关闭"
+                @click="showUninstallAllConfirm = false"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </div>
+            <div class="plugin-detail-body">
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
+                确认要卸载全部 <strong class="text-[#EC4141]">{{ plugins.length }}</strong> 个插件吗？卸载后无法恢复，需重新安装。
+              </p>
+              <div class="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--ghost"
+                  @click="showUninstallAllConfirm = false"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--danger"
+                  @click="confirmUninstallAll"
+                >
+                  <Trash2 class="h-4 w-4" />
+                  确认卸载
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 插件详情弹窗 -->
+    <Teleport to="body">
+      <Transition name="plugin-detail">
+        <div
+          v-if="detailPlugin"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="closePluginDetail"
+        >
+          <div class="plugin-detail-card">
+            <!-- 头部 -->
+            <div class="plugin-detail-header">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]">
+                  <Puzzle class="h-5 w-5" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{{ detailPlugin.name }}</div>
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">
+                    {{ detailPlugin.format === 'lx' ? '落雪格式' : 'MusicFree 格式' }}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="plugin-detail-close"
+                aria-label="关闭"
+                @click="closePluginDetail"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </div>
+
+            <!-- 信息列表 -->
+            <div class="plugin-detail-body">
+              <div class="plugin-detail-row">
+                <span class="plugin-detail-label">版本</span>
+                <span class="plugin-detail-value">v{{ detailPlugin.version || '—' }}</span>
+              </div>
+              <div class="plugin-detail-row">
+                <span class="plugin-detail-label">作者</span>
+                <span class="plugin-detail-value">{{ detailPlugin.author || '—' }}</span>
+              </div>
+              <div class="plugin-detail-row">
+                <span class="plugin-detail-label">描述</span>
+                <span class="plugin-detail-value">{{ detailPlugin.description || '—' }}</span>
+              </div>
+              <div class="plugin-detail-row">
+                <span class="plugin-detail-label">音源</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <span
+                    v-for="src in detailPlugin.sources"
+                    :key="src"
+                    class="settings-plugin-tag"
+                  >{{ src }}</span>
+                  <span v-if="detailPlugin.sources.length === 0" class="plugin-detail-value">—</span>
+                </div>
+              </div>
+              <div class="plugin-detail-row">
+                <span class="plugin-detail-label">插件链接</span>
+                <button
+                  type="button"
+                  class="plugin-detail-link"
+                  :title="detailPlugin.filePath || ''"
+                  @click="copyPluginLink"
+                >
+                  <Copy class="h-3.5 w-3.5 shrink-0" />
+                  <span class="truncate">{{ detailPlugin.filePath || '—' }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -1129,5 +1295,155 @@ function handleRemoveSubscription(sub: Subscription) {
 :global(.dark) .settings-plugin-icon-button--danger:hover {
   background: rgba(220, 38, 38, 0.18);
   color: #ff6b6b;
+}
+
+/* 插件详情弹窗 */
+.plugin-detail-card {
+  width: min(92vw, 460px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.plugin-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.plugin-detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: rgba(75, 85, 99, 0.8);
+  transition: background-color 160ms ease, color 160ms ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.plugin-detail-close:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: rgb(17 24 39);
+}
+
+.plugin-detail-body {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plugin-detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.plugin-detail-label {
+  flex-shrink: 0;
+  width: 64px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(100, 116, 139, 0.9);
+  padding-top: 2px;
+}
+
+.plugin-detail-value {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  color: #1f2937;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.plugin-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(236, 65, 65, 0.06);
+  color: #ec4141;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  transition: background-color 160ms ease;
+  cursor: pointer;
+  border: none;
+}
+
+.plugin-detail-link:hover {
+  background: rgba(236, 65, 65, 0.12);
+}
+
+/* 弹窗过渡动画 */
+.plugin-detail-enter-active,
+.plugin-detail-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.plugin-detail-enter-active .plugin-detail-card,
+.plugin-detail-leave-active .plugin-detail-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.plugin-detail-enter-from,
+.plugin-detail-leave-to {
+  opacity: 0;
+}
+
+.plugin-detail-enter-from .plugin-detail-card,
+.plugin-detail-leave-to .plugin-detail-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* 深色模式 */
+:global(.dark) .plugin-detail-card {
+  background: #1f1f23;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .plugin-detail-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .plugin-detail-close {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:global(.dark) .plugin-detail-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+:global(.dark) .plugin-detail-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+:global(.dark) .plugin-detail-value {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:global(.dark) .plugin-detail-link {
+  background: rgba(236, 65, 65, 0.14);
+  color: #ff8b8b;
+}
+
+:global(.dark) .plugin-detail-link:hover {
+  background: rgba(236, 65, 65, 0.22);
 }
 </style>

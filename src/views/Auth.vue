@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { invoke } from '@tauri-apps/api/core';
+import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 import { useAuthStore } from '../features/auth/store';
 import { useCollectionsStore } from '../features/collections/store';
@@ -38,21 +40,87 @@ const stats = ref<ProfileStats | null>(null);
 const nicknameDraft = ref('');
 const avatarDraft = ref('');
 const avatarUploading = ref(false);
+// 头像弹窗定位
+const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
+const avatarBtnRef = ref<HTMLElement | null>(null);
+
+function openAvatarMenu() {
+  const el = avatarBtnRef.value;
+  if (!el) {
+    avatarMenuOpen.value = true;
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  const cardWidth = Math.min(window.innerWidth * 0.86, 320);
+  const gap = 12;
+  // 默认放在头像右下方
+  let left = rect.right + gap;
+  let top = rect.top;
+  // 右侧放不下则放左侧
+  if (left + cardWidth > window.innerWidth - 8) {
+    left = rect.left - cardWidth - gap;
+  }
+  // 左侧也放不下则贴左边
+  if (left < 8) {
+    left = 8;
+  }
+  // 下方溢出则向上对齐底部
+  if (top + 200 > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - 220);
+  }
+  avatarMenuPos.value = { top, left };
+  avatarMenuOpen.value = true;
+}
+// 昵称行内编辑
+const nicknameEditing = ref(false);
+const nicknameInputRef = ref<HTMLInputElement | null>(null);
+
+async function startNicknameEdit() {
+  nicknameEditing.value = true;
+  await nextTick();
+  nicknameInputRef.value?.focus();
+  nicknameInputRef.value?.select();
+}
+
+async function saveNicknameEdit() {
+  if (!nicknameEditing.value) return;
+  const next = nicknameDraft.value.trim();
+  const current = authStore.user?.nickname || authStore.user?.username || '';
+  if (!next || next === current) {
+    nicknameEditing.value = false;
+    nicknameDraft.value = current;
+    return;
+  }
+  await handleSaveProfile();
+  nicknameEditing.value = false;
+}
+
+function cancelNicknameEdit() {
+  if (!nicknameEditing.value) return;
+  nicknameEditing.value = false;
+  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
+}
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
 const profileSaving = ref(false);
 const passwordSaving = ref(false);
+const passwordPanelOpen = ref(false);
+
+// 头像弹窗
+const avatarMenuOpen = ref(false);
+const avatarPreviewOpen = ref(false);
+const avatarInputRef = ref<HTMLInputElement | null>(null);
 
 type Shortcut = {
   label: string;
   desc: string;
   to: string;
-  icon: 'cog' | 'theme' | 'home' | 'folder';
+  icon: 'cog' | 'theme' | 'home' | 'folder' | 'plugin';
 };
 
 const personalShortcuts: Shortcut[] = [
-  { label: '账号设置', desc: '应用通用选项', to: '/settings', icon: 'cog' },
-  { label: '主题外观', desc: '换肤与界面风格', to: '/settings', icon: 'theme' },
-  { label: '回到首页', desc: '统计与首页内容', to: '/', icon: 'home' },
+  { label: '账号设置', desc: '应用通用选项', to: '/settings?tab=general', icon: 'cog' },
+  { label: '插件管理', desc: '管理已安装插件', to: '/settings?tab=plugins', icon: 'plugin' },
+  { label: '主题外观', desc: '换肤与界面风格', to: '/settings?tab=theme', icon: 'theme' },
   { label: '本地音乐', desc: '管理本地曲库', to: '/?view=all', icon: 'folder' },
 ];
 
@@ -252,6 +320,54 @@ async function handleAvatarFileChange(event: Event) {
   }
 }
 
+function openAvatarPicker() {
+  avatarMenuOpen.value = false;
+  // 下一帧触发点击，避免弹窗关闭动画与文件对话框冲突
+  requestAnimationFrame(() => {
+    avatarInputRef.value?.click();
+  });
+}
+
+async function saveAvatarToLocal() {
+  const url = avatarDraft.value || authStore.user?.avatar;
+  if (!url) {
+    showToast('暂无头像可保存', 'error');
+    return;
+  }
+  avatarMenuOpen.value = false;
+  avatarUploading.value = true;
+  try {
+    // 拉取头像二进制
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('头像下载失败');
+    const blob = await res.blob();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // 从 MIME 推断扩展名
+    const ext = blob.type.includes('png') ? 'png'
+      : blob.type.includes('webp') ? 'webp'
+      : blob.type.includes('gif') ? 'gif'
+      : blob.type.includes('jpeg') || blob.type.includes('jpg') ? 'jpg'
+      : 'png';
+    const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`;
+    // 让用户选择保存位置
+    const destPath = await saveDialog({
+      defaultPath: defaultName,
+      filters: [{ name: '图片', extensions: [ext] }],
+    });
+    if (!destPath) return; // 用户取消
+    await invoke<string>('save_download_bytes', {
+      data: Array.from(bytes),
+      destPath,
+    });
+    showToast('头像已保存到本地', 'success');
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '保存失败';
+    showToast(tip, 'error');
+  } finally {
+    avatarUploading.value = false;
+  }
+}
+
 async function handleChangePassword() {
   if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
     showToast('请填写完整的密码信息', 'error');
@@ -281,7 +397,15 @@ async function handleChangePassword() {
   }
 }
 
-async function handleLogout() {
+// 退出登录二次确认
+const showLogoutConfirm = ref(false);
+
+function handleLogout() {
+  showLogoutConfirm.value = true;
+}
+
+async function confirmLogout() {
+  showLogoutConfirm.value = false;
   loading.value = true;
   try {
     await logout();
@@ -343,19 +467,19 @@ onMounted(async () => {
 
 <template>
   <div class="auth-page h-full w-full overflow-y-auto custom-scrollbar text-gray-800 dark:text-gray-200">
-    <div class="px-[clamp(1rem,2.2vw,2.5rem)] pt-[clamp(0.25rem,0.6vw,0.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
+    <div class="px-[clamp(1rem,1.5vw,1.75rem)] pt-[clamp(1rem,1.5vw,1.75rem)] pb-[clamp(2rem,4vw,4rem)] max-w-6xl mx-auto">
 
       <!-- 未登录：登录/注册 -->
       <div v-if="!authStore.isLoggedIn" class="animate-fade-in-up">
         <!-- 顶部标题区 -->
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.25rem,0.5vw,0.5rem)]">
+        <header class="pb-[clamp(0.25rem,0.5vw,0.5rem)]">
           <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ headerLabel }}</p>
           <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">{{ title }}</h2>
           <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-2 max-w-xl">{{ subtitle }}</p>
         </header>
 
         <!-- 模式切换 -->
-        <nav class="px-[clamp(1.5rem,2.8vw,3.5rem)]">
+        <nav class="mt-[clamp(1rem,1.5vw,1.75rem)]">
           <div
             v-if="mode !== 'forgot'"
             class="flex items-center gap-2 border-b border-black/10 dark:border-white/10"
@@ -407,7 +531,7 @@ onMounted(async () => {
           <form
             v-if="mode === 'forgot'"
             key="forgot"
-            class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
@@ -490,7 +614,7 @@ onMounted(async () => {
           <form
             v-else
             :key="mode"
-            class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
+            class="pt-[clamp(0.75rem,1.5vw,1.5rem)] pb-8 grid gap-7 max-w-2xl"
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
@@ -583,7 +707,7 @@ onMounted(async () => {
         <!-- 消息条 -->
         <div
           v-if="message"
-          class="px-[clamp(1.5rem,2.8vw,3.5rem)] mt-4"
+          class="mt-4"
         >
           <p
             class="text-base font-medium"
@@ -598,18 +722,98 @@ onMounted(async () => {
 
       <!-- 已登录：个人中心 -->
       <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]">
-        <!-- 顶部标题区 -->
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
-          <div>
-            <p class="text-black/70 dark:text-white/70 text-[clamp(0.75rem,1vw,0.875rem)] font-light tracking-wider mb-2">个人中心</p>
-            <h2 class="text-black dark:text-white text-[clamp(1.5rem,3vw,2.25rem)] font-black tracking-tight leading-none">
-              {{ authStore.user?.nickname || authStore.user?.username }}
-            </h2>
-            <p class="text-black/60 dark:text-white/60 text-[clamp(0.75rem,1vw,0.875rem)] font-light mt-2">
-              @{{ authStore.user?.username }} · {{ authStore.user?.email }}
-            </p>
+        <!-- 顶部标题区（含头像） -->
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
+          <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0">
+            <!-- 头像（可点击） -->
+            <div class="relative shrink-0">
+              <button
+                ref="avatarBtnRef"
+                type="button"
+                class="grid h-[clamp(3.5rem,5vw,4.5rem)] w-[clamp(3.5rem,5vw,4.5rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                :disabled="avatarUploading || loading"
+                :title="avatarUploading ? '上传中…' : '点击管理头像'"
+                @click="openAvatarMenu"
+              >
+                <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
+                <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
+              </button>
+              <!-- 编辑角标 -->
+              <span class="pointer-events-none absolute bottom-0 right-0 grid h-[clamp(1rem,1.4vw,1.25rem)] w-[clamp(1rem,1.4vw,1.25rem)] place-items-center rounded-full bg-[#EC4141] text-white shadow-sm ring-2 ring-white dark:ring-neutral-900">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[60%] w-[60%]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </span>
+              <!-- 隐藏的文件输入 -->
+              <input
+                ref="avatarInputRef"
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                class="hidden"
+                :disabled="avatarUploading || loading"
+                @change="handleAvatarFileChange"
+              />
+            </div>
+            <!-- 昵称 + 副信息 -->
+            <div class="min-w-0">
+              <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.95vw,0.8rem)] font-light tracking-wider mb-1">个人中心</p>
+              <!-- 昵称：QQ式点击编辑 -->
+              <div class="flex items-center gap-2 min-w-0">
+                <input
+                  v-if="nicknameEditing"
+                  ref="nicknameInputRef"
+                  v-model="nicknameDraft"
+                  type="text"
+                  placeholder="输入昵称"
+                  maxlength="64"
+                  class="min-w-0 flex-1 bg-transparent border-b border-[#EC4141] text-black dark:text-white text-[clamp(1.25rem,2.6vw,2rem)] font-black tracking-tight leading-none outline-none"
+                  @keydown.enter.prevent="saveNicknameEdit"
+                  @keydown.esc.prevent="cancelNicknameEdit"
+                />
+                <h2
+                  v-else
+                  class="text-black dark:text-white text-[clamp(1.25rem,2.6vw,2rem)] font-black tracking-tight leading-none truncate cursor-text"
+                  :title="authStore.user?.nickname || authStore.user?.username"
+                  @click="startNicknameEdit"
+                >
+                  {{ authStore.user?.nickname || authStore.user?.username }}
+                </h2>
+                <button
+                  v-if="!nicknameEditing"
+                  type="button"
+                  class="shrink-0 grid place-items-center h-7 w-7 rounded-md text-black/40 dark:text-white/40 hover:text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 transition cursor-pointer"
+                  title="编辑昵称"
+                  aria-label="编辑昵称"
+                  @click="startNicknameEdit"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                <!-- 保存按钮：仅在有修改时弹出 -->
+                <button
+                  v-if="nicknameEditing"
+                  type="button"
+                  class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.8rem,1.1vw,0.95rem)] font-semibold px-1 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  :disabled="profileSaving || !nicknameDraft.trim() || nicknameDraft.trim() === (authStore.user?.nickname || authStore.user?.username)"
+                  @click="saveNicknameEdit"
+                >
+                  {{ profileSaving ? '保存中…' : '保存' }}
+                </button>
+              </div>
+              <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light mt-1.5 truncate">
+                @{{ authStore.user?.username }} · {{ authStore.user?.email }}
+              </p>
+              <!-- 数据统计 -->
+              <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3">
+                <div v-for="item in meterItems" :key="item.key" class="flex items-baseline gap-1.5">
+                  <span class="text-black dark:text-white text-[clamp(1rem,1.4vw,1.2rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</span>
+                  <span class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wide">{{ item.label }}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0">
             <button
               type="button"
               class="text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer"
@@ -628,120 +832,165 @@ onMounted(async () => {
           </div>
         </header>
 
-        <!-- 顶行：头像（横向布局，单独一行） -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 80ms;">
-          <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap">
-            <div class="grid h-[clamp(4rem,6vw,5rem)] w-[clamp(4rem,6vw,5rem)] shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.5rem,2.5vw,2rem)] font-black">
-              <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
-              <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
-            </div>
-            <label class="inline-flex items-center h-[clamp(2rem,2.8vw,2.25rem)] px-4 rounded-full border border-black/15 dark:border-white/15 text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:border-[#EC4141]/40 cursor-pointer transition-colors">
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-                class="hidden"
-                :disabled="avatarUploading || loading"
-                @change="handleAvatarFileChange"
-              />
-              <span>{{ avatarUploading ? '上传中…' : '更换头像' }}</span>
-            </label>
-            <div class="ml-auto hidden md:block text-right">
-              <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light">用户ID</p>
-              <p class="text-black/80 dark:text-white/80 text-[clamp(0.75rem,1vw,0.875rem)] font-mono mt-0.5">@{{ authStore.user?.username }}</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- 统计：字体缩小放在右侧 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 160ms;">
-          <div class="flex items-center justify-between gap-4 flex-wrap">
-            <p class="text-black/70 dark:text-white/70 text-[clamp(0.75rem,1vw,0.875rem)] font-light tracking-wider shrink-0">数据统计</p>
-            <div class="flex items-center gap-[clamp(1rem,1.5vw,1.75rem)] flex-wrap justify-end">
-              <div v-for="item in meterItems" :key="item.key" class="text-right">
-                <p class="text-black/50 dark:text-white/50 text-[clamp(0.65rem,0.8vw,0.75rem)] font-light tracking-wide mb-0.5">{{ item.label }}</p>
-                <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</p>
+        <!-- 头像操作弹窗（定位在头像附近） -->
+        <Teleport to="body">
+          <Transition name="avatar-modal">
+            <div
+              v-if="avatarMenuOpen"
+              class="fixed inset-0 z-[200]"
+              @click.self="avatarMenuOpen = false"
+            >
+              <div
+                v-if="avatarMenuPos"
+                class="avatar-menu-card fixed"
+                :style="{ top: avatarMenuPos.top + 'px', left: avatarMenuPos.left + 'px' }"
+              >
+                <div class="avatar-menu-body">
+                  <button type="button" class="avatar-menu-item" @click="openAvatarPicker">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </span>
+                    <span class="avatar-menu-text">
+                      <strong>更换头像</strong>
+                      <small>从本地选择图片上传</small>
+                    </span>
+                  </button>
+                  <button type="button" class="avatar-menu-item" @click="avatarMenuOpen = false; avatarPreviewOpen = true">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </span>
+                    <span class="avatar-menu-text">
+                      <strong>放大查看</strong>
+                      <small>查看当前头像大图</small>
+                    </span>
+                  </button>
+                  <button type="button" class="avatar-menu-item" @click="saveAvatarToLocal">
+                    <span class="avatar-menu-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </span>
+                    <span class="avatar-menu-text">
+                      <strong>保存到本地</strong>
+                      <small>下载当前头像到电脑</small>
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </Transition>
 
-        <!-- 个人信息（缩小） -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 240ms;">
-          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-3">个人信息</p>
-          <div class="grid gap-3 max-w-xl">
-            <label class="grid gap-1.5">
-              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">昵称</span>
-              <input
-                v-model="nicknameDraft"
-                type="text"
-                placeholder="显示名称"
-                maxlength="64"
-                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-              />
-            </label>
-            <div class="pt-1">
-              <button
-                type="button"
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-1.5 rounded-full text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium transition active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                :disabled="profileSaving || loading"
-                @click="handleSaveProfile"
-              >
-                {{ profileSaving ? '保存中…' : '保存资料' }}
-              </button>
+          <!-- 头像放大查看 -->
+          <Transition name="avatar-preview">
+            <div
+              v-if="avatarPreviewOpen"
+              class="fixed inset-0 z-[201] flex items-center justify-center p-8 bg-black/80 backdrop-blur-sm"
+              @click="avatarPreviewOpen = false"
+            >
+              <div class="relative max-w-full max-h-full">
+                <div class="w-[min(80vw,70vh)] h-[min(80vw,70vh)] rounded-full overflow-hidden ring-4 ring-white/10 shadow-2xl">
+                  <img
+                    v-if="avatarDraft || authStore.user?.avatar"
+                    :src="avatarDraft || authStore.user?.avatar || ''"
+                    alt="头像"
+                    class="h-full w-full object-cover"
+                  />
+                  <div
+                    v-else
+                    class="h-full w-full grid place-items-center bg-white/10 text-white text-[20vh] font-black"
+                  >
+                    {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="absolute -top-2 -right-2 grid h-9 w-9 place-items-center rounded-full bg-white text-black hover:bg-white/90 transition shadow-lg cursor-pointer"
+                  @click="avatarPreviewOpen = false"
+                  aria-label="关闭"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </Transition>
+        </Teleport>
 
-        <!-- 修改密码（缩小） -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 320ms;">
-          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-1.5">修改密码</p>
-          <p class="text-black/55 dark:text-white/55 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light mb-3">修改成功后需要重新登录</p>
-          <div class="grid gap-3 max-w-xl">
-            <label class="grid gap-1.5">
-              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">当前密码</span>
-              <input
-                v-model="passwordForm.oldPassword"
-                type="password"
-                placeholder="输入当前密码"
-                autocomplete="current-password"
-                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-              />
-            </label>
-            <label class="grid gap-1.5">
-              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">新密码</span>
-              <input
-                v-model="passwordForm.newPassword"
-                type="password"
-                placeholder="输入新密码"
-                autocomplete="new-password"
-                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-              />
-            </label>
-            <label class="grid gap-1.5">
-              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">确认新密码</span>
-              <input
-                v-model="passwordForm.confirmPassword"
-                type="password"
-                placeholder="再次输入新密码"
-                autocomplete="new-password"
-                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-              />
-            </label>
-            <div class="pt-1">
-              <button
-                type="button"
-                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-6 py-1.5 rounded-full text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                :disabled="passwordSaving || loading"
-                @click="handleChangePassword"
-              >
-                {{ passwordSaving ? '提交中…' : '更新密码' }}
-              </button>
+        <!-- 修改密码（可折叠） -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 260ms;">
+          <button
+            type="button"
+            class="w-full flex items-center justify-between gap-3 cursor-pointer px-3 py-2 -mx-3 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+            :aria-expanded="passwordPanelOpen"
+            @click="passwordPanelOpen = !passwordPanelOpen"
+          >
+            <span class="text-black dark:text-white text-[clamp(1.05rem,1.5vw,1.25rem)] font-medium tracking-wider">修改密码</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 text-black/50 dark:text-white/50 transition-transform duration-300"
+              :class="{ 'rotate-180': passwordPanelOpen }"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <transition name="password-panel">
+            <div v-if="passwordPanelOpen" class="password-panel-content">
+              <p class="text-black/55 dark:text-white/55 text-[clamp(0.8rem,1vw,0.9rem)] font-light mt-2 mb-3">修改成功后需要重新登录</p>
+              <div class="grid gap-3 max-w-xl">
+                <label class="grid gap-1.5">
+                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">当前密码</span>
+                  <input
+                    v-model="passwordForm.oldPassword"
+                    type="password"
+                    placeholder="输入当前密码"
+                    autocomplete="current-password"
+                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  />
+                </label>
+                <label class="grid gap-1.5">
+                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">新密码</span>
+                  <input
+                    v-model="passwordForm.newPassword"
+                    type="password"
+                    placeholder="输入新密码"
+                    autocomplete="new-password"
+                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  />
+                </label>
+                <label class="grid gap-1.5">
+                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">确认新密码</span>
+                  <input
+                    v-model="passwordForm.confirmPassword"
+                    type="password"
+                    placeholder="再次输入新密码"
+                    autocomplete="new-password"
+                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  />
+                </label>
+                <div class="pt-1">
+                  <button
+                    type="button"
+                    class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-6 py-1.5 rounded-full text-[clamp(0.85rem,1vw,0.95rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                    :disabled="passwordSaving || loading"
+                    @click="handleChangePassword"
+                  >
+                    {{ passwordSaving ? '提交中…' : '更新密码' }}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          </transition>
         </section>
 
         <!-- 快捷入口 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 400ms;">
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;">
           <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <button
@@ -755,6 +1004,7 @@ onMounted(async () => {
                 <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                 <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
                 <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                <svg v-else-if="item.icon === 'plugin'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                 <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
               </span>
               <span class="grid gap-0.5 min-w-0">
@@ -767,10 +1017,178 @@ onMounted(async () => {
       </div>
 
     </div>
+
+    <!-- 退出登录确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="avatar-modal">
+        <div
+          v-if="showLogoutConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showLogoutConfirm = false"
+        >
+          <div class="logout-confirm-card">
+            <div class="logout-confirm-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </div>
+            <h3 class="logout-confirm-title">退出登录</h3>
+            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p>
+            <div class="logout-confirm-actions">
+              <button
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                @click="showLogoutConfirm = false"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-btn logout-btn--danger"
+                @click="confirmLogout"
+              >
+                确认退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
+/* 退出登录确认弹窗 */
+.logout-confirm-card {
+  width: min(86vw, 360px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.logout-confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+  margin: 0 auto 14px;
+}
+
+.logout-confirm-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 8px;
+}
+
+.logout-confirm-desc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(75, 85, 99, 0.9);
+  margin: 0 0 20px;
+}
+
+.logout-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.logout-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  border: 1px solid transparent;
+}
+
+.logout-btn--ghost {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.logout-btn--ghost:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31 41 55);
+}
+
+.logout-btn--danger {
+  background: #EC4141;
+  color: #ffffff;
+}
+
+.logout-btn--danger:hover {
+  background: #d13b3b;
+}
+
+/* 弹窗过渡动画（复用 avatar-modal） */
+.avatar-modal-enter-active .logout-confirm-card,
+.avatar-modal-leave-active .logout-confirm-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.avatar-modal-enter-from .logout-confirm-card,
+.avatar-modal-leave-to .logout-confirm-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* 深色模式 */
+:global(.dark) .logout-confirm-card {
+  background: #1f1f23;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .logout-confirm-icon {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
+}
+
+:global(.dark) .logout-confirm-title {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+:global(.dark) .logout-confirm-desc {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+:global(.dark) .logout-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:global(.dark) .logout-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+/* 修改密码面板展开/收起动画 */
+.password-panel-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.password-panel-enter-from,
+.password-panel-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -817,6 +1235,167 @@ onMounted(async () => {
     transform: none;
     filter: none;
   }
+}
+
+/* 头像管理弹窗 */
+.avatar-menu-card {
+  width: min(86vw, 320px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .avatar-menu-card {
+  background: #1f1f1f;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.avatar-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .avatar-menu-header {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.avatar-menu-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.avatar-menu-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .avatar-menu-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.avatar-menu-body {
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+}
+
+.avatar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
+  font: inherit;
+}
+
+.avatar-menu-item:hover {
+  background: rgba(236, 65, 65, 0.08);
+}
+
+.avatar-menu-item:active {
+  background: rgba(236, 65, 65, 0.14);
+}
+
+.avatar-menu-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+  flex-shrink: 0;
+}
+
+.avatar-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.avatar-menu-text strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.avatar-menu-text small {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  line-height: 1.3;
+}
+
+/* 弹窗过渡动画 */
+.avatar-modal-enter-active,
+.avatar-modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.avatar-menu-card {
+  transform-origin: top left;
+}
+
+.avatar-modal-enter-active .avatar-menu-card,
+.avatar-modal-leave-active .avatar-menu-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.avatar-modal-enter-from,
+.avatar-modal-leave-to {
+  opacity: 0;
+}
+
+.avatar-modal-enter-from .avatar-menu-card,
+.avatar-modal-leave-to .avatar-menu-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* 放大查看过渡 */
+.avatar-preview-enter-active,
+.avatar-preview-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.avatar-preview-enter-active > div,
+.avatar-preview-leave-active > div {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+
+.avatar-preview-enter-from,
+.avatar-preview-leave-to {
+  opacity: 0;
+}
+
+.avatar-preview-enter-from > div,
+.avatar-preview-leave-to > div {
+  opacity: 0;
+  transform: scale(0.7);
 }
 </style>
 
