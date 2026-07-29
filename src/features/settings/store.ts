@@ -11,6 +11,7 @@ import type {
   LyricsSettings,
   SidebarSettings,
   ThemeSettings,
+  UploadSettings,
 } from '../../types';
 import {
   createDefaultDesktopLyricsSettings,
@@ -48,9 +49,10 @@ export type AudioSettingsPatch = Partial<Omit<AudioSettings, 'volumeBalance'>> &
 };
 export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
 export type DownloadSettingsPatch = Partial<DownloadSettings>;
+export type UploadSettingsPatch = Partial<UploadSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
@@ -59,6 +61,7 @@ export interface AppSettingsPatch
   audio?: AudioSettingsPatch;
   customLyricsFonts?: ImportedLyricsFontsPatch;
   download?: DownloadSettingsPatch;
+  upload?: UploadSettingsPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -134,6 +137,13 @@ export const defaultDownloadSettings: DownloadSettings = {
   rememberDownloadPath: false,
 };
 
+export const defaultUploadSettings: UploadSettings = {
+  playlists: true,
+  history: true,
+  favorites: true,
+  plugins: true,
+};
+
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
   showDesktopLyrics: false,
@@ -159,6 +169,7 @@ export const defaultAppSettings: AppSettings = {
   gpuAcceleration: true,
   writeArtistAvatarToTags: false,
   download: defaultDownloadSettings,
+  upload: defaultUploadSettings,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -187,6 +198,20 @@ export const createDefaultAudioSettings = (): AudioSettings => ({
 
 export const createDefaultDownloadSettings = (): DownloadSettings => ({
   ...defaultDownloadSettings,
+});
+
+export const createDefaultUploadSettings = (): UploadSettings => ({
+  ...defaultUploadSettings,
+});
+
+export const mergeUploadSettings = (
+  base: UploadSettings,
+  patch: UploadSettingsPatch,
+): UploadSettings => ({
+  playlists: typeof patch.playlists === 'boolean' ? patch.playlists : base.playlists,
+  history: typeof patch.history === 'boolean' ? patch.history : base.history,
+  favorites: typeof patch.favorites === 'boolean' ? patch.favorites : base.favorites,
+  plugins: typeof patch.plugins === 'boolean' ? patch.plugins : base.plugins,
 });
 
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
@@ -240,6 +265,7 @@ export const createDefaultAppSettings = (): AppSettings => ({
   sidebar: createDefaultSidebarSettings(),
   shortcuts: createDefaultShortcutSettings(),
   download: createDefaultDownloadSettings(),
+  upload: createDefaultUploadSettings(),
 });
 
 export const mergeThemeSettings = (
@@ -355,6 +381,7 @@ export const mergeAppSettings = (
     sidebar: mergeSidebarSettings(base.sidebar, patch.sidebar ?? {}),
     shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
     download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
+    upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
   };
 };
 
