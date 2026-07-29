@@ -117,6 +117,43 @@ export function useLibraryCurrentViewSongs({
 
     return missingOnline.length > 0 ? [...backendPaths, ...missingOnline] : backendPaths;
   };
+
+  /**
+   * 后端最近播放视图按数据库反查，会丢掉在线歌曲。
+   * 这里把仍能从 songLookup 反查到的在线最近播放歌曲按 recentSongs 时间顺序补回结果，
+   * 并在有搜索词时按标题/歌手做前端过滤。
+   */
+  const appendMissingOnlineRecents = (
+    backendPaths: string[],
+    recentItems: HistoryItem[],
+    query: string,
+  ) => {
+    const existing = new Set(backendPaths);
+    const keyword = query.trim().toLowerCase();
+
+    const missingOnline = recentItems
+      .map(item => item.path)
+      .filter((path) => {
+        if (existing.has(path) || !isOnlineSongPath(path)) {
+          return false;
+        }
+
+        const song = songLookup.value.get(path);
+        if (!song) {
+          return false;
+        }
+
+        if (!keyword) {
+          return true;
+        }
+
+        const title = getSongTitleLabel(song).toLowerCase();
+        const artist = getSongArtistSearchText(song).toLowerCase();
+        return title.includes(keyword) || artist.includes(keyword);
+      });
+
+    return missingOnline.length > 0 ? [...backendPaths, ...missingOnline] : backendPaths;
+  };
   const recentViewSongPaths = ref<string[]>([]);
   const folderViewSongPaths = ref<string[]>([]);
   const localArtistFilterPaths = ref<string[]>([]);
@@ -311,7 +348,9 @@ export function useLibraryCurrentViewSongs({
           return;
         }
 
-        recentViewSongPaths.value = nextPaths;
+        // 后端按数据库反查最近播放，在线歌曲（lx://、remote://、plugin://）不在库中会被丢弃。
+        // 这里把仍可从前端反查到的在线最近播放歌曲补回列表末尾，避免它们在排序/搜索模式下消失。
+        recentViewSongPaths.value = appendMissingOnlineRecents(nextPaths, items, query);
       } catch {
         if (requestId !== recentViewRequestId) {
           return;
