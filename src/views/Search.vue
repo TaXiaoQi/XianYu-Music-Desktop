@@ -563,7 +563,6 @@ const handlePlaySong = (item: LxSearchResultItem) => {
   (song as any)._songmid = item.songmid;
   (song as any)._source = item.source;
   void playSong(song, { insertAfterCurrent: true });
-  uiStore.showPlayerDetail = true;
 };
 
 // ==================== MusicFree 插件歌曲播放 ====================
@@ -694,7 +693,6 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     }
 
     void playSong(song, { insertAfterCurrent: true });
-    uiStore.showPlayerDetail = true;
   } catch (e: any) {
     console.warn('[MusicFree] 播放失败:', e?.message);
   }
