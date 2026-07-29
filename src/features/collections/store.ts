@@ -19,6 +19,12 @@ export const useCollectionsStore = defineStore('collections', () => {
    * 因此收藏时额外保存一份元信息用于列表展示与播放。
    */
   const favoriteSongMeta = ref<Record<string, Song>>({});
+  /**
+   * 在线最近播放歌曲的完整元信息（path → Song）。
+   * 在线歌曲不在本地音乐库/数据库中，仅存 path 无法在最近播放列表里还原歌曲信息，
+   * 因此播放时额外保存一份元信息用于列表展示与播放。
+   */
+  const recentSongMeta = ref<Record<string, Song>>({});
   const playlists = ref<Playlist[]>([]);
   const recentSongs = ref<HistoryItem[]>([]);
   const playlistSortMode = ref<PlaylistSortMode>('custom');
@@ -209,8 +215,49 @@ export const useCollectionsStore = defineStore('collections', () => {
     recentSongs.value.unshift({ path: song.path, playedAt: Date.now() });
 
     if (recentSongs.value.length > RECENT_SONG_LIMIT) {
+      const removed = recentSongs.value.slice(RECENT_SONG_LIMIT);
       recentSongs.value = recentSongs.value.slice(0, RECENT_SONG_LIMIT);
+      // 超出上限被裁掉的在线歌曲，同步清理其元信息，避免无用堆积
+      if (removed.length > 0) {
+        const kept = new Set(recentSongs.value.map(item => item.path));
+        const nextMeta = { ...recentSongMeta.value };
+        let metaChanged = false;
+        removed.forEach((item) => {
+          if (!kept.has(item.path) && item.path in nextMeta) {
+            delete nextMeta[item.path];
+            metaChanged = true;
+          }
+        });
+        if (metaChanged) {
+          recentSongMeta.value = nextMeta;
+        }
+      }
     }
+  };
+
+  /** 保存在线最近播放歌曲的完整元信息 */
+  const setRecentSongMeta = (path: string, song: Song) => {
+    if (!path || !song) {
+      return;
+    }
+
+    recentSongMeta.value = { ...recentSongMeta.value, [path]: song };
+  };
+
+  /** 移除某首在线最近播放歌曲的元信息 */
+  const removeRecentSongMeta = (path: string) => {
+    if (!path || !(path in recentSongMeta.value)) {
+      return;
+    }
+
+    const next = { ...recentSongMeta.value };
+    delete next[path];
+    recentSongMeta.value = next;
+  };
+
+  /** 整体替换在线最近播放元信息（启动恢复时用） */
+  const setRecentSongMetaMap = (map: Record<string, Song>) => {
+    recentSongMeta.value = map ?? {};
   };
 
   const removeRecentSongs = (songPaths: string[]) => {
@@ -220,15 +267,29 @@ export const useCollectionsStore = defineStore('collections', () => {
 
     const blocked = new Set(songPaths);
     recentSongs.value = recentSongs.value.filter(item => !blocked.has(item.path));
+
+    const nextMeta = { ...recentSongMeta.value };
+    let metaChanged = false;
+    songPaths.forEach((path) => {
+      if (path in nextMeta) {
+        delete nextMeta[path];
+        metaChanged = true;
+      }
+    });
+    if (metaChanged) {
+      recentSongMeta.value = nextMeta;
+    }
   };
 
   const clearRecentSongs = () => {
     recentSongs.value = [];
+    recentSongMeta.value = {};
   };
 
   return {
     favoritePaths,
     favoriteSongMeta,
+    recentSongMeta,
     playlists,
     recentSongs,
     playlistSortMode,
@@ -252,6 +313,9 @@ export const useCollectionsStore = defineStore('collections', () => {
     removeFavoritePaths,
     clearFavorites,
     addRecentSong,
+    setRecentSongMeta,
+    removeRecentSongMeta,
+    setRecentSongMetaMap,
     removeRecentSongs,
     clearRecentSongs,
   };
