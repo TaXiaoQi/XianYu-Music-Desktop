@@ -21,13 +21,27 @@ interface DownloadRequest {
 self.onmessage = async (event: MessageEvent<DownloadRequest>) => {
   const { url } = event.data;
   try {
-    const resp = await fetch(url, {
-      headers: {
-        // 模拟浏览器媒体流请求，降低被下载器识别为“文件下载”的概率
-        Accept: 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5',
-        Range: 'bytes=0-',
-      },
-    });
+    const ACCEPT =
+      'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5';
+
+    // 先尝试带 Range 的媒体流请求（伪装成浏览器音频播放，规避 IDM 等下载器拦截）；
+    // 部分音源 CDN 对开放式 Range 会返回 502/416/403（高品、无损直链的节点尤其常见），
+    // 此时去掉 Range 重试一次普通 GET。
+    const doFetch = (withRange: boolean) =>
+      fetch(url, {
+        headers: withRange
+          ? { Accept: ACCEPT, Range: 'bytes=0-' }
+          : { Accept: ACCEPT },
+      });
+
+    let resp = await doFetch(true);
+    if (
+      !resp.ok &&
+      resp.status !== 206 &&
+      (resp.status === 502 || resp.status === 416 || resp.status === 403)
+    ) {
+      resp = await doFetch(false);
+    }
 
     if (!resp.ok && resp.status !== 206) {
       throw new Error(`HTTP ${resp.status}`);
