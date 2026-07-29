@@ -7,6 +7,7 @@ import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
 import { useCoverCache } from './useCoverCache';
 import { useRenderingPower } from './renderingPower';
+import { fetchLxSongLyricsRaw } from '../services/lxLyricFetcher';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -464,6 +465,30 @@ export const createPlayerPlayback = ({
           }
         }
       }
+    }
+
+    // 队列建立后再启动异步歌词请求，确保成功结果能同步更新队列 fallback。
+    if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
+      void fetchLxSongLyricsRaw(song)
+        .then((lyricsRaw) => {
+          if (
+            !lyricsRaw
+            || requestId !== playRequestId
+            || currentSong.value?.path !== song.path
+          ) {
+            return;
+          }
+
+          // 在线歌曲由 fallback 对象承载；先更新源对象，确保队列与当前歌曲共享引用时都能获得歌词。
+          song.lyrics_raw = lyricsRaw;
+          const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
+          playQueue.value = playQueue.value.map(item => (
+            item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
+          ));
+          currentSong.value = songWithLyrics;
+          void loadLyrics();
+        })
+        .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
     }
 
     const retainedFullCoverPaths = prepareDetailFullCovers(song);
