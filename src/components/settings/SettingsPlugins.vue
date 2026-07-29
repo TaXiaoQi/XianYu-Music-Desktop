@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download } from 'lucide-vue-next';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, UploadCloud, FileCode2 } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins } from '../../services/pluginEngine';
@@ -12,13 +13,28 @@ const { showToast } = useToast();
 // 启动时加载已启用的插件
 onMounted(() => {
   void loadPlugins();
+  // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
+  setupDragDropListeners();
+});
+
+onUnmounted(() => {
+  unlistenDragDrop?.();
+  unlistenDragOver?.();
+  unlistenDragLeave?.();
 });
 
 // UI 状态
 const searchQuery = ref('');
 const showSubscriptionPanel = ref(false);
 const showInstallFromUrlDialog = ref(false);
+const showInstallFromFilePanel = ref(false);
+const isDragOverDropZone = ref(false);
 const installUrl = ref('');
+
+// Tauri 拖放事件取消监听函数
+let unlistenDragDrop: UnlistenFn | null = null;
+let unlistenDragOver: UnlistenFn | null = null;
+let unlistenDragLeave: UnlistenFn | null = null;
 
 /** 插件订阅源 */
 interface Subscription {
@@ -30,6 +46,8 @@ interface Subscription {
 // 插件列表（从 localStorage 读取）
 const plugins = ref<PluginSource[]>(getStoredPlugins());
 const subscriptions = ref<Subscription[]>([]);
+const showAddSubscriptionInput = ref(false);
+const newSubscriptionUrl = ref('');
 
 const isPluginBusy = ref(false);
 
@@ -55,26 +73,67 @@ function refreshPluginList() {
 
 // ==================== 从本地文件安装 ====================
 
-async function handleInstallFromFile() {
-  try {
-    const selected = await openDialog({
-      title: '选择插件文件',
-      filters: [{ name: 'JavaScript 插件', extensions: ['js'] }],
-      multiple: false,
+/** 注册 Tauri 窗口级拖放事件监听 */
+async function setupDragDropListeners() {
+  unlistenDragOver = await listen('tauri://drag-over', () => {
+    if (showInstallFromFilePanel.value) {
+      isDragOverDropZone.value = true;
+    }
+  });
+
+  unlistenDragLeave = await listen('tauri://drag-leave', () => {
+    isDragOverDropZone.value = false;
+  });
+
+  unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+    isDragOverDropZone.value = false;
+    if (!showInstallFromFilePanel.value) return;
+
+    const paths = event.payload?.paths ?? [];
+    // 筛选 .js 和 .json 文件
+    const pluginFiles = paths.filter((p) => {
+      const lower = p.toLowerCase();
+      return lower.endsWith('.js') || lower.endsWith('.json');
     });
-    if (!selected || typeof selected !== 'string') return;
 
-    const filePath = selected as string;
+    if (pluginFiles.length === 0) return;
+
+    for (const filePath of pluginFiles) {
+      await installFromFilePath(filePath);
+    }
+  });
+}
+
+/** 从文件路径安装插件（供拖放和文件选择共用） */
+async function installFromFilePath(filePath: string) {
+  try {
     isPluginBusy.value = true;
-
-    // 通过后端读取文件内容
     const script = await invoke<string>('read_plugin_file', { path: filePath });
     if (!script || script.trim().length === 0) {
       showToast('插件文件为空', 'error');
       return;
     }
-
     await installPluginFromScript(script, filePath);
+  } catch (e: any) {
+    showToast(`安装失败: ${e?.message || e}`, 'error');
+  } finally {
+    isPluginBusy.value = false;
+  }
+}
+
+async function handleInstallFromFile() {
+  try {
+    const selected = await openDialog({
+      title: '选择插件文件',
+      filters: [
+        { name: '插件文件', extensions: ['js', 'json'] },
+        { name: 'JavaScript 插件', extensions: ['js'] },
+        { name: 'JSON 插件索引', extensions: ['json'] },
+      ],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== 'string') return;
+    await installFromFilePath(selected as string);
   } catch (e: any) {
     showToast(`安装失败: ${e?.message || e}`, 'error');
   } finally {
@@ -239,13 +298,76 @@ async function handleUninstallPlugin(plugin: PluginSource) {
 
 // 打开订阅设置
 function toggleSubscriptionPanel() {
-  showSubscriptionPanel.value = !showSubscriptionPanel.value;
+  const willOpen = !showSubscriptionPanel.value;
+  // 互斥：打开一个面板时关闭其他
+  if (willOpen) {
+    showInstallFromUrlDialog.value = false;
+    showInstallFromFilePanel.value = false;
+  }
+  showSubscriptionPanel.value = willOpen;
+}
+
+// 切换网络安装输入面板
+function toggleInstallFromUrlDialog() {
+  const willOpen = !showInstallFromUrlDialog.value;
+  if (willOpen) {
+    showSubscriptionPanel.value = false;
+    showInstallFromFilePanel.value = false;
+  }
+  showInstallFromUrlDialog.value = willOpen;
+}
+
+// 切换本地安装面板
+function toggleInstallFromFilePanel() {
+  const willOpen = !showInstallFromFilePanel.value;
+  if (willOpen) {
+    showSubscriptionPanel.value = false;
+    showInstallFromUrlDialog.value = false;
+  }
+  showInstallFromFilePanel.value = willOpen;
+  isDragOverDropZone.value = false;
 }
 
 // 添加订阅源
 function handleAddSubscription() {
-  // TODO: 打开添加订阅对话框
-  showToast('添加订阅：等待后端接入', 'info');
+  showAddSubscriptionInput.value = !showAddSubscriptionInput.value;
+  newSubscriptionUrl.value = '';
+}
+
+// 确认添加订阅
+function confirmAddSubscription() {
+  const url = newSubscriptionUrl.value.trim();
+  if (!url) {
+    showToast('请输入订阅 URL', 'error');
+    return;
+  }
+
+  // 简单 URL 校验
+  try {
+    new URL(url);
+  } catch {
+    showToast('请输入有效的 URL', 'error');
+    return;
+  }
+
+  // 避免重复
+  if (subscriptions.value.some((s) => s.url === url)) {
+    showToast('该订阅已存在', 'error');
+    return;
+  }
+
+  // 从 URL 提取名称（取域名或最后路径段）
+  let name = url;
+  try {
+    const u = new URL(url);
+    name = u.hostname + (u.pathname !== '/' ? u.pathname.split('/').pop() || '' : '');
+  } catch { /* keep raw url */ }
+
+  const id = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  subscriptions.value.push({ id, name, url });
+  newSubscriptionUrl.value = '';
+  showAddSubscriptionInput.value = false;
+  showToast(`已添加订阅: ${name}`, 'success');
 }
 
 // 从订阅安装
@@ -281,39 +403,40 @@ function handleRemoveSubscription(sub: Subscription) {
         </div>
 
         <!-- 操作按钮组 -->
-        <div class="p-4 flex flex-wrap items-center gap-3">
+        <div class="p-4 flex items-center gap-2 settings-plugin-toolbar">
           <button
             type="button"
             class="settings-plugin-button"
-            @click="handleInstallFromFile"
+            :class="{ 'settings-plugin-button--active': showInstallFromFilePanel }"
+            @click="toggleInstallFromFilePanel"
           >
             <PackageOpen class="h-4 w-4" />
-            从本地文件安装
+            本地安装
           </button>
 
           <button
             type="button"
             class="settings-plugin-button"
-            @click="showInstallFromUrlDialog = true"
+            :class="{ 'settings-plugin-button--active': showInstallFromUrlDialog }"
+            @click="toggleInstallFromUrlDialog"
           >
             <Globe class="h-4 w-4" />
-            从网络安装
+            网络链接
           </button>
 
           <button
             type="button"
             class="settings-plugin-button"
+            :class="{ 'settings-plugin-button--active': showSubscriptionPanel }"
             @click="toggleSubscriptionPanel"
           >
             <Link2 class="h-4 w-4" />
             订阅管理
           </button>
 
-          <div class="flex-1"></div>
-
           <button
             type="button"
-            class="settings-plugin-button settings-plugin-button--danger"
+            class="settings-plugin-button settings-plugin-button--danger settings-plugin-button--uninstall"
             :disabled="plugins.length === 0"
             :class="{ 'settings-plugin-button--disabled': plugins.length === 0 }"
             @click="handleUninstallAll"
@@ -322,6 +445,39 @@ function handleRemoveSubscription(sub: Subscription) {
             卸载全部
           </button>
         </div>
+
+        <!-- 本地安装拖放面板（展开） -->
+        <transition name="settings-pop-panel">
+          <div v-if="showInstallFromFilePanel" class="px-4 pb-4">
+            <div class="settings-plugin-inline-panel">
+              <div
+                class="settings-plugin-dropzone"
+                :class="{ 'settings-plugin-dropzone--active': isDragOverDropZone }"
+                @click="handleInstallFromFile"
+              >
+                <div class="settings-plugin-dropzone-icon">
+                  <UploadCloud class="h-8 w-8" />
+                </div>
+                <div class="settings-plugin-dropzone-title">
+                  点击选择文件或拖拽到此处
+                </div>
+                <div class="settings-plugin-dropzone-hint">
+                  <FileCode2 class="h-3.5 w-3.5" />
+                  支持 .js 或 .json 格式的插件文件
+                </div>
+              </div>
+              <div class="flex justify-end mt-3">
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--ghost"
+                  @click="toggleInstallFromFilePanel"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        </transition>
 
         <!-- 从 URL 安装的输入行（展开） -->
         <transition name="settings-pop-panel">
@@ -349,7 +505,7 @@ function handleRemoveSubscription(sub: Subscription) {
                 <button
                   type="button"
                   class="settings-plugin-button settings-plugin-button--ghost"
-                  @click="showInstallFromUrlDialog = false; installUrl = ''"
+                  @click="toggleInstallFromUrlDialog(); installUrl = ''"
                 >
                   取消
                 </button>
@@ -371,12 +527,35 @@ function handleRemoveSubscription(sub: Subscription) {
                   class="settings-plugin-button settings-plugin-button--sm"
                   @click="handleAddSubscription"
                 >
-                  添加订阅
+                  {{ showAddSubscriptionInput ? '取消' : '添加订阅' }}
                 </button>
               </div>
 
-              <div v-if="subscriptions.length === 0" class="settings-plugin-empty">
-                暂无订阅源
+              <!-- 添加订阅输入行 -->
+              <transition name="settings-pop-panel">
+                <div v-if="showAddSubscriptionInput" class="mb-3">
+                  <div class="flex items-center gap-3">
+                    <input
+                      v-model="newSubscriptionUrl"
+                      type="text"
+                      placeholder="https://example.com/subscription.json"
+                      class="settings-plugin-input flex-1"
+                      @keydown.enter="confirmAddSubscription"
+                    />
+                    <button
+                      type="button"
+                      class="settings-plugin-button"
+                      @click="confirmAddSubscription"
+                    >
+                      <Download class="h-4 w-4" />
+                      添加
+                    </button>
+                  </div>
+                </div>
+              </transition>
+
+              <div v-if="subscriptions.length === 0 && !showAddSubscriptionInput" class="settings-plugin-empty">
+                暂无订阅源，点击「添加订阅」导入
               </div>
               <div v-else class="flex flex-col gap-2">
                 <div
@@ -538,6 +717,7 @@ function handleRemoveSubscription(sub: Subscription) {
   color: #ec4141;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
@@ -552,6 +732,26 @@ function handleRemoveSubscription(sub: Subscription) {
   border-color: rgba(236, 65, 65, 0.34);
   background: rgba(236, 65, 65, 0.1);
   box-shadow: 0 10px 20px rgba(236, 65, 65, 0.08);
+}
+
+.settings-plugin-button--active {
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(236, 65, 65, 0.14);
+  color: #c42f2f;
+}
+
+.settings-plugin-button--active:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.6);
+  background: rgba(236, 65, 65, 0.18);
+}
+
+/* 工具栏：确保所有按钮在同一行，卸载全部靠右 */
+.settings-plugin-toolbar {
+  flex-wrap: nowrap;
+}
+
+.settings-plugin-button--uninstall {
+  margin-left: auto;
 }
 
 .settings-plugin-button--secondary {
@@ -651,6 +851,65 @@ function handleRemoveSubscription(sub: Subscription) {
   padding-top: 14px;
 }
 
+.settings-plugin-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 20px;
+  border: 2px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    transform 200ms ease;
+}
+
+.settings-plugin-dropzone:hover {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.04);
+  transform: translateY(-1px);
+}
+
+.settings-plugin-dropzone--active {
+  border-color: rgba(236, 65, 65, 0.6);
+  background: rgba(236, 65, 65, 0.08);
+  transform: scale(1.01);
+}
+
+.settings-plugin-dropzone-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: rgba(236, 65, 65, 0.08);
+  color: #ec4141;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
+  background: rgba(236, 65, 65, 0.16);
+}
+
+.settings-plugin-dropzone-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(55, 65, 81, 0.9);
+}
+
+.settings-plugin-dropzone-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: rgba(100, 116, 139, 0.8);
+}
+
 .settings-plugin-search {
   display: flex;
   align-items: center;
@@ -747,6 +1006,17 @@ function handleRemoveSubscription(sub: Subscription) {
   color: rgba(255, 255, 255, 0.96);
 }
 
+:global(.dark) .settings-plugin-button--active {
+  border-color: rgba(236, 65, 65, 0.55);
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+:global(.dark) .settings-plugin-button--active:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.65);
+  background: rgba(236, 65, 65, 0.24);
+}
+
 :global(.dark) .settings-plugin-button--ghost {
   border-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.65);
@@ -777,6 +1047,38 @@ function handleRemoveSubscription(sub: Subscription) {
 
 :global(.dark) .settings-plugin-inline-panel {
   border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .settings-plugin-dropzone {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:global(.dark) .settings-plugin-dropzone:hover {
+  border-color: rgba(236, 65, 65, 0.45);
+  background: rgba(236, 65, 65, 0.06);
+}
+
+:global(.dark) .settings-plugin-dropzone--active {
+  border-color: rgba(236, 65, 65, 0.6);
+  background: rgba(236, 65, 65, 0.1);
+}
+
+:global(.dark) .settings-plugin-dropzone-icon {
+  background: rgba(236, 65, 65, 0.14);
+  color: #ff6b6b;
+}
+
+:global(.dark) .settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
+  background: rgba(236, 65, 65, 0.22);
+}
+
+:global(.dark) .settings-plugin-dropzone-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:global(.dark) .settings-plugin-dropzone-hint {
+  color: rgba(255, 255, 255, 0.45);
 }
 
 :global(.dark) .settings-plugin-search {
