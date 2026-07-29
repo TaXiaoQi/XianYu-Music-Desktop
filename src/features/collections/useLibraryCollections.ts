@@ -24,6 +24,9 @@ export function useLibraryCollections() {
   const renamePlaylist = (id: string, name: string) =>
     collectionsStore.renamePlaylist(id, name);
 
+  const setPlaylistCover = (id: string, coverPath: string | null) =>
+    collectionsStore.setPlaylistCover(id, coverPath);
+
   const deletePlaylist = (id: string) => {
     const deleted = collectionsStore.deletePlaylist(id);
     const currentRoute = router.currentRoute.value;
@@ -96,7 +99,11 @@ export function useLibraryCollections() {
         libraryStore.setExtraSong(song);
       } else {
         collectionsStore.removeFavoriteSongMeta(path);
-        libraryStore.removeExtraSong(path);
+        // extraSong 是收藏与最近播放共享的元信息池，若该歌仍在最近播放中则不删除，
+        // 避免误删导致最近播放列表反查失败。
+        if (!(path in collectionsStore.recentSongMeta)) {
+          libraryStore.removeExtraSong(path);
+        }
       }
     }
 
@@ -120,6 +127,15 @@ export function useLibraryCollections() {
     collectionsStore.addRecentSong(song);
     playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
 
+    // 在线歌曲（lx://、remote://、plugin://）不在本地音乐库/数据库中，
+    // 后端 add_to_history 查不到 song_id 会静默丢弃，最近播放列表也无法反查。
+    // 因此额外保存其元信息并写入额外歌曲池，使列表能还原并持久化。
+    if (isOnlineSong(song)) {
+      const libraryStore = useLibraryStore();
+      collectionsStore.setRecentSongMeta(song.path, song);
+      libraryStore.setExtraSong(song);
+    }
+
     historyApi.addToHistory(song.path).catch(error => {
       console.warn('add_to_history failed:', error);
     });
@@ -130,8 +146,21 @@ export function useLibraryCollections() {
       return;
     }
 
+    // 在移除前记录哪些是曾保存过元信息的在线歌曲，用于清理额外歌曲池。
+    const onlineMetaPaths = songPaths.filter(path => path in collectionsStore.recentSongMeta);
+
     collectionsStore.removeRecentSongs(songPaths);
     playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
+
+    if (onlineMetaPaths.length > 0) {
+      const libraryStore = useLibraryStore();
+      onlineMetaPaths.forEach((path) => {
+        // extraSong 与收藏共享，仍被收藏引用时不删除。
+        if (!(path in collectionsStore.favoriteSongMeta)) {
+          libraryStore.removeExtraSong(path);
+        }
+      });
+    }
 
     try {
       await historyApi.removeFromRecentHistory(songPaths);
@@ -141,8 +170,20 @@ export function useLibraryCollections() {
   };
 
   const clearHistory = async () => {
+    const clearedOnlinePaths = Object.keys(collectionsStore.recentSongMeta);
+
     collectionsStore.clearRecentSongs();
     playerStorage.remove(LEGACY_PLAYER_HISTORY_KEY);
+
+    if (clearedOnlinePaths.length > 0) {
+      const libraryStore = useLibraryStore();
+      clearedOnlinePaths.forEach((path) => {
+        // extraSong 与收藏共享，仍被收藏引用时不删除。
+        if (!(path in collectionsStore.favoriteSongMeta)) {
+          libraryStore.removeExtraSong(path);
+        }
+      });
+    }
 
     try {
       await historyApi.clearRecentHistory();
@@ -157,6 +198,7 @@ export function useLibraryCollections() {
     ...collectionsRefs,
     createPlaylist,
     renamePlaylist,
+    setPlaylistCover,
     deletePlaylist,
     addToPlaylist,
     removeFromPlaylist,

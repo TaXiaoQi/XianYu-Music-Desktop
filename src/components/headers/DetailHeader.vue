@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Song } from '../../types';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -67,6 +68,12 @@ const updateHeaderCover = async () => {
 
   if (currentViewMode.value === 'playlist') {
       const pl = playlists.value.find(p => p.id === filterCondition.value);
+      // 优先使用歌单自定义封面
+      if (pl && pl.coverPath) {
+        if (requestId !== coverRequestId) return;
+        headerCover.value = convertFileSrc(pl.coverPath);
+        return;
+      }
       if (pl && pl.songPaths.length > 0) {
         const firstSongPath = pl.songPaths[0];
         try {
@@ -113,6 +120,14 @@ const updateHeaderCover = async () => {
 
 watch(() => props.songs, updateHeaderCover, { immediate: true });
 
+// 歌单自定义封面变化时重新加载
+watch(
+  () => playlists.value.find(p => p.id === filterCondition.value)?.coverPath,
+  () => {
+    if (currentViewMode.value === 'playlist') void updateHeaderCover();
+  },
+);
+
 const handlePlayAll = () => {
   emit('playAll');
 };
@@ -154,11 +169,11 @@ const handlePlayAll = () => {
         <div>
           <div class="flex items-center gap-2 mb-1">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-white truncate max-w-[500px]">{{ title }}</h1>
-            <button 
-              v-if="showRename" 
-              @click="emit('rename')" 
+            <button
+              v-if="showRename"
+              @click="emit('rename')"
               class="text-gray-500 dark:text-white/60 hover:text-gray-800 dark:hover:text-white transition p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 shrink-0"
-              title="修改名称"
+              title="修改信息"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />

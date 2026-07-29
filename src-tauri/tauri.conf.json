@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "XY-Music-Desktop",
-  "version": "1.0.5-fix2",
+  "productName": "弦予音乐",
+  "mainBinaryName": "弦予音乐",
+  "version": "1.0.5-fix9",
   "identifier": "com.xymusic.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "XY-Music",
+        "title": "弦予音乐",
         "width": 1200,
         "height": 800,
         "minWidth": 960,
@@ -75,9 +76,13 @@
       },
       "nsis": {
         "languages": [
-          "SimpChinese"
+          "SimpChinese",
+          "English"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": true,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/header.bmp",
+        "sidebarImage": "icons/sidebar.bmp"
       }
     }
   }

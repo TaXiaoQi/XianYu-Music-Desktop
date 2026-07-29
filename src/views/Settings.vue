@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import SettingsAbout from "../components/settings/SettingsAbout.vue";
 import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
@@ -13,10 +14,47 @@ import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about'>('general');
+type TabId = 'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about';
+const VALID_TABS: TabId[] = ['general', 'theme', 'sidebar', 'desktopLyrics', 'audioOutput', 'toolbox', 'library', 'remoteLibrary', 'plugins', 'shortcuts', 'account', 'about'];
+
+const route = useRoute();
+const router = useRouter();
+
+const initialTab = (() => {
+  const q = route.query.tab as string | undefined;
+  return (q && VALID_TABS.includes(q as TabId)) ? (q as TabId) : 'general';
+})();
+
+const activeTab = ref<TabId>(initialTab);
+const mainRef = ref<HTMLElement | null>(null);
+
+// 支持外部通过 ?tab=xxx 跳转到指定标签
+watch(() => route.query.tab, (q) => {
+  const next = (q as string | undefined) ?? '';
+  if (next && VALID_TABS.includes(next as TabId) && next !== activeTab.value) {
+    activeTab.value = next as TabId;
+  }
+});
+
+// 切换 tab 时同步 URL query，便于分享/刷新保持
+watch(activeTab, (t) => {
+  if (route.query.tab !== t) {
+    void router.replace({ query: { ...route.query, tab: t } });
+  }
+});
+
+watch(activeTab, () => {
+  nextTick(() => {
+    if (mainRef.value) {
+      mainRef.value.scrollTop = 0;
+    }
+  });
+});
 
 const tabs = [
   { id: 'general', name: '常规' },
+  { id: 'account', name: '账号' },
+  { id: 'plugins', name: '插件' },
   { id: 'theme', name: '外观' },
   { id: 'sidebar', name: '侧边栏管理' },
   { id: 'desktopLyrics', name: '桌面歌词' },
@@ -25,8 +63,6 @@ const tabs = [
   { id: 'library', name: '本地音乐库' },
   { id: 'remoteLibrary', name: '远程音乐库' },
   { id: 'shortcuts', name: '快捷键' },
-  { id: 'plugins', name: '插件' },
-  { id: 'account', name: '账号' },
   { id: 'about', name: '关于' },
 ];
 </script>
@@ -51,10 +87,12 @@ const tabs = [
       </nav>
     </aside>
 
-    <main :class="activeTab === 'about' ? 'relative h-full min-w-0 flex-1 overflow-hidden px-10 py-10 xl:px-16' : 'custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16'">
-      <div :class="activeTab === 'about' ? 'h-full w-full' : 'w-full pb-16'">
+    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
+      <div class="w-full pb-16">
         <transition name="settings-tab" mode="out-in">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
+          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
+          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsSidebar v-else-if="activeTab === 'sidebar'" key="sidebar" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
@@ -62,9 +100,7 @@ const tabs = [
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" key="remoteLibrary" />
-          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
-          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
 
           <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">

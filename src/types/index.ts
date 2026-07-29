@@ -96,6 +96,7 @@ export interface Playlist {
   name: string;
   songPaths: string[];
   createdAt?: string;
+  coverPath?: string;
 }
 
 export interface LibraryFolder {
@@ -216,7 +217,7 @@ export interface LibraryScanSession {
 }
 
 export interface ThemeSettings {
-  mode: 'light' | 'dark' | 'custom';
+  mode: 'light' | 'dark' | 'custom' | 'system';
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   flowColorBoost: number;
@@ -302,6 +303,7 @@ export interface DesktopLyricsSettings {
   autoHideWhenPaused: boolean;
   showDoubleLine: boolean;
   enableWordEffect: boolean;
+  enableTextOutline: boolean;
   isLocked: boolean;
   persistLock: boolean;
   centerHorizontally: boolean;

@@ -147,6 +147,7 @@ export function useAppThemeSync() {
       () => theme.value.windowMaterial,
       () => theme.value.windowBlurTint,
       () => theme.value.customBackground.foregroundStyle,
+      isDarkTheme,
     ],
     () => {
       void syncThemeAndMaterial();

@@ -23,6 +23,7 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
+    "version.ts",
     "src/**/*.ts",
     "src/**/*.d.ts",
     "src/**/*.tsx",

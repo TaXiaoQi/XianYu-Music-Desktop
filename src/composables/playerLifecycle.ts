@@ -562,6 +562,15 @@ export const createPlayerLifecycle = ({
         libraryStore.setExtraSongs(extraSongs);
       }
 
+      // 恢复在线最近播放歌曲的元信息，并写入额外歌曲池，
+      // 使最近播放列表能反查出这些不在本地音乐库中的歌曲
+      const recentSongMeta = playerStorage.readRecentSongMeta();
+      collectionsStore.setRecentSongMetaMap(recentSongMeta);
+      const recentExtraSongs = Object.values(recentSongMeta);
+      if (recentExtraSongs.length > 0) {
+        libraryStore.setExtraSongs(recentExtraSongs);
+      }
+
       // 恢复队列/歌单中在线歌曲的元信息（含非收藏），写入额外歌曲池，
       // 使 resolveSongsByPaths 能还原这些不在本地库的在线歌（含 duration），
       // 否则非收藏在线歌重启后会从播放队列中整首丢失
