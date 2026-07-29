@@ -96,6 +96,7 @@ export interface Playlist {
   name: string;
   songPaths: string[];
   createdAt?: string;
+  coverPath?: string;
 }
 
 export interface LibraryFolder {

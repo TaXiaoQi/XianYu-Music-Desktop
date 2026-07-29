@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useStatisticsStore } from '../../features/statistics/store';
+import { useAuthStore } from '../../features/auth/store';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 
 const TEXT = {
@@ -13,6 +14,8 @@ const TEXT = {
   playCount: '播放次数',
   longestPlayed: '最长播放',
   hourlyDistribution: '24小时播放分布',
+  leaderboard: '听歌排行榜',
+  leaderboardSubtitle: '单日听歌时长排行',
   loadFailed: '加载失败：',
   retry: '重试',
   noData: '暂无数据',
@@ -23,7 +26,94 @@ const TEXT = {
   hourUnit: '小时',
   minuteUnit: '分钟',
   secondUnit: '秒',
+  you: '你',
 };
+
+// 听歌排行榜类型
+type LeaderboardEntry = {
+  rank: number;
+  username: string;
+  nickname: string;
+  avatar?: string;
+  duration: number; // 秒
+  isMe?: boolean;
+};
+
+// 生成模拟排行榜数据（前端 Mock）
+function generateMockLeaderboard(currentUsername: string, currentNickname: string, currentAvatar?: string): LeaderboardEntry[] {
+  const mockUsers = [
+    { username: 'melody_master', nickname: '旋律大师', duration: 53280 },
+    { username: 'music_lover', nickname: '音乐发烧友', duration: 47620 },
+    { username: 'night_owl', nickname: '夜猫子', duration: 41250 },
+    { username: 'chill_vibes', nickname: ' Chill爱好者', duration: 38940 },
+    { username: 'beat_keeper', nickname: '节奏掌控', duration: 35600 },
+    { username: 'vinyl_collector', nickname: '黑胶收藏家', duration: 32180 },
+    { username: 'lofi_dreamer', nickname: 'Lofi梦想家', duration: 28960 },
+    { username: 'bass_head', nickname: '低音炮', duration: 26450 },
+    { username: 'acoustic_fan', nickname: '原声迷', duration: 23890 },
+    { username: 'indie_soul', nickname: '独立灵魂', duration: 21340 },
+    { username: 'synth_wave', nickname: '合成波', duration: 18750 },
+    { username: 'classical_ear', nickname: '古典耳朵', duration: 16280 },
+    { username: 'rock_roller', nickname: '摇滚青年', duration: 13940 },
+    { username: 'pop_addict', nickname: '流行上瘾', duration: 11680 },
+    { username: 'jazzy_cat', nickname: '爵士猫', duration: 9520 },
+    { username: 'ambient_drift', nickname: '氛围漂流', duration: 8430 },
+    { username: 'edm_dancer', nickname: '电音舞者', duration: 7210 },
+    { username: 'folk_wanderer', nickname: '民谣流浪者', duration: 6180 },
+    { username: 'metal_head', nickname: '金属头', duration: 5340 },
+    { username: 'rnb_smooth', nickname: 'R&B柔情', duration: 4520 },
+  ];
+  // 当前用户的模拟时长
+  const myDuration = 12600;
+  const all: LeaderboardEntry[] = mockUsers.map(u => ({ ...u, rank: 0, isMe: false }));
+  all.push({
+    rank: 0,
+    username: currentUsername,
+    nickname: currentNickname,
+    avatar: currentAvatar,
+    duration: myDuration,
+    isMe: true,
+  });
+  // 按时长降序排序
+  all.sort((a, b) => b.duration - a.duration);
+  // 计算排名
+  all.forEach((u, i) => { u.rank = i + 1; });
+  return all;
+}
+
+const leaderboard = ref<LeaderboardEntry[]>([]);
+const leaderboardLoading = ref(false);
+
+async function loadLeaderboard() {
+  const authStore = useAuthStore();
+  if (!authStore.isLoggedIn) {
+    leaderboard.value = [];
+    return;
+  }
+  leaderboardLoading.value = true;
+  // 模拟网络延迟
+  await new Promise(resolve => setTimeout(resolve, 600));
+  leaderboard.value = generateMockLeaderboard(
+    authStore.user?.username || 'guest',
+    authStore.user?.nickname || authStore.user?.username || '游客',
+    authStore.user?.avatar || undefined,
+  );
+  leaderboardLoading.value = false;
+}
+
+// 前15名 + 始终返回自己的排名（用于底部固定显示）
+const leaderboardDisplay = computed(() => {
+  const top15 = leaderboard.value.slice(0, 15);
+  const me = leaderboard.value.find(u => u.isMe);
+  return { top: top15, me };
+});
+
+function formatLeaderboardDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}小时${m > 0 ? `${m}分` : ''}`;
+  return `${m}分钟`;
+}
 
 const statisticsStore = useStatisticsStore();
 const {
@@ -38,6 +128,8 @@ const { canonicalSongs } = useLibraryBrowse();
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();
   await statisticsStore.ensureLoaded('All');
+  // 非阻塞加载排行榜数据
+  void loadLeaderboard();
 });
 
 onUnmounted(() => {
@@ -116,21 +208,9 @@ const longestPlayed = computed(() => {
   };
 });
 
-const hourDistribution = computed(() => behaviorStats.value?.hour_distribution ?? []);
-const maxHourCount = computed(() => Math.max(...hourDistribution.value, 1));
-
 const losslessRatio = computed(() => {
   if (!stats.value || stats.value.total_songs === 0) return 0;
   return Math.round((stats.value.lossless_count / stats.value.total_songs) * 100);
-});
-
-const hourLabels = computed(() => {
-  const labels: string[] = [];
-  for (let i = 0; i <= 24; i += 6) {
-    const hour = String(i).padStart(2, '0');
-    labels.push(`${hour}:00`);
-  }
-  return labels;
 });
 </script>
 
@@ -163,10 +243,10 @@ const hourLabels = computed(() => {
       </div>
 
       <!-- Main content -->
-      <div v-else-if="stats && behaviorStats" class="space-y-[clamp(1rem,2vw,2rem)]">
+      <div v-else-if="stats && behaviorStats" class="space-y-[clamp(0.5rem,1vw,0.875rem)]">
         <!-- 总听歌时长 + 右侧三个小分支 -->
-        <section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1rem,2vw,2rem)] animate-fade-in-up">
-          <div class="flex items-end justify-between gap-[clamp(1rem,2vw,2.5rem)] flex-wrap">
+        <section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1.5rem,3vw,2.5rem)] animate-fade-in-up">
+          <div class="flex items-end justify-between gap-[clamp(3rem,6vw,6rem)] flex-wrap">
             <!-- 左：总听歌时长 -->
             <div class="shrink-0">
               <p class="text-black dark:text-white text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
@@ -190,39 +270,103 @@ const hourLabels = computed(() => {
           </div>
         </section>
 
-        <!-- 总歌曲 + 播放次数 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-[clamp(1rem,2vw,1.5rem)]">
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 100ms;">
+        <!-- 总歌曲 + 播放次数 + 最长播放 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 100ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.totalSongs }}</p>
             <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ stats.total_songs }}</p>
           </section>
 
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 200ms;">
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 200ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
             <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
           </section>
+
+          <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 300ms;">
+            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
+            <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
+          </section>
         </div>
 
-        <!-- 最长播放 -->
-        <section v-if="longestPlayed" class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 300ms;">
-          <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
-          <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
-          <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
-        </section>
+        <!-- 听歌排行榜 -->
+        <section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 400ms;">
+          <div class="flex items-end justify-between gap-3 flex-wrap mb-[clamp(0.5rem,1vw,0.875rem)]">
+            <div>
+              <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider">{{ TEXT.leaderboard }}</p>
+              <p class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light mt-1">{{ TEXT.leaderboardSubtitle }}</p>
+            </div>
+            <button
+              type="button"
+              class="text-[clamp(0.7rem,0.9vw,0.8rem)] text-black/60 dark:text-white/60 hover:text-[#EC4141] dark:hover:text-[#EC4141] font-medium transition cursor-pointer"
+              @click="loadLeaderboard"
+            >
+              刷新
+            </button>
+          </div>
 
-        <!-- 24小时播放分布 -->
-        <section class="px-[clamp(1rem,2.5vw,3rem)] py-[clamp(1rem,1.8vw,2rem)] animate-fade-in-up" style="animation-delay: 400ms;">
-          <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-[clamp(1rem,1.5vw,1.5rem)]">{{ TEXT.hourlyDistribution }}</p>
-          <div class="flex items-end gap-[clamp(0.125rem,0.3vw,0.5rem)] h-[clamp(6rem,12vw,8rem)]">
+          <!-- 加载骨架屏 -->
+          <div v-if="leaderboardLoading" class="grid gap-2">
             <div
-              v-for="(count, hour) in hourDistribution"
-              :key="hour"
-              class="flex-1 rounded-t-md transition-all duration-300 bg-black dark:bg-white"
-              :style="{ height: `${Math.max((count / maxHourCount) * 100, 3)}%`, opacity: count > 0 ? 1 : 0.15 }"
+              v-for="i in 5"
+              :key="i"
+              class="h-12 rounded-xl bg-gray-100/60 dark:bg-white/5 animate-pulse"
             ></div>
           </div>
-          <div class="flex justify-between mt-3 text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.875rem)] font-medium">
-            <span v-for="label in hourLabels" :key="label">{{ label }}</span>
+
+          <!-- 未登录提示 -->
+          <div v-else-if="leaderboardDisplay.top.length === 0" class="py-8 text-center">
+            <p class="text-black/50 dark:text-white/50 text-sm">登录后可查看听歌排行榜</p>
+          </div>
+
+          <!-- 排行榜列表 -->
+          <div v-else class="grid gap-1.5">
+            <div
+              v-for="item in leaderboardDisplay.top"
+              :key="item.username"
+              class="leaderboard-row"
+              :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3 }"
+            >
+              <div class="leaderboard-rank" :class="`rank-${item.rank <= 3 ? item.rank : 'normal'}`">
+                {{ item.rank }}
+              </div>
+              <div class="leaderboard-avatar">
+                <img v-if="item.avatar" :src="item.avatar" alt="" class="h-full w-full object-cover" />
+                <span v-else>{{ item.nickname.slice(0, 1).toUpperCase() }}</span>
+              </div>
+              <div class="leaderboard-info">
+                <div class="leaderboard-name">
+                  {{ item.nickname }}
+                  <span v-if="item.isMe" class="leaderboard-tag">{{ TEXT.you }}</span>
+                </div>
+                <div class="leaderboard-username">@{{ item.username }}</div>
+              </div>
+              <div class="leaderboard-duration">{{ formatLeaderboardDuration(item.duration) }}</div>
+            </div>
+
+            <!-- 自己的排名（始终固定在底部显示） -->
+            <template v-if="leaderboardDisplay.me">
+              <div class="leaderboard-divider">
+                <span>···</span>
+              </div>
+              <div class="leaderboard-row is-me is-sticky">
+                <div class="leaderboard-rank" :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`">
+                  {{ leaderboardDisplay.me.rank }}
+                </div>
+                <div class="leaderboard-avatar">
+                  <img v-if="leaderboardDisplay.me.avatar" :src="leaderboardDisplay.me.avatar" alt="" class="h-full w-full object-cover" />
+                  <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
+                </div>
+                <div class="leaderboard-info">
+                  <div class="leaderboard-name">
+                    {{ leaderboardDisplay.me.nickname }}
+                    <span class="leaderboard-tag">{{ TEXT.you }}</span>
+                  </div>
+                  <div class="leaderboard-username">@{{ leaderboardDisplay.me.username }}</div>
+                </div>
+                <div class="leaderboard-duration">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
+              </div>
+            </template>
           </div>
         </section>
       </div>
@@ -246,6 +390,190 @@ const hourLabels = computed(() => {
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* 听歌排行榜 */
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid transparent;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.leaderboard-row:hover {
+  background: rgba(0, 0, 0, 0.05);
+  transform: translateX(2px);
+}
+
+.leaderboard-row.is-top-3 {
+  background: rgba(236, 65, 65, 0.04);
+}
+
+.leaderboard-row.is-me {
+  background: rgba(236, 65, 65, 0.08);
+  border-color: rgba(236, 65, 65, 0.25);
+}
+
+.leaderboard-row.is-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(236, 65, 65, 0.35);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .leaderboard-row.is-sticky {
+  background: rgba(30, 30, 30, 0.92);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+}
+
+:global(.dark) .leaderboard-row {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:global(.dark) .leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+:global(.dark) .leaderboard-row.is-top-3 {
+  background: rgba(236, 65, 65, 0.08);
+}
+
+:global(.dark) .leaderboard-row.is-me {
+  background: rgba(236, 65, 65, 0.12);
+  border-color: rgba(236, 65, 65, 0.35);
+}
+
+.leaderboard-rank {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+}
+
+:global(.dark) .leaderboard-rank {
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.leaderboard-rank.rank-1 {
+  color: #fff;
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  box-shadow: 0 2px 8px rgba(255, 165, 0, 0.3);
+}
+
+.leaderboard-rank.rank-2 {
+  color: #fff;
+  background: linear-gradient(135deg, #C0C0C0, #A8A8A8);
+  box-shadow: 0 2px 8px rgba(168, 168, 168, 0.3);
+}
+
+.leaderboard-rank.rank-3 {
+  color: #fff;
+  background: linear-gradient(135deg, #CD7F32, #A0522D);
+  box-shadow: 0 2px 8px rgba(160, 82, 45, 0.3);
+}
+
+.leaderboard-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.06);
+  color: #EC4141;
+  font-size: 0.9rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+:global(.dark) .leaderboard-avatar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.leaderboard-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.leaderboard-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.dark) .leaderboard-name {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.leaderboard-tag {
+  display: inline-grid;
+  place-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  background: #EC4141;
+  flex-shrink: 0;
+}
+
+.leaderboard-username {
+  font-size: 0.7rem;
+  color: rgba(0, 0, 0, 0.45);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.dark) .leaderboard-username {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.leaderboard-duration {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1f2937;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.dark) .leaderboard-duration {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.leaderboard-divider {
+  display: grid;
+  place-items: center;
+  padding: 4px 0;
+  color: rgba(0, 0, 0, 0.3);
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+}
+
+:global(.dark) .leaderboard-divider {
+  color: rgba(255, 255, 255, 0.3);
 }
 </style>
 

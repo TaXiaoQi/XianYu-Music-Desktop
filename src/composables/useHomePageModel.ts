@@ -69,6 +69,7 @@ export function useHomePageModel() {
     favoritePaths,
     removeFromHistory,
     playlists,
+    setPlaylistCover,
   } = useLibraryCollections();
   const { coverCache, loadingSet, preloadCovers } = useCoverCache();
 
@@ -186,6 +187,8 @@ export function useHomePageModel() {
   const {
     showRenameModal,
     renameInitialValue,
+    renameInitialCoverPath,
+    editingPlaylistId,
     handleRenamePlaylist,
     confirmRename,
   } = useHomePlaylistRename({
@@ -193,6 +196,7 @@ export function useHomePageModel() {
     filterCondition,
     playlists,
     showToast,
+    setPlaylistCover,
   });
 
   const playlistDetail = computed(() => {
@@ -350,6 +354,8 @@ export function useHomePageModel() {
     confirmCreateFolder,
     showRenameModal,
     renameInitialValue,
+    renameInitialCoverPath,
+    editingPlaylistId,
     confirmRename,
   };
 }

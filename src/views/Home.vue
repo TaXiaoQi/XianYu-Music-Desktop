@@ -103,10 +103,11 @@
       @confirm="confirmCreateFolder"
     />
 
-    <ModernInputModal
+    <PlaylistEditInfoModal
       :visible="showRenameModal"
-      title="重命名播放列表"
-      :initial-value="renameInitialValue"
+      :playlist-id="editingPlaylistId"
+      :initial-name="renameInitialValue"
+      :initial-cover-path="renameInitialCoverPath"
       @cancel="showRenameModal = false"
       @confirm="confirmRename"
     />
@@ -119,6 +120,7 @@ import HomeViewPane from '../components/home/HomeViewPane.vue';
 import ModernInputModal from '../components/common/ModernInputModal.vue';
 import ModernModal from '../components/common/ModernModal.vue';
 import MoveToFolderModal from '../components/overlays/MoveToFolderModal.vue';
+import PlaylistEditInfoModal from '../components/overlays/PlaylistEditInfoModal.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 import { useHomePageModel } from '../composables/useHomePageModel';
 
@@ -181,6 +183,8 @@ const {
   confirmCreateFolder,
   showRenameModal,
   renameInitialValue,
+  renameInitialCoverPath,
+  editingPlaylistId,
   confirmRename,
 } = useHomePageModel();
 </script>

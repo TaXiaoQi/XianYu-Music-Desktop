@@ -72,6 +72,17 @@ export const useCollectionsStore = defineStore('collections', () => {
     return false;
   };
 
+  const setPlaylistCover = (id: string, coverPath: string | null) => {
+    const playlist = getPlaylistById(id);
+    if (!playlist) return false;
+    if (coverPath === null) {
+      playlist.coverPath = undefined;
+    } else {
+      playlist.coverPath = coverPath;
+    }
+    return true;
+  };
+
   const getPlaylistById = (playlistId: string) =>
     playlists.value.find(item => item.id === playlistId);
 
@@ -299,6 +310,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     createPlaylist,
     deletePlaylist,
     renamePlaylist,
+    setPlaylistCover,
     getPlaylistById,
     addToPlaylist,
     removeFromPlaylist,

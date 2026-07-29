@@ -42,7 +42,15 @@ function handleOpenAccount() {
   void router.push('/auth');
 }
 
+// 退出登录二次确认
+const showLogoutConfirm = ref(false);
+
 function handleLogout() {
+  showLogoutConfirm.value = true;
+}
+
+function confirmLogout() {
+  showLogoutConfirm.value = false;
   authStore.reset();
   showToast('已退出登录', 'info');
 }
@@ -204,6 +212,43 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
         </div>
       </div>
     </section>
+
+    <!-- 退出登录确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="logout-modal">
+        <div
+          v-if="showLogoutConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showLogoutConfirm = false"
+        >
+          <div class="logout-confirm-card">
+            <div class="logout-confirm-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </div>
+            <h3 class="logout-confirm-title">退出登录</h3>
+            <p class="logout-confirm-desc">确认要退出当前账号吗？退出后需重新登录才能同步云端数据。</p>
+            <div class="logout-confirm-actions">
+              <button
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                @click="showLogoutConfirm = false"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-btn logout-btn--danger"
+                @click="confirmLogout"
+              >
+                确认退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -295,5 +340,132 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
 
 .upload-switch.is-on .upload-switch-thumb {
   transform: translateX(18px);
+}
+
+/* 退出登录确认弹窗 */
+.logout-confirm-card {
+  width: min(86vw, 360px);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.logout-confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+  margin: 0 auto 14px;
+}
+
+.logout-confirm-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 8px;
+}
+
+.logout-confirm-desc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(75, 85, 99, 0.9);
+  margin: 0 0 20px;
+}
+
+.logout-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.logout-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  border: 1px solid transparent;
+}
+
+.logout-btn--ghost {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.logout-btn--ghost:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31 41 55);
+}
+
+.logout-btn--danger {
+  background: #EC4141;
+  color: #ffffff;
+}
+
+.logout-btn--danger:hover {
+  background: #d13b3b;
+}
+
+/* 弹窗过渡动画 */
+.logout-modal-enter-active,
+.logout-modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.logout-modal-enter-active .logout-confirm-card,
+.logout-modal-leave-active .logout-confirm-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.logout-modal-enter-from,
+.logout-modal-leave-to {
+  opacity: 0;
+}
+
+.logout-modal-enter-from .logout-confirm-card,
+.logout-modal-leave-to .logout-confirm-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* 深色模式 */
+:global(.dark) .logout-confirm-card {
+  background: #1f1f23;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .logout-confirm-icon {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
+}
+
+:global(.dark) .logout-confirm-title {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+:global(.dark) .logout-confirm-desc {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+:global(.dark) .logout-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:global(.dark) .logout-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
 }
 </style>
