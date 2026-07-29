@@ -1,8 +1,7 @@
 <div align="center">
   <img src="logo.png" width="120" height="120" alt="XianYue Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-# 弦予音乐
-(XianYue-Music)
+# 弦予音乐(XianYue-Music)
 
 一款基于 **[Lycia Player](https://github.com/Billy636/LyciaMusic)** 修改构建的现代化、高颜值在线音乐播放框架，支持插件化在线音乐、本地音乐等播放功能,拥有良好的音乐播放体验。
 
@@ -99,8 +98,8 @@
 1. 克隆本仓库：
   
   ```bash
-  git clone https://github.com/Billy636/LyciaMusic.git
-  cd LyciaMusic
+  git clone https://github.com/ShenYichenCN/XianYu-Music-Desktop.git
+  cd XianYu-Music-Desktop
   ```
   
 2. 安装依赖项：
@@ -132,7 +131,7 @@
 
 ## 📐 技术架构
 
-Lycia Player 采用经典的前后端分离架构，通过 Tauri 提供的 IPC 通道进行高性能的跨进程通信：
+弦乐音乐 采用经典的前后端分离架构，通过 Tauri 提供的 IPC 通道进行高性能的跨进程通信：
 
 ```mermaid
 graph TD
