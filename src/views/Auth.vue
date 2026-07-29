@@ -597,29 +597,29 @@ onMounted(async () => {
       </div>
 
       <!-- 已登录：个人中心 -->
-      <div v-else class="space-y-[clamp(1.5rem,3vw,3rem)]">
+      <div v-else class="space-y-[clamp(1rem,1.8vw,1.5rem)]">
         <!-- 顶部标题区 -->
-        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1rem,1.6vw,2rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
+        <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
           <div>
-            <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-3">个人中心</p>
-            <h2 class="text-black dark:text-white text-[clamp(1.75rem,4vw,3rem)] font-black tracking-tight leading-none">
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.75rem,1vw,0.875rem)] font-light tracking-wider mb-2">个人中心</p>
+            <h2 class="text-black dark:text-white text-[clamp(1.5rem,3vw,2.25rem)] font-black tracking-tight leading-none">
               {{ authStore.user?.nickname || authStore.user?.username }}
             </h2>
-            <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mt-4">
+            <p class="text-black/60 dark:text-white/60 text-[clamp(0.75rem,1vw,0.875rem)] font-light mt-2">
               @{{ authStore.user?.username }} · {{ authStore.user?.email }}
             </p>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
             <button
               type="button"
-              class="text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white px-5 py-2 rounded-md text-base font-medium transition cursor-pointer"
+              class="text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer"
               @click="goBackToMain"
             >
               返回主界面
             </button>
             <button
               type="button"
-              class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-5 py-2 rounded-md text-base font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="loading"
               @click="handleLogout"
             >
@@ -628,58 +628,61 @@ onMounted(async () => {
           </div>
         </header>
 
-        <!-- 头像 + 统计 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 100ms;">
-          <div class="flex items-end justify-between gap-[clamp(1.5rem,2.5vw,3.5rem)] flex-wrap">
-            <!-- 左：头像 -->
-            <div class="shrink-0 grid gap-4">
-              <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">头像</p>
-              <div class="flex items-center gap-5">
-                <div class="grid h-[clamp(5rem,8vw,7rem)] w-[clamp(5rem,8vw,7rem)] shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.75rem,4vw,3rem)] font-black">
-                  <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
-                  <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
-                </div>
-                <label class="inline-flex items-center h-[clamp(2.5rem,3.5vw,2.75rem)] px-5 rounded-full border border-black/15 dark:border-white/15 text-[clamp(0.875rem,1.1vw,1rem)] font-medium text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:border-[#EC4141]/40 cursor-pointer transition-colors">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-                    class="hidden"
-                    :disabled="avatarUploading || loading"
-                    @change="handleAvatarFileChange"
-                  />
-                  <span>{{ avatarUploading ? '上传中…' : '更换头像' }}</span>
-                </label>
-              </div>
+        <!-- 顶行：头像（横向布局，单独一行） -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 80ms;">
+          <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap">
+            <div class="grid h-[clamp(4rem,6vw,5rem)] w-[clamp(4rem,6vw,5rem)] shrink-0 place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.5rem,2.5vw,2rem)] font-black">
+              <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
+              <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
             </div>
+            <label class="inline-flex items-center h-[clamp(2rem,2.8vw,2.25rem)] px-4 rounded-full border border-black/15 dark:border-white/15 text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:border-[#EC4141]/40 cursor-pointer transition-colors">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                class="hidden"
+                :disabled="avatarUploading || loading"
+                @change="handleAvatarFileChange"
+              />
+              <span>{{ avatarUploading ? '上传中…' : '更换头像' }}</span>
+            </label>
+            <div class="ml-auto hidden md:block text-right">
+              <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light">用户ID</p>
+              <p class="text-black/80 dark:text-white/80 text-[clamp(0.75rem,1vw,0.875rem)] font-mono mt-0.5">@{{ authStore.user?.username }}</p>
+            </div>
+          </div>
+        </section>
 
-            <!-- 右：统计 -->
-            <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-[clamp(1rem,2vw,2rem)] min-w-0">
-              <div v-for="item in meterItems" :key="item.key">
-                <p class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ item.label }}</p>
-                <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ displayStats[item.key] }}</p>
+        <!-- 统计：字体缩小放在右侧 -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 160ms;">
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.75rem,1vw,0.875rem)] font-light tracking-wider shrink-0">数据统计</p>
+            <div class="flex items-center gap-[clamp(1rem,1.5vw,1.75rem)] flex-wrap justify-end">
+              <div v-for="item in meterItems" :key="item.key" class="text-right">
+                <p class="text-black/50 dark:text-white/50 text-[clamp(0.65rem,0.8vw,0.75rem)] font-light tracking-wide mb-0.5">{{ item.label }}</p>
+                <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-bold tracking-tight leading-none">{{ displayStats[item.key] }}</p>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- 个人信息 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 200ms;">
-          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-6">个人信息</p>
-          <div class="grid gap-7 max-w-2xl">
-            <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">昵称</span>
+        <!-- 个人信息（缩小） -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 240ms;">
+          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-3">个人信息</p>
+          <div class="grid gap-3 max-w-xl">
+            <label class="grid gap-1.5">
+              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">昵称</span>
               <input
                 v-model="nicknameDraft"
                 type="text"
                 placeholder="显示名称"
                 maxlength="64"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
-            <div>
+            <div class="pt-1">
               <button
                 type="button"
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full text-base font-medium transition active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-1.5 rounded-full text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium transition active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 :disabled="profileSaving || loading"
                 @click="handleSaveProfile"
               >
@@ -689,45 +692,45 @@ onMounted(async () => {
           </div>
         </section>
 
-        <!-- 修改密码 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 300ms;">
-          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-3">修改密码</p>
-          <p class="text-black/60 dark:text-white/60 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light mb-6">修改成功后需要重新登录</p>
-          <div class="grid gap-7 max-w-2xl">
-            <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">当前密码</span>
+        <!-- 修改密码（缩小） -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 320ms;">
+          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-1.5">修改密码</p>
+          <p class="text-black/55 dark:text-white/55 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light mb-3">修改成功后需要重新登录</p>
+          <div class="grid gap-3 max-w-xl">
+            <label class="grid gap-1.5">
+              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">当前密码</span>
               <input
                 v-model="passwordForm.oldPassword"
                 type="password"
                 placeholder="输入当前密码"
                 autocomplete="current-password"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
-            <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">新密码</span>
+            <label class="grid gap-1.5">
+              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">新密码</span>
               <input
                 v-model="passwordForm.newPassword"
                 type="password"
                 placeholder="输入新密码"
                 autocomplete="new-password"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
-            <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认新密码</span>
+            <label class="grid gap-1.5">
+              <span class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light tracking-wider">确认新密码</span>
               <input
                 v-model="passwordForm.confirmPassword"
                 type="password"
                 placeholder="再次输入新密码"
                 autocomplete="new-password"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.8rem,1vw,0.9rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
-            <div>
+            <div class="pt-1">
               <button
                 type="button"
-                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-10 py-3 rounded-full text-base font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-6 py-1.5 rounded-full text-[clamp(0.75rem,0.9vw,0.875rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 :disabled="passwordSaving || loading"
                 @click="handleChangePassword"
               >
@@ -738,25 +741,25 @@ onMounted(async () => {
         </section>
 
         <!-- 快捷入口 -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(1.5rem,2vw,2.5rem)] animate-fade-in-up" style="animation-delay: 400ms;">
-          <p class="text-black dark:text-white text-[clamp(1.25rem,2vw,1.5rem)] font-light tracking-wider mb-6">快捷入口</p>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 400ms;">
+          <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <button
               v-for="item in personalShortcuts"
               :key="item.label"
               type="button"
-              class="grid gap-3 p-6 rounded-2xl border border-black/10 dark:border-white/10 hover:border-[#EC4141]/40 hover:bg-red-50/40 dark:hover:bg-red-500/5 text-left transition-colors cursor-pointer"
+              class="grid gap-2 p-4 rounded-xl border border-black/10 dark:border-white/10 hover:border-[#EC4141]/40 hover:bg-red-50/40 dark:hover:bg-red-500/5 text-left transition-colors cursor-pointer"
               @click="navigateShortcut(item.to)"
             >
-              <span class="grid h-11 w-11 place-items-center rounded-xl bg-black/5 dark:bg-white/10 text-[#EC4141]">
-                <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
-                <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+              <span class="grid h-9 w-9 place-items-center rounded-lg bg-black/5 dark:bg-white/10 text-[#EC4141]">
+                <svg v-if="item.icon === 'cog'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <svg v-else-if="item.icon === 'theme'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+                <svg v-else-if="item.icon === 'home'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
               </span>
-              <span class="grid gap-1 min-w-0">
-                <strong class="text-base font-medium text-black dark:text-white truncate">{{ item.label }}</strong>
-                <small class="text-sm text-black/60 dark:text-white/60 truncate">{{ item.desc }}</small>
+              <span class="grid gap-0.5 min-w-0">
+                <strong class="text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black dark:text-white truncate">{{ item.label }}</strong>
+                <small class="text-[clamp(0.65rem,0.8vw,0.75rem)] text-black/55 dark:text-white/55 truncate">{{ item.desc }}</small>
               </span>
             </button>
           </div>

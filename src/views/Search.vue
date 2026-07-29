@@ -28,14 +28,14 @@
         <div class="flex items-center gap-1 flex-wrap">
           <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1">来源</span>
           <button
-            v-for="source in lxSourceList"
+            v-for="source in allSourceList"
             :key="source.id"
             type="button"
             class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
-            :class="selectedLxSource === source.id
+            :class="(source.type === 'lx' ? selectedLxSource === source.id : selectedMfSource === source.id)
               ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
               : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
-            @click="handleSelectSource(source.id)"
+            @click="handleSelectSource(source)"
           >
             {{ source.name }}
           </button>
@@ -83,7 +83,7 @@
         </div>
 
         <!-- 无结果 -->
-        <div v-else-if="lxSearchResults.length === 0" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
+        <div v-else-if="lxSearchResults.length === 0 && pluginSearchResults.length === 0" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -110,9 +110,10 @@
               </tr>
             </thead>
             <tbody>
+              <!-- 落雪 LX 搜索结果 -->
               <tr
                 v-for="(item, index) in lxSearchResults"
-                :key="`${item.source}-${item.songmid}-${index}`"
+                :key="`lx-${item.source}-${item.songmid}-${index}`"
                 class="group border-b border-black/5 dark:border-white/5 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                 @click="handlePlaySong(item)"
                 @contextmenu="handleContextMenu($event, item)"
@@ -146,6 +147,44 @@
                 </td>
                 <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
                   {{ item.interval }}
+                </td>
+              </tr>
+              <!-- MusicFree 插件搜索结果 -->
+              <tr
+                v-for="(item, index) in pluginSearchResults"
+                :key="`mf-${item.platform}-${item.id}-${index}`"
+                class="group border-b border-black/5 dark:border-white/5 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                @click="handlePlayMfSong(item)"
+                @contextmenu="handleMfContextMenu($event, item)"
+              >
+                <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
+                  {{ lxSearchResults.length + index + 1 }}
+                </td>
+                <td class="py-2 px-2">
+                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+                    <img
+                      v-if="item.coverUrl"
+                      :src="item.coverUrl"
+                      class="w-full h-full object-cover"
+                      alt=""
+                      loading="lazy"
+                    />
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                  </div>
+                </td>
+                <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
+                  {{ item.title }}
+                </td>
+                <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
+                  {{ item.artist }}
+                </td>
+                <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
+                  {{ item.album }}
+                </td>
+                <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
+                  {{ item.duration ? formatMfDuration(item.duration) : '--:--' }}
                 </td>
               </tr>
             </tbody>
@@ -194,6 +233,8 @@ import {
   type LxSourceId,
 } from '../services/lxMusicSdk';
 import { cacheLxSong } from '../services/lxSongCache';
+import { getStoredPlugins, pluginSearch, pluginGetMusicInfo } from '../services/pluginEngine';
+import type { PluginSource, PluginSearchResult } from '../types';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -222,12 +263,32 @@ const handleSearchTypeChange = (type: SearchTypeKey) => {
 const lxSourceList = Object.entries(LX_SOURCE_NAMES).map(([id, name]) => ({
   id: id as LxSourceId,
   name,
+  type: 'lx' as const,
 }));
-const selectedLxSource = ref<LxSourceId>('kw');
 
-const selectedSourceName = computed(
-  () => LX_SOURCE_NAMES[selectedLxSource.value] ?? '未知音源',
-);
+// MusicFree 插件音源
+const mfSourceList = ref<{ id: string; name: string; type: 'musicfree'; source: PluginSource }[]>([]);
+
+function refreshMfSourceList() {
+  const plugins = getStoredPlugins().filter(p => p.enabled && p.format === 'musicfree');
+  mfSourceList.value = plugins.map(p => ({ id: p.id, name: p.name, type: 'musicfree' as const, source: p }));
+}
+
+// 统一来源列表 = 落雪音源 + MusicFree 插件音源
+const allSourceList = computed(() => [...lxSourceList, ...mfSourceList.value]);
+
+// 当前选中的来源（既可以是 LX 也可以是 MusicFree）
+const selectedLxSource = ref<LxSourceId>('kw');
+const selectedMfSource = ref<string | null>(null); // MusicFree 插件 ID
+
+const selectedSourceName = computed(() => {
+  if (selectedMfSource.value) {
+    return mfSourceList.value.find(s => s.id === selectedMfSource.value)?.name ?? '未知音源';
+  }
+  return LX_SOURCE_NAMES[selectedLxSource.value] ?? '未知音源';
+});
+
+const isLxSource = computed(() => !selectedMfSource.value);
 
 // ==================== 搜索状态 ====================
 const searching = ref(false);
@@ -235,6 +296,7 @@ const loadingMore = ref(false);
 const hasMore = ref(false);
 const currentPage = ref(1);
 const lxSearchResults = shallowRef<LxSearchResultItem[]>([]);
+const pluginSearchResults = shallowRef<PluginSearchResult[]>([]);
 const resultsScrollRef = ref<HTMLElement | null>(null);
 
 // 封面加载任务版本号，用于在新搜索时取消旧任务
@@ -251,7 +313,9 @@ const hasQuery = computed(() => searchQuery.value.trim().length > 0);
 
 // 当前类型的结果数量
 const resultCount = computed(() => {
-  if (activeSearchType.value === 'track') return lxSearchResults.value.length;
+  if (activeSearchType.value === 'track') {
+    return lxSearchResults.value.length + pluginSearchResults.value.length;
+  }
   return 0;
 });
 
@@ -262,6 +326,7 @@ const performSearch = async () => {
   const query = searchQuery.value.trim();
   if (!query) {
     lxSearchResults.value = [];
+    pluginSearchResults.value = [];
     hasMore.value = false;
     return;
   }
@@ -277,17 +342,30 @@ const performSearch = async () => {
   hasMore.value = false;
   searching.value = true;
   try {
-    const result = await lxSearch(selectedLxSource.value, query, 1);
-    // 若已被后续搜索取消，丢弃结果
-    if (searchAbortController.signal.aborted) return;
-    lxSearchResults.value = result.list;
-    hasMore.value = result.list.length >= result.limit;
-    // 异步批量加载封面（kw/kg 搜索结果 img=null）
-    triggerCoverLoading();
+    if (isLxSource.value) {
+      // 落雪 LX 搜索
+      pluginSearchResults.value = [];
+      const result = await lxSearch(selectedLxSource.value, query, 1);
+      if (searchAbortController.signal.aborted) return;
+      lxSearchResults.value = result.list;
+      hasMore.value = result.list.length >= result.limit;
+      triggerCoverLoading();
+    } else {
+      // MusicFree 插件搜索
+      lxSearchResults.value = [];
+      const mfSource = mfSourceList.value.find(s => s.id === selectedMfSource.value);
+      if (mfSource) {
+        const results = await pluginSearch(mfSource.source, query, 1, 30);
+        if (searchAbortController.signal.aborted) return;
+        pluginSearchResults.value = results;
+        hasMore.value = results.length >= 30;
+      }
+    }
   } catch (err) {
     if (!searchAbortController.signal.aborted) {
-      console.warn('[LX Search] failed:', err);
+      console.warn('[Search] failed:', err);
       lxSearchResults.value = [];
+      pluginSearchResults.value = [];
     }
   } finally {
     if (!searchAbortController.signal.aborted) {
@@ -305,18 +383,33 @@ const loadMore = async () => {
   loadingMore.value = true;
   const nextPage = currentPage.value + 1;
   try {
-    const result = await lxSearch(selectedLxSource.value, query, nextPage);
-    if (result.list.length > 0) {
-      currentPage.value = nextPage;
-      lxSearchResults.value = [...lxSearchResults.value, ...result.list];
-      hasMore.value = result.list.length >= result.limit;
-      // 为新加载的项目加载封面
-      triggerCoverLoading();
+    if (isLxSource.value) {
+      // 落雪 LX 分页
+      const result = await lxSearch(selectedLxSource.value, query, nextPage);
+      if (result.list.length > 0) {
+        currentPage.value = nextPage;
+        lxSearchResults.value = [...lxSearchResults.value, ...result.list];
+        hasMore.value = result.list.length >= result.limit;
+        triggerCoverLoading();
+      } else {
+        hasMore.value = false;
+      }
     } else {
-      hasMore.value = false;
+      // MusicFree 插件分页
+      const mfSource = mfSourceList.value.find(s => s.id === selectedMfSource.value);
+      if (mfSource) {
+        const results = await pluginSearch(mfSource.source, query, nextPage, 30);
+        if (results.length > 0) {
+          currentPage.value = nextPage;
+          pluginSearchResults.value = [...pluginSearchResults.value, ...results];
+          hasMore.value = results.length >= 30;
+        } else {
+          hasMore.value = false;
+        }
+      }
     }
   } catch (err) {
-    console.warn('[LX Search] loadMore failed:', err);
+    console.warn('[Search] loadMore failed:', err);
     hasMore.value = false;
   } finally {
     loadingMore.value = false;
@@ -400,8 +493,13 @@ const handleImgError = (item: LxSearchResultItem) => {
 };
 
 // 切换来源
-const handleSelectSource = (sourceId: LxSourceId) => {
-  selectedLxSource.value = sourceId;
+const handleSelectSource = (source: { id: string; type: 'lx' | 'musicfree' }) => {
+  if (source.type === 'lx') {
+    selectedLxSource.value = source.id as LxSourceId;
+    selectedMfSource.value = null;
+  } else {
+    selectedMfSource.value = source.id;
+  }
 };
 
 // 监听关键词变化（防抖）
@@ -414,7 +512,7 @@ watch(searchQuery, () => {
 });
 
 // 监听来源变化，立即重新搜索
-watch(selectedLxSource, () => {
+watch([selectedLxSource, selectedMfSource], () => {
   performSearch();
 });
 
@@ -466,6 +564,82 @@ const handlePlaySong = (item: LxSearchResultItem) => {
   uiStore.showPlayerDetail = true;
 };
 
+// ==================== MusicFree 插件歌曲播放 ====================
+
+const formatMfDuration = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+const handlePlayMfSong = async (item: PluginSearchResult) => {
+  const mfSource = mfSourceList.value.find(s => s.id === item.pluginId);
+  if (!mfSource) {
+    console.warn('[MusicFree] 插件未找到:', item.pluginId);
+    return;
+  }
+
+  try {
+    // 通过插件获取播放 URL（与 YinDongMusic pluginGetMusicInfo 完全一致）
+    const musicInfo = await pluginGetMusicInfo(mfSource.source, item, 'standard');
+    if (!musicInfo?.url) {
+      console.warn('[MusicFree] 无法获取播放URL:', item.title);
+      return;
+    }
+
+    const artistNames = item.artist ? item.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
+    const song: Song = {
+      name: item.title,
+      title: item.title,
+      // 直接设置 path 为解析到的真实 URL，走 HTML5 Audio 播放
+      path: musicInfo.url,
+      artist: item.artist || '未知歌手',
+      artist_names: artistNames,
+      effective_artist_names: artistNames,
+      album: item.album || '未知专辑',
+      album_artist: item.artist || '未知歌手',
+      album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
+      is_various_artists_album: false,
+      collapse_artist_credits: false,
+      // MusicFree 返回的 duration 是毫秒，需要转秒
+      duration: Math.floor((item.duration || 0) / 1000),
+      cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
+      source_type: 'remote',
+      remote_source_id: musicInfo.url,
+    } as any;
+    void playSong(song, { insertAfterCurrent: true });
+    uiStore.showPlayerDetail = true;
+  } catch (e: any) {
+    console.warn('[MusicFree] 播放失败:', e?.message);
+  }
+};
+
+const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
+  e.preventDefault();
+  const artistNames = item.artist ? item.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
+  contextMenuTargetSong.value = {
+    name: item.title,
+    title: item.title,
+    path: `plugin://${item.platform}/${item.id}`,
+    artist: item.artist || '未知歌手',
+    artist_names: artistNames,
+    effective_artist_names: artistNames,
+    album: item.album || '未知专辑',
+    album_artist: item.artist || '未知歌手',
+    album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: item.duration || 0,
+    cover_thumb_path: item.coverUrl || '',
+    source_type: 'remote',
+    remote_source_id: `plugin://${item.platform}/${item.id}`,
+  } as any;
+  contextMenuX.value = e.clientX;
+  contextMenuY.value = e.clientY;
+  showContextMenu.value = true;
+};
+
 // 右键菜单
 const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
   e.preventDefault();
@@ -505,6 +679,7 @@ const openAddToPlaylistSelection = () => {
 // 初始化
 onMounted(() => {
   uiStore.showPlayerDetail = false;
+  refreshMfSourceList();
   if (!hasQuery.value) return;
   performSearch();
 });
