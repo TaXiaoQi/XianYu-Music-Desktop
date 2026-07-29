@@ -3,7 +3,7 @@ use rodio::source::SeekError;
 use rodio::Source;
 use serde::{Deserialize, Serialize};
 use souvlaki::MediaControls;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -141,6 +141,9 @@ pub struct SharedProgress {
     pub sample_rate: Arc<AtomicU32>,
     pub channels: Arc<AtomicU32>,
     pub visualizer: Arc<SharedVisualizer>,
+    /// 本次播放启动是否失败（远程取流 403/不支持 Range/解码失败等）。
+    /// 供前端「在线走 Rust 起播探测」快速感知硬失败，无需死等超时即可回退 H5。
+    pub start_failed: Arc<AtomicBool>,
 }
 
 pub enum AudioCommand {

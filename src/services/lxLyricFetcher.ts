@@ -13,6 +13,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import CryptoJS from 'crypto-js';
+import type { Song } from '../types';
+import { buildLyricsRaw } from '../composables/lyrics/parser';
 
 // ==================== Types ====================
 
@@ -988,124 +990,6 @@ async function fetchTxLyric(songInfo: LxSongInfo): Promise<LxLyricResult | null>
 
 // ==================== NetEase (wy) Lyric Fetching ====================
 
-const wyParseTools = {
-  rxps: { info: /^{"/, lineTime: /^\[(\d+),\d+\]/, wordTime: /\(\d+,\d+,\d+\)/, wordTimeAll: /(\(\d+,\d+,\d+\))/g },
-  msFormat(timeMs: number): string {
-    if (Number.isNaN(timeMs)) return '';
-    let ms = timeMs % 1000;
-    timeMs /= 1000;
-    const m = parseInt(String(timeMs / 60)).toString().padStart(2, '0');
-    timeMs %= 60;
-    const s = parseInt(String(timeMs)).toString().padStart(2, '0');
-    return `[${m}:${s}.${ms}]`;
-  },
-  parseLyric(lines: string[]): { lyric: string; lxlyric: string } {
-    const lxlrcLines: string[] = [];
-    const lrcLines: string[] = [];
-    for (let line of lines) {
-      line = line.trim();
-      const result = this.rxps.lineTime.exec(line);
-      if (!result) {
-        if (line.startsWith('[offset')) { lxlrcLines.push(line); lrcLines.push(line); }
-        continue;
-      }
-      const startMsTime = parseInt(result[1]);
-      const startTimeStr = this.msFormat(startMsTime);
-      if (!startTimeStr) continue;
-      const words = line.replace(this.rxps.lineTime, '');
-      lrcLines.push(`${startTimeStr}${words.replace(this.rxps.wordTimeAll, '')}`);
-let times: string[] | null = words.match(this.rxps.wordTimeAll);
-if (!times) continue;
-times = times.map(time => {
-const r = /\((\d+),(\d+),\d+\)/.exec(time)!;
-return `<${Math.max(parseInt(r[1]) - startMsTime, 0)},${r[2]}>`;
-});
-      const wordArr = words.split(this.rxps.wordTime);
-      wordArr.shift();
-      const newWords = times.map((time, index) => `${time}${wordArr[index]}`).join('');
-      lxlrcLines.push(`${startTimeStr}${newWords}`);
-    }
-    return { lyric: lrcLines.join('\n'), lxlyric: lxlrcLines.join('\n') };
-  },
-  parseHeaderInfo(str: string): string[] | null {
-    str = str.trim().replace(/\r/g, '');
-    if (!str) return null;
-    const lines = str.split('\n');
-    return lines.map(line => {
-      if (!this.rxps.info.test(line)) return line;
-      try {
-        const info = JSON.parse(line);
-        const timeTag = this.msFormat(info.t);
-        return timeTag ? `${timeTag}${info.c.map((t: any) => t.tx).join('')}` : '';
-      } catch { return ''; }
-    });
-  },
-  getIntv(interval: string): number {
-    if (!interval) return 0;
-    if (!interval.includes('.')) interval += '.0';
-    const arr = interval.split(/:|\./);
-    while (arr.length < 3) arr.unshift('0');
-    const [m, s, ms] = arr;
-    return parseInt(m) * 3600000 + parseInt(s) * 1000 + parseInt(ms);
-  },
-  fixTimeTag(lrc: string, targetlrc: string): string {
-    let lrcLines = lrc.split('\n');
-    const targetlrcLines = targetlrc.split('\n');
-    const timeRxp = /^\[([\d:.]+)\]/;
-    const temp: string[] = [];
-    const newLrc: string[] = [];
-    targetlrcLines.forEach(line => {
-      const result = timeRxp.exec(line);
-      if (!result) return;
-      const words = line.replace(timeRxp, '');
-      if (!words.trim()) return;
-      const t1 = this.getIntv(result[1]);
-      while (lrcLines.length) {
-        const lrcLine = lrcLines.shift()!;
-        const lrcLineResult = timeRxp.exec(lrcLine);
-        if (!lrcLineResult) continue;
-        const t2 = this.getIntv(lrcLineResult[1]);
-        if (Math.abs(t1 - t2) < 100) {
-          const newLine = line.replace(timeRxp, lrcLineResult[0]).trim();
-          if (!newLine) continue;
-          newLrc.push(newLine);
-          break;
-        }
-        temp.push(lrcLine);
-      }
-      lrcLines = [...temp, ...lrcLines];
-      temp.length = 0;
-    });
-    return newLrc.join('\n');
-  },
-  parse(ylrc: string, ytlrc: string, yrlrc: string, lrc: string, tlrc: string, rlrc: string): LxLyricResult {
-    const info: LxLyricResult = { lyric: '', tlyric: '', rlyric: '', lxlyric: '' };
-    if (ylrc) {
-      const lines = this.parseHeaderInfo(ylrc);
-      if (lines) {
-        const result = this.parseLyric(lines);
-        if (ytlrc) {
-          const tlrcLines = this.parseHeaderInfo(ytlrc);
-          if (tlrcLines) info.tlyric = this.fixTimeTag(result.lyric, tlrcLines.join('\n'));
-        }
-        if (yrlrc) {
-          const rlrcLines = this.parseHeaderInfo(yrlrc);
-          if (rlrcLines) info.rlyric = this.fixTimeTag(result.lyric, rlrcLines.join('\n'));
-        }
-        const timeRxp = /^\[[\d:.]+\]/;
-        const headers = lines.filter(l => timeRxp.test(l)).join('\n');
-        info.lyric = `${headers}\n${result.lyric}`;
-        info.lxlyric = result.lxlyric;
-        return info;
-      }
-    }
-    if (lrc) { const lines = this.parseHeaderInfo(lrc); if (lines) info.lyric = lines.join('\n'); }
-    if (tlrc) { const lines = this.parseHeaderInfo(tlrc); if (lines) info.tlyric = lines.join('\n'); }
-    if (rlrc) { const lines = this.parseHeaderInfo(rlrc); if (lines) info.rlyric = lines.join('\n'); }
-    return info;
-  },
-};
-
 function wyFixTimeLabel(lrc: string, tlrc: string, romalrc: string): { lrc: string; tlrc: string; romalrc: string } {
   if (lrc) {
     let newLrc = lrc.replace(/\[(\d{2}:\d{2}):(\d{2})]/g, '[$1.$2]');
@@ -1492,66 +1376,12 @@ async function fetchWyLyric(songInfo: LxSongInfo): Promise<LxLyricResult | null>
 // ==================== lxlyric 格式归一化 ====================
 
 /**
- * 将 kg/kw 的绝对时间戳 lxlyric 归一化为相对偏移格式（与 tx/wy 一致）
- *
- * kg (KRC) 和 kw 的 lxlyric 格式中，<start,duration> 的 start 是从歌曲开始的绝对时间（毫秒）。
- * tx 和 wy 的 lxlyric 格式中，<offset,duration> 的 offset 是相对于行首的偏移（毫秒）。
- *
- * 本函数将所有来源统一为相对偏移格式，使后续的 convertLxLyricToEnhancedLrc 能正确处理。
- *
- * 输入格式: [mm:ss.ms]<absoluteStartMs,durationMs>word<absoluteStartMs,durationMs>word...
- * 输出格式: [mm:ss.ms]<relativeOffsetMs,durationMs>word<relativeOffsetMs,durationMs>word...
- */
-function normalizeLxlyricToRelative(lxlyric: string): string {
-  if (!lxlyric || !lxlyric.trim()) return lxlyric;
-  const lines = lxlyric.split('\n');
-  const result: string[] = [];
-  const lineTimePattern = /^\[(\d{1,}:\d{2}(?:\.\d+)?)\](.*)$/;
-  const wordTimePattern = /<(\d+),(\d+)>/g;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    const lineMatch = lineTimePattern.exec(line);
-    if (!lineMatch) {
-      result.push(line);
-      continue;
-    }
-    const lineStartStr = lineMatch[1];
-    const lineStartMs = parseLxTimestampToMs(lineStartStr);
-    if (lineStartMs === null) {
-      result.push(line);
-      continue;
-    }
-    const body = lineMatch[2];
-    // 将 <absoluteStartMs,durationMs> 转为 <relativeOffsetMs,durationMs>
-    const normalizedBody = body.replace(wordTimePattern, (_match, start, duration) => {
-      const absoluteStart = parseInt(start);
-      const relativeOffset = Math.max(0, absoluteStart - lineStartMs);
-      return `<${relativeOffset},${duration}>`;
-    });
-    result.push(`[${lineStartStr}]${normalizedBody}`);
-  }
-  return result.join('\n');
-}
-
-function parseLxTimestampToMs(raw: string): number | null {
-  const match = /^(\d+):(\d{2})(?:\.(\d{1,3}))?$/.exec(raw.trim());
-  if (!match) return null;
-  const minutes = Number(match[1]);
-  const seconds = Number(match[2]);
-  const milliseconds = Number((match[3] ?? '').padEnd(3, '0').slice(0, 3) || '0');
-  if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || !Number.isFinite(milliseconds)) return null;
-  if (seconds >= 60) return null;
-  return (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
-}
-
-/**
  * 按音源归一化 lxlyric 格式
  * 所有音源（kg/kw/tx/wy）的 lxlyric 都已是相对行首偏移格式，无需归一化。
  * Go 源码的 handleKw/handleWyy 等都不做归一化。
  * 此函数保留仅为向后兼容，直接返回原数据。
  */
-export function normalizeLxlyricBySource(source: string, lxlyric: string): string {
+export function normalizeLxlyricBySource(_source: string, lxlyric: string): string {
   return lxlyric;
 }
 
@@ -1591,4 +1421,44 @@ export async function fetchLxLyric(
     console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e);
     return null;
   }
+}
+
+const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy']);
+
+/** 获取 LX 在线歌曲歌词并转换为播放器支持的原始歌词文本。 */
+export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
+  if (song.lyrics_raw?.trim()) return song.lyrics_raw;
+
+  const match = /^lx:\/\/([^/]+)\/(.+)$/.exec(song.path);
+  if (!match) return '';
+
+  const [, source, songmid] = match;
+  if (!LX_SOURCES.has(source) || !songmid) return '';
+
+  const extendedSong = song as Song & {
+    _hash?: string;
+    _songmid?: string;
+    _copyrightId?: string;
+  };
+  const cached = getCachedLxSongInfo(source, songmid);
+  const songInfo: LxSongInfo = {
+    songmid: cached?.songmid || extendedSong._songmid || songmid,
+    hash: cached?.hash || extendedSong._hash,
+    name: cached?.name || song.title || song.name,
+    singer: cached?.singer || song.artist || '',
+    albumName: cached?.albumName || song.album,
+    interval: cached?.interval,
+    _interval: cached?._interval,
+    songId: cached?.songId,
+    strMediaMid: cached?.strMediaMid,
+    albumMid: cached?.albumMid,
+    albumId: cached?.albumId,
+    copyrightId: cached?.copyrightId || extendedSong._copyrightId,
+    source,
+  };
+
+  const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+  if (!lyrics) return '';
+
+  return buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
 }
