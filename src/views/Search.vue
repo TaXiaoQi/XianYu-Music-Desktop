@@ -599,7 +599,7 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
   return item.coverUrl; // 先显示原图（可能 403），代理完成后刷新
 };
 
-const handleMfImgError = (e: Event, _item: PluginSearchResult) => {
+const handleMfImgError = (e: Event, item: PluginSearchResult) => {
   (e.target as HTMLImageElement).style.display = 'none';
 };
 
