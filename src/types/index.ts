@@ -302,6 +302,7 @@ export interface DesktopLyricsSettings {
   autoHideWhenPaused: boolean;
   showDoubleLine: boolean;
   enableWordEffect: boolean;
+  enableTextOutline: boolean;
   isLocked: boolean;
   persistLock: boolean;
   centerHorizontally: boolean;

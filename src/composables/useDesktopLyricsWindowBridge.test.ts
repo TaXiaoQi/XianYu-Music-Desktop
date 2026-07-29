@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
       autoHideWhenPaused: false,
       showDoubleLine: false,
       enableWordEffect: true,
+      enableTextOutline: false,
       isLocked: false,
       persistLock: false,
       colorScheme: 'pink',
