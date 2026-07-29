@@ -16,12 +16,16 @@ pub(crate) fn is_remote_uri(path: &str) -> bool {
     path.starts_with("remote://")
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteStreamSource {
     pub remote_uri: String,
     pub url: String,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// 自定义 User-Agent（在线直链防盗链常需要浏览器 UA）
+    pub user_agent: Option<String>,
+    /// 自定义 Referer（部分音源防盗链校验来源）
+    pub referer: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -166,6 +170,7 @@ pub(crate) fn choose_remote_playback_source(
         url: webdav::build_url(&source, &remote_path),
         username: source.username,
         password: source.password,
+        ..Default::default()
     })
 }
 

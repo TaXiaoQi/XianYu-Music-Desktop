@@ -1,9 +1,4 @@
-import { computed, effectScope, shallowRef, watch } from 'vue';
-import { storeToRefs } from 'pinia';
-
-import { useSettingsStore } from '../features/settings/store';
-import { appApi } from '../services/tauri/appApi';
-import type { PerformanceMode } from '../types';
+import { computed, shallowRef } from 'vue';
 
 /**
  * 硬件能力检测结果（进程内单例缓存，避免重复探测）。
@@ -82,53 +77,19 @@ function getAutoDetectedMode(): 'low' | 'high' {
  * 性能模式 composable。
  *
  * 返回：
- * - effectiveMode: 实际生效的模式（auto 会被解析为 low/high）
+ * - effectiveMode: 根据硬件能力自动检测出的实际模式（low/high）
  * - isLowPerformance: 是否处于低性能模式（渲染降级判断用）
  * - isHighPerformance: 是否处于高性能模式
  * - hardwareCapability: 硬件能力详情（用于设置页展示）
  */
-
-// [修复防御]: rustSyncStarted 提升到模块级 + 使用 detached effectScope，
-// 确保 watch 只注册一次且不随组件卸载而销毁。
-// 原实现 rustSyncStarted 是局部变量，每次调用 usePerformanceMode() 都重复注册 watch
-// 并 { immediate: true } 触发 IPC，5 个组件调用 = 5 次冗余 IPC + 设置页每次挂载额外 1 次。
-let rustSyncStarted = false;
-const rustSyncScope = effectScope(true);
-
 export function usePerformanceMode() {
-  const { settings } = storeToRefs(useSettingsStore());
-
-  const effectiveMode = computed<'low' | 'high'>(() => {
-    const configured: PerformanceMode = settings.value.performanceMode ?? 'auto';
-    if (configured === 'auto') return getAutoDetectedMode();
-    return configured;
-  });
+  // 当前项目尚未接入手动性能模式设置及对应的 Rust IPC，使用真实可用的硬件自动检测。
+  const effectiveMode = computed<'low' | 'high'>(() => getAutoDetectedMode());
 
   const isLowPerformance = computed(() => effectiveMode.value === 'low');
   const isHighPerformance = computed(() => effectiveMode.value === 'high');
 
   const hardwareCapability = computed<HardwareCapability>(() => detectHardwareCapability());
-
-  // [修复防御]: 性能模式切换时通知 Rust 端动态调整缓存大小。
-  // 平滑过渡：渲染降级即时生效（computed 自动响应），Rust 端缓存阈值即时更新。
-  // 正在执行的封面加载任务不受影响，下次缓存清理按新阈值执行。
-  const syncToRust = async (mode: 'low' | 'high') => {
-    try {
-      await appApi.setPerformanceMode(mode);
-    } catch (err) {
-      console.warn('[usePerformanceMode] 通知 Rust 端性能模式失败', err);
-    }
-  };
-
-  // 首次调用时启动 watch，避免在模块加载时就触发 IPC
-  if (!rustSyncStarted) {
-    rustSyncStarted = true;
-    rustSyncScope.run(() => {
-      watch(effectiveMode, (mode) => {
-        void syncToRust(mode);
-      }, { immediate: true });
-    });
-  }
 
   return {
     effectiveMode,

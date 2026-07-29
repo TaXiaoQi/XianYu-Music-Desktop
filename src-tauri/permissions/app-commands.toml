@@ -26,6 +26,8 @@ commands.allow = [
   "seek_audio",
   "set_volume",
   "get_playback_progress",
+  "get_playback_ready",
+  "get_playback_start_failed",
   "get_audio_visualizer_samples",
   "get_track_loudness_info",
   "update_loudness_settings",

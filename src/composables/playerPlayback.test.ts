@@ -11,6 +11,13 @@ const preloadFullCoversMock = vi.fn();
 const preloadPriorityCoversMock = vi.fn();
 const retainFullCoverPathsMock = vi.fn();
 const primeCoverPathMock = vi.fn().mockReturnValue('');
+const { fetchLxSongLyricsRawMock } = vi.hoisted(() => ({
+  fetchLxSongLyricsRawMock: vi.fn().mockResolvedValue(''),
+}));
+
+vi.mock('../services/lxLyricFetcher', () => ({
+  fetchLxSongLyricsRaw: fetchLxSongLyricsRawMock,
+}));
 
 vi.mock('../services/tauri/playbackApi', () => ({
   playbackApi: {
@@ -76,6 +83,8 @@ describe('player playback domain', () => {
     preloadPriorityCoversMock.mockReset();
     retainFullCoverPathsMock.mockReset();
     primeCoverPathMock.mockReturnValue('');
+    fetchLxSongLyricsRawMock.mockReset();
+    fetchLxSongLyricsRawMock.mockResolvedValue('');
     setMainWindowRenderingSnapshot({
       documentHidden: false,
       windowFocused: true,
@@ -382,6 +391,73 @@ describe('player playback domain', () => {
 
     resolvePlayAudio();
     await playPromise;
+    playerPlayback.dispose();
+  });
+
+  it('loads LX lyrics asynchronously and refreshes the current song', async () => {
+    const playbackStore = usePlaybackStore();
+    const loadLyrics = vi.fn();
+    const song = makeSong({ path: 'lx://wy/123', title: 'Online' });
+    fetchLxSongLyricsRawMock.mockResolvedValue('[00:01.00]Online lyric');
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics,
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    await vi.waitFor(() => {
+      expect(playbackStore.currentSong?.lyrics_raw).toBe('[00:01.00]Online lyric');
+    });
+
+    expect(fetchLxSongLyricsRawMock).toHaveBeenCalledWith(song);
+    expect(playbackStore.playQueue[0]?.lyrics_raw).toBe('[00:01.00]Online lyric');
+    expect(loadLyrics).toHaveBeenCalled();
+    playerPlayback.dispose();
+  });
+
+  it('ignores lyrics returned for an outdated LX playback request', async () => {
+    const playbackStore = usePlaybackStore();
+    const firstSong = makeSong({ path: 'lx://wy/first', title: 'First' });
+    const secondSong = makeSong({ path: '/music/second.flac', title: 'Second' });
+    let resolveLyrics!: (value: string) => void;
+    fetchLxSongLyricsRawMock.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveLyrics = resolve;
+    }));
+    const loadLyrics = vi.fn();
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [firstSong, secondSong],
+      addToHistory: vi.fn(),
+      loadLyrics,
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(firstSong);
+    await playerPlayback.playSong(secondSong);
+    resolveLyrics('[00:01.00]Stale lyric');
+    await Promise.resolve();
+
+    expect(playbackStore.currentSong?.path).toBe(secondSong.path);
+    expect(playbackStore.currentSong?.lyrics_raw).toBeUndefined();
+    playerPlayback.dispose();
+  });
+
+  it('does not fetch LX lyrics when the song already carries lyrics', async () => {
+    const song = makeSong({
+      path: 'lx://tx/existing',
+      lyrics_raw: '[00:01.00]Existing lyric',
+    });
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+
+    expect(fetchLxSongLyricsRawMock).not.toHaveBeenCalled();
     playerPlayback.dispose();
   });
 

@@ -15,7 +15,7 @@ use rodio::{Decoder, Sink, Source};
 use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -38,6 +38,11 @@ fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
 
 fn reset_playback_progress(progress: &Arc<SharedProgress>) {
     progress.samples_played.store(0, Ordering::Relaxed);
+    // 同时清零采样率/声道，避免上一首的残留值让 get_playback_ready（判据 sample_rate>0）
+    // 在新歌尚未解码成功时就误报“已就绪”。解码成功后 append_decoded_source 会重新写入正确值。
+    progress.sample_rate.store(0, Ordering::Relaxed);
+    progress.channels.store(0, Ordering::Relaxed);
+    progress.start_failed.store(false, Ordering::Relaxed);
     progress.visualizer.reset();
 }
 
@@ -242,6 +247,11 @@ struct RemoteRangeReader {
     len: Option<u64>,
     buffer_start: u64,
     buffer: Vec<u8>,
+    /// 服务器不支持 Range（对 Range 请求返回 200 全量）时置 true：
+    /// 一次性把整首歌下载进 full_body，之后全部从内存服务，不再发分块请求。
+    /// 这修复了「不支持 Range 的 CDN 直链只能播首个 1MB 块后中断」的问题。
+    no_range: bool,
+    full_body: Option<Vec<u8>>,
 }
 
 impl RemoteRangeReader {
@@ -258,24 +268,73 @@ impl RemoteRangeReader {
             len,
             buffer_start: 0,
             buffer: Vec::new(),
+            no_range: false,
+            full_body: None,
         })
+    }
+
+    /// 一次性下载整首歌到内存（用于服务器不支持 Range 的情况）。
+    fn download_full(&mut self) -> std::io::Result<()> {
+        let request = self.client.get(&self.source.url);
+        let mut response = Self::auth(request, &self.source)
+            .send()
+            .map_err(std::io::Error::other)?;
+        if !response.status().is_success() {
+            eprintln!(
+                "[Audio][rust] 整曲下载失败 status={} url={}",
+                response.status(),
+                self.source.url
+            );
+            return Err(std::io::Error::other(format!(
+                "远程音频下载失败：{}",
+                response.status()
+            )));
+        }
+        let mut bytes = Vec::new();
+        response.read_to_end(&mut bytes)?;
+        self.len = Some(bytes.len() as u64);
+        self.full_body = Some(bytes);
+        self.no_range = true;
+        Ok(())
     }
 
     fn auth(
         request: reqwest::blocking::RequestBuilder,
         source: &RemoteStreamSource,
     ) -> reqwest::blocking::RequestBuilder {
-        if let Some(username) = source.username.as_deref().filter(|value| !value.is_empty()) {
-            request.basic_auth(username.to_string(), source.password.clone())
-        } else {
-            request
+        // 认证：仅在有用户名时加 Basic Auth（WebDAV）
+        let mut request =
+            if let Some(username) = source.username.as_deref().filter(|value| !value.is_empty()) {
+                request.basic_auth(username.to_string(), source.password.clone())
+            } else {
+                request
+            };
+        // 自定义请求头：在线直链防盗链常需要浏览器 UA / Referer
+        if let Some(ua) = source.user_agent.as_deref().filter(|value| !value.is_empty()) {
+            request = request.header(reqwest::header::USER_AGENT, ua);
         }
+        if let Some(referer) = source.referer.as_deref().filter(|value| !value.is_empty()) {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+        request
+    }
+
+    /// 从响应的 Content-Length 头显式解析长度。
+    /// 注意：不能用 reqwest 的 `response.content_length()`——对 HEAD 等无 body 响应它可能返回
+    /// 已读取 body 的长度（0），而非头部声明的值，导致误判文件长度为 0、整个流读不出。
+    fn content_length_header(response: &reqwest::blocking::Response) -> Option<u64> {
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|len| *len > 0)
     }
 
     fn content_len(client: &reqwest::blocking::Client, source: &RemoteStreamSource) -> Option<u64> {
         if let Ok(response) = Self::auth(client.head(&source.url), source).send() {
             if response.status().is_success() {
-                if let Some(length) = response.content_length() {
+                if let Some(length) = Self::content_length_header(&response) {
                     return Some(length);
                 }
             }
@@ -297,7 +356,7 @@ impl RemoteRangeReader {
                 .and_then(|value| value.rsplit('/').next())
                 .and_then(|value| value.parse::<u64>().ok())
         } else if response.status().is_success() {
-            response.content_length()
+            Self::content_length_header(&response)
         } else {
             None
         }
@@ -315,13 +374,29 @@ impl RemoteRangeReader {
         if !(response.status().is_success()
             || response.status() == reqwest::StatusCode::PARTIAL_CONTENT)
         {
+            eprintln!(
+                "[Audio][rust] 远程流请求非成功状态 status={} url={}（可能防盗链 403/鉴权失败）",
+                response.status(),
+                self.source.url
+            );
             return Err(std::io::Error::other(format!(
                 "远程音频播放失败：{}",
                 response.status()
             )));
         }
-        if response.status() == reqwest::StatusCode::OK && start > 0 {
-            return Err(std::io::Error::other("WebDAV 服务器不支持 Range 播放"));
+        if response.status() == reqwest::StatusCode::OK {
+            // 服务器忽略 Range 直接返回 200 全量 → 不支持 Range。
+            // 直接把整个响应体读入 full_body，后续从内存服务，避免只播首块就中断。
+            eprintln!(
+                "[Audio][rust] 服务器忽略 Range 返回 200，改为整曲下载到内存 url={}",
+                self.source.url
+            );
+            let mut bytes = Vec::new();
+            response.read_to_end(&mut bytes)?;
+            self.len = Some(bytes.len() as u64);
+            self.full_body = Some(bytes);
+            self.no_range = true;
+            return Ok(());
         }
 
         let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
@@ -346,11 +421,35 @@ impl Read for RemoteRangeReader {
         if output.is_empty() {
             return Ok(0);
         }
+
+        // 不支持 Range：整曲已下载进 full_body，直接从内存按 pos 服务
+        if self.no_range {
+            if self.full_body.is_none() {
+                self.download_full()?;
+            }
+            let body = self.full_body.as_ref().unwrap();
+            let pos = self.pos as usize;
+            if pos >= body.len() {
+                return Ok(0);
+            }
+            let available = body.len() - pos;
+            let count = available.min(output.len());
+            output[..count].copy_from_slice(&body[pos..pos + count]);
+            self.pos = self.pos.saturating_add(count as u64);
+            return Ok(count);
+        }
+
         if self.len.map(|len| self.pos >= len).unwrap_or(false) {
             return Ok(0);
         }
 
         self.ensure_buffer()?;
+
+        // fetch_at 可能在过程中发现服务器不支持 Range 而切到 full_body 模式
+        if self.no_range {
+            return self.read(output);
+        }
+
         if self.buffer.is_empty() {
             return Ok(0);
         }
@@ -404,7 +503,12 @@ fn append_decoded_source<R>(
         *current_sink = output.create_sink().ok();
 
         let reader = BufReader::with_capacity(512 * 1024, reader);
-        if let Ok(source) = Decoder::new(reader) {
+        let decoded = Decoder::new(reader);
+        if let Err(ref e) = decoded {
+            eprintln!("[Audio][rust] Decoder::new 解码失败（无法识别音频格式或流读取失败）: {e}");
+            progress.start_failed.store(true, Ordering::Relaxed);
+        }
+        if let Ok(source) = decoded {
             let rate = source.sample_rate();
             let channels = source.channels();
             progress.sample_rate.store(rate, Ordering::Relaxed);
@@ -497,8 +601,9 @@ fn handle_play(
             }
         }
         AudioSource::RemoteWebDav(stream) => {
-            if let Ok(reader) = RemoteRangeReader::new(stream) {
-                append_decoded_source(
+            let stream_url = stream.url.clone();
+            match RemoteRangeReader::new(stream) {
+                Ok(reader) => append_decoded_source(
                     reader,
                     output,
                     current_sink,
@@ -508,7 +613,11 @@ fn handle_play(
                     current_normalizer_handle,
                     equalizer_handle,
                     user_volume,
-                );
+                ),
+                Err(e) => {
+                    eprintln!("[Audio][rust] 远程流 RemoteRangeReader 创建失败 url={stream_url}: {e}");
+                    progress.start_failed.store(true, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -528,6 +637,7 @@ fn handle_seek(
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    remote_stream: Option<&RemoteStreamSource>,
 ) {
     let clamped_time = time.max(0.0);
     let jump_target = Duration::from_secs_f64(clamped_time);
@@ -552,67 +662,55 @@ fn handle_seek(
                 }
             }
             Err(_) => {
-                if !current_path.is_empty() {
-                    if let Some(output) = output {
-                        sink.stop();
-                        *current_sink = output.create_sink().ok();
+                // try_seek 失败（流式音频跳转到靠后位置时常见）：停掉旧 sink 并重建解码链，
+                // 用 skip_duration 跳到目标位置。
+                //
+                // 关键：远程流（在线直链/WebDAV）的 current_path 是 URL，不能用 File::open 打开，
+                // 必须用 RemoteRangeReader 重建；否则这里会静默失败，导致 sink 已停但没有新音源
+                // ——表现为"拖动进度条后没声音，进度条却继续走"。
+                sink.stop();
 
-                        if let Ok(file) = File::open(current_path) {
-                            let reader = BufReader::with_capacity(512 * 1024, file);
-                            if let Ok(source) = Decoder::new(reader) {
-                                let rate = source.sample_rate();
-                                let channels = source.channels();
-                                let samples_to_skip =
-                                    (clamped_time * rate as f64 * channels as f64).round() as u64;
-                                progress
-                                    .samples_played
-                                    .store(samples_to_skip, Ordering::Relaxed);
-
-                                let skipped_source =
-                                    source.convert_samples::<f32>().skip_duration(jump_target);
-
-                                // 1. VolumeNormalizer 音量平衡节点
-                                let (normalized_source, handle) = VolumeNormalizer::new(
-                                    skipped_source,
-                                    volume_balance_gain,
-                                    100, // ramp 100ms
-                                );
-                                *current_normalizer_handle = Some(handle);
-
-                                // 2. Equalizer 10段级联滤波器组
-                                let eq_source = crate::player::equalizer::Equalizer::new(
-                                    normalized_source,
-                                    equalizer_handle,
-                                );
-
-                                // 3. UserVolumeSource 自定义主音量节点
-                                let vol_source = crate::player::equalizer::UserVolumeSource::new(
-                                    eq_source,
-                                    user_volume,
-                                );
-
-                                // 4. ClipGuardSource 最终安全限幅源
-                                let clip_source =
-                                    crate::player::equalizer::ClipGuardSource::new(vol_source);
-
-                                // 5. TimedSource 可视化进度节点
-                                let timed_source = TimedSource::new(
-                                    clip_source,
-                                    progress.samples_played.clone(),
-                                    progress.visualizer.clone(),
-                                );
-
-                                if let Some(new_sink) = current_sink {
-                                    new_sink.set_volume(1.0); // 必须固定为 1.0
-                                    new_sink.append(timed_source);
-                                    if is_playing {
-                                        new_sink.play();
-                                    } else {
-                                        new_sink.pause();
-                                    }
-                                }
-                            }
+                // append_decoded_source 内部会重建 sink、装配处理链并开始播放
+                let start_offset = Some(jump_target);
+                if let Some(stream) = remote_stream.cloned() {
+                    match RemoteRangeReader::new(stream) {
+                        Ok(reader) => append_decoded_source(
+                            reader,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            user_volume,
+                        ),
+                        Err(e) => {
+                            eprintln!("[Audio][rust] seek 重建远程流失败: {e}");
                         }
+                    }
+                } else if !current_path.is_empty() {
+                    match File::open(current_path) {
+                        Ok(file) => append_decoded_source(
+                            file,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            user_volume,
+                        ),
+                        Err(e) => {
+                            eprintln!("[Audio][rust] seek 重建本地文件失败: {e}");
+                        }
+                    }
+                }
+
+                if !is_playing {
+                    if let Some(new_sink) = current_sink {
+                        new_sink.pause();
                     }
                 }
             }
@@ -635,6 +733,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         sample_rate: Arc::new(AtomicU32::new(44100)),
         channels: Arc::new(AtomicU32::new(2)),
         visualizer: Arc::new(SharedVisualizer::new()),
+        start_failed: Arc::new(AtomicBool::new(false)),
     });
     let thread_progress = shared_progress.clone();
     let thread_app_handle = app.clone();
@@ -667,6 +766,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
             .map(|output| output.active_device_name().to_string());
         let mut current_normalizer_handle: Option<VolumeNormalizerHandle> = None;
         let mut current_volume_balance_gain = 1.0;
+        // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
+        // 因为远程流的 current_path 是 URL，不能用 File::open 打开。
+        let mut current_remote_stream: Option<RemoteStreamSource> = None;
 
         if let Some(output) = &output {
             current_sink = output.create_sink().ok();
@@ -695,6 +797,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         current_volume_balance_gain = volume_balance_gain;
                         let source_is_remote = source.is_remote();
                         let display_path = source.display_path();
+                        // 记住当前远程流信息：seek 失败需要重建解码链时，远程流不能用
+                        // File::open(current_path)（那是 URL），必须用 RemoteRangeReader 重建
+                        current_remote_stream = match &source {
+                            AudioSource::RemoteWebDav(stream) => Some(stream.clone()),
+                            AudioSource::LocalFile(_) => None,
+                        };
 
                         if let Some(sink) = &current_sink {
                             sink.stop();
@@ -872,6 +980,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
+                            current_remote_stream.as_ref(),
                         )
                     }
                     AudioCommand::SetVolume(vol) => {
@@ -1091,6 +1200,274 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
+    use std::net::TcpListener;
+
+    /// 启动一个本地 mock HTTP 服务器，返回 (url, join_handle)。
+    /// support_range=true 时按 Range 头返回 206 分片；false 时忽略 Range 直接返回 200 全量
+    /// （模拟很多音乐 CDN 直链的行为，用于验证 no_range 整曲下载修复）。
+    fn spawn_mock_server(body: Vec<u8>, support_range: bool) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}/audio");
+
+        let handle = std::thread::spawn(move || {
+            // 处理若干次连接（HEAD 探测、content_len 的 Range:0-0、正式读取等）
+            for _ in 0..16 {
+                let Ok((mut stream, _)) = listener.accept() else { break };
+                let mut buf = [0u8; 2048];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                if n == 0 {
+                    continue;
+                }
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let is_head = req.starts_with("HEAD");
+                let range = req
+                    .lines()
+                    .find(|l| l.to_ascii_lowercase().starts_with("range:"))
+                    .map(|l| l.to_string());
+                let total = body.len();
+
+                if is_head {
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n"
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    continue;
+                }
+
+                if support_range {
+                    if let Some(range) = range {
+                        // 解析 "Range: bytes=start-end"
+                        let spec = range.split('=').nth(1).unwrap_or("").trim().to_string();
+                        let mut parts = spec.split('-');
+                        let start: usize = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+                        let end: usize = parts
+                            .next()
+                            .and_then(|v| v.trim().parse().ok())
+                            .unwrap_or(total - 1)
+                            .min(total - 1);
+                        let slice = &body[start..=end];
+                        let header = format!(
+                            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+                            slice.len(), start, end, total
+                        );
+                        let _ = stream.write_all(header.as_bytes());
+                        let _ = stream.write_all(slice);
+                        continue;
+                    }
+                }
+
+                // 不支持 Range（或无 Range 头）：返回 200 全量
+                let header =
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
+                let _ = stream.write_all(header.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        });
+
+        (url, handle)
+    }
+
+    fn read_all_via_reader(url: &str) -> Vec<u8> {
+        let source = RemoteStreamSource {
+            remote_uri: url.to_string(),
+            url: url.to_string(),
+            ..Default::default()
+        };
+        let mut reader = RemoteRangeReader::new(source).expect("reader 创建失败");
+        let mut out = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = reader.read(&mut chunk).expect("读取失败");
+            if n == 0 {
+                break;
+            }
+            out.extend_from_slice(&chunk[..n]);
+        }
+        out
+    }
+
+    #[test]
+    fn remote_reader_reads_full_body_with_range_support() {
+        // 2.5MB 数据，跨越多个 1MB 分块，验证支持 Range 的服务器能完整读取
+        let body: Vec<u8> = (0..(2_500_000_usize)).map(|i| (i % 251) as u8).collect();
+        let (url, handle) = spawn_mock_server(body.clone(), true);
+        let got = read_all_via_reader(&url);
+        assert_eq!(got.len(), body.len(), "支持 Range 时应完整读取");
+        assert_eq!(got, body, "支持 Range 时内容应一致");
+        drop(handle);
+    }
+
+    #[test]
+    fn remote_reader_reads_full_body_when_range_ignored() {
+        // 关键回归测试：服务器忽略 Range 返回 200 全量（不支持 Range 的 CDN 直链）。
+        // 旧逻辑只能播首个 1MB 块后中断（进度条鬼畜）；修复后应触发整曲下载并完整读取。
+        let body: Vec<u8> = (0..(2_500_000_usize)).map(|i| (i % 251) as u8).collect();
+        let (url, handle) = spawn_mock_server(body.clone(), false);
+        let got = read_all_via_reader(&url);
+        assert_eq!(got.len(), body.len(), "忽略 Range 时应通过整曲下载完整读取");
+        assert_eq!(got, body, "忽略 Range 时内容应一致");
+        drop(handle);
+    }
+
+    /// 验证 seek 在两种服务器模式下都能定位到正确字节（seek 是在线走 Rust 完整可用的一部分）。
+    fn assert_seek_correct(support_range: bool) {
+        let body: Vec<u8> = (0..(2_500_000_usize)).map(|i| (i % 251) as u8).collect();
+        let (url, handle) = spawn_mock_server(body.clone(), support_range);
+        let source = RemoteStreamSource {
+            remote_uri: url.clone(),
+            url: url.clone(),
+            ..Default::default()
+        };
+        let mut reader = RemoteRangeReader::new(source).expect("reader 创建失败");
+
+        // 先读开头一点，触发（no_range 下的）整曲下载或首块拉取
+        let mut head = [0u8; 16];
+        reader.read_exact(&mut head).expect("读开头失败");
+        assert_eq!(&head[..], &body[..16], "开头字节应正确");
+
+        // seek 到中段某位置，读若干字节比对
+        let target = 1_500_003_u64;
+        reader
+            .seek(SeekFrom::Start(target))
+            .expect("seek 到中段失败");
+        let mut mid = [0u8; 32];
+        reader.read_exact(&mut mid).expect("中段读失败");
+        assert_eq!(
+            &mid[..],
+            &body[target as usize..target as usize + 32],
+            "seek 后中段字节应正确"
+        );
+
+        // seek 回退到较前位置，验证可后退
+        reader.seek(SeekFrom::Start(100)).expect("seek 回退失败");
+        let mut back = [0u8; 8];
+        reader.read_exact(&mut back).expect("回退读失败");
+        assert_eq!(&back[..], &body[100..108], "seek 回退后字节应正确");
+
+        drop(handle);
+    }
+
+    #[test]
+    fn remote_reader_seek_correct_with_range_support() {
+        assert_seek_correct(true);
+    }
+
+    #[test]
+    fn remote_reader_seek_correct_when_range_ignored() {
+        assert_seek_correct(false);
+    }
+
+    /// 构造一个最小合法 WAV 文件（PCM 16bit）字节，用于验证 rodio 能否解码通过
+    /// RemoteRangeReader 取到的在线流。sample_rate=44100，双声道，含 `seconds` 秒正弦波。
+    fn build_wav(sample_rate: u32, channels: u16, seconds: u32) -> Vec<u8> {
+        let bits_per_sample: u16 = 16;
+        let num_samples = sample_rate * seconds;
+        let block_align = channels * bits_per_sample / 8;
+        let byte_rate = sample_rate * block_align as u32;
+        let data_len = num_samples * block_align as u32;
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&(36 + data_len).to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        buf.extend_from_slice(&channels.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        buf.extend_from_slice(&byte_rate.to_le_bytes());
+        buf.extend_from_slice(&block_align.to_le_bytes());
+        buf.extend_from_slice(&bits_per_sample.to_le_bytes());
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&data_len.to_le_bytes());
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            let value = (t * 440.0 * std::f32::consts::TAU).sin();
+            let sample = (value * 16000.0) as i16;
+            for _ in 0..channels {
+                buf.extend_from_slice(&sample.to_le_bytes());
+            }
+        }
+        buf
+    }
+
+    /// 端到端：验证 rodio Decoder 能解码「通过 RemoteRangeReader 取到的在线流」。
+    /// 这是「在线走 Rust 播放」的核心技术前提（取流→解码链路，除 cpal 硬件输出外）。
+    fn assert_decodes(support_range: bool) {
+        let wav = build_wav(44_100, 2, 1);
+        let (url, handle) = spawn_mock_server(wav.clone(), support_range);
+        let source = RemoteStreamSource {
+            remote_uri: url.clone(),
+            url: url.clone(),
+            ..Default::default()
+        };
+        let reader = RemoteRangeReader::new(source).expect("reader 创建失败");
+        let buffered = BufReader::with_capacity(512 * 1024, reader);
+        let decoder = Decoder::new(buffered).expect("rodio 应能解码在线 WAV 流");
+        assert_eq!(decoder.sample_rate(), 44_100, "解码采样率应为 44100");
+        assert_eq!(decoder.channels(), 2, "解码声道数应为 2");
+        // 实际取出一些样本，确认解码链路真的产出音频数据
+        let produced = decoder.take(1000).count();
+        assert!(produced > 0, "解码器应产出音频样本");
+        drop(handle);
+    }
+
+    /// 验证「seek 到靠后位置」时的重建路径：try_seek 失败后，handle_seek 会用
+    /// RemoteRangeReader 重新建流并 skip_duration 跳到目标位置。这里复现该路径，
+    /// 断言重建后仍能解码并产出音频样本。
+    ///
+    /// 回归的 bug：旧代码在 try_seek 失败后用 File::open(current_path) 重建，
+    /// 而远程流的 current_path 是 URL，必然失败 → sink 已停却无新音源，
+    /// 表现为「拖动进度条到靠后位置后没声音，进度条却继续走」。
+    fn assert_seek_rebuild_produces_audio(support_range: bool) {
+        // 10 秒音频，跳到第 8 秒（靠后位置）
+        let wav = build_wav(44_100, 2, 10);
+        let (url, handle) = spawn_mock_server(wav.clone(), support_range);
+        let source = RemoteStreamSource {
+            remote_uri: url.clone(),
+            url: url.clone(),
+            ..Default::default()
+        };
+
+        // 复现修复后的重建逻辑：新建 RemoteRangeReader + 解码 + skip 到目标位置
+        let reader = RemoteRangeReader::new(source).expect("重建 reader 应成功");
+        let buffered = BufReader::with_capacity(512 * 1024, reader);
+        let decoder = Decoder::new(buffered).expect("重建后应能解码");
+        assert_eq!(decoder.sample_rate(), 44_100);
+
+        let jump_target = Duration::from_secs(8);
+        let mut skipped = decoder.convert_samples::<f32>().skip_duration(jump_target);
+        // 跳转到靠后位置后仍应有音频样本产出（不是静默/立即结束）
+        let produced = (0..1000).filter_map(|_| skipped.next()).count();
+        assert!(
+            produced > 0,
+            "seek 到靠后位置重建后应仍能产出音频样本（support_range={support_range}）"
+        );
+
+        drop(handle);
+    }
+
+    #[test]
+    fn seek_rebuild_produces_audio_with_range_support() {
+        assert_seek_rebuild_produces_audio(true);
+    }
+
+    #[test]
+    fn seek_rebuild_produces_audio_when_range_ignored() {
+        assert_seek_rebuild_produces_audio(false);
+    }
+
+    #[test]
+    fn rodio_decodes_online_wav_with_range_support() {
+        assert_decodes(true);
+    }
+
+    #[test]
+    fn rodio_decodes_online_wav_when_range_ignored() {
+        assert_decodes(false);
+    }
 
     fn test_progress_at(seconds: f64) -> Arc<SharedProgress> {
         let sample_rate = 44_100_u32;
@@ -1102,6 +1479,7 @@ mod tests {
             sample_rate: Arc::new(AtomicU32::new(sample_rate)),
             channels: Arc::new(AtomicU32::new(channels)),
             visualizer: Arc::new(SharedVisualizer::new()),
+            start_failed: Arc::new(AtomicBool::new(false)),
         })
     }
 
