@@ -38,6 +38,9 @@ pub async fn plugin_http_request(
     let client_builder = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
+        .gzip(true)
+        .brotli(true)
+        .deflate(true)
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     let client = if timeout_secs == 0 {
         client_builder.build()
@@ -190,4 +193,100 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     }
 
     fs::read_to_string(path_obj).map_err(|error| error.to_string())
+}
+
+/// 代理图片请求 —— 自动添加 Referer 头，解决 B站等 CDN 403 问题
+#[tauri::command]
+pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(15))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    // B站 CDN 需要 Referer 头
+    let ref_url = referer.unwrap_or_else(|| {
+        if url.contains("hdslb.com") || url.contains("bilivideo.com") {
+            "https://www.bilibili.com".to_string()
+        } else {
+            String::new()
+        }
+    });
+    if !ref_url.is_empty() {
+        req = req.header("Referer", &ref_url);
+    }
+
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+
+    // 限制 5MB
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err("Image too large".to_string());
+    }
+
+    // 转为 data URL
+    use base64::{engine::general_purpose, Engine as _};
+    let b64 = general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", content_type, b64))
+}
+
+/// 异步下载音频到临时文件，返回本地文件路径
+/// 用于 B站 m4s 等需要特殊 headers 的音频流
+#[tauri::command]
+pub async fn download_audio_to_temp(
+    url: String,
+    headers: Option<HashMap<String, String>>,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(60))
+        .gzip(true)
+        .brotli(true)
+        .deflate(true)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    if let Some(hdrs) = headers {
+        for (key, value) in hdrs {
+            if !key.trim().is_empty() && !value.trim().is_empty() {
+                req = req.header(key, value);
+            }
+        }
+    }
+
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Err("Empty response".to_string());
+    }
+
+    // 写入临时文件
+    let temp_dir = std::env::temp_dir();
+    let file_name = format!("xy_music_{}.m4s", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+    let temp_path = temp_dir.join(&file_name);
+    std::fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
+
+    Ok(temp_path.to_string_lossy().to_string())
 }

@@ -496,7 +496,30 @@ export const createPlayerPlayback = ({
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
-      if (isNetworkAudio) {
+      // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
+      // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
+      let actualAudioPath = audioFilePath;
+      if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com'))) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const tempPath = await invoke<string>('download_audio_to_temp', {
+            url: audioFilePath,
+            headers: { 'Referer': 'https://www.bilibili.com' },
+          });
+          if (tempPath) {
+            actualAudioPath = tempPath;
+            // 作为本地文件走 Rust 后端播放
+            const isNet = false;
+          }
+        } catch (e: any) {
+          console.warn('[Audio] m4s 下载到临时文件失败:', e?.message);
+        }
+      }
+
+      const isM4sLocal = actualAudioPath !== audioFilePath;
+
+      if (isNetworkAudio && !isM4sLocal) {
+        // HTML5 Audio 播放网络音频（落雪等）
         // [落雪] 网络音频走 HTML5 Audio 元素播放（与 YinDongMusic 一致）
         // 1. 停止后端播放
         try { await playbackApi.pauseAudio(); } catch {}
@@ -505,7 +528,6 @@ export const createPlayerPlayback = ({
 
         // [IDM 兼容模式] 开启后先在 Worker 线程把整首音频拉成本地 blob 再播放，
         // 这样主线程不会直接请求音频直链，可避免被 IDM 等下载器劫持导致播放异常。
-        let playbackSource = audioFilePath;
         if (settingsStore.settings.audio.idmCompatMode) {
           try {
             const { fetchViaWorker } = await import('../services/downloadService');
@@ -532,17 +554,29 @@ export const createPlayerPlayback = ({
         // 等待 canplay
         await new Promise<void>((resolve, reject) => {
           const onCanPlay = () => {
+            console.log('[Audio] canplay fired, duration=', audio.duration);
             audio.removeEventListener('canplay', onCanPlay);
             audio.removeEventListener('error', onError);
+            audio.removeEventListener('stalled', onStalled);
             resolve();
           };
           const onError = () => {
             audio.removeEventListener('canplay', onCanPlay);
             audio.removeEventListener('error', onError);
-            reject(new Error(`Audio failed to load: ${audio.error?.code ?? 'unknown'}`));
+            audio.removeEventListener('stalled', onStalled);
+            const mediaError = audio.error;
+            const detail = mediaError
+              ? `code=${mediaError.code} ${mediaError.message || ''}`
+              : 'unknown';
+            console.error(`[Audio] HTML5 Audio load failed: ${detail}`, 'src=', playbackSource?.substring(0, 120));
+            reject(new Error(`Audio failed to load: ${detail}`));
+          };
+          const onStalled = () => {
+            console.warn('[Audio] stalled - loading might be blocked (CORS/Referer/403):', playbackSource?.substring(0, 120));
           };
           audio.addEventListener('canplay', onCanPlay);
           audio.addEventListener('error', onError);
+          audio.addEventListener('stalled', onStalled);
           audio.load();
         });
 
@@ -626,7 +660,7 @@ export const createPlayerPlayback = ({
         stopNetworkAudio();
 
         await playbackApi.playAudio({
-          path: audioFilePath,
+          path: actualAudioPath,
           title: getSmtcTitle(song),
           artist: song.artist || 'Unknown Artist',
           album: song.album || 'Unknown Album',
