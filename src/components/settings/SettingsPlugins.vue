@@ -6,7 +6,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins } from '../../services/pluginEngine';
-import { isLxPluginScript, loadLxPluginFromScript, parseLxScriptInfo } from '../../services/lxPluginEngine';
 
 const { showToast } = useToast();
 

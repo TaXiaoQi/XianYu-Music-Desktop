@@ -56,7 +56,7 @@ function updateCargoLockVersion(filePath, packageName, nextVersion) {
 const packageJson = readJson(packageJsonPath);
 const version = packageJson.version;
 
-if (!/^\d+\.\d+\.\d+$/.test(version)) {
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)) {
   console.error(`Invalid version in package.json: ${version}`);
   process.exit(1);
 }

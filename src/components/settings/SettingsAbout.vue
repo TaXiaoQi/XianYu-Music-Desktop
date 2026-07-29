@@ -139,8 +139,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-w-0 flex-col items-center justify-center gap-[clamp(16px,3vh,32px)] px-4 pb-[clamp(24px,6vh,80px)] animate-in fade-in zoom-in-95 duration-300">
-    <div class="flex min-w-0 flex-col items-center gap-[clamp(10px,2vh,24px)] text-center">
+  <div class="flex h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in zoom-in-95 duration-300">
+    <div class="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-[clamp(16px,3vh,32px)]">
+      <div class="flex min-w-0 flex-col items-center gap-[clamp(10px,2vh,24px)] text-center">
       <div class="flex items-center justify-center">
         <img
           src="/logo.png"
@@ -206,15 +207,17 @@ onMounted(() => {
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.49 11.49 0 0 1 12 5.797c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.8 24 17.302 24 12c0-6.627-5.373-12-12-12Z" /></svg>
         GitHub 原仓库
-      </a>
+        </a>
+      </div>
     </div>
 
-    <div class="max-w-full text-center text-[clamp(10px,1.4vh,12px)] leading-relaxed text-gray-400 dark:text-gray-600">
-      开发者名单（排名不分先后）：<a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@TaXiaoQi</a> <a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@ShenYichenCN</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@知难辞</a> <a href="https://github.com/kaishui-server" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@绛狐</a>
-    </div>
-
-    <div class="-mt-[clamp(10px,2vh,24px)] max-w-full text-center text-[clamp(10px,1.4vh,12px)] text-gray-400 dark:text-gray-600">
-      Copyright © 2026 XY-Music-Desktop Developer. Licensed under AGPL-3.0-only.
+    <div class="mt-auto max-w-full shrink-0 space-y-1 text-center text-[clamp(10px,1.4vh,12px)] leading-relaxed text-gray-400 dark:text-gray-600">
+      <div>
+        开发者名单（排名不分先后）：<a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@TaXiaoQi</a> <a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@ShenYichenCN</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@知难辞</a> <a href="https://github.com/kaishui-server" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@绛狐</a>
+      </div>
+      <div>
+        Copyright © 2026 XY-Music-Desktop Developer. Licensed under AGPL-3.0-only.
+      </div>
     </div>
 
     <ModernModal
