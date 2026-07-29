@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import {
@@ -9,7 +9,29 @@ import {
 import type { ThemeSettings } from '../types';
 import type { WindowMaterialMode } from './windowMaterial';
 
+const systemPrefersDark = ref(false);
+let systemThemeListenerInitialized = false;
+
+function ensureSystemThemeListener() {
+  if (systemThemeListenerInitialized || typeof window === 'undefined' || !window.matchMedia) {
+    return;
+  }
+  systemThemeListenerInitialized = true;
+
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  systemPrefersDark.value = mq.matches;
+  mq.addEventListener('change', (e: MediaQueryListEvent) => {
+    systemPrefersDark.value = e.matches;
+  });
+}
+
+ensureSystemThemeListener();
+
 const resolveThemeDarkMode = (theme: ThemeSettings) => {
+  if (theme.mode === 'system') {
+    return systemPrefersDark.value;
+  }
+
   if (theme.mode !== 'custom') {
     return theme.mode === 'dark';
   }
