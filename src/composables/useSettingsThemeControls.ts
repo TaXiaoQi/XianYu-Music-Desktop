@@ -16,7 +16,7 @@ export function useSettingsThemeControls() {
 
   const colorScheme = computed({
     get: () => theme.value.mode,
-    set: (value: 'light' | 'dark' | 'custom') => {
+    set: (value: 'light' | 'dark' | 'custom' | 'system') => {
       setThemeMode(value);
     },
   });
@@ -55,7 +55,7 @@ export function useSettingsThemeControls() {
     () => colorScheme.value === 'custom' || hasWindowMaterialSelected.value,
   );
 
-  const setColorScheme = (mode: 'light' | 'dark' | 'custom') => {
+  const setColorScheme = (mode: 'light' | 'dark' | 'custom' | 'system') => {
     colorScheme.value = mode;
   };
 

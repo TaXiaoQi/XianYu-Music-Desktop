@@ -139,7 +139,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in zoom-in-95 duration-300">
+  <div class="flex min-h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in zoom-in-95 duration-300">
     <div class="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-[clamp(16px,3vh,32px)]">
       <div class="flex min-w-0 flex-col items-center gap-[clamp(10px,2vh,24px)] text-center">
       <div class="flex items-center justify-center">
