@@ -39,6 +39,7 @@ function createPayload(enableWordEffect: boolean): DesktopLyricsStatePayload {
       autoHideWhenPaused: false,
       showDoubleLine: false,
       enableWordEffect,
+      enableTextOutline: false,
       isLocked: false,
       persistLock: false,
       centerHorizontally: false,
@@ -134,6 +135,14 @@ describe('useDesktopLyricsDisplay', () => {
     ]);
   });
 
+  it('keeps desktop text outline disabled by default', () => {
+    const display = useDesktopLyricsDisplay(ref(false));
+
+    display.handlePayload(createPayload(true));
+
+    expect(display.widgetStyle.value['--desktop-text-outline-width']).toBe('0px');
+  });
+
   it('exposes desktop readability settings as CSS variables', () => {
     const display = useDesktopLyricsDisplay(ref(false));
     const payload = createPayload(true);
@@ -144,6 +153,7 @@ describe('useDesktopLyricsDisplay', () => {
         ...payload.settings,
         textOpacity: 0.82,
         textShadowColor: '#112233',
+        enableTextOutline: true,
         firstLineTextShadowStrength: 25,
         secondLineTextShadowStrength: 75,
       } as any,
@@ -152,6 +162,7 @@ describe('useDesktopLyricsDisplay', () => {
     expect(display.widgetStyle.value).toMatchObject({
       '--desktop-text-opacity': '0.82',
       '--desktop-text-shadow-color': '17 34 51',
+      '--desktop-text-outline-width': '1.5px',
       '--desktop-first-line-text-shadow-alpha': '0.25',
       '--desktop-first-line-text-shadow-blur': '6px',
       '--desktop-second-line-text-shadow-alpha': '0.75',

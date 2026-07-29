@@ -299,7 +299,9 @@ const {
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   transform-origin: var(--lyrics-line-transform-origin, 50%) center;
   opacity: var(--desktop-text-opacity, 1);
-  transition: opacity 220ms ease;
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  paint-order: stroke fill;
+  transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
 }
 
 .desktop-lyric-row {
@@ -510,6 +512,8 @@ const {
 .desktop-empty-state {
   color: var(--desktop-text-secondary);
   font-size: 1.1rem;
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  paint-order: stroke fill;
   font-weight: 600;
   letter-spacing: 0.02em;
   filter:
