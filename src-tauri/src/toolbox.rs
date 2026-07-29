@@ -498,17 +498,31 @@ pub async fn download_online_song(
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
 
-    // 模拟浏览器媒体流请求（Accept/Range），降低被下载器识别为“文件下载”的概率
-    let response = client
-        .get(&url)
-        .header(
+    // 模拟浏览器媒体流请求（Accept/Range），降低被下载器识别为“文件下载”的概率。
+    // 但部分音源 CDN 对开放式 Range（高品/无损直链节点尤其常见）会返回 502/416/403，
+    // 此时自动回退到不带 Range 的普通 GET。
+    let send_with_range = |with_range: bool| {
+        let mut builder = client.get(&url).header(
             "Accept",
             "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5",
-        )
-        .header("Range", "bytes=0-")
-        .send()
+        );
+        if with_range {
+            builder = builder.header("Range", "bytes=0-");
+        }
+        builder.send()
+    };
+
+    let mut response = send_with_range(true)
         .await
         .map_err(|e| format!("发送下载请求失败: {e}"))?;
+    let status_code = response.status().as_u16();
+    if !response.status().is_success()
+        && (status_code == 502 || status_code == 416 || status_code == 403)
+    {
+        response = send_with_range(false)
+            .await
+            .map_err(|e| format!("发送下载请求（无 Range 回退）失败: {e}"))?;
+    }
     if !response.status().is_success() {
         return Err(format!("下载服务器返回错误状态: {}", response.status()));
     }
@@ -630,6 +644,84 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
         .await
         .map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 探测在线音频直链的大小与最终 URL（用于下载对话框显示各档位文件大小）。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProbeUrlInfo {
+    pub url: String,
+    pub size: u64,
+    /// 探测失败时的诊断信息，便于前端在控制台看到具体原因（403/超时等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// 用 `Range: bytes=0-0` 探测直链文件大小。
+///
+/// 支持 Range 的服务器返回 206 + `Content-Range: bytes 0-0/TOTAL`；
+/// 不支持的返回 200 + `Content-Length`（整个文件大小）。
+/// 之所以不先发 HEAD：很多音源 CDN 对 HEAD 返回 403/405，反而更慢。
+#[tauri::command]
+pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("无效的探测链接".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("创建探测客户端失败: {e}"))?;
+
+    let resp = match client
+        .get(&url)
+        .header(reqwest::header::RANGE, "bytes=0-0")
+        .header(
+            reqwest::header::ACCEPT,
+            "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,*/*;q=0.5",
+        )
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(ProbeUrlInfo {
+                url,
+                size: 0,
+                error: Some(format!("请求失败: {e}")),
+            });
+        }
+    };
+
+    let final_url = resp.url().to_string();
+    let status = resp.status();
+
+    if status == reqwest::StatusCode::PARTIAL_CONTENT {
+        let size = resp
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.rsplit('/').next())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        return Ok(ProbeUrlInfo { url: final_url, size, error: None });
+    }
+    if status.is_success() {
+        let size = resp
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .unwrap_or(0);
+        return Ok(ProbeUrlInfo { url: final_url, size, error: None });
+    }
+
+    Ok(ProbeUrlInfo {
+        url: final_url,
+        size: 0,
+        error: Some(format!("HTTP {status}")),
+    })
 }
 
 #[tauri::command]
