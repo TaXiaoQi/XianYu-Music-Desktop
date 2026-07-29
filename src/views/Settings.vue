@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import SettingsAbout from "../components/settings/SettingsAbout.vue";
 import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
@@ -14,6 +14,15 @@ import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
 const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about'>('general');
+const mainRef = ref<HTMLElement | null>(null);
+
+watch(activeTab, () => {
+  nextTick(() => {
+    if (mainRef.value) {
+      mainRef.value.scrollTop = 0;
+    }
+  });
+});
 
 const tabs = [
   { id: 'general', name: '常规' },
@@ -51,7 +60,7 @@ const tabs = [
       </nav>
     </aside>
 
-    <main :class="activeTab === 'about' ? 'relative h-full min-w-0 flex-1 overflow-hidden px-10 py-10 xl:px-16' : 'custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16'">
+    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
       <div class="w-full pb-16">
         <transition name="settings-tab" mode="out-in">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
