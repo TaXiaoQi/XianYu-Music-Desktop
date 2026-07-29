@@ -472,8 +472,10 @@ export interface PluginSource {
   sources: string[];
   /** 是否为内置插件 */
   isBuiltin?: boolean;
-  /** 是否有可用更新（用于在插件列表显示“可更新”标记） */
+  /** 是否有可用更新（用于在插件列表显示"可更新"标记） */
   updateAvailable?: boolean;
+  /** 用户自定义排序权重（数值越小越靠前），同一格式组内生效 */
+  sortOrder?: number;
 }
 
 /** 插件 HTTP 响应 */

@@ -33,7 +33,7 @@
             type="button"
             class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
             :class="(source.type === 'lx' ? selectedLxSource === source.id : selectedMfSource === source.id)
-              ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
+              ? sourceSelectedClass(source.type)
               : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
             @click="handleSelectSource(source)"
           >
@@ -272,7 +272,9 @@ const lxSourceList = Object.entries(LX_SOURCE_NAMES).map(([id, name]) => ({
 const mfSourceList = ref<{ id: string; name: string; type: 'musicfree'; source: PluginSource }[]>([]);
 
 function refreshMfSourceList() {
-  const plugins = getStoredPlugins().filter(p => p.enabled && p.format === 'musicfree');
+  const plugins = getStoredPlugins()
+    .filter(p => p.enabled && p.format === 'musicfree')
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   mfSourceList.value = plugins.map(p => ({ id: p.id, name: p.name, type: 'musicfree' as const, source: p }));
 }
 
@@ -289,6 +291,14 @@ const selectedSourceName = computed(() => {
   }
   return LX_SOURCE_NAMES[selectedLxSource.value] ?? '未知音源';
 });
+
+/** 根据来源类型返回选中时的颜色类名 */
+function sourceSelectedClass(type: 'lx' | 'musicfree') {
+  if (type === 'lx') {
+    return 'text-green-600 bg-green-50 dark:bg-green-500/10';
+  }
+  return 'text-orange-600 bg-orange-50 dark:bg-orange-500/10';
+}
 
 const isLxSource = computed(() => !selectedMfSource.value);
 
@@ -599,7 +609,7 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
   return item.coverUrl; // 先显示原图（可能 403），代理完成后刷新
 };
 
-const handleMfImgError = (e: Event, item: PluginSearchResult) => {
+const handleMfImgError = (e: Event, _item: PluginSearchResult) => {
   (e.target as HTMLImageElement).style.display = 'none';
 };
 
