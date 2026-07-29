@@ -268,13 +268,23 @@ const handleWindowClick = (e: MouseEvent) => {
 };
 
 // --- Idle State for Auto-Hide ---
-// 主底栏与播放详情页底栏使用各自独立的 pinned 状态，互不影响
+// 主底栏与播放详情页底栏使用各自独立的 pinned 和 idle 状态，互不影响
 const isPinnedFooter = ref(localStorage.getItem('footer_pinned') === 'true');
 const isPinnedDetail = ref(localStorage.getItem('footer_pinned_detail') === 'true');
-// 根据当前是否处于播放详情页，选择生效的 pinned 状态
 const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : isPinnedFooter.value);
-const isIdle = ref(false);
+
+const isIdleFooter = ref(false);
+const isIdleDetail = ref(false);
+const isIdle = computed(() => showPlayerDetail.value ? isIdleDetail.value : isIdleFooter.value);
 let idleTimer: any = null;
+
+const clearIdle = () => {
+  if (showPlayerDetail.value) {
+    isIdleDetail.value = false;
+  } else {
+    isIdleFooter.value = false;
+  }
+};
 
 const togglePin = () => {
   if (showPlayerDetail.value) {
@@ -283,7 +293,7 @@ const togglePin = () => {
     if (!isPinnedDetail.value) {
       startIdleTimer();
     } else {
-      isIdle.value = false;
+      isIdleDetail.value = false;
       if (idleTimer) clearTimeout(idleTimer);
     }
   } else {
@@ -292,7 +302,7 @@ const togglePin = () => {
     if (!isPinnedFooter.value) {
       startIdleTimer();
     } else {
-      isIdle.value = false;
+      isIdleFooter.value = false;
       if (idleTimer) clearTimeout(idleTimer);
     }
   }
@@ -302,25 +312,36 @@ const startIdleTimer = () => {
   if (idleTimer) clearTimeout(idleTimer);
   // Do not hide if context menu, dragging, or volume slider is active
   if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || showVolumeSlider.value || isPinned.value) return;
-  
+
   idleTimer = setTimeout(() => {
-    isIdle.value = true;
+    if (showPlayerDetail.value) {
+      isIdleDetail.value = true;
+    } else {
+      isIdleFooter.value = true;
+    }
   }, 2000);
 };
 
 const handleFooterMouseEnter = () => {
-  isIdle.value = false;
+  clearIdle();
   if (idleTimer) clearTimeout(idleTimer);
 };
 
 const handleFooterMouseMove = () => {
-  if (isIdle.value) isIdle.value = false;
+  if (isIdle.value) clearIdle();
   if (idleTimer) clearTimeout(idleTimer);
 };
 
 const handleFooterMouseLeave = () => {
   startIdleTimer();
 };
+
+// 切换页面时重置目标页面的 idle 状态并重新计时，避免详情页隐藏状态泄漏到主页
+watch(showPlayerDetail, () => {
+  clearIdle();
+  if (idleTimer) clearTimeout(idleTimer);
+  startIdleTimer();
+});
 
 onMounted(async () => { 
   window.addEventListener('pointermove', onGlobalPointerMove); 
