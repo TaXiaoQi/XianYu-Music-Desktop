@@ -22,7 +22,7 @@ use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, 
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
-use plugins::{plugin_http_request, plugin_http_request_binary, read_plugin_file};
+use plugins::{plugin_http_request, plugin_http_request_binary, read_plugin_file, proxy_image, download_audio_to_temp};
 use music::{
     add_library_folder, add_sidebar_folder, batch_move_music_files, clear_cover_cache,
     create_folder, delete_folder, delete_music_file, get_folder_children, get_folder_first_song,
@@ -208,6 +208,8 @@ plugin_http_request,
 plugin_http_request_binary,
 parse_lyrics_text,
 read_plugin_file,
+proxy_image,
+download_audio_to_temp,
             consume_pending_open_paths,
             get_system_fonts,
             import_lyrics_font,

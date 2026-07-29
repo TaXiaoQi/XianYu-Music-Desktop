@@ -164,10 +164,11 @@
                   <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
                     <img
                       v-if="item.coverUrl"
-                      :src="item.coverUrl"
+                      :src="getMfCoverUrl(item)"
                       class="w-full h-full object-cover"
                       alt=""
                       loading="lazy"
+                      @error="handleMfImgError($event, item)"
                     />
                     <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
@@ -233,7 +234,7 @@ import {
   type LxSourceId,
 } from '../services/lxMusicSdk';
 import { cacheLxSong } from '../services/lxSongCache';
-import { getStoredPlugins, pluginSearch, pluginGetMusicInfo } from '../services/pluginEngine';
+import { getStoredPlugins, pluginSearch, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult } from '../types';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
@@ -573,6 +574,34 @@ const formatMfDuration = (seconds: number): string => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+// B站图片代理：hdslb.com/bilivideo.com 需要 Referer 头
+const mfCoverProxyCache = new Map<string, string>();
+const getMfCoverUrl = (item: PluginSearchResult) => {
+  if (!item.coverUrl) return '';
+  // 非 B站 URL 直接返回
+  if (!item.coverUrl.includes('hdslb.com') && !item.coverUrl.includes('bilivideo.com')) {
+    return item.coverUrl;
+  }
+  // 已缓存 data URL
+  const cached = mfCoverProxyCache.get(item.id);
+  if (cached) return cached;
+  // 异步代理并刷新
+  (async () => {
+    try {
+      const { pluginApi } = await import('../services/tauri/pluginApi');
+      const dataUrl = await pluginApi.proxyImage(item.coverUrl);
+      mfCoverProxyCache.set(item.id, dataUrl);
+      // 触发响应式更新
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    } catch { /* ignore */ }
+  })();
+  return item.coverUrl; // 先显示原图（可能 403），代理完成后刷新
+};
+
+const handleMfImgError = (e: Event, item: PluginSearchResult) => {
+  (e.target as HTMLImageElement).style.display = 'none';
+};
+
 const handlePlayMfSong = async (item: PluginSearchResult) => {
   const mfSource = mfSourceList.value.find(s => s.id === item.pluginId);
   if (!mfSource) {
@@ -581,7 +610,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   }
 
   try {
-    // 通过插件获取播放 URL（与 YinDongMusic pluginGetMusicInfo 完全一致）
+    // 1. 通过插件获取播放 URL（与 MusicFree PluginMethods.getMediaSource 完全一致）
     const musicInfo = await pluginGetMusicInfo(mfSource.source, item, 'standard');
     if (!musicInfo?.url) {
       console.warn('[MusicFree] 无法获取播放URL:', item.title);
@@ -592,7 +621,6 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     const song: Song = {
       name: item.title,
       title: item.title,
-      // 直接设置 path 为解析到的真实 URL，走 HTML5 Audio 播放
       path: musicInfo.url,
       artist: item.artist || '未知歌手',
       artist_names: artistNames,
@@ -602,12 +630,68 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
       is_various_artists_album: false,
       collapse_artist_credits: false,
-      // MusicFree 返回的 duration 是毫秒，需要转秒
       duration: Math.floor((item.duration || 0) / 1000),
       cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
       source_type: 'remote',
       remote_source_id: musicInfo.url,
     } as any;
+
+    // 2. 从 getMediaSource 返回值中提取歌词
+    if (musicInfo.lyric) {
+      (song as any).lyrics_raw = musicInfo.lyric;
+      if (musicInfo.tlyric) {
+        (song as any).lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
+      }
+    }
+
+    // 3. 如果没有歌词，通过插件获取
+    if (!(song as any).lyrics_raw) {
+      try {
+        const lyricData = await pluginGetLyric(mfSource.source, item);
+        if (lyricData?.lyric) {
+          (song as any).lyrics_raw = lyricData.lyric;
+          if (lyricData.tlyric) {
+            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 4. 如果没有封面，通过插件获取
+    if (!song.cover_thumb_path) {
+      try {
+        const coverUrl = await pluginGetCover(mfSource.source, item);
+        if (coverUrl) {
+          song.cover_thumb_path = coverUrl;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 5. 设置播放队列（与 YinDongMusic 完全一致）
+    const allSongs = pluginSearchResults.value.map((mfItem) => {
+      const aNames = mfItem.artist ? mfItem.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
+      return {
+        name: mfItem.title,
+        title: mfItem.title,
+        path: '',
+        artist: mfItem.artist || '未知歌手',
+        artist_names: aNames,
+        effective_artist_names: aNames,
+        album: mfItem.album || '未知专辑',
+        album_artist: mfItem.artist || '未知歌手',
+        album_key: `${mfItem.album || '未知专辑'}-${mfItem.artist || '未知歌手'}`,
+        is_various_artists_album: false,
+        collapse_artist_credits: false,
+        duration: Math.floor((mfItem.duration || 0) / 1000),
+        cover_thumb_path: mfItem.coverUrl || '',
+        source_type: 'remote' as const,
+      } as Song;
+    });
+    const songIndex = allSongs.findIndex(s => s.name === song.name && s.artist === song.artist);
+    if (songIndex >= 0) {
+      allSongs[songIndex] = song;
+    }
+
     void playSong(song, { insertAfterCurrent: true });
     uiStore.showPlayerDetail = true;
   } catch (e: any) {
