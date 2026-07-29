@@ -48,22 +48,12 @@ const appWindow = getCurrentWindow();
 
 const minimize = () => appWindow.minimize();
 
-// 全屏状态由前端自管理：切换走 Rust 原生 command（绕过 tao 的 placement 机制），
-// 因此不能再依赖 appWindow.isFullscreen()（绕过后 tao 内部状态会失真）
+// 全屏：调用项目自实现的 Win32 原生命令（绕过 tao，专门处理无边框窗口）
+// 该命令用整个显示器矩形铺满窗口并调用 MarkFullscreenWindow 让 shell 隐藏任务栏
 const isFullscreen = ref(false);
-// 防止过渡进行中重复点击（全屏与最大化共用同一把锁）
-let windowTransitioning = false;
-// 退出全屏时的内容层收缩动画：无边框窗系统无缩小动画（窗口硬跳回小窗），
-// 用内容 scale+淡出的 CSS 过渡盖住硬跳，观感为“画面向内收缩”
-const isCollapsing = ref(false);
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-// Rust 原生全屏切换：进全屏借系统最大化动画丝滑放大；退全屏窗口一步硬跳还原
-const applyImmersiveFullscreen = async (enter: boolean) => {
-  const result = await tauriInvoke('set_immersive_fullscreen', { enter });
-  isFullscreen.value = result;
-};
+// 'entering' | 'exiting' | null，控制进/退全屏的过渡动画
+const fullscreenAnimState = ref<'entering' | 'exiting' | null>(null);
+const FS_ANIM_DURATION = 320;
 
 // 沉浸模式下鼠标 2 秒无操作隐藏指针，移动/点击恢复
 const CURSOR_IDLE_HIDE_DELAY = 2000;
@@ -105,54 +95,58 @@ const disableCursorAutoHide = () => {
   isCursorHidden.value = false;
 };
 
-// 统一过渡编排：仅做防连点
-const runWindowTransition = async (action: () => Promise<void>, onError: string) => {
-  if (windowTransitioning) {
-    return;
-  }
-  windowTransitioning = true;
+const applyImmersiveFullscreen = async (enter: boolean) => {
+  const result = await tauriInvoke('set_immersive_fullscreen', { enter });
+  isFullscreen.value = result;
+};
 
-  try {
-    await action();
-  } catch (error) {
-    showToast(`${onError}: ${String(error)}`, 'error');
-  } finally {
-    windowTransitioning = false;
+const toggleFullscreen = async () => {
+  if (fullscreenAnimState.value) return;
+
+  if (!isFullscreen.value) {
+    // 进入全屏：先调用原生命令铺满整个显示器（含任务栏），窗口尺寸稳定后再播放放大动画
+    fullscreenAnimState.value = 'entering';
+    enableCursorAutoHide();
+    try {
+      await applyImmersiveFullscreen(true);
+    } catch (error) {
+      showToast(`进入全屏失败: ${String(error)}`, 'error');
+      fullscreenAnimState.value = null;
+      return;
+    }
+    // 原生铺满完成后，触发前端放大过渡动画盖住瞬间的尺寸跳变
+    setTimeout(() => {
+      fullscreenAnimState.value = null;
+    }, FS_ANIM_DURATION);
+  } else {
+    // 退出全屏：先播放前端收缩动画，动画结束后再调用原生退出恢复窗口
+    fullscreenAnimState.value = 'exiting';
+    disableCursorAutoHide();
+    setTimeout(async () => {
+      try {
+        await applyImmersiveFullscreen(false);
+      } catch (error) {
+        showToast(`退出全屏失败: ${String(error)}`, 'error');
+      }
+      isFullscreen.value = false;
+      fullscreenAnimState.value = null;
+    }, FS_ANIM_DURATION);
   }
 };
 
-const toggleFullscreen = () =>
-  runWindowTransition(async () => {
-    if (isFullscreen.value) {
-      // 退出全屏：先停鼠标自动隐藏，再播内容收缩动画、硬跳回小窗
-      disableCursorAutoHide();
-      isCollapsing.value = true;
-      await sleep(200);
-      await applyImmersiveFullscreen(false);
-      await sleep(20);
-      isCollapsing.value = false;
-    } else {
-      // 进入全屏：系统最大化动画已丝滑，前端不介入；启用鼠标静止自动隐藏
-      await applyImmersiveFullscreen(true);
-      enableCursorAutoHide();
-    }
-  }, '切换全屏失败');
+const toggleMaximize = async () => {
+  // 全屏态或退出动画进行中：不响应最大化
+  if (isFullscreen.value || fullscreenAnimState.value === 'exiting') {
+    return;
+  }
 
-const toggleMaximize = () =>
-  runWindowTransition(async () => {
-    // 全屏态下点最大化：退出全屏，placement 会一步恢复到进全屏前的状态（通常是最大化）
-    if (isFullscreen.value) {
-      disableCursorAutoHide();
-      await applyImmersiveFullscreen(false);
-      return;
-    }
+  if (await appWindow.isMaximized()) {
+    await appWindow.unmaximize();
+  } else {
+    await appWindow.maximize();
+  }
+};
 
-    if (await appWindow.isMaximized()) {
-      await appWindow.unmaximize();
-    } else {
-      await appWindow.maximize();
-    }
-  }, '切换窗口大小失败');
 const closeApp = async () => {
   if (settings.value.closeToTray) {
     await appWindow.hide();
@@ -439,14 +433,18 @@ const handleChangeLyrics = async () => {
     class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
     :class="[
       showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
-      isCollapsing ? 'bg-[#0a0a0a]' : '',
+      isFullscreen || fullscreenAnimState ? 'bg-[#0a0a0a]' : '',
       isCursorHidden ? 'cursor-hidden' : '',
     ]"
     @contextmenu.prevent="handleContextMenu"
   >
     <div
-      class="relative flex h-[100vh] w-full flex-col pt-[calc(100vh-100%)]"
-      :class="{ 'fs-collapsing': isCollapsing }"
+      class="relative flex h-[100vh] w-full flex-col"
+      :class="[
+        isFullscreen || fullscreenAnimState ? 'pt-0' : 'pt-[calc(100vh-100%)]',
+        fullscreenAnimState === 'entering' ? 'fs-entering' : '',
+        fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
+      ]"
     >
       <div
         class="absolute inset-0 transition-all duration-600 ease-[cubic-bezier(0.22,1,0.36,1)]"
@@ -602,13 +600,37 @@ const handleChangeLyrics = async () => {
   cursor: none !important;
 }
 
-/* 退出全屏时内容向内收缩，盖住无边框窗窗口硬跳缩小的瞬间。
-   不使用 opacity（会让详情页半透明、透出底层统计页），改用不透明底色兜住 scale 缩进后露出的边缘 */
-.fs-collapsing {
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  transform: scale(0.96);
+/* 全屏切换动画：进入时从 94% 放大到 100%，退出时从 100% 收缩到 94% */
+.fs-entering {
+  animation: fs-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: center center;
-  background-color: #0a0a0a;
+}
+
+.fs-exiting {
+  animation: fs-exit 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center center;
+}
+
+@keyframes fs-enter {
+  0% {
+    transform: scale(0.94);
+    opacity: 0.82;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fs-exit {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.94);
+    opacity: 0.82;
+  }
 }
 
 .fade-scale-enter-active,
