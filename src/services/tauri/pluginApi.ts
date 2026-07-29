@@ -211,12 +211,29 @@ export async function fetchPluginUrl(url: string): Promise<string> {
   return resp.body;
 }
 
+export async function proxyImage(url: string, referer?: string): Promise<string> {
+  return invoke<string>('proxy_image', { url, referer: referer ?? null });
+}
+
+export async function pluginHttpRequestBinary(
+  method: string,
+  url: string,
+  headers?: Record<string, string>,
+  body?: string,
+  timeout?: number,
+  follow?: number,
+): Promise<{ status: number; url: string; headers: Record<string, string>; body_base64: string }> {
+  return invoke('plugin_http_request_binary', { method, url, headers, body, timeout, follow });
+}
+
 export const pluginApi = {
   getInstalledPlugins,
   pluginSearch,
   setPluginEnabled,
   getPluginTrackUrl,
   pluginHttpRequest,
+  pluginHttpRequestBinary,
   readPluginFile,
   fetchPluginUrl,
+  proxyImage,
 };

@@ -618,6 +618,27 @@ export const createPlayerPlayback = ({
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
+      // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
+      // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
+      let actualAudioPath = audioFilePath;
+      if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com'))) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const tempPath = await invoke<string>('download_audio_to_temp', {
+            url: audioFilePath,
+            headers: { 'Referer': 'https://www.bilibili.com' },
+          });
+          if (tempPath) {
+            actualAudioPath = tempPath;
+          }
+        } catch (e: any) {
+          console.warn('[Audio] m4s 下载到临时文件失败:', e?.message);
+        }
+      }
+
+      // m4s 已下载为本地文件时按本地文件走 Rust 后端
+      const isM4sLocal = actualAudioPath !== audioFilePath;
+
       // [Rust 播放收尾] 本地文件与在线直链走 Rust 成功后共用的收尾逻辑：
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
@@ -687,17 +708,29 @@ export const createPlayerPlayback = ({
         // 等待 canplay
         await new Promise<void>((resolve, reject) => {
           const onCanPlay = () => {
+            console.log('[Audio] canplay fired, duration=', audio.duration);
             audio.removeEventListener('canplay', onCanPlay);
             audio.removeEventListener('error', onError);
+            audio.removeEventListener('stalled', onStalled);
             resolve();
           };
           const onError = () => {
             audio.removeEventListener('canplay', onCanPlay);
             audio.removeEventListener('error', onError);
-            reject(new Error(`Audio failed to load: ${audio.error?.code ?? 'unknown'}`));
+            audio.removeEventListener('stalled', onStalled);
+            const mediaError = audio.error;
+            const detail = mediaError
+              ? `code=${mediaError.code} ${mediaError.message || ''}`
+              : 'unknown';
+            console.error(`[Audio] HTML5 Audio load failed: ${detail}`, 'src=', playbackSource?.substring(0, 120));
+            reject(new Error(`Audio failed to load: ${detail}`));
+          };
+          const onStalled = () => {
+            console.warn('[Audio] stalled - loading might be blocked (CORS/Referer/403):', playbackSource?.substring(0, 120));
           };
           audio.addEventListener('canplay', onCanPlay);
           audio.addEventListener('error', onError);
+          audio.addEventListener('stalled', onStalled);
           audio.load();
         });
 
@@ -849,7 +882,7 @@ export const createPlayerPlayback = ({
         return false;
       };
 
-      if (isNetworkAudio) {
+      if (isNetworkAudio && !isM4sLocal) {
         // [在线播放] 先停掉可能残留的网络音频，再优先走 Rust 后端播放（可视化/均衡器/响度均衡生效，
         // 且请求由 Rust 进程发起，规避 IDM 劫持）；Rust 失败时回退到 HTML5 播放。
         stopNetworkAudio();
@@ -878,7 +911,7 @@ export const createPlayerPlayback = ({
         stopNetworkAudio();
 
         await playbackApi.playAudio({
-          path: audioFilePath,
+          path: actualAudioPath,
           title: getSmtcTitle(song),
           artist: song.artist || 'Unknown Artist',
           album: song.album || 'Unknown Album',
