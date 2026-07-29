@@ -244,25 +244,25 @@ const losslessRatio = computed(() => {
 
       <!-- Main content -->
       <div v-else-if="stats && behaviorStats" class="space-y-[clamp(0.5rem,1vw,0.875rem)]">
-        <!-- 总听歌时长 + 右侧三个小分支 -->
-        <section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(1.5rem,3vw,2.5rem)] animate-fade-in-up">
+        <!-- 总歌曲 + 右侧三个小分支 -->
+        <section class="px-[clamp(1rem,2.5vw,3rem)] pt-[clamp(0.25rem,0.5vw,0.5rem)] pb-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up">
           <div class="flex items-end justify-between gap-[clamp(3rem,6vw,6rem)] flex-wrap">
-            <!-- 左：总听歌时长 -->
-            <div class="shrink-0">
-              <p class="text-black dark:text-white text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-              <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
+            <!-- 左：总歌曲 -->
+            <div class="shrink-0 flex flex-col justify-end">
+              <p class="text-black dark:text-white text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalSongs }}</p>
+              <p class="text-black dark:text-white text-[clamp(1.5rem,3.5vw,2.25rem)] font-black tracking-tight leading-none">{{ stats.total_songs }}</p>
             </div>
             <!-- 右：三个小分支，均匀分布 -->
             <div class="flex-1 grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,2rem)] min-w-0">
-              <div>
+              <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.songTotalDuration }}</p>
                 <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatDuration(stats.total_duration) }}</p>
               </div>
-              <div>
+              <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.librarySize }}</p>
                 <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatFileSize(stats.total_file_size) }}</p>
               </div>
-              <div>
+              <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.losslessRatio }}</p>
                 <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ losslessRatio }}%</p>
               </div>
@@ -270,19 +270,19 @@ const losslessRatio = computed(() => {
           </div>
         </section>
 
-        <!-- 总歌曲 + 播放次数 + 最长播放 -->
+        <!-- 总听歌时长 + 播放次数 + 最长播放 -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 100ms;">
-            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.totalSongs }}</p>
-            <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ stats.total_songs }}</p>
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 100ms;">
+            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
           </section>
 
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 200ms;">
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 200ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
             <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
           </section>
 
-          <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up" style="animation-delay: 300ms;">
+          <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 300ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
             <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
             <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
