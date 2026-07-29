@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import SettingsAbout from "../components/settings/SettingsAbout.vue";
 import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
@@ -13,8 +14,34 @@ import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about'>('general');
+type TabId = 'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about';
+const VALID_TABS: TabId[] = ['general', 'theme', 'sidebar', 'desktopLyrics', 'audioOutput', 'toolbox', 'library', 'remoteLibrary', 'plugins', 'shortcuts', 'account', 'about'];
+
+const route = useRoute();
+const router = useRouter();
+
+const initialTab = (() => {
+  const q = route.query.tab as string | undefined;
+  return (q && VALID_TABS.includes(q as TabId)) ? (q as TabId) : 'general';
+})();
+
+const activeTab = ref<TabId>(initialTab);
 const mainRef = ref<HTMLElement | null>(null);
+
+// 支持外部通过 ?tab=xxx 跳转到指定标签
+watch(() => route.query.tab, (q) => {
+  const next = (q as string | undefined) ?? '';
+  if (next && VALID_TABS.includes(next as TabId) && next !== activeTab.value) {
+    activeTab.value = next as TabId;
+  }
+});
+
+// 切换 tab 时同步 URL query，便于分享/刷新保持
+watch(activeTab, (t) => {
+  if (route.query.tab !== t) {
+    void router.replace({ query: { ...route.query, tab: t } });
+  }
+});
 
 watch(activeTab, () => {
   nextTick(() => {
