@@ -52,6 +52,8 @@ const writeMeta = (queueSongMeta: Record<string, Song>) => {
     watchedFolders: [],
     favoritePaths: [],
     favoriteSongMeta: {},
+    recentSongMeta: {},
+    recentOnlineHistory: [],
     queueSongMeta,
     playlists: [],
     settings: {} as any,
@@ -107,5 +109,36 @@ describe('playerStorage: queueSongMeta I/O', () => {
   it('returns empty object for non-object stored value', () => {
     localStorage.setItem(playerStorageKeys.queueSongMeta, JSON.stringify([1, 2, 3]));
     expect(playerStorage.readQueueSongMeta()).toEqual({});
+  });
+
+  it('round-trips recentSongMeta and recentOnlineHistory', () => {
+    const song = makeOnlineSong({ path: 'lx://kg/recent', duration: 321 });
+    playerStorage.writePlayerState({
+      playlistPathKey: 'k_playlist',
+      queuePathKey: 'k_queue',
+      legacyPlaylistKey: 'k_legacy_playlist',
+      legacyQueueKey: 'k_legacy_queue',
+      sourceSongPaths: [],
+      watchedFolders: [],
+      favoritePaths: [],
+      favoriteSongMeta: {},
+      recentSongMeta: { 'lx://kg/recent': song },
+      recentOnlineHistory: [{ path: 'lx://kg/recent', playedAt: 1700000000000 }],
+      queueSongMeta: {},
+      playlists: [],
+      settings: {} as any,
+      playQueuePaths: [],
+      artistCustomOrder: [],
+      albumCustomOrder: [],
+      folderCustomOrder: {},
+      localCustomOrder: [],
+    });
+
+    const meta = playerStorage.readRecentSongMeta();
+    expect(Object.keys(meta)).toEqual(['lx://kg/recent']);
+    expect(meta['lx://kg/recent'].duration).toBe(321);
+
+    const history = playerStorage.readRecentOnlineHistory();
+    expect(history).toEqual([{ path: 'lx://kg/recent', playedAt: 1700000000000 }]);
   });
 });

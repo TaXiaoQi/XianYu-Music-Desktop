@@ -43,6 +43,12 @@ const isPersistedDarkTheme = (settings: PersistedSettings | null) => {
     return true;
   }
 
+  if (theme.mode === 'system') {
+    return typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : false;
+  }
+
   return theme.mode === 'custom' && theme.customBackground?.foregroundStyle === 'light';
 };
 

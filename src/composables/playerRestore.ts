@@ -42,17 +42,43 @@ export const createPlayerRestore = ({
   const playbackStore = usePlaybackStore();
   const { loadCover, retainFullCoverPaths } = useCoverCache();
 
+  const RECENT_HISTORY_LIMIT = 200;
+
+  // 合并后端最近播放（本地歌曲）与前端持久化的在线最近播放：
+  // 按 path 去重、playedAt 取较大值，按 playedAt 降序，截断到上限。
+  const mergeRecentHistory = (
+    primary: HistoryItem[],
+    secondary: HistoryItem[],
+  ): HistoryItem[] => {
+    const merged = new Map<string, number>();
+    [...primary, ...secondary].forEach((item) => {
+      if (!item?.path) {
+        return;
+      }
+      const existing = merged.get(item.path);
+      if (existing === undefined || item.playedAt > existing) {
+        merged.set(item.path, item.playedAt);
+      }
+    });
+
+    return Array.from(merged.entries())
+      .map(([path, playedAt]) => ({ path, playedAt }))
+      .sort((left, right) => right.playedAt - left.playedAt)
+      .slice(0, RECENT_HISTORY_LIMIT);
+  };
+
   const restoreRecentHistory = async () => {
     const legacyHistory = readStoredHistory(keys.legacyPlayerHistory);
+    const onlineHistory = playerStorage.readRecentOnlineHistory();
 
     try {
       const records = await historyApi.getRecentHistory(200);
-      if (records.length > 0) {
-        collectionsStore.setRecentSongs(records
-          .map(record => ({
-            path: record.songPath,
-            playedAt: record.playedAt,
-          })));
+      if (records.length > 0 || onlineHistory.length > 0) {
+        const backendHistory = records.map(record => ({
+          path: record.songPath,
+          playedAt: record.playedAt,
+        }));
+        collectionsStore.setRecentSongs(mergeRecentHistory(backendHistory, onlineHistory));
 
         if (collectionsStore.recentSongs.length > 0) {
           playerStorage.remove(keys.legacyPlayerHistory);
@@ -63,12 +89,14 @@ export const createPlayerRestore = ({
       console.warn('get_recent_history failed:', error);
     }
 
-    if (legacyHistory.length === 0) {
+    if (legacyHistory.length === 0 && onlineHistory.length === 0) {
       collectionsStore.setRecentSongs([]);
       return;
     }
 
-    collectionsStore.setRecentSongs(legacyHistory.slice(0, 200));
+    collectionsStore.setRecentSongs(
+      mergeRecentHistory(legacyHistory, onlineHistory),
+    );
 
     const importedEntries = legacyHistory.map(item => ({
       songPath: item.path,

@@ -33,6 +33,7 @@ import router from '../router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useCollectionsStore } from '../features/collections/store';
+import { useLibraryStore } from '../features/library/store';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
@@ -141,5 +142,62 @@ describe('library collections domain', () => {
     expect(historyApi.clearRecentHistory).toHaveBeenCalledTimes(1);
     expect(playerStorage.remove).toHaveBeenCalled();
     expect(collectionsStore.recentSongs).toEqual([]);
+  });
+
+  it('persists online song metadata into recent history and extra song pool', async () => {
+    const collectionsStore = useCollectionsStore();
+    const libraryStore = useLibraryStore();
+    const { addToHistory } = useLibraryCollections();
+    const onlineSong = makeSong({
+      path: 'lx://kg/abc123',
+      name: 'Online Song',
+      title: 'Online Song',
+      artist: 'Online Artist',
+    });
+
+    await addToHistory(onlineSong);
+
+    expect(collectionsStore.recentSongs.map(item => item.path)).toEqual([onlineSong.path]);
+    expect(collectionsStore.recentSongMeta[onlineSong.path]).toMatchObject({ path: onlineSong.path });
+    expect(libraryStore.getSongByPath(onlineSong.path)).toMatchObject({ path: onlineSong.path });
+    expect(historyApi.addToHistory).toHaveBeenCalledWith(onlineSong.path);
+  });
+
+  it('keeps extra song metadata when a removed recent song is still favorited', async () => {
+    const collectionsStore = useCollectionsStore();
+    const libraryStore = useLibraryStore();
+    const { toggleFavorite, addToHistory, removeFromHistory } = useLibraryCollections();
+    const onlineSong = makeSong({
+      path: 'lx://kg/shared',
+      name: 'Shared Online',
+      title: 'Shared Online',
+      artist: 'Online Artist',
+    });
+
+    expect(toggleFavorite(onlineSong)).toBe(true);
+    await addToHistory(onlineSong);
+    await removeFromHistory([onlineSong.path]);
+
+    // recent 元信息被清理，但仍被收藏，extraSong 不应被误删
+    expect(collectionsStore.recentSongMeta[onlineSong.path]).toBeUndefined();
+    expect(collectionsStore.recentSongs).toEqual([]);
+    expect(libraryStore.getSongByPath(onlineSong.path)).toMatchObject({ path: onlineSong.path });
+  });
+
+  it('drops extra song metadata when a removed recent song is not favorited', async () => {
+    const collectionsStore = useCollectionsStore();
+    const libraryStore = useLibraryStore();
+    const { addToHistory, removeFromHistory } = useLibraryCollections();
+    const onlineSong = makeSong({
+      path: 'lx://kg/orphan',
+      name: 'Orphan Online',
+      title: 'Orphan Online',
+    });
+
+    await addToHistory(onlineSong);
+    await removeFromHistory([onlineSong.path]);
+
+    expect(collectionsStore.recentSongMeta[onlineSong.path]).toBeUndefined();
+    expect(libraryStore.getSongByPath(onlineSong.path)).toBeNull();
   });
 });

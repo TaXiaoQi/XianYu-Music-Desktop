@@ -325,6 +325,7 @@ export function useDesktopLyricsWindowBridge() {
       autoHideWhenPaused: desktopLyricsSettings.autoHideWhenPaused,
       showDoubleLine: desktopLyricsSettings.showDoubleLine,
       enableWordEffect: desktopLyricsSettings.enableWordEffect,
+      enableTextOutline: desktopLyricsSettings.enableTextOutline,
       isLocked: desktopLyricsSettings.isLocked,
       persistLock: desktopLyricsSettings.persistLock,
       colorScheme: desktopLyricsSettings.colorScheme,

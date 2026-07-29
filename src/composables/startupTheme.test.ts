@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyPersistedStartupTheme, shouldApplyStartupThemePaint } from './startupTheme';
 
@@ -89,6 +89,64 @@ describe('startup theme bootstrap', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
     expect(document.documentElement.style.backgroundColor).toBe('#fafafa');
     expect(document.body.style.backgroundColor).toBe('#fafafa');
+  });
+
+  it('applies dark startup paint when persisted theme is system and OS is dark', () => {
+    const matchMediaSpy = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    Object.defineProperty(globalThis, 'window', {
+      value: { matchMedia: matchMediaSpy },
+      configurable: true,
+    });
+
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      theme: {
+        mode: 'system',
+      },
+    }));
+
+    applyPersistedStartupTheme();
+
+    expect(matchMediaSpy).toHaveBeenCalledWith('(prefers-color-scheme: dark)');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.style.backgroundColor).toBe('#121212');
+
+    Object.defineProperty(globalThis, 'window', {
+      value: undefined,
+      configurable: true,
+    });
+  });
+
+  it('applies light startup paint when persisted theme is system and OS is light', () => {
+    const matchMediaSpy = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    Object.defineProperty(globalThis, 'window', {
+      value: { matchMedia: matchMediaSpy },
+      configurable: true,
+    });
+
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      theme: {
+        mode: 'system',
+      },
+    }));
+
+    applyPersistedStartupTheme();
+
+    expect(matchMediaSpy).toHaveBeenCalledWith('(prefers-color-scheme: dark)');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.backgroundColor).toBe('#fafafa');
+
+    Object.defineProperty(globalThis, 'window', {
+      value: undefined,
+      configurable: true,
+    });
   });
 
   it('does not apply startup paint to transparent auxiliary windows', () => {

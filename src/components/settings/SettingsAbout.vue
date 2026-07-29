@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { getVersion } from '@tauri-apps/api/app';
+import { ref } from 'vue';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { APP_VERSION } from '../../../version';
 import ModernModal from '../common/ModernModal.vue';
 import { compareVersions, fetchLatestRelease } from '../../utils/update';
 
@@ -11,7 +11,7 @@ const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 const RELEASES_URL = `${REPO_URL}/releases`;
 const OFFICIAL_SITE_URL = 'https://xy.zh2026.cn/ciyuanxi/';
 
-const appVersion = ref('');
+const appVersion = ref(APP_VERSION);
 const isCheckingUpdate = ref(false);
 
 const dialogVisible = ref(false);
@@ -21,15 +21,6 @@ const dialogConfirmText = ref('确定');
 const dialogCancelText = ref('取消');
 const dialogAction = ref<'close' | 'open-release'>('close');
 const dialogOpenUrl = ref(RELEASES_URL);
-
-async function loadAppVersion() {
-  try {
-    appVersion.value = await getVersion();
-  } catch (error) {
-    console.error('Failed to get version:', error);
-    appVersion.value = 'Unknown';
-  }
-}
 
 function showDialog(options: {
   title: string;
@@ -73,10 +64,6 @@ async function handleCheckUpdate() {
   isCheckingUpdate.value = true;
 
   try {
-    if (!appVersion.value) {
-      await loadAppVersion();
-    }
-
     const latestRelease = await fetchLatestRelease(REPO_OWNER, REPO_NAME);
 
     const comparison = compareVersions(latestRelease.version, appVersion.value);
@@ -132,14 +119,10 @@ async function handleDialogConfirm() {
     await openUrl(dialogOpenUrl.value);
   }
 }
-
-onMounted(() => {
-  void loadAppVersion();
-});
 </script>
 
 <template>
-  <div class="flex h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in zoom-in-95 duration-300">
+  <div class="flex min-h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in zoom-in-95 duration-300">
     <div class="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-[clamp(16px,3vh,32px)]">
       <div class="flex min-w-0 flex-col items-center gap-[clamp(10px,2vh,24px)] text-center">
       <div class="flex items-center justify-center">
