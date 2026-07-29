@@ -232,6 +232,7 @@ import {
   type LxSearchResultItem,
   type LxSourceId,
 } from '../services/lxMusicSdk';
+import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
 import { getStoredPlugins, pluginSearch, pluginGetMusicInfo } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult } from '../types';
@@ -549,7 +550,7 @@ const handlePlaySong = (item: LxSearchResultItem) => {
     album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: 0,
+    duration: parseIntervalToSeconds(item.interval),
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
@@ -656,7 +657,7 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
     album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: 0,
+    duration: parseIntervalToSeconds(item.interval),
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
