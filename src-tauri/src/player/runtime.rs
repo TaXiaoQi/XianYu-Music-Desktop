@@ -257,9 +257,14 @@ struct RemoteRangeReader {
 impl RemoteRangeReader {
     fn new(source: RemoteStreamSource) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(300))
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .gzip(true)
+            .brotli(true)
+            .deflate(true)
             .build()
             .map_err(|error| error.to_string())?;
+        // content_len 失败时不阻塞，返回 None 继续播放
         let len = Self::content_len(&client, &source);
         Ok(Self {
             client,
@@ -332,7 +337,15 @@ impl RemoteRangeReader {
     }
 
     fn content_len(client: &reqwest::blocking::Client, source: &RemoteStreamSource) -> Option<u64> {
-        if let Ok(response) = Self::auth(client.head(&source.url), source).send() {
+        // 使用更短的超时，避免 B站 CDN 不响应 HEAD 请求时卡死
+        let timeout_client = match reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .gzip(true)
+            .build() {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+        if let Ok(response) = Self::auth(timeout_client.head(&source.url), source).send() {
             if response.status().is_success() {
                 if let Some(length) = Self::content_length_header(&response) {
                     return Some(length);

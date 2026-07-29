@@ -101,7 +101,9 @@ async function tauriAdapter(config: any): Promise<any> {
       throw new Error(`Invalid URL: ${url || '(empty)'}`);
     }
 
+    log(`[tauriAdapter] ${method} ${url.substring(0, 120)}, headers=${JSON.stringify(headers).substring(0, 200)}`);
     const response = await pluginApi.pluginHttpRequest(method, url, headers, body);
+    log(`[tauriAdapter] 响应: status=${response.status}, bodyLen=${response.body?.length ?? 0}, bodyPreview=${response.body?.substring(0, 200) ?? ''}`);
 
     let responseData: any;
     try {
@@ -380,7 +382,7 @@ export async function loadPluginFromScript(
       // 第二次 (args) 执行内层函数，传入 require/module/exports 等参数
       _instance = Function(
         `'use strict';
-        return function(require, __musicfree_require, module, exports, console, env, URL, process) {
+        return function(require, __musicfree_require, module, exports, console, env, URL, process, fetch) {
           ${script}
         }
       `,
@@ -393,6 +395,7 @@ export async function loadPluginFromScript(
         env,
         URL,
         _process,
+        proxyFetch,
       );
 
       // 与 MusicFree 第950~955行完全一致
@@ -517,9 +520,11 @@ export async function pluginSearch(
     const searchType = inst.instance.defaultSearchType
       ?? inst.instance.supportedSearchType?.[0]
       ?? 'music';
+    log(`[pluginSearch] ${source.name} searchType=${searchType}, 开始调用 search()`);
 
     // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
     const result = (await inst.instance.search(keyword, page, searchType)) ?? {};
+    log(`[pluginSearch] ${source.name} search 返回: type=${typeof result}, keys=${result ? Object.keys(result).join(',') : 'null'}, dataIsArray=${Array.isArray(result?.data)}, dataLen=${result?.data?.length ?? 0}`);
 
     // 与 MusicFree PluginMethodsWrapper.search() 第177~189行一致
     if (Array.isArray(result.data)) {
@@ -867,7 +872,11 @@ function toPluginSearchResult(item: any, source: PluginSource): PluginSearchResu
   const title = item.title || item.name || item.songname || '';
   const artist = extractArtist(item);
   const album = extractAlbum(item);
-  const coverUrl = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
+  let coverUrl = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
+  // B站 CDN 图片需要 HTTPS + 避免 Referer 403
+  if (coverUrl && coverUrl.startsWith('http://') && (coverUrl.includes('hdslb.com') || coverUrl.includes('bilivideo.com') || coverUrl.includes('bilibili.com'))) {
+    coverUrl = coverUrl.replace('http://', 'https://');
+  }
   const duration = parseDuration(item.duration || item.interval);
 
   return {
