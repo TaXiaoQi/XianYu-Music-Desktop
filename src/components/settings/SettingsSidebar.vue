@@ -61,9 +61,31 @@ const restoreDefaultOrder = () => {
 // 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
 const draggingIndex = ref<number | null>(null);
 const listRef = ref<HTMLElement | null>(null);
+const scrollContainer = ref<HTMLElement | null>(null);
+let latestPointerY = 0;
+let autoScrollFrame: number | null = null;
 
-/** 根据指针 Y 坐标推导应插入的目标索引 */
-const resolveTargetIndex = (clientY: number): number | null => {
+const AUTO_SCROLL_EDGE_SIZE = 80;
+const AUTO_SCROLL_MAX_SPEED = 8;
+
+/** 查找列表所在的纵向滚动容器 */
+const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+  let current = element.parentElement;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+};
+
+/**
+ * 根据指针位置和当前拖拽索引推导目标索引。
+ * 只在越过相邻项中线后换位，避免列表重排后指针反向命中原位置而抖动。
+ */
+const resolveTargetIndex = (clientY: number, currentIndex: number): number | null => {
   const listEl = listRef.value;
   if (!listEl) return null;
 
@@ -72,29 +94,88 @@ const resolveTargetIndex = (clientY: number): number | null => {
   );
   if (rows.length === 0) return null;
 
-  for (let i = 0; i < rows.length; i++) {
+  let target = currentIndex;
+
+  for (let i = currentIndex - 1; i >= 0; i--) {
     const rect = rows[i].getBoundingClientRect();
-    if (clientY < rect.top + rect.height / 2) {
-      return i;
-    }
+    if (clientY < rect.top + rect.height / 2) target = i;
+    else break;
   }
-  return rows.length - 1;
+
+  if (target !== currentIndex) return target;
+
+  for (let i = currentIndex + 1; i < rows.length; i++) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY > rect.top + rect.height / 2) target = i;
+    else break;
+  }
+
+  return target;
+};
+
+const updateDraggedItemPosition = (clientY: number) => {
+  const currentIndex = draggingIndex.value;
+  if (currentIndex === null) return;
+
+  const target = resolveTargetIndex(clientY, currentIndex);
+  if (target === null || target === currentIndex) return;
+
+  moveItem(currentIndex, target);
+  // 实时重排后，被拖拽项已移动到新位置
+  draggingIndex.value = target;
+};
+
+/** 指针靠近滚动区域边缘时，持续滚动并同步更新拖拽位置 */
+const runAutoScroll = () => {
+  autoScrollFrame = null;
+  if (draggingIndex.value === null) return;
+
+  const container = scrollContainer.value;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  let speed = 0;
+
+  if (latestPointerY < rect.top + AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (rect.top + AUTO_SCROLL_EDGE_SIZE - latestPointerY) / AUTO_SCROLL_EDGE_SIZE);
+    speed = -AUTO_SCROLL_MAX_SPEED * intensity;
+  } else if (latestPointerY > rect.bottom - AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (latestPointerY - (rect.bottom - AUTO_SCROLL_EDGE_SIZE)) / AUTO_SCROLL_EDGE_SIZE);
+    speed = AUTO_SCROLL_MAX_SPEED * intensity;
+  }
+
+  if (speed === 0) return;
+
+  const previousScrollTop = container.scrollTop;
+  container.scrollTop += speed;
+  if (container.scrollTop !== previousScrollTop) {
+    updateDraggedItemPosition(latestPointerY);
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
+};
+
+const scheduleAutoScroll = () => {
+  if (autoScrollFrame === null) {
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
 };
 
 const handlePointerMove = (event: PointerEvent) => {
   if (draggingIndex.value === null) return;
   event.preventDefault();
 
-  const target = resolveTargetIndex(event.clientY);
-  if (target === null || target === draggingIndex.value) return;
-
-  moveItem(draggingIndex.value, target);
-  // 实时重排后，被拖拽项已移动到新位置
-  draggingIndex.value = target;
+  latestPointerY = event.clientY;
+  updateDraggedItemPosition(event.clientY);
+  scheduleAutoScroll();
 };
 
 const stopDragging = () => {
   draggingIndex.value = null;
+  scrollContainer.value = null;
+  if (autoScrollFrame !== null) {
+    cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
   window.removeEventListener('pointermove', handlePointerMove);
   window.removeEventListener('pointerup', stopDragging);
   window.removeEventListener('pointercancel', stopDragging);
@@ -106,6 +187,8 @@ const startDragging = (index: number, event: PointerEvent) => {
   event.preventDefault();
 
   draggingIndex.value = index;
+  latestPointerY = event.clientY;
+  scrollContainer.value = listRef.value ? findScrollContainer(listRef.value) : null;
   window.addEventListener('pointermove', handlePointerMove, { passive: false });
   window.addEventListener('pointerup', stopDragging);
   window.addEventListener('pointercancel', stopDragging);
@@ -143,16 +226,17 @@ onUnmounted(stopDragging);
           </div>
         </div>
 
-        <!-- 可排序项 -->
-        <div
-          v-for="(item, index) in orderedItems"
-          :key="item.key"
-          data-sidebar-row
-          class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 transition-colors"
-          :class="draggingIndex === index
-            ? 'bg-[#EC4141]/10 ring-1 ring-inset ring-[#EC4141]/30'
-            : 'hover:bg-white/40 dark:hover:bg-white/10'"
-        >
+        <!-- 可排序项：TransitionGroup 使用 FLIP 动画平滑移动重排项 -->
+        <TransitionGroup name="sidebar-sort" tag="div" class="flex flex-col">
+          <div
+            v-for="(item, index) in orderedItems"
+            :key="item.key"
+            data-sidebar-row
+            class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 transition-colors"
+            :class="draggingIndex === index
+              ? 'bg-[#EC4141]/10 ring-1 ring-inset ring-[#EC4141]/30'
+              : 'hover:bg-white/40 dark:hover:bg-white/10'"
+          >
           <div class="flex min-w-0 items-center gap-3">
             <GripVertical
               class="h-4 w-4 shrink-0 touch-none select-none text-gray-400 transition-colors hover:text-[#EC4141] dark:text-white/35"
@@ -235,7 +319,8 @@ onUnmounted(stopDragging);
               />
             </button>
           </div>
-        </div>
+          </div>
+        </TransitionGroup>
       </div>
 
       <div class="flex justify-end">
@@ -253,6 +338,17 @@ onUnmounted(stopDragging);
 </template>
 
 <style scoped>
+.sidebar-sort-move {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-sort-move {
+    transition: none;
+  }
+}
+
 .settings-sidebar-move {
   display: inline-flex;
   height: 26px;
