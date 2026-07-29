@@ -6,6 +6,7 @@ import '@applemusic-like-lyrics/core/style.css'
 import App from './App.vue'
 import router from './router'
 import { applyPersistedStartupTheme, shouldApplyStartupThemePaint } from './composables/startupTheme'
+import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 
 const currentWindowLabel = (() => {
   try {
@@ -43,6 +44,34 @@ const formatError = (error: unknown) => {
   }
 }
 
+const DYNAMIC_IMPORT_RELOAD_KEY = 'lycia_dynamic_import_reload'
+
+/**
+ * 开发服务器热更新或应用升级后，旧分包地址可能瞬时失效。
+ * 对这类错误自动刷新一次；冷却时间内再次失败则交给致命错误页，避免刷新循环。
+ */
+const recoverDynamicImportError = createDynamicImportRecovery({
+  getLastReloadAt: () => {
+    try {
+      return Number(sessionStorage.getItem(DYNAMIC_IMPORT_RELOAD_KEY) ?? 0)
+    } catch {
+      return 0
+    }
+  },
+  setLastReloadAt: (value) => {
+    try {
+      sessionStorage.setItem(DYNAMIC_IMPORT_RELOAD_KEY, String(value))
+    } catch {
+      // 当前运行周期状态仍可阻止同一错误从多个通道重复处理。
+    }
+  },
+  reload: () => window.location.reload(),
+  schedule: (callback, delay) => {
+    console.warn('动态模块加载失败，正在刷新应用以恢复。')
+    window.setTimeout(callback, delay)
+  },
+})
+
 const showFatalError = (title: string, error: unknown) => {
   const message = formatError(error)
   console.error(title, error)
@@ -73,16 +102,26 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 app.config.errorHandler = (error, _instance, info) => {
+  if (recoverDynamicImportError(error)) return
   showFatalError(`前端运行错误: ${info}`, error)
 }
 
 document.addEventListener('contextmenu', (e) => e.preventDefault())
 
 window.addEventListener('error', (event) => {
-  showFatalError('窗口脚本错误', event.error ?? event.message)
+  const error = event.error ?? event.message
+  if (recoverDynamicImportError(error)) {
+    event.preventDefault()
+    return
+  }
+  showFatalError('窗口脚本错误', error)
 })
 
 window.addEventListener('unhandledrejection', (event) => {
+  if (recoverDynamicImportError(event.reason)) {
+    event.preventDefault()
+    return
+  }
   showFatalError('未处理的异步错误', event.reason)
 })
 
