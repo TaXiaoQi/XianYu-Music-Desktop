@@ -52,7 +52,7 @@ const tabs = [
     </aside>
 
     <main :class="activeTab === 'about' ? 'relative h-full min-w-0 flex-1 overflow-hidden px-10 py-10 xl:px-16' : 'custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16'">
-      <div class="w-full pb-16">
+      <div :class="activeTab === 'about' ? 'h-full w-full' : 'w-full pb-16'">
         <transition name="settings-tab" mode="out-in">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
