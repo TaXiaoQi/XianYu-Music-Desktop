@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, Download, Eye, EyeOff, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -72,8 +72,11 @@ const QUALITY_OPTIONS = [
 
 const currentQuality = ref('标准');
 const showQualityMenu = ref(false);
+const qualityButtonRef = ref<HTMLElement | null>(null);
+const qualityMenuRef = ref<HTMLElement | null>(null);
 
-const toggleQualityMenu = () => {
+const toggleQualityMenu = (e: MouseEvent) => {
+  e.stopPropagation();
   showQualityMenu.value = !showQualityMenu.value;
 };
 
@@ -227,6 +230,13 @@ const showEqPanel = ref(false);
 const eqButtonRef = ref<HTMLElement | null>(null);
 const eqPanelRef = ref<HTMLElement | null>(null);
 
+// --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
+const showFooterTools = ref(false);
+const footerToolsRef = ref<HTMLElement | null>(null);
+const toggleFooterTools = () => {
+  showFooterTools.value = !showFooterTools.value;
+};
+
 const { settings } = useSettings();
 
 watch(
@@ -248,6 +258,11 @@ const handleWindowClick = (e: MouseEvent) => {
   if (showEqPanel.value && eqPanelRef.value && eqButtonRef.value) {
     if (!eqPanelRef.value.contains(target) && !eqButtonRef.value.contains(target)) {
       showEqPanel.value = false;
+    }
+  }
+  if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
+    if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
+      showQualityMenu.value = false;
     }
   }
 };
@@ -455,19 +470,6 @@ onUnmounted(() => {
       <button
         v-if="showPlayerDetail"
         @mousedown.stop
-        @click.stop="handleDownloadClick"
-        class="flex items-center justify-center transition-colors"
-        :class="isOnlineSong
-          ? 'text-white/60 hover:text-white cursor-pointer'
-          : 'text-white/30 cursor-not-allowed'"
-        :title="isOnlineSong ? '下载歌曲' : '本地歌曲无法下载'"
-      >
-        <Download class="h-5 w-5" />
-      </button>
-
-      <button
-        v-if="showPlayerDetail"
-        @mousedown.stop
         @click.stop="toggleLyricsPlayerSettings"
         class="flex items-center justify-center text-base font-semibold tracking-[0.02em] transition-colors"
         :class="showLyricsPlayerSettingsPanel
@@ -526,6 +528,7 @@ onUnmounted(() => {
       <!-- 音质选择按钮 -->
       <div class="relative flex items-center justify-center h-full z-[70]">
         <button
+          ref="qualityButtonRef"
           @click="toggleQualityMenu"
           class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
           :class="showQualityMenu
@@ -533,8 +536,35 @@ onUnmounted(() => {
             : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
           title="音质选择"
         >
+          <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
           <span class="whitespace-nowrap">{{ currentQuality }}</span>
         </button>
+
+        <transition name="fade-scale">
+          <div
+            v-if="showQualityMenu"
+            ref="qualityMenuRef"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+          >
+            <div
+              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+            >
+              <button
+                v-for="opt in QUALITY_OPTIONS"
+                :key="opt.value"
+                @click="selectQuality(opt.label)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                :class="currentQuality === opt.label
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+          </div>
+        </transition>
       </div>
 
       <div 
@@ -581,71 +611,111 @@ onUnmounted(() => {
         </button>
       </div>
 
+      <!-- 在线歌曲下载：位于更多工具与音量设置之间 -->
       <button
-        v-if="showPlayerDetail"
-        @click="toggleProgressVisibility"
-        :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isProgressHidden ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
-        :title="isProgressHidden ? '显示进度条' : '隐藏进度条'"
+        @mousedown.stop
+        @click.stop="handleDownloadClick"
+        class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
+        :class="isOnlineSong
+          ? (showPlayerDetail
+            ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+            : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+          : (showPlayerDetail
+            ? 'text-white/30 cursor-not-allowed'
+            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')"
+        :title="isOnlineSong ? '下载歌曲' : '本地歌曲无法下载'"
       >
-        <EyeOff v-if="isProgressHidden" class="h-4 w-4" :stroke-width="2.2" />
-        <Eye v-else class="h-4 w-4" :stroke-width="2.2" />
+        <Download class="h-5 w-5" />
       </button>
 
-      <button
-        v-if="showPlayerDetail"
-        @click="toggleVisualizer"
-        :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isVisualizerEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
-        :title="isVisualizerEnabled ? '关闭可视化' : '开启可视化'"
-      >
-        <AudioLines class="h-4 w-4" :stroke-width="2.2" />
-      </button>
-      
-      <button 
-        @click="toggleLyrics"
-        :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-        title="桌面歌词"
-      >
-        词
-      </button>
-
-      <!-- 均衡器按钮与弹出面板 -->
-      <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center h-full z-[70]">
-        <button 
-          ref="eqButtonRef"
-          @click="toggleEqPanel"
-          :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-          title="均衡器 (EQ)"
-        >
-          <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
-        </button>
-
-        <transition name="fade-scale">
-          <div 
-            v-if="showEqPanel"
-            ref="eqPanelRef"
-            class="absolute bottom-full right-[-10px] pb-4.5 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
+      <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/桌面歌词/均衡器/固定） -->
+      <div ref="footerToolsRef" class="relative flex items-center justify-center h-full z-[70]">
+        <transition name="footer-tools">
+          <div
+            v-if="showFooterTools"
+            class="absolute bottom-full right-0 pb-3 flex flex-col items-center gap-2 z-[75]"
           >
-            <!-- 极富流动感、平滑贝塞尔圆弧的气泡指引尾巴 -->
-            <svg width="32" height="10" viewBox="0 0 32 10" class="absolute bottom-[9px] right-[10px] text-[#FFFFFF] dark:text-[#1E1E1E] fill-current z-[81] overflow-visible">
-              <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0 Z" />
-              <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="1" />
-            </svg>
-            
-            <EqualizerPanel />
+            <button
+              v-if="showPlayerDetail"
+              @click="toggleProgressVisibility"
+              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isProgressHidden ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
+              :title="isProgressHidden ? '显示进度条' : '隐藏进度条'"
+            >
+              <EyeOff v-if="isProgressHidden" class="h-4 w-4" :stroke-width="2.2" />
+              <Eye v-else class="h-4 w-4" :stroke-width="2.2" />
+            </button>
+
+            <button
+              v-if="showPlayerDetail"
+              @click="toggleVisualizer"
+              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isVisualizerEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
+              :title="isVisualizerEnabled ? '关闭可视化' : '开启可视化'"
+            >
+              <AudioLines class="h-4 w-4" :stroke-width="2.2" />
+            </button>
+
+            <button
+              @click="toggleLyrics"
+              :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+              title="桌面歌词"
+            >
+              词
+            </button>
+
+            <!-- 均衡器按钮与弹出面板 -->
+            <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center z-[70]">
+              <button
+                ref="eqButtonRef"
+                @click="toggleEqPanel"
+                :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+                title="均衡器 (EQ)"
+              >
+                <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
+              </button>
+
+              <transition name="fade-scale">
+                <div
+                  v-if="showEqPanel"
+                  ref="eqPanelRef"
+                  class="absolute bottom-full right-[-10px] pb-4.5 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
+                >
+                  <!-- 极富流动感、平滑贝塞尔圆弧的气泡指引尾巴 -->
+                  <svg width="32" height="10" viewBox="0 0 32 10" class="absolute bottom-[9px] right-[10px] text-[#FFFFFF] dark:text-[#1E1E1E] fill-current z-[81] overflow-visible">
+                    <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0 Z" />
+                    <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="1" />
+                  </svg>
+
+                  <EqualizerPanel />
+                </div>
+              </transition>
+            </div>
+
+            <button @click="togglePin"
+              class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+              :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+              :title="isPinned ? '取消固定 (当前已常驻)' : '固定状态栏 (当前离开后消失)'"
+            >
+              <!-- 已固定：完整图钉 -->
+              <svg v-if="isPinned" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+              <!-- 未固定：带取消斜线的图钉 -->
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0-1.16.37"/></svg>
+            </button>
           </div>
         </transition>
-      </div>
 
-      <button @click="togglePin"
-        class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
-        :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
-        :title="isPinned ? '取消固定 (当前已常驻)' : '固定状态栏 (当前离开后消失)'"
-      >
-        <!-- 已固定：完整图钉 -->
-        <svg v-if="isPinned" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-        <!-- 未固定：带取消斜线的图钉 -->
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0-1.16.37"/></svg>
-      </button>
+        <!-- 触发按钮：^，展开后翻转为开口向上 -->
+        <button
+          @click="toggleFooterTools"
+          :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showFooterTools ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+          :title="showFooterTools ? '收起工具' : '更多工具'"
+        >
+          <ChevronUp
+            class="h-4 w-4 transition-transform duration-300 ease-out"
+            :class="showFooterTools ? 'rotate-180' : ''"
+            :stroke-width="2.2"
+          />
+        </button>
+      </div>
     </div>
         <FooterContextMenu 
 
@@ -665,51 +735,6 @@ onUnmounted(() => {
 
       </footer>
 
-      <!-- 音质选择弹窗 -->
-      <Teleport to="body">
-        <transition name="quality-modal">
-          <div
-            v-if="showQualityMenu"
-            class="fixed inset-0 z-[9999] flex items-center justify-center"
-            @click.self="showQualityMenu = false"
-          >
-            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
-            <div
-              class="relative w-[300px] rounded-2xl border shadow-2xl p-2 transition-colors"
-              :class="showPlayerDetail
-                ? 'bg-[#1c1c1c]/95 border-white/10'
-                : 'bg-white/95 dark:bg-zinc-900/95 border-gray-100 dark:border-white/10'"
-            >
-              <div
-                class="px-3 py-2.5 text-[13px] font-semibold transition-colors"
-                :class="showPlayerDetail ? 'text-white/90' : 'text-gray-700 dark:text-white/90'"
-              >
-                音质选择
-              </div>
-              <div class="flex flex-col gap-1">
-                <button
-                  v-for="opt in QUALITY_OPTIONS"
-                  :key="opt.value"
-                  @click="selectQuality(opt.label)"
-                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] font-medium rounded-lg transition-colors select-none"
-                  :class="currentQuality === opt.label
-                    ? 'text-[#EC4141] bg-[#EC4141]/10'
-                    : (showPlayerDetail
-                      ? 'text-white/75 hover:text-white hover:bg-white/8'
-                      : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
-                >
-                  <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                  <span
-                    v-if="currentQuality === opt.label"
-                    class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"
-                  ></span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </transition>
-      </Teleport>
-
     </template>
 
 <style scoped>
@@ -725,25 +750,25 @@ onUnmounted(() => {
   transform: translateY(6px) scale(0.85);
 }
 
-/* 音质选择弹窗进入与离开动画：遮罩淡入 + 内容缩放放大 */
-.quality-modal-enter-active,
-.quality-modal-leave-active {
-  transition: opacity 0.25s ease;
+/* 底栏工具收纳：向上展开/折叠，带模糊过渡 */
+.footer-tools-enter-active,
+.footer-tools-leave-active {
+  transition: opacity 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 0.28s ease;
 }
 
-.quality-modal-enter-active > div:last-child,
-.quality-modal-leave-active > div:last-child {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
-}
-
-.quality-modal-enter-from,
-.quality-modal-leave-to {
+.footer-tools-enter-from,
+.footer-tools-leave-to {
   opacity: 0;
+  transform: translateY(12px) scale(0.9);
+  filter: blur(6px);
 }
 
-.quality-modal-enter-from > div:last-child,
-.quality-modal-leave-to > div:last-child {
-  opacity: 0;
-  transform: scale(0.92) translateY(8px);
+.footer-tools-enter-to,
+.footer-tools-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
 }
 </style>

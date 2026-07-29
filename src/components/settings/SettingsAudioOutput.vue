@@ -172,10 +172,10 @@ const idmCompatDialogContent = [
       <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="desktop-setting-row rounded-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">IDM 兼容模式</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">兼容播放模式</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              若安装了 IDM 等下载工具且在线歌曲播放异常（无声、卡住、被弹出下载），可开启此项。
-              开启后会先把整首歌取回本地再播放，起播略慢。
+              在线歌曲默认由内置音频内核播放（支持频谱、均衡器）。若某些歌曲播放异常（无声、卡住、
+              被下载工具弹窗），可开启此项改用浏览器播放：先把整首歌取回本地再播，起播略慢且没有频谱与均衡器。
             </div>
           </div>
           <div class="flex items-center gap-3">
