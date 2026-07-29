@@ -53,6 +53,8 @@ watch(activeTab, () => {
 
 const tabs = [
   { id: 'general', name: '常规' },
+  { id: 'account', name: '账号' },
+  { id: 'plugins', name: '插件' },
   { id: 'theme', name: '外观' },
   { id: 'sidebar', name: '侧边栏管理' },
   { id: 'desktopLyrics', name: '桌面歌词' },
@@ -61,8 +63,6 @@ const tabs = [
   { id: 'library', name: '本地音乐库' },
   { id: 'remoteLibrary', name: '远程音乐库' },
   { id: 'shortcuts', name: '快捷键' },
-  { id: 'plugins', name: '插件' },
-  { id: 'account', name: '账号' },
   { id: 'about', name: '关于' },
 ];
 </script>
@@ -91,6 +91,8 @@ const tabs = [
       <div class="w-full pb-16">
         <transition name="settings-tab" mode="out-in">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
+          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
+          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsSidebar v-else-if="activeTab === 'sidebar'" key="sidebar" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
@@ -98,9 +100,7 @@ const tabs = [
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" key="remoteLibrary" />
-          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
-          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
 
           <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
