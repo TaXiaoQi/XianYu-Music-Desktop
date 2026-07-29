@@ -195,6 +195,22 @@ export async function readPluginFile(path: string): Promise<string> {
   return invoke<string>('read_plugin_file', { path });
 }
 
+/**
+ * 通过后端 HTTP 代理获取远程插件脚本
+ * 用于 ensurePluginInstance 加载远程 URL 插件
+ */
+export async function fetchPluginUrl(url: string): Promise<string> {
+  // 完全对齐 YinDongMusic: 只传 method 和 url
+  const resp = await invoke<{ status: number; body: string }>('plugin_http_request', {
+    method: 'GET',
+    url,
+  });
+  if (resp.status < 200 || resp.status >= 300) {
+    throw new Error(`HTTP ${resp.status}`);
+  }
+  return resp.body;
+}
+
 export const pluginApi = {
   getInstalledPlugins,
   pluginSearch,
@@ -202,4 +218,5 @@ export const pluginApi = {
   getPluginTrackUrl,
   pluginHttpRequest,
   readPluginFile,
+  fetchPluginUrl,
 };

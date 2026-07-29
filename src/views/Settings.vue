@@ -5,6 +5,7 @@ import SettingsAccount from "../components/settings/SettingsAccount.vue";
 import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
 import SettingsGeneral from "../components/settings/SettingsGeneral.vue";
 import SettingsLibrary from "../components/settings/SettingsLibrary.vue";
+import SettingsPlugins from "../components/settings/SettingsPlugins.vue";
 import SettingsRemoteLibrary from "../components/settings/SettingsRemoteLibrary.vue";
 import SettingsShortcuts from "../components/settings/SettingsShortcuts.vue";
 import SettingsSidebar from "../components/settings/SettingsSidebar.vue";
@@ -12,7 +13,7 @@ import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'shortcuts' | 'account' | 'about'>('general');
+const activeTab = ref<'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about'>('general');
 
 const tabs = [
   { id: 'general', name: '常规' },
@@ -24,6 +25,7 @@ const tabs = [
   { id: 'library', name: '本地音乐库' },
   { id: 'remoteLibrary', name: '远程音乐库' },
   { id: 'shortcuts', name: '快捷键' },
+  { id: 'plugins', name: '插件' },
   { id: 'account', name: '账号' },
   { id: 'about', name: '关于' },
 ];
@@ -51,26 +53,44 @@ const tabs = [
 
     <main :class="activeTab === 'about' ? 'relative h-full min-w-0 flex-1 overflow-hidden px-10 py-10 xl:px-16' : 'custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16'">
       <div class="w-full pb-16">
-        <SettingsGeneral v-if="activeTab === 'general'" />
-        <SettingsTheme v-else-if="activeTab === 'theme'" />
-        <SettingsSidebar v-else-if="activeTab === 'sidebar'" />
-        <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" />
-        <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" />
-        <SettingsToolbox v-else-if="activeTab === 'toolbox'" />
-        <SettingsLibrary v-else-if="activeTab === 'library'" />
-        <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" />
-        <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
-        <SettingsAccount v-else-if="activeTab === 'account'" />
-        <SettingsAbout v-else-if="activeTab === 'about'" />
+        <transition name="settings-tab" mode="out-in">
+          <SettingsGeneral v-if="activeTab === 'general'" key="general" />
+          <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
+          <SettingsSidebar v-else-if="activeTab === 'sidebar'" key="sidebar" />
+          <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
+          <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
+          <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
+          <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
+          <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" key="remoteLibrary" />
+          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
+          <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
+          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
+          <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
 
-        <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
-          <div class="text-4xl opacity-50">施工中</div>
-          <div>当前设置模块正在整理中。</div>
-        </div>
+          <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
+            <div class="text-4xl opacity-50">施工中</div>
+            <div>当前设置模块正在整理中。</div>
+          </div>
+        </transition>
       </div>
     </main>
   </div>
 </template>
 
 <style scoped>
+/* 设置页切换动画：旧面板淡出+轻微下移，新面板淡入+轻微上移 */
+.settings-tab-enter-active,
+.settings-tab-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.settings-tab-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.settings-tab-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
 </style>

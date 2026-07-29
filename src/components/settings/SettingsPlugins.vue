@@ -94,17 +94,45 @@ async function handleInstallFromUrl() {
 
   isPluginBusy.value = true;
   try {
-    // 通过后端 HTTP 代理获取插件脚本
-    const { pluginApi } = await import('../../services/tauri/pluginApi');
-    const resp = await pluginApi.pluginHttpRequest('GET', url, {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': '*/*',
-    }, undefined, 15000);
-    if (resp.status < 200 || resp.status >= 300 || !resp.body) {
-      showToast(`下载失败: HTTP ${resp.status}`, 'error');
+    // 先尝试浏览器 fetch（Tauri WebView 不受部分 CORS 限制）
+    let content = '';
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': '*/*' },
+      });
+      if (resp.ok) content = await resp.text();
+    } catch { /* ignore, try Tauri backend */ }
+
+    // 回退到 Tauri 后端代理
+    if (!content) {
+      const { pluginApi } = await import('../../services/tauri/pluginApi');
+      content = await pluginApi.fetchPluginUrl(url);
+    }
+
+    if (!content || !content.trim()) {
+      showToast('获取链接内容失败，请检查 URL 是否正确', 'error');
       return;
     }
-    await installPluginFromScript(resp.body, url);
+
+    // [批量导入] 检测是否为多插件 JSON 格式
+    // MusicFree 插件集合: { "plugins": [{ "name": "...", "url": "...", "version": "..." }] }
+    const trimmed = content.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const json = JSON.parse(trimmed);
+        const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
+        if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
+          await importMultiplePlugins(pluginList);
+          installUrl.value = '';
+          showInstallFromUrlDialog.value = false;
+          return;
+        }
+      } catch { /* 不是有效 JSON，当作普通脚本处理 */ }
+    }
+
+    // 单个插件导入
+    await installPluginFromScript(content, url);
     installUrl.value = '';
     showInstallFromUrlDialog.value = false;
   } catch (e: any) {
@@ -114,27 +142,69 @@ async function handleInstallFromUrl() {
   }
 }
 
+/** 批量导入多插件 JSON 中的所有插件 */
+async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) {
+  const { loadPluginFromScript } = await import('../../services/pluginEngine');
+  const { pluginApi } = await import('../../services/tauri/pluginApi');
+  let successCount = 0;
+  let failCount = 0;
+  const names: string[] = [];
+
+  for (const item of pluginList) {
+    if (!item.url) continue;
+    try {
+      // 下载单个插件脚本
+      let script = '';
+      try {
+        const resp = await fetch(item.url, { headers: { 'Accept': '*/*' } });
+        if (resp.ok) script = await resp.text();
+      } catch { /* ignore */ }
+
+      if (!script) {
+        try { script = await pluginApi.fetchPluginUrl(item.url); } catch { /* ignore */ }
+      }
+
+      if (!script || !script.trim()) {
+        failCount++;
+        continue;
+      }
+
+      const source = await loadPluginFromScript(script, item.url);
+      if (source) {
+        if (item.name) source.name = item.name;
+        if (item.version) source.version = item.version;
+        addPluginSource(source);
+        names.push(source.name);
+        successCount++;
+      } else {
+        failCount++;
+      }
+    } catch {
+      failCount++;
+    }
+  }
+
+  refreshPluginList();
+  if (successCount > 0) {
+    showToast(`成功导入 ${successCount} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`, 'success');
+  } else {
+    showToast(`所有插件导入失败 (${failCount} 个)`, 'error');
+  }
+}
+
 // ==================== 核心安装逻辑 ====================
 
 async function installPluginFromScript(script: string, filePath: string) {
-  // 检测插件格式
-  if (isLxPluginScript(script)) {
-    // 落雪 LX 插件
-    const scriptInfo = parseLxScriptInfo(script);
-    showToast(`正在加载落雪插件: ${scriptInfo.name || filePath}…`, 'info');
-
-    const source = await loadLxPluginFromScript(script, filePath);
-    if (!source) {
-      showToast('插件加载失败', 'error');
-      return;
-    }
-    addPluginSource(source);
-    refreshPluginList();
-    showToast(`成功安装插件: ${source.name}`, 'success');
-  } else {
-    // 暂不支持 MusicFree 格式
-    showToast('暂不支持此插件格式，仅支持落雪(LX)插件', 'error');
+  // 使用 pluginEngine 的 loadPluginFromScript，自动检测格式（LX 或 MusicFree）
+  const { loadPluginFromScript } = await import('../../services/pluginEngine');
+  const source = await loadPluginFromScript(script, filePath);
+  if (!source) {
+    showToast('插件加载失败', 'error');
+    return;
   }
+  addPluginSource(source);
+  refreshPluginList();
+  showToast(`成功安装插件: ${source.name} (${source.format === 'lx' ? '落雪' : 'MusicFree'})`, 'success');
 }
 
 // ==================== 插件管理 ====================
