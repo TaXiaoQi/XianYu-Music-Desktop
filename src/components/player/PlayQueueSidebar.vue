@@ -119,8 +119,8 @@ watch(
             v-for="(song, index) in playQueue"
             :key="song.path + index"
             :ref="el => setItemRef(el, index)"
-            @click="playSong(song)"
-            class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-pointer transition-all duration-200 border"
+            @dblclick="playSong(song)"
+            class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border"
             :class="[
               currentSong?.path === song.path
                 ? 'bg-[#fff1f1]/95 dark:bg-[#EC4141]/18 text-[#EC4141] border-[#EC4141]/18 shadow-[0_10px_26px_rgba(15,23,42,0.14)]'
