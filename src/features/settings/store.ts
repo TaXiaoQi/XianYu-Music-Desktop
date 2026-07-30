@@ -134,6 +134,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   lyricsFormat: 'lrc',
   overwriteExisting: false,
   keepSourceFilename: false,
+  fileNameStyle: 'artist-title',
   rememberDownloadPath: false,
 };
 
@@ -217,6 +218,11 @@ export const mergeUploadSettings = (
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
 const VALID_DOWNLOAD_QUALITIES: DownloadSettings['quality'][] = ['lossless', 'high', 'standard'];
 const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
+const VALID_FILE_NAME_STYLES: DownloadSettings['fileNameStyle'][] = [
+  'artist-title',
+  'title-artist',
+  'title-artist-album',
+];
 
 export const mergeDownloadSettings = (
   base: DownloadSettings,
@@ -231,6 +237,9 @@ export const mergeDownloadSettings = (
   const lyricsFormat = patch.lyricsFormat && VALID_LYRICS_FORMATS.includes(patch.lyricsFormat)
     ? patch.lyricsFormat
     : base.lyricsFormat;
+  const fileNameStyle = patch.fileNameStyle && VALID_FILE_NAME_STYLES.includes(patch.fileNameStyle)
+    ? patch.fileNameStyle
+    : base.fileNameStyle;
 
   return {
     downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
@@ -240,6 +249,7 @@ export const mergeDownloadSettings = (
     lyricsFormat,
     overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
+    fileNameStyle,
     rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
   };
 };

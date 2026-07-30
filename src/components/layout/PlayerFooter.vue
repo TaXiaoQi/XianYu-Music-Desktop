@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -9,6 +9,8 @@ import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 import DownloadDialog from '../player/DownloadDialog.vue';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
+import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import type { RemoteDownloadProgress } from '../../types';
@@ -35,10 +37,63 @@ const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
 // --- 下载功能 ---
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
 const showDownloadDialog = ref(false);
+
+// 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
+const downloadedRecord = ref<DownloadRecord | null>(null);
+const showRedownloadConfirm = ref(false);
+// 防止快速切歌时旧的异步检测结果覆盖新歌状态
+let downloadCheckId = 0;
+
+/** 检测当前歌曲是否已下载（文件仍存在）。文件已被删除时记录会被自动清理。 */
+const refreshDownloadedState = async () => {
+  const requestId = ++downloadCheckId;
+  const song = currentSong.value;
+  const songPath = song?.cue_source_path || song?.path || '';
+
+  if (!isOnlineSong.value || !songPath) {
+    downloadedRecord.value = null;
+    return;
+  }
+
+  const record = await checkDownloadExists(songPath);
+  // 检测期间已切歌，丢弃这次结果
+  if (requestId !== downloadCheckId) return;
+  downloadedRecord.value = record;
+};
+
+watch(
+  () => currentSong.value?.cue_source_path || currentSong.value?.path,
+  () => { void refreshDownloadedState(); },
+  { immediate: true },
+);
+
 const handleDownloadClick = () => {
   if (!isOnlineSong.value) return;
+  // 已下载过：先弹确认，让用户决定是否重新下载
+  if (downloadedRecord.value) {
+    showRedownloadConfirm.value = true;
+    return;
+  }
   showDownloadDialog.value = true;
 };
+
+/** 确认重新下载：打开原本的下载对话框（确认弹窗由 ModernModal 自行关闭） */
+const handleConfirmRedownload = () => {
+  showDownloadDialog.value = true;
+};
+
+const downloadButtonTitle = computed(() => {
+  if (!isOnlineSong.value) return '本地歌曲无法下载';
+  if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}`;
+  return '下载歌曲';
+});
+
+const redownloadContent = computed(() => {
+  const name = downloadedRecord.value?.fileName || '';
+  return name
+    ? `此歌曲已下载过了（${name}），是否要重新下载？`
+    : '此歌曲已下载过了，是否要重新下载？';
+});
 
 // --- Context Menu State ---
 const showContextMenu = ref(false);
@@ -632,21 +687,27 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 在线歌曲下载：位于更多工具与音量设置之间 -->
+      <!-- 在线歌曲下载：位于更多工具与音量设置之间。
+           已下载且文件仍存在时显示对勾图标，点击后先确认是否重新下载 -->
       <button
         @mousedown.stop
         @click.stop="handleDownloadClick"
         class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
-        :class="isOnlineSong
+        :class="!isOnlineSong
           ? (showPlayerDetail
-            ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
-            : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
-          : (showPlayerDetail
             ? 'text-white/30 cursor-not-allowed'
-            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')"
-        :title="isOnlineSong ? '下载歌曲' : '本地歌曲无法下载'"
+            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')
+          : downloadedRecord
+            ? (showPlayerDetail
+              ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
+              : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+            : (showPlayerDetail
+              ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+              : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
+        :title="downloadButtonTitle"
       >
-        <Download class="h-5 w-5" />
+        <CircleCheck v-if="isOnlineSong && downloadedRecord" class="h-5 w-5" />
+        <Download v-else class="h-5 w-5" />
       </button>
 
       <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/桌面歌词/均衡器/固定） -->
@@ -752,7 +813,22 @@ onUnmounted(() => {
 
         />
 
-        <DownloadDialog v-model:visible="showDownloadDialog" :song="currentSong" />
+        <DownloadDialog
+          v-model:visible="showDownloadDialog"
+          :song="currentSong"
+          @downloaded="refreshDownloadedState"
+        />
+
+        <!-- 已下载确认：询问是否重新下载 -->
+        <ModernModal
+          v-model:visible="showRedownloadConfirm"
+          title="歌曲已下载"
+          :content="redownloadContent"
+          cancel-text="取消"
+          confirm-text="重新下载"
+          type="info"
+          @confirm="handleConfirmRedownload"
+        />
 
       </footer>
 
