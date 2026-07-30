@@ -613,6 +613,16 @@ export function useLibraryCurrentViewSongs({
       return [];
     }
 
+    // 优先使用 playlist.songs 缓存中的歌曲路径（在线歌曲可能尚未注入 extraSongPool）
+    if (playlist.songs && playlist.songs.length > 0) {
+      const songPathSet = new Set(playlist.songs.map(s => s.path).filter(Boolean));
+      // 合并 songPaths 和 songs 中的路径，确保所有歌曲都能被展示
+      const allPaths = playlist.songPaths.filter(path => 
+        songLookup.value.has(path) || songPathSet.has(path)
+      );
+      return allPaths;
+    }
+
     return playlist.songPaths.filter(path => songLookup.value.has(path));
   };
 
@@ -814,7 +824,26 @@ export function useLibraryCurrentViewSongs({
 
   const currentViewSongs = computed(() => {
     canonicalSongPaths.value;
-    return materializeSongPaths(currentViewSongPaths.value);
+
+    const paths = currentViewSongPaths.value;
+    const songsFromLookup = materializeSongPaths(paths);
+
+    // 歌单视图：如果 songLookup 找不到所有歌曲（在线歌曲重启后尚未注入 extraSongPool），
+    // 从 playlist.songs 缓存中补充缺失的歌曲
+    if (currentViewMode.value === 'playlist' && songsFromLookup.length < paths.length) {
+      const playlist = playlists.value.find(item => item.id === filterCondition.value);
+      if (playlist?.songs && playlist.songs.length > 0) {
+        const foundPaths = new Set(songsFromLookup.map(s => s.path));
+        const songMap = new Map(playlist.songs.map(s => [s.path, s] as const));
+        const missing = paths
+          .filter(path => !foundPaths.has(path))
+          .map(path => songMap.get(path))
+          .filter((song): song is Song => !!song);
+        return [...songsFromLookup, ...missing];
+      }
+    }
+
+    return songsFromLookup;
   });
 
   const currentViewSongCount = computed(() => currentViewSongs.value.length);

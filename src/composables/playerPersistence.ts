@@ -1,4 +1,5 @@
 import { storeToRefs } from 'pinia';
+import { toRaw } from 'vue';
 import type { Song } from '../types';
 import { isRemoteSong } from '../utils/remoteSong';
 import { playerStorage } from '../services/storage/playerStorage';
@@ -62,6 +63,9 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       persistTimer = null;
     }
 
+    // 使用 toRaw + JSON 深拷贝，确保 Vue 响应式代理中的所有字段（包括 songs）被正确序列化
+    const rawPlaylists = JSON.parse(JSON.stringify(toRaw(collectionsStore.playlists)));
+
     playerStorage.writePlayerState({
       playlistPathKey: keys.playerPlaylistPaths,
       queuePathKey: keys.playerQueuePaths,
@@ -74,7 +78,7 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       recentSongMeta: collectionsStore.recentSongMeta,
       recentOnlineHistory: collectRecentOnlineHistory(),
       queueSongMeta: collectQueueSongMeta(),
-      playlists: collectionsStore.playlists,
+      playlists: rawPlaylists,
       settings: settingsStore.settings,
       playQueuePaths: playQueuePaths.value,
       artistCustomOrder: artistCustomOrder.value,

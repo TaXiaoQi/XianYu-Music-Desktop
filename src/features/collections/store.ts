@@ -41,7 +41,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     recentSongs.value = historyItems;
   };
 
-  const createPlaylist = (name: string, initialSongs: string[] = []) => {
+  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) => {
     if (!name.trim()) {
       return null;
     }
@@ -51,7 +51,10 @@ export const useCollectionsStore = defineStore('collections', () => {
       name,
       songPaths: [...initialSongs],
       createdAt: formatPlaylistDate(),
+      songs: fullSongs?.length ? [...fullSongs] : undefined,
     };
+
+    console.log(`[createPlaylist] name="${name}", songPaths=${playlist.songPaths.length}, songs=${playlist.songs?.length ?? 0}`);
 
     playlists.value.push(playlist);
     return playlist.id;
@@ -142,6 +145,12 @@ export const useCollectionsStore = defineStore('collections', () => {
       return [];
     }
 
+    // 优先使用完整歌曲对象缓存（插件导入等非本地来源）
+    if (playlist.songs && playlist.songs.length > 0) {
+      return [...playlist.songs];
+    }
+
+    // 回退到按 path 从 libraryStore 查找
     const songMap = new Map<string, Song>();
     libraryStore.songList.forEach(song => {
       songMap.set(song.path, song);

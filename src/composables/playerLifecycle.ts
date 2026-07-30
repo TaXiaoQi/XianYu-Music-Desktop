@@ -338,6 +338,16 @@ export const createPlayerLifecycle = ({
     watch(watchedFolders, scheduleStatePersistence);
     watch(favoritePaths, scheduleStatePersistence, { deep: true });
     watch(playlists, scheduleStatePersistence, { deep: true });
+
+    // 歌单变化时，将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
+    // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中）
+    watch(playlists, (newPlaylists) => {
+      for (const pl of newPlaylists) {
+        if (pl.songs && pl.songs.length > 0) {
+          libraryStore.setExtraSongs(pl.songs);
+        }
+      }
+    }, { deep: true, immediate: true });
     watch(settings, scheduleStatePersistence, { deep: true });
     watch(
       () => settings.value.audio.volumeBalance,
@@ -581,6 +591,24 @@ export const createPlayerLifecycle = ({
       }
 
       collectionsStore.setPlaylists(playerStorage.readPlaylists());
+
+      // 诊断：检查恢复的歌单是否包含 songs 缓存
+      const restoredPls = collectionsStore.playlists;
+      const withSongs = restoredPls.filter(p => p.songs && p.songs.length > 0);
+      console.log(`[restore] playlists: ${restoredPls.length} total, ${withSongs.length} with songs cache`);
+      for (const pl of restoredPls) {
+        if (pl.songPaths.some(p => p.startsWith('plugin://') || p.startsWith('lx://'))) {
+          console.log(`[restore] playlist "${pl.name}": songPaths=${pl.songPaths.length}, songs=${pl.songs?.length ?? 0}`);
+        }
+      }
+
+      // 恢复歌单后，将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
+      // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中，重启后会丢失）
+      for (const pl of collectionsStore.playlists) {
+        if (pl.songs && pl.songs.length > 0) {
+          libraryStore.setExtraSongs(pl.songs);
+        }
+      }
 
       restoreSortSettings({
         artistSortMode,
