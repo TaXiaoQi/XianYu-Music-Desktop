@@ -5,7 +5,7 @@ interface PlayerPlaylistApi {
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, path: string) => void;
   removeFromPlaylist: (playlistId: string, path: string) => void;
-  addSongsToPlaylist: (playlistId: string, songPaths: string[]) => number;
+  addSongsToPlaylist: (playlistId: string, songPaths: string[], fullSongs?: Song[]) => number;
   viewPlaylist: (id: string) => void;
   getSongsFromPlaylist: (playlistId: string) => Song[];
   openAddToPlaylistDialog: (songPaths: string | string[]) => void;
@@ -34,8 +34,8 @@ export function useCollectionsActions({
   const deletePlaylist = (id: string) => playerPlaylist.deletePlaylist(id);
   const addToPlaylist = (playlistId: string, path: string) => playerPlaylist.addToPlaylist(playlistId, path);
   const removeFromPlaylist = (playlistId: string, path: string) => playerPlaylist.removeFromPlaylist(playlistId, path);
-  const addSongsToPlaylist = (playlistId: string, songPaths: string[]) =>
-    playerPlaylist.addSongsToPlaylist(playlistId, songPaths);
+  const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
+    playerPlaylist.addSongsToPlaylist(playlistId, songPaths, fullSongs);
   const viewPlaylist = (id: string) => playerPlaylist.viewPlaylist(id);
   const getSongsFromPlaylist = (playlistId: string) => playerPlaylist.getSongsFromPlaylist(playlistId);
   const openAddToPlaylistDialog = (songPaths: string | string[]) => playerPlaylist.openAddToPlaylistDialog(songPaths);

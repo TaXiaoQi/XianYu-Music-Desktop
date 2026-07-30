@@ -20,8 +20,8 @@ export const createPlayerPlaylist = () => {
     libraryCollections.removeFromPlaylist(playlistId, path);
   };
 
-  const addSongsToPlaylist = (playlistId: string, songPaths: string[]): number => {
-    return libraryCollections.addSongsToPlaylist(playlistId, songPaths);
+  const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]): number => {
+    return libraryCollections.addSongsToPlaylist(playlistId, songPaths, fullSongs);
   };
 
   const viewPlaylist = (id: string) => {
