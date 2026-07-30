@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CustomSkinModal from './CustomSkinModal.vue';
+import SettingsSidebar from './SettingsSidebar.vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 
 const TEXT = {
@@ -443,6 +444,9 @@ const {
         {{ TEXT.windowMaterialConflictHint }}
       </p>
     </section>
+
+    <!-- 侧边栏管理（并入外观） -->
+    <SettingsSidebar />
 
     <CustomSkinModal v-if="showCustomModal" @close="showCustomModal = false" />
   </div>
