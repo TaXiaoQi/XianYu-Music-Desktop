@@ -21,7 +21,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/plugins', name: 'Plugins', component: Plugins },
   { path: '/settings', name: 'Settings', component: Settings },
   { path: '/auth', name: 'Auth', component: Auth },
-  { path: '/search', name: 'Search', component: Search },
+  { path: '/search', name: 'Search', component: Search, meta: { keepAlive: true } },
   { path: '/online-detail', name: 'OnlineDetail', component: OnlineDetail },
 ];
 
