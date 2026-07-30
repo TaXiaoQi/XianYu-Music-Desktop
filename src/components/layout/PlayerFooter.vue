@@ -24,7 +24,7 @@ const {
   currentSong,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute, toggleMode, togglePlaylist,
-  togglePlayerDetail, seekTo, formatDuration
+  togglePlayerDetail, seekTo, formatDuration, playSong,
 } = usePlaybackController();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
 
@@ -117,27 +117,63 @@ const isProgressHidden = ref(readStoredProgressHidden(localStorage));
 const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
 
-// 音质选择（UI 占位，功能待后端开发完毕合并）
+// 音质选择：lxType 是落雪/插件引擎实际使用的音质标识
+const ONLINE_QUALITY_KEY = 'online_quality';
 const QUALITY_OPTIONS = [
-  { label: '标准', value: 'standard' },
-  { label: 'HQ', value: 'hq' },
-  { label: 'SQ', value: 'sq' },
-  { label: 'Hi-Res', value: 'hires' },
+  { label: '标准', value: 'standard', lxType: '128k' },
+  { label: 'HQ',   value: 'hq',       lxType: '320k' },
+  { label: 'SQ',   value: 'sq',       lxType: 'flac' },
+  { label: 'Hi-Res', value: 'hires',  lxType: 'flac24bit' },
 ] as const;
 
-const currentQuality = ref('标准');
+/** 存储当前选择的 lxType（默认 '320k' = HQ），持久化到 localStorage */
+const selectedQualityLxType = ref<string>(localStorage.getItem(ONLINE_QUALITY_KEY) || '320k');
+/** 在线歌曲：显示在按钮上的音质标签（HQ / SQ 等） */
+const currentQualityLabel = computed(
+  () => QUALITY_OPTIONS.find(o => o.lxType === selectedQualityLxType.value)?.label ?? 'HQ',
+);
+
+/** 本地歌曲：取 format/codec/container 字段，或从路径末尾提取扩展名，全大写显示 */
+const localFormatLabel = computed(() => {
+  const song = currentSong.value;
+  if (!song) return '';
+  const raw = song.format || song.codec || song.container;
+  if (raw) return raw.toUpperCase();
+  const ext = song.path.split('.').pop();
+  return ext ? ext.toUpperCase() : '';
+});
+
+/** 按钮实际显示文字：在线歌曲显示音质标签，本地歌曲显示格式后缀名 */
+const qualityButtonLabel = computed(() =>
+  isQualitySelectableSong.value ? currentQualityLabel.value : localFormatLabel.value,
+);
+
+/** 是否是支持音质切换的在线歌曲（lx:// 或 plugin:// 协议） */
+const isQualitySelectableSong = computed(() => {
+  const path = currentSong.value?.path ?? '';
+  return path.startsWith('lx://') || path.startsWith('plugin://');
+});
+
 const showQualityMenu = ref(false);
 const qualityButtonRef = ref<HTMLElement | null>(null);
 const qualityMenuRef = ref<HTMLElement | null>(null);
 
 const toggleQualityMenu = (e: MouseEvent) => {
+  if (!isQualitySelectableSong.value) return; // 本地歌曲或不支持的在线歌曲：禁用
   e.stopPropagation();
   showQualityMenu.value = !showQualityMenu.value;
 };
 
-const selectQuality = (label: string) => {
-  currentQuality.value = label;
+const selectQuality = async (lxType: string) => {
+  const prev = selectedQualityLxType.value;
+  selectedQualityLxType.value = lxType;
+  localStorage.setItem(ONLINE_QUALITY_KEY, lxType);
   showQualityMenu.value = false;
+
+  // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
+  if (lxType !== prev && isQualitySelectableSong.value && currentSong.value) {
+    await playSong(currentSong.value, { startTime: currentTime.value, preserveQueue: true });
+  }
 };
 
 const toggleVisualizer = () => {
@@ -601,19 +637,27 @@ onUnmounted(() => {
       class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
-      <!-- 音质选择按钮 -->
+      <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲变暗并显示禁止指针 -->
       <div class="relative flex items-center justify-center h-full z-[70]">
         <button
           ref="qualityButtonRef"
           @click="toggleQualityMenu"
           class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
-          :class="showQualityMenu
-            ? 'text-[#EC4141] bg-[#EC4141]/10'
-            : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
-          title="音质选择"
+          :class="[
+            !isQualitySelectableSong
+              ? (showPlayerDetail
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-gray-300 dark:text-white/20 cursor-not-allowed')
+              : showQualityMenu
+                ? 'text-[#EC4141] bg-[#EC4141]/10'
+                : (showPlayerDetail
+                    ? 'text-white/60 hover:text-white hover:bg-white/10'
+                    : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')
+          ]"
+          :title="isQualitySelectableSong ? '音质选择' : '本地歌曲不支持音质切换'"
         >
           <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
-          <span class="whitespace-nowrap">{{ currentQuality }}</span>
+          <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
         </button>
 
         <transition name="fade-scale">
@@ -629,14 +673,14 @@ onUnmounted(() => {
               <button
                 v-for="opt in QUALITY_OPTIONS"
                 :key="opt.value"
-                @click="selectQuality(opt.label)"
+                @click="selectQuality(opt.lxType)"
                 class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="currentQuality === opt.label
+                :class="selectedQualityLxType === opt.lxType
                   ? 'text-[#EC4141] bg-[#EC4141]/8'
                   : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
               >
                 <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                <span v-if="selectedQualityLxType === opt.lxType" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
               </button>
             </div>
           </div>
