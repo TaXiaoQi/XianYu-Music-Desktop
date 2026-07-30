@@ -1116,6 +1116,23 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
 // 右键菜单
 const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
   e.preventDefault();
+  // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
+  // 下一首播放/添加到队尾等操作会延迟调用 playSong，必须提前缓存否则解析失败
+  cacheLxSong(item);
+  cacheLxSongInfo(item.source, item.songmid, {
+    songmid: item.songmid,
+    hash: item.hash,
+    name: item.name,
+    singer: item.singer,
+    albumName: item.albumName,
+    interval: item.interval,
+    songId: item.songId,
+    strMediaMid: item.strMediaMid,
+    albumMid: item.albumMid,
+    albumId: item.albumId,
+    copyrightId: item.copyrightId,
+    source: item.source,
+  });
   const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
   contextMenuTargetSong.value = {
     name: item.name,
