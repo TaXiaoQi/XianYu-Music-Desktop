@@ -356,6 +356,7 @@ import { useCollectionsStore } from '../features/collections/store';
 import {
   lxSearch,
   lxGetPic,
+  LX_SOURCE_NAMES,
   type LxSearchResultItem,
   type LxSourceId,
 } from '../services/lxMusicSdk';
@@ -404,16 +405,35 @@ type SourceItem = {
 
 const pluginSourceList = ref<SourceItem[]>([]);
 
+/** LX 支持的源 ID 集合 */
+const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
+
 function refreshPluginSourceList() {
   const plugins = getStoredPlugins().filter(p => p.enabled);
   const items: SourceItem[] = [];
   for (const p of plugins) {
     if (p.format === 'musicfree') {
+      // MusicFree 插件：单个平台 = 单个来源条目
       items.push({ id: p.id, name: p.name, type: 'musicfree', source: p });
     } else if (p.format === 'lx' && p.sources.length > 0) {
-      const lxSourceId = p.sources.find(s => ['kw', 'kg', 'tx', 'wy', 'mg'].includes(s)) as LxSourceId | undefined;
-      if (lxSourceId) {
-        items.push({ id: p.id, name: p.name, type: 'lx', source: p, lxSourceId });
+      // LX 插件：解析出所有受支持的音源平台
+      const lxSources = p.sources.filter(s => VALID_LX_SOURCES.has(s)) as LxSourceId[];
+      if (lxSources.length === 0) continue;
+
+      if (lxSources.length === 1) {
+        // 单平台：直接以插件名显示
+        items.push({ id: p.id, name: p.name, type: 'lx', source: p, lxSourceId: lxSources[0] });
+      } else {
+        // 多平台：每个平台拆分为独立来源条目，以平台名显示
+        for (const sourceId of lxSources) {
+          items.push({
+            id: `${p.id}__${sourceId}`,
+            name: LX_SOURCE_NAMES[sourceId],
+            type: 'lx',
+            source: p,
+            lxSourceId: sourceId,
+          });
+        }
       }
     }
   }
