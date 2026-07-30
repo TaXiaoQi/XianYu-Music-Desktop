@@ -20,7 +20,7 @@ import {
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics/constants';
+} from '../../composables/lyrics';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,
@@ -79,6 +79,7 @@ export const defaultThemeSettings: ThemeSettings = {
   mode: 'light',
   dynamicBgType: 'none',
   windowMaterial: 'none',
+  keepWindowMaterialOnBlur: false,
   flowColorBoost: 25,
   flowDepth: 30,
   flowSpeed: 52,

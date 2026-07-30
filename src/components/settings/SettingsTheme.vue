@@ -24,6 +24,8 @@ const TEXT = {
   windowMaterialTransparencyHint: '\u9700\u5728\u7cfb\u7edf\u8bbe\u7f6e\u4e2d\u5f00\u542f\u900f\u660e\u6548\u679c\u540e\u624d\u53ef\u7528\u3002',
   windowMaterialConflictHint: '\u5173\u95ed\u52a8\u6001\u80cc\u666f\u6216\u81ea\u5b9a\u4e49\u76ae\u80a4\u540e\u53ef\u7528\u3002',
   windowMaterialWin11Only: '\u4ec5 Windows 11 \u652f\u6301',
+  keepWindowMaterialOnBlur: '\u5931\u7126\u4fdd\u6301\u6750\u8d28',
+  keepWindowMaterialOnBlurHint: '\u5f00\u542f\u540e\u7a97\u53e3\u5931\u7126\u65f6\u4ecd\u4f1a\u5c1d\u8bd5\u4fdd\u6301\u5f53\u524d\u6750\u8d28\u6548\u679c\u3002',
 };
 
 const FLOW_TEXT = {
@@ -56,6 +58,7 @@ const {
   showCustomModal,
   colorScheme,
   materialMode,
+  keepWindowMaterialOnBlur,
   isWindowMaterialDisabled,
   isWindowMaterialButtonDisabled,
   getWindowMaterialModeDisabledReason,
@@ -74,6 +77,7 @@ const {
   setFlowSpeed,
   setFlowTexture,
   setWindowBlurTint,
+  setKeepWindowMaterialOnBlur,
 } = useSettingsThemeControls();
 </script>
 
@@ -403,6 +407,32 @@ const {
             </button>
           </div>
         </div>
+
+        <label
+          class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/70 bg-white/45 px-4 py-3 transition-all dark:border-white/10 dark:bg-black/20"
+          :class="materialMode === 'none' ? 'cursor-not-allowed opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/60 dark:hover:bg-white/10'"
+        >
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
+            <span class="mt-0.5 block text-xs text-gray-500 dark:text-white/50">{{ TEXT.keepWindowMaterialOnBlurHint }}</span>
+          </span>
+          <input
+            type="checkbox"
+            class="sr-only"
+            :checked="keepWindowMaterialOnBlur"
+            :disabled="materialMode === 'none'"
+            @change="setKeepWindowMaterialOnBlur(($event.target as HTMLInputElement).checked)"
+          />
+          <span
+            class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+            :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
+          >
+            <span
+              class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+              :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'translate-x-5' : ''"
+            ></span>
+          </span>
+        </label>
 
         <transition name="flow-panel">
           <div

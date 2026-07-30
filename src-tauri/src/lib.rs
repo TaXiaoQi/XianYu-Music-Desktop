@@ -71,7 +71,7 @@ use toolbox::{
 use toolbox::{append_webview2_browser_arg, should_disable_gpu_for_startup};
 use window_boundary::set_mini_boundary_enabled;
 use window_fullscreen::set_immersive_fullscreen;
-use window_material::get_window_material_capabilities;
+use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
 use window_z_order::{refresh_current_window_topmost, start_topmost_guard, stop_topmost_guard};
 
@@ -203,6 +203,7 @@ get_song_lyrics_payload,            get_song_lyrics_for_edit,
             set_mini_boundary_enabled,
             set_immersive_fullscreen,
             get_window_material_capabilities,
+            refresh_window_material_active_state,
             get_foreground_fullscreen_state,
             set_dark_mode_for_window,
             refresh_current_window_topmost,
