@@ -8,11 +8,13 @@ import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
+import { useSettings } from '../../features/settings/useSettings';
 
 const router = useRouter();
 const route = useRoute();
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
+const { settings } = useSettings();
 const { isDarkTheme, toggleThemeMode } = useThemeSettings();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const authStore = useAuthStore();
@@ -81,7 +83,13 @@ const openAccountPage = () => {
 
 const minimize = () => { void appWindow.minimize(); };
 const toggleMaximize = () => { void appWindow.toggleMaximize(); };
-const closeWindow = () => { void appWindow.close(); };
+const closeWindow = async () => {
+  if (settings.value.closeToTray) {
+    await appWindow.hide();
+  } else {
+    await appWindow.close();
+  }
+};
 
 onMounted(() => {
   // 启动时尝试恢复登录态（非阻塞）
