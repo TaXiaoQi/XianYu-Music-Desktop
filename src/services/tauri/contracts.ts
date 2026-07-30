@@ -138,6 +138,8 @@ export interface PlayAudioOptions {
   volumeBalanceEnabled?: boolean | null;
   gainOffsetDb?: number | null;
   preventClipping?: boolean | null;
+  /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效 */
+  headers?: Record<string, string> | null;
 }
 
 export interface UpdateLoudnessSettingsOptions {

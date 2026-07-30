@@ -1,6 +1,7 @@
 import { storeToRefs } from 'pinia';
 import { watch } from 'vue';
-import type { Song } from '../types';
+import type { Song, QualityKey } from '../types';
+import { QUALITY_META } from '../types';
 import { playbackApi } from '../services/tauri/playbackApi';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
@@ -222,6 +223,7 @@ export const createPlayerPlayback = ({
     playMode,
     tempQueue,
     volume,
+    currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
 
@@ -575,7 +577,48 @@ export const createPlayerPlayback = ({
 
     addToHistory(song);
 
+    // 提前获取当前歌曲支持的音质列表（与 URL 解析独立，确保预获取 URL 的歌曲也能正确渲染音质选项）
+    currentAvailableQualities.value = null;
+    const songPath = song.cue_source_path || song.path;
+    try {
+      if (songPath.startsWith('lx://')) {
+        // LX 歌曲：从缓存的 _types 提取
+        const parts = songPath.replace('lx://', '').split('/');
+        const lxSource = parts[0];
+        const songmid = parts.slice(1).join('/');
+        if (lxSource && songmid) {
+          const { getCachedLxSong } = await import('../services/lxSongCache');
+          const cachedInfo = getCachedLxSong(lxSource, songmid);
+          if (cachedInfo?._types) {
+            const lxQualities = Object.keys(cachedInfo._types)
+              .filter(k => k in QUALITY_META) as QualityKey[];
+            if (lxQualities.length > 0) {
+              currentAvailableQualities.value = lxQualities
+                .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+            }
+          }
+        }
+      } else if (songPath.startsWith('plugin://')) {
+        // plugin:// 歌曲：从插件实例的 supportedQualities 提取
+        const pluginSearchResult = song.rawData;
+        if (pluginSearchResult?.pluginId) {
+          const { getStoredPlugins, pluginGetSupportedQualities } = await import('../services/pluginEngine');
+          const plugins = getStoredPlugins();
+          const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+          if (pluginSource) {
+            const supportedQ = await pluginGetSupportedQualities(pluginSource);
+            if (supportedQ && supportedQ.length > 0) {
+              currentAvailableQualities.value = supportedQ
+                .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+            }
+          }
+        }
+      }
+    } catch { /* ignore: 音质列表获取失败不影响播放 */ }
+
     let audioFilePath = song.cue_source_path || song.path;
+    // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），随 URL 一起传递给播放器
+    let pluginHeaders: Record<string, string> | null = null;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
     // [落雪] lx:// 协议需要通过落雪插件引擎解析真实播放 URL
@@ -598,8 +641,10 @@ export const createPlayerPlayback = ({
             await ensureLxPluginInstance(matchedPlugin);
             // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
             const cachedInfo = getCachedLxSong(lxSource, songmid);
-            // 读取用户在设置中选择的默认音质（默认 '320k' = HQ）
-            const lxQualityType = settingsStore.settings.audio.onlineDefaultQuality || '320k';
+            // 读取用户在设置中选择的默认音质（统一 12 档）
+            // 若音源插件不支持该档位（如 LX 原生 5 个音源只支持 128k/320k/flac/flac24bit），
+            // 直接透传给插件，插件内部会按支持情况回退
+            const requestedQuality = settingsStore.settings.audio.onlineDefaultQuality || '320k';
             const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
               songId: songmid,
               name: song.name,
@@ -616,7 +661,7 @@ export const createPlayerPlayback = ({
               interval: cachedInfo?.interval,
               _types: cachedInfo?._types,
               types: cachedInfo?.types,
-            } as any, lxQualityType);
+            } as any, requestedQuality);
             const musicUrl = urlResult?.url;
             if (musicUrl && /^https?:/.test(musicUrl)) {
               audioFilePath = musicUrl;
@@ -635,64 +680,75 @@ export const createPlayerPlayback = ({
     // [MusicFree 插件] plugin:// 协议需要通过插件引擎解析真实播放 URL
     // 用于"全部播放"场景：歌曲仅携带 rawData（PluginSearchResult），播放时才拉取直链
     if (audioFilePath.startsWith('plugin://')) {
-      const pluginSearchResult = song.rawData;
-      if (pluginSearchResult?.pluginId) {
-        try {
-          const { getStoredPlugins, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } = await import('../services/pluginEngine');
-          const plugins = getStoredPlugins();
-          const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-          if (pluginSource) {
-            // 读取用户在设置中选择的默认音质，映射到 MusicFree 插件的 quality 枚举
-            const lxQualityType = settingsStore.settings.audio.onlineDefaultQuality || '320k';
-            const pluginQuality: 'standard' | 'high' | 'lossless' =
-              lxQualityType === 'flac24bit' || lxQualityType === 'flac'
-                ? 'lossless'
-                : lxQualityType === '320k'
-                  ? 'high'
-                  : 'standard';
-            const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, pluginQuality);
-            if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
-              audioFilePath = musicInfo.url;
+      // 优先使用预获取的直链（remote_source_id），避免重复调用插件 API
+      // 播放入口（如 handlePlayMfSong）会在播放前预获取 URL 并存到 remote_source_id
+      const preUrl = song.remote_source_id;
+      if (preUrl && /^https?:/.test(preUrl)) {
+        audioFilePath = preUrl;
+        // 加载预获取时保存的防盗链 headers
+        if (song.remote_headers) {
+          pluginHeaders = song.remote_headers;
+        }
+      } else {
+        // 回退到插件解析：通过 rawData 调用 pluginGetMusicInfo 获取直链
+        const pluginSearchResult = song.rawData;
+        if (pluginSearchResult?.pluginId) {
+          try {
+            const { getStoredPlugins, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } = await import('../services/pluginEngine');
+            const plugins = getStoredPlugins();
+            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+            if (pluginSource) {
+              // 读取用户在设置中选择的统一音质，直接传给插件
+              // pluginGetMusicInfo 内部会先尝试新键值（Toskysun 插件），再回退到旧三档（原版 MusicFree）
+              const requestedQuality = settingsStore.settings.audio.onlineDefaultQuality || '320k';
+              const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, requestedQuality);
+              if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
+                audioFilePath = musicInfo.url;
+                // 保存插件返回的防盗链 headers
+                if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
+                  pluginHeaders = musicInfo.headers;
+                }
 
-              // 更新歌词（如果尚未有）
-              if (!song.lyrics_raw?.trim()) {
-                if (musicInfo.lyric) {
-                  song.lyrics_raw = musicInfo.lyric;
-                  if (musicInfo.tlyric) {
-                    song.lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
-                  }
-                } else {
-                  try {
-                    const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
-                    if (lyricData?.lyric) {
-                      song.lyrics_raw = lyricData.lyric;
-                      if (lyricData.tlyric) {
-                        song.lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
-                      }
+                // 更新歌词（如果尚未有）
+                if (!song.lyrics_raw?.trim()) {
+                  if (musicInfo.lyric) {
+                    song.lyrics_raw = musicInfo.lyric;
+                    if (musicInfo.tlyric) {
+                      song.lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
                     }
-                  } catch { /* ignore lyric error */ }
+                  } else {
+                    try {
+                      const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
+                      if (lyricData?.lyric) {
+                        song.lyrics_raw = lyricData.lyric;
+                        if (lyricData.tlyric) {
+                          song.lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
+                        }
+                      }
+                    } catch { /* ignore lyric error */ }
+                  }
                 }
-              }
 
-              // 更新封面（如果尚未有）
-              if (!song.cover_thumb_path) {
-                if (musicInfo.coverUrl) {
-                  song.cover_thumb_path = musicInfo.coverUrl;
-                } else {
-                  try {
-                    const cover = await pluginGetCover(pluginSource, pluginSearchResult);
-                    if (cover) song.cover_thumb_path = cover;
-                  } catch { /* ignore cover error */ }
+                // 更新封面（如果尚未有）
+                if (!song.cover_thumb_path) {
+                  if (musicInfo.coverUrl) {
+                    song.cover_thumb_path = musicInfo.coverUrl;
+                  } else {
+                    try {
+                      const cover = await pluginGetCover(pluginSource, pluginSearchResult);
+                      if (cover) song.cover_thumb_path = cover;
+                    } catch { /* ignore cover error */ }
+                  }
                 }
+              } else {
+                console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
               }
             } else {
-              console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
+              console.warn(`[Audio] No enabled plugin found for pluginId=${pluginSearchResult.pluginId}`);
             }
-          } else {
-            console.warn(`[Audio] No enabled plugin found for pluginId=${pluginSearchResult.pluginId}`);
+          } catch (e: any) {
+            console.warn(`[Audio] Failed to resolve plugin:// URL: ${e?.message}`);
           }
-        } catch (e: any) {
-          console.warn(`[Audio] Failed to resolve plugin:// URL: ${e?.message}`);
         }
       }
     }
@@ -768,7 +824,7 @@ export const createPlayerPlayback = ({
         {
           try {
             const { fetchViaWorker } = await import('../services/downloadService');
-            const bytes = await fetchViaWorker(audioFilePath);
+            const bytes = await fetchViaWorker(audioFilePath, undefined, pluginHeaders);
             if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
             const blob = new Blob([bytes as BlobPart], { type: 'audio/mpeg' });
@@ -940,6 +996,7 @@ export const createPlayerPlayback = ({
             volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
             gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
             preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
+            headers: pluginHeaders,
           });
         } catch (e: any) {
           console.warn('[Audio] 在线直链 playAudio 调用失败，回退 HTML5:', e?.message || e);

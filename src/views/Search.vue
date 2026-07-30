@@ -999,8 +999,8 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   const pluginSrc = mfSource.source;
 
   try {
-    // 1. 通过插件获取播放 URL（与 MusicFree PluginMethods.getMediaSource 完全一致）
-    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, 'standard');
+    // 1. 通过插件获取播放 URL（必须，阻塞播放）
+    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, '320k');
     if (!musicInfo?.url) {
       console.warn('[MusicFree] 无法获取播放URL:', item.title);
       return;
@@ -1010,7 +1010,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     const song: Song = {
       name: item.title,
       title: item.title,
-      path: musicInfo.url,
+      path: `plugin://${item.platform}/${item.id}`,
       artist: item.artist || '未知歌手',
       artist_names: artistNames,
       effective_artist_names: artistNames,
@@ -1023,9 +1023,11 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
       source_type: 'remote',
       remote_source_id: musicInfo.url,
+      remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
+      rawData: item,
     } as any;
 
-    // 2. 从 getMediaSource 返回值中提取歌词
+    // 从 getMediaSource 返回值中提取歌词（如果有）
     if (musicInfo.lyric) {
       (song as any).lyrics_raw = musicInfo.lyric;
       if (musicInfo.tlyric) {
@@ -1033,36 +1035,13 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       }
     }
 
-    // 3. 如果没有歌词，通过插件获取
-    if (!(song as any).lyrics_raw) {
-      try {
-        const lyricData = await pluginGetLyric(pluginSrc, item);
-        if (lyricData?.lyric) {
-          (song as any).lyrics_raw = lyricData.lyric;
-          if (lyricData.tlyric) {
-            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
-          }
-        }
-      } catch { /* ignore */ }
-    }
-
-    // 4. 如果没有封面，通过插件获取
-    if (!song.cover_thumb_path) {
-      try {
-        const coverUrl = await pluginGetCover(pluginSrc, item);
-        if (coverUrl) {
-          song.cover_thumb_path = coverUrl;
-        }
-      } catch { /* ignore */ }
-    }
-
-    // 5. 设置播放队列（与 YinDongMusic 完全一致）
+    // 2. 设置播放队列（所有歌曲统一使用 plugin:// 协议前缀并携带 rawData）
     const allSongs = pluginSearchResults.value.map((mfItem) => {
       const aNames = mfItem.artist ? mfItem.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
       return {
         name: mfItem.title,
         title: mfItem.title,
-        path: '',
+        path: `plugin://${mfItem.platform}/${mfItem.id}`,
         artist: mfItem.artist || '未知歌手',
         artist_names: aNames,
         effective_artist_names: aNames,
@@ -1074,6 +1053,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
         duration: Math.floor((mfItem.duration || 0) / 1000),
         cover_thumb_path: mfItem.coverUrl || '',
         source_type: 'remote' as const,
+        rawData: mfItem,
       } as Song;
     });
     const songIndex = allSongs.findIndex(s => s.name === song.name && s.artist === song.artist);
@@ -1081,7 +1061,26 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       allSongs[songIndex] = song;
     }
 
+    // 3. 立即播放（不等歌词/封面，让用户尽快听到声音）
     void playSong(song, { insertAfterCurrent: true });
+
+    // 4. 后台异步获取歌词和封面（不阻塞播放）
+    // playSong 内部已有歌词/封面补获逻辑，这里仅作为预获取优化
+    if (!(song as any).lyrics_raw) {
+      void pluginGetLyric(pluginSrc, item).then((lyricData) => {
+        if (lyricData?.lyric) {
+          (song as any).lyrics_raw = lyricData.lyric;
+          if (lyricData.tlyric) {
+            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
+          }
+        }
+      }).catch(() => {});
+    }
+    if (!song.cover_thumb_path) {
+      void pluginGetCover(pluginSrc, item).then((coverUrl) => {
+        if (coverUrl) song.cover_thumb_path = coverUrl;
+      }).catch(() => {});
+    }
   } catch (e: any) {
     console.warn('[MusicFree] 播放失败:', e?.message);
   }

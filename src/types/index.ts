@@ -29,6 +29,8 @@ export interface SongCore {
   file_modified_at?: number;
   source_type?: 'local' | 'remote' | 'plugin';
   remote_source_id?: string;
+  /** 插件返回的防盗链请求头（Cookie/Referer 等），随 remote_source_id 一起传递给播放器 */
+  remote_headers?: Record<string, string>;
   plugin_id?: string;
   cue_source_path?: string;
   cue_start_offset?: number;
@@ -350,12 +352,97 @@ export interface EqualizerSettings {
   currentPresetId?: string | null;
 }
 
+/**
+ * 统一音质枚举（LX / MusicFree 共用）
+ * 插件支持多少，就显示多少。
+ *
+ * 音质键值 | 说明 | 比特率/格式
+ * ---------|------|-------------
+ * mgg      | 低清音质 | 96 kbps
+ * 128k     | 普通音质 | 128 kbps
+ * 192k     | 中等音质 | 192 kbps
+ * 320k     | 高清音质 | 320 kbps
+ * flac     | 高清无损 | FLAC
+ * flac24bit | 高解析度无损 | FLAC 24位
+ * hires    | 高解析度 | 高分辨率
+ * vinyl    | 黑胶音质 | 黑胶唱片
+ * dolby    | 杜比全景声 | 杜比自然声
+ * atmos    | 臻品音质 | Atmos 2.0
+ * atmos_plus | 臻品全景声 | Atmos+ 2.0
+ * master   | 臻品母带 | 大师3.0
+ */
+export type QualityKey =
+  | 'mgg'
+  | '128k'
+  | '192k'
+  | '320k'
+  | 'flac'
+  | 'flac24bit'
+  | 'hires'
+  | 'vinyl'
+  | 'dolby'
+  | 'atmos'
+  | 'atmos_plus'
+  | 'master';
+
+/** 音质元信息（UI 显示 + 内部映射） */
+export interface QualityMeta {
+  key: QualityKey;
+  label: string;            /** 中文标签 */
+  description: string;      /** 比特率/格式 */
+  /** 是否属于无损类（用于判断下载扩展名与无损识别） */
+  isLossless: boolean;
+  /** 音质排序序号，越小音质越差，用于从高到低降级时翻转 */
+  rank: number;
+}
+
+/** 音质元数据表：按音质从低到高排序 */
+export const QUALITY_META: Record<QualityKey, QualityMeta> = {
+  mgg:         { key: 'mgg',         label: '低清',   description: '96 kbps',         isLossless: false, rank: 1  },
+  '128k':      { key: '128k',      label: '普通',   description: '128 kbps',        isLossless: false, rank: 2  },
+  '192k':      { key: '192k',      label: '中等',   description: '192 kbps',        isLossless: false, rank: 3  },
+  '320k':      { key: '320k',      label: 'HQ',    description: '320 kbps',        isLossless: false, rank: 4  },
+  flac:         { key: 'flac',         label: 'SQ',    description: 'FLAC',           isLossless: true,  rank: 5  },
+  flac24bit:    { key: 'flac24bit',    label: 'Hi-Res',description: 'FLAC 24位',     isLossless: true,  rank: 6  },
+  hires:        { key: 'hires',        label: '高解析度', description: '高分辨率',       isLossless: true,  rank: 7  },
+  vinyl:        { key: 'vinyl',        label: '黑胶',   description: '黑胶唱片',           isLossless: true,  rank: 8  },
+  dolby:        { key: 'dolby',        label: '杜比全景声', description: '杜比自然声',   isLossless: false, rank: 9  },
+  atmos:        { key: 'atmos',        label: '臻品音质', description: 'Atmos 2.0',       isLossless: false, rank: 10 },
+  atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'Atmos+ 2.0',  isLossless: false, rank: 11 },
+  master:       { key: 'master',       label: '臻品母带', description: '大师3.0',       isLossless: true,  rank: 12 },
+};
+
+/** 所有 12 种音质键值列表（按 rank 升序：低→高） */
+export const ALL_QUALITY_KEYS: QualityKey[] =
+  (Object.keys(QUALITY_META) as QualityKey[])
+    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+
+/** 所有 12 种音质键值列表（按 rank 降序：高→低） */
+export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse();
+
 /** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
-export type OnlineDefaultQuality = '128k' | '320k' | 'flac' | 'flac24bit';
+/** 现在使用统一的 QualityKey */
+export type OnlineDefaultQuality = QualityKey;
 /** 在线歌曲起播失败时的行为 */
 export type OnlineFailureBehavior = 'skip' | 'stop' | 'retry';
 /** 在线歌曲播放中途被中断（卡顿/出错）时的行为 */
 export type OnlineInterruptBehavior = 'pause' | 'skip';
+
+/**
+ * 将 QualityKey 映射到 MusicFree 插件的 standard / high / lossless
+ * MusicFree 插件标准只有这 3 档，其他档位按比特率/无损性降级映射
+ *
+ * 映射规则：
+ *   mgg / 128k / 192k           → standard
+ *   320k                         → high
+ *   flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master  → lossless
+ */
+export function qualityKeyToMfQuality(q: QualityKey): 'standard' | 'high' | 'lossless' {
+  const meta = QUALITY_META[q];
+  if (meta.isLossless || meta.rank >= 5) return 'lossless';
+  if (meta.rank >= 4) return 'high';
+  return 'standard';
+}
 
 export interface AudioSettings {
   outputMode: AudioOutputMode;
@@ -438,7 +525,8 @@ export interface AppSettings {
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
-export type DownloadQuality = 'lossless' | 'high' | 'standard';
+/** 下载默认音质（使用统一的 QualityKey 枚举，和在线播放一致） */
+export type DownloadQuality = QualityKey;
 
 /**
  * 下载文件名样式：

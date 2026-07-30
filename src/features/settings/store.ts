@@ -14,6 +14,7 @@ import type {
   ThemeSettings,
   UploadSettings,
 } from '../../types';
+import { ALL_QUALITY_KEYS } from '../../types';
 import {
   createDefaultDesktopLyricsSettings,
   createDefaultLyricsSettings,
@@ -136,7 +137,7 @@ export const defaultAudioSettings: AudioSettings = {
 export const defaultDownloadSettings: DownloadSettings = {
   downloadPath: '',
   format: 'mp3',
-  quality: 'high',
+  quality: '320k',
   downloadLyrics: true,
   lyricsFormat: 'lrc',
   overwriteExisting: false,
@@ -230,7 +231,7 @@ export const mergeUploadSettings = (
 });
 
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
-const VALID_DOWNLOAD_QUALITIES: DownloadSettings['quality'][] = ['lossless', 'high', 'standard'];
+const VALID_DOWNLOAD_QUALITIES = ALL_QUALITY_KEYS;
 const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
 const VALID_FILE_NAME_STYLES: DownloadSettings['fileNameStyle'][] = [
   'artist-title',
@@ -359,7 +360,7 @@ export const mergeAudioSettings = (
       ? patch.outputMode
       : base.outputMode ?? 'shared';
 
-  const VALID_ONLINE_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+  const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
   const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'retry'];
   const VALID_INTERRUPT_BEHAVIORS = ['pause', 'skip'];
 
@@ -381,7 +382,7 @@ export const mergeAudioSettings = (
     idmCompatMode: typeof patch.idmCompatMode === 'boolean'
       ? patch.idmCompatMode
       : base.idmCompatMode ?? false,
-    onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as string)
+    onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as any)
       ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
       : base.onlineDefaultQuality ?? '320k',
     onlineFailureBehavior: VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)
