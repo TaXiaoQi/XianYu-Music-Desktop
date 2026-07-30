@@ -57,6 +57,47 @@ export function setLogCallback(cb: ((msg: string) => void) | null) {
   _logCallback = cb;
 }
 
+// ==================== Cookie 管理（模拟 Electron session.cookies）====================
+
+function getCookiesForUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+    const cookieStore = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+    const cookies: string[] = [];
+    for (const [name, info] of Object.entries(cookieStore)) {
+      const c = info as any;
+      if (c.domain && (domain.includes(c.domain) || c.domain.includes(domain))) {
+        cookies.push(`${name}=${c.value}`);
+      }
+    }
+    return cookies.join('; ');
+  } catch {
+    return '';
+  }
+}
+
+function captureCookiesFromResponse(url: string, responseHeaders: Record<string, string>) {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+    const cookieStore = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+    const setCookie = responseHeaders['set-cookie'] || responseHeaders['Set-Cookie'];
+    if (setCookie) {
+      const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
+      for (const c of cookies) {
+        const parts = c.split(';')[0].split('=');
+        if (parts.length >= 2) {
+          const name = parts[0].trim();
+          const value = parts.slice(1).join('=').trim();
+          cookieStore[name] = { value, domain };
+        }
+      }
+      localStorage.setItem('__plugin_cookies', JSON.stringify(cookieStore));
+    }
+  } catch { /* ignore */ }
+}
+
 // ==================== MusicFree 包注入（与 plugin.ts 第57~73行完全一致）====================
 
 async function tauriAdapter(config: any): Promise<any> {
@@ -70,7 +111,14 @@ async function tauriAdapter(config: any): Promise<any> {
     }
 
     if (config.params) {
-      const paramStr = qs.stringify(config.params);
+      // [修复] 插件内部可能将 RegExp.match() 的结果（数组）直接作为 params 值传入，
+      // qs.stringify 会把数组序列化为 key[0]=&key[1]= 格式，导致服务端解析失败。
+      // 这里把数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值数组的行为。
+      const cleanParams: Record<string, any> = {};
+      for (const [key, value] of Object.entries(config.params)) {
+        cleanParams[key] = Array.isArray(value) ? value[0] : value;
+      }
+      const paramStr = qs.stringify(cleanParams);
       url += (url.includes('?') ? '&' : '?') + paramStr;
     }
 
@@ -101,9 +149,20 @@ async function tauriAdapter(config: any): Promise<any> {
       throw new Error(`Invalid URL: ${url || '(empty)'}`);
     }
 
-    log(`[tauriAdapter] ${method} ${url.substring(0, 120)}, headers=${JSON.stringify(headers).substring(0, 200)}`);
+    // [修复] 自动注入 Cookie（模拟 Electron session.cookies 自动携带）
+    const cookieStr = getCookiesForUrl(url);
+    if (cookieStr && !headers['Cookie'] && !headers['cookie']) {
+      headers['Cookie'] = cookieStr;
+    }
+
+    log(`[tauriAdapter] ${method} ${url.substring(0, 150)}, headers=${JSON.stringify(headers).substring(0, 300)}, body=${body ? body.substring(0, 200) : '(none)'}`);
     const response = await pluginApi.pluginHttpRequest(method, url, headers, body);
     log(`[tauriAdapter] 响应: status=${response.status}, bodyLen=${response.body?.length ?? 0}, bodyPreview=${response.body?.substring(0, 200) ?? ''}`);
+
+    // [修复] 自动捕获 Set-Cookie（模拟 Electron session.cookies 自动捕获）
+    if (response.headers) {
+      captureCookiesFromResponse(url, response.headers);
+    }
 
     let responseData: any;
     try {
@@ -139,74 +198,104 @@ async function tauriAdapter(config: any): Promise<any> {
   }
 }
 
+// ==================== MusicFree 包注入（与 plugin.ts 第15~46行完全一致）====================
+
+// Tauri 环境下 axios 无法直接发跨域请求，需要通过 tauriAdapter 代理到 Rust 后端
 const proxyAxios = axios.create({
   adapter: tauriAdapter as any,
 });
+
+// 与 MusicFree plugin.ts 第15行一致：axios.defaults.timeout = 15000
+proxyAxios.defaults.timeout = 15000;
 
 const _originalCreate = proxyAxios.create.bind(proxyAxios);
 proxyAxios.create = (config?: any) => {
   const inst = _originalCreate(config);
   inst.defaults.adapter = tauriAdapter as any;
+  inst.defaults.timeout = 15000;
   inst.create = proxyAxios.create;
   return inst;
 };
 
-const packages: Record<string, any> = {
-  cheerio,
-  'crypto-js': CryptoJs,
-  axios: proxyAxios,
-  dayjs,
-  qs,
-  he,
-  'big-integer': bigInt,
-  buffer: { Buffer },
-};
-
-const _require = (packageName: string) => {
-  let pkg = packages[packageName];
-  if (pkg) {
-    // 如果已有 default 属性，直接返回
-    if (pkg.default) return pkg;
-
-    // 函数类型的包（如 big-integer）：不能 Object.assign，否则丢失可调用性
-    if (typeof pkg === 'function') {
-      try {
-        pkg.default = pkg;
-        return pkg;
-      } catch {
-        // ES Module 冻结的函数 → 创建可调用包装
-        const fn = pkg;
-        const wrapper: any = function (this: unknown, ...args: any[]) { return fn.apply(this, args); };
-        wrapper.default = fn;
-        Object.keys(fn).forEach(k => { wrapper[k] = (fn as any)[k]; });
-        return wrapper;
-      }
+/**
+ * 解包 Vite ESM 包装的 CommonJS 模块
+ *
+ * MusicFreeDesktop 运行在 Electron/webpack 中，import he from "he" 直接得到 CJS module.exports。
+ * 本项目运行在 Vite 中，import he from "he" 可能得到 { default: { decode, ... } }（ESM 包装）。
+ * 此函数还原 MusicFreeDesktop 的行为：返回原始 CJS 模块对象。
+ */
+function unwrapMod(mod: any, checkProp?: string): any {
+  if (!mod) return mod;
+  // 如果模块本身就有 checkProp，说明已是正确形态
+  if (checkProp && mod[checkProp]) return mod;
+  // 如果有 default 属性且 default 有 checkProp，解包 default
+  if (mod.default && mod.default !== mod) {
+    if (!checkProp || mod.default[checkProp] || typeof mod.default === 'function') {
+      return mod.default;
     }
-
-    // [修复防御]: axios 实例不能 Object.assign，否则丢失原型方法（request/get/post 等）
-    // 直接返回 proxyAxios 实例，添加 .default 属性
-    if (packageName === 'axios') {
-      if (!pkg.default) pkg.default = pkg;
-      return pkg;
-    }
-
-    // 普通对象：包装为可变副本
-    const wrapped = Object.assign({}, pkg);
-    wrapped.default = pkg;
-    return wrapped;
   }
-  // 未知包返回空对象
-  log(`[require] 未知包: ${packageName}，返回空模块`);
-  const emptyModule: any = {};
-  emptyModule.default = emptyModule;
-  return emptyModule;
+  return mod;
+}
+
+// 与 MusicFree plugin.ts 第26~37行一致
+const packages: Record<string, any> = {
+  cheerio: unwrapMod(cheerio, 'load'),
+  'crypto-js': unwrapMod(CryptoJs, 'SHA256'),
+  axios: proxyAxios,
+  dayjs: unwrapMod(dayjs, 'isDayjs'),
+  'big-integer': unwrapMod(bigInt),
+  qs: unwrapMod(qs, 'stringify'),
+  he: unwrapMod(he, 'decode'),
+  buffer: { Buffer },
+  '@react-native-cookies/cookies': {
+    set: async (url: string, cookie: any) => {
+      try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        const store = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+        store[cookie.name] = { ...cookie, domain };
+        localStorage.setItem('__plugin_cookies', JSON.stringify(store));
+        return true;
+      } catch { return false; }
+    },
+    get: async (url: string) => {
+      try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        const store = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+        const result: any = {};
+        for (const [name, info] of Object.entries(store)) {
+          const c = info as any;
+          if (c.domain && (domain.includes(c.domain) || c.domain.includes(domain))) {
+            result[name] = c;
+          }
+        }
+        return result;
+      } catch { return {}; }
+    },
+    flush: async () => {},
+  },
+  'musicfree/storage': {
+    setItem: async (key: string, value: unknown) => {
+      localStorage.setItem(`__plugin_storage_${key}`, typeof value === 'string' ? value : JSON.stringify(value));
+    },
+    getItem: async (key: string) => {
+      return localStorage.getItem(`__plugin_storage_${key}`);
+    },
+    removeItem: async (key: string) => {
+      localStorage.removeItem(`__plugin_storage_${key}`);
+    },
+  },
 };
 
-const _console = {
-  log: (...args: any[]) => { log(`[PLUGIN] ${args.map(a => typeof a === 'object' ? JSON.stringify(a)?.substring(0, 200) : String(a)).join(' ')}`); },
-  warn: (...args: any[]) => { log(`[PLUGIN WARN] ${args.join(' ')}`); },
-  info: (...args: any[]) => { log(`[PLUGIN INFO] ${args.join(' ')}`); },
-  error: (...args: any[]) => { log(`[PLUGIN ERROR] ${args.join(' ')}`); },
+// 与 MusicFree plugin.ts 第39~46行一致：_require
+const _require = (packageName: string) => {
+  const pkg = packages[packageName];
+  if (pkg) {
+    try { pkg.default = pkg; } catch {}
+    return pkg;
+  }
+  return null;
 };
 
 // ==================== proxyFetch（通过 Tauri 后端代理 fetch 请求，绕过 CORS）====================
@@ -276,6 +365,7 @@ export async function proxyFetch(input: RequestInfo | URL, init?: RequestInit): 
 interface PluginInstance {
   source: PluginSource;
   instance: IPluginInstance;
+  script: string; // 存储插件源码用于错误诊断
 }
 
 /** 与 MusicFree IPlugin.IPluginDefine 一致 */
@@ -289,6 +379,8 @@ interface IPluginInstance {
   defaultSearchType?: string;
   userVariables?: any[];
   cacheControl?: string;
+  /** 提示文本（与 MusicFree IPlugin.IPluginDefine.hints 一致） */
+  hints?: Record<string, string[]>;
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
   getMusicInfo?: (musicItem: any) => Promise<any>;
@@ -298,6 +390,7 @@ interface IPluginInstance {
   getTopLists?: () => Promise<any>;
   getTopListDetail?: (topListItem: any, page: number) => Promise<any>;
   importMusicSheet?: (urlLike: string) => Promise<any>;
+  importMusicItem?: (urlLike: string) => Promise<any>;
   getMusicSheetInfo?: (sheetItem: any, page: number) => Promise<any>;
   getRecommendSheetTags?: () => Promise<any>;
   getRecommendSheetsByTag?: (tagItem: any, page: number) => Promise<any>;
@@ -363,17 +456,27 @@ export async function loadPluginFromScript(
     let _instance: IPluginInstance;
 
     // 与 MusicFree 第915~932行一致
+    // [修复] ensurePluginInitialized — 与 MusicFree plugin.ts 第88~90行一致
+    // 使用 ref 对象避免 TS 控制流分析将变量收窄为 null
+    const _resolveRef: { fn: (() => void) | null } = { fn: null };
+    const ensurePluginInitialized = new Promise<void>((resolve) => {
+      _resolveRef.fn = resolve;
+    });
+
+    // 与 MusicFree plugin.ts 第94~104行一致
     const env = {
       getUserVariables: () => ({}),
-      get userVariables() { return this.getUserVariables() ?? {}; },
+      os: 'win32',
       appVersion: '1.0.0',
-      os: 'browser',
       lang: 'zh-CN',
     };
     const _process = {
-      platform: 'browser',
+      // [修复] 设为 win32 模拟桌面端环境
+      platform: 'win32',
       version: '1.0.0',
       env,
+      // [修复] 与 MusicFree plugin.ts 第109行一致
+      ensurePluginInitialized,
     };
 
     try {
@@ -391,7 +494,7 @@ export async function loadPluginFromScript(
         _require,
         _module,
         _module.exports,
-        _console,
+        console,
         env,
         URL,
         _process,
@@ -404,6 +507,9 @@ export async function loadPluginFromScript(
       } else {
         _instance = _module.exports;
       }
+
+      // [修复] 与 MusicFree plugin.ts 第132行一致：resolve ensurePluginInitialized
+      if (_resolveRef.fn) _resolveRef.fn();
 
       // 调试：检查 _instance 内容
       log(`_module.exports 类型: ${typeof _module.exports}`);
@@ -465,8 +571,8 @@ export async function loadPluginFromScript(
       sources: [platform],
     };
 
-    // 缓存实例
-    pluginInstances.set(hash, { source, instance: _instance });
+// 缓存实例
+pluginInstances.set(hash, { source, instance: _instance, script });
 
     log(`=== 插件加载成功: "${platform}" (version=${version}) ===`);
     return source;
@@ -613,11 +719,120 @@ export async function pluginGetPlaylistDetail(
   }
 }
 
-// ==================== 歌单导入（与 MusicFree importMusicSheet 一致）====================
+// ==================== 歌单导入 ====================
+
+/**
+ * URL 预处理：从各种格式的分享链接中提取歌单 ID
+ *
+ * 各平台插件的 importMusicSheet 正则有局限性，不能匹配所有 URL 格式：
+ *   - 网易云: 只匹配 y.music.163.com/m/playlist?id= ，不匹配 music.163.com/m/playlist?id=
+ *   - QQ: 只匹配 i.y.qq.com/n2/m/share/details/taoge.html?id= ，不匹配新版 i2.y.qq.com/n3/...
+ *   - 酷我: 正则有 typo (www/ 而非 www.)，且不匹配 m.kuwo.cn/newh5app/playlist/
+ *   - 酷狗: 正则 ^(.*?)(\d+)(.*?)$ 提取第一个数字序列，对 gcid_xxx 会截断为首个数字
+ *
+ * 所有插件的 importMusicSheet 都支持 ^\d+$ 纯数字格式。
+ * 修复方案：从 URL 中提取歌单 ID，以纯数字形式传给插件。
+ */
+async function normalizeImportUrl(source: PluginSource, urlLike: string): Promise<string> {
+  const url = urlLike.trim();
+
+  // 纯数字直接返回（所有插件都支持）
+  if (/^\d+$/.test(url)) return url;
+
+  // 尝试解析为 URL
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return url; // 不是合法 URL，原样返回让插件自行处理
+  }
+
+  const platform = source.name;
+
+  // ---- 网易云音乐 ----
+  // 插件正则: y.music.163.com/m/playlist?id= 或 music.163.com/playlist/id/ 或 music.163.com/#/playlist?id=
+  // 不匹配: music.163.com/m/playlist?id= (缺少 y. 前缀)
+  // 修复: 提取 id 查询参数
+  if (platform.includes('网易云') || parsedUrl.hostname.includes('music.163.com')) {
+    const id = parsedUrl.searchParams.get('id');
+    if (id && /^\d+$/.test(id)) return id;
+  }
+
+  // ---- QQ音乐 ----
+  // 插件正则: i.y.qq.com/n2/m/share/details/taoge.html?id= 或 y.qq.com/n/ryqq/playlist/
+  // 不匹配: i2.y.qq.com/n3/other/pages/details/playlist.html?id=
+  // 修复: 提取 id 查询参数
+  if (platform.includes('QQ') || parsedUrl.hostname.includes('y.qq.com')) {
+    const id = parsedUrl.searchParams.get('id');
+    if (id && /^\d+$/.test(id)) return id;
+  }
+
+  // ---- 酷我音乐 ----
+  // 插件正则有 typo: www/kuwo.cn (应为 www.) 且只匹配 h5app/playlist/
+  // 不匹配: m.kuwo.cn/newh5app/playlist_detail/ 或 m.kuwo.cn/playlist_detail/
+  // 修复: 从路径或查询参数中提取数字 ID
+  if (platform.includes('酷我') || parsedUrl.hostname.includes('kuwo.cn')) {
+    const id = parsedUrl.searchParams.get('id');
+    if (id && /^\d+$/.test(id)) return id;
+    const pathMatch = parsedUrl.pathname.match(/(\d+)/);
+    if (pathMatch) return pathMatch[1];
+  }
+
+  // ---- 酷狗音乐 ----
+  // 插件正则: ^(.*?)(\d+)(.*?)$ 提取第一个数字序列
+  // 问题: gcid_3zu8nugmzaz02f 会提取到 "3" 而非完整 ID
+  // 插件只支持纯数字酷狗码，不支持 gcid URL
+  // 修复: 尝试从 query param code 提取酷狗码，或从路径提取 6 位以上数字
+  //       如果是 gcid_ URL，通过 HTTP 请求解析出数字歌单 ID
+  if (platform.includes('酷狗') || parsedUrl.hostname.includes('kugou.com')) {
+    // 酷狗码通常在 query 参数 code 中
+    const code = parsedUrl.searchParams.get('code');
+    if (code && /^\d+$/.test(code)) return code;
+
+    // 路径中的数字 ID（至少 6 位，避免匹配 gcid_3 中的 3）
+    const pathMatch = parsedUrl.pathname.match(/(\d{6,})/);
+    if (pathMatch) return pathMatch[1];
+
+    // gcid_ URL: 需要通过 HTTP 请求解析出数字歌单 ID
+    if (url.includes('gcid_')) {
+      try {
+        log(`[酷狗] 检测到 gcid URL，尝试通过 HTTP 请求解析歌单 ID...`);
+        const res = await axios.get(url, {
+          maxRedirects: 5,
+          timeout: 10000,
+          responseType: 'text',
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36',
+          },
+        });
+        const html = typeof res.data === 'string' ? res.data : '';
+        // 尝试多种模式从 HTML 中提取 specialid
+        const idMatch =
+          html.match(/specialid["'\s:=]+(\d+)/i) ||
+          html.match(/global_collection["'\s:=]+(\d+)/i) ||
+          html.match(/special_single\/(\d+)/) ||
+          html.match(/yy\/special\/single\/(\d+)/) ||
+          html.match(/"global_collection_id"["'\s:=]+(\d+)/) ||
+          html.match(/data-specialid[="'\s]+(\d+)/i);
+        if (idMatch) {
+          log(`[酷狗] 从 gcid URL 解析出歌单 ID: ${idMatch[1]}`);
+          return idMatch[1];
+        }
+        log(`[酷狗] 无法从 gcid URL HTML 中解析出歌单 ID`);
+      } catch (e: any) {
+        log(`[酷狗] 解析 gcid URL 失败: ${e?.message ?? e}`);
+      }
+    }
+  }
+
+  return url;
+}
 
 /**
  * 从 URL 导入歌单
- * 与 MusicFree PluginMethodsWrapper.importMusicSheet() 一致
+ * 先通过 normalizeImportUrl 从各种格式的分享链接中提取歌单 ID，
+ * 然后将纯数字 ID 传给插件的 importMusicSheet 方法。
  */
 export async function pluginImportMusicSheet(
   source: PluginSource,
@@ -632,18 +847,31 @@ export async function pluginImportMusicSheet(
       return [];
     }
 
-    // 与 MusicFree PluginMethodsWrapper.importMusicSheet() 第688-701行一致
-    const result = (await inst.instance.importMusicSheet(urlLike)) ?? [];
-    if (!Array.isArray(result) || result.length === 0) {
+    // URL 预处理：提取歌单 ID
+    const normalizedUrl = await normalizeImportUrl(source, urlLike);
+    log(`[${source.name}] 开始导入歌单, url="${urlLike.substring(0, 200)}" → id="${normalizedUrl.substring(0, 100)}"`);
+
+    const result = (await inst.instance.importMusicSheet(normalizedUrl)) ?? [];
+
+    if (!Array.isArray(result)) {
+      log(`[${source.name}] 歌单导入返回非数组: type=${typeof result}, value=${JSON.stringify(result)?.substring(0, 200)}`);
+      return [];
+    }
+
+    if (result.length === 0) {
       log(`[${source.name}] 歌单导入返回空结果`);
       return [];
     }
 
-    // 与 MusicFree 一致：每个 item 调用 resetMediaItem
+    log(`[${source.name}] 歌单导入成功, 共 ${result.length} 首`);
+
+    // 与 MusicFree 一致：对每个 item 调用 resetMediaItem
     result.forEach((_: any) => { resetMediaItem(_, source.name); });
     return result.map((item: any) => toPluginSearchResult(item, source));
   } catch (e: any) {
-    log(`[${source.name}] 歌单导入失败: ${e?.message}`);
+    const errMsg = e?.message || (typeof e === 'string' ? e : '') || 'Unknown error';
+    const errStack = e?.stack ? `\n  堆栈: ${e.stack.substring(0, 500)}` : '';
+    log(`[${source.name}] 歌单导入失败: ${errMsg}${errStack}`);
     return [];
   }
 }
@@ -651,6 +879,42 @@ export async function pluginImportMusicSheet(
 /** 获取支持歌单导入的插件列表 */
 export function getPluginsWithImportAbility(): PluginSource[] {
   return getStoredPlugins().filter(p => p.enabled && p.format === 'musicfree');
+}
+
+/**
+ * 检查插件是否支持歌单导入（importMusicSheet）
+ * 通过加载插件实例并检查是否存在 importMusicSheet 函数来判断
+ */
+export async function pluginSupportsImportMusicSheet(source: PluginSource): Promise<boolean> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return false;
+  return typeof inst.instance.importMusicSheet === 'function';
+}
+
+/**
+ * 获取插件的 importMusicSheet 提示文本
+ * 与 MusicFree IPlugin.IPluginDefine.hints.importMusicSheet 一致
+ */
+export async function getPluginImportHints(source: PluginSource): Promise<string[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+  return inst.instance.hints?.importMusicSheet ?? [];
+}
+
+/**
+ * 批量检查多个插件是否支持歌单导入
+ * 返回支持的插件 ID 集合
+ */
+export async function checkPluginsImportSupport(sources: PluginSource[]): Promise<Set<string>> {
+  const supported = new Set<string>();
+  await Promise.allSettled(
+    sources.map(async (source) => {
+      if (await pluginSupportsImportMusicSheet(source)) {
+        supported.add(source.id);
+      }
+    }),
+  );
+  return supported;
 }
 
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
@@ -954,9 +1218,28 @@ export function addPluginSource(source: PluginSource) {
   if (existing >= 0) {
     plugins[existing] = source;
   } else {
+    // 设置初始排序权重：新插件排到同格式组的末尾
+    const sameFormatCount = plugins.filter(p => p.format === source.format).length;
+    source.sortOrder = sameFormatCount;
     plugins.push(source);
   }
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(plugins));
+}
+
+/**
+ * 按用户拖拽后的新顺序重写所有插件的 sortOrder
+ * @param orderedIds 排序后的插件 ID 数组（完整列表）
+ */
+export function reorderPlugins(orderedIds: string[]) {
+  const stored = readPluginsFromLocalStorage();
+  const idToIndex = new Map(orderedIds.map((id, i) => [id, i]));
+  for (const p of stored) {
+    const idx = idToIndex.get(p.id);
+    if (idx !== undefined) {
+      p.sortOrder = idx;
+    }
+  }
+  localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
 }
 
 export function removePluginSource(id: string) {

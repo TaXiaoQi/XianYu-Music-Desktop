@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, UploadCloud, FileCode2, Info, X, Copy } from 'lucide-vue-next';
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport } from '../../services/pluginEngine';
+import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 
 const { showToast } = useToast();
 
-// 启动时加载已启用的插件
-onMounted(() => {
-  void loadPlugins();
+// 启动时加载已启用的插件，并检查歌单导入支持
+onMounted(async () => {
+  await loadPlugins();
+  plugins.value = getStoredPlugins();
+  void checkImportSupport();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
 });
@@ -51,15 +54,120 @@ const newSubscriptionUrl = ref('');
 
 const isPluginBusy = ref(false);
 
+// ==================== 歌单导入 ====================
+/** 支持歌单导入的插件 ID 集合 */
+const importSupportedPlugins = ref<Set<string>>(new Set());
+/** 导入歌单弹窗 */
+const showImportModal = ref(false);
+/** 当前要导入歌单的插件 */
+const importTargetPlugin = ref<PluginSource | null>(null);
+
+/** 检查已安装的 MusicFree 插件是否支持歌单导入 */
+async function checkImportSupport() {
+  const musicfreePlugins = plugins.value.filter(p => p.enabled && p.format === 'musicfree');
+  if (musicfreePlugins.length === 0) {
+    importSupportedPlugins.value = new Set();
+    return;
+  }
+  const supported = await checkPluginsImportSupport(musicfreePlugins);
+  importSupportedPlugins.value = supported;
+}
+
+// 插件列表变化时重新检查导入支持
+watch(plugins, () => {
+  void checkImportSupport();
+}, { deep: true });
+
+/** 插件排序：落雪(lx) 始终在上，其次 MusicFree，同组内按 sortOrder 排列 */
+function sortPlugins(list: PluginSource[]): PluginSource[] {
+  const formatPriority: Record<string, number> = { lx: 0, musicfree: 1, unknown: 2 };
+  return [...list].sort((a, b) => {
+    const pa = formatPriority[a.format] ?? 3;
+    const pb = formatPriority[b.format] ?? 3;
+    if (pa !== pb) return pa - pb;
+    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  });
+}
+
 const filteredPlugins = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase();
-  if (!keyword) return plugins.value;
-  return plugins.value.filter((p) =>
+  const sorted = sortPlugins(plugins.value);
+  if (!keyword) return sorted;
+  return sorted.filter((p) =>
     p.name.toLowerCase().includes(keyword) ||
     p.sources.join(',').toLowerCase().includes(keyword) ||
     (p.author?.toLowerCase().includes(keyword) ?? false)
   );
 });
+
+// ==================== 拖拽排序 ====================
+const draggedId = ref<string | null>(null);
+const dragOverId = ref<string | null>(null);
+
+function onDragStart(e: DragEvent, plugin: PluginSource) {
+  // 搜索模式下禁止拖拽
+  if (searchQuery.value.trim()) { e.preventDefault(); return; }
+  draggedId.value = plugin.id;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', plugin.id);
+  }
+}
+
+function onDragOver(e: DragEvent, plugin: PluginSource) {
+  if (searchQuery.value.trim() || !draggedId.value) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  if (draggedId.value !== plugin.id) {
+    dragOverId.value = plugin.id;
+  } else {
+    dragOverId.value = null;
+  }
+}
+
+function onDrop(e: DragEvent, targetPlugin: PluginSource) {
+  e.preventDefault();
+  if (!draggedId.value || searchQuery.value.trim()) return;
+
+  const draggedPlugin = plugins.value.find(p => p.id === draggedId.value);
+  if (!draggedPlugin || draggedPlugin.id === targetPlugin.id) {
+    draggedId.value = null;
+    dragOverId.value = null;
+    return;
+  }
+
+  // 仅允许在同一格式组内拖拽
+  if (draggedPlugin.format !== targetPlugin.format) {
+    showToast('只能在同一类型的插件内调整顺序', 'info');
+    draggedId.value = null;
+    dragOverId.value = null;
+    return;
+  }
+
+  // 在已排序列表中执行移动
+  const sorted = sortPlugins(plugins.value);
+  const draggedIdx = sorted.findIndex(p => p.id === draggedId.value);
+  const targetIdx = sorted.findIndex(p => p.id === targetPlugin.id);
+  if (draggedIdx === -1 || targetIdx === -1) {
+    draggedId.value = null;
+    dragOverId.value = null;
+    return;
+  }
+  const [moved] = sorted.splice(draggedIdx, 1);
+  sorted.splice(targetIdx, 0, moved);
+
+  // 持久化新顺序
+  reorderPlugins(sorted.map(p => p.id));
+  plugins.value = getStoredPlugins();
+
+  draggedId.value = null;
+  dragOverId.value = null;
+}
+
+function onDragEnd() {
+  draggedId.value = null;
+  dragOverId.value = null;
+}
 
 const pluginStatsLabel = computed(() => {
   const total = plugins.value.length;
@@ -67,8 +175,39 @@ const pluginStatsLabel = computed(() => {
   return `共 ${total} 个插件，已启用 ${enabled} 个`;
 });
 
+/** 根据插件格式返回对应颜色类名 */
+function pluginColorClasses(format: PluginSource['format']) {
+  if (format === 'lx') {
+    return {
+      iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12',
+      iconText: 'text-green-600 dark:text-green-400',
+      toggle: 'bg-green-500',
+      tagBg: 'bg-green-500/10 text-green-700 dark:text-green-300 dark:bg-green-500/15',
+      label: '落雪',
+    };
+  }
+  if (format === 'musicfree') {
+    return {
+      iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12',
+      iconText: 'text-orange-600 dark:text-orange-400',
+      toggle: 'bg-orange-500',
+      tagBg: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 dark:bg-orange-500/15',
+      label: 'MusicFree',
+    };
+  }
+  // unknown / fallback
+  return {
+    iconBg: 'bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12',
+    iconText: 'text-[#EC4141]',
+    toggle: 'bg-[#EC4141]',
+    tagBg: 'bg-gray-500/10 text-gray-700 dark:text-gray-300 dark:bg-gray-500/15',
+    label: '未知',
+  };
+}
+
 function refreshPluginList() {
   plugins.value = getStoredPlugins();
+  void checkImportSupport();
 }
 
 // ==================== 从本地文件安装 ====================
@@ -670,10 +809,30 @@ async function copyPluginLink() {
           v-for="plugin in filteredPlugins"
           :key="plugin.id"
           class="settings-plugin-card"
+          :class="{
+            'settings-plugin-card--dragging': draggedId === plugin.id,
+            'settings-plugin-card--drag-over': dragOverId === plugin.id,
+          }"
+          @dragover="onDragOver($event, plugin)"
+          @drop="onDrop($event, plugin)"
         >
+          <!-- 拖拽手柄 -->
+          <div
+            class="plugin-drag-handle"
+            :class="{ 'plugin-drag-handle--disabled': !!searchQuery.trim() }"
+            draggable="true"
+            @dragstart="onDragStart($event, plugin)"
+            @dragend="onDragEnd"
+          >
+            <GripVertical class="h-5 w-5" />
+          </div>
+
           <!-- 左侧：图标 + 信息 -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EC4141]/12 to-[#ff8b8b]/12 flex items-center justify-center shrink-0 text-[#EC4141]">
+            <div
+              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              :class="[pluginColorClasses(plugin.format).iconBg, pluginColorClasses(plugin.format).iconText]"
+            >
               <Puzzle class="h-5 w-5" />
             </div>
             <div class="min-w-0 flex-1">
@@ -681,7 +840,12 @@ async function copyPluginLink() {
                 <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
                   {{ plugin.name }}
                 </div>
-                <span class="settings-plugin-tag">{{ plugin.sources.join(', ') || 'LX' }}</span>
+                <span
+                  class="settings-plugin-tag"
+                  :class="pluginColorClasses(plugin.format).tagBg"
+                >
+                  {{ pluginColorClasses(plugin.format).label }}
+                </span>
                 <span
                   v-if="plugin.updateAvailable"
                   class="settings-plugin-tag settings-plugin-tag--accent"
@@ -690,7 +854,7 @@ async function copyPluginLink() {
                 </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
-                v{{ plugin.version }}{{ plugin.format === 'lx' ? ' · 落雪' : '' }}
+                v{{ plugin.version }}
                 <span v-if="plugin.author"> · {{ plugin.author }}</span>
                 <span v-if="plugin.description"> · {{ plugin.description }}</span>
               </div>
@@ -699,6 +863,19 @@ async function copyPluginLink() {
 
           <!-- 右侧：操作 -->
           <div class="flex items-center gap-1.5 shrink-0">
+            <!-- 导入歌单按钮已隐藏 -->
+            <!--
+            <button
+              v-if="plugin.format === 'musicfree' && importSupportedPlugins.has(plugin.id)"
+              type="button"
+              class="settings-plugin-import-btn"
+              title="导入歌单"
+              @click="handleImportMusicSheet(plugin)"
+            >
+              <ListMusic class="h-4 w-4" />
+              <span class="settings-plugin-import-btn__text">导入歌单</span>
+            </button>
+            -->
             <button
               type="button"
               class="settings-plugin-icon-button"
@@ -725,7 +902,7 @@ async function copyPluginLink() {
             </button>
             <button
               class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ml-1"
-              :class="plugin.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              :class="plugin.enabled ? pluginColorClasses(plugin.format).toggle : 'bg-gray-300 dark:bg-gray-700'"
               @click="handleTogglePlugin(plugin)"
             >
               <span
@@ -868,6 +1045,13 @@ async function copyPluginLink() {
       </Transition>
     </Teleport>
   </div>
+
+  <!-- 导入歌单弹窗 -->
+  <ImportMusicSheetModal
+    :visible="showImportModal"
+    :plugin="importTargetPlugin"
+    @close="showImportModal = false; importTargetPlugin = null"
+  />
 </template>
 
 <style scoped>
@@ -1119,6 +1303,61 @@ async function copyPluginLink() {
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
 }
 
+/* 拖拽手柄 */
+.plugin-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: rgba(148, 163, 184, 0.6);
+  cursor: grab;
+  flex-shrink: 0;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.plugin-drag-handle:hover {
+  color: rgba(100, 116, 139, 0.9);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.plugin-drag-handle:active {
+  cursor: grabbing;
+}
+
+.plugin-drag-handle--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* 拖拽中的卡片 */
+.settings-plugin-card--dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* 拖拽悬停目标 */
+.settings-plugin-card--drag-over {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.06);
+  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.12);
+}
+
+:global(.dark) .plugin-drag-handle {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+:global(.dark) .plugin-drag-handle:hover {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:global(.dark) .settings-plugin-card--drag-over {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.08);
+}
+
 .settings-plugin-tag {
   display: inline-flex;
   align-items: center;
@@ -1295,6 +1534,54 @@ async function copyPluginLink() {
 :global(.dark) .settings-plugin-icon-button--danger:hover {
   background: rgba(220, 38, 38, 0.18);
   color: #ff6b6b;
+}
+
+/* 导入歌单按钮 */
+.settings-plugin-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.06);
+  color: rgb(249, 115, 22);
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-plugin-import-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.12);
+}
+
+@media (max-width: 640px) {
+  .settings-plugin-import-btn__text {
+    display: none;
+  }
+  .settings-plugin-import-btn {
+    padding: 0 8px;
+  }
+}
+
+:global(.dark) .settings-plugin-import-btn {
+  border-color: rgba(249, 115, 22, 0.2);
+  background: rgba(249, 115, 22, 0.1);
+  color: rgb(251, 146, 60);
+}
+
+:global(.dark) .settings-plugin-import-btn:hover {
+  border-color: rgba(249, 115, 22, 0.36);
+  background: rgba(249, 115, 22, 0.16);
 }
 
 /* 插件详情弹窗 */
