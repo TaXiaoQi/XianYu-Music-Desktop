@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { usePlayer } from '../../composables/player';
 import { useThemeSettings } from '../../composables/useThemeSettings';
@@ -8,6 +8,7 @@ import ModernModal from '../common/ModernModal.vue';
 
 const {
   playQueue,
+  tempQueue,
   currentSong,
   showPlaylist,
   togglePlaylist,
@@ -20,6 +21,9 @@ const { theme } = useThemeSettings();
 
 const showClearModal = ref(false);
 const itemRefs = ref<HTMLElement[]>([]);
+
+// 合并显示：下一首播放（tempQueue）在前，播放队列（playQueue）在后
+const displayQueue = computed(() => [...tempQueue.value, ...playQueue.value]);
 
 const handleClearClick = () => {
   showClearModal.value = true;
@@ -46,7 +50,7 @@ const scrollToCurrentSong = async (behavior: ScrollBehavior = 'auto') => {
 
   await nextTick();
 
-  const currentIndex = playQueue.value.findIndex(song => song.path === currentSong.value?.path);
+  const currentIndex = displayQueue.value.findIndex(song => song.path === currentSong.value?.path);
   if (currentIndex === -1) return;
 
   itemRefs.value[currentIndex]?.scrollIntoView({
@@ -84,9 +88,9 @@ watch(
         class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#101827]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
         :class="[
           (theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-2xl',
-          playQueue.length > 0 ? 'bottom-24 w-[340px]' : 'bottom-5 w-[340px]'
+          displayQueue.length > 0 ? 'bottom-24 w-[340px]' : 'bottom-5 w-[340px]'
         ]"
-        :style="{ height: playQueue.length > 0 ? 'calc(100vh - 180px)' : 'calc(100vh - 40px)', 'min-height': '200px' }"
+        :style="{ height: displayQueue.length > 0 ? 'calc(100vh - 180px)' : 'calc(100vh - 40px)', 'min-height': '200px' }"
         @click.stop
       >
         <div
@@ -95,7 +99,7 @@ watch(
         >
           <div class="flex items-center gap-3">
             <h3 class="font-bold text-[#172033] dark:text-white text-lg tracking-tight">播放队列</h3>
-            <span class="text-xs text-[#34445c] dark:text-white font-semibold bg-[#e7edf5] dark:bg-white/12 px-2 py-0.5 rounded-full">{{ playQueue.length }}</span>
+            <span class="text-xs text-[#34445c] dark:text-white font-semibold bg-[#e7edf5] dark:bg-white/12 px-2 py-0.5 rounded-full">{{ displayQueue.length }}</span>
           </div>
           <button
             @click="handleClearClick"
@@ -108,7 +112,7 @@ watch(
         </div>
 
         <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1 bg-[#eef3f8]/45 dark:bg-[#0b1220]/35">
-          <div v-if="playQueue.length === 0" class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20">
+          <div v-if="displayQueue.length === 0" class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20">
             <div class="w-20 h-20 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-inner">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-[#42526a] dark:text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
             </div>
@@ -116,7 +120,7 @@ watch(
           </div>
 
           <div
-            v-for="(song, index) in playQueue"
+            v-for="(song, index) in displayQueue"
             :key="song.path + index"
             :ref="el => setItemRef(el, index)"
             @dblclick="playSong(song)"

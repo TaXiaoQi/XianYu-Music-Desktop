@@ -189,6 +189,7 @@ export const createPlayerQueue = ({
 
   const playNext = (song: Song) => {
     tempQueue.value = [song, ...tempQueue.value];
+    showToast('已添加至下一首播放', 'success');
   };
 
   return {
