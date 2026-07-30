@@ -375,6 +375,10 @@ export interface TauriCommandMap {
     payload: undefined;
     response: WindowMaterialCapabilities;
   };
+  refresh_window_material_active_state: {
+    payload: { keepActive: boolean };
+    response: void;
+  };
   get_foreground_fullscreen_state: {
     payload: undefined;
     response: ForegroundFullscreenState;

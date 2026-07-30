@@ -97,6 +97,7 @@ commands.allow = [
   "set_mini_boundary_enabled",
   "set_immersive_fullscreen",
   "get_window_material_capabilities",
+  "refresh_window_material_active_state",
   "get_foreground_fullscreen_state",
   "set_dark_mode_for_window",
   "refresh_current_window_topmost",

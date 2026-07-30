@@ -3,6 +3,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useWindowMaterial } from './windowMaterial';
 import { useThemeSettings } from './useThemeSettings';
+import { windowApi } from '../services/tauri/windowApi';
 
 export function useAppThemeSync() {
   const {
@@ -49,13 +50,26 @@ export function useAppThemeSync() {
     }
   };
 
+  const refreshMaterialActiveState = async (hasMaterial = theme.value.windowMaterial !== 'none') => {
+    if (!hasMaterial) {
+      return;
+    }
+
+    try {
+      await windowApi.refreshWindowMaterialActiveState(theme.value.keepWindowMaterialOnBlur);
+    } catch (error) {
+      console.warn('Failed to refresh window material active state:', error);
+    }
+  };
+
   const syncWindowMaterial = async () => {
     await nextTick();
-    await applyWindowMaterial(
+    const resolvedMaterial = await applyWindowMaterial(
       theme.value.windowMaterial,
       document.documentElement.classList.contains('dark'),
       theme.value.windowBlurTint,
     );
+    await refreshMaterialActiveState(resolvedMaterial !== 'none');
   };
 
   const syncThemeAndMaterial = async () => {
@@ -97,11 +111,12 @@ export function useAppThemeSync() {
       await applyTheme();
       if (gen !== syncGeneration) return;
       await nextTick();
-      await rebuildWindowMaterialForCompositor(
+      const resolvedMaterial = await rebuildWindowMaterialForCompositor(
         theme.value.windowMaterial,
         document.documentElement.classList.contains('dark'),
         theme.value.windowBlurTint,
       );
+      await refreshMaterialActiveState(resolvedMaterial !== 'none');
     } finally {
       if (gen === syncGeneration) {
         markInitialThemeSynced();
@@ -145,6 +160,7 @@ export function useAppThemeSync() {
     [
       () => theme.value.mode,
       () => theme.value.windowMaterial,
+      () => theme.value.keepWindowMaterialOnBlur,
       () => theme.value.windowBlurTint,
       () => theme.value.customBackground.foregroundStyle,
       isDarkTheme,
@@ -157,7 +173,7 @@ export function useAppThemeSync() {
 
   onMounted(() => {
     void appWindow.onFocusChanged(({ payload: focused }) => {
-      if (focused) {
+      if (focused || theme.value.keepWindowMaterialOnBlur) {
         scheduleRestoreMaterialSync();
       }
     }).then((unlisten) => {
@@ -182,6 +198,7 @@ export function useAppThemeSync() {
     hasWindowMaterial,
     isMicaWindowMaterial,
     syncWindowMaterial,
+    refreshMaterialActiveState,
     whenInitialThemeSynced: () => initialThemeSync,
     restoreMaterialAfterShow: scheduleStartupMaterialRebuild,
     rebuildStartupMaterialBeforeShow,

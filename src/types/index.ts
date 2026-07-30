@@ -224,6 +224,7 @@ export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
+  keepWindowMaterialOnBlur: boolean;
   flowColorBoost: number;
   flowDepth: number;
   flowSpeed: number;
@@ -563,4 +564,3 @@ export interface PluginPlaylistSearchResult {
   pluginId: string;
   rawData?: any;
 }
-
