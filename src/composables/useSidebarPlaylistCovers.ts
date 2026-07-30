@@ -1,4 +1,5 @@
 import { onUnmounted, ref, watch, type Ref } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { sidebarPlaylistCoverCache } from '../caches/imageCaches';
 
 import type { Playlist } from '../types';
@@ -16,6 +17,8 @@ export function useSidebarPlaylistCovers({
   primeCoverPath,
 }: UseSidebarPlaylistCoversOptions) {
   const playlistRealFirstSongMap = new Map<string, string>();
+  // 记录每个歌单当前自定义封面路径，用于检测变化
+  const playlistCustomCoverMap = new Map<string, string | undefined>();
   const playlistCoverCacheVersion = ref(0);
   const pendingPlaylistCoverLoads = new Set<string>();
   let playlistCoverRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -39,6 +42,10 @@ export function useSidebarPlaylistCovers({
 
     return primeCoverPath(firstSong.path, firstSong.cover_thumb_path);
   };
+
+  /** 判断字符串是否为可直接显示的网络/资源 URL */
+  const isDirectUrl = (path: string) =>
+    /^https?:\/\//i.test(path) || path.startsWith('asset:') || path.startsWith('data:');
 
   const updateCoverIfChanged = async (playlistId: string, firstSongPath: string) => {
     if (
@@ -70,9 +77,39 @@ export function useSidebarPlaylistCovers({
     }
   };
 
+  /** 设置自定义封面到缓存，返回是否发生变化 */
+  const applyCustomCover = (playlistId: string, coverPath: string | undefined): boolean => {
+    const prev = playlistCustomCoverMap.get(playlistId);
+    if (prev === coverPath && sidebarPlaylistCoverCache.has(playlistId)) {
+      return false;
+    }
+    playlistCustomCoverMap.set(playlistId, coverPath);
+
+    if (!coverPath) {
+      // 自定义封面被移除，清除缓存并重新走首歌曲封面逻辑
+      sidebarPlaylistCoverCache.delete(playlistId);
+      playlistRealFirstSongMap.delete(playlistId);
+      return true;
+    }
+
+    const url = isDirectUrl(coverPath) ? coverPath : convertFileSrc(coverPath);
+    sidebarPlaylistCoverCache.set(playlistId, url);
+    return true;
+  };
+
   const calculatePlaylistCovers = async () => {
     const changes = await Promise.all(
       playlists.value.map(async playlist => {
+        // 优先使用自定义封面
+        if (playlist.coverPath) {
+          return applyCustomCover(playlist.id, playlist.coverPath);
+        }
+
+        // 没有自定义封面，但之前可能有自定义封面（现已移除）
+        if (playlistCustomCoverMap.has(playlist.id)) {
+          applyCustomCover(playlist.id, undefined);
+        }
+
         if (playlist.songPaths.length > 0) {
           return updateCoverIfChanged(playlist.id, playlist.songPaths[0]);
         }
@@ -113,6 +150,16 @@ export function useSidebarPlaylistCovers({
 
     // 在线歌曲封面可能已在 primeCoverPath 中缓存但尚未写入 sidebarPlaylistCoverCache
     const playlist = playlists.value.find(item => item.id === playlistId);
+
+    // 优先使用自定义封面
+    if (playlist?.coverPath) {
+      const url = isDirectUrl(playlist.coverPath) ? playlist.coverPath : convertFileSrc(playlist.coverPath);
+      sidebarPlaylistCoverCache.set(playlistId, url);
+      playlistCustomCoverMap.set(playlistId, playlist.coverPath);
+      playlistCoverCacheVersion.value += 1;
+      return url;
+    }
+
     const firstSongPath = playlist?.songPaths[0];
     if (firstSongPath) {
       // 先尝试从 songs 缓存中快速获取
@@ -134,7 +181,6 @@ export function useSidebarPlaylistCovers({
     }
     if (playlistCoverRefreshIdleId !== null && 'cancelIdleCallback' in window) {
       window.cancelIdleCallback(playlistCoverRefreshIdleId);
-      playlistCoverRefreshIdleId = null;
     }
 
     const runRefresh = () => {
@@ -154,7 +200,7 @@ export function useSidebarPlaylistCovers({
   watch(
     () =>
       playlists.value
-        .map(playlist => `${playlist.id}:${playlist.songPaths[0] ?? ''}:${playlist.songPaths.length}`)
+        .map(playlist => `${playlist.id}:${playlist.coverPath ?? ''}:${playlist.songPaths[0] ?? ''}:${playlist.songPaths.length}`)
         .join('|'),
     () => {
       schedulePlaylistCoverRefresh();
