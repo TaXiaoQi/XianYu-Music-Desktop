@@ -244,7 +244,7 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+  <div class="w-full space-y-8 mt-8">
     <template v-if="currentView === 'list'">
       <section class="space-y-3">
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
