@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 
-import type { DownloadQuality, Song } from '../types';
+import type { DownloadFileNameStyle, DownloadQuality, Song } from '../types';
 
 /** 落雪音源内部音质档位 */
 export type LxQuality = '128k' | '320k' | 'flac' | 'flac24bit';
@@ -116,14 +116,42 @@ function extFromQuality(quality: LxQuality): string {
 }
 
 /**
+ * 按样式拼接文件名主体（不含扩展名）。
+ * 缺失的字段（如无专辑信息）会被跳过，避免出现 "歌名 -  - " 这种空段。
+ */
+export function buildFileNameBase(song: Song, style: DownloadFileNameStyle): string {
+  const title = song.title || song.name || '未知歌曲';
+  const artist = song.artist || '';
+  const album = song.album || '';
+
+  let parts: string[];
+  switch (style) {
+    case 'title-artist':
+      parts = [title, artist];
+      break;
+    case 'title-artist-album':
+      parts = [title, artist, album];
+      break;
+    case 'artist-title':
+    default:
+      parts = [artist, title];
+      break;
+  }
+
+  const joined = parts.map((p) => p.trim()).filter(Boolean).join(' - ');
+  return joined || title;
+}
+
+/**
  * 构造下载文件名（不含目录）。
- * keepSourceFilename 为真时使用 URL 原始文件名，否则用 "歌手 - 标题"。
+ * keepSourceFilename 为真时使用 URL 原始文件名，否则按 style 拼接歌名/歌手/专辑。
  */
 export function buildDownloadFileName(
   song: Song,
   url: string,
   hitQuality: LxQuality,
   keepSourceFilename: boolean,
+  style: DownloadFileNameStyle = 'artist-title',
 ): string {
   const ext = extFromUrl(url) || extFromQuality(hitQuality);
 
@@ -139,10 +167,7 @@ export function buildDownloadFileName(
     }
   }
 
-  const title = song.title || song.name || '未知歌曲';
-  const artist = song.artist || '';
-  const base = artist ? `${artist} - ${title}` : title;
-  return sanitizeFileName(base) + ext;
+  return sanitizeFileName(buildFileNameBase(song, style)) + ext;
 }
 
 /** 解析出的候选音源直链上下文（供逐档位下载回退使用） */
@@ -447,6 +472,8 @@ export interface DownloadSongOptions {
   quality: DownloadQuality;
   downloadDir: string;
   keepSourceFilename: boolean;
+  /** 文件名样式（keepSourceFilename 为真时不生效） */
+  fileNameStyle?: DownloadFileNameStyle;
   overwriteExisting: boolean;
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
@@ -535,7 +562,13 @@ export async function downloadSong(
       continue;
     }
 
-    const fileName = buildDownloadFileName(song, url, q, options.keepSourceFilename);
+    const fileName = buildDownloadFileName(
+      song,
+      url,
+      q,
+      options.keepSourceFilename,
+      options.fileNameStyle ?? 'artist-title',
+    );
     let destPath = joinPath(options.downloadDir, fileName);
     if (!options.overwriteExisting) {
       destPath = await resolveNonConflictingPath(destPath);

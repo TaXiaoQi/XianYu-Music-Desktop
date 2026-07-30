@@ -256,6 +256,7 @@ pub fn file_exists(path: String) -> bool {
 
 const APP_IDENTIFIER: &str = "com.xymusic.desktop";
 const GPU_CONFIG_FILE: &str = "gpu_config.json";
+const DOWNLOAD_HISTORY_FILE: &str = "download_history.json";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct GpuConfig {
@@ -644,6 +645,65 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
         .await
         .map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 下载记录文件路径：`%APPDATA%\com.xymusic.desktop\download_history.json`。
+///
+/// 与 `gpu_config_path` 保持同一目录约定。非 Windows 平台走 Tauri 的 app_data_dir。
+fn download_history_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app_handle;
+        return std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .map(|dir| dir.join(APP_IDENTIFIER).join(DOWNLOAD_HISTORY_FILE))
+            .ok_or_else(|| "APPDATA environment variable not found".to_string());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri::Manager;
+        Ok(app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join(DOWNLOAD_HISTORY_FILE))
+    }
+}
+
+/// 读取下载记录 JSON 文本。
+///
+/// 文件不存在或内容损坏时返回 `"{}"` 而不是报错，让前端始终能拿到可解析的结果。
+/// 记录结构由前端定义（传 JSON 字符串而非结构体），后续加字段无需改动 Rust 侧。
+#[tauri::command]
+pub async fn read_download_history(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let path = download_history_path(&app_handle)?;
+    if !path.is_file() {
+        return Ok("{}".to_string());
+    }
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) if !content.trim().is_empty() => Ok(content),
+        Ok(_) => Ok("{}".to_string()),
+        Err(e) => Err(format!("读取下载记录失败: {e}")),
+    }
+}
+
+/// 写入下载记录 JSON 文本（整体覆盖），自动创建父目录。
+#[tauri::command]
+pub async fn write_download_history(
+    app_handle: tauri::AppHandle,
+    content: String,
+) -> Result<(), String> {
+    let path = download_history_path(&app_handle)?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("创建下载记录目录失败: {e}"))?;
+    }
+    tokio::fs::write(&path, content)
+        .await
+        .map_err(|e| format!("写入下载记录失败: {e}"))?;
+    Ok(())
 }
 
 /// 探测在线音频直链的大小与最终 URL（用于下载对话框显示各档位文件大小）。
