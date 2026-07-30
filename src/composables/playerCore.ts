@@ -45,6 +45,8 @@ interface PlaySongOptions {
   clearShuffleFuture?: boolean;
   preserveQueue?: boolean;
   insertAfterCurrent?: boolean;
+  /** 起播时间（秒），用于按当前进度切换音质后无缝续播 */
+  startTime?: number;
 }
 
 interface LibraryRefreshSummary {

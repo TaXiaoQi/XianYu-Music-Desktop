@@ -349,6 +349,13 @@ export interface EqualizerSettings {
   currentPresetId?: string | null;
 }
 
+/** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
+export type OnlineDefaultQuality = '128k' | '320k' | 'flac' | 'flac24bit';
+/** 在线歌曲起播失败时的行为 */
+export type OnlineFailureBehavior = 'skip' | 'stop' | 'retry';
+/** 在线歌曲播放中途被中断（卡顿/出错）时的行为 */
+export type OnlineInterruptBehavior = 'pause' | 'skip';
+
 export interface AudioSettings {
   outputMode: AudioOutputMode;
   volumeBalance: {
@@ -357,12 +364,18 @@ export interface AudioSettings {
     preventClipping: boolean;
   };
   equalizer: EqualizerSettings;
-  showEqualizerInFooter: boolean; // 运行态必选属性
+  showEqualizerInFooter: boolean;
   /**
    * IDM 兼容模式：在线歌曲改为在 Worker 线程拉取完整音频后用本地 blob 播放，
    * 避免音频直链出现在主线程请求中被 IDM 等下载器劫持。
    */
   idmCompatMode: boolean;
+  /** 在线播放默认音质，默认 '320k'（HQ） */
+  onlineDefaultQuality: OnlineDefaultQuality;
+  /** 在线歌曲起播失败时的行为，默认 'skip'（跳到下一首） */
+  onlineFailureBehavior: OnlineFailureBehavior;
+  /** 在线歌曲播放中途被中断时的行为，默认 'pause'（暂停等待） */
+  onlineInterruptBehavior: OnlineInterruptBehavior;
 }
 
 export type ShortcutActionId =
