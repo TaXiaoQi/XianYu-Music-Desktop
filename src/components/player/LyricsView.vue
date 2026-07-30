@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { LyricLine as AmlLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import {
@@ -73,6 +73,55 @@ interface AmlLyricPlayerInstance {
 const amlPlayerRef = ref<AmlLyricPlayerInstance | null>(null);
 const isFontPresetMenuOpen = ref(false);
 const fontPresetMenuStyle = ref<Record<string, string>>({});
+
+/** 歌词样式面板动态定位样式：窄窗口下自动调整，防止溢出视口 */
+const fontPanelDynamicStyle = ref<Record<string, string>>({});
+
+const fontPanelStyle = computed(() => ({
+  width: 'min(320px, calc(34vw - 24px))',
+  marginRight: window.innerWidth >= 1536 ? '22vw' : '14vw',
+  ...fontPanelDynamicStyle.value,
+}));
+
+/** 检测歌词样式面板是否溢出视口左边界，溢出时动态调整位置 */
+function updateFontPanelPosition() {
+  if (!fontPanelRef.value) return;
+
+  const container = fontPanelRef.value.parentElement;
+  if (!container) return;
+
+  const containerRect = container.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const safeMargin = 16;
+  const panelMinWidth = 260;
+
+  // 默认 margin-right（与 CSS 中 14vw / 2xl:22vw 一致）
+  const defaultMr = viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
+
+  // 左侧可用空间 = 歌词视图左边缘到视口左边缘
+  const availableSpace = containerRect.left - safeMargin;
+
+  // 最大允许 margin-right = 可用空间 - 面板最小宽度
+  const maxMr = availableSpace - panelMinWidth;
+
+  if (maxMr < 0) {
+    // 左侧空间完全不够：切换到歌词视图右侧
+    fontPanelDynamicStyle.value = {
+      right: 'auto',
+      left: '100%',
+      marginLeft: `${safeMargin}px`,
+      marginRight: '0',
+    };
+  } else if (defaultMr > maxMr) {
+    // 默认 margin 太大：限制到 maxMr
+    fontPanelDynamicStyle.value = {
+      marginRight: `${Math.round(maxMr)}px`,
+    };
+  } else {
+    // 正常：使用默认值
+    fontPanelDynamicStyle.value = {};
+  }
+}
 
 const amllLines = computed<AmlLyricLine[]>(() => {
   return convertLyricsToAmlLines(
@@ -322,14 +371,26 @@ async function handleLineClick(event: LyricLineMouseEvent) {
 onMounted(() => {
   window.addEventListener('mousedown', handleClickOutside);
   window.addEventListener('resize', updateFontPresetMenuPosition);
+  window.addEventListener('resize', updateFontPanelPosition);
   void loadSystemLyricsFonts();
 });
 
 onUnmounted(() => {
   window.removeEventListener('mousedown', handleClickOutside);
   window.removeEventListener('resize', updateFontPresetMenuPosition);
+  window.removeEventListener('resize', updateFontPanelPosition);
   showLyricsPlayerSettingsPanel.value = false;
   isFontPresetMenuOpen.value = false;
+});
+
+// 面板可见性变化时重新检测位置
+watch(showLyricsPlayerSettingsPanel, async (visible) => {
+  if (visible) {
+    await nextTick();
+    updateFontPanelPosition();
+  } else {
+    fontPanelDynamicStyle.value = {};
+  }
 });
 </script>
 
@@ -338,8 +399,8 @@ onUnmounted(() => {
     <div
       v-show="amllLines.length > 0"
       ref="fontPanelRef"
-      class="pointer-events-none absolute right-[100%] mr-[14vw] 2xl:mr-[22vw] top-2 bottom-12 z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
-      style="width: min(320px, calc(34vw - 24px));"
+      class="pointer-events-none absolute right-[100%] top-2 bottom-12 z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
+      :style="fontPanelStyle"
     >
       <transition name="font-panel">
         <div
