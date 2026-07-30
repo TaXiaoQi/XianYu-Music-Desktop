@@ -48,11 +48,14 @@ let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
+// [在线失败行为] 记录上一次因起播失败而重试过的歌曲路径，避免 'retry' 无限重试
+let lastFailureRetriedPath: string | null = null;
 
 // [落雪] HTML5 Audio 网络音频播放（与 YinDongMusic 一致）
 let networkAudio: HTMLAudioElement | null = null;
 let networkAudioTimeUpdateHandler: (() => void) | null = null;
 let networkAudioEndedHandler: (() => void) | null = null;
+let networkAudioErrorHandler: (() => void) | null = null;
 /** IDM 兼容模式下为音频创建的 blob URL，需在切歌/停止时释放，避免内存泄漏 */
 let networkAudioBlobUrl: string | null = null;
 
@@ -166,6 +169,10 @@ const stopNetworkAudio = () => {
   if (networkAudioEndedHandler) {
     networkAudio.removeEventListener('ended', networkAudioEndedHandler);
     networkAudioEndedHandler = null;
+  }
+  if (networkAudioErrorHandler) {
+    networkAudio.removeEventListener('error', networkAudioErrorHandler);
+    networkAudioErrorHandler = null;
   }
 
   networkAudio.src = '';
@@ -591,8 +598,8 @@ export const createPlayerPlayback = ({
             await ensureLxPluginInstance(matchedPlugin);
             // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
             const cachedInfo = getCachedLxSong(lxSource, songmid);
-            // 读取用户选择的音质（默认 '320k' = HQ），由 PlayerFooter 写入
-            const lxQualityType = localStorage.getItem('online_quality') || '320k';
+            // 读取用户在设置中选择的默认音质（默认 '320k' = HQ）
+            const lxQualityType = settingsStore.settings.audio.onlineDefaultQuality || '320k';
             const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
               songId: songmid,
               name: song.name,
@@ -635,8 +642,8 @@ export const createPlayerPlayback = ({
           const plugins = getStoredPlugins();
           const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
           if (pluginSource) {
-            // 读取用户选择的音质，映射到 MusicFree 插件的 quality 枚举
-            const lxQualityType = localStorage.getItem('online_quality') || '320k';
+            // 读取用户在设置中选择的默认音质，映射到 MusicFree 插件的 quality 枚举
+            const lxQualityType = settingsStore.settings.audio.onlineDefaultQuality || '320k';
             const pluginQuality: 'standard' | 'high' | 'lossless' =
               lxQualityType === 'flac24bit' || lxQualityType === 'flac'
                 ? 'lossless'
@@ -718,6 +725,7 @@ export const createPlayerPlayback = ({
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
+        lastFailureRetriedPath = null; // 起播成功，清除重试标记
         sessionStartTime = Date.now();
         loadLyrics();
         startPlaybackRuntime();
@@ -837,8 +845,21 @@ export const createPlayerPlayback = ({
         networkAudioEndedHandler = () => {
           handleAutoNext();
         };
+        // [在线中途被打断行为] 播放开始后音频出错（网络中断/解码异常）时按设置处理
+        networkAudioErrorHandler = () => {
+          if (!networkAudio || currentSong.value?.path !== song.path) return;
+          const behavior = settingsStore.settings.audio.onlineInterruptBehavior ?? 'pause';
+          if (behavior === 'skip') {
+            handleAutoNext();
+          } else {
+            // 'pause'：暂停等待，停在当前位置
+            isPlaying.value = false;
+            stopPlaybackRuntime();
+          }
+        };
         audio.addEventListener('timeupdate', networkAudioTimeUpdateHandler);
         audio.addEventListener('ended', networkAudioEndedHandler);
+        audio.addEventListener('error', networkAudioErrorHandler);
 
         // 用户在加载音频期间按了暂停：保留已就绪的 audio 元素（后续点播放可直接续播），
         // 但不要出声，并停在暂停态
@@ -1067,6 +1088,35 @@ export const createPlayerPlayback = ({
       isSongLoaded.value = false;
       sessionStartTime = null;
       stopPlaybackRuntime();
+
+      // [在线播放起播失败行为] 仅对在线歌曲生效；本地歌曲维持原有「停止」表现
+      const isOnlineSong = song.path.startsWith('lx://')
+        || song.path.startsWith('plugin://')
+        || song.path.startsWith('http://')
+        || song.path.startsWith('https://')
+        || song.path.startsWith('remote://');
+      if (!isOnlineSong) return;
+
+      const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+      if (failureBehavior === 'skip') {
+        lastFailureRetriedPath = null;
+        setTimeout(() => {
+          if (currentSong.value?.path === song.path) handleAutoNext();
+        }, 400);
+      } else if (failureBehavior === 'retry') {
+        // 每首歌只自动重试一次，重试仍失败则停止，避免死循环
+        if (lastFailureRetriedPath !== song.path) {
+          lastFailureRetriedPath = song.path;
+          setTimeout(() => {
+            if (currentSong.value?.path === song.path) {
+              void playSong(song, { startTime: currentTime.value, preserveQueue: true });
+            }
+          }, 800);
+        } else {
+          lastFailureRetriedPath = null;
+        }
+      }
+      // 'stop'：保持停止，不做额外处理
     }
   };
 

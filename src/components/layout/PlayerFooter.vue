@@ -33,6 +33,7 @@ const handleOpenDetail = () => {
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
+const { settings, patchSettings: patchAudioSettings } = useSettings();
 
 // --- 下载功能 ---
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
@@ -126,8 +127,14 @@ const QUALITY_OPTIONS = [
   { label: 'Hi-Res', value: 'hires',  lxType: 'flac24bit' },
 ] as const;
 
-/** 存储当前选择的 lxType（默认 '320k' = HQ），持久化到 localStorage */
-const selectedQualityLxType = ref<string>(localStorage.getItem(ONLINE_QUALITY_KEY) || '320k');
+/** 当前选择的 lxType，来源于 settings store（默认 '320k' = HQ） */
+const selectedQualityLxType = computed<string>(
+  () => settings.value.audio.onlineDefaultQuality ?? '320k',
+);
+// 保持 localStorage 与 settings store 一致（playerPlayback 通过 localStorage 读取音质）
+watch(selectedQualityLxType, (value) => {
+  localStorage.setItem(ONLINE_QUALITY_KEY, value);
+}, { immediate: true });
 /** 在线歌曲：显示在按钮上的音质标签（HQ / SQ 等） */
 const currentQualityLabel = computed(
   () => QUALITY_OPTIONS.find(o => o.lxType === selectedQualityLxType.value)?.label ?? 'HQ',
@@ -166,7 +173,8 @@ const toggleQualityMenu = (e: MouseEvent) => {
 
 const selectQuality = async (lxType: string) => {
   const prev = selectedQualityLxType.value;
-  selectedQualityLxType.value = lxType;
+  // 写入 settings store（持久化 + 设置页联动），并同步 localStorage 供 playerPlayback 读取
+  patchAudioSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: lxType as any } });
   localStorage.setItem(ONLINE_QUALITY_KEY, lxType);
   showQualityMenu.value = false;
 
@@ -327,8 +335,6 @@ const footerToolsRef = ref<HTMLElement | null>(null);
 const toggleFooterTools = () => {
   showFooterTools.value = !showFooterTools.value;
 };
-
-const { settings } = useSettings();
 
 watch(
   () => settings.value.audio.showEqualizerInFooter,

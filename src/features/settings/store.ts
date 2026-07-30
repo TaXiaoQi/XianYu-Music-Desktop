@@ -127,6 +127,9 @@ export const defaultAudioSettings: AudioSettings = {
   },
   showEqualizerInFooter: true,
   idmCompatMode: false,
+  onlineDefaultQuality: '320k',
+  onlineFailureBehavior: 'skip',
+  onlineInterruptBehavior: 'pause',
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -355,6 +358,10 @@ export const mergeAudioSettings = (
       ? patch.outputMode
       : base.outputMode ?? 'shared';
 
+  const VALID_ONLINE_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'retry'];
+  const VALID_INTERRUPT_BEHAVIORS = ['pause', 'skip'];
+
   return {
     ...base,
     outputMode: nextOutputMode,
@@ -373,6 +380,15 @@ export const mergeAudioSettings = (
     idmCompatMode: typeof patch.idmCompatMode === 'boolean'
       ? patch.idmCompatMode
       : base.idmCompatMode ?? false,
+    onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as string)
+      ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
+      : base.onlineDefaultQuality ?? '320k',
+    onlineFailureBehavior: VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)
+      ? (patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'])
+      : base.onlineFailureBehavior ?? 'skip',
+    onlineInterruptBehavior: VALID_INTERRUPT_BEHAVIORS.includes(patch.onlineInterruptBehavior as string)
+      ? (patch.onlineInterruptBehavior as AudioSettings['onlineInterruptBehavior'])
+      : base.onlineInterruptBehavior ?? 'pause',
   };
 };
 
