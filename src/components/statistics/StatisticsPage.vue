@@ -335,18 +335,18 @@ const losslessRatio = computed(() => {
                 <span v-else>{{ item.nickname.slice(0, 1).toUpperCase() }}</span>
               </div>
               <div class="leaderboard-info">
-                <div class="leaderboard-name">
+                <div class="leaderboard-name text-gray-800 dark:text-white/90">
                   {{ item.nickname }}
                   <span v-if="item.isMe" class="leaderboard-tag">{{ TEXT.you }}</span>
                 </div>
-                <div class="leaderboard-username">@{{ item.username }}</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ item.username }}</div>
               </div>
-              <div class="leaderboard-duration">{{ formatLeaderboardDuration(item.duration) }}</div>
+              <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(item.duration) }}</div>
             </div>
 
             <!-- 自己的排名（始终固定在底部显示） -->
             <template v-if="leaderboardDisplay.me">
-              <div class="leaderboard-divider">
+              <div class="leaderboard-divider text-black/30 dark:text-white/30">
                 <span>···</span>
               </div>
               <div class="leaderboard-row is-me is-sticky">
@@ -358,13 +358,13 @@ const losslessRatio = computed(() => {
                   <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
                 </div>
                 <div class="leaderboard-info">
-                  <div class="leaderboard-name">
+                  <div class="leaderboard-name text-gray-800 dark:text-white/90">
                     {{ leaderboardDisplay.me.nickname }}
                     <span class="leaderboard-tag">{{ TEXT.you }}</span>
                   </div>
-                  <div class="leaderboard-username">@{{ leaderboardDisplay.me.username }}</div>
+                  <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.username }}</div>
                 </div>
-                <div class="leaderboard-duration">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
+                <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
               </div>
             </template>
           </div>
@@ -429,11 +429,6 @@ const losslessRatio = computed(() => {
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
 }
 
-:global(.dark) .leaderboard-row.is-sticky {
-  background: rgba(30, 30, 30, 0.92);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
-}
-
 :global(.dark) .leaderboard-row {
   background: rgba(255, 255, 255, 0.04);
 }
@@ -449,6 +444,12 @@ const losslessRatio = computed(() => {
 :global(.dark) .leaderboard-row.is-me {
   background: rgba(236, 65, 65, 0.12);
   border-color: rgba(236, 65, 65, 0.35);
+}
+
+/* is-sticky 放在 is-me 之后，确保 sticky 行的模糊背景优先于 is-me 的红色背景 */
+:global(.dark) .leaderboard-row.is-sticky {
+  background: rgba(30, 30, 30, 0.92);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .leaderboard-rank {

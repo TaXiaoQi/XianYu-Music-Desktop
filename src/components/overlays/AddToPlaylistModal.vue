@@ -1,9 +1,12 @@
 //负责显示“添加到歌单”的弹窗。
 <script setup lang="ts">
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { useLibraryStore } from '../../features/library/store';
 import { onUnmounted, ref, watch } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import ModernInputModal from '../common/ModernInputModal.vue';
 import { useCoverCache } from '../../composables/useCoverCache';
+import type { Playlist } from '../../types';
 
 const props = defineProps<{
   visible: boolean,
@@ -13,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits(['close', 'add']);
 
 const { playlists, createPlaylist } = useLibraryCollections();
+const libraryStore = useLibraryStore();
 const playlistCoverCache = ref<Map<string, string>>(new Map());
 let clearTimer: number | null = null;
 const { loadCover } = useCoverCache();
@@ -36,6 +40,36 @@ const scheduleClear = () => {
   }, 15000);
 };
 
+// 同步获取歌单封面：优先自定义封面 coverPath，其次首歌曲的 cover_thumb_path（网络歌曲）
+const getPlaylistCover = (playlist: Playlist): string => {
+  if (playlist.coverPath) {
+    if (playlist.coverPath.startsWith('http') || playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
+      return playlist.coverPath;
+    }
+    try {
+      return convertFileSrc(playlist.coverPath);
+    } catch {
+      return '';
+    }
+  }
+  // 网络歌曲（plugin/remote）：使用首歌曲的 cover_thumb_path
+  if (playlist.songPaths.length > 0) {
+    const song = libraryStore.songLookup.get(playlist.songPaths[0]);
+    const thumbPath = song?.cover_thumb_path;
+    if (thumbPath) {
+      if (thumbPath.startsWith('http') || thumbPath.startsWith('asset:') || thumbPath.startsWith('data:')) {
+        return thumbPath;
+      }
+      try {
+        return convertFileSrc(thumbPath);
+      } catch {
+        return '';
+      }
+    }
+  }
+  return '';
+};
+
 const loadPlaylistCover = async (id: string, path: string) => {
   if (!path || playlistCoverCache.value.has(id)) return;
   try {
@@ -49,7 +83,11 @@ const loadPlaylistCover = async (id: string, path: string) => {
 watch(() => props.visible, (val) => {
   if (val) {
     cancelClearTimer();
-    playlists.value.forEach(pl => { if (pl.songPaths.length > 0) void loadPlaylistCover(pl.id, pl.songPaths[0]); });
+    // 仅对没有自定义封面、且首歌曲无 cover_thumb_path 的歌单加载后端缩略图
+    playlists.value.forEach(pl => {
+      if (getPlaylistCover(pl)) return;
+      if (pl.songPaths.length > 0) void loadPlaylistCover(pl.id, pl.songPaths[0]);
+    });
     return;
   }
 
@@ -93,7 +131,7 @@ const handleConfirmCreate = (name: string) => {
           </div>
           <div v-for="pl in playlists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
             <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-              <img v-if="playlistCoverCache.get(pl.id)" :src="playlistCoverCache.get(pl.id)" class="w-full h-full object-cover">
+              <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover">
               <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
             </div>
             <div class="flex-1 min-w-0">

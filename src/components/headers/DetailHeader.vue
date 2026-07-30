@@ -63,6 +63,15 @@ const headerCover = ref('');
 let coverRequestId = 0;
 const { loadCover, loadFullCover, primeCoverPath } = useCoverCache();
 
+/** 判断字符串是否为可直接显示的网络/资源 URL */
+const isDirectUrl = (path: string) =>
+  /^https?:\/\//i.test(path) || path.startsWith('asset:') || path.startsWith('data:');
+
+const resolveCoverPath = (coverPath: string): string => {
+  if (!coverPath) return '';
+  return isDirectUrl(coverPath) ? coverPath : convertFileSrc(coverPath);
+};
+
 const updateHeaderCover = async () => {
   const requestId = ++coverRequestId;
 
@@ -71,7 +80,7 @@ const updateHeaderCover = async () => {
       // 优先使用歌单自定义封面
       if (pl && pl.coverPath) {
         if (requestId !== coverRequestId) return;
-        headerCover.value = convertFileSrc(pl.coverPath);
+        headerCover.value = resolveCoverPath(pl.coverPath);
         return;
       }
       if (pl && pl.songPaths.length > 0) {
@@ -98,7 +107,14 @@ const updateHeaderCover = async () => {
 
           const thumbnailCover = await loadCover(firstSongPath);
           if (requestId !== coverRequestId) return;
-          headerCover.value = thumbnailCover || '';
+          if (thumbnailCover) {
+            headerCover.value = thumbnailCover;
+          } else {
+            // 后端无法获取封面（如 plugin 网络歌曲），回退到歌曲的 cover_thumb_path
+            const firstSong = props.songs[0];
+            const thumbPath = firstSong?.cover_thumb_path;
+            headerCover.value = thumbPath || '';
+          }
         } catch {
           if (requestId !== coverRequestId) return;
           headerCover.value = '';
