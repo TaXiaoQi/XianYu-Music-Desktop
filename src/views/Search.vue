@@ -185,7 +185,7 @@
                   {{ item.album }}
                 </td>
                 <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-                  {{ item.duration ? formatMfDuration(item.duration) : '--:--' }}
+                  {{ item.duration ? formatMfDuration(Math.floor(item.duration / 1000)) : '--:--' }}
                 </td>
               </tr>
               <!-- 本地搜索结果 -->
@@ -429,6 +429,7 @@ import {
 } from '../services/pluginEngine';
 import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
+import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -1190,18 +1191,66 @@ const handlePlaylistClick = (playlist: Playlist) => {
 
 // ==================== 插件歌手/专辑/歌单导航 ====================
 
-// 插件来源暂无专属详情页，点击后以该名称作为关键词在搜索页搜索对应歌曲
+const onlineDetailStore = useOnlineDetailStore();
+
+/** 根据 pluginId 查找对应的 PluginSource */
+function findPluginSource(pluginId: string): PluginSource | undefined {
+  const item = pluginSourceList.value.find(s => s.id === pluginId && s.type === 'musicfree');
+  return item?.source;
+}
+
 const handlePluginArtistClick = (artist: PluginArtistResult) => {
-  void router.push({ path: '/search', query: { q: artist.name } });
+  const pluginSource = findPluginSource(artist.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: artist.name } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'artist',
+    title: artist.name,
+    subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+    coverUrl: artist.avatarUrl,
+    pluginSource,
+    rawData: artist.rawData,
+    sourceSearchType: 'artist' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'artist' } });
 };
 
 const handlePluginAlbumClick = (album: PluginAlbumResult) => {
-  void router.push({ path: '/search', query: { q: album.name } });
+  const pluginSource = findPluginSource(album.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: album.name } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'album',
+    title: album.name,
+    subtitle: album.artist,
+    coverUrl: album.coverUrl,
+    pluginSource,
+    rawData: album.rawData,
+    sourceSearchType: 'album' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'album' } });
 };
 
 const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
-  // 当前没有歌单详情页，暂时搜索歌单名
-  void router.push({ path: '/search', query: { q: playlist.title } });
+  const pluginSource = findPluginSource(playlist.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: playlist.title } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'playlist',
+    title: playlist.title,
+    subtitle: playlist.trackCount ? `${playlist.trackCount} 首` : (playlist.artist || ''),
+    coverUrl: playlist.coverUrl,
+    pluginSource,
+    rawData: playlist.rawData,
+    sourceSearchType: 'playlist' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 };
 
 const handlePluginImgError = (e: Event) => {
@@ -1272,6 +1321,11 @@ onMounted(() => {
   // 初始化来源选择：优先选第一个插件，无插件则选本地
   if (allSourceList.value.length > 0) {
     selectedSourceId.value = allSourceList.value[0].id;
+  }
+  // 从在线详情返回时，恢复对应的搜索 tab（"从哪儿来回哪儿去"）
+  const pendingType = onlineDetailStore.consumePendingSearchType();
+  if (pendingType) {
+    activeSearchType.value = pendingType;
   }
   if (!hasQuery.value) return;
   performSearch();
