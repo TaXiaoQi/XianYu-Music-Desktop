@@ -1487,9 +1487,8 @@ export function addPluginSource(source: PluginSource) {
   if (existing >= 0) {
     plugins[existing] = source;
   } else {
-    // 设置初始排序权重：新插件排到同格式组的末尾
-    const sameFormatCount = plugins.filter(p => p.format === source.format).length;
-    source.sortOrder = sameFormatCount;
+    // 设置初始排序权重：新插件排到所有插件的末尾
+    source.sortOrder = plugins.length;
     plugins.push(source);
   }
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(plugins));

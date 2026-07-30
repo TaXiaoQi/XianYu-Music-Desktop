@@ -34,6 +34,7 @@ onUnmounted(() => {
   unlistenDragDrop?.();
   unlistenDragOver?.();
   unlistenDragLeave?.();
+  stopDragging();
 });
 
 // UI 状态
@@ -88,14 +89,14 @@ watch(plugins, () => {
   void checkImportSupport();
 }, { deep: true });
 
-/** 插件排序：落雪(lx) 始终在上，其次 MusicFree，同组内按 sortOrder 排列 */
+/** 插件排序：完全按用户自定义的 sortOrder 排列，不强制按格式分组 */
 function sortPlugins(list: PluginSource[]): PluginSource[] {
-  const formatPriority: Record<string, number> = { lx: 0, musicfree: 1, unknown: 2 };
   return [...list].sort((a, b) => {
-    const pa = formatPriority[a.format] ?? 3;
-    const pb = formatPriority[b.format] ?? 3;
-    if (pa !== pb) return pa - pb;
-    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    const sa = a.sortOrder ?? 0;
+    const sb = b.sortOrder ?? 0;
+    if (sa !== sb) return sa - sb;
+    // sortOrder 相同时保持原始顺序（兼容旧数据）
+    return list.indexOf(a) - list.indexOf(b);
   });
 }
 
@@ -110,74 +111,166 @@ const filteredPlugins = computed(() => {
   );
 });
 
-// ==================== 拖拽排序 ====================
-const draggedId = ref<string | null>(null);
-const dragOverId = ref<string | null>(null);
+// ==================== 拖拽排序（基于 pointer 事件）====================
+// 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
+// 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
+const draggingIndex = ref<number | null>(null);
+const listRef = ref<HTMLElement | null>(null);
+const scrollContainer = ref<HTMLElement | null>(null);
+let latestPointerY = 0;
+let autoScrollFrame: number | null = null;
 
-function onDragStart(e: DragEvent, plugin: PluginSource) {
+const AUTO_SCROLL_EDGE_SIZE = 80;
+const AUTO_SCROLL_MAX_SPEED = 8;
+
+/** 查找列表所在的纵向滚动容器 */
+const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+  let current = element.parentElement;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+};
+
+/**
+ * 根据指针位置和当前拖拽索引推导目标索引。
+ * 只在越过相邻项中线后换位，避免列表重排后指针反向命中原位置而抖动。
+ */
+const resolveTargetIndex = (clientY: number, currentIndex: number): number | null => {
+  const listEl = listRef.value;
+  if (!listEl) return null;
+
+  const rows = Array.from(
+    listEl.querySelectorAll<HTMLElement>('[data-plugin-row]'),
+  );
+  if (rows.length === 0) return null;
+
+  let target = currentIndex;
+
+  // 向上扫描
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) target = i;
+    else break;
+  }
+
+  if (target !== currentIndex) return target;
+
+  // 向下扫描
+  for (let i = currentIndex + 1; i < rows.length; i++) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY > rect.top + rect.height / 2) target = i;
+    else break;
+  }
+
+  return target;
+};
+
+/** 在已排序列表中移动插件（仅内存操作，拖拽结束后持久化） */
+const movePluginItem = (from: number, to: number) => {
+  if (from < 0 || from >= filteredPlugins.value.length || to < 0 || to >= filteredPlugins.value.length || from === to) return;
+  const sorted = [...filteredPlugins.value];
+  const [moved] = sorted.splice(from, 1);
+  sorted.splice(to, 0, moved);
+  // 更新内存中的 sortOrder，触发 filteredPlugins 重新排序
+  sorted.forEach((p, i) => {
+    const plugin = plugins.value.find(item => item.id === p.id);
+    if (plugin) plugin.sortOrder = i;
+  });
+};
+
+const updateDraggedItemPosition = (clientY: number) => {
+  const currentIndex = draggingIndex.value;
+  if (currentIndex === null) return;
+
+  const target = resolveTargetIndex(clientY, currentIndex);
+  if (target === null || target === currentIndex) return;
+
+  movePluginItem(currentIndex, target);
+  // 实时重排后，被拖拽项已移动到新位置
+  draggingIndex.value = target;
+};
+
+/** 指针靠近滚动区域边缘时，持续滚动并同步更新拖拽位置 */
+const runAutoScroll = () => {
+  autoScrollFrame = null;
+  if (draggingIndex.value === null) return;
+
+  const container = scrollContainer.value;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  let speed = 0;
+
+  if (latestPointerY < rect.top + AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (rect.top + AUTO_SCROLL_EDGE_SIZE - latestPointerY) / AUTO_SCROLL_EDGE_SIZE);
+    speed = -AUTO_SCROLL_MAX_SPEED * intensity;
+  } else if (latestPointerY > rect.bottom - AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (latestPointerY - (rect.bottom - AUTO_SCROLL_EDGE_SIZE)) / AUTO_SCROLL_EDGE_SIZE);
+    speed = AUTO_SCROLL_MAX_SPEED * intensity;
+  }
+
+  if (speed === 0) return;
+
+  const previousScrollTop = container.scrollTop;
+  container.scrollTop += speed;
+  if (container.scrollTop !== previousScrollTop) {
+    updateDraggedItemPosition(latestPointerY);
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
+};
+
+const scheduleAutoScroll = () => {
+  if (autoScrollFrame === null) {
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
+};
+
+const handlePointerMove = (event: PointerEvent) => {
+  if (draggingIndex.value === null) return;
+  event.preventDefault();
+
+  latestPointerY = event.clientY;
+  updateDraggedItemPosition(event.clientY);
+  scheduleAutoScroll();
+};
+
+const stopDragging = () => {
+  // 拖拽结束时持久化到 localStorage
+  if (draggingIndex.value !== null) {
+    const finalOrder = sortPlugins(plugins.value).map(p => p.id);
+    reorderPlugins(finalOrder);
+    plugins.value = getStoredPlugins();
+  }
+  draggingIndex.value = null;
+  scrollContainer.value = null;
+  if (autoScrollFrame !== null) {
+    cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
+  window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointerup', stopDragging);
+  window.removeEventListener('pointercancel', stopDragging);
+};
+
+const startDragging = (index: number, event: PointerEvent) => {
   // 搜索模式下禁止拖拽
-  if (searchQuery.value.trim()) { e.preventDefault(); return; }
-  draggedId.value = plugin.id;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', plugin.id);
-  }
-}
+  if (searchQuery.value.trim()) return;
+  // 只响应主键/触摸
+  if (event.button !== 0) return;
+  event.preventDefault();
 
-function onDragOver(e: DragEvent, plugin: PluginSource) {
-  if (searchQuery.value.trim() || !draggedId.value) return;
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  if (draggedId.value !== plugin.id) {
-    dragOverId.value = plugin.id;
-  } else {
-    dragOverId.value = null;
-  }
-}
-
-function onDrop(e: DragEvent, targetPlugin: PluginSource) {
-  e.preventDefault();
-  if (!draggedId.value || searchQuery.value.trim()) return;
-
-  const draggedPlugin = plugins.value.find(p => p.id === draggedId.value);
-  if (!draggedPlugin || draggedPlugin.id === targetPlugin.id) {
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-
-  // 仅允许在同一格式组内拖拽
-  if (draggedPlugin.format !== targetPlugin.format) {
-    showToast('只能在同一类型的插件内调整顺序', 'info');
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-
-  // 在已排序列表中执行移动
-  const sorted = sortPlugins(plugins.value);
-  const draggedIdx = sorted.findIndex(p => p.id === draggedId.value);
-  const targetIdx = sorted.findIndex(p => p.id === targetPlugin.id);
-  if (draggedIdx === -1 || targetIdx === -1) {
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-  const [moved] = sorted.splice(draggedIdx, 1);
-  sorted.splice(targetIdx, 0, moved);
-
-  // 持久化新顺序
-  reorderPlugins(sorted.map(p => p.id));
-  plugins.value = getStoredPlugins();
-
-  draggedId.value = null;
-  dragOverId.value = null;
-}
-
-function onDragEnd() {
-  draggedId.value = null;
-  dragOverId.value = null;
-}
+  draggingIndex.value = index;
+  latestPointerY = event.clientY;
+  scrollContainer.value = listRef.value ? findScrollContainer(listRef.value) : null;
+  window.addEventListener('pointermove', handlePointerMove, { passive: false });
+  window.addEventListener('pointerup', stopDragging);
+  window.addEventListener('pointercancel', stopDragging);
+};
 
 const pluginStatsLabel = computed(() => {
   const total = plugins.value.length;
@@ -981,25 +1074,26 @@ async function copyPluginLink() {
       </div>
 
       <!-- 插件卡片 -->
-      <div v-else class="flex flex-col gap-2">
+      <div v-else ref="listRef">
+      <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col gap-2">
         <div
-          v-for="plugin in filteredPlugins"
+          v-for="(plugin, index) in filteredPlugins"
           :key="plugin.id"
+          data-plugin-row
           class="settings-plugin-card"
           :class="{
-            'settings-plugin-card--dragging': draggedId === plugin.id,
-            'settings-plugin-card--drag-over': dragOverId === plugin.id,
+            'settings-plugin-card--dragging': draggingIndex === index,
           }"
-          @dragover="onDragOver($event, plugin)"
-          @drop="onDrop($event, plugin)"
         >
           <!-- 拖拽手柄 -->
           <div
-            class="plugin-drag-handle"
-            :class="{ 'plugin-drag-handle--disabled': !!searchQuery.trim() }"
-            draggable="true"
-            @dragstart="onDragStart($event, plugin)"
-            @dragend="onDragEnd"
+            class="plugin-drag-handle touch-none select-none"
+            :class="{
+              'plugin-drag-handle--disabled': !!searchQuery.trim(),
+              'cursor-grabbing': draggingIndex === index,
+              'cursor-grab': draggingIndex !== index,
+            }"
+            @pointerdown="startDragging(index, $event)"
           >
             <GripVertical class="h-5 w-5" />
           </div>
@@ -1096,6 +1190,7 @@ async function copyPluginLink() {
             </button>
           </div>
         </div>
+      </TransitionGroup>
       </div>
     </section>
 
@@ -1540,15 +1635,21 @@ async function copyPluginLink() {
 
 /* 拖拽中的卡片 */
 .settings-plugin-card--dragging {
-  opacity: 0.4;
-  border-style: dashed;
+  border-color: rgba(236, 65, 65, 0.35);
+  background: rgba(236, 65, 65, 0.06);
+  box-shadow: 0 8px 20px rgba(236, 65, 65, 0.12);
 }
 
-/* 拖拽悬停目标 */
-.settings-plugin-card--drag-over {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.06);
-  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.12);
+/* FLIP 排序动画 */
+.plugin-sort-move {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugin-sort-move {
+    transition: none;
+  }
 }
 
 :global(.dark) .plugin-drag-handle {
@@ -1560,9 +1661,9 @@ async function copyPluginLink() {
   background: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .settings-plugin-card--drag-over {
-  border-color: rgba(34, 197, 94, 0.4);
-  background: rgba(34, 197, 94, 0.08);
+:global(.dark) .settings-plugin-card--dragging {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.1);
 }
 
 .settings-plugin-tag {
