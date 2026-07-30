@@ -7,21 +7,27 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult } from '../../services/pluginEngine';
+import { useSettings } from '../../features/settings/useSettings';
 import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 
 const { showToast } = useToast();
+const { settings, patchSettings } = useSettings();
 
-// 启动时加载已启用的插件，并检查歌单导入支持
+// 插件设置快捷访问
+const pluginSettings = computed(() => settings.value.plugins);
+function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVersionCheck') {
+  patchSettings({
+    plugins: { [key]: !pluginSettings.value[key] },
+  });
+}
+
+// 启动时加载已启用的插件
 onMounted(async () => {
-  await loadPlugins();
+  await loadPlugins(pluginSettings.value.lazyLoad);
   plugins.value = getStoredPlugins();
   void checkImportSupport();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
-  // 自动检查所有插件更新（非阻塞，仅刷新 updateAvailable 标记与缓存）
-  if (plugins.value.length > 0) {
-    void handleCheckAllUpdates();
-  }
 });
 
 onUnmounted(() => {
@@ -395,6 +401,19 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
 
 // ==================== 核心安装逻辑 ====================
 
+/** 简单版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同 */
+function compareVer(a: string, b: string): number {
+  const pa = (a || '0').split(/[.-]/).filter(Boolean);
+  const pb = (b || '0').split(/[.-]/).filter(Boolean);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = parseInt(pa[i]) || 0;
+    const nb = parseInt(pb[i]) || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
 async function installPluginFromScript(script: string, filePath: string) {
   // 使用 pluginEngine 的 loadPluginFromScript，自动检测格式（LX 或 MusicFree）
   const { loadPluginFromScript } = await import('../../services/pluginEngine');
@@ -403,6 +422,19 @@ async function installPluginFromScript(script: string, filePath: string) {
     showToast('插件加载失败', 'error');
     return;
   }
+
+  // 版本校验：检查是否已存在同名插件且版本更高或相同
+  if (!pluginSettings.value.skipVersionCheck) {
+    const existing = getStoredPlugins().find(p => p.name === source.name);
+    if (existing) {
+      const cmp = compareVer(source.version, existing.version);
+      if (cmp <= 0) {
+        showToast(`已存在同名插件 v${existing.version}，新版本 v${source.version} 未高于已安装版本，已跳过`, 'info');
+        return;
+      }
+    }
+  }
+
   addPluginSource(source);
   refreshPluginList();
   showToast(`成功安装插件: ${source.name} (${source.format === 'lx' ? '落雪' : 'MusicFree'})`, 'success');
@@ -824,6 +856,70 @@ async function copyPluginLink() {
             </div>
           </div>
         </transition>
+      </div>
+    </section>
+
+    <!-- 插件设置 -->
+    <section class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        插件设置
+      </h2>
+      <div class="space-y-1 rounded-lg border border-black/5 dark:border-white/5 divide-y divide-black/5 dark:divide-white/5 overflow-hidden">
+        <!-- 启动时自动更新插件 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">启动时自动更新插件</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">软件启动时自动检查并安装插件更新</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.autoUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('autoUpdateOnStartup')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+        <!-- 插件懒加载 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">插件懒加载</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">首次使用时才初始化插件，加快启动速度</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.lazyLoad ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('lazyLoad')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+        <!-- 安装时不校验版本 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">安装时不校验版本</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">允许安装相同或更低版本的插件</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.skipVersionCheck ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('skipVersionCheck')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
       </div>
     </section>
 

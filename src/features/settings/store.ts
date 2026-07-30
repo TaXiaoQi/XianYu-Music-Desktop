@@ -9,6 +9,7 @@ import type {
   EqualizerPreset,
   ImportedLyricsFont,
   LyricsSettings,
+  PluginSettings,
   SidebarSettings,
   ThemeSettings,
   UploadSettings,
@@ -50,9 +51,10 @@ export type AudioSettingsPatch = Partial<Omit<AudioSettings, 'volumeBalance'>> &
 export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
 export type DownloadSettingsPatch = Partial<DownloadSettings>;
 export type UploadSettingsPatch = Partial<UploadSettings>;
+export type PluginSettingsPatch = Partial<PluginSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
@@ -62,6 +64,7 @@ export interface AppSettingsPatch
   customLyricsFonts?: ImportedLyricsFontsPatch;
   download?: DownloadSettingsPatch;
   upload?: UploadSettingsPatch;
+  plugins?: PluginSettingsPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -145,6 +148,12 @@ export const defaultUploadSettings: UploadSettings = {
   plugins: true,
 };
 
+export const defaultPluginSettings: PluginSettings = {
+  autoUpdateOnStartup: false,
+  lazyLoad: false,
+  skipVersionCheck: false,
+};
+
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
   showDesktopLyrics: false,
@@ -171,6 +180,7 @@ export const defaultAppSettings: AppSettings = {
   writeArtistAvatarToTags: false,
   download: defaultDownloadSettings,
   upload: defaultUploadSettings,
+  plugins: defaultPluginSettings,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -392,8 +402,15 @@ export const mergeAppSettings = (
     shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
     download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
     upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
+    plugins: mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins ?? {}),
   };
 };
+
+const mergePluginSettings = (base: PluginSettings, patch: Partial<PluginSettings>): PluginSettings => ({
+  autoUpdateOnStartup: typeof patch.autoUpdateOnStartup === 'boolean' ? patch.autoUpdateOnStartup : base.autoUpdateOnStartup,
+  lazyLoad: typeof patch.lazyLoad === 'boolean' ? patch.lazyLoad : base.lazyLoad,
+  skipVersionCheck: typeof patch.skipVersionCheck === 'boolean' ? patch.skipVersionCheck : base.skipVersionCheck,
+});
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(createDefaultAppSettings());
