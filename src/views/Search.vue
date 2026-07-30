@@ -389,8 +389,11 @@
       :y="contextMenuY"
       :song="contextMenuTargetSong"
       :is-playlist-view="false"
+      :is-online-search="true"
       @close="showContextMenu = false"
       @add-to-playlist="openAddToPlaylistSelection"
+      @view-online-artist="handleOnlineViewArtist"
+      @view-online-album="handleOnlineViewAlbum"
     />
   </div>
 </template>
@@ -407,6 +410,8 @@ import { useNavigationStore } from '../shared/stores/navigation';
 import { useLibraryStore } from '../features/library/store';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
 import { useCollectionsStore } from '../features/collections/store';
+import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
+import { useToast } from '../composables/toast';
 import {
   lxSearch,
   lxGetPic,
@@ -441,6 +446,8 @@ const uiStore = useUiStore();
 const navigationStore = useNavigationStore();
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+const { showToast } = useToast();
 const { searchQuery } = storeToRefs(navigationStore);
 const { canonicalSongs } = storeToRefs(libraryStore);
 const { artistList, albumList } = useLibraryBrowse();
@@ -1099,6 +1106,7 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
     cover_thumb_path: item.coverUrl || '',
     source_type: 'remote',
     remote_source_id: `plugin://${item.platform}/${item.id}`,
+    rawData: item,
   } as any;
   contextMenuX.value = e.clientX;
   contextMenuY.value = e.clientY;
@@ -1137,8 +1145,100 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
 };
 
 const openAddToPlaylistSelection = () => {
-  const songPaths = contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : [];
-  console.warn('Add lx song to playlist - path:', songPaths);
+  const song = contextMenuTargetSong.value;
+  if (!song) return;
+
+  // 缓存在线歌曲元信息到 extraSongPool，确保歌单中能正确显示
+  libraryStore.setExtraSong(song);
+
+  // 触发原生收藏到歌单弹窗，同时传入完整 Song 对象用于持久化
+  openAddToPlaylistDialog([song.path], { songs: [song] });
+};
+
+// ==================== 在线搜索右键：歌手/专辑导航 ====================
+
+const handleOnlineViewArtist = async (song: Song) => {
+  const artistName = song.effective_artist_names?.[0] || song.artist_names?.[0] || song.artist || '';
+  if (!artistName || artistName === '未知歌手') {
+    showToast('当前歌曲缺少歌手信息', 'info');
+    return;
+  }
+
+  const pluginSource = selectedSourceItem.value?.source;
+  if (!pluginSource) {
+    showToast('当前音源不支持查看歌手', 'info');
+    return;
+  }
+
+  // MusicFree 插件：搜索歌手后跳转到歌手详情页
+  if (selectedSourceItem.value?.type === 'musicfree') {
+    try {
+      const results = await pluginArtistSearch(pluginSource, artistName, 1);
+      if (results.length === 0) {
+        showToast('未找到该歌手', 'info');
+        return;
+      }
+      const artist = results[0];
+      onlineDetailStore.setContext({
+        type: 'artist',
+        title: artist.name,
+        subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+        coverUrl: artist.avatarUrl,
+        pluginSource,
+        rawData: artist.rawData,
+        sourceSearchType: 'artist' as SourceSearchType,
+      });
+      void router.push({ path: '/online-detail', query: { type: 'artist' } });
+    } catch (e: any) {
+      showToast(`查看歌手失败: ${e?.message || e}`, 'error');
+    }
+    return;
+  }
+
+  // LX 落雪源暂不支持歌手详情页
+  showToast('当前音源暂不支持查看歌手', 'info');
+};
+
+const handleOnlineViewAlbum = async (song: Song) => {
+  const albumName = song.album || '';
+  if (!albumName || albumName === '未知专辑') {
+    showToast('当前歌曲缺少专辑信息', 'info');
+    return;
+  }
+
+  const pluginSource = selectedSourceItem.value?.source;
+  if (!pluginSource) {
+    showToast('当前音源不支持查看专辑', 'info');
+    return;
+  }
+
+  // MusicFree 插件：搜索专辑后跳转到专辑详情页
+  if (selectedSourceItem.value?.type === 'musicfree') {
+    try {
+      const results = await pluginAlbumSearch(pluginSource, albumName, 1);
+      if (results.length === 0) {
+        showToast('未找到该专辑', 'info');
+        return;
+      }
+      const album = results[0];
+      onlineDetailStore.setContext({
+        type: 'album',
+        title: album.name,
+        subtitle: album.artist,
+        coverUrl: album.coverUrl,
+        pluginSource,
+        rawData: album.rawData,
+        sourceSearchType: 'album' as SourceSearchType,
+      });
+      void router.push({ path: '/online-detail', query: { type: 'album' } });
+    } catch (e: any) {
+      showToast(`查看专辑失败: ${e?.message || e}`, 'error');
+    }
+    return;
+  }
+
+  // LX 落雪源暂不支持专辑详情页
+  showToast('当前音源暂不支持查看专辑', 'info');
 };
 
 // ==================== 本地歌曲播放与右键菜单 ====================
