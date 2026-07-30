@@ -425,6 +425,14 @@ export interface AppSettings {
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
 export type DownloadQuality = 'lossless' | 'high' | 'standard';
 
+/**
+ * 下载文件名样式：
+ *   artist-title       → 歌手 - 歌名
+ *   title-artist       → 歌名 - 歌手
+ *   title-artist-album → 歌名 - 歌手 - 专辑
+ */
+export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-artist-album';
+
 export interface DownloadSettings {
   downloadPath: string;
   format: DownloadFormat;
@@ -433,6 +441,8 @@ export interface DownloadSettings {
   lyricsFormat: 'lrc' | 'txt';
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
+  /** 文件名样式（keepSourceFilename 为真时不生效） */
+  fileNameStyle: DownloadFileNameStyle;
   rememberDownloadPath: boolean;
 }
 
