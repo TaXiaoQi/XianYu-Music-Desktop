@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue';
 import { defineStore } from 'pinia';
 
 import { useLibraryStore } from '../library/store';
-import type { Song } from '../../types';
+import type { Song, QualityKey } from '../../types';
 
 const areSamePaths = (left: string[], right: string[]) =>
   left.length === right.length && left.every((path, index) => path === right[index]);
@@ -23,6 +23,8 @@ export const usePlaybackStore = defineStore('playback', () => {
   const currentCover = ref('');
   const currentCoverPath = ref('');
   const currentCoverFull = ref('');
+  /** 当前播放歌曲支持的音质列表（null 表示未知，UI 回退到全部显示） */
+  const currentAvailableQualities = ref<QualityKey[] | null>(null);
 
   const pruneFallbackSongs = () => {
     const queuedPaths = new Set<string>([
@@ -121,6 +123,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCover.value = '';
     currentCoverPath.value = '';
     currentCoverFull.value = '';
+    currentAvailableQualities.value = null;
   };
 
   const hasExternalStartupFile = ref(false);
@@ -160,6 +163,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCover,
     currentCoverPath,
     currentCoverFull,
+    currentAvailableQualities,
     resetPlaybackState,
     hasExternalStartupFile,
     isStartupPathsResolved,

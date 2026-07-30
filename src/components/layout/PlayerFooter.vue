@@ -20,8 +20,9 @@ import {
   readStoredProgressHidden
 } from './playerFooterProgress';
 
-const { 
+const {
   currentSong,
+  currentAvailableQualities,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute, toggleMode, togglePlaylist,
   togglePlayerDetail, seekTo, formatDuration, playSong,
@@ -118,26 +119,39 @@ const isProgressHidden = ref(readStoredProgressHidden(localStorage));
 const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
 
-// 音质选择：lxType 是落雪/插件引擎实际使用的音质标识
+// 音质选择：使用统一 QualityKey（12 档：mgg / 128k / 192k / 320k / flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master）
 const ONLINE_QUALITY_KEY = 'online_quality';
-const QUALITY_OPTIONS = [
-  { label: '标准', value: 'standard', lxType: '128k' },
-  { label: 'HQ',   value: 'hq',       lxType: '320k' },
-  { label: 'SQ',   value: 'sq',       lxType: 'flac' },
-  { label: 'Hi-Res', value: 'hires',  lxType: 'flac24bit' },
-] as const;
+import type { QualityKey } from '../../types';
+import { QUALITY_META } from '../../types';
 
-/** 当前选择的 lxType，来源于 settings store（默认 '320k' = HQ） */
-const selectedQualityLxType = computed<string>(
-  () => settings.value.audio.onlineDefaultQuality ?? '320k',
+/** 全部音质选项（按 rank 排序） */
+const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description: string }> =
+  (Object.keys(QUALITY_META) as QualityKey[])
+    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
+    .map(k => ({
+      label: QUALITY_META[k].label,
+      value: k,
+      description: QUALITY_META[k].description,
+    }));
+
+/** 当前歌曲可用的音质选项（根据插件/音源实际支持过滤，null 时回退到全部） */
+const QUALITY_OPTIONS = computed(() => {
+  const supported = currentAvailableQualities.value;
+  if (!supported || supported.length === 0) return ALL_QUALITY_OPTIONS;
+  return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
+});
+
+/** 当前选择的音质 Key，来源于 settings store（默认 '320k' = HQ） */
+const selectedQualityKey = computed<QualityKey>(
+  () => (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
 );
 // 保持 localStorage 与 settings store 一致（playerPlayback 通过 localStorage 读取音质）
-watch(selectedQualityLxType, (value) => {
+watch(selectedQualityKey, (value) => {
   localStorage.setItem(ONLINE_QUALITY_KEY, value);
 }, { immediate: true });
-/** 在线歌曲：显示在按钮上的音质标签（HQ / SQ 等） */
+/** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带） */
 const currentQualityLabel = computed(
-  () => QUALITY_OPTIONS.find(o => o.lxType === selectedQualityLxType.value)?.label ?? 'HQ',
+  () => QUALITY_META[selectedQualityKey.value]?.label ?? 'HQ',
 );
 
 /** 本地歌曲：取 format/codec/container 字段，或从路径末尾提取扩展名，全大写显示 */
@@ -171,15 +185,15 @@ const toggleQualityMenu = (e: MouseEvent) => {
   showQualityMenu.value = !showQualityMenu.value;
 };
 
-const selectQuality = async (lxType: string) => {
-  const prev = selectedQualityLxType.value;
+const selectQuality = async (qualityKey: QualityKey) => {
+  const prev = selectedQualityKey.value;
   // 写入 settings store（持久化 + 设置页联动），并同步 localStorage 供 playerPlayback 读取
-  patchAudioSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: lxType as any } });
-  localStorage.setItem(ONLINE_QUALITY_KEY, lxType);
+  patchAudioSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: qualityKey } });
+  localStorage.setItem(ONLINE_QUALITY_KEY, qualityKey);
   showQualityMenu.value = false;
 
   // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
-  if (lxType !== prev && isQualitySelectableSong.value && currentSong.value) {
+  if (qualityKey !== prev && isQualitySelectableSong.value && currentSong.value) {
     await playSong(currentSong.value, { startTime: currentTime.value, preserveQueue: true });
   }
 };
@@ -679,14 +693,15 @@ onUnmounted(() => {
               <button
                 v-for="opt in QUALITY_OPTIONS"
                 :key="opt.value"
-                @click="selectQuality(opt.lxType)"
+                @click="selectQuality(opt.value)"
                 class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="selectedQualityLxType === opt.lxType
+                :class="selectedQualityKey === opt.value
                   ? 'text-[#EC4141] bg-[#EC4141]/8'
                   : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
               >
                 <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span v-if="selectedQualityLxType === opt.lxType" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                <span v-if="selectedQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
               </button>
             </div>
           </div>

@@ -27,7 +27,9 @@ import type {
   PluginSource,
   PluginSearchResult,
   PluginMusicInfo,
+  QualityKey,
 } from '../types';
+import { QUALITY_META, qualityKeyToMfQuality } from '../types';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
 
 // ==================== 常量 ====================
@@ -1050,6 +1052,17 @@ export async function checkPluginsImportSupport(sources: PluginSource[]): Promis
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
 
 /**
+ * 将 QualityKey 映射为插件可识别的音质字符串。
+ *
+ * Toskysun 系列（BakaMusic）插件直接使用 12 档新键值（如 '320k'、'flac'、'master'），
+ * 但 'mgg' 需映射为 '96k'（Toskysun 体系用 96k 表示低清）。
+ * 原版 MusicFree 插件使用 'standard'/'high'/'lossless'，由 qualityKeyToMfQuality 处理。
+ */
+function qualityKeyToPluginString(q: QualityKey): string {
+  return q === 'mgg' ? '96k' : q;
+}
+
+/**
  * 获取播放 URL
  *
  * MusicFree PluginMethodsWrapper.getMediaSource() 核心逻辑：
@@ -1057,11 +1070,15 @@ export async function checkPluginsImportSupport(sources: PluginSource[]): Promis
  *     ?? { url: musicItem?.qualities?.[quality]?.url };
  *   if (!url) { throw new Error("NOT RETRY"); }
  *   // 重试逻辑：retryCount > 0 && e?.message !== "NOT RETRY" → delay(150) → 递归重试
+ *
+ * 音质适配策略（兼容 Toskysun 系列插件与原版 MusicFree 插件）：
+ *   1. 先用 QualityKey 直接传入（Toskysun 插件原生支持 12 档键值）
+ *   2. 若返回空/失败，回退到 standard/high/lossless（原版 MusicFree 插件）
  */
 export async function pluginGetMusicInfo(
   source: PluginSource,
   item: PluginSearchResult,
-  quality = 'standard',
+  quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
 ): Promise<PluginMusicInfo | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
@@ -1077,22 +1094,48 @@ export async function pluginGetMusicInfo(
     ? resetMediaItem(item.rawData, source.name)
     : resetMediaItem(item, source.name);
 
-  log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, quality=${quality}`);
+  // 构建音质尝试列表
+  // 先检测插件是否声明了 supportedQualities（Toskysun 系列插件特有字段）
+  const supportedNewQualities = (inst.instance as any).supportedQualities;
+  const supportsNewKeys = Array.isArray(supportedNewQualities) && supportedNewQualities.length > 0;
 
-  // 与 MusicFree 第269行一致，带重试
+  const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
+  const tryQualities: string[] = [];
+  if (isQualityKey(quality)) {
+    if (supportsNewKeys) {
+      // Toskysun 插件：直接使用新键值（mgg→96k）
+      tryQualities.push(qualityKeyToPluginString(quality));
+    } else {
+      // 原版 MusicFree 插件：直接使用旧三档映射，跳过无效的新键值尝试
+      tryQualities.push(qualityKeyToMfQuality(quality));
+    }
+  } else {
+    // 旧版 standard/high/lossless 直接使用
+    tryQualities.push(quality);
+  }
+
+  log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
+
   let result: any = null;
   let lastError: any = null;
-  for (let retry = 0; retry <= 1; retry++) {
-    try {
-      result = await inst.instance.getMediaSource(musicItem, quality);
-      if (result?.url) break;
-    } catch (e: any) {
-      lastError = e;
-      log(`[getMediaSource] 第${retry + 1}次异常: ${e?.message || e}`);
-      if (retry < 1) {
-        await new Promise(r => setTimeout(r, 150));
+
+  for (const q of tryQualities) {
+    // 与 MusicFree 第269行一致，带重试
+    for (let retry = 0; retry <= 1; retry++) {
+      try {
+        result = await inst.instance.getMediaSource(musicItem, q);
+        if (result?.url) break;
+      } catch (e: any) {
+        lastError = e;
+        log(`[getMediaSource] quality=${q} 第${retry + 1}次异常: ${e?.message || e}`);
+        if (retry < 1) {
+          await new Promise(r => setTimeout(r, 150));
+        }
       }
     }
+    if (result?.url) break;
+    log(`[getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
+    result = null;
   }
 
   if (!result || typeof result !== 'object') {
@@ -1329,6 +1372,31 @@ export function pluginSupportsSearchType(source: PluginSource, type: 'music' | '
   const supported = getPluginSupportedSearchTypes(source);
   if (supported.length === 0) return type === 'music'; // 无声明默认支持音乐搜索
   return supported.includes(type);
+}
+
+/**
+ * 获取插件声明的支持音质列表。
+ *
+ * Toskysun 系列（BakaMusic）插件在实例上声明 `supportedQualities` 字段，
+ * 使用 12 档新键值（如 '320k'、'flac'、'master'）。
+ * 原版 MusicFree 插件无此字段，仅支持 standard/high/lossless 三档，
+ * 返回对应的 3 档代表音质（128k / 320k / flac），由 qualityKeyToMfQuality 完成实际映射。
+ *
+ * 返回的键值已映射为本项目的 QualityKey（'96k' → 'mgg'）。
+ */
+export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return null;
+  const raw = (inst.instance as any).supportedQualities;
+  if (Array.isArray(raw) && raw.length > 0) {
+    // Toskysun 插件：映射 96k → mgg，其余保持原样；过滤未知键值
+    return raw
+      .map((q: string) => (q === '96k' ? 'mgg' : q))
+      .filter((q: string) => q in QUALITY_META) as QualityKey[];
+  }
+  // 原版 MusicFree 插件：仅支持 standard/high/lossless 三档
+  // 返回 3 档代表音质，选择时由 qualityKeyToMfQuality 映射回 MF 三档
+  return ['128k', '320k', 'flac'];
 }
 
 // ==================== 辅助函数 ====================

@@ -156,7 +156,8 @@ async function handlePlaySong(song: Song) {
   if (!mfItem) return;
 
   try {
-    const musicInfo = await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, 'standard');
+    // 通过插件获取播放 URL（必须，阻塞播放）
+    const musicInfo = await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, '320k');
     if (!musicInfo?.url) {
       showToast('无法获取播放URL', 'error');
       return;
@@ -164,8 +165,8 @@ async function handlePlaySong(song: Song) {
 
     const playableSong: Song = {
       ...song,
-      path: musicInfo.url,
       remote_source_id: musicInfo.url,
+      remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
       cover_thumb_path: song.cover_thumb_path || musicInfo.coverUrl || '',
     } as any;
 
@@ -176,26 +177,25 @@ async function handlePlaySong(song: Song) {
       }
     }
 
+    // 立即播放（不等歌词/封面，让用户尽快听到声音）
+    void playSong(playableSong, { insertAfterCurrent: true });
+
+    // 后台异步获取歌词和封面（不阻塞播放）
     if (!(playableSong as any).lyrics_raw) {
-      try {
-        const lyricData = await pluginGetLyric(ctx.value.pluginSource, mfItem);
+      void pluginGetLyric(ctx.value.pluginSource, mfItem).then((lyricData) => {
         if (lyricData?.lyric) {
           (playableSong as any).lyrics_raw = lyricData.lyric;
           if (lyricData.tlyric) {
             (playableSong as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
           }
         }
-      } catch { /* ignore */ }
+      }).catch(() => {});
     }
-
     if (!playableSong.cover_thumb_path) {
-      try {
-        const cover = await pluginGetCover(ctx.value.pluginSource, mfItem);
+      void pluginGetCover(ctx.value.pluginSource, mfItem).then((cover) => {
         if (cover) playableSong.cover_thumb_path = cover;
-      } catch { /* ignore */ }
+      }).catch(() => {});
     }
-
-    void playSong(playableSong, { insertAfterCurrent: true });
   } catch (e: any) {
     showToast(`播放失败: ${e?.message || e}`, 'error');
   }

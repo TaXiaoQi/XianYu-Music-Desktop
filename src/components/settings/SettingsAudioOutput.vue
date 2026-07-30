@@ -5,17 +5,18 @@ import { useSettings } from '../../features/settings/useSettings';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
 import ModernModal from '../common/ModernModal.vue';
 import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineInterruptBehavior } from '../../types';
+import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 
 const { settings, patchSettings } = useSettings();
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 
-const ONLINE_QUALITY_OPTIONS: { label: string; value: OnlineDefaultQuality }[] = [
-  { label: '标准', value: '128k' },
-  { label: 'HQ',   value: '320k' },
-  { label: 'SQ',   value: 'flac' },
-  { label: 'Hi-Res', value: 'flac24bit' },
-];
+const ONLINE_QUALITY_OPTIONS: { label: string; value: OnlineDefaultQuality; description: string }[] =
+  ALL_QUALITY_KEYS.map(k => ({
+    label: QUALITY_META[k].label,
+    value: k,
+    description: QUALITY_META[k].description,
+  }));
 
 const FAILURE_BEHAVIOR_OPTIONS: { label: string; value: OnlineFailureBehavior }[] = [
   { label: '跳到下一首', value: 'skip' },
@@ -202,18 +203,18 @@ const idmCompatDialogContent = [
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
               播放在线歌曲时优先请求的音质档位。实际可用档位取决于歌曲源；若请求档位不存在，插件将自动回退。
+              支持 12 档统一标准：低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比全景声/臻品音质/臻品全景声/臻品母带。
             </div>
           </div>
-          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
-            <button
-              v-for="opt in ONLINE_QUALITY_OPTIONS" :key="opt.value"
-              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors"
-              :class="settings.audio.onlineDefaultQuality === opt.value
-                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
-                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
-              @click="patchOnlineQuality(opt.value)"
-            >{{ opt.label }}</button>
-          </div>
+          <select
+            class="shrink-0 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/40"
+            :value="settings.audio.onlineDefaultQuality"
+            @change="(e: Event) => patchOnlineQuality((e.target as HTMLSelectElement).value as OnlineDefaultQuality)"
+          >
+            <option v-for="opt in ONLINE_QUALITY_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }} ({{ opt.description }})
+            </option>
+          </select>
         </div>
 
         <!-- 起播失败行为 -->

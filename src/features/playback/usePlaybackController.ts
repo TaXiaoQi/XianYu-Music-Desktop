@@ -20,6 +20,7 @@ export function usePlaybackController() {
     currentCover: playbackRefs.currentCover,
     currentCoverPath: playbackRefs.currentCoverPath,
     currentCoverFull: playbackRefs.currentCoverFull,
+    currentAvailableQualities: playbackRefs.currentAvailableQualities,
     isPlaying: playbackRefs.isPlaying,
     volume: playbackRefs.volume,
     currentTime: playbackRefs.currentTime,
