@@ -591,6 +591,8 @@ export const createPlayerPlayback = ({
             await ensureLxPluginInstance(matchedPlugin);
             // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
             const cachedInfo = getCachedLxSong(lxSource, songmid);
+            // 读取用户选择的音质（默认 '320k' = HQ），由 PlayerFooter 写入
+            const lxQualityType = localStorage.getItem('online_quality') || '320k';
             const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
               songId: songmid,
               name: song.name,
@@ -607,7 +609,7 @@ export const createPlayerPlayback = ({
               interval: cachedInfo?.interval,
               _types: cachedInfo?._types,
               types: cachedInfo?.types,
-            } as any, '320k');
+            } as any, lxQualityType);
             const musicUrl = urlResult?.url;
             if (musicUrl && /^https?:/.test(musicUrl)) {
               audioFilePath = musicUrl;
@@ -633,7 +635,15 @@ export const createPlayerPlayback = ({
           const plugins = getStoredPlugins();
           const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
           if (pluginSource) {
-            const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, 'standard');
+            // 读取用户选择的音质，映射到 MusicFree 插件的 quality 枚举
+            const lxQualityType = localStorage.getItem('online_quality') || '320k';
+            const pluginQuality: 'standard' | 'high' | 'lossless' =
+              lxQualityType === 'flac24bit' || lxQualityType === 'flac'
+                ? 'lossless'
+                : lxQualityType === '320k'
+                  ? 'high'
+                  : 'standard';
+            const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, pluginQuality);
             if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
               audioFilePath = musicInfo.url;
 
