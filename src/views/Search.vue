@@ -53,8 +53,8 @@
     <!-- 搜索结果列表 -->
     <div class="flex-1 flex overflow-hidden relative">
       <section class="flex-1 flex overflow-hidden">
-        <!-- 非音乐类型 + 非本地源：开发中提示 -->
-        <div v-if="activeSearchType !== 'track' && !isLocalSource" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+        <!-- 非音乐类型 + LX 插件：开发中提示（本地与 MusicFree 已支持） -->
+        <div v-if="activeSearchType !== 'track' && !isLocalSource && selectedSourceItem?.type === 'lx'" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
@@ -241,9 +241,10 @@
           </div>
         </div>
 
-        <!-- 歌手搜索结果（本地） -->
+        <!-- 歌手搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'artist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地歌手 -->
             <button
               v-for="artist in localArtistResults"
               :key="artist.id"
@@ -266,12 +267,30 @@
               <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50">{{ artist.count }} 首</p>
             </button>
+            <!-- 插件歌手 -->
+            <button
+              v-for="artist in pluginArtistResults"
+              :key="`p-artist-${artist.id}`"
+              type="button"
+              class="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginArtistClick(artist)"
+            >
+              <div class="w-20 h-20 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="artist.avatarUrl" :src="artist.avatarUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50">{{ artist.songCount ? `${artist.songCount} 首` : '查看' }}</p>
+            </button>
           </div>
         </div>
 
-        <!-- 专辑搜索结果（本地） -->
+        <!-- 专辑搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'album'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地专辑 -->
             <button
               v-for="album in localAlbumResults"
               :key="album.key"
@@ -294,12 +313,30 @@
               <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
             </button>
+            <!-- 插件专辑 -->
+            <button
+              v-for="album in pluginAlbumResults"
+              :key="`p-album-${album.id}`"
+              type="button"
+              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginAlbumClick(album)"
+            >
+              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="album.coverUrl" :src="album.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
+            </button>
           </div>
         </div>
 
-        <!-- 歌单搜索结果（本地） -->
+        <!-- 歌单搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'playlist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地歌单 -->
             <button
               v-for="playlist in localPlaylistResults"
               :key="playlist.id"
@@ -321,6 +358,23 @@
               </div>
               <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.songPaths.length }} 首</p>
+            </button>
+            <!-- 插件歌单 -->
+            <button
+              v-for="playlist in pluginPlaylistResults"
+              :key="`p-playlist-${playlist.id}`"
+              type="button"
+              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginPlaylistClick(playlist)"
+            >
+              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="playlist.coverUrl" :src="playlist.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.title }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.trackCount ? `${playlist.trackCount} 首` : '查看' }}</p>
             </button>
           </div>
         </div>
@@ -362,8 +416,19 @@ import {
 } from '../services/lxMusicSdk';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
-import { getStoredPlugins, pluginSearch, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } from '../services/pluginEngine';
-import type { PluginSource, PluginSearchResult } from '../types';
+import {
+  getStoredPlugins,
+  pluginSearch,
+  pluginGetMusicInfo,
+  pluginGetLyric,
+  pluginGetCover,
+  pluginArtistSearch,
+  pluginAlbumSearch,
+  pluginPlaylistSearch,
+  pluginSupportsSearchType,
+} from '../services/pluginEngine';
+import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
+import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -472,6 +537,10 @@ const localSearchResults = shallowRef<Song[]>([]);
 const localArtistResults = shallowRef<ArtistCatalogItem[]>([]);
 const localAlbumResults = shallowRef<AlbumCatalogItem[]>([]);
 const localPlaylistResults = shallowRef<Playlist[]>([]);
+// 插件来源的歌手/专辑/歌单搜索结果
+const pluginArtistResults = shallowRef<PluginArtistResult[]>([]);
+const pluginAlbumResults = shallowRef<PluginAlbumResult[]>([]);
+const pluginPlaylistResults = shallowRef<PluginPlaylistSearchResult[]>([]);
 const resultsScrollRef = ref<HTMLElement | null>(null);
 
 // 封面加载任务版本号，用于在新搜索时取消旧任务
@@ -496,6 +565,10 @@ const resultCount = computed(() => {
     if (activeSearchType.value === 'album') return localAlbumResults.value.length;
     if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length;
   }
+  // 插件来源
+  if (activeSearchType.value === 'artist') return pluginArtistResults.value.length;
+  if (activeSearchType.value === 'album') return pluginAlbumResults.value.length;
+  if (activeSearchType.value === 'playlist') return pluginPlaylistResults.value.length;
   return 0;
 });
 
@@ -504,9 +577,15 @@ const hasNoResults = computed(() => {
   if (activeSearchType.value === 'track') {
     return lxSearchResults.value.length === 0 && pluginSearchResults.value.length === 0 && localSearchResults.value.length === 0;
   }
-  if (activeSearchType.value === 'artist') return localArtistResults.value.length === 0;
-  if (activeSearchType.value === 'album') return localAlbumResults.value.length === 0;
-  if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length === 0;
+  if (isLocalSource.value) {
+    if (activeSearchType.value === 'artist') return localArtistResults.value.length === 0;
+    if (activeSearchType.value === 'album') return localAlbumResults.value.length === 0;
+    if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length === 0;
+  }
+  // 插件来源
+  if (activeSearchType.value === 'artist') return pluginArtistResults.value.length === 0;
+  if (activeSearchType.value === 'album') return pluginAlbumResults.value.length === 0;
+  if (activeSearchType.value === 'playlist') return pluginPlaylistResults.value.length === 0;
   return true;
 });
 
@@ -522,12 +601,15 @@ const performSearch = async () => {
     localArtistResults.value = [];
     localAlbumResults.value = [];
     localPlaylistResults.value = [];
+    pluginArtistResults.value = [];
+    pluginAlbumResults.value = [];
+    pluginPlaylistResults.value = [];
     hasMore.value = false;
     return;
   }
 
-  // 非音乐类型搜索仅支持本地来源
-  if (activeSearchType.value !== 'track' && !isLocalSource.value) {
+  // 非音乐类型搜索：本地来源与 MusicFree 插件支持；LX 插件不支持（仅音乐）
+  if (activeSearchType.value !== 'track' && selectedSourceItem.value?.type === 'lx') {
     return;
   }
 
@@ -549,6 +631,9 @@ const performSearch = async () => {
       // 本地搜索：根据搜索类型分别索引
       pluginSearchResults.value = [];
       lxSearchResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
       // 清空所有类型结果，仅填充当前类型
       localSearchResults.value = [];
       localArtistResults.value = [];
@@ -584,6 +669,9 @@ const performSearch = async () => {
     } else if (source.type === 'lx' && source.lxSourceId) {
       // 落雪 LX 插件搜索
       pluginSearchResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
       localSearchResults.value = [];
       const result = await lxSearch(source.lxSourceId, query, 1);
       if (searchAbortController.signal.aborted) return;
@@ -594,10 +682,53 @@ const performSearch = async () => {
       // MusicFree 插件搜索
       lxSearchResults.value = [];
       localSearchResults.value = [];
-      const results = await pluginSearch(source.source, query, 1, 30);
-      if (searchAbortController.signal.aborted) return;
-      pluginSearchResults.value = results;
-      hasMore.value = results.length >= 30;
+      localArtistResults.value = [];
+      localAlbumResults.value = [];
+      localPlaylistResults.value = [];
+
+      if (activeSearchType.value === 'track') {
+        // 音乐搜索
+        pluginArtistResults.value = [];
+        pluginAlbumResults.value = [];
+        pluginPlaylistResults.value = [];
+        const results = await pluginSearch(source.source, query, 1, 30);
+        if (searchAbortController.signal.aborted) return;
+        pluginSearchResults.value = results;
+        hasMore.value = results.length >= 30;
+      } else if (activeSearchType.value === 'artist') {
+        // 歌手搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'artist')) {
+          const results = await pluginArtistSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginArtistResults.value = results;
+        } else {
+          pluginArtistResults.value = [];
+        }
+        hasMore.value = false;
+      } else if (activeSearchType.value === 'album') {
+        // 专辑搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'album')) {
+          const results = await pluginAlbumSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginAlbumResults.value = results;
+        } else {
+          pluginAlbumResults.value = [];
+        }
+        hasMore.value = false;
+      } else if (activeSearchType.value === 'playlist') {
+        // 歌单搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'sheet')) {
+          const results = await pluginPlaylistSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginPlaylistResults.value = results;
+        } else {
+          pluginPlaylistResults.value = [];
+        }
+        hasMore.value = false;
+      }
     }
   } catch (err) {
     if (!searchAbortController.signal.aborted) {
@@ -608,6 +739,9 @@ const performSearch = async () => {
       localArtistResults.value = [];
       localAlbumResults.value = [];
       localPlaylistResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
     }
   } finally {
     if (!searchAbortController.signal.aborted) {
@@ -1052,6 +1186,26 @@ const handleAlbumClick = (album: AlbumCatalogItem) => {
 
 const handlePlaylistClick = (playlist: Playlist) => {
   void router.push({ path: '/', query: { view: 'playlist', filter: playlist.id } });
+};
+
+// ==================== 插件歌手/专辑/歌单导航 ====================
+
+// 插件来源暂无专属详情页，点击后以该名称作为关键词在搜索页搜索对应歌曲
+const handlePluginArtistClick = (artist: PluginArtistResult) => {
+  void router.push({ path: '/search', query: { q: artist.name } });
+};
+
+const handlePluginAlbumClick = (album: PluginAlbumResult) => {
+  void router.push({ path: '/search', query: { q: album.name } });
+};
+
+const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
+  // 当前没有歌单详情页，暂时搜索歌单名
+  void router.push({ path: '/search', query: { q: playlist.title } });
+};
+
+const handlePluginImgError = (e: Event) => {
+  (e.target as HTMLImageElement).style.display = 'none';
 };
 
 const getLocalArtistCover = (artist: ArtistCatalogItem): string => {
