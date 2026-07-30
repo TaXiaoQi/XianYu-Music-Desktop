@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
-import { storeToRefs } from 'pinia';
-import { usePluginsStore } from '../../features/plugins/store';
+import { Loader2 } from 'lucide-vue-next';
 import type { Playlist } from '../../types';
+import { PLAYLIST_SOURCES, importPlaylist } from '../../services/playlistImport';
+import type { PlaylistImportResult } from '../../services/playlistImport';
+import { useToast } from '../../composables/toast';
 
 type TabType = 'create' | 'import';
 
@@ -14,11 +16,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
   (event: 'create', name: string): void;
-  (event: 'import', payload: { pluginId: string; playlistInput: string; rename?: string }): void;
+  (
+    event: 'import',
+    payload: { result: PlaylistImportResult; rename?: string },
+  ): void;
 }>();
 
-const pluginsStore = usePluginsStore();
-const { enabledPlugins, activePluginId } = storeToRefs(pluginsStore);
+const { showToast } = useToast();
 
 const activeTab = ref<TabType>('create');
 const isClosing = ref(false);
@@ -30,34 +34,37 @@ const createInputRef = ref<HTMLInputElement | null>(null);
 // 导入歌单
 const importInput = ref('');
 const importInputRef = ref<HTMLInputElement | null>(null);
-const pluginDropdownOpen = ref(false);
+const selectedSource = ref<string>('auto');
+const sourceDropdownOpen = ref(false);
 const importRename = ref('');
 const importRenameRef = ref<HTMLInputElement | null>(null);
+const importing = ref(false);
+const importError = ref('');
 
 const tabs: { type: TabType; label: string }[] = [
   { type: 'create', label: '新建歌单' },
   { type: 'import', label: '导入歌单' },
 ];
 
-const currentPluginName = computed(() => {
-  const plugin = enabledPlugins.value.find(p => p.id === activePluginId.value);
-  return plugin?.name ?? '请选择插件';
-});
-
 // 弹窗打开时重置状态
-watch(() => props.visible, async (val) => {
-  if (val) {
-    createName.value = '';
-    importInput.value = '';
-    importRename.value = '';
-    pluginDropdownOpen.value = false;
-    await pluginsStore.loadPlugins();
-    await nextTick();
-    focusCurrentTab();
-  } else {
-    isClosing.value = false;
-  }
-});
+watch(
+  () => props.visible,
+  async (val) => {
+    if (val) {
+      createName.value = '';
+      importInput.value = '';
+      importRename.value = '';
+      importError.value = '';
+      importing.value = false;
+      selectedSource.value = 'auto';
+      sourceDropdownOpen.value = false;
+      await nextTick();
+      focusCurrentTab();
+    } else {
+      isClosing.value = false;
+    }
+  },
+);
 
 // 切换 tab 时聚焦对应输入框
 watch(activeTab, async () => {
@@ -73,12 +80,14 @@ const focusCurrentTab = () => {
   }
 };
 
-const handleSelectPlugin = (id: string) => {
-  pluginsStore.setActivePlugin(id);
-  pluginDropdownOpen.value = false;
+const handleSelectSource = (key: string) => {
+  selectedSource.value = key;
+  sourceDropdownOpen.value = false;
+  importError.value = '';
 };
 
 const handleClose = () => {
+  if (importing.value) return; // 导入中不允许关闭
   isClosing.value = true;
   setTimeout(() => {
     emit('update:visible', false);
@@ -86,7 +95,7 @@ const handleClose = () => {
   }, 200);
 };
 
-const handleConfirm = () => {
+const handleConfirm = async () => {
   if (activeTab.value === 'create') {
     if (!createName.value.trim()) return;
     isClosing.value = true;
@@ -96,38 +105,54 @@ const handleConfirm = () => {
       isClosing.value = false;
     }, 200);
   } else if (activeTab.value === 'import') {
-    const pluginId = activePluginId.value;
-    if (!importInput.value.trim() || !pluginId) return;
-    const rename = importRename.value.trim();
-    isClosing.value = true;
-    setTimeout(() => {
-      emit('import', {
-        pluginId,
-        playlistInput: importInput.value.trim(),
-        rename: rename.length > 0 ? rename : undefined,
-      });
-      emit('update:visible', false);
-      isClosing.value = false;
-    }, 200);
+    if (!importInput.value.trim() || importing.value) return;
+    importError.value = '';
+    importing.value = true;
+
+    try {
+      const result = await importPlaylist(selectedSource.value, importInput.value.trim());
+      if (result.songs.length === 0) {
+        importError.value = '导入失败或歌单为空，请检查链接是否正确';
+        showToast('导入失败或歌单为空', 'error');
+      } else {
+        const rename = importRename.value.trim();
+        showToast(`成功导入 ${result.songs.length} 首歌曲`, 'success');
+        isClosing.value = true;
+        setTimeout(() => {
+          emit('import', {
+            result,
+            rename: rename.length > 0 ? rename : undefined,
+          });
+          emit('update:visible', false);
+          isClosing.value = false;
+        }, 200);
+      }
+    } catch (e: any) {
+      importError.value = `导入失败: ${e?.message || e}`;
+      showToast(`导入失败: ${e?.message || e}`, 'error');
+    } finally {
+      importing.value = false;
+    }
   }
 };
 
 const canConfirm = computed(() => {
   if (activeTab.value === 'create') return createName.value.trim().length > 0;
-  if (activeTab.value === 'import') return importInput.value.trim().length > 0 && !!activePluginId.value;
+  if (activeTab.value === 'import') return importInput.value.trim().length > 0 && !importing.value;
   return false;
 });
 
 const confirmText = computed(() => {
   if (activeTab.value === 'create') return '创建';
+  if (importing.value) return '导入中…';
   return '导入';
 });
 
 const handleKeydown = (e: KeyboardEvent) => {
   if (!props.visible) return;
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && !importing.value) {
     handleClose();
-  } else if (e.key === 'Enter' && !pluginDropdownOpen.value) {
+  } else if (e.key === 'Enter' && !sourceDropdownOpen.value && !importing.value) {
     handleConfirm();
   }
 };
@@ -152,7 +177,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
       <!-- Modal Card -->
       <div
-        class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1)"
+        class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all duration-300"
+        style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1)"
         :class="[
           isClosing ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0',
           'border border-white/20 ring-1 ring-black/5'
@@ -197,59 +223,64 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
             <!-- 导入歌单 -->
             <div v-else-if="activeTab === 'import'" key="import" class="space-y-3">
+              <!-- 音源选择 -->
               <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">来源插件</label>
-                <div class="relative">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label>
+                <div class="flex flex-wrap gap-2">
                   <button
+                    v-for="src in PLAYLIST_SOURCES"
+                    :key="src.key"
                     type="button"
-                    class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:border-[#EC4141]/40 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/30 transition-all"
-                    @click="pluginDropdownOpen = !pluginDropdownOpen"
+                    class="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                    :class="selectedSource === src.key
+                      ? 'bg-[#EC4141] text-white'
+                      : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                    @click="handleSelectSource(src.key)"
                   >
-                    <span class="text-sm font-medium">{{ currentPluginName }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 transition-transform" :class="{ 'rotate-180': pluginDropdownOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
+                    {{ src.name }}
                   </button>
-                  <Transition name="dropdown">
-                    <div
-                      v-if="pluginDropdownOpen"
-                      class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto"
-                    >
-                      <button
-                        v-for="plugin in enabledPlugins"
-                        :key="plugin.id"
-                        type="button"
-                        class="block w-full text-left px-4 py-2.5 text-sm transition-colors"
-                        :class="activePluginId === plugin.id
-                          ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10 font-medium'
-                          : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'"
-                        @click="handleSelectPlugin(plugin.id)"
-                      >
-                        {{ plugin.name }}
-                      </button>
-                    </div>
-                  </Transition>
                 </div>
               </div>
+
+              <!-- 歌单链接 -->
               <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单 ID 或链接</label>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单链接或 ID</label>
                 <input
                   ref="importInputRef"
                   v-model="importInput"
                   type="text"
-                  placeholder="粘贴歌单链接或输入 ID"
-                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+                  :disabled="importing"
+                  placeholder="粘贴歌单分享链接或输入歌单 ID"
+                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
                 />
               </div>
+
+              <!-- 重命名 -->
               <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单重命名 <span class="text-gray-400 dark:text-gray-500 font-normal">（可选）</span></label>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  歌单重命名 <span class="text-gray-400 dark:text-gray-500 font-normal">（可选）</span>
+                </label>
                 <input
                   ref="importRenameRef"
                   v-model="importRename"
                   type="text"
+                  :disabled="importing"
                   placeholder="导入后给歌单起个新名字"
-                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
                 />
+              </div>
+
+              <!-- 提示文本 -->
+              <div class="text-xs text-gray-400 dark:text-white/40 leading-relaxed">
+                打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方输入框即可一键导入。仅支持公开歌单。
+              </div>
+
+              <!-- 错误提示 -->
+              <div
+                v-if="importError"
+                class="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs"
+              >
+                <span>{{ importError }}</span>
               </div>
             </div>
           </Transition>
@@ -260,13 +291,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           <button
             @click="handleConfirm"
             :disabled="!canConfirm"
-            class="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#EC4141] sm:text-sm transition-all duration-200 bg-[#EC4141] hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#EC4141] sm:text-sm transition-all duration-200 bg-[#EC4141] hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
+            <Loader2 v-if="importing" class="h-4 w-4 animate-spin" />
             {{ confirmText }}
           </button>
           <button
             @click="handleClose"
-            class="w-full inline-flex justify-center rounded-xl border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm transition-all duration-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700"
+            :disabled="importing"
+            class="w-full inline-flex justify-center rounded-xl border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm transition-all duration-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             取消
           </button>
@@ -277,10 +310,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </template>
 
 <style scoped>
-.cubic-bezier {
-  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
 /* Tab 内容切换动画 */
 .tab-fade-enter-active,
 .tab-fade-leave-active {
@@ -293,16 +322,5 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 .tab-fade-leave-to {
   opacity: 0;
   transform: translateX(-8px);
-}
-
-/* 下拉菜单动画 */
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 </style>

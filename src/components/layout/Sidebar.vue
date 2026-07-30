@@ -17,7 +17,10 @@ import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlayl
 import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers';
 import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
 import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
-import type { SidebarItemKey } from '../../types';
+import { useLibraryStore } from '../../features/library/store';
+import { useToast } from '../../composables/toast';
+import type { Song, SidebarItemKey } from '../../types';
+import type { PlaylistImportResult } from '../../services/playlistImport';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';
@@ -140,9 +143,63 @@ const confirmCreatePlaylist = (name: string) => {
   }
 };
 
-const confirmImportPlaylist = (payload: { pluginId: string; playlistInput: string; rename?: string }) => {
-  // TODO: 接入后端 plugin_import_playlist command
-  console.log('Import playlist:', payload);
+const libraryStore = useLibraryStore();
+const { showToast } = useToast();
+
+/**
+ * 将导入的搜索结果转换为 Song 对象并保存元信息
+ * 使用 plugin:// 协议作为 path，与播放器/收藏/歌单系统一致
+ */
+function importResultToSongs(result: PlaylistImportResult): Song[] {
+  return result.songs.map((item) => {
+    const artistNames = item.artist
+      ? item.artist.split(/[、,/&]/).filter(Boolean).map((s) => s.trim())
+      : ['未知歌手'];
+    const path = `plugin://${item.platform}/${item.id}`;
+    return {
+      name: item.title,
+      title: item.title,
+      path,
+      artist: item.artist || '未知歌手',
+      artist_names: artistNames,
+      effective_artist_names: artistNames,
+      album: item.album || '未知专辑',
+      album_artist: item.artist || '未知歌手',
+      album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
+      is_various_artists_album: false,
+      collapse_artist_credits: false,
+      duration: Math.floor((item.duration || 0) / 1000),
+      cover_thumb_path: item.coverUrl || '',
+      source_type: 'plugin' as const,
+      plugin_id: item.pluginId,
+      remote_source_id: path,
+      rawData: item.rawData ?? item,
+    } as Song;
+  });
+}
+
+const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?: string }) => {
+  const { result, rename } = payload;
+  if (result.songs.length === 0) return;
+
+  // 将搜索结果转换为 Song 对象
+  const songs = importResultToSongs(result);
+  const songPaths = songs.map((s) => s.path);
+
+  // 保存在线歌曲元信息到 libraryStore.extraSongPool
+  for (const song of songs) {
+    libraryStore.setExtraSong(song);
+  }
+
+  // 创建歌单（使用用户指定的名称或原始歌单名称）
+  const playlistName = rename || result.info.name || '导入的歌单';
+  const playlistId = createPlaylist(playlistName, songPaths);
+
+  if (playlistId) {
+    showToast(`已创建歌单「${playlistName}」，共 ${songPaths.length} 首歌曲`, 'success');
+  } else {
+    showToast('创建歌单失败', 'error');
+  }
 };
 
 const handleOpenAllView = () => {
