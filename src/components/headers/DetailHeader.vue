@@ -61,7 +61,7 @@ const emit = defineEmits([
 
 const headerCover = ref('');
 let coverRequestId = 0;
-const { loadCover, loadFullCover } = useCoverCache();
+const { loadCover, loadFullCover, primeCoverPath } = useCoverCache();
 
 const updateHeaderCover = async () => {
   const requestId = ++coverRequestId;
@@ -76,6 +76,18 @@ const updateHeaderCover = async () => {
       }
       if (pl && pl.songPaths.length > 0) {
         const firstSongPath = pl.songPaths[0];
+
+        // 优先从 playlist.songs 缓存中获取在线歌曲封面（网络 URL）
+        const cachedSong = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
+        if (cachedSong?.cover_thumb_path) {
+          const primedUrl = primeCoverPath(cachedSong.path, cachedSong.cover_thumb_path);
+          if (primedUrl) {
+            if (requestId !== coverRequestId) return;
+            headerCover.value = primedUrl;
+            return;
+          }
+        }
+
         try {
           const fullCover = await loadFullCover(firstSongPath);
           if (requestId !== coverRequestId) return;
@@ -96,7 +108,19 @@ const updateHeaderCover = async () => {
         headerCover.value = '';
       }
   } else if (props.songs.length > 0) {
-    const firstSongPath = props.songs[0].path;
+    const firstSong = props.songs[0];
+    const firstSongPath = firstSong.path;
+
+    // 在线歌曲封面优先从 cover_thumb_path 获取（网络 URL）
+    if (firstSong.cover_thumb_path) {
+      const primedUrl = primeCoverPath(firstSongPath, firstSong.cover_thumb_path);
+      if (primedUrl) {
+        if (requestId !== coverRequestId) return;
+        headerCover.value = primedUrl;
+        return;
+      }
+    }
+
     try {
       const fullCover = await loadFullCover(firstSongPath);
       if (requestId !== coverRequestId) return;

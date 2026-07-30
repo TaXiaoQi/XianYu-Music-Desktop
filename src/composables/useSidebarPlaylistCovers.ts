@@ -6,17 +6,39 @@ import type { Playlist } from '../types';
 interface UseSidebarPlaylistCoversOptions {
   playlists: Ref<Playlist[]>;
   loadCover: (songPath: string) => Promise<string | null | undefined>;
+  /** 将歌曲的 cover_thumb_path（可能是网络 URL）注入封面缓存并返回可用的 URL */
+  primeCoverPath: (path: string | undefined, rawPath: string | undefined | null) => string;
 }
 
 export function useSidebarPlaylistCovers({
   playlists,
   loadCover,
+  primeCoverPath,
 }: UseSidebarPlaylistCoversOptions) {
   const playlistRealFirstSongMap = new Map<string, string>();
   const playlistCoverCacheVersion = ref(0);
   const pendingPlaylistCoverLoads = new Set<string>();
   let playlistCoverRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let playlistCoverRefreshIdleId: number | null = null;
+
+  /**
+   * 从 playlist.songs 缓存中获取第一首歌的封面 URL。
+   * 在线歌曲的封面是网络 URL，直接通过 primeCoverPath 注入缓存，
+   * 无需调用后端 invoke。
+   */
+  const tryPrimeFromPlaylistSongs = (playlistId: string, firstSongPath: string): string => {
+    const playlist = playlists.value.find(item => item.id === playlistId);
+    if (!playlist?.songs || playlist.songs.length === 0) {
+      return '';
+    }
+
+    const firstSong = playlist.songs.find(s => s.path === firstSongPath) ?? playlist.songs[0];
+    if (!firstSong?.cover_thumb_path) {
+      return '';
+    }
+
+    return primeCoverPath(firstSong.path, firstSong.cover_thumb_path);
+  };
 
   const updateCoverIfChanged = async (playlistId: string, firstSongPath: string) => {
     if (
@@ -27,6 +49,14 @@ export function useSidebarPlaylistCovers({
     }
 
     playlistRealFirstSongMap.set(playlistId, firstSongPath);
+
+    // 优先从 playlist.songs 缓存中获取封面（在线歌曲封面是网络 URL）
+    const primedUrl = tryPrimeFromPlaylistSongs(playlistId, firstSongPath);
+    if (primedUrl) {
+      sidebarPlaylistCoverCache.set(playlistId, primedUrl);
+      return true;
+    }
+
     try {
       const assetUrl = await loadCover(firstSongPath);
       if (assetUrl) {
@@ -81,9 +111,17 @@ export function useSidebarPlaylistCovers({
       return cachedCover;
     }
 
+    // 在线歌曲封面可能已在 primeCoverPath 中缓存但尚未写入 sidebarPlaylistCoverCache
     const playlist = playlists.value.find(item => item.id === playlistId);
     const firstSongPath = playlist?.songPaths[0];
     if (firstSongPath) {
+      // 先尝试从 songs 缓存中快速获取
+      const primedUrl = tryPrimeFromPlaylistSongs(playlistId, firstSongPath);
+      if (primedUrl) {
+        sidebarPlaylistCoverCache.set(playlistId, primedUrl);
+        return primedUrl;
+      }
+
       void refreshPlaylistCover(playlistId, firstSongPath);
     }
 
