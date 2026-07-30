@@ -3,15 +3,18 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Check, ChevronDown, FolderOpen, Download, X, Loader2 } from 'lucide-vue-next';
-import type { DownloadQuality, Song } from '../../types';
+import type { DownloadFileNameStyle, DownloadQuality, Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
   downloadSong,
   probeAvailableQualities,
   formatFileSize,
+  buildFileNameBase,
+  sanitizeFileName,
   type ProbedQuality,
 } from '../../services/downloadService';
+import { recordDownload, fileNameFromPath } from '../../services/downloadHistory';
 
 const props = defineProps<{
   visible: boolean;
@@ -20,6 +23,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
+  /** 下载成功并写入记录后触发，供父组件刷新「已下载」状态 */
+  (e: 'downloaded'): void;
 }>();
 
 const { settings } = useSettings();
@@ -50,6 +55,39 @@ const selectedDir = ref('');
 const rememberPath = ref(false);
 const withLyrics = ref(true);
 const isQualityMenuOpen = ref(false);
+
+// 文件名样式
+const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
+const isFileNameMenuOpen = ref(false);
+
+const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string }[] = [
+  { value: 'artist-title', label: '歌手 - 歌名' },
+  { value: 'title-artist', label: '歌名 - 歌手' },
+  { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑' },
+];
+
+const selectedFileNameStyleLabel = computed(
+  () => FILE_NAME_STYLE_OPTIONS.find((o) => o.value === selectedFileNameStyle.value)?.label
+    ?? '歌手 - 歌名',
+);
+
+/** 实时预览最终文件名（扩展名取当前选中音质的探测结果） */
+const fileNamePreview = computed(() => {
+  if (!props.song) return '';
+  const base = buildFileNameBase(props.song, selectedFileNameStyle.value);
+  const ext = selectedQualityOption.value?.ext || '';
+  return sanitizeFileName(base) + ext;
+});
+
+function toggleFileNameMenu() {
+  if (isDownloading.value) return;
+  isFileNameMenuOpen.value = !isFileNameMenuOpen.value;
+}
+
+function selectFileNameStyle(value: DownloadFileNameStyle) {
+  selectedFileNameStyle.value = value;
+  isFileNameMenuOpen.value = false;
+}
 
 // 探测状态：打开对话框时立即探测音源，探测完成后才能选择音质
 const isProbing = ref(false);
@@ -144,6 +182,8 @@ watch(
       selectedDir.value = settings.value.download.downloadPath;
       rememberPath.value = settings.value.download.rememberDownloadPath;
       withLyrics.value = settings.value.download.downloadLyrics;
+      selectedFileNameStyle.value = settings.value.download.fileNameStyle ?? 'artist-title';
+      isFileNameMenuOpen.value = false;
       isQualityMenuOpen.value = false;
       isDownloading.value = false;
       progress.value = 0;
@@ -211,6 +251,9 @@ async function startDownload() {
     // 忽略监听失败，不影响下载
   }
 
+  // 文件名样式：记住本次选择，下次打开对话框沿用
+  settings.value.download.fileNameStyle = selectedFileNameStyle.value;
+
   // 记忆下载位置：写回全局设置
   if (rememberPath.value) {
     settings.value.download.rememberDownloadPath = true;
@@ -224,6 +267,7 @@ async function startDownload() {
       quality: selectedQuality.value,
       downloadDir: selectedDir.value,
       keepSourceFilename: settings.value.download.keepSourceFilename,
+      fileNameStyle: selectedFileNameStyle.value,
       overwriteExisting: settings.value.download.overwriteExisting,
       downloadLyrics: withLyrics.value,
       lyricsFormat: settings.value.download.lyricsFormat,
@@ -232,6 +276,19 @@ async function startDownload() {
       },
     });
     progress.value = 100;
+
+    // 记录本次下载（位置 + 文件名），供后续播放到该歌曲时显示「已下载」状态
+    await recordDownload({
+      songPath: props.song.cue_source_path || props.song.path,
+      filePath: result.filePath,
+      fileName: fileNameFromPath(result.filePath),
+      quality: result.hitQuality,
+      downloadedAt: Date.now(),
+      title: props.song.title || props.song.name,
+      artist: props.song.artist,
+    });
+    emit('downloaded');
+
     const lyricNote = result.lyricsSaved ? '（含歌词）' : '';
     // 命中的实际档位可能低于用户所选（无版权自动降级）
     const qualityLabelMap: Record<string, string> = {
@@ -358,6 +415,45 @@ onUnmounted(() => {
                     </button>
                   </div>
                 </transition>
+              </div>
+            </div>
+
+            <!-- 文件名样式 -->
+            <div class="space-y-1.5">
+              <div class="text-xs font-semibold text-gray-500 dark:text-white/50">文件名样式</div>
+              <div class="download-select">
+                <button
+                  type="button"
+                  class="download-select__trigger"
+                  :class="{ 'download-select__trigger--open': isFileNameMenuOpen }"
+                  :disabled="isDownloading"
+                  @click="toggleFileNameMenu"
+                >
+                  <span>{{ selectedFileNameStyleLabel }}</span>
+                  <ChevronDown
+                    class="download-select__icon"
+                    :class="{ 'download-select__icon--open': isFileNameMenuOpen }"
+                  />
+                </button>
+                <transition name="download-menu">
+                  <div v-if="isFileNameMenuOpen" class="download-select__menu">
+                    <button
+                      v-for="option in FILE_NAME_STYLE_OPTIONS"
+                      :key="option.value"
+                      type="button"
+                      class="download-select__option"
+                      :class="{ 'download-select__option--selected': selectedFileNameStyle === option.value }"
+                      @click="selectFileNameStyle(option.value)"
+                    >
+                      <div class="min-w-0 flex-1 text-[13px] font-semibold">{{ option.label }}</div>
+                      <Check v-if="selectedFileNameStyle === option.value" class="h-4 w-4 flex-none" />
+                    </button>
+                  </div>
+                </transition>
+              </div>
+              <!-- 最终文件名预览 -->
+              <div class="download-filename-preview" :title="fileNamePreview">
+                {{ fileNamePreview }}
               </div>
             </div>
 
@@ -582,6 +678,20 @@ onUnmounted(() => {
   font-weight: 400;
   color: rgba(100, 116, 139, 0.85);
   margin-top: 2px;
+}
+
+.download-filename-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+  font-size: 11px;
+  color: rgba(100, 116, 139, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+:global(.dark) .download-filename-preview {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .download-select__ext-badge {
