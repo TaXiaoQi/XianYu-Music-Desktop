@@ -51,6 +51,8 @@ const props = defineProps<{
   isFolderView?: boolean;
   isManagementMode?: boolean;
   isOnlineSearch?: boolean;
+  /** 在线详情页容器类型：用于在歌手/专辑容器中隐藏"查看歌手/查看专辑" */
+  onlineDetailType?: 'artist' | 'album' | 'playlist';
 }>();
 
 const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album']);
@@ -192,10 +194,18 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
 
   if (online) {
     // 在线搜索模式：查看歌手、查看专辑，最后是收藏至歌单
+    // 歌手/专辑容器中隐藏"查看歌手/查看专辑"，歌单容器和搜索页显示完整菜单
+    const hideViewNavigation = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
+
+    if (!hideViewNavigation) {
+      entries.push(
+        { type: 'divider', key: 'divider-primary' },
+        { type: 'action', key: 'viewArtist', label: '查看歌手' },
+        { type: 'action', key: 'viewAlbum', label: '查看专辑' },
+      );
+    }
+
     entries.push(
-      { type: 'divider', key: 'divider-primary' },
-      { type: 'action', key: 'viewArtist', label: '查看歌手' },
-      { type: 'action', key: 'viewAlbum', label: '查看专辑' },
       { type: 'divider', key: 'divider-secondary' },
       { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
     );

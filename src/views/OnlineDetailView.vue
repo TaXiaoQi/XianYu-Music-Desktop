@@ -17,6 +17,8 @@ import {
   pluginGetMusicInfo,
   pluginGetLyric,
   pluginGetCover,
+  pluginArtistSearch,
+  pluginAlbumSearch,
 } from '../services/pluginEngine';
 import type { PluginAlbumResult } from '../services/pluginEngine';
 
@@ -24,6 +26,7 @@ import ArtistDetailHeader from '../components/headers/ArtistDetailHeader.vue';
 import AlbumDetailHeader from '../components/headers/AlbumDetailHeader.vue';
 import DetailHeader from '../components/headers/DetailHeader.vue';
 import OnlineSongList from '../components/song-list/OnlineSongList.vue';
+import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 import { type ArtistTabId } from '../utils/artistTabsOrder';
 
 const route = useRoute();
@@ -45,6 +48,12 @@ const albums = ref<PluginAlbumResult[]>([]);
 const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const artistActiveTab = ref<ArtistTabId>('songs');
+
+// 右键菜单状态
+const showContextMenu = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextMenuTargetSong = ref<Song | null>(null);
 
 const title = computed(() => ctx.value?.title || '');
 const subtitle = computed(() => ctx.value?.subtitle || '');
@@ -228,8 +237,84 @@ function handleAddToPlaylist() {
   openAddToPlaylistDialog(songPaths, { songs: songList.value });
 }
 
-function handleContextMenu(_e: MouseEvent, _song: Song) {
-  // 右键菜单暂不处理
+function handleContextMenu(e: MouseEvent, song: Song) {
+  e.preventDefault();
+  contextMenuTargetSong.value = song;
+  contextMenuX.value = e.clientX;
+  contextMenuY.value = e.clientY;
+  showContextMenu.value = true;
+}
+
+/** 右键菜单：收藏至歌单 */
+function handleContextMenuAddToPlaylist() {
+  const song = contextMenuTargetSong.value;
+  if (!song) return;
+  // 缓存在线歌曲元信息到 extraSongPool
+  libraryStore.setExtraSong(song);
+  // 触发原生收藏到歌单弹窗
+  openAddToPlaylistDialog([song.path], { songs: [song] });
+}
+
+/** 右键菜单：查看歌手（仅在歌单容器中显示） */
+async function handleOnlineViewArtist(song: Song) {
+  if (!ctx.value) return;
+  const artistName = song.effective_artist_names?.[0] || song.artist_names?.[0] || song.artist || '';
+  if (!artistName || artistName === '未知歌手') {
+    showToast('当前歌曲缺少歌手信息', 'info');
+    return;
+  }
+
+  try {
+    const results = await pluginArtistSearch(ctx.value.pluginSource, artistName, 1);
+    if (results.length === 0) {
+      showToast('未找到该歌手', 'info');
+      return;
+    }
+    const artist = results[0];
+    onlineDetailStore.setContextWithHistory({
+      type: 'artist',
+      title: artist.name,
+      subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+      coverUrl: artist.avatarUrl,
+      pluginSource: ctx.value.pluginSource,
+      rawData: artist.rawData,
+      sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+    });
+    void router.push({ path: '/online-detail', query: { type: 'artist' } });
+  } catch (e: any) {
+    showToast(`查看歌手失败: ${e?.message || e}`, 'error');
+  }
+}
+
+/** 右键菜单：查看专辑（仅在歌单容器中显示） */
+async function handleOnlineViewAlbum(song: Song) {
+  if (!ctx.value) return;
+  const albumName = song.album || '';
+  if (!albumName || albumName === '未知专辑') {
+    showToast('当前歌曲缺少专辑信息', 'info');
+    return;
+  }
+
+  try {
+    const results = await pluginAlbumSearch(ctx.value.pluginSource, albumName, 1);
+    if (results.length === 0) {
+      showToast('未找到该专辑', 'info');
+      return;
+    }
+    const album = results[0];
+    onlineDetailStore.setContextWithHistory({
+      type: 'album',
+      title: album.name,
+      subtitle: album.artist,
+      coverUrl: album.coverUrl,
+      pluginSource: ctx.value.pluginSource,
+      rawData: album.rawData,
+      sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+    });
+    void router.push({ path: '/online-detail', query: { type: 'album' } });
+  } catch (e: any) {
+    showToast(`查看专辑失败: ${e?.message || e}`, 'error');
+  }
 }
 
 /** 点击歌手详情中的专辑，导航到在线专辑详情 */
@@ -301,7 +386,7 @@ watch(artistActiveTab, () => {
         @click="handleBack"
       >
         <ArrowLeft class="h-4 w-4" />
-        返回搜索
+        返回
       </button>
     </div>
 
@@ -447,6 +532,20 @@ watch(artistActiveTab, () => {
         </div>
       </Transition>
     </div>
+
+    <SongContextMenu
+      :visible="showContextMenu"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :song="contextMenuTargetSong"
+      :is-playlist-view="false"
+      :is-online-search="true"
+      :online-detail-type="detailType"
+      @close="showContextMenu = false"
+      @add-to-playlist="handleContextMenuAddToPlaylist"
+      @view-online-artist="handleOnlineViewArtist"
+      @view-online-album="handleOnlineViewAlbum"
+    />
   </div>
 </template>
 

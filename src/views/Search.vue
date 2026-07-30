@@ -399,7 +399,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -1186,7 +1186,7 @@ const handleOnlineViewArtist = async (song: Song) => {
         coverUrl: artist.avatarUrl,
         pluginSource,
         rawData: artist.rawData,
-        sourceSearchType: 'artist' as SourceSearchType,
+        sourceSearchType: activeSearchType.value as SourceSearchType,
       });
       void router.push({ path: '/online-detail', query: { type: 'artist' } });
     } catch (e: any) {
@@ -1228,7 +1228,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
         coverUrl: album.coverUrl,
         pluginSource,
         rawData: album.rawData,
-        sourceSearchType: 'album' as SourceSearchType,
+        sourceSearchType: activeSearchType.value as SourceSearchType,
       });
       void router.push({ path: '/online-detail', query: { type: 'album' } });
     } catch (e: any) {
@@ -1429,6 +1429,13 @@ onMounted(() => {
   }
   if (!hasQuery.value) return;
   performSearch();
+});
+
+// keep-alive 激活时：保持原有状态（滚动位置、选中 tab、搜索结果等）
+// 仅消费 pendingSearchType 避免残留，不强制改变当前 tab
+onActivated(() => {
+  uiStore.showPlayerDetail = false;
+  onlineDetailStore.consumePendingSearchType();
 });
 </script>
 
