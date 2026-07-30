@@ -18,8 +18,8 @@ export function useLibraryCollections() {
   const collectionsRefs = storeToRefs(collectionsStore);
   const { openAddToPlaylistDialog: openDialog } = useAddToPlaylistDialog();
 
-  const createPlaylist = (name: string, initialSongs: string[] = []) =>
-    collectionsStore.createPlaylist(name, initialSongs);
+  const createPlaylist = (name: string, initialSongs: string[] = [], fullSongs?: Song[]) =>
+    collectionsStore.createPlaylist(name, initialSongs, fullSongs);
 
   const renamePlaylist = (id: string, name: string) =>
     collectionsStore.renamePlaylist(id, name);
