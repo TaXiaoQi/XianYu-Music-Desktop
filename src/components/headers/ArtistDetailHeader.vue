@@ -17,6 +17,10 @@ const props = defineProps<{
   selectedCount?: number;
   activeTab: ArtistTabId;
   songs?: any[];
+  /** 只读模式：禁用头像编辑、管理按钮、tab 拖拽，过滤掉详情 tab */
+  readOnly?: boolean;
+  /** 在线封面 URL（readOnly 模式下优先使用） */
+  coverUrlOverride?: string;
 }>();
 
 const emit = defineEmits([
@@ -33,6 +37,14 @@ const tabs = ref(getOrderedArtistTabs());
 const draggedTabId = ref<ArtistTabId | null>(null);
 const suppressClick = ref<boolean>(false);
 
+/** readOnly 模式下过滤掉 details tab */
+const visibleTabs = computed(() => {
+  if (props.readOnly) {
+    return tabs.value.filter(t => t.id !== 'details');
+  }
+  return tabs.value;
+});
+
 const handleTabClick = (id: ArtistTabId) => {
   if (suppressClick.value) return;
   emit('update:activeTab', id);
@@ -46,6 +58,7 @@ let pressTimer: number | null = null;
 
 const onPointerDown = (tabId: ArtistTabId, event: PointerEvent) => {
   if (event.button !== 0) return;
+  if (props.readOnly) return; // readOnly 模式禁用拖拽
   
   draggedTabId.value = tabId;
   startX.value = event.clientX;
@@ -166,6 +179,10 @@ const currentArtist = computed(() => {
 });
 
 const displayedCover = computed(() => {
+  // readOnly 模式优先使用在线封面 URL
+  if (props.readOnly && props.coverUrlOverride) {
+    return props.coverUrlOverride;
+  }
   if (currentArtist.value?.avatarPath) {
     return convertFileSrc(currentArtist.value.avatarPath);
   }
@@ -450,8 +467,9 @@ const handlePlayAll = () => {
     <div v-else class="flex gap-6 h-auto mt-2 mb-6">
       <!-- 封面图 (圆形) -->
       <div 
-        @click="handleAvatarClick"
-        class="w-36 h-36 rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border-4 border-white/50 dark:border-white/5 cursor-pointer"
+        @click="!readOnly ? handleAvatarClick : undefined"
+        class="w-36 h-36 rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border-4 border-white/50 dark:border-white/5"
+        :class="!readOnly ? 'cursor-pointer' : 'cursor-default'"
       >
         <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
         <img v-else-if="displayedCover" :src="displayedCover" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="artistName"/>
@@ -471,7 +489,7 @@ const handlePlayAll = () => {
         
         <!-- Hover Overlay Mask -->
         <div 
-          v-else
+          v-else-if="!readOnly"
           class="absolute inset-0 bg-black/50 opacity-0 flex flex-col items-center justify-center text-white transition-opacity duration-300 gap-1.5"
           :class="isSavingAvatar ? 'hidden' : 'group-hover:opacity-100'"
         >
@@ -505,6 +523,7 @@ const handlePlayAll = () => {
            
            <!-- 批量操作 -->
            <button 
+             v-if="!readOnly"
              @click="emit('update:isBatchMode', true)" 
              title="批量操作" 
              class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
@@ -525,7 +544,7 @@ const handlePlayAll = () => {
       class="flex gap-8 text-[15px] font-medium mt-auto w-full select-none touch-none"
     >
       <div 
-        v-for="(tab, index) in tabs" 
+        v-for="(tab, index) in visibleTabs" 
         :key="tab.id"
         class="relative flex items-center shrink-0"
       >
@@ -556,7 +575,7 @@ const handlePlayAll = () => {
 
         <!-- 插入指示线 (右侧，仅针对最后一个元素的右侧插入) -->
         <div 
-          v-if="isDragging && targetInsertIndex === tabs.length && index === tabs.length - 1" 
+          v-if="isDragging && targetInsertIndex === visibleTabs.length && index === visibleTabs.length - 1" 
           class="absolute right-[-16px] w-[3px] h-5 bg-[#EC4141] rounded-full animate-pulse transition-all z-20 pointer-events-none"
         ></div>
       </div>

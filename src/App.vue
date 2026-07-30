@@ -15,6 +15,7 @@ import { MINI_PLAYER_WINDOW_LABEL } from './features/miniPlayer/shared';
 import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
 import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
+import { loadPlugins, checkAllPluginUpdates, performPluginUpdate } from './services/pluginEngine';
 
 const currentWindowLabel = (() => {
   try {
@@ -51,6 +52,32 @@ if (currentWindowLabel === 'main') {
       if (settings.value.closeToTray) {
         event.preventDefault();
         await getCurrentWindow().hide();
+      }
+    });
+
+    // 启动时加载插件（尊重懒加载设置）
+    const pluginConfig = settings.value.plugins;
+    void loadPlugins(pluginConfig.lazyLoad).then(async () => {
+      // 启动时自动检查并更新插件
+      if (!pluginConfig.autoUpdateOnStartup) return;
+      try {
+        const results = await checkAllPluginUpdates();
+        let updated = 0;
+        for (const [id, result] of results) {
+          if (result.hasUpdate && result.newScript) {
+            const { getStoredPlugins } = await import('./services/pluginEngine');
+            const plugin = getStoredPlugins().find(p => p.id === id);
+            if (plugin) {
+              const updateResult = await performPluginUpdate(plugin, result);
+              if (updateResult.success) updated++;
+            }
+          }
+        }
+        if (updated > 0) {
+          showToast(`已自动更新 ${updated} 个插件`, 'success');
+        }
+      } catch (error) {
+        console.error('[AutoUpdate] 插件自动更新失败:', error);
       }
     });
   });

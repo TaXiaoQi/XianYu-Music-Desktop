@@ -420,6 +420,7 @@ export interface AppSettings {
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;
   upload: UploadSettings;
+  plugins: PluginSettings;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
@@ -460,6 +461,16 @@ export interface SaveArtistAvatarResponse {
 }
 
 // ==================== 插件系统类型 ====================
+
+/** 插件全局设置 */
+export interface PluginSettings {
+  /** 启动软件时自动检查并更新插件 */
+  autoUpdateOnStartup: boolean;
+  /** 插件懒加载（仅在首次使用时初始化，而非启动时全部预加载） */
+  lazyLoad: boolean;
+  /** 安装插件时不校验版本（允许重复安装同版本或旧版本） */
+  skipVersionCheck: boolean;
+}
 
 /** 插件格式枚举 */
 export type PluginFormat = 'lx' | 'musicfree' | 'unknown';
