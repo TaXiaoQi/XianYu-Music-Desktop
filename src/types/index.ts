@@ -36,6 +36,8 @@ export interface SongCore {
   comment?: string;
   /** 原始歌词文本（在线歌曲或内嵌歌词加载时可直接解析） */
   lyrics_raw?: string;
+  /** 插件原始数据（在线搜索结果的完整原始对象，播放时用于解析音乐URL等） */
+  rawData?: any;
 }
 
 export interface Song extends SongCore {}
@@ -97,6 +99,8 @@ export interface Playlist {
   songPaths: string[];
   createdAt?: string;
   coverPath?: string;
+  /** 缓存的完整 Song 对象（在线歌曲导入时写入，用于封面URL等快速访问） */
+  songs?: Song[];
 }
 
 export interface LibraryFolder {

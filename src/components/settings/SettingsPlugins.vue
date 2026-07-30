@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult } from '../../services/pluginEngine';
 import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 
 const { showToast } = useToast();
@@ -18,6 +18,10 @@ onMounted(async () => {
   void checkImportSupport();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
+  // 自动检查所有插件更新（非阻塞，仅刷新 updateAvailable 标记与缓存）
+  if (plugins.value.length > 0) {
+    void handleCheckAllUpdates();
+  }
 });
 
 onUnmounted(() => {
@@ -432,8 +436,73 @@ async function handleTogglePlugin(plugin: PluginSource) {
   }
 }
 
+// 更新检查结果缓存
+const updateCheckResults = ref<Map<string, PluginUpdateCheckResult>>(new Map());
+const checkingUpdates = ref(false);
+const updatingPluginId = ref<string | null>(null);
+
 async function handleUpdatePlugin(plugin: PluginSource) {
-  showToast(`请重新导入 ${plugin.name} 以更新`, 'info');
+  // 如果已有缓存结果且确认有更新，直接执行更新
+  const cached = updateCheckResults.value.get(plugin.id);
+  if (cached?.hasUpdate && cached.newScript) {
+    updatingPluginId.value = plugin.id;
+    try {
+      const result = await performPluginUpdate(plugin, cached);
+      if (result.success) {
+        showToast(`${plugin.name} 已更新到 v${cached.newVersion}`, 'success');
+        updateCheckResults.value.delete(plugin.id);
+        await refreshPluginList();
+      } else {
+        showToast(result.message || '更新失败', 'error');
+      }
+    } catch (e: any) {
+      showToast(`更新失败: ${e?.message || e}`, 'error');
+    } finally {
+      updatingPluginId.value = null;
+    }
+    return;
+  }
+
+  // 否则先检查更新
+  updatingPluginId.value = plugin.id;
+  try {
+    const result = await checkPluginUpdate(plugin);
+    if (!result) {
+      showToast(`${plugin.name} 无可用更新源`, 'info');
+    } else if (result.hasUpdate) {
+      updateCheckResults.value.set(plugin.id, result);
+      showToast(`${plugin.name} 发现新版本 v${result.newVersion}，再次点击更新`, 'info');
+    } else {
+      showToast(`${plugin.name} 已是最新版本`, 'info');
+    }
+  } catch (e: any) {
+    showToast(`检查更新失败: ${e?.message || e}`, 'error');
+  } finally {
+    updatingPluginId.value = null;
+  }
+}
+
+async function handleCheckAllUpdates() {
+  if (checkingUpdates.value) return;
+  checkingUpdates.value = true;
+  try {
+    const results = await checkAllPluginUpdates();
+    updateCheckResults.value = results;
+    let updateCount = 0;
+    for (const [, result] of results) {
+      if (result.hasUpdate) updateCount++;
+    }
+    if (updateCount > 0) {
+      showToast(`发现 ${updateCount} 个插件可更新`, 'info');
+    } else {
+      showToast('所有插件均为最新版本', 'info');
+    }
+    await refreshPluginList();
+  } catch (e: any) {
+    showToast(`批量检查失败: ${e?.message || e}`, 'error');
+  } finally {
+    checkingUpdates.value = false;
+  }
 }
 
 async function handleUninstallPlugin(plugin: PluginSource) {
@@ -765,8 +834,20 @@ async function copyPluginLink() {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           已安装插件
         </h2>
-        <div class="text-xs text-gray-500 dark:text-white/55">
-          {{ pluginStatsLabel }}
+        <div class="flex items-center gap-3">
+          <div class="text-xs text-gray-500 dark:text-white/55">
+            {{ pluginStatsLabel }}
+          </div>
+          <button
+            type="button"
+            class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+            :disabled="checkingUpdates || plugins.length === 0"
+            :class="{ 'settings-plugin-button--disabled': checkingUpdates || plugins.length === 0 }"
+            @click="handleCheckAllUpdates"
+          >
+            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': checkingUpdates }" />
+            {{ checkingUpdates ? '检查中...' : '检查全部更新' }}
+          </button>
         </div>
       </div>
 
@@ -887,10 +968,17 @@ async function copyPluginLink() {
             <button
               type="button"
               class="settings-plugin-icon-button"
-              title="更新此插件"
+              :class="{
+                'settings-plugin-icon-button--updating': updatingPluginId === plugin.id,
+                'settings-plugin-icon-button--update-available': !!updateCheckResults.get(plugin.id)?.hasUpdate,
+              }"
+              :disabled="updatingPluginId === plugin.id"
+              :title="updateCheckResults.get(plugin.id)?.hasUpdate
+                ? `${plugin.name} 可更新到 v${updateCheckResults.get(plugin.id)?.newVersion}，点击执行更新`
+                : (updatingPluginId === plugin.id ? '正在更新...' : `检查 ${plugin.name} 的更新`)"
               @click="handleUpdatePlugin(plugin)"
             >
-              <RefreshCw class="h-4 w-4" />
+              <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': updatingPluginId === plugin.id }" />
             </button>
             <button
               type="button"
@@ -1177,6 +1265,29 @@ async function copyPluginLink() {
 .settings-plugin-icon-button--danger:hover {
   background: rgba(220, 38, 38, 0.1);
   color: rgb(220 38 38);
+}
+
+/* 更新进行中：禁用并保留图标颜色 */
+.settings-plugin-icon-button--updating {
+  cursor: progress;
+  opacity: 0.7;
+  transform: none;
+}
+
+.settings-plugin-icon-button--updating:hover {
+  background: transparent;
+  transform: none;
+}
+
+/* 有可用更新：醒目高亮，提示用户点击执行更新 */
+.settings-plugin-icon-button--update-available {
+  background: rgba(236, 65, 65, 0.12);
+  color: #ec4141;
+}
+
+.settings-plugin-icon-button--update-available:hover {
+  background: rgba(236, 65, 65, 0.2);
+  color: #c42f2f;
 }
 
 .settings-plugin-input {
@@ -1534,6 +1645,16 @@ async function copyPluginLink() {
 :global(.dark) .settings-plugin-icon-button--danger:hover {
   background: rgba(220, 38, 38, 0.18);
   color: #ff6b6b;
+}
+
+:global(.dark) .settings-plugin-icon-button--update-available {
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+:global(.dark) .settings-plugin-icon-button--update-available:hover {
+  background: rgba(236, 65, 65, 0.28);
+  color: #ffa6a6;
 }
 
 /* 导入歌单按钮 */
