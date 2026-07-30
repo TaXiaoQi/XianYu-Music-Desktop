@@ -623,6 +623,63 @@ export const createPlayerPlayback = ({
       }
     }
 
+    // [MusicFree 插件] plugin:// 协议需要通过插件引擎解析真实播放 URL
+    // 用于"全部播放"场景：歌曲仅携带 rawData（PluginSearchResult），播放时才拉取直链
+    if (audioFilePath.startsWith('plugin://')) {
+      const pluginSearchResult = song.rawData;
+      if (pluginSearchResult?.pluginId) {
+        try {
+          const { getStoredPlugins, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } = await import('../services/pluginEngine');
+          const plugins = getStoredPlugins();
+          const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+          if (pluginSource) {
+            const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, 'standard');
+            if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
+              audioFilePath = musicInfo.url;
+
+              // 更新歌词（如果尚未有）
+              if (!song.lyrics_raw?.trim()) {
+                if (musicInfo.lyric) {
+                  song.lyrics_raw = musicInfo.lyric;
+                  if (musicInfo.tlyric) {
+                    song.lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
+                  }
+                } else {
+                  try {
+                    const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
+                    if (lyricData?.lyric) {
+                      song.lyrics_raw = lyricData.lyric;
+                      if (lyricData.tlyric) {
+                        song.lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
+                      }
+                    }
+                  } catch { /* ignore lyric error */ }
+                }
+              }
+
+              // 更新封面（如果尚未有）
+              if (!song.cover_thumb_path) {
+                if (musicInfo.coverUrl) {
+                  song.cover_thumb_path = musicInfo.coverUrl;
+                } else {
+                  try {
+                    const cover = await pluginGetCover(pluginSource, pluginSearchResult);
+                    if (cover) song.cover_thumb_path = cover;
+                  } catch { /* ignore cover error */ }
+                }
+              }
+            } else {
+              console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
+            }
+          } else {
+            console.warn(`[Audio] No enabled plugin found for pluginId=${pluginSearchResult.pluginId}`);
+          }
+        } catch (e: any) {
+          console.warn(`[Audio] Failed to resolve plugin:// URL: ${e?.message}`);
+        }
+      }
+    }
+
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 

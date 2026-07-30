@@ -6,6 +6,8 @@ import { ArrowLeft } from 'lucide-vue-next';
 import type { Song, PluginSearchResult } from '../types';
 import { useOnlineDetailStore, type OnlineDetailType } from '../features/onlineDetail/store';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
+import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
+import { useLibraryStore } from '../features/library/store';
 import { useToast } from '../composables/toast';
 import {
   pluginGetArtistWorks,
@@ -27,7 +29,9 @@ import { type ArtistTabId } from '../utils/artistTabsOrder';
 const route = useRoute();
 const router = useRouter();
 const { showToast } = useToast();
-const { playSong } = usePlaybackController();
+const { playSong, clearQueue, addSongsToQueue } = usePlaybackController();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+const libraryStore = useLibraryStore();
 const onlineDetailStore = useOnlineDetailStore();
 
 const detailType = computed<OnlineDetailType>(() => (route.query.type as OnlineDetailType) || 'artist');
@@ -47,6 +51,38 @@ const coverUrl = computed(() => ctx.value?.coverUrl || '');
 // 将 PluginSearchResult 转换为 Song 用于展示和播放
 function mfResultToSong(item: PluginSearchResult): Song {
   const artistNames = item.artist ? item.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
+
+  // 专辑名：优先用 item.album；为空时尝试从 rawData 提取；仍为空时在专辑详情页用上下文标题
+  let album = item.album || '';
+  if (!album && item.rawData) {
+    const raw = item.rawData;
+    album = raw.al?.name || raw.album?.name || raw.albumName || '';
+  }
+  if (!album && detailType.value === 'album' && title.value) {
+    album = title.value;
+  }
+  album = album || '未知专辑';
+
+  // 时长：优先用 item.duration（已由 parseDuration 提取为毫秒）；
+  // 为空时尝试从 rawData 的 dt / duration / interval 字段提取
+  let durationMs = item.duration || 0;
+  if ((!durationMs || durationMs <= 0) && item.rawData) {
+    const raw = item.rawData;
+    const rawDur = raw.dt || raw.duration || raw.interval;
+    if (rawDur) {
+      // parseDuration 逻辑：数字 > 1000 视为毫秒，否则视为秒并 ×1000
+      durationMs = typeof rawDur === 'number'
+        ? (rawDur > 1000 ? rawDur : rawDur * 1000)
+        : 0;
+      if (!durationMs && typeof rawDur === 'string') {
+        const parts = rawDur.split(':');
+        if (parts.length >= 2) {
+          durationMs = (parseInt(parts[0]) * 60 + parseInt(parts[1])) * 1000;
+        }
+      }
+    }
+  }
+
   return {
     name: item.title,
     title: item.title,
@@ -54,12 +90,12 @@ function mfResultToSong(item: PluginSearchResult): Song {
     artist: item.artist || '未知歌手',
     artist_names: artistNames,
     effective_artist_names: artistNames,
-    album: item.album || '未知专辑',
+    album,
     album_artist: item.artist || '未知歌手',
-    album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
+    album_key: `${album}-${item.artist || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: Math.floor((item.duration || 0) / 1000),
+    duration: Math.floor((durationMs || 0) / 1000),
     cover_thumb_path: item.coverUrl || '',
     source_type: 'remote',
     remote_source_id: `plugin://${item.platform}/${item.id}`,
@@ -151,6 +187,38 @@ async function handlePlaySong(song: Song) {
   } catch (e: any) {
     showToast(`播放失败: ${e?.message || e}`, 'error');
   }
+}
+
+/** 全部播放：清空队列 → 加入全部歌曲 → 播放第一首（播放时才拉取直链） */
+async function handlePlayAll() {
+  if (!ctx.value || songList.value.length === 0) {
+    showToast('暂无可播放的歌曲', 'info');
+    return;
+  }
+
+  // 清空当前播放队列，加入全部歌曲（保留 rawData，播放时由 playSong 解析 plugin:// URL）
+  await clearQueue();
+  addSongsToQueue(songList.value);
+
+  // 播放第一首：playSong 内部会解析 plugin:// 协议并拉取直链、歌词、封面
+  await playSong(songList.value[0], { preserveQueue: true });
+}
+
+/** 收藏至歌单：调用原有引擎的收藏到歌单逻辑和 UI */
+function handleAddToPlaylist() {
+  if (songList.value.length === 0) {
+    showToast('暂无可收藏的歌曲', 'info');
+    return;
+  }
+
+  // 将在线歌曲元信息缓存到 extraSongPool，确保歌单中能正确显示
+  for (const song of songList.value) {
+    libraryStore.setExtraSong(song);
+  }
+
+  // 调用原有的收藏到歌单对话框，同时传入完整 Song 对象用于持久化
+  const songPaths = songList.value.map(s => s.path);
+  openAddToPlaylistDialog(songPaths, { songs: songList.value });
 }
 
 function handleContextMenu(_e: MouseEvent, _song: Song) {
@@ -321,7 +389,8 @@ watch(artistActiveTab, () => {
           :selectedCount="selectedPaths.size"
           :readOnly="true"
           :coverUrlOverride="coverUrl"
-          @playAll="handlePlaySong(songList[0])"
+          @playAll="handlePlayAll"
+          @addToPlaylist="handleAddToPlaylist"
         />
         <OnlineSongList
           :songs="songList"
@@ -340,7 +409,8 @@ watch(artistActiveTab, () => {
           :selectedCount="selectedPaths.size"
           :readOnly="true"
           :coverUrlOverride="coverUrl"
-          @playAll="handlePlaySong(songList[0])"
+          @playAll="handlePlayAll"
+          @openAddToPlaylist="handleAddToPlaylist"
         />
         <OnlineSongList
           :songs="songList"

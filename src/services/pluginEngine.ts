@@ -1404,7 +1404,7 @@ function toPluginSearchResult(item: any, source: PluginSource): PluginSearchResu
   const artist = extractArtist(item);
   const album = extractAlbum(item);
   const coverUrl = extractCoverUrl(item);
-  const duration = parseDuration(item.duration || item.interval);
+  const duration = parseDuration(item.duration || item.interval || item.dt);
 
   return {
     id,
