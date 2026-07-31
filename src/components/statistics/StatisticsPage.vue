@@ -327,12 +327,17 @@ const losslessRatio = computed(() => {
           <!-- 排行榜列表 -->
           <div v-else class="grid gap-1.5">
             <div
-              v-for="item in leaderboardDisplay.top"
+              v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
-              class="leaderboard-row"
+              class="leaderboard-row animate-fade-in-up"
               :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3 }"
+              :style="{ animationDelay: `${index * 60}ms` }"
             >
-              <div class="leaderboard-rank" :class="`rank-${item.rank <= 3 ? item.rank : 'normal'}`">
+              <div
+                class="leaderboard-rank animate-rank-pop"
+                :class="`rank-${item.rank <= 3 ? item.rank : 'normal'}`"
+                :style="{ animationDelay: `${index * 60 + 200}ms` }"
+              >
                 {{ item.rank }}
               </div>
               <div class="leaderboard-avatar">
@@ -354,8 +359,15 @@ const losslessRatio = computed(() => {
               <div class="leaderboard-divider text-black/30 dark:text-white/30">
                 <span>···</span>
               </div>
-              <div class="leaderboard-row is-me is-sticky">
-                <div class="leaderboard-rank" :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`">
+              <div
+                class="leaderboard-row is-me is-sticky animate-fade-in-up"
+                :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
+              >
+                <div
+                  class="leaderboard-rank animate-rank-pop"
+                  :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`"
+                  :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 400}ms` }"
+                >
                   {{ leaderboardDisplay.me.rank }}
                 </div>
                 <div class="leaderboard-avatar">
@@ -555,12 +567,32 @@ const losslessRatio = computed(() => {
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 排名数字：放大淡入效果，延迟于整行之后触发。
+   不单独控制 opacity，跟随整行淡入，避免整行显示后排名"闪"出 */
+.animate-rank-pop {
+  animation: rankPop 0.4s cubic-bezier(0.34, 1.15, 0.64, 1) forwards;
+}
+
+@keyframes rankPop {
+  from {
+    transform: scale(0.4);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in-up {
     animation: none;
     opacity: 1;
     transform: none;
     filter: none;
+  }
+
+  .animate-rank-pop {
+    animation: none;
   }
 }
 
