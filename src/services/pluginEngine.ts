@@ -31,7 +31,7 @@ import type {
 } from '../types';
 import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
-import { buildLyricsRaw } from '../composables/lyrics/parser';
+import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
 
 // ==================== 常量 ====================
