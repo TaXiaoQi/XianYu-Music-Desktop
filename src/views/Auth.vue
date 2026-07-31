@@ -100,6 +100,17 @@ function cancelNicknameEdit() {
   nicknameEditing.value = false;
   nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
 }
+
+function onNicknameBlur() {
+  // 光标离开时：未修改内容则关闭编辑框恢复显示；有修改则保留编辑状态由用户主动保存
+  // （避免误触丢失输入，也避免 blur 自动保存因网络失败导致用户无感知）
+  if (!nicknameEditing.value) return;
+  const next = nicknameDraft.value.trim();
+  const current = authStore.user?.nickname || authStore.user?.username || '';
+  if (!next || next === current) {
+    cancelNicknameEdit();
+  }
+}
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
 const profileSaving = ref(false);
 const passwordSaving = ref(false);
@@ -767,6 +778,7 @@ onMounted(async () => {
                   placeholder="输入昵称"
                   maxlength="64"
                   class="min-w-0 flex-1 bg-transparent border-b border-[#EC4141] text-black dark:text-white text-[clamp(1.25rem,2.6vw,2rem)] font-black tracking-tight leading-none outline-none"
+                  @blur="onNicknameBlur"
                   @keydown.enter.prevent="saveNicknameEdit"
                   @keydown.esc.prevent="cancelNicknameEdit"
                 />
