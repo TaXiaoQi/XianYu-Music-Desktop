@@ -6,9 +6,6 @@ import { Check, ChevronDown, CircleAlert } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlayer } from '../../composables/player';
 import { useToast } from '../../composables/toast';
-import { useCoverCache } from '../../composables/useCoverCache';
-import { clearPaletteCache } from '../../composables/colorExtraction';
-import { clearImageCaches } from '../../caches/imageCaches';
 import { appApi } from '../../services/tauri/appApi';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import type { AudioOutputStatus } from '../../services/tauri/contracts';
@@ -48,7 +45,6 @@ async function handleGpuAccelerationChange() {
 const showLyricsSyncOffsetPanel = ref(false);
 const showClearAllDataConfirm = ref(false);
 const isClearingAllData = ref(false);
-const isClearingCache = ref(false);
 const audioOutputStatus = ref<AudioOutputStatus | null>(null);
 const audioOutputDevices = ref<AudioDevice[]>([]);
 const selectedOutputDeviceId = ref<string>('');
@@ -57,7 +53,6 @@ const isOutputDeviceMenuOpen = ref(false);
 const isChangingOutputDevice = ref(false);
 const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软件可能无声；设备断开或被占用时会自动回退默认播放。';
 let unlistenAudioOutput: UnlistenFn | null = null;
-const { clearCoverCaches } = useCoverCache();
 
 const isLibraryScanActive = computed(
   () => !!libraryScanProgress.value && !libraryScanProgress.value.done
@@ -259,27 +254,6 @@ const handleClearAllData = async () => {
     showToast('清除所有数据失败，请重试', 'error');
     showClearAllDataConfirm.value = false;
     isClearingAllData.value = false;
-  }
-};
-
-const handleClearCaches = async () => {
-  if (isClearingCache.value) {
-    return;
-  }
-
-  isClearingCache.value = true;
-
-  try {
-    await appApi.clearCoverCache();
-    clearCoverCaches();
-    clearImageCaches();
-    clearPaletteCache();
-    showToast('封面缓存已清除', 'success');
-  } catch (error) {
-    console.error('Failed to clear cover caches:', error);
-    showToast('清除缓存失败，请重试', 'error');
-  } finally {
-    isClearingCache.value = false;
   }
 };
 
@@ -556,23 +530,6 @@ onScopeDispose(() => {
         存储空间
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden">
-         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">清除缓存</div>
-          </div>
-          <button
-            type="button"
-            :disabled="isClearingCache"
-            @click="handleClearCaches"
-            class="settings-action-button"
-            :class="isClearingCache
-              ? 'settings-action-button--disabled'
-              : 'settings-action-button--soft'"
-          >
-            {{ isClearingCache ? '清除中...' : '清除' }}
-          </button>
-        </div>
-
         <!-- 在线播放缓存上限 -->
         <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">

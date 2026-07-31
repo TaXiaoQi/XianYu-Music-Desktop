@@ -41,6 +41,8 @@ commands.allow = [
   "set_stream_cache_max_size",
   "get_stream_cache_info",
   "clear_stream_cache",
+  "is_stream_cached",
+  "wait_stream_complete",
   "get_library_folders",
   "is_directory",
   "add_library_folder",

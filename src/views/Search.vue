@@ -402,7 +402,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -412,6 +412,7 @@ import { useUiStore } from '../shared/stores/ui';
 import { useNavigationStore } from '../shared/stores/navigation';
 import { useLibraryStore } from '../features/library/store';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
+import { usePlaybackStore } from '../features/playback/store';
 import { useCollectionsStore } from '../features/collections/store';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useToast } from '../composables/toast';
@@ -916,6 +917,7 @@ const handlePlaySong = (item: LxSearchResultItem) => {
   // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
   cacheLxSong(item);
   // 同时缓存到 lxLyricFetcher（供歌词获取使用）
+  const songDuration = parseIntervalToSeconds(item.interval);
   cacheLxSongInfo(item.source, item.songmid, {
     songmid: item.songmid,
     hash: item.hash,
@@ -923,6 +925,7 @@ const handlePlaySong = (item: LxSearchResultItem) => {
     singer: item.singer,
     albumName: item.albumName,
     interval: item.interval,
+    _interval: songDuration > 0 ? Math.round(songDuration) : undefined,
     songId: item.songId,
     strMediaMid: item.strMediaMid,
     albumMid: item.albumMid,
@@ -944,7 +947,7 @@ const handlePlaySong = (item: LxSearchResultItem) => {
     album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: parseIntervalToSeconds(item.interval),
+    duration: songDuration,
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
@@ -1126,6 +1129,7 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
   // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
   // 下一首播放/添加到队尾等操作会延迟调用 playSong，必须提前缓存否则解析失败
   cacheLxSong(item);
+  const contextMenuDuration = parseIntervalToSeconds(item.interval);
   cacheLxSongInfo(item.source, item.songmid, {
     songmid: item.songmid,
     hash: item.hash,
@@ -1133,6 +1137,7 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
     singer: item.singer,
     albumName: item.albumName,
     interval: item.interval,
+    _interval: contextMenuDuration > 0 ? Math.round(contextMenuDuration) : undefined,
     songId: item.songId,
     strMediaMid: item.strMediaMid,
     albumMid: item.albumMid,
@@ -1153,7 +1158,7 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
     album_key: `${item.albumName || '未知专辑'}-${item.singer || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: parseIntervalToSeconds(item.interval),
+    duration: contextMenuDuration,
     cover_thumb_path: item.img || '',
     source_type: 'remote',
     remote_source_id: `lx://${item.source}/${item.songmid}`,
@@ -1460,6 +1465,16 @@ onMounted(() => {
 onActivated(() => {
   uiStore.showPlayerDetail = false;
   onlineDetailStore.consumePendingSearchType();
+});
+
+// [修复] 离开搜索页时清空 tempQueue（下一首播放暂存），避免一直暂存
+// tempQueue 中的歌曲是搜索页"下一首播放"添加的，离开搜索场景后应清空
+// 已经从 tempQueue 取出播放的歌曲不受影响（已从 tempQueue 移除）
+onDeactivated(() => {
+  const playbackStore = usePlaybackStore();
+  if (playbackStore.tempQueue.length > 0) {
+    playbackStore.tempQueue = [];
+  }
 });
 </script>
 
