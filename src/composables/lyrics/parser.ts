@@ -10,12 +10,12 @@ import type {
   ParsedWord,
 } from './types';
 
-const TIMESTAMP_BLOCK_PATTERN = /\[(\d{1,}:\d{2}(?:\.\d+)?)\]/g;
-const ADJACENT_TIMESTAMPS_BEFORE_TEXT_PATTERN = /(?:\[(?:\d{1,}:\d{2}(?:\.\d+)?)\])+(?=[^[\]\r\n])/g;
+const TIMESTAMP_BLOCK_PATTERN = /\[(\d+:\d{2}(?:\.\d+)?)]/g;
+const ADJACENT_TIMESTAMPS_BEFORE_TEXT_PATTERN = /(?:\[\d+:\d{2}(?:\.\d+)?])+(?=[^[\]\r\n])/g;
 const ESLRC_GAP_PLACEHOLDER = '\u2063';
-const ENHANCED_TIMESTAMP_PATTERN = /<(\d{1,}:\d{2}(?:\.\d+)?)>/g;
-const ENHANCED_TIMESTAMP_TEXT_PATTERN = /<\d{1,}:\d{2}(?:\.\d+)?>/;
-const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d{1,}:\d{2}(?:\.\d+)?)\](.*)$/;
+const ENHANCED_TIMESTAMP_PATTERN = /<(\d+:\d{2}(?:\.\d+)?)>/g;
+const ENHANCED_TIMESTAMP_TEXT_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
+const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
 const ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS = 5;
 
 type ParserSource = ParsedLineSourceFormat;

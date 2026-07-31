@@ -53,8 +53,9 @@
     <!-- 搜索结果列表 -->
     <div class="flex-1 flex overflow-hidden relative">
       <section class="flex-1 flex overflow-hidden">
+        <transition name="page-fade" mode="out-in">
         <!-- 非音乐类型 + LX 插件：开发中提示（本地与 MusicFree 已支持） -->
-        <div v-if="activeSearchType !== 'track' && !isLocalSource && selectedSourceItem?.type === 'lx'" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+        <div v-if="activeSearchType !== 'track' && !isLocalSource && selectedSourceItem?.type === 'lx'" key="dev-placeholder" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
@@ -63,7 +64,7 @@
         </div>
 
         <!-- 加载中 -->
-        <div v-else-if="searching" class="flex-1 flex items-center justify-center">
+        <div v-else-if="searching" key="searching" class="flex-1 flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -74,7 +75,7 @@
         </div>
 
         <!-- 空状态 -->
-        <div v-else-if="!hasQuery" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+        <div v-else-if="!hasQuery" key="no-query" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -83,7 +84,7 @@
         </div>
 
         <!-- 无结果 -->
-        <div v-else-if="hasNoResults" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
+        <div v-else-if="hasNoResults" key="no-results" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -94,6 +95,7 @@
         <!-- 音乐搜索结果列表 -->
         <div
           v-else-if="activeSearchType === 'track'"
+          key="track"
           ref="resultsScrollRef"
           class="flex-1 overflow-y-auto custom-scrollbar"
           @scroll="handleScroll"
@@ -242,7 +244,7 @@
         </div>
 
         <!-- 歌手搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'artist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <div v-else-if="activeSearchType === 'artist'" key="artist" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             <!-- 本地歌手 -->
             <button
@@ -288,7 +290,7 @@
         </div>
 
         <!-- 专辑搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'album'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <div v-else-if="activeSearchType === 'album'" key="album" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             <!-- 本地专辑 -->
             <button
@@ -334,7 +336,7 @@
         </div>
 
         <!-- 歌单搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'playlist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
+        <div v-else-if="activeSearchType === 'playlist'" key="playlist" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             <!-- 本地歌单 -->
             <button
@@ -378,6 +380,7 @@
             </button>
           </div>
         </div>
+        </transition>
       </section>
     </div>
 
