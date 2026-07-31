@@ -177,6 +177,8 @@ pub enum AudioCommand {
 pub enum AudioSource {
     LocalFile(String),
     RemoteWebDav(crate::remote::cache::RemoteStreamSource),
+    /// 流式临时文件：在线音频下载到本地临时文件，边下边播
+    StreamingTempFile(crate::player::stream_cache::StreamingTempFileState),
 }
 
 impl AudioSource {
@@ -184,6 +186,7 @@ impl AudioSource {
         match self {
             AudioSource::LocalFile(path) => path.clone(),
             AudioSource::RemoteWebDav(source) => source.remote_uri.clone(),
+            AudioSource::StreamingTempFile(state) => state.path.clone(),
         }
     }
 

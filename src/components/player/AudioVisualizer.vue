@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { playbackApi } from '../../services/tauri/playbackApi';
-import { getNetworkVisualizerLevels } from '../../composables/playerPlayback';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { smoothVisualizerLevel } from './audioVisualizerMath';
 
@@ -142,15 +141,7 @@ const fetchSamples = async () => {
   if (!shouldFetchSamples()) return;
 
   try {
-    // 在线播放（IDM 兼容模式的本地 blob）优先用 Web Audio 分析出的频谱；
-    // 拿不到（普通直链/本地歌）则回退 Rust 后端采样
-    const networkLevels = getNetworkVisualizerLevels();
-    if (networkLevels.length > 0) {
-      levels.value = networkLevels.slice(0, BAR_COUNT);
-      scheduleDraw();
-      return;
-    }
-
+    // 所有音频（本地 + 在线流式缓存）统一走 Rust 后端采样
     const nextLevels = await playbackApi.getAudioVisualizerSamples();
     if (nextLevels.length > 0) {
       levels.value = nextLevels.slice(0, BAR_COUNT);

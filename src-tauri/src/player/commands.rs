@@ -75,18 +75,29 @@ pub async fn play_audio(
     let mut selected_output_mode = output_mode;
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
     let source = if is_http_stream {
-        // [在线播放] 普通 http(s) 直链（多来自 lx:// 插件解析）走 Rust rodio HTTP Range 流播放，
-        // 请求由 Rust 进程发起、不经 WebView 主线程，从根源规避 IDM 等下载器劫持；
-        // 且可复用后端均衡器/响度/限幅/可视化处理链。
+        // [在线播放重构] 把在线音频流式下载到本地临时文件，再用本地引擎播放。
+        // 这样所有音乐都走统一的 File::open + Decoder 路径，设备切换恢复天然支持，
+        // 无需维护 RemoteRangeReader 的复杂重建逻辑。
+        // 下载够最小缓冲（512KB）后才开始播放，避免起播立即卡顿。
         selected_output_mode = AudioOutputMode::Shared;
-        AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
-            remote_uri: path.clone(),
-            url: path.clone(),
-            // 部分音源防盗链需要浏览器 UA，给一个通用桌面浏览器 UA 兜底
-            user_agent: Some(DEFAULT_STREAM_USER_AGENT.to_string()),
-            headers: headers.clone(),
-            ..Default::default()
-        })
+        let stream_state = crate::player::stream_cache::start_streaming_download(
+            &path,
+            headers.as_ref(),
+            Some(DEFAULT_STREAM_USER_AGENT),
+        )
+        .map_err(|e| format!("在线音频缓存启动失败: {}", e))?;
+
+        // 等待最小缓冲就绪（最多等 30 秒，超时则放弃等待直接播放让 reader 阻塞缓冲）
+        let wait_start = std::time::Instant::now();
+        while !crate::player::stream_cache::is_buffer_ready(&stream_state) {
+            if wait_start.elapsed() > std::time::Duration::from_secs(30) {
+                eprintln!("[Audio][rust] 在线音频最小缓冲等待超时，继续播放（reader 会阻塞等待）");
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        AudioSource::StreamingTempFile(stream_state)
     } else if is_remote_uri(&path) {
         match remote_playback_source(&db_state, &path) {
             Ok(RemotePlaybackSource::Cached { path }) => AudioSource::LocalFile(path),
@@ -160,6 +171,27 @@ pub async fn play_audio(
     }
 
     Ok(())
+}
+
+/// 设置在线音频流式缓存上限（字节）
+#[tauri::command]
+pub fn set_stream_cache_max_size(bytes: u64) {
+    crate::player::stream_cache::set_max_cache_size(bytes);
+}
+
+/// 获取在线音频流式缓存信息：当前使用大小和上限（字节）
+#[tauri::command]
+pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
+    let mut info = std::collections::HashMap::new();
+    info.insert("current", crate::player::stream_cache::current_cache_size());
+    info.insert("max", crate::player::stream_cache::max_cache_size());
+    info
+}
+
+/// 清空在线音频流式缓存
+#[tauri::command]
+pub fn clear_stream_cache() {
+    crate::player::stream_cache::clear_all();
 }
 
 fn schedule_remote_cache_after_half(

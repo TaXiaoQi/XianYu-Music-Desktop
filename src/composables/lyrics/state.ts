@@ -25,6 +25,10 @@ export const lyricDocument = ref<LyricDocument | null>(null);
 const rawLyrics = ref('');
 const semanticLyrics = ref<SemanticLine[]>([]);
 let loadRequestId = 0;
+// [在线歌词重试] 最大重试次数（每次间隔 800ms，共约 12 秒）
+// 超过此次数后停止重试，置为 'empty' 状态
+const MAX_ONLINE_LYRICS_RETRIES = 15;
+let onlineLyricsRetryCount = 0;
 
 function createSettingsProxy<T extends object>(
   read: () => T,
@@ -76,7 +80,13 @@ export async function loadLyrics() {
     semanticLyrics.value = [];
     parsedLyrics.value = [];
     lyricsStatus.value = 'idle';
+    onlineLyricsRetryCount = 0;
     return;
+  }
+
+  // [修复] 歌曲切换时重置在线歌词重试计数器
+  if (lastWatchedSongPath !== song.path) {
+    onlineLyricsRetryCount = 0;
   }
 
   lyricsStatus.value = 'loading';
@@ -105,6 +115,7 @@ export async function loadLyrics() {
         secondary: line.secondary ? [...line.secondary] : undefined,
       })) as LyricLine[];
       lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
+      onlineLyricsRetryCount = 0; // 歌词加载成功，重置重试计数器
       return;
     }
 
@@ -115,6 +126,15 @@ export async function loadLyrics() {
     const isOnlineSong = lyricsPath.startsWith('lx://') || lyricsPath.startsWith('plugin://');
     if (isOnlineSong) {
       lyricsStatus.value = 'loading';
+      // [修复] 添加最大重试次数，避免歌词获取失败后无限重试
+      // 歌词获取成功时 lyrics_raw 会被设置并触发 watcher 调用 loadLyrics，
+      // 此时 lyrics_raw 非空不会进入此分支，所以 maxRetry 只限制"等待歌词"的重试
+      onlineLyricsRetryCount += 1;
+      if (onlineLyricsRetryCount > MAX_ONLINE_LYRICS_RETRIES) {
+        lyricsStatus.value = 'empty';
+        onlineLyricsRetryCount = 0;
+        return;
+      }
       // 延迟重试：等待 IIFE 异步获取歌词完成
       setTimeout(() => {
         // 仅当仍是同一首歌且仍是最新请求时才重试

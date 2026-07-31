@@ -1441,6 +1441,9 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     _copyrightId?: string;
   };
   const cached = getCachedLxSongInfo(source, songmid);
+  // [修复] 缓存未命中时（如从队列播放/页面刷新后），从 song.duration 补全 _interval，
+  // 否则 KG 歌词搜索的 timelength=0 会导致搜索失败
+  const fallbackInterval = song.duration > 0 ? Math.round(song.duration) : undefined;
   const songInfo: LxSongInfo = {
     songmid: cached?.songmid || extendedSong._songmid || songmid,
     hash: cached?.hash || extendedSong._hash,
@@ -1448,7 +1451,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     singer: cached?.singer || song.artist || '',
     albumName: cached?.albumName || song.album,
     interval: cached?.interval,
-    _interval: cached?._interval,
+    _interval: cached?._interval || fallbackInterval,
     songId: cached?.songId,
     strMediaMid: cached?.strMediaMid,
     albumMid: cached?.albumMid,
@@ -1457,8 +1460,35 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     source,
   };
 
+  // 优先直接从音乐平台 API 获取歌词（更快、更可靠）
   const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
-  if (!lyrics) return '';
+  if (lyrics) {
+    return buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
+  }
 
-  return buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
+  // [后备] 直接 API 失败时，回退到 LX 插件的 lyric 接口
+  // 某些音源直接 API 可能被限流/封锁，但 LX 插件内部可能有不同的请求策略
+  try {
+    const { getStoredPlugins } = await import('./pluginEngine');
+    const { ensureLxPluginInstance, lxPluginGetLyric } = await import('./lxPluginEngine');
+    const lxPlugins = getStoredPlugins().filter((p: any) => p.enabled && p.format === 'lx');
+    let matchedPlugin = lxPlugins.find((p: any) => p.sources.includes(source));
+    if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+    if (matchedPlugin) {
+      await ensureLxPluginInstance(matchedPlugin);
+      const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
+      if (pluginLyrics?.lyric) {
+        return buildLyricsRaw(
+          pluginLyrics.lyric,
+          pluginLyrics.tlyric,
+          pluginLyrics.rlyric,
+          pluginLyrics.lxlyric,
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[fetchLxSongLyricsRaw] LX 插件歌词后备获取失败:', e);
+  }
+
+  return '';
 }
