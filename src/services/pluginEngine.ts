@@ -22,6 +22,7 @@ import he from 'he';
 import qs from 'qs';
 import bigInt from 'big-integer';
 import { Buffer } from 'buffer';
+import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   PluginSource,
@@ -60,6 +61,15 @@ function log(msg: string) {
 
 export function setLogCallback(cb: ((msg: string) => void) | null) {
   _logCallback = cb;
+}
+
+// ==================== 插件状态版本号 ====================
+// 响应式版本号：每次插件列表变更（增删/排序/开关/更新）后自增，
+// 供 Search 等页面 watch 以第一时间刷新本地缓存的插件派生数据。
+export const pluginsVersion = ref(0);
+
+function bumpPluginsVersion() {
+  pluginsVersion.value += 1;
 }
 
 // ==================== Cookie 管理（模拟 Electron session.cookies）====================
@@ -1668,6 +1678,7 @@ export function addPluginSource(source: PluginSource) {
     plugins.push(source);
   }
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(plugins));
+  bumpPluginsVersion();
 }
 
 /**
@@ -1684,6 +1695,7 @@ export function reorderPlugins(orderedIds: string[]) {
     }
   }
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
+  bumpPluginsVersion();
 }
 
 export function removePluginSource(id: string) {
@@ -1692,6 +1704,7 @@ export function removePluginSource(id: string) {
   pluginInstances.delete(id);
   // [修复防御]: LX 插件删除时也要销毁 iframe
   destroyLxPlugin(id);
+  bumpPluginsVersion();
 }
 
 export function updatePluginSource(id: string, updates: Partial<PluginSource>) {
@@ -1700,6 +1713,7 @@ export function updatePluginSource(id: string, updates: Partial<PluginSource>) {
   if (idx >= 0) {
     stored[idx] = { ...stored[idx], ...updates };
     localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
+    bumpPluginsVersion();
   }
 }
 
@@ -1724,6 +1738,7 @@ export async function togglePlugin(id: string): Promise<{ success: boolean; enab
   if (sIdx >= 0) {
     stored[sIdx] = updatedSource;
     localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
+    bumpPluginsVersion();
   }
 
   // LX 插件需要管理 iframe 生命周期
@@ -1739,6 +1754,7 @@ export async function togglePlugin(id: string): Promise<{ success: boolean; enab
         if (rIdx >= 0) {
           rollback[rIdx] = { ...updatedSource, enabled: false };
           localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(rollback));
+          bumpPluginsVersion();
         }
         return { success: false, enabled: false, message: `${source.name} 初始化失败` };
       }
