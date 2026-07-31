@@ -4,7 +4,6 @@ import { FolderOpen } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import type { DownloadFileNameStyle, DownloadQuality } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
-import SettingHint from './SettingHint.vue';
 
 const { settings, patchSettings } = useSettings();
 
@@ -121,19 +120,17 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         <div class="desktop-setting-row rounded-b-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音质缺失行为</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">所选音质不可用时采取的回退策略</div>
           </div>
-          <div class="flex shrink-0 items-center gap-3">
-            <SettingHint text="所选音质不可用时采取的回退策略" />
-            <div class="flex items-center rounded-lg bg-gray-100 p-0.5 gap-0.5 dark:bg-white/5">
-              <button
-                v-for="opt in [{label: '下载更低音质', value: 'lower'}, {label: '下载更高音质', value: 'higher'}] as const" :key="opt.value"
-                class="px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
-                :class="settings.download.qualityFallbackBehavior === opt.value
-                  ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
-                  : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
-                @click="patchSettings({ download: { ...settings.download, qualityFallbackBehavior: opt.value } })"
-              >{{ opt.label }}</button>
-            </div>
+          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
+            <button
+              v-for="opt in [{label: '下载更低音质', value: 'lower'}, {label: '下载更高音质', value: 'higher'}] as const" :key="opt.value"
+              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
+              :class="settings.download.qualityFallbackBehavior === opt.value
+                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+              @click="patchSettings({ download: { ...settings.download, qualityFallbackBehavior: opt.value } })"
+            >{{ opt.label }}</button>
           </div>
         </div>
       </div>
