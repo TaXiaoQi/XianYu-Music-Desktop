@@ -502,37 +502,115 @@ async function getListDetailWy(rawId: string): Promise<PlaylistImportResult> {
 }
 
 /**
- * 网易云批量获取歌曲详情
- * 使用 /api/song/detail GET 请求（无需加密），与 yyy LxSdkSongList.fetchWyMusicDetailList 目标一致
- * weapi 和 linuxapi 在 Tauri 环境下均异常（weapi 返回空 body，linuxapi 返回错误），
- * 改用 /api/song/detail 端点直接 GET 请求，该端点支持无加密访问。
- * 注意：v1 端点字段名与 v3 不同（artists/ar, album/al, duration/dt）。
+ * weapi 加密（移植自 YinDongMusic wyCrypto.ts，与 lx-music-desktop 一致）
+ * AES-CBC 双重加密 + RSA 加密随机密钥
+ */
+const WEAPI_PRESET_KEY = CryptoJs.enc.Utf8.parse('0CoJUm6Qyw8W8jud');
+const WEAPI_IV = CryptoJs.enc.Utf8.parse('0102030405060708');
+const BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const RSA_MODULUS_HEX = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7';
+
+function uint8ArrayToWordArray(u8arr: Uint8Array): CryptoJs.lib.WordArray {
+  const words: number[] = [];
+  for (let i = 0; i < u8arr.length; i++) {
+    words[i >>> 2] |= u8arr[i] << (24 - (i % 4) * 8);
+  }
+  return CryptoJs.lib.WordArray.create(words, u8arr.length);
+}
+
+function rsaEncrypt(data: Uint8Array): string {
+  const padded = new Uint8Array(128);
+  padded.set(data, 128 - data.length);
+  let m = 0n;
+  for (const b of padded) m = (m << 8n) | BigInt(b);
+  const n = BigInt('0x' + RSA_MODULUS_HEX);
+  let result = 1n;
+  let base = m % n;
+  let exp = 65537n;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % n;
+    base = (base * base) % n;
+    exp >>= 1n;
+  }
+  return result.toString(16).padStart(256, '0');
+}
+
+function weapiEncrypt(object: Record<string, any>): { params: string; encSecKey: string } {
+  const text = JSON.stringify(object);
+  const keyBytes = new Uint8Array(16);
+  crypto.getRandomValues(keyBytes);
+  for (let i = 0; i < 16; i++) keyBytes[i] = BASE62.charCodeAt(keyBytes[i] % 62);
+  const secretKey = uint8ArrayToWordArray(keyBytes);
+
+  const firstEncrypted = CryptoJs.AES.encrypt(CryptoJs.enc.Utf8.parse(text), WEAPI_PRESET_KEY, {
+    iv: WEAPI_IV, mode: CryptoJs.mode.CBC, padding: CryptoJs.pad.Pkcs7,
+  }).toString();
+  const params = CryptoJs.AES.encrypt(CryptoJs.enc.Utf8.parse(firstEncrypted), secretKey, {
+    iv: WEAPI_IV, mode: CryptoJs.mode.CBC, padding: CryptoJs.pad.Pkcs7,
+  }).toString();
+
+  const reversedKey = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) reversedKey[i] = keyBytes[15 - i];
+  const encSecKey = rsaEncrypt(reversedKey);
+
+  return { params, encSecKey };
+}
+
+/**
+ * 网易云批量获取歌曲详情（完全对齐 YinDongMusic 的实现）
+ * 使用 weapi POST 到 /weapi/v3/song/detail，避免 GET URL 过长导致 400 错误
+ * 每批最多 1000 首，失败自动重试 2 次
  */
 async function fetchWyMusicDetailList(ids: string[]): Promise<PluginSearchResult[]> {
   if (ids.length === 0) return [];
 
-  const idsStr = `[${ids.join(',')}]`;
-  const url = `https://music.163.com/api/song/detail/?ids=${encodeURIComponent(idsStr)}`;
+  const MAX_RETRY = 2;
+  let lastError: any = null;
 
-  const resp = await httpFetch(url, 'GET', {
-    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
-    'Referer': 'https://music.163.com',
-  });
+  for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+    try {
+      const encrypted = weapiEncrypt({
+        c: '[' + ids.map(id => `{"id":${id}}`).join(',') + ']',
+        ids: '[' + ids.join(',') + ']',
+      });
 
-  const body = resp.body;
-  if (typeof body !== 'object' || body === null || body.code !== 200) {
-    log(`fetchWyMusicDetailList: error code=${body?.code}, body=${typeof body === 'string' ? body.substring(0, 200) : JSON.stringify(body).substring(0, 200)}`);
-    throw new Error(`网易云歌曲详情获取失败: code=${body?.code ?? 'unknown'}`);
+      const resp = await httpFetch(
+        'https://music.163.com/weapi/v3/song/detail',
+        'POST',
+        {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+          'Origin': 'https://music.163.com',
+          'Referer': 'https://music.163.com/',
+        },
+        `params=${encodeURIComponent(encrypted.params)}&encSecKey=${encodeURIComponent(encrypted.encSecKey)}`,
+      );
+
+      const body = resp.body;
+      if (typeof body === 'object' && body !== null && body.code === 200) {
+        const songs = body.songs || [];
+        const list: PluginSearchResult[] = [];
+        for (const track of songs) {
+          const parsed = parseWyTrack(track);
+          if (parsed) list.push(parsed);
+        }
+        log(`fetchWyMusicDetailList: requested=${ids.length}, parsed=${list.length}, attempt=${attempt + 1}`);
+        return list;
+      }
+
+      log(`fetchWyMusicDetailList: attempt=${attempt + 1} code=${body?.code}, body=${typeof body === 'string' ? body.substring(0, 200) : JSON.stringify(body).substring(0, 200)}`);
+      lastError = new Error(`code=${body?.code ?? 'unknown'}`);
+    } catch (e: any) {
+      log(`fetchWyMusicDetailList: attempt=${attempt + 1} exception: ${e?.message}`);
+      lastError = e;
+    }
+
+    if (attempt < MAX_RETRY) {
+      await new Promise(r => setTimeout(r, 300));
+    }
   }
 
-  const songs = body.songs || [];
-  const list: PluginSearchResult[] = [];
-  for (const track of songs) {
-    const parsed = parseWyTrack(track);
-    if (parsed) list.push(parsed);
-  }
-  log(`fetchWyMusicDetailList: requested=${ids.length}, parsed=${list.length}`);
-  return list;
+  throw new Error(`网易云歌曲详情获取失败: ${lastError?.message || 'unknown'}`);
 }
 
 function parseWyTrack(track: any): PluginSearchResult | null {

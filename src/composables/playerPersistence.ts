@@ -57,7 +57,7 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
     return meta;
   };
 
-  const flushPersistedState = () => {
+  const flushPersistedState = async () => {
     if (persistTimer) {
       clearTimeout(persistTimer);
       persistTimer = null;
@@ -65,6 +65,9 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
 
     // 使用 toRaw + JSON 深拷贝，确保 Vue 响应式代理中的所有字段（包括 songs）被正确序列化
     const rawPlaylists = JSON.parse(JSON.stringify(toRaw(collectionsStore.playlists)));
+
+    // 歌单数据异步写入文件系统（避免 localStorage 超限），其余数据仍走 localStorage
+    await playerStorage.writePlaylistsAsync(rawPlaylists);
 
     playerStorage.writePlayerState({
       playlistPathKey: keys.playerPlaylistPaths,
@@ -93,7 +96,7 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       clearTimeout(persistTimer);
     }
     persistTimer = setTimeout(() => {
-      flushPersistedState();
+      flushPersistedState().catch(e => console.error('[persist] flushPersistedState failed:', e));
     }, 200);
   };
 

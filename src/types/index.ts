@@ -97,6 +97,14 @@ export interface Playlist {
   songPaths: string[];
   createdAt?: string;
   coverPath?: string;
+  /** 完整歌曲对象（插件导入等非本地来源，用于跨设备同步） */
+  songs?: Song[];
+  /** 云端歌单 ID（同步后绑定，用于增量同步定位云端歌单） */
+  cloudId?: number;
+  /** 云端歌单封面 URL */
+  cloudCoverUrl?: string;
+  /** 是否为收藏歌单（"我喜欢的音乐"） */
+  isFavorite?: boolean;
 }
 
 export interface LibraryFolder {

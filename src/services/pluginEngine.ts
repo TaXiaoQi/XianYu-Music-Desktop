@@ -1462,6 +1462,107 @@ function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   ]);
 }
 
+// ==================== 云端同步支持 ====================
+
+/**
+ * 获取插件脚本内容（用于云端同步上传）
+ * 优先从内存缓存读取，没有则尝试从文件/URL 读取
+ */
+export async function getPluginScript(id: string): Promise<string | null> {
+  // 1. 优先从内存缓存读取
+  const instance = pluginInstances.get(id);
+  if (instance?.script) {
+    return instance.script;
+  }
+
+  // 2. 从 localStorage 读取元数据，尝试重新加载脚本
+  const source = getStoredPlugins().find(p => p.id === id);
+  if (!source) return null;
+
+  try {
+    if (source.filePath.startsWith('builtin://')) {
+      return null; // 内置插件不需要同步
+    } else if (source.filePath.startsWith('http')) {
+      const resp = await fetchWithTimeout(source.filePath, 10000);
+      if (resp.ok) return await resp.text();
+    } else {
+      const { pluginApi } = await import('./tauri/pluginApi');
+      return await pluginApi.readPluginFile(source.filePath);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * 从云端同步数据恢复插件
+ * 解析脚本、创建实例、持久化元数据
+ */
+export async function restorePluginFromSync(
+  source: PluginSource,
+  script: string,
+): Promise<boolean> {
+  try {
+    if (!script || script.trim().length === 0) {
+      log(`restorePluginFromSync: 脚本为空, 跳过 ${source.name}`);
+      return false;
+    }
+
+    // 检查是否已存在相同插件
+    const existing = getStoredPlugins().find(p => p.id === source.id);
+    if (existing) {
+      // 已存在：更新元数据，保留现有脚本缓存
+      updatePluginSource(source.id, {
+        enabled: source.enabled,
+        sortOrder: source.sortOrder,
+        name: source.name,
+        version: source.version,
+      });
+      log(`restorePluginFromSync: 插件已存在, 更新元数据 ${source.name}`);
+      return true;
+    }
+
+    // 新插件：解析脚本并创建实例
+    const loadedSource = await loadPluginFromScript(script, source.filePath);
+    if (!loadedSource) {
+      log(`restorePluginFromSync: 脚本解析失败 ${source.name}`);
+      return false;
+    }
+
+    // 合并同步的元数据（保留 enabled、sortOrder 等用户设置）
+    const merged: PluginSource = {
+      ...loadedSource,
+      enabled: source.enabled,
+      sortOrder: source.sortOrder ?? loadedSource.sortOrder,
+      importedAt: source.importedAt || loadedSource.importedAt,
+    };
+
+    // 确保 instance 缓存使用正确的 id
+    const entry = pluginInstances.get(loadedSource.id);
+    if (entry) {
+      entry.source = merged;
+      pluginInstances.set(merged.id, entry);
+      if (loadedSource.id !== merged.id) {
+        pluginInstances.delete(loadedSource.id);
+      }
+    }
+
+    addPluginSource(merged);
+    log(`restorePluginFromSync: 恢复成功 ${merged.name} (${merged.format})`);
+
+    // LX 插件如果启用，需要初始化 iframe
+    if (merged.format === 'lx' && merged.enabled) {
+      await initLxPlugin(merged);
+    }
+
+    return true;
+  } catch (e: any) {
+    log(`restorePluginFromSync: 恢复失败 ${source.name} - ${e?.message || e}`);
+    return false;
+  }
+}
+
 // ==================== 导出 ====================
 
 export type { IPluginInstance };

@@ -124,4 +124,6 @@ commands.allow = [
   "read_plugin_file",
   "proxy_image",
   "download_audio_to_temp",
+  "write_state_json",
+  "read_state_json",
 ]

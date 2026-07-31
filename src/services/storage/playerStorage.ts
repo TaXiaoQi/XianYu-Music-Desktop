@@ -1,5 +1,6 @@
 import type { AppSettings, HistoryItem, Playlist, Song, EqualizerPreset } from '../../types';
 import { localStore } from './localStore';
+import { fileStore } from './fileStore';
 
 export type ArtistSortMode = 'count' | 'name' | 'custom';
 export type AlbumSortMode = 'count' | 'name' | 'artist' | 'custom';
@@ -153,6 +154,45 @@ export const playerStorage = {
     });
   },
 
+  /**
+   * 异步读取歌单：优先从文件系统读取（支持大数据），回退到 localStorage（兼容旧数据）。
+   * 导入大歌单（9000+首）后 localStorage 会超限，必须用文件存储。
+   */
+  async readPlaylistsAsync(key = playerStorageKeys.playlists): Promise<Playlist[]> {
+    const filterPlaylists = (parsed: unknown): Playlist[] => {
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is Playlist => {
+        if (!item || typeof item !== 'object') return false;
+        const playlist = item as Playlist;
+        return typeof playlist.id === 'string' && typeof playlist.name === 'string' && Array.isArray(playlist.songPaths);
+      });
+    };
+
+    // 优先从文件系统读取
+    const fileData = await fileStore.getJson<unknown>(key);
+    if (fileData !== null) {
+      return filterPlaylists(fileData);
+    }
+    // 回退到 localStorage（兼容未迁移的旧数据）
+    return filterPlaylists(localStore.getJson<unknown>(key));
+  },
+
+  /**
+   * 异步写入歌单到文件系统，同时尝试写入 localStorage（向后兼容，超限时清理旧数据释放空间）。
+   */
+  async writePlaylistsAsync(playlists: Playlist[], key = playerStorageKeys.playlists): Promise<void> {
+    // 优先写入文件系统（主存储，无大小限制）
+    await fileStore.setJson(key, playlists);
+    // 尝试同步写入 localStorage（向后兼容旧版本），超限时移除旧数据释放空间
+    try {
+      localStore.setJson(key, playlists);
+    } catch {
+      // localStorage 配额超限，文件存储已保证数据安全
+      // 移除 localStorage 中的旧歌单数据，释放空间给其他 localStorage 写入
+      localStore.remove(key);
+    }
+  },
+
   // 均衡器预设管理
   readEqualizerPresets(): EqualizerPreset[] {
     const parsed = localStore.getJson<unknown>(playerStorageKeys.equalizerPresets);
@@ -272,7 +312,7 @@ export const playerStorage = {
     localStore.setJson(playerStorageKeys.recentSongMeta, options.recentSongMeta);
     localStore.setJson(playerStorageKeys.recentOnlineHistory, options.recentOnlineHistory);
     localStore.setJson(playerStorageKeys.queueSongMeta, options.queueSongMeta);
-    localStore.setJson(playerStorageKeys.playlists, options.playlists);
+    // 歌单数据通过 writePlaylistsAsync 异步写入文件系统，避免 localStorage 超限
     localStore.setJson(playerStorageKeys.settings, options.settings);
     localStore.setJson(options.queuePathKey, options.playQueuePaths);
     localStore.setJson(playerStorageKeys.artistCustomOrder, options.artistCustomOrder);

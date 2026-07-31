@@ -62,9 +62,9 @@ use taskbar::{
 };
 use toolbox::{
     apply_rename, check_update_by_rust, download_online_song, download_update_file,
-    fetch_announcement, file_exists, open_external_program, preview_rename, refresh_folder_songs,
-    probe_url_size, run_installer, save_download_bytes, save_download_lyrics,
-    set_gpu_acceleration,
+    fetch_announcement, file_exists, open_external_program, preview_rename, read_state_json,
+    refresh_folder_songs, probe_url_size, run_installer, save_download_bytes,
+    save_download_lyrics, set_gpu_acceleration, write_state_json,
 };
 
 #[cfg(target_os = "windows")]
@@ -232,7 +232,9 @@ download_audio_to_temp,
             save_download_bytes,
             save_download_lyrics,
             run_installer,
-            fetch_announcement
+            fetch_announcement,
+            write_state_json,
+            read_state_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
