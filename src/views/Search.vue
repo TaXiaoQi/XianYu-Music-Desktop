@@ -1007,8 +1007,9 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   const pluginSrc = mfSource.source;
 
   try {
-    // 1. 读取用户在设置中选择的默认音质（统一 12 档），并获取音质回退行为
-    const requestedQuality = settingsStore.settings.audio.onlineDefaultQuality || '320k';
+    // 1. 读取音质：优先底栏会话覆盖（当前歌临时切换），回退到设置页默认音质
+    const requestedQuality = playbackStore.sessionQualityOverride
+      ?? (settingsStore.settings.audio.onlineDefaultQuality || '320k');
     const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
 
     // 2. 并行获取播放 URL（阻塞）和歌词（getMediaSource 可能不返回歌词，用 pluginGetLyric 补获）

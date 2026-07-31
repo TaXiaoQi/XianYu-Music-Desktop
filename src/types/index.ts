@@ -402,6 +402,64 @@ export type OnlineFailureBehavior = 'skip' | 'stop' | 'wait';
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
 /**
+ * 根据用户首选音质、音源可用音质列表和回退行为，计算实际应尝试的音质列表（有序）。
+ *
+ * 逻辑：
+ * 1. 首选音质在可用列表中 → 首选排第一
+ * 2. 根据回退行为添加候选：
+ *    - 'lower': 添加低于首选的可用音质（从高到低依次）
+ *    - 'higher': 添加高于首选的可用音质（从低到高依次）
+ *    - 'pause': 不添加候选
+ * 3. 若候选列表为空（行为无法对应，如首选最高且回退为更高但音源只有更低音质），
+ *    回退到可用列表中的最高音质，确保始终能播放
+ *
+ * @returns 有序音质列表，第一个返回有效 URL 的即采用
+ */
+export function resolveOnlinePlayQuality(
+  preferred: QualityKey,
+  available: QualityKey[] | null,
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+): QualityKey[] {
+  const avail = available && available.length > 0 ? available : [...ALL_QUALITY_KEYS];
+  const availableSet = new Set(avail);
+  const result: QualityKey[] = [];
+
+  // 1. 首选音质可用时优先
+  if (availableSet.has(preferred)) {
+    result.push(preferred);
+  }
+
+  // 2. 根据回退行为添加候选
+  const preferredIdx = ALL_QUALITY_KEYS.indexOf(preferred);
+  if (preferredIdx !== -1) {
+    if (fallbackBehavior === 'higher') {
+      // 向上升级：从首选+1 到最高
+      for (let i = preferredIdx + 1; i < ALL_QUALITY_KEYS.length; i++) {
+        if (availableSet.has(ALL_QUALITY_KEYS[i])) {
+          result.push(ALL_QUALITY_KEYS[i]);
+        }
+      }
+    } else if (fallbackBehavior === 'lower') {
+      // 向下降级：从首选-1 到最低
+      for (let i = preferredIdx - 1; i >= 0; i--) {
+        if (availableSet.has(ALL_QUALITY_KEYS[i])) {
+          result.push(ALL_QUALITY_KEYS[i]);
+        }
+      }
+    }
+    // 'pause': 不添加回退候选
+  }
+
+  // 3. 若候选为空（行为无法对应），回退到可用列表中的最高音质
+  if (result.length === 0 && avail.length > 0) {
+    const highest = [...avail].sort((a, b) => QUALITY_META[b].rank - QUALITY_META[a].rank)[0];
+    result.push(highest);
+  }
+
+  return result;
+}
+
+/**
  * 将 QualityKey 映射到 MusicFree 插件的 standard / high / lossless
  * MusicFree 插件标准只有这 3 档，其他档位按比特率/无损性降级映射
  *
@@ -690,6 +748,8 @@ export interface PluginMusicInfo {
   lyricsRaw?: string;
   coverUrl?: string;
   headers?: Record<string, string>;
+  /** 实际获取到有效 URL 的音质（用于底部栏同步显示） */
+  actualQuality?: QualityKey;
 }
 
 /** MusicFree 插件歌单搜索结果 */
