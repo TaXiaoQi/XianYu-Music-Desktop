@@ -758,7 +758,7 @@ onUnmounted(() => {
         <button
           ref="qualityButtonRef"
           @click="toggleQualityMenu"
-          class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
+          class="flex shrink-0 items-center justify-center whitespace-nowrap w-9 h-9 text-[12px] font-semibold rounded-full transition-colors select-none"
           :class="[
             !isQualitySelectableSong
               ? (showPlayerDetail
@@ -767,8 +767,8 @@ onUnmounted(() => {
               : showQualityMenu
                 ? 'text-[#EC4141] bg-[#EC4141]/10'
                 : (showPlayerDetail
-                    ? 'text-white/60 hover:text-white hover:bg-white/10'
-                    : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')
+                    ? 'text-white/80 hover:text-white hover:bg-white/10'
+                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
           ]"
           :title="isQualitySelectableSong ? '音质选择' : '本地歌曲不支持音质切换'"
         >
