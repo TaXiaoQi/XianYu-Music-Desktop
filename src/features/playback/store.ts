@@ -27,8 +27,12 @@ export const usePlaybackStore = defineStore('playback', () => {
   const currentAvailableQualities = ref<QualityKey[] | null>(null);
   /** 当前实际播放的音质（经回退逻辑解析后真正使用的音质，null 表示未知/本地歌曲） */
   const currentPlayingQuality = ref<QualityKey | null>(null);
-  /** 底栏音质覆盖：仅对当前歌曲生效，切歌后清空，回退到设置页的默认音质。
-   *  用于解耦底栏音质选择与设置页 onlineDefaultQuality，避免底栏临时切换污染全局默认。 */
+  /**
+   * 会话级临时音质覆盖（底部栏音质切换按钮写入）。
+   * 仅影响播放链路取用的音质，不写入 settings，因此不会同步到设置页的「在线播放音质」。
+   * 切歌时保留（尊重用户本次会话的选择），仅在 resetPlaybackState / 应用重启时清空。
+   * 播放时优先级：sessionQualityOverride > settings.audio.onlineDefaultQuality。
+   */
   const sessionQualityOverride = ref<QualityKey | null>(null);
   const setSessionQualityOverride = (q: QualityKey | null) => {
     sessionQualityOverride.value = q;

@@ -452,6 +452,7 @@ const navigationStore = useNavigationStore();
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
 const settingsStore = useSettingsStore();
+const playbackStore = usePlaybackStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { showToast } = useToast();
 const { searchQuery } = storeToRefs(navigationStore);
@@ -1007,9 +1008,9 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   const pluginSrc = mfSource.source;
 
   try {
-    // 1. 读取音质：优先底栏会话覆盖（当前歌临时切换），回退到设置页默认音质
+    // 1. 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
     const requestedQuality = playbackStore.sessionQualityOverride
-      ?? (settingsStore.settings.audio.onlineDefaultQuality || '320k');
+      || settingsStore.settings.audio.onlineDefaultQuality || '320k';
     const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
 
     // 2. 并行获取播放 URL（阻塞）和歌词（getMediaSource 可能不返回歌词，用 pluginGetLyric 补获）
@@ -1472,7 +1473,6 @@ onActivated(() => {
 // tempQueue 中的歌曲是搜索页"下一首播放"添加的，离开搜索场景后应清空
 // 已经从 tempQueue 取出播放的歌曲不受影响（已从 tempQueue 移除）
 onDeactivated(() => {
-  const playbackStore = usePlaybackStore();
   if (playbackStore.tempQueue.length > 0) {
     playbackStore.tempQueue = [];
   }
