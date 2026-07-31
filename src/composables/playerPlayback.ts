@@ -35,6 +35,8 @@ let progressFrameId: number | null = null;
 let progressTimerId: ReturnType<typeof setTimeout> | null = null;
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
+// [渐入渐出] 淡入淡出动画帧 ID，用于取消正在进行的音量渐变
+let fadeFrameId: number | null = null;
 let playRequestId = 0;
 // [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
 // togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
@@ -50,8 +52,8 @@ let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
-// [在线失败行为] 记录上一次因起播失败而重试过的歌曲路径，避免 'retry' 无限重试
-let lastFailureRetriedPath: string | null = null;
+// [在线失败行为] 记录上一次因起播失败而等待过的歌曲路径，避免 'wait' 无限等待
+let lastFailureWaitedPath: string | null = null;
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
@@ -199,6 +201,46 @@ export const createPlayerPlayback = ({
     }
   };
 
+  // [渐入渐出] 取消正在进行的音量渐变动画
+  const cancelFade = () => {
+    if (fadeFrameId !== null) {
+      cancelAnimationFrame(fadeFrameId);
+      fadeFrameId = null;
+    }
+  };
+
+  // [渐入渐出] 将实际输出音量从当前值渐变到目标值（不影响 playbackStore.volume 显示值）
+  const fadeVolumeTo = (targetVolume: number, durationMs: number): Promise<void> => {
+    return new Promise((resolve) => {
+      cancelFade();
+      const startVolume = playbackStore.volume / 100;
+      const targetVol = Math.max(0, Math.min(1, targetVolume));
+      if (Math.abs(startVolume - targetVol) < 0.005 || durationMs <= 0) {
+        void playbackApi.setVolume(targetVol).catch(() => {});
+        resolve();
+        return;
+      }
+      const startTime = performance.now();
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+        // 使用 easeOutQuad 缓动函数，让渐变更自然
+        const eased = 1 - (1 - progress) * (1 - progress);
+        const currentVol = startVolume + (targetVol - startVolume) * eased;
+        void playbackApi.setVolume(currentVol).catch(() => {});
+        if (progress < 1) {
+          fadeFrameId = requestAnimationFrame(step);
+        } else {
+          fadeFrameId = null;
+          // 确保最终设置精确的目标音量
+          void playbackApi.setVolume(targetVol).catch(() => {});
+          resolve();
+        }
+      };
+      fadeFrameId = requestAnimationFrame(step);
+    });
+  };
+
   const reanchorPlaybackClock = (time: number) => {
     playbackAnchorTime = performance.now();
     playbackStartOffset = time;
@@ -324,6 +366,8 @@ export const createPlayerPlayback = ({
 
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
+    // [渐入渐出] 切歌时取消正在进行的淡入淡出动画
+    cancelFade();
 
     flushPlaySession();
     onBeforePlay?.(song, options);
@@ -352,11 +396,12 @@ export const createPlayerPlayback = ({
     if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
       void fetchLxSongLyricsRaw(song)
         .then((lyricsRaw) => {
-          if (
-            !lyricsRaw
-            || requestId !== playRequestId
-            || currentSong.value?.path !== song.path
-          ) {
+          if (!lyricsRaw) {
+            console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
+            return;
+          }
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+            console.log('[Lyrics] LX 歌词获取成功但已被切歌:', song.path);
             return;
           }
 
@@ -367,6 +412,7 @@ export const createPlayerPlayback = ({
             item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
           ));
           currentSong.value = songWithLyrics;
+          console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
           void loadLyrics();
         })
         .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
@@ -553,7 +599,7 @@ export const createPlayerPlayback = ({
             const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
 
             // 根据音质回退行为构建尝试列表
-            const lxTryQualities: QualityKey[] = (() => {
+            let lxTryQualities: QualityKey[] = (() => {
               if (fallbackBehavior === 'pause') return [requestedQuality];
               if (fallbackBehavior === 'higher') {
                 const idx = ALL_QUALITY_KEYS.indexOf(requestedQuality);
@@ -565,6 +611,18 @@ export const createPlayerPlayback = ({
               if (idx === -1) return [requestedQuality];
               return ALL_QUALITY_KEYS_DESC.slice(idx);
             })();
+
+            // [音质缓存验证] 如果已获取到当前歌曲支持的音质列表，只尝试被支持的音质
+            // 避免对不支持的音质发起无效 API 请求，提升起播速度
+            const availableQualities = playbackStore.currentAvailableQualities;
+            if (availableQualities && availableQualities.length > 0) {
+              const supportedSet = new Set(availableQualities);
+              const filtered = lxTryQualities.filter(q => supportedSet.has(q));
+              if (filtered.length > 0) {
+                lxTryQualities = filtered;
+              }
+              // 如果请求音质不在支持列表中，且过滤后为空，保持原列表不变（让插件自行判断）
+            }
 
             // 依次尝试音质列表，第一个返回有效 URL 的即采用
             for (const q of lxTryQualities) {
@@ -609,10 +667,51 @@ export const createPlayerPlayback = ({
       // 播放入口（如 handlePlayMfSong）会在播放前预获取 URL 并存到 remote_source_id
       const preUrl = song.remote_source_id;
       if (preUrl && /^https?:/.test(preUrl)) {
-        audioFilePath = preUrl;
-        // 加载预获取时保存的防盗链 headers
-        if (song.remote_headers) {
-          pluginHeaders = song.remote_headers;
+        // [缓存复用] Baka 等前置请求易失败的音源，若该 URL 已缓存完成则直接复用，不再请求插件
+        // 避免每次播放都走 pluginGetMusicInfo（可能返回会失败的占位 URL）
+        let usePreUrlDirectly = true;
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const cached = await invoke<boolean>('is_stream_cached', { url: preUrl });
+          if (!cached && song.rawData?.pluginId) {
+            // 未缓存：走插件解析获取新 URL（插件可能返回不同音质/防盗链直链）
+            const { getStoredPlugins, pluginGetMusicInfo, pluginGetCover } = await import('../services/pluginEngine');
+            const plugins = getStoredPlugins();
+            const pluginSource = plugins.find(p => p.id === song.rawData!.pluginId && p.enabled);
+            if (pluginSource) {
+              const requestedQuality = settingsStore.settings.audio.onlineDefaultQuality || '320k';
+              const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+              const musicInfo = await pluginGetMusicInfo(pluginSource, song.rawData, requestedQuality, fallbackBehavior);
+              if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
+                audioFilePath = musicInfo.url;
+                usePreUrlDirectly = false;
+                if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
+                  pluginHeaders = musicInfo.headers;
+                }
+                if (!song.lyrics_raw?.trim() && musicInfo.lyricsRaw) {
+                  song.lyrics_raw = musicInfo.lyricsRaw;
+                }
+                if (!song.cover_thumb_path) {
+                  if (musicInfo.coverUrl) {
+                    song.cover_thumb_path = musicInfo.coverUrl;
+                  } else {
+                    try {
+                      const cover = await pluginGetCover(pluginSource, song.rawData);
+                      if (cover) song.cover_thumb_path = cover;
+                    } catch { /* ignore cover error */ }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e: any) {
+          console.warn('[Audio] 缓存检测/插件解析失败，回退到 preUrl:', e?.message);
+        }
+        if (usePreUrlDirectly) {
+          audioFilePath = preUrl;
+          if (song.remote_headers) {
+            pluginHeaders = song.remote_headers;
+          }
         }
       } else {
         // 回退到插件解析：通过 rawData 调用 pluginGetMusicInfo 获取直链
@@ -696,7 +795,7 @@ export const createPlayerPlayback = ({
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
-        lastFailureRetriedPath = null; // 起播成功，清除重试标记
+        lastFailureWaitedPath = null; // 起播成功，清除等待标记
         sessionStartTime = Date.now();
         loadLyrics();
         startPlaybackRuntime();
@@ -894,21 +993,32 @@ export const createPlayerPlayback = ({
 
       const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
       if (failureBehavior === 'skip') {
-        lastFailureRetriedPath = null;
+        lastFailureWaitedPath = null;
         setTimeout(() => {
           if (currentSong.value?.path === song.path) handleAutoNext();
         }, 400);
-      } else if (failureBehavior === 'retry') {
-        // 每首歌只自动重试一次，重试仍失败则停止，避免死循环
-        if (lastFailureRetriedPath !== song.path) {
-          lastFailureRetriedPath = song.path;
-          setTimeout(() => {
-            if (currentSong.value?.path === song.path) {
-              void playSong(song, { startTime: currentTime.value, preserveQueue: true });
+      } else if (failureBehavior === 'wait') {
+        // [等待响应] 等待流式缓存下载完成后重新播放（每首歌只等待一次，避免死循环）
+        // 适用于 Baka 等前置请求易失败的音源：解码失败时缓存可能仍在后台下载
+        const waitUrl = audioFilePath;
+        if (/^https?:/.test(waitUrl) && lastFailureWaitedPath !== song.path) {
+          lastFailureWaitedPath = song.path;
+          console.log('[Audio] 起播失败，等待缓存完成后重试:', waitUrl);
+          void (async () => {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const ok = await invoke<boolean>('wait_stream_complete', { url: waitUrl, timeoutSecs: 60 });
+              if (ok && currentSong.value?.path === song.path && requestId === playRequestId) {
+                void playSong(song, { startTime: currentTime.value, preserveQueue: true });
+              } else {
+                console.warn('[Audio] 缓存等待失败或已切歌，放弃重试');
+              }
+            } catch (e: any) {
+              console.warn('[Audio] 等待缓存异常:', e?.message);
             }
-          }, 800);
+          })();
         } else {
-          lastFailureRetriedPath = null;
+          lastFailureWaitedPath = null;
         }
       }
       // 'stop'：保持停止，不做额外处理
@@ -930,13 +1040,28 @@ export const createPlayerPlayback = ({
       cancelledPlayRequestId = playRequestId;
     }
 
+    // [渐入渐出] 淡出：渐变音量到0后再暂停
+    const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
+    const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
+    if (fadeEnabled && isPlaying.value && isSongLoaded.value) {
+      await fadeVolumeTo(0, fadeDuration);
+    }
+
     isPlaying.value = false;
     await playbackApi.pauseAudio();
     stopPlaybackRuntime();
+
+    // [渐入渐出] 淡出完成后恢复音量设置（不影响 UI 显示值，仅恢复后端音量）
+    if (fadeEnabled) {
+      void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+    }
   };
 
   const togglePlay = async () => {
     if (!currentSong.value) return;
+
+    const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
+    const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
     if (isPlaying.value) {
       if (sessionStartTime) {
@@ -953,13 +1078,24 @@ export const createPlayerPlayback = ({
         cancelledPlayRequestId = playRequestId;
       }
 
+      // [渐入渐出] 淡出：渐变音量到0后再暂停
+      if (fadeEnabled && isSongLoaded.value) {
+        await fadeVolumeTo(0, fadeDuration);
+      }
+
       await playbackApi.pauseAudio();
       isPlaying.value = false;
       stopPlaybackRuntime();
+
+      // [渐入渐出] 淡出完成后恢复后端音量设置（不影响 UI 显示值）
+      if (fadeEnabled) {
+        void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+      }
       return;
     }
 
     // 用户重新点了播放，撤销之前的取消标记
+    cancelFade(); // 取消可能正在进行的淡出
     cancelledPlayRequestId = -1;
 
     if (!isSongLoaded.value) {
@@ -973,6 +1109,11 @@ export const createPlayerPlayback = ({
 
     isPlaying.value = true;
     startPlaybackRuntime();
+
+    // [渐入渐出] 淡入：从0渐变到目标音量
+    if (fadeEnabled) {
+      void fadeVolumeTo(playbackStore.volume / 100, fadeDuration);
+    }
   };
 
   const seekTo = async (newTime: number) => {

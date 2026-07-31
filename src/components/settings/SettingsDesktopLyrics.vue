@@ -29,6 +29,7 @@ import {
 import { DESKTOP_LYRICS_RESET_BOUNDS_EVENT } from '../../features/desktopLyrics/shared';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
+import SettingHint from './SettingHint.vue';
 
 
 
@@ -964,6 +965,10 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">同步偏移</div>
           </div>
           <div class="flex items-center gap-3 shrink-0">
+            <SettingHint
+              text="正值让歌词更晚显示，负值让歌词更早显示。用于修正不同输出设备的播放缓冲差异，默认值为 0 ms。"
+              :focusable="false"
+            />
             <div class="rounded-full bg-[#EC4141]/10 px-3 py-1 text-xs font-medium text-[#EC4141] tabular-nums">
               {{ lyricsSyncOffsetLabel }}
             </div>
@@ -978,11 +983,7 @@ onUnmounted(() => {
         <transition name="desktop-expand-panel">
           <div v-if="showLyricsSyncOffsetPanel" class="desktop-setting-expand">
             <div class="desktop-setting-expand-inner">
-              <div class="text-xs text-gray-600 dark:text-white/60">
-                正值让歌词更晚显示，负值让歌词更早显示。用于修正不同输出设备的播放缓冲差异，默认值为 0 ms。
-              </div>
-
-              <div class="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
+              <div class="flex flex-col gap-4 md:flex-row md:items-center">
                 <input
                   v-model="lyricsSyncOffsetMs"
                   type="range"

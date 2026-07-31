@@ -9,6 +9,7 @@ import type { PluginSource, PluginSubscription } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl } from '../../services/pluginEngine';
 import { useSettings } from '../../features/settings/useSettings';
 import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
+import SettingHint from './SettingHint.vue';
 
 const { showToast } = useToast();
 const { settings, patchSettings } = useSettings();
@@ -849,11 +850,9 @@ async function copyPluginLink() {
 
       <div class="flex flex-col gap-3 rounded-xl">
         <!-- 描述 -->
-        <div class="p-4 border-b border-white/30 dark:border-white/5">
+        <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
-          <div class="text-xs text-gray-500 dark:text-white/55 mt-1 leading-relaxed">
-            支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。
-          </div>
+          <SettingHint text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。" />
         </div>
 
         <!-- 操作按钮组 -->
@@ -915,10 +914,7 @@ async function copyPluginLink() {
                 <div class="settings-plugin-dropzone-title">
                   点击选择文件或拖拽到此处
                 </div>
-                <div class="settings-plugin-dropzone-hint">
-                  <FileCode2 class="h-3.5 w-3.5" />
-                  支持 .js 或 .json 格式的插件文件
-                </div>
+                <SettingHint class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" />
               </div>
               <div class="flex justify-end mt-3">
                 <button
@@ -937,32 +933,33 @@ async function copyPluginLink() {
         <transition name="settings-pop-panel">
           <div v-if="showInstallFromUrlDialog" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
-              <div class="text-xs text-gray-600 dark:text-white/60 mb-3">
-                粘贴插件的 JS 文件直链或 JSON 索引地址
-              </div>
-              <div class="flex items-center gap-3">
-                <input
-                  v-model="installUrl"
-                  type="text"
-                  placeholder="https://example.com/plugin.js"
-                  class="settings-plugin-input flex-1"
-                  @keydown.enter="handleInstallFromUrl"
-                />
-                <button
-                  type="button"
-                  class="settings-plugin-button"
-                  @click="handleInstallFromUrl"
-                >
-                  <Download class="h-4 w-4" />
-                  安装
-                </button>
-                <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--ghost"
-                  @click="toggleInstallFromUrlDialog(); installUrl = ''"
-                >
-                  取消
-                </button>
+              <div class="flex items-center justify-between gap-4">
+                <div class="shrink-0 text-sm font-medium text-gray-800 dark:text-gray-200">插件地址</div>
+                <div class="flex min-w-0 flex-1 items-center gap-3">
+                  <SettingHint text="粘贴插件的 JS 文件直链或 JSON 索引地址" />
+                  <input
+                    v-model="installUrl"
+                    type="text"
+                    placeholder="https://example.com/plugin.js"
+                    class="settings-plugin-input flex-1"
+                    @keydown.enter="handleInstallFromUrl"
+                  />
+                  <button
+                    type="button"
+                    class="settings-plugin-button"
+                    @click="handleInstallFromUrl"
+                  >
+                    <Download class="h-4 w-4" />
+                    安装
+                  </button>
+                  <button
+                    type="button"
+                    class="settings-plugin-button settings-plugin-button--ghost"
+                    @click="toggleInstallFromUrlDialog(); installUrl = ''"
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -973,10 +970,9 @@ async function copyPluginLink() {
           <div v-if="showSubscriptionPanel" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
               <div class="flex items-center justify-between mb-3 gap-2">
-                <div class="text-xs text-gray-600 dark:text-white/60 min-w-0">
-                  订阅可自动同步远端插件列表，方便一次性安装多个来源
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">订阅管理</div>
+                <div class="flex shrink-0 items-center gap-3">
+                  <SettingHint text="订阅可自动同步远端插件列表，方便一次性安装多个来源" />
                   <button
                     type="button"
                     class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary"
@@ -1105,55 +1101,55 @@ async function copyPluginLink() {
         <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
-            <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">启动时自动更新插件</p>
-              <p class="text-xs text-gray-400 dark:text-white/40 truncate">软件启动时自动检查并安装插件更新</p>
-            </div>
+            <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
           </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
-            :class="pluginSettings.autoUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="togglePluginSetting('autoUpdateOnStartup')"
-          >
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="软件启动时自动检查并安装插件更新" />
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              :class="pluginSettings.autoUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="togglePluginSetting('autoUpdateOnStartup')"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
         </div>
         <!-- 插件懒加载 -->
         <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
-            <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">插件懒加载</p>
-              <p class="text-xs text-gray-400 dark:text-white/40 truncate">首次使用时才初始化插件，加快启动速度</p>
-            </div>
+            <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">插件懒加载</p>
           </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
-            :class="pluginSettings.lazyLoad ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="togglePluginSetting('lazyLoad')"
-          >
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="首次使用时才初始化插件，加快启动速度" />
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              :class="pluginSettings.lazyLoad ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="togglePluginSetting('lazyLoad')"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
         </div>
         <!-- 安装时不校验版本 -->
         <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
           <div class="flex items-center gap-3 min-w-0">
             <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
-            <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">安装时不校验版本</p>
-              <p class="text-xs text-gray-400 dark:text-white/40 truncate">允许安装相同或更低版本的插件</p>
-            </div>
+            <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>
           </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
-            :class="pluginSettings.skipVersionCheck ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="togglePluginSetting('skipVersionCheck')"
-          >
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="允许安装相同或更低版本的插件" />
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              :class="pluginSettings.skipVersionCheck ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="togglePluginSetting('skipVersionCheck')"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -1765,6 +1761,7 @@ async function copyPluginLink() {
 }
 
 .settings-plugin-dropzone {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;

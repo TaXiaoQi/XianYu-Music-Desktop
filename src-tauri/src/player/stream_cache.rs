@@ -500,6 +500,46 @@ pub fn is_buffer_ready(state: &StreamingTempFileState) -> bool {
     state.downloaded_bytes() >= MIN_BUFFER_BYTES || state.is_download_complete()
 }
 
+/// 检查指定 URL 是否已缓存且下载完成。
+/// 用于播放前探测：若已缓存则直接复用，跳过插件重复请求（Baka 等前置请求易失败的音源）。
+pub fn is_url_cached(url: &str) -> bool {
+    let hash = url_hash(url);
+    let mgr = cache().lock().unwrap();
+    if let Some(entry) = mgr.entries.get(&hash) {
+        return entry.download_complete.load(Ordering::Relaxed) && entry.size > 0;
+    }
+    false
+}
+
+/// 等待指定 URL 缓存下载完成（轮询，供前端 'wait' 失败行为使用）。
+/// 返回最终是否完成且有效（字节数 > 0）。
+pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
+    let hash = url_hash(url);
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        let complete = {
+            let mgr = cache().lock().unwrap();
+            if let Some(entry) = mgr.entries.get(&hash) {
+                entry.download_complete.load(Ordering::Relaxed)
+            } else {
+                // URL 不在缓存中（从未下载或已被淘汰），无法等待
+                return false;
+            }
+        };
+        if complete {
+            let mgr = cache().lock().unwrap();
+            if let Some(entry) = mgr.entries.get(&hash) {
+                return entry.size > 0;
+            }
+            return false;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 /// 清理所有缓存
 pub fn clear_all() {
     if let Some(mgr) = STREAM_CACHE.get() {

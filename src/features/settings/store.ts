@@ -131,11 +131,12 @@ export const defaultAudioSettings: AudioSettings = {
     gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   showEqualizerInFooter: true,
-  idmCompatMode: false,
   onlineDefaultQuality: '320k',
   onlineFailureBehavior: 'skip',
   onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 500,
+  fadeInOutEnabled: false,
+  fadeInOutDurationMs: 300,
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -148,6 +149,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   keepSourceFilename: false,
   fileNameStyle: 'artist-title',
   rememberDownloadPath: false,
+  qualityFallbackBehavior: 'lower',
 };
 
 export const defaultUploadSettings: UploadSettings = {
@@ -278,6 +280,9 @@ export const mergeDownloadSettings = (
   const fileNameStyle = patch.fileNameStyle && VALID_FILE_NAME_STYLES.includes(patch.fileNameStyle)
     ? patch.fileNameStyle
     : base.fileNameStyle;
+  const qualityFallbackBehavior = patch.qualityFallbackBehavior && ['lower', 'higher'].includes(patch.qualityFallbackBehavior)
+    ? patch.qualityFallbackBehavior
+    : base.qualityFallbackBehavior;
 
   return {
     downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
@@ -289,6 +294,7 @@ export const mergeDownloadSettings = (
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
     fileNameStyle,
     rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
+    qualityFallbackBehavior,
   };
 };
 
@@ -385,7 +391,7 @@ export const mergeAudioSettings = (
       : base.outputMode ?? 'shared';
 
   const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
-  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'retry'];
+  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'wait'];
   const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
 
   return {
@@ -403,9 +409,6 @@ export const mergeAudioSettings = (
       currentPresetId: eqCurrentPresetId,
     },
     showEqualizerInFooter: patch.showEqualizerInFooter ?? base.showEqualizerInFooter ?? true,
-    idmCompatMode: typeof patch.idmCompatMode === 'boolean'
-      ? patch.idmCompatMode
-      : base.idmCompatMode ?? false,
     onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as any)
       ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
       : base.onlineDefaultQuality ?? '320k',
@@ -418,6 +421,12 @@ export const mergeAudioSettings = (
     streamCacheSizeMB: Number.isFinite(patch.streamCacheSizeMB) && patch.streamCacheSizeMB! > 0
       ? Math.round(patch.streamCacheSizeMB!)
       : base.streamCacheSizeMB ?? 500,
+    fadeInOutEnabled: typeof patch.fadeInOutEnabled === 'boolean'
+      ? patch.fadeInOutEnabled
+      : base.fadeInOutEnabled ?? false,
+    fadeInOutDurationMs: Number.isFinite(patch.fadeInOutDurationMs) && patch.fadeInOutDurationMs! > 0
+      ? Math.round(patch.fadeInOutDurationMs!)
+      : base.fadeInOutDurationMs ?? 300,
   };
 };
 

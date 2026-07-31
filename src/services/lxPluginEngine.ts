@@ -116,6 +116,17 @@ if (!_g.__lxRequestLock) {
 }
 let _requestLock: Promise<unknown> = _g.__lxRequestLock;
 
+// [修复防御]: ensureLxPluginInstance 并发初始化锁
+// 首次播放时 fetchLxSongLyricsRaw（歌词获取）与 lxPluginGetMusicUrl（URL解析）会并发调用
+// ensureLxPluginInstance，没有此锁时两个调用都会进入 loadLxPluginFromScript，
+// 第二个调用会销毁第一个正在 loading 的实例（loadLxPluginFromScript 第 822-824 行），
+// 导致第一个调用（歌词获取）的 initPromise 永远无法 resolve，歌词加载失败。
+// 切换音质时插件已初始化完成，所以歌词能正常获取——这就是"切换音质才能显示歌词"的根因。
+if (!_g.__lxEnsureLock) {
+  _g.__lxEnsureLock = new Map<string, Promise<LxPluginState | null>>();
+}
+const _ensureLock: Map<string, Promise<LxPluginState | null>> = _g.__lxEnsureLock;
+
 // [修复防御]: 脚本内容缓存 —— 避免同一脚本被反复 fetch
 // 首次启动时 loadPlugins / ensureLxPluginInstance 等入口可能请求同一脚本
 // 没有缓存时 N 次初始化 = N 次网络请求，有缓存后仅首次需要网络
@@ -1027,11 +1038,57 @@ export async function loadLxPluginFromScript(
       },
       zlib: {
         async inflate(buf: any) {
-          // 简化实现：用 pako 或返回原始数据
-          return buf;
+          // [修复] 使用 DecompressionStream 正确解压 deflate 数据
+          // 之前是 no-op 直接返回原始数据，导致依赖 zlib.inflate 的 LX 插件
+          // (如 KW/KG 歌词解压) 无法正确解析歌词
+          try {
+            const data = buf instanceof Uint8Array ? buf : Buffer.from(buf);
+            const ds = new DecompressionStream('deflate');
+            const writer = ds.writable.getWriter();
+            writer.write(data).catch(() => {});
+            writer.close().catch(() => {});
+            const reader = ds.readable.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (value) chunks.push(value);
+              if (done) break;
+            }
+            reader.releaseLock();
+            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+            const result = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { result.set(c, offset); offset += c.length; }
+            return Buffer.from(result);
+          } catch (e) {
+            log(`[zlib.inflate] 解压失败，返回原始数据: ${e}`);
+            return buf;
+          }
         },
         async deflate(data: any) {
-          return data;
+          try {
+            const src = data instanceof Uint8Array ? data : Buffer.from(data);
+            const cs = new CompressionStream('deflate');
+            const writer = cs.writable.getWriter();
+            writer.write(src).catch(() => {});
+            writer.close().catch(() => {});
+            const reader = cs.readable.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (value) chunks.push(value);
+              if (done) break;
+            }
+            reader.releaseLock();
+            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+            const result = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) { result.set(c, offset); offset += c.length; }
+            return Buffer.from(result);
+          } catch (e) {
+            log(`[zlib.deflate] 压缩失败，返回原始数据: ${e}`);
+            return data;
+          }
         },
       },
     },
@@ -1323,30 +1380,45 @@ export async function ensureLxPluginInstance(source: PluginSource): Promise<LxPl
     return null;
   }
   const state = lxPlugins.get(source.id);
-  if (state) return state;
+  if (state && state.status === 'ready') return state;
 
-  log(`落雪插件实例未缓存，重新加载: ${source.name} (${source.filePath})`);
+  // [修复防御]: 并发初始化锁 —— 同一插件的并发调用共享同一个初始化 Promise，
+  // 避免两个调用同时进入 loadLxPluginFromScript 导致互相销毁 loading 实例
+  const existing = _ensureLock.get(source.id);
+  if (existing) {
+    log(`[ensureLxPluginInstance] 等待已存在的初始化 Promise: ${source.name}`);
+    return existing;
+  }
 
-  try {
-    // [修复防御]: 使用带缓存的 fetchLxPluginScript，避免同一脚本被反复 fetch
-    const script = await fetchLxPluginScript(source.filePath);
+  const initPromise = (async () => {
+    log(`落雪插件实例未缓存，重新加载: ${source.name} (${source.filePath})`);
+    try {
+      // [修复防御]: 使用带缓存的 fetchLxPluginScript，避免同一脚本被反复 fetch
+      const script = await fetchLxPluginScript(source.filePath);
 
-    if (script) {
-      const result = await loadLxPluginFromScript(script, source.filePath);
-      // [修复防御]: 用 source.id 也缓存一份，确保后续 lxPluginRequest 能找到
-      if (result && result.id !== source.id) {
-        const newState = lxPlugins.get(result.id);
-        if (newState) {
-          lxPlugins.set(source.id, newState);
+      if (script) {
+        const result = await loadLxPluginFromScript(script, source.filePath);
+        // [修复防御]: 用 source.id 也缓存一份，确保后续 lxPluginRequest 能找到
+        if (result && result.id !== source.id) {
+          const newState = lxPlugins.get(result.id);
+          if (newState) {
+            lxPlugins.set(source.id, newState);
+          }
         }
       }
-    }
 
-    return lxPlugins.get(source.id) || null;
-  } catch (e) {
-    log(`落雪插件重新加载失败: ${source.name} ${e}`);
-    return null;
-  }
+      return lxPlugins.get(source.id) || null;
+    } catch (e) {
+      log(`落雪插件重新加载失败: ${source.name} ${e}`);
+      return null;
+    } finally {
+      // 初始化完成（成功或失败）后清除锁，允许后续重试
+      _ensureLock.delete(source.id);
+    }
+  })();
+
+  _ensureLock.set(source.id, initPromise);
+  return initPromise;
 }
 
 /** 销毁落雪插件实例 */
