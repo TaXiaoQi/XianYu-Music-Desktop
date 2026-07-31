@@ -393,8 +393,8 @@ export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse
 export type OnlineDefaultQuality = QualityKey;
 /** 在线歌曲起播失败时的行为 */
 export type OnlineFailureBehavior = 'skip' | 'stop' | 'retry';
-/** 在线歌曲播放中途被中断（卡顿/出错）时的行为 */
-export type OnlineInterruptBehavior = 'pause' | 'skip';
+/** 在线歌曲默认音质播放失败时的音质回退行为 */
+export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
 /**
  * 将 QualityKey 映射到 MusicFree 插件的 standard / high / lossless
@@ -447,8 +447,8 @@ export interface AudioSettings {
   onlineDefaultQuality: OnlineDefaultQuality;
   /** 在线歌曲起播失败时的行为，默认 'skip'（跳到下一首） */
   onlineFailureBehavior: OnlineFailureBehavior;
-  /** 在线歌曲播放中途被中断时的行为，默认 'pause'（暂停等待） */
-  onlineInterruptBehavior: OnlineInterruptBehavior;
+  /** 在线歌曲默认音质播放失败时的音质回退行为，默认 'lower'（播放更低音质） */
+  onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
 }
 
 export type ShortcutActionId =
@@ -609,6 +609,10 @@ export interface PluginMusicInfo {
   url: string;
   lyric?: string;
   tlyric?: string;
+  /** 逐字歌词（lx-music-desktop 格式），由 Toskysun 系列插件提供 */
+  lxlyric?: string;
+  /** 构建好的歌词文本（优先使用逐字歌词），可直接赋值给 song.lyrics_raw */
+  lyricsRaw?: string;
   coverUrl?: string;
   headers?: Record<string, string>;
 }

@@ -50,14 +50,14 @@ watch(activeTab, () => {
 });
 
 const tabs = [
-  { id: 'general', name: '常规' },
   { id: 'account', name: '账号' },
+  { id: 'general', name: '常规' },
   { id: 'plugins', name: '插件' },
   { id: 'theme', name: '外观' },
-  { id: 'desktopLyrics', name: '桌面歌词' },
-  { id: 'audioOutput', name: '音频输出' },
-  { id: 'toolbox', name: '工具箱' },
+  { id: 'audioOutput', name: '播放' },
   { id: 'library', name: '音乐库' },
+  { id: 'toolbox', name: '工具箱' },
+  { id: 'desktopLyrics', name: '桌面歌词' },
   { id: 'shortcuts', name: '快捷键' },
   { id: 'about', name: '关于' },
 ];

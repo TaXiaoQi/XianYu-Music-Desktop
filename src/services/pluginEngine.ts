@@ -29,7 +29,9 @@ import type {
   PluginMusicInfo,
   QualityKey,
 } from '../types';
-import { QUALITY_META, qualityKeyToMfQuality } from '../types';
+import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS } from '../types';
+import type { OnlineQualityFallbackBehavior } from '../types';
+import { buildLyricsRaw } from '../composables/lyrics/parser';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
 
 // ==================== 常量 ====================
@@ -1079,6 +1081,7 @@ export async function pluginGetMusicInfo(
   source: PluginSource,
   item: PluginSearchResult,
   quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
+  fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
 ): Promise<PluginMusicInfo | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
@@ -1094,7 +1097,7 @@ export async function pluginGetMusicInfo(
     ? resetMediaItem(item.rawData, source.name)
     : resetMediaItem(item, source.name);
 
-  // 构建音质尝试列表
+  // 构建音质尝试列表（含自动降级/升级）
   // 先检测插件是否声明了 supportedQualities（Toskysun 系列插件特有字段）
   const supportedNewQualities = (inst.instance as any).supportedQualities;
   const supportsNewKeys = Array.isArray(supportedNewQualities) && supportedNewQualities.length > 0;
@@ -1103,11 +1106,56 @@ export async function pluginGetMusicInfo(
   const tryQualities: string[] = [];
   if (isQualityKey(quality)) {
     if (supportsNewKeys) {
-      // Toskysun 插件：直接使用新键值（mgg→96k）
-      tryQualities.push(qualityKeyToPluginString(quality));
+      // Toskysun 插件：使用新键值列表（mgg→96k）
+      if (fallbackBehavior === 'pause') {
+        // 仅尝试请求的音质，不回退
+        tryQualities.push(qualityKeyToPluginString(quality));
+      } else if (fallbackBehavior === 'higher') {
+        // 从请求音质开始向上升级直到最高档
+        const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
+        if (startIdx !== -1) {
+          for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
+            tryQualities.push(qualityKeyToPluginString(ALL_QUALITY_KEYS[i]));
+          }
+        } else {
+          tryQualities.push(qualityKeyToPluginString(quality));
+        }
+      } else {
+        // lower：从请求音质开始向下降级直到最低档（默认行为）
+        const { ALL_QUALITY_KEYS_DESC } = await import('../types');
+        const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
+        if (startIdx !== -1) {
+          for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
+            tryQualities.push(qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]));
+          }
+        } else {
+          tryQualities.push(qualityKeyToPluginString(quality));
+        }
+      }
     } else {
-      // 原版 MusicFree 插件：直接使用旧三档映射，跳过无效的新键值尝试
-      tryQualities.push(qualityKeyToMfQuality(quality));
+      // 原版 MusicFree 插件：映射到旧三档
+      const mfQ = qualityKeyToMfQuality(quality);
+      if (fallbackBehavior === 'pause') {
+        tryQualities.push(mfQ);
+      } else if (fallbackBehavior === 'higher') {
+        // 向上升级：standard → high → lossless
+        if (mfQ === 'standard') {
+          tryQualities.push('standard', 'high', 'lossless');
+        } else if (mfQ === 'high') {
+          tryQualities.push('high', 'lossless');
+        } else {
+          tryQualities.push('lossless');
+        }
+      } else {
+        // lower：向下降级（默认）：lossless → high → standard
+        if (mfQ === 'lossless') {
+          tryQualities.push('lossless', 'high', 'standard');
+        } else if (mfQ === 'high') {
+          tryQualities.push('high', 'standard');
+        } else {
+          tryQualities.push('standard');
+        }
+      }
     }
   } else {
     // 旧版 standard/high/lossless 直接使用
@@ -1148,17 +1196,29 @@ export async function pluginGetMusicInfo(
   const url = result.url || '';
   const headers = result.headers || {};
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
-  const lyric = result.lyric || '';
-  const tlyric = result.tlyric || '';
-  const coverUrl = result.coverUrl || '';
+  // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）
+  const lyric = result.lyric || result.rawLrc || result.lrc || '';
+  const tlyric = result.tlyric || result.translation || '';
+  const lxlyric = result.lxlyric || '';
+  // 逐字歌词：兼容 yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）字段
+  // 不同 MF 插件可能返回其中一种或多种，buildLyricsRaw 会按优先级选用
+  const yrc = result.yrc || '';
+  const qrc = result.qrc || '';
+  const coverUrl = result.coverUrl || result.artwork || '';
   if (!url) {
     log(`[getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
     (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
     return null;
   }
 
-  log(`[getMediaSource] 成功: ${url.substring(0, 100)}`);
-  return { url, headers: headers as Record<string, string>, lyric, tlyric, coverUrl };
+  // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
+  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
+    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
+    : '';
+
+  const headerKeys = Object.keys(headers);
+  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}`);
+  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl };
 }
 
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================
@@ -1170,11 +1230,16 @@ export async function pluginGetMusicInfo(
  *   lrcSource = (await this.plugin.instance?.getLyric?.(resetMediaItem(musicItem, undefined, true))?.catch(() => null)) || null;
  *   rawLrc = lrcSource?.rawLrc || rawLrc;
  *   translation = lrcSource?.translation || null;
+ *
+ * Toskysun 系列插件扩展返回 lxlyric（逐字歌词，lx-music-desktop 格式）。
+ * 原版 MF 插件（如 Baka 插件）可能返回 yrc（网易云）/ qrc（QQ 音乐）字段。
+ * 使用 buildLyricsRaw 统一构建为 lyricsRaw 文本（优先级：yrc > qrc > lxlyric > lyric，
+ * 高优先级格式解析失败时由后端自动回退到下一档）。
  */
 export async function pluginGetLyric(
   source: PluginSource,
   item: PluginSearchResult,
-): Promise<{ lyric: string; tlyric?: string } | null> {
+): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; lyricsRaw?: string } | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
@@ -1199,15 +1264,24 @@ export async function pluginGetLyric(
       return null;
     }
 
-    const rawLrc = lrcSource.rawLrc || '';
-    const translation = lrcSource.translation || '';
+    // 兼容多种字段名：rawLrc / lyric / lrc（标准 MF 返回 rawLrc，部分插件返回 lyric 或 lrc）
+    const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+    // 兼容多种翻译字段名：translation / tlyric / translateLyric
+    const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
+    // 逐字歌词字段：lxlyric（Toskysun 系列）/ yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）
+    // 不同插件返回字段不同，buildLyricsRaw 会按优先级选用并自动回退
+    const lxlyric = lrcSource.lxlyric || '';
+    const yrc = lrcSource.yrc || '';
+    const qrc = lrcSource.qrc || '';
 
-    if (!rawLrc) {
+    if (!rawLrc && !lxlyric && !yrc && !qrc) {
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
-    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}`);
-    return { lyric: rawLrc, tlyric: translation };
+    // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
+    const lyricsRaw = buildLyricsRaw(rawLrc, translation, null, lxlyric, yrc, qrc);
+    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}`);
+    return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw };
   } catch (e) {
     log(`获取歌词失败: ${source.name} ${e}`);
     return null;

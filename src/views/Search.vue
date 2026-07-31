@@ -436,6 +436,7 @@ import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEn
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
 import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
+import { useSettingsStore } from '../features/settings/store';
 
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
@@ -446,6 +447,7 @@ const uiStore = useUiStore();
 const navigationStore = useNavigationStore();
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
+const settingsStore = useSettingsStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { showToast } = useToast();
 const { searchQuery } = storeToRefs(navigationStore);
@@ -999,8 +1001,14 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   const pluginSrc = mfSource.source;
 
   try {
-    // 1. 通过插件获取播放 URL（必须，阻塞播放）
-    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, '320k');
+    // 1. 读取用户在设置中选择的默认音质（统一 12 档），并获取音质回退行为
+    const requestedQuality = settingsStore.settings.audio.onlineDefaultQuality || '320k';
+    const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+
+    // 2. 并行获取播放 URL（阻塞）和歌词（getMediaSource 可能不返回歌词，用 pluginGetLyric 补获）
+    //    URL 必须等待，歌词不阻塞播放但尽量在 playSong 前就绪
+    const lyricPromise = pluginGetLyric(pluginSrc, item).catch(() => null);
+    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior);
     if (!musicInfo?.url) {
       console.warn('[MusicFree] 无法获取播放URL:', item.title);
       return;
@@ -1027,15 +1035,23 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       rawData: item,
     } as any;
 
-    // 从 getMediaSource 返回值中提取歌词（如果有）
-    if (musicInfo.lyric) {
-      (song as any).lyrics_raw = musicInfo.lyric;
-      if (musicInfo.tlyric) {
-        (song as any).lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
-      }
+    // 歌词优先级：getMediaSource 返回的 lyricsRaw > pluginGetLyric 获取的歌词
+    if (musicInfo.lyricsRaw) {
+      (song as any).lyrics_raw = musicInfo.lyricsRaw;
+    } else {
+      // 等待并行获取的歌词（不阻塞太久，最多等 1.5 秒）
+      try {
+        const lyricData = await Promise.race([
+          lyricPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+        ]);
+        if (lyricData?.lyricsRaw) {
+          (song as any).lyrics_raw = lyricData.lyricsRaw;
+        }
+      } catch { /* 歌词获取失败不阻塞播放 */ }
     }
 
-    // 2. 设置播放队列（所有歌曲统一使用 plugin:// 协议前缀并携带 rawData）
+    // 3. 设置播放队列（所有歌曲统一使用 plugin:// 协议前缀并携带 rawData）
     const allSongs = pluginSearchResults.value.map((mfItem) => {
       const aNames = mfItem.artist ? mfItem.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
       return {
@@ -1061,21 +1077,10 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       allSongs[songIndex] = song;
     }
 
-    // 3. 立即播放（不等歌词/封面，让用户尽快听到声音）
+    // 4. 立即播放（歌词已尽可能就绪，封面由 playSong 内部异步补获）
     void playSong(song, { insertAfterCurrent: true });
 
-    // 4. 后台异步获取歌词和封面（不阻塞播放）
-    // playSong 内部已有歌词/封面补获逻辑，这里仅作为预获取优化
-    if (!(song as any).lyrics_raw) {
-      void pluginGetLyric(pluginSrc, item).then((lyricData) => {
-        if (lyricData?.lyric) {
-          (song as any).lyrics_raw = lyricData.lyric;
-          if (lyricData.tlyric) {
-            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
-          }
-        }
-      }).catch(() => {});
-    }
+    // 5. 后台异步获取封面（不阻塞播放）
     if (!song.cover_thumb_path) {
       void pluginGetCover(pluginSrc, item).then((coverUrl) => {
         if (coverUrl) song.cover_thumb_path = coverUrl;

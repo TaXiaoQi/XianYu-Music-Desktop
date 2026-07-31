@@ -131,7 +131,7 @@ export const defaultAudioSettings: AudioSettings = {
   idmCompatMode: false,
   onlineDefaultQuality: '320k',
   onlineFailureBehavior: 'skip',
-  onlineInterruptBehavior: 'pause',
+  onlineQualityFallbackBehavior: 'lower',
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -362,7 +362,7 @@ export const mergeAudioSettings = (
 
   const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
   const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'retry'];
-  const VALID_INTERRUPT_BEHAVIORS = ['pause', 'skip'];
+  const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
 
   return {
     ...base,
@@ -388,9 +388,9 @@ export const mergeAudioSettings = (
     onlineFailureBehavior: VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)
       ? (patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'])
       : base.onlineFailureBehavior ?? 'skip',
-    onlineInterruptBehavior: VALID_INTERRUPT_BEHAVIORS.includes(patch.onlineInterruptBehavior as string)
-      ? (patch.onlineInterruptBehavior as AudioSettings['onlineInterruptBehavior'])
-      : base.onlineInterruptBehavior ?? 'pause',
+    onlineQualityFallbackBehavior: VALID_QUALITY_FALLBACK_BEHAVIORS.includes(patch.onlineQualityFallbackBehavior as string)
+      ? (patch.onlineQualityFallbackBehavior as AudioSettings['onlineQualityFallbackBehavior'])
+      : base.onlineQualityFallbackBehavior ?? 'lower',
   };
 };
 
