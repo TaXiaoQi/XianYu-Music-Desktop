@@ -5,6 +5,7 @@ import { QUALITY_META, resolveOnlinePlayQuality } from '../types';
 import { playbackApi } from '../services/tauri/playbackApi';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
+import { useLibraryStore } from '../features/library/store';
 import { useUiStore } from '../shared/stores/ui';
 import { useCoverCache } from './useCoverCache';
 import { useRenderingPower } from './renderingPower';
@@ -67,6 +68,7 @@ export const createPlayerPlayback = ({
 }: CreatePlayerPlaybackDeps) => {
   const playbackStore = usePlaybackStore();
   const settingsStore = useSettingsStore();
+  const libraryStore = useLibraryStore();
   const uiStore = useUiStore();
   const { isMainWindowLowPower } = useRenderingPower();
   const {
@@ -720,6 +722,11 @@ export const createPlayerPlayback = ({
           }
 
           song.lyrics_raw = lyricsRaw;
+          // [修复] 同步更新 library store 中的 extraSongPool/songPool 条目。
+          // 当歌曲在 extraSongPool（在线收藏）中时，currentSong computed getter 会返回
+          // extraSongPool 中的对象而非入参 song 或 fallback。若不更新池中对象，
+          // loadLyrics 读到的 currentSong.lyrics_raw 仍为空，导致歌词加载超时。
+          libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
           const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
           playQueue.value = playQueue.value.map(item => (
             item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
@@ -757,6 +764,8 @@ export const createPlayerPlayback = ({
               return;
             }
             song.lyrics_raw = lyricData.lyricsRaw;
+            // [修复] 同步更新 library store 池中条目（与 LX 歌词处理一致）
+            libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
             const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricData.lyricsRaw };
             playQueue.value = playQueue.value.map(item => (
               item.path === song.path ? { ...item, lyrics_raw: lyricData.lyricsRaw } : item
