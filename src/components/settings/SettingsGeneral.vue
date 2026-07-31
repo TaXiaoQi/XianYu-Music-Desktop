@@ -2,7 +2,7 @@
 import { computed, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { Check, ChevronDown, CircleAlert } from 'lucide-vue-next';
+import { Check, ChevronDown } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlayer } from '../../composables/player';
 import { useToast } from '../../composables/toast';
@@ -16,6 +16,7 @@ import {
   getSelectedOutputDeviceLabel,
 } from './audioOutputDeviceLabels';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
+import SettingHint from './SettingHint.vue';
 
 const { settings } = useSettings();
 const {
@@ -357,11 +358,13 @@ onScopeDispose(() => {
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">修改歌手头像时同步写回音频标签</div>
-            <div class="text-xs text-gray-400 mt-0.5 max-w-[500px]">开启后，手动修改歌手头像时会同步修改本地音频文件（注意：多歌手合作歌曲、远程歌曲、CUE分轨、只读文件会被自动跳过）</div>
           </div>
-          <button @click="settings.writeArtistAvatarToTags = !settings.writeArtistAvatarToTags" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.writeArtistAvatarToTags ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.writeArtistAvatarToTags ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="开启后，手动修改歌手头像时会同步修改本地音频文件（注意：多歌手合作歌曲、远程歌曲、CUE分轨、只读文件会被自动跳过）" />
+            <button @click="settings.writeArtistAvatarToTags = !settings.writeArtistAvatarToTags" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.writeArtistAvatarToTags ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.writeArtistAvatarToTags ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -443,14 +446,7 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
           </div>
           <div class="flex items-center gap-3">
-            <span
-              class="wasapi-tip"
-              :aria-label="wasapiExclusiveSideEffectTip"
-              tabindex="0"
-            >
-              <CircleAlert class="h-4 w-4" aria-hidden="true" />
-              <span class="wasapi-tip-popover" role="tooltip">{{ wasapiExclusiveSideEffectTip }}</span>
-            </span>
+            <SettingHint :text="wasapiExclusiveSideEffectTip" />
             <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
               <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
             </button>
@@ -466,6 +462,10 @@ onScopeDispose(() => {
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词同步补偿</div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
+              <SettingHint
+                text="正值让歌词更晚显示，负值让歌词更早显示。用于修正不同输出设备的播放缓冲差异，默认值为 0 ms。"
+                :focusable="false"
+              />
               <div class="text-xs font-medium text-gray-600 dark:text-gray-300 tabular-nums">
                 {{ lyricsSyncOffsetLabel }}
               </div>
@@ -483,11 +483,7 @@ onScopeDispose(() => {
           <transition name="settings-pop-panel">
             <div v-if="showLyricsSyncOffsetPanel" class="px-4 pb-4">
               <div class="settings-expand-panel">
-                <div class="text-xs leading-6 text-gray-600 dark:text-white/60">
-                  正值让歌词更晚显示，负值让歌词更早显示。用于修正不同输出设备的播放缓冲差异，默认值为 0 ms。
-                </div>
-
-                <div class="mt-4 flex flex-col gap-4 md:flex-row md:items-center">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center">
                   <input
                     v-model="lyricsSyncOffsetMs"
                     type="range"
@@ -534,19 +530,19 @@ onScopeDispose(() => {
         <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">在线播放缓存上限</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              在线歌曲流式下载后缓存到本地，再次播放无需重新下载。缓存满后自动清理最久未播放的曲目。
-            </div>
           </div>
-          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
-            <button
-              v-for="opt in STREAM_CACHE_SIZE_OPTIONS" :key="opt.value"
-              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
-              :class="settings.audio.streamCacheSizeMB === opt.value
-                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
-                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
-              @click="patchStreamCacheSize(opt.value)"
-            >{{ opt.label }}</button>
+          <div class="flex shrink-0 items-center gap-3">
+            <SettingHint text="在线歌曲流式下载后缓存到本地，再次播放无需重新下载。缓存满后自动清理最久未播放的曲目。" />
+            <div class="flex items-center rounded-lg bg-gray-100 p-0.5 gap-0.5 dark:bg-white/5">
+              <button
+                v-for="opt in STREAM_CACHE_SIZE_OPTIONS" :key="opt.value"
+                class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
+                :class="settings.audio.streamCacheSizeMB === opt.value
+                  ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                  : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+                @click="patchStreamCacheSize(opt.value)"
+              >{{ opt.label }}</button>
+            </div>
           </div>
         </div>
 
@@ -559,21 +555,21 @@ onScopeDispose(() => {
                 {{ formatStreamCacheBytes(streamCacheCurrent) }} / {{ formatStreamCacheBytes(streamCacheMax) }}
               </span>
             </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              清理后正在播放的在线歌曲不受影响，但已缓存的其他曲目需重新下载。
-            </div>
           </div>
-          <button
-            type="button"
-            :disabled="isClearingStreamCache || streamCacheCurrent === 0"
-            @click="handleClearStreamCache"
-            class="settings-action-button shrink-0"
-            :class="isClearingStreamCache || streamCacheCurrent === 0
-              ? 'settings-action-button--disabled'
-              : 'settings-action-button--soft'"
-          >
-            {{ isClearingStreamCache ? '清理中...' : '清理' }}
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="清理后正在播放的在线歌曲不受影响，但已缓存的其他曲目需重新下载。" />
+            <button
+              type="button"
+              :disabled="isClearingStreamCache || streamCacheCurrent === 0"
+              @click="handleClearStreamCache"
+              class="settings-action-button shrink-0"
+              :class="isClearingStreamCache || streamCacheCurrent === 0
+                ? 'settings-action-button--disabled'
+                : 'settings-action-button--soft'"
+            >
+              {{ isClearingStreamCache ? '清理中...' : '清理' }}
+            </button>
+          </div>
         </div>
 
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
@@ -614,47 +610,6 @@ onScopeDispose(() => {
 
 .settings-playback-group {
   overflow: visible;
-}
-
-.wasapi-tip {
-  position: relative;
-  display: inline-flex;
-  height: 20px;
-  width: 20px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #f59e0b;
-  outline: none;
-}
-
-.wasapi-tip-popover {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 30;
-  width: min(280px, calc(100vw - 48px));
-  max-width: calc(100vw - 48px);
-  pointer-events: none;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
-  color: rgb(31 41 55);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.55;
-  opacity: 0;
-  padding: 10px 12px;
-  transform: translateY(-4px);
-  transition: opacity 160ms ease, transform 160ms ease;
-  white-space: normal;
-}
-
-.wasapi-tip:hover .wasapi-tip-popover,
-.wasapi-tip:focus-visible .wasapi-tip-popover {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .settings-slider {
@@ -888,17 +843,6 @@ onScopeDispose(() => {
 
 :global(.dark) .settings-expand-panel {
   border-top-color: rgba(255, 255, 255, 0.08);
-}
-
-:global(.dark) .wasapi-tip {
-  color: #fcd34d;
-}
-
-:global(.dark) .wasapi-tip-popover {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(31, 31, 31, 0.96);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-  color: rgba(255, 255, 255, 0.92);
 }
 
 :global(.dark) .settings-number-input {

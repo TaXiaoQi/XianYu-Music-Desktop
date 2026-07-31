@@ -8,6 +8,7 @@ import ToolboxStep1 from './ToolboxStep1.vue';
 import ToolboxStep2 from './ToolboxStep2.vue';
 import ToolboxStep3 from './ToolboxStep3.vue';
 import ToolboxStep4 from './ToolboxStep4.vue';
+import SettingHint from './SettingHint.vue';
 
 type ToolboxView = 'setup' | 'preprocess' | 'tagging' | 'rename' | 'refresh';
 
@@ -332,16 +333,16 @@ const restart = () => {
         <div class="flex flex-col overflow-hidden rounded-xl border border-white/30 bg-white/40 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
           <div class="border-b border-white/30 p-5 transition-colors dark:border-white/5">
             <div class="mb-3 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
-                <div class="mt-0.5 text-xs text-gray-600 dark:text-white/60">用于歌曲标签写入和人工校对。</div>
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
+              <div class="flex items-center gap-3">
+                <SettingHint text="用于歌曲标签写入和人工校对。" />
+                <button
+                  @click="selectExecutable"
+                  class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                >
+                  选择路径
+                </button>
               </div>
-              <button
-                @click="selectExecutable"
-                class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
-              >
-                选择路径
-              </button>
             </div>
             <div class="rounded-lg border border-dashed border-gray-300 bg-white/50 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
               <span v-if="musicTagPath" class="break-all text-slate-700 dark:text-slate-200">{{ musicTagPath }}</span>
@@ -351,16 +352,16 @@ const restart = () => {
 
           <div class="p-5 transition-colors">
             <div class="mb-3 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">目标文件夹</div>
-                <div class="mt-0.5 text-xs text-gray-600 dark:text-white/60">这里决定本次要处理的整批歌曲文件。</div>
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200">目标文件夹</div>
+              <div class="flex items-center gap-3">
+                <SettingHint text="这里决定本次要处理的整批歌曲文件。" />
+                <button
+                  @click="selectTargetFolder"
+                  class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                >
+                  选择文件夹
+                </button>
               </div>
-              <button
-                @click="selectTargetFolder"
-                class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
-              >
-                选择文件夹
-              </button>
             </div>
             <div class="rounded-lg border border-dashed border-gray-300 bg-white/50 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
               <span v-if="targetPath" class="break-all text-slate-700 dark:text-slate-200">{{ targetPath }}</span>
@@ -599,19 +600,19 @@ const restart = () => {
 
           <template v-else-if="currentView === 'refresh'">
             <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
-                <p class="mt-1 text-sm text-slate-600 dark:text-white/60">这里显示刷新进度和最终完成状态。</p>
-              </div>
-              <div
-                class="rounded-full px-3 py-1 text-xs font-medium"
-                :class="
-                  refreshPreview.refreshed
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                    : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300'
-                "
-              >
-                {{ refreshPreview.refreshed ? '已完成' : '待刷新' }}
+              <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
+              <div class="flex items-center gap-3">
+                <SettingHint text="这里显示刷新进度和最终完成状态。" />
+                <div
+                  class="rounded-full px-3 py-1 text-xs font-medium"
+                  :class="
+                    refreshPreview.refreshed
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                      : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300'
+                  "
+                >
+                  {{ refreshPreview.refreshed ? '已完成' : '待刷新' }}
+                </div>
               </div>
             </div>
 

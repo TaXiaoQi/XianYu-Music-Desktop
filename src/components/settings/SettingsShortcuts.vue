@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { useGlobalShortcutStatus } from '../../composables/useKeyboardShortcuts';
 import { useToast } from '../../composables/toast';
 import { useSettings } from '../../features/settings/useSettings';
+import SettingHint from './SettingHint.vue';
 import {
   areShortcutBindingsEqual,
   createDefaultShortcutSettings,
@@ -118,14 +119,9 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
       </h2>
 
       <div class="flex flex-col rounded-xl overflow-hidden">
-        <div class="p-4 border-b border-white/30 dark:border-white/5">
+        <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">窗口内快捷键</div>
-          <div class="mt-1 text-xs text-gray-600 dark:text-white/60">
-            软件打开且窗口处于焦点时生效。默认支持按下 Space 播放/暂停。
-          </div>
-          <div class="mt-3 text-[11px] text-gray-500 dark:text-white/45">
-            点击快捷键按钮后直接按键录入，按 Esc 取消，按 Backspace 或 Delete 清空当前绑定。
-          </div>
+          <SettingHint text="软件打开且窗口处于焦点时生效。默认支持按下 Space 播放/暂停。点击快捷键按钮后直接按键录入，按 Esc 取消，按 Backspace 或 Delete 清空当前绑定。" />
         </div>
 
         <div class="px-4 py-3 grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45 border-b border-white/30 dark:border-white/5">
@@ -197,44 +193,50 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用窗口内快捷键</div>
-            <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">关闭后将不再响应当前窗口内的所有快捷键</div>
           </div>
-          <button
-            @click="settings.shortcuts.enabled = !settings.shortcuts.enabled"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.shortcuts.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.shortcuts.enabled ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="关闭后将不再响应当前窗口内的所有快捷键" />
+            <button
+              @click="settings.shortcuts.enabled = !settings.shortcuts.enabled"
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              :class="settings.shortcuts.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="settings.shortcuts.enabled ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
         </div>
 
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用全局快捷键</div>
-            <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">开启后在后台也可响应上方设置的全局快捷键，默认关闭</div>
           </div>
-          <button
-            @click="settings.shortcuts.globalEnabled = !settings.shortcuts.globalEnabled"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.shortcuts.globalEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.shortcuts.globalEnabled ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint text="开启后在后台也可响应上方设置的全局快捷键，默认关闭" />
+            <button
+              @click="settings.shortcuts.globalEnabled = !settings.shortcuts.globalEnabled"
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              :class="settings.shortcuts.globalEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            >
+              <span
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="settings.shortcuts.globalEnabled ? 'translate-x-6' : 'translate-x-1'"
+              />
+            </button>
+          </div>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors opacity-70 cursor-not-allowed">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">使用系统媒体快捷键</div>
-            <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5">播放/暂停、上一首、下一首等系统级媒体键入口已预留</div>
           </div>
-          <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-gray-300 dark:bg-gray-700">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1 shadow-sm" />
+          <div class="flex items-center gap-3">
+            <SettingHint text="播放/暂停、上一首、下一首等系统级媒体键入口已预留" />
+            <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-gray-300 dark:bg-gray-700">
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1 shadow-sm" />
+            </div>
           </div>
         </div>
       </div>

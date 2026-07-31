@@ -11,6 +11,7 @@ import {
   getAuthBaseUrl,
   setAuthBaseUrl,
 } from '../../services/auth/authService';
+import SettingHint from './SettingHint.vue';
 
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
@@ -299,13 +300,13 @@ function updateAutoSyncMaxDelay(event: Event) {
 
     <!-- 后端地址 -->
     <section class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        后端地址
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          后端地址
+        </span>
+        <SettingHint :text="`登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。
-      </p>
       <div class="flex items-stretch gap-2 flex-wrap">
         <input
           v-model="draftBaseUrl"
@@ -330,20 +331,17 @@ function updateAutoSyncMaxDelay(event: Event) {
           恢复默认
         </button>
       </div>
-      <p class="text-xs text-gray-500 dark:text-white/50 m-0">
-        默认地址：<code class="font-mono">{{ DEFAULT_AUTH_BASE_URL }}</code>
-      </p>
     </section>
 
     <!-- 上传选项 -->
     <section class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        上传
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          上传
+        </span>
+        <SettingHint text="选择需要同步到云端的数据类型，关闭后该项数据将仅保留在本地。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        选择需要同步到云端的数据类型，关闭后该项数据将仅保留在本地。
-      </p>
       <div class="grid gap-2">
         <div
           v-for="item in uploadItems"
@@ -352,31 +350,33 @@ function updateAutoSyncMaxDelay(event: Event) {
         >
           <div class="upload-copy">
             <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
-            <div class="upload-desc text-gray-500 dark:text-white/50">{{ item.desc }}</div>
           </div>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="settingsStore.settings.upload[item.key]"
-            class="upload-switch"
-            :class="{ 'is-on': settingsStore.settings.upload[item.key] }"
-            @click="toggleUpload(item.key)"
-          >
-            <span class="upload-switch-thumb"></span>
-          </button>
+          <div class="flex items-center gap-3">
+            <SettingHint :text="item.desc" />
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="settingsStore.settings.upload[item.key]"
+              class="upload-switch"
+              :class="{ 'is-on': settingsStore.settings.upload[item.key] }"
+              @click="toggleUpload(item.key)"
+            >
+              <span class="upload-switch-thumb"></span>
+            </button>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- 歌单同步 -->
     <section v-if="authStore.isLoggedIn" class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        歌单同步
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          歌单同步
+        </span>
+        <SettingHint text="将本地歌单同步到云端，或从云端拉取歌单到本地。支持多设备间歌单共享。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        将本地歌单同步到云端，或从云端拉取歌单到本地。支持多设备间歌单共享。
-      </p>
 
       <!-- 同步状态 -->
       <div v-if="playlistSync.syncing.value" class="sync-status sync-status--active">
@@ -450,13 +450,13 @@ function updateAutoSyncMaxDelay(event: Event) {
 
     <!-- 插件同步 -->
     <section v-if="authStore.isLoggedIn" class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        插件同步
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          插件同步
+        </span>
+        <SettingHint text="将已安装的插件同步到云端，或从云端恢复插件到本地。支持多设备间插件共享。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        将已安装的插件同步到云端，或从云端恢复插件到本地。支持多设备间插件共享。
-      </p>
 
       <!-- 同步状态 -->
       <div v-if="playlistSync.pluginSyncing.value" class="sync-status sync-status--active">
@@ -530,13 +530,13 @@ function updateAutoSyncMaxDelay(event: Event) {
 
     <!-- 设置同步 -->
     <section v-if="authStore.isLoggedIn" class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        设置同步
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          设置同步
+        </span>
+        <SettingHint text="将本地设置同步到云端，或从云端恢复设置到本地。支持多设备间设置共享（主题、歌词、快捷键等）。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        将本地设置同步到云端，或从云端恢复设置到本地。支持多设备间设置共享（主题、歌词、快捷键等）。
-      </p>
 
       <!-- 同步状态 -->
       <div v-if="playlistSync.settingsSyncing.value" class="sync-status sync-status--active">
@@ -610,30 +610,32 @@ function updateAutoSyncMaxDelay(event: Event) {
 
     <!-- 自动同步 -->
     <section v-if="authStore.isLoggedIn" class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        自动同步
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          自动同步
+        </span>
+        <SettingHint text="按设定的时间自动同步数据到云端。当服务器繁忙时会自动延后并提示，避免带宽拥塞。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
-        按设定的时间自动同步数据到云端。当服务器繁忙时会自动延后并提示，避免带宽拥塞。
-      </p>
 
       <!-- 自动同步开关 -->
       <div class="upload-item">
         <div class="upload-copy">
           <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
-          <div class="upload-desc text-gray-500 dark:text-white/50">开启后在指定时间自动执行同步</div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="settingsStore.settings.autoSync.enabled"
-          class="upload-switch"
-          :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
-          @click="toggleAutoSync()"
-        >
-          <span class="upload-switch-thumb"></span>
-        </button>
+        <div class="flex items-center gap-3">
+          <SettingHint text="开启后在指定时间自动执行同步" />
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="settingsStore.settings.autoSync.enabled"
+            class="upload-switch"
+            :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
+            @click="toggleAutoSync()"
+          >
+            <span class="upload-switch-thumb"></span>
+          </button>
+        </div>
       </div>
 
       <!-- 自动同步配置 -->
