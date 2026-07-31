@@ -34,6 +34,7 @@ interface CreatePlayerPlaybackDeps {
 let progressFrameId: number | null = null;
 let progressTimerId: ReturnType<typeof setTimeout> | null = null;
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
 let playRequestId = 0;
 // [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
 // togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
@@ -333,6 +334,10 @@ export const createPlayerPlayback = ({
       clearInterval(syncIntervalId);
       syncIntervalId = null;
     }
+    if (periodicFlushTimerId !== null) {
+      clearInterval(periodicFlushTimerId);
+      periodicFlushTimerId = null;
+    }
   };
 
   const reanchorPlaybackClock = (time: number) => {
@@ -373,6 +378,17 @@ export const createPlayerPlayback = ({
     };
 
     scheduleUpdate(update);
+
+    // [定时刷新] 每 30 秒将当前播放会话刷写到统计数据库，确保「总听歌时长」准实时更新。
+    // flushPlaySession 会重置 accumulatedTime 和 sessionStartTime，
+    // 所以刷新后需立即重启会话计时器，保证后续时长继续累积。
+    periodicFlushTimerId = setInterval(() => {
+      if (isPlaying.value && currentSong.value) {
+        flushPlaySession();
+        sessionStartTime = Date.now();
+      }
+    }, 30_000);
+
     syncIntervalId = setInterval(async () => {
       if (!isPlaying.value || isSeeking) return;
 
@@ -1183,6 +1199,9 @@ export const createPlayerPlayback = ({
       sessionStartTime = null;
     }
 
+    // 暂停时立即刷写当前播放会话到统计数据库，确保听歌时长实时更新
+    flushPlaySession();
+
     // 歌曲仍在起播过程中（在线歌曲解析直链期间）：标记本次请求已取消，
     // 避免 playSong 拿到直链后继续出声
     if (!isSongLoaded.value) {
@@ -1206,6 +1225,9 @@ export const createPlayerPlayback = ({
         accumulatedTime += (Date.now() - sessionStartTime) / 1000;
         sessionStartTime = null;
       }
+
+      // 暂停时立即刷写当前播放会话到统计数据库，确保听歌时长实时更新
+      flushPlaySession();
 
       // 若当前歌曲仍在起播过程中（在线歌曲解析直链期间），标记该次请求已被取消，
       // 让 playSong 在拿到直链后不要继续出声。

@@ -87,15 +87,34 @@ const {
 
 const { canonicalSongs } = useLibraryBrowse();
 
+let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();
-  await statisticsStore.ensureLoaded('All');
+  // 每次进入统计页都强制刷新行为统计（不依赖缓存），确保听歌时长是最新的
+  await statisticsStore.refreshBehaviorOnly('All');
+  if (!statisticsStore.stats) {
+    await statisticsStore.ensureLoaded('All');
+  }
   // 统计数据加载完成后，再加载排行榜（需要 total_duration 上报到后端）
   void loadLeaderboard();
+
+  // 每 30 秒自动刷新行为统计，让「总听歌时长」准实时更新
+  statsRefreshTimer = setInterval(async () => {
+    try {
+      await statisticsStore.refreshBehaviorOnly('All');
+    } catch {
+      // 刷新失败静默处理，不影响用户使用
+    }
+  }, 30_000);
 });
 
 onUnmounted(() => {
   statisticsStore.scheduleHeavyDataRelease();
+  if (statsRefreshTimer) {
+    clearInterval(statsRefreshTimer);
+    statsRefreshTimer = null;
+  }
 });
 
 async function handleRefresh() {
