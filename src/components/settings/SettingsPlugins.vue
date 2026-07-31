@@ -5,8 +5,8 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
-import type { PluginSource } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult } from '../../services/pluginEngine';
+import type { PluginSource, PluginSubscription } from '../../types';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl } from '../../services/pluginEngine';
 import { useSettings } from '../../features/settings/useSettings';
 import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 
@@ -50,16 +50,10 @@ let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
 
-/** 插件订阅源 */
-interface Subscription {
-  id: string;
-  name: string;
-  url: string;
-}
-
-// 插件列表（从 localStorage 读取）
+/** 插件列表（从 localStorage 读取） */
 const plugins = ref<PluginSource[]>(getStoredPlugins());
-const subscriptions = ref<Subscription[]>([]);
+/** 订阅列表（持久化到 localStorage，重启后保留） */
+const subscriptions = ref<PluginSubscription[]>(getSubscriptions());
 const showAddSubscriptionInput = ref(false);
 const newSubscriptionUrl = ref('');
 
@@ -695,45 +689,119 @@ function confirmAddSubscription() {
     return;
   }
 
-  // 简单 URL 校验
-  try {
-    new URL(url);
-  } catch {
-    showToast('请输入有效的 URL', 'error');
+  // URL 校验：必须 http(s) 且以 .js/.json 结尾（与 MusicFreeDesktop 一致）
+  if (!isValidSubscriptionUrl(url)) {
+    showToast('订阅链接需以 .js 或 .json 结尾', 'error');
     return;
   }
 
-  // 避免重复
-  if (subscriptions.value.some((s) => s.url === url)) {
-    showToast('该订阅已存在', 'error');
+  // 调用 service 持久化（内部含去重校验）
+  const sub = addSubscription({ name: '', url });
+  if (!sub) {
+    showToast('该订阅已存在或 URL 无效', 'error');
     return;
   }
-
-  // 从 URL 提取名称（取域名或最后路径段）
-  let name = url;
-  try {
-    const u = new URL(url);
-    name = u.hostname + (u.pathname !== '/' ? u.pathname.split('/').pop() || '' : '');
-  } catch { /* keep raw url */ }
-
-  const id = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  subscriptions.value.push({ id, name, url });
+  subscriptions.value = getSubscriptions();
   newSubscriptionUrl.value = '';
   showAddSubscriptionInput.value = false;
-  showToast(`已添加订阅: ${name}`, 'success');
+  showToast(`已添加订阅: ${sub.name}`, 'success');
 }
 
-// 从订阅安装
-function handleInstallFromSubscription(sub: Subscription) {
-  // TODO: 从订阅 URL 拉取并安装
-  showToast(`从订阅 ${sub.name} 安装：等待后端接入`, 'info');
+// 从单个订阅安装
+async function handleInstallFromSubscription(sub: PluginSubscription) {
+  if (isPluginBusy.value) return;
+  isPluginBusy.value = true;
+  try {
+    const result = await installFromSubscriptionUrl(sub.url, {
+      skipVersionCheck: pluginSettings.value.skipVersionCheck,
+    });
+    // 更新该订阅的同步状态
+    updateSubscription(sub.id, {
+      lastSyncAt: Date.now(),
+      lastSyncStatus: result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed'),
+      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`,
+      lastSyncCount: result.successCount,
+    });
+    subscriptions.value = getSubscriptions();
+    refreshPluginList();
+    if (result.successCount > 0) {
+      showToast(
+        `从 ${sub.name} 安装 ${result.successCount} 个插件${result.failCount ? `，${result.failCount} 个失败` : ''}`,
+        'success',
+      );
+    } else {
+      showToast(`从 ${sub.name} 安装失败: ${result.errors[0] || '无可安装插件'}`, 'error');
+    }
+  } catch (e: any) {
+    showToast(`同步失败: ${e?.message || e}`, 'error');
+  } finally {
+    isPluginBusy.value = false;
+  }
+}
+
+// 一键更新全部订阅
+const syncingAll = ref(false);
+async function handleSyncAllSubscriptions() {
+  if (syncingAll.value || isPluginBusy.value) return;
+  if (subscriptions.value.length === 0) {
+    showToast('暂无订阅源', 'info');
+    return;
+  }
+  syncingAll.value = true;
+  try {
+    const res = await installAllSubscriptions();
+    subscriptions.value = getSubscriptions();
+    refreshPluginList();
+    showToast(
+      `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`,
+      res.failedSubs ? 'info' : 'success',
+    );
+  } catch (e: any) {
+    showToast(`同步失败: ${e?.message || e}`, 'error');
+  } finally {
+    syncingAll.value = false;
+  }
+}
+
+// ==================== 订阅名称编辑 ====================
+const editingSubId = ref<string | null>(null);
+const editingSubName = ref('');
+
+function startEditSubName(sub: PluginSubscription) {
+  editingSubId.value = sub.id;
+  editingSubName.value = sub.name;
+}
+
+function saveSubName(sub: PluginSubscription) {
+  if (editingSubId.value !== sub.id) return;
+  const name = editingSubName.value.trim();
+  if (name && name !== sub.name) {
+    updateSubscription(sub.id, { name });
+    subscriptions.value = getSubscriptions();
+  }
+  editingSubId.value = null;
+}
+
+function cancelEditSubName() {
+  editingSubId.value = null;
+}
+
+/** 相对时间格式化（用于显示"上次同步"） */
+function formatRelativeTime(ts: number | undefined): string {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // 移除订阅源（二次确认）
 const showRemoveSubscriptionConfirm = ref(false);
-const pendingRemoveSubscription = ref<Subscription | null>(null);
+const pendingRemoveSubscription = ref<PluginSubscription | null>(null);
 
-function handleRemoveSubscription(sub: Subscription) {
+function handleRemoveSubscription(sub: PluginSubscription) {
   pendingRemoveSubscription.value = sub;
   showRemoveSubscriptionConfirm.value = true;
 }
@@ -741,8 +809,8 @@ function handleRemoveSubscription(sub: Subscription) {
 function confirmRemoveSubscription() {
   const sub = pendingRemoveSubscription.value;
   if (!sub) return;
-  // TODO: 调用后端移除订阅
-  subscriptions.value = subscriptions.value.filter((s) => s.id !== sub.id);
+  removeSubscription(sub.id);
+  subscriptions.value = getSubscriptions();
   showRemoveSubscriptionConfirm.value = false;
   pendingRemoveSubscription.value = null;
   showToast(`已移除订阅 ${sub.name}`, 'success');
@@ -904,17 +972,30 @@ async function copyPluginLink() {
         <transition name="settings-pop-panel">
           <div v-if="showSubscriptionPanel" class="px-4 pb-4">
             <div class="settings-plugin-inline-panel">
-              <div class="flex items-center justify-between mb-3">
-                <div class="text-xs text-gray-600 dark:text-white/60">
+              <div class="flex items-center justify-between mb-3 gap-2">
+                <div class="text-xs text-gray-600 dark:text-white/60 min-w-0">
                   订阅可自动同步远端插件列表，方便一次性安装多个来源
                 </div>
-                <button
-                  type="button"
-                  class="settings-plugin-button settings-plugin-button--sm"
-                  @click="handleAddSubscription"
-                >
-                  {{ showAddSubscriptionInput ? '取消' : '添加订阅' }}
-                </button>
+                <div class="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary"
+                    :disabled="syncingAll || subscriptions.length === 0"
+                    :class="{ 'settings-plugin-button--disabled': syncingAll || subscriptions.length === 0 }"
+                    :title="subscriptions.length === 0 ? '暂无订阅' : '拉取所有订阅并安装插件'"
+                    @click="handleSyncAllSubscriptions"
+                  >
+                    <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': syncingAll }" />
+                    {{ syncingAll ? '同步中...' : '更新全部' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="settings-plugin-button settings-plugin-button--sm"
+                    @click="handleAddSubscription"
+                  >
+                    {{ showAddSubscriptionInput ? '取消' : '添加订阅' }}
+                  </button>
+                </div>
               </div>
 
               <!-- 添加订阅输入行 -->
@@ -950,12 +1031,48 @@ async function copyPluginLink() {
                   class="flex items-center gap-3 p-2.5 rounded-lg bg-white/50 dark:bg-white/5 border border-black/5 dark:border-white/5"
                 >
                   <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{{ sub.name }}</div>
+                    <!-- 名称：非编辑态可点击编辑，编辑态显示 input -->
+                    <input
+                      v-if="editingSubId === sub.id"
+                      v-model="editingSubName"
+                      type="text"
+                      class="settings-plugin-input settings-plugin-input--inline text-sm font-medium"
+                      @keydown.enter="saveSubName(sub)"
+                      @keydown.esc="cancelEditSubName"
+                      @blur="saveSubName(sub)"
+                    />
+                    <div
+                      v-else
+                      class="text-sm font-medium text-gray-800 dark:text-gray-100 truncate cursor-text hover:text-[#EC4141] transition-colors"
+                      :title="`点击编辑「${sub.name}」名称`"
+                      @click="startEditSubName(sub)"
+                    >
+                      {{ sub.name || sub.url }}
+                    </div>
                     <div class="text-xs text-gray-500 dark:text-white/50 truncate">{{ sub.url }}</div>
+                    <!-- 上次同步状态 -->
+                    <div
+                      v-if="sub.lastSyncAt"
+                      class="flex items-center gap-1.5 mt-0.5 text-[11px] truncate"
+                      :class="sub.lastSyncStatus === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-white/40'"
+                      :title="sub.lastSyncMessage"
+                    >
+                      <span
+                        class="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+                        :class="{
+                          'bg-green-500': sub.lastSyncStatus === 'success',
+                          'bg-amber-500': sub.lastSyncStatus === 'partial',
+                          'bg-red-500': sub.lastSyncStatus === 'failed',
+                        }"
+                      ></span>
+                      <span class="truncate">上次同步: {{ formatRelativeTime(sub.lastSyncAt) }} · {{ sub.lastSyncCount ?? 0 }} 个</span>
+                    </div>
                   </div>
                   <button
                     type="button"
                     class="settings-plugin-icon-button"
+                    :disabled="isPluginBusy"
+                    :class="{ 'settings-plugin-icon-button--updating': isPluginBusy }"
                     title="从订阅安装"
                     @click="handleInstallFromSubscription(sub)"
                   >
@@ -1631,6 +1748,15 @@ async function copyPluginLink() {
 .settings-plugin-input:focus {
   border-color: rgba(236, 65, 65, 0.34);
   box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.08);
+}
+
+/* 订阅名称内联编辑输入框：更紧凑，铺满名称列 */
+.settings-plugin-input--inline {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 .settings-plugin-inline-panel {
