@@ -4,6 +4,7 @@ import { defineStore } from 'pinia';
 import type {
   AppSettings,
   AudioSettings,
+  AutoSyncConfig,
   DesktopLyricsSettings,
   DownloadSettings,
   EqualizerPreset,
@@ -53,9 +54,10 @@ export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
 export type DownloadSettingsPatch = Partial<DownloadSettings>;
 export type UploadSettingsPatch = Partial<UploadSettings>;
 export type PluginSettingsPatch = Partial<PluginSettings>;
+export type AutoSyncConfigPatch = Partial<AutoSyncConfig>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
@@ -66,6 +68,7 @@ export interface AppSettingsPatch
   download?: DownloadSettingsPatch;
   upload?: UploadSettingsPatch;
   plugins?: PluginSettingsPatch;
+  autoSync?: AutoSyncConfigPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -161,6 +164,18 @@ export const defaultPluginSettings: PluginSettings = {
   skipVersionCheck: false,
 };
 
+export const defaultAutoSyncConfig: AutoSyncConfig = {
+  enabled: false,
+  syncIntervalHours: 1,
+  syncIntervalMinutes: 2,
+  syncIntervalSeconds: 38,
+  maxDelayMinutes: 30,
+  delayedCount: 0,
+  lastSyncAttemptAt: 0,
+  lastSyncSuccessAt: 0,
+  nextSyncAt: 0,
+};
+
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
   showDesktopLyrics: false,
@@ -188,6 +203,7 @@ export const defaultAppSettings: AppSettings = {
   download: defaultDownloadSettings,
   upload: defaultUploadSettings,
   plugins: defaultPluginSettings,
+  autoSync: defaultAutoSyncConfig,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -220,6 +236,10 @@ export const createDefaultDownloadSettings = (): DownloadSettings => ({
 
 export const createDefaultUploadSettings = (): UploadSettings => ({
   ...defaultUploadSettings,
+});
+
+export const createDefaultAutoSyncConfig = (): AutoSyncConfig => ({
+  ...defaultAutoSyncConfig,
 });
 
 export const mergeUploadSettings = (
@@ -294,6 +314,7 @@ export const createDefaultAppSettings = (): AppSettings => ({
   shortcuts: createDefaultShortcutSettings(),
   download: createDefaultDownloadSettings(),
   upload: createDefaultUploadSettings(),
+  autoSync: createDefaultAutoSyncConfig(),
 });
 
 export const mergeThemeSettings = (
@@ -427,6 +448,7 @@ export const mergeAppSettings = (
     download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
     upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
     plugins: mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins ?? {}),
+    autoSync: mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync ?? {}),
   };
 };
 
@@ -434,6 +456,18 @@ const mergePluginSettings = (base: PluginSettings, patch: Partial<PluginSettings
   autoUpdateOnStartup: typeof patch.autoUpdateOnStartup === 'boolean' ? patch.autoUpdateOnStartup : base.autoUpdateOnStartup,
   lazyLoad: typeof patch.lazyLoad === 'boolean' ? patch.lazyLoad : base.lazyLoad,
   skipVersionCheck: typeof patch.skipVersionCheck === 'boolean' ? patch.skipVersionCheck : base.skipVersionCheck,
+});
+
+const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: Partial<AutoSyncConfig>): AutoSyncConfig => ({
+  enabled: typeof patch.enabled === 'boolean' ? patch.enabled : base.enabled,
+  syncIntervalHours: typeof patch.syncIntervalHours === 'number' && patch.syncIntervalHours >= 0 ? patch.syncIntervalHours : base.syncIntervalHours,
+  syncIntervalMinutes: typeof patch.syncIntervalMinutes === 'number' && patch.syncIntervalMinutes >= 0 && patch.syncIntervalMinutes < 60 ? patch.syncIntervalMinutes : base.syncIntervalMinutes,
+  syncIntervalSeconds: typeof patch.syncIntervalSeconds === 'number' && patch.syncIntervalSeconds >= 0 && patch.syncIntervalSeconds < 60 ? patch.syncIntervalSeconds : base.syncIntervalSeconds,
+  maxDelayMinutes: typeof patch.maxDelayMinutes === 'number' && patch.maxDelayMinutes >= 0 ? patch.maxDelayMinutes : base.maxDelayMinutes,
+  delayedCount: typeof patch.delayedCount === 'number' ? patch.delayedCount : base.delayedCount,
+  lastSyncAttemptAt: typeof patch.lastSyncAttemptAt === 'number' ? patch.lastSyncAttemptAt : base.lastSyncAttemptAt,
+  lastSyncSuccessAt: typeof patch.lastSyncSuccessAt === 'number' ? patch.lastSyncSuccessAt : base.lastSyncSuccessAt,
+  nextSyncAt: typeof patch.nextSyncAt === 'number' ? patch.nextSyncAt : base.nextSyncAt,
 });
 
 export const useSettingsStore = defineStore('settings', () => {
