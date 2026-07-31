@@ -427,6 +427,7 @@ import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
 import {
   getStoredPlugins,
+  pluginsVersion,
   pluginSearch,
   pluginGetMusicInfo,
   pluginGetLyric,
@@ -489,7 +490,19 @@ const pluginSourceList = ref<SourceItem[]>([]);
 const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
 
 function refreshPluginSourceList() {
-  const plugins = getStoredPlugins().filter(p => p.enabled);
+  // 按用户自定义的 sortOrder 排序，与插件管理页显示顺序保持一致
+  // sortOrder 相同时以原始数组顺序作为 tiebreaker 保证稳定（见 project_memory 约定）
+  const raw = getStoredPlugins();
+  const plugins = raw
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => p.enabled)
+    .sort((a, b) => {
+      const sa = a.p.sortOrder ?? 0;
+      const sb = b.p.sortOrder ?? 0;
+      if (sa !== sb) return sa - sb;
+      return a.idx - b.idx;
+    })
+    .map(({ p }) => p);
   const items: SourceItem[] = [];
   for (const p of plugins) {
     if (p.format === 'musicfree') {
@@ -911,6 +924,17 @@ watch(selectedSourceId, () => {
 // 监听搜索类型变化，重新搜索
 watch(activeSearchType, () => {
   performSearch();
+});
+
+// 监听插件状态版本号：插件变更（排序/开关/更新/增删）时第一时间刷新搜索源列表
+watch(pluginsVersion, () => {
+  const prevSelectedId = selectedSourceId.value;
+  refreshPluginSourceList();
+  // 若当前选中的源已不存在（被禁用/删除），回退到第一个可用源
+  const stillExists = allSourceList.value.some(s => s.id === prevSelectedId);
+  if (!stillExists && allSourceList.value.length > 0) {
+    selectedSourceId.value = allSourceList.value[0].id;
+  }
 });
 
 // 播放搜索到的歌曲
