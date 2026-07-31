@@ -53,139 +53,6 @@ let stalledProgressTicks = 0;
 // [在线失败行为] 记录上一次因起播失败而重试过的歌曲路径，避免 'retry' 无限重试
 let lastFailureRetriedPath: string | null = null;
 
-// [落雪] HTML5 Audio 网络音频播放（与 YinDongMusic 一致）
-let networkAudio: HTMLAudioElement | null = null;
-let networkAudioTimeUpdateHandler: (() => void) | null = null;
-let networkAudioEndedHandler: (() => void) | null = null;
-let networkAudioErrorHandler: (() => void) | null = null;
-/** IDM 兼容模式下为音频创建的 blob URL，需在切歌/停止时释放，避免内存泄漏 */
-let networkAudioBlobUrl: string | null = null;
-
-// --- 在线音频可视化（仅 IDM 兼容模式的本地 blob 可用；跨域直链受浏览器安全限制无法分析）---
-let networkAudioContext: AudioContext | null = null;
-let networkAnalyser: AnalyserNode | null = null;
-let networkAnalyserSource: MediaElementAudioSourceNode | null = null;
-let networkAnalyserBuffer: Uint8Array | null = null;
-const NETWORK_VISUALIZER_BANDS = 48;
-
-/**
- * 为网络音频建立 Web Audio 分析链路（仅在本地 blob 播放时调用，跨域直链无法分析）。
- *
- * 关键点：
- * - AudioContext 全局单例、只复用不 close。一旦对某个 <audio> 调用 createMediaElementSource，
- *   该元素的音频就被路由进这个 context，必须保持 context running 否则会没声音/卡住。
- * - 每首歌的 <audio> 是新实例，为它单独建 source（同一元素只能建一次，新元素没问题）。
- */
-const setupNetworkAnalyser = async (audio: HTMLAudioElement) => {
-  try {
-    // 先断开上一首的 source（但不销毁 context）
-    try { networkAnalyserSource?.disconnect(); } catch { /* ignore */ }
-    networkAnalyserSource = null;
-
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    if (!networkAudioContext) {
-      networkAudioContext = new AudioCtx();
-    }
-    // 自动播放策略可能让 context 处于 suspended。必须先等它恢复 running 再接入 source，
-    // 否则音频被路由进一个非 running 的 context 会没声音/卡住——宁可放弃可视化也不能影响播放
-    if (networkAudioContext.state === 'suspended') {
-      try { await networkAudioContext.resume(); } catch { /* ignore */ }
-    }
-    if (networkAudioContext.state !== 'running') {
-      return; // 无法恢复：不接入 source，保住正常播放
-    }
-
-    if (!networkAnalyser) {
-      networkAnalyser = networkAudioContext.createAnalyser();
-      networkAnalyser.fftSize = 256;
-      networkAnalyser.smoothingTimeConstant = 0.75;
-      networkAnalyser.connect(networkAudioContext.destination);
-      networkAnalyserBuffer = new Uint8Array(networkAnalyser.frequencyBinCount);
-    }
-
-    // 链路：source → analyser → destination（保证仍能听到声音）
-    networkAnalyserSource = networkAudioContext.createMediaElementSource(audio);
-    networkAnalyserSource.connect(networkAnalyser);
-  } catch (e: any) {
-    console.warn('[Audio] 网络音频可视化分析链路创建失败:', e?.message || e);
-    teardownNetworkAnalyser();
-  }
-};
-
-/** 断开当前歌曲的 source（保留复用 context/analyser 单例，避免反复创建销毁导致卡顿） */
-const teardownNetworkAnalyser = () => {
-  try { networkAnalyserSource?.disconnect(); } catch { /* ignore */ }
-  networkAnalyserSource = null;
-};
-
-/**
- * 读取网络音频当前频谱，返回 0..1 的 48 个频段电平（与 Rust 后端可视化输出量级一致）。
- * 无分析链路或频谱全为 0（context 未运行/静音）时返回空数组，调用方应回退到 Rust 数据源。
- */
-export const getNetworkVisualizerLevels = (): number[] => {
-  if (!networkAnalyserSource || !networkAnalyser || !networkAnalyserBuffer) return [];
-  if (networkAudioContext?.state !== 'running') return [];
-
-  networkAnalyser.getByteFrequencyData(networkAnalyserBuffer);
-  const bins = networkAnalyserBuffer;
-  // 只取低到中频段（人耳音乐能量主要集中区），映射到 48 个频段
-  const usableBins = Math.floor(bins.length * 0.8);
-  const levels: number[] = new Array(NETWORK_VISUALIZER_BANDS);
-  let total = 0;
-  for (let i = 0; i < NETWORK_VISUALIZER_BANDS; i += 1) {
-    const start = Math.floor((i / NETWORK_VISUALIZER_BANDS) * usableBins);
-    const end = Math.max(start + 1, Math.floor(((i + 1) / NETWORK_VISUALIZER_BANDS) * usableBins));
-    let sum = 0;
-    for (let j = start; j < end; j += 1) sum += bins[j];
-    const level = sum / (end - start) / 255;
-    levels[i] = level;
-    total += level;
-  }
-  // 全 0（context 静音/未真正出数）时返回空，让调用方回退，避免频谱条贴底卡住
-  if (total <= 0) return [];
-  return levels;
-};
-
-/**
- * 彻底停止并清理 HTML5 网络音频。
- *
- * 播放本地歌曲（走 Rust 后端）之前必须调用，否则上一首在线歌的 Audio 实例会残留继续播放，
- * 并且让 pause/seek 的通道判断误判到已失效的网络音频上（表现为"切歌失败/暂停错乱"）。
- */
-const stopNetworkAudio = () => {
-  teardownNetworkAnalyser();
-  if (!networkAudio) return;
-
-  try {
-    networkAudio.pause();
-  } catch {
-    // ignore
-  }
-
-  if (networkAudioTimeUpdateHandler) {
-    networkAudio.removeEventListener('timeupdate', networkAudioTimeUpdateHandler);
-    networkAudioTimeUpdateHandler = null;
-  }
-  if (networkAudioEndedHandler) {
-    networkAudio.removeEventListener('ended', networkAudioEndedHandler);
-    networkAudioEndedHandler = null;
-  }
-  if (networkAudioErrorHandler) {
-    networkAudio.removeEventListener('error', networkAudioErrorHandler);
-    networkAudioErrorHandler = null;
-  }
-
-  networkAudio.src = '';
-  networkAudio = null;
-
-  if (networkAudioBlobUrl) {
-    URL.revokeObjectURL(networkAudioBlobUrl);
-    networkAudioBlobUrl = null;
-  }
-};
-
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
 
@@ -223,17 +90,9 @@ export const createPlayerPlayback = ({
     playQueue,
     playMode,
     tempQueue,
-    volume,
     currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
-
-  // 在线播放走 HTML5 audio，音量条只改了 Rust 后端音量，需同步到网络音频
-  watch(volume, (value) => {
-    if (networkAudio) {
-      networkAudio.volume = Math.min(1, Math.max(0, value / 100));
-    }
-  });
 
   const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) => {
     if (previousSong?.path === song.path) {
@@ -392,17 +251,6 @@ export const createPlayerPlayback = ({
     syncIntervalId = setInterval(async () => {
       if (!isPlaying.value || isSeeking) return;
 
-      // [在线播放] 网络音频走 HTML5 audio，进度以 audio 自身为准。
-      // 不能用 Rust 后端的 getPlaybackProgress 校准——此时后端并未在播放，
-      // 会返回过时/为 0 的值，反复把进度拉回，导致进度条闪烁。
-      if (networkAudio) {
-        const audioTime = networkAudio.currentTime;
-        if (Number.isFinite(audioTime) && Math.abs(audioTime - currentTime.value) > 0.25) {
-          reanchorPlaybackClock(audioTime);
-        }
-        return;
-      }
-
       try {
         const rawTime = await playbackApi.getPlaybackProgress();
         const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
@@ -421,9 +269,8 @@ export const createPlayerPlayback = ({
           stalledProgressTicks += 1;
           const unknownDuration = !song.duration || song.duration <= 0;
           const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
-          // 在线歌（HTTP 流）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
-          // 若沿用 2 轮阈值会被误判为播放结束而自动切下一首——切歌时若 Rust 起播探测
-          // 失败又会回退 H5 用 WebView 请求直链，进而弹出 IDM。故对在线歌放宽阈值。
+          // 在线歌（流式下载）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
+          // 若沿用 2 轮阈值会被误判为播放结束而自动切下一首，故对在线歌放宽阈值。
           const isOnlineStream = !!song.path
             && (song.path.startsWith('http://')
               || song.path.startsWith('https://')
@@ -634,44 +481,47 @@ export const createPlayerPlayback = ({
 
     addToHistory(song);
 
-    // 提前获取当前歌曲支持的音质列表（与 URL 解析独立，确保预获取 URL 的歌曲也能正确渲染音质选项）
+    // [预获取优化] 音质列表获取与 URL 解析并行执行，减少起播延迟
+    // 音质列表独立于播放流程，可在后台并行获取
     currentAvailableQualities.value = null;
-    const songPath = song.cue_source_path || song.path;
-    try {
-      if (songPath.startsWith('lx://')) {
-        // LX 歌曲：从缓存的 _types 提取
-        const parts = songPath.replace('lx://', '').split('/');
-        const lxSource = parts[0];
-        const songmid = parts.slice(1).join('/');
-        if (lxSource && songmid) {
-          const { getCachedLxSong } = await import('../services/lxSongCache');
-          const cachedInfo = getCachedLxSong(lxSource, songmid);
-          if (cachedInfo?._types) {
-            const lxQualities = Object.keys(cachedInfo._types)
-              .filter(k => k in QUALITY_META) as QualityKey[];
-            if (lxQualities.length > 0) {
-              currentAvailableQualities.value = lxQualities
-                .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+    const qSongPath = song.cue_source_path || song.path;
+    const qualityListPromise = (async () => {
+      try {
+        if (qSongPath.startsWith('lx://')) {
+          // LX 歌曲：从缓存的 _types 提取
+          const parts = qSongPath.replace('lx://', '').split('/');
+          const lxSource = parts[0];
+          const songmid = parts.slice(1).join('/');
+          if (lxSource && songmid) {
+            const { getCachedLxSong } = await import('../services/lxSongCache');
+            const cachedInfo = getCachedLxSong(lxSource, songmid);
+            if (cachedInfo?._types) {
+              const lxQualities = Object.keys(cachedInfo._types)
+                .filter(k => k in QUALITY_META) as QualityKey[];
+              if (lxQualities.length > 0) {
+                currentAvailableQualities.value = lxQualities
+                  .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+              }
+            }
+          }
+        } else if (qSongPath.startsWith('plugin://')) {
+          // plugin:// 歌曲：从插件实例的 supportedQualities 提取
+          const pluginSearchResult = song.rawData;
+          if (pluginSearchResult?.pluginId) {
+            const { getStoredPlugins, pluginGetSupportedQualities } = await import('../services/pluginEngine');
+            const plugins = getStoredPlugins();
+            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+            if (pluginSource) {
+              const supportedQ = await pluginGetSupportedQualities(pluginSource);
+              if (supportedQ && supportedQ.length > 0) {
+                currentAvailableQualities.value = supportedQ
+                  .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+              }
             }
           }
         }
-      } else if (songPath.startsWith('plugin://')) {
-        // plugin:// 歌曲：从插件实例的 supportedQualities 提取
-        const pluginSearchResult = song.rawData;
-        if (pluginSearchResult?.pluginId) {
-          const { getStoredPlugins, pluginGetSupportedQualities } = await import('../services/pluginEngine');
-          const plugins = getStoredPlugins();
-          const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-          if (pluginSource) {
-            const supportedQ = await pluginGetSupportedQualities(pluginSource);
-            if (supportedQ && supportedQ.length > 0) {
-              currentAvailableQualities.value = supportedQ
-                .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
-            }
-          }
-        }
-      }
-    } catch { /* ignore: 音质列表获取失败不影响播放 */ }
+      } catch { /* ignore: 音质列表获取失败不影响播放 */ }
+    })();
 
     let audioFilePath = song.cue_source_path || song.path;
     // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），随 URL 一起传递给播放器
@@ -815,6 +665,9 @@ export const createPlayerPlayback = ({
       }
     }
 
+    // 等待音质列表获取完成（与 URL 解析并行执行，此时大概率已完成）
+    await qualityListPromise;
+
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
@@ -873,170 +726,8 @@ export const createPlayerPlayback = ({
           .catch(() => {});
       };
 
-      // [在线 H5 回退] 原 HTML5 Audio 播放逻辑，作为在线走 Rust 失败时的兜底。
-      // 返回是否成功起播（被切歌作废时返回 true 表示无需继续）。
-      const playOnlineViaHtml5 = async (): Promise<void> => {
-        // [避免 IDM 劫持] H5 回退路径一律先在 Worker 线程把整首音频拉成本地 blob 再播放。
-        // 主线程直接请求音频直链会被 IDM 等下载器拦截（弹出下载框、播放失败），而 Worker
-        // 线程的请求通常能逃过拦截。原先仅在用户开启「IDM 兼容模式」时才这么做，导致未开启
-        // 该设置的用户一旦走到 H5 回退就会弹出 IDM；这里改为回退时总是优先 blob，
-        // 拉取失败再退回直链保证可用性。
-        // 注意：Rust 主路径不经过此函数，因此「IDM 相关处理仅作用于 H5 回退」的边界不变。
-        let playbackSource = audioFilePath;
-        {
-          try {
-            const { fetchViaWorker } = await import('../services/downloadService');
-            const bytes = await fetchViaWorker(audioFilePath, undefined, pluginHeaders);
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
-
-            const blob = new Blob([bytes as BlobPart], { type: 'audio/mpeg' });
-            playbackSource = URL.createObjectURL(blob);
-            networkAudioBlobUrl = playbackSource;
-          } catch (e: any) {
-            // 拉取失败则回退到直链播放，保证可用性
-            console.warn('[Audio] IDM 兼容模式拉取失败，回退直链播放:', e?.message || e);
-            playbackSource = audioFilePath;
-          }
-        }
-
-        const audio = new Audio();
-        audio.preload = 'auto';
-        // [修复 CORS] 不设置 crossOrigin，允许跨域音频播放
-        audio.volume = playbackStore.volume / 100;
-        audio.src = playbackSource;
-        networkAudio = audio;
-
-        // 等待 canplay
-        await new Promise<void>((resolve, reject) => {
-          const onCanPlay = () => {
-            console.log('[Audio] canplay fired, duration=', audio.duration);
-            audio.removeEventListener('canplay', onCanPlay);
-            audio.removeEventListener('error', onError);
-            audio.removeEventListener('stalled', onStalled);
-            resolve();
-          };
-          const onError = () => {
-            audio.removeEventListener('canplay', onCanPlay);
-            audio.removeEventListener('error', onError);
-            audio.removeEventListener('stalled', onStalled);
-            const mediaError = audio.error;
-            const detail = mediaError
-              ? `code=${mediaError.code} ${mediaError.message || ''}`
-              : 'unknown';
-            console.error(`[Audio] HTML5 Audio load failed: ${detail}`, 'src=', playbackSource?.substring(0, 120));
-            reject(new Error(`Audio failed to load: ${detail}`));
-          };
-          const onStalled = () => {
-            console.warn('[Audio] stalled - loading might be blocked (CORS/Referer/403):', playbackSource?.substring(0, 120));
-          };
-          audio.addEventListener('canplay', onCanPlay);
-          audio.addEventListener('error', onError);
-          audio.addEventListener('stalled', onStalled);
-          audio.load();
-        });
-
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-          // [修复] 本次播放已被新的切歌请求作废：除了暂停，还要清理掉指针，
-          // 否则这个废弃实例会残留并影响后续 pause/seek 的通道判断
-          audio.pause();
-          audio.src = '';
-          if (networkAudio === audio) {
-            networkAudio = null;
-          }
-          if (networkAudioBlobUrl === playbackSource) {
-            URL.revokeObjectURL(networkAudioBlobUrl);
-            networkAudioBlobUrl = null;
-          }
-          return;
-        }
-
-        // 设置进度同步和播放结束处理器
-        networkAudioTimeUpdateHandler = () => {
-          if (!networkAudio || !isPlaying.value) return;
-          const newTime = networkAudio.currentTime;
-          // 阈值放宽：让 rAF 平滑时钟主导，仅在明显漂移时才校正，
-          // 避免每次 timeupdate（~4Hz）都 reanchor 导致进度条来回抖动
-          if (Math.abs(newTime - currentTime.value) > 0.5) {
-            reanchorPlaybackClock(newTime);
-          }
-        };
-        networkAudioEndedHandler = () => {
-          handleAutoNext();
-        };
-        // [在线中途被打断行为] 播放开始后音频出错（网络中断/解码异常）时默认暂停等待，停在当前位置
-        networkAudioErrorHandler = () => {
-          if (!networkAudio || currentSong.value?.path !== song.path) return;
-          isPlaying.value = false;
-          stopPlaybackRuntime();
-        };
-        audio.addEventListener('timeupdate', networkAudioTimeUpdateHandler);
-        audio.addEventListener('ended', networkAudioEndedHandler);
-        audio.addEventListener('error', networkAudioErrorHandler);
-
-        // 用户在加载音频期间按了暂停：保留已就绪的 audio 元素（后续点播放可直接续播），
-        // 但不要出声，并停在暂停态
-        if (cancelledPlayRequestId === requestId) {
-          isSongLoaded.value = true;
-          isPlaying.value = false;
-          stopPlaybackRuntime();
-          loadLyrics();
-          return;
-        }
-
-        audio.play().catch(() => {});
-
-        // [在线可视化] 仅在 IDM 兼容模式的本地 blob（同源）下建立 Web Audio 分析链路。
-        // 跨域直链受浏览器安全限制（tainted）无法取频谱；放到 play() 之后建立，
-        // 且分析链路创建失败/无法恢复 context 时不影响正常播放（内部已做保护）
-        if (networkAudioBlobUrl && networkAudioBlobUrl === playbackSource) {
-          void setupNetworkAnalyser(audio);
-        }
-
-        isSongLoaded.value = true;
-        sessionStartTime = Date.now();
-        loadLyrics();
-        startPlaybackRuntime();
-
-        // [修复] duration 未知时从 Audio 元素回退填充
-        if (currentSong.value && (!currentSong.value.duration || currentSong.value.duration <= 0)) {
-          const audioDuration = audio.duration;
-          if (audioDuration && audioDuration > 0 && isFinite(audioDuration)) {
-            currentSong.value = { ...currentSong.value, duration: Math.floor(audioDuration) };
-          }
-        }
-
-        // 更新 SMTC 元数据
-        void playbackApi.updatePlaybackMetadata({
-          title: getSmtcTitle(song),
-          artist: song.artist || 'Unknown Artist',
-          album: song.album || 'Unknown Album',
-          cover: cachedCoverPath,
-          duration: Math.floor(song.duration),
-          isPlaying: true,
-        }).catch(() => {});
-
-        // 封面加载回调
-        void currentThumbnailLoad
-          .then(async ([cover, coverPath]) => {
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
-            const normalizedCover = cover || '';
-            const normalizedCoverPath = coverPath || '';
-            currentCover.value = normalizedCover;
-            if (!currentCoverFull.value) currentCoverFull.value = normalizedCover;
-            await playbackApi.updatePlaybackMetadata({
-              title: getSmtcTitle(song),
-              artist: song.artist || 'Unknown Artist',
-              album: song.album || 'Unknown Album',
-              cover: normalizedCoverPath,
-              duration: Math.floor(song.duration),
-              isPlaying: isPlaying.value,
-            }).catch(() => {});
-          })
-          .catch(() => {});
-      };
-
-      // [在线走 Rust] 用后端 rodio + HTTP Range 流播放在线直链。
-      // 成功返回 true；抛错（403 防盗链 / 不支持 Range / 解码失败）返回 false 由调用方回退 H5。
+      // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
+      // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
         try {
           await playbackApi.playAudio({
@@ -1055,7 +746,7 @@ export const createPlayerPlayback = ({
             headers: pluginHeaders,
           });
         } catch (e: any) {
-          console.warn('[Audio] 在线直链 playAudio 调用失败，回退 HTML5:', e?.message || e);
+          console.warn('[Audio] 在线直链 playAudio 调用失败:', e?.message || e);
           return false;
         }
 
@@ -1066,13 +757,14 @@ export const createPlayerPlayback = ({
         // - 对支持 Range 的流：解码器读到文件头即就绪，通常很快。
         // - 对不支持 Range 的直链：后端会整曲下载到内存后才解码，可能耗时数秒到十几秒，
         //   因此给较长超时；只要期间 ready 变 true 就算成功，不误判为失败。
-        // 就绪后再要求进度真实推进一点，排除"就绪但立刻卡死"的极端情况。
+        //
+        // [优化] ready 后立即返回，不再等待进度推进 0.3 秒。
+        // 流式文件已在 play_audio 中等待 512KB 缓冲（约 15 秒音频），
+        // decoder ready 即意味着已有足够数据开始播放，无需额外等待。
         const READY_TIMEOUT_MS = 20000;
         const PROBE_INTERVAL_MS = 200;
-        const ADVANCE_THRESHOLD = 0.3;
         const probeStart = Date.now();
         let ready = false;
-        let firstProgress: number | null = null;
         while (Date.now() - probeStart < READY_TIMEOUT_MS) {
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
             return true; // 已被新切歌请求接管，无需回退
@@ -1080,42 +772,34 @@ export const createPlayerPlayback = ({
           try {
             // 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时
             if (await playbackApi.getPlaybackStartFailed()) {
-              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错），立即回退 HTML5');
+              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错）');
               return false;
             }
             if (!ready) {
               ready = await playbackApi.getPlaybackReady();
             }
             if (ready) {
-              const progress = await playbackApi.getPlaybackProgress();
-              if (progress > 0) {
-                if (firstProgress === null) firstProgress = progress;
-                if (progress - firstProgress >= ADVANCE_THRESHOLD) return true;
-              }
+              // decoder 就绪即可，不再等待进度推进
+              return true;
             }
           } catch { /* ignore, keep probing */ }
           await new Promise(resolve => setTimeout(resolve, PROBE_INTERVAL_MS));
         }
 
-        console.warn('[Audio] 在线直链走 Rust 起播探测失败（未就绪或进度未推进），回退 HTML5');
+        console.warn('[Audio] 在线直链走 Rust 起播探测失败（未就绪）');
         return false;
       };
 
       if (isNetworkAudio && !isM4sLocal) {
-        // [在线播放] 先停掉可能残留的网络音频，再优先走 Rust 后端播放（可视化/均衡器/响度均衡生效，
-        // 且请求由 Rust 进程发起，规避 IDM 劫持）；Rust 失败时回退到 HTML5 播放。
-        stopNetworkAudio();
+        // [在线播放重构] 所有在线音乐统一走 Rust 后端：流式下载到临时文件 + 本地引擎播放。
+        // Rust 后端处理下载、解码、设备切换恢复全流程。
 
-        // [兼容模式逃生开关] 用户开启后跳过 Rust，直接走 HTML5 + Worker blob 播放。
-        // 供 Rust 内核在某些音源/环境下播放异常时使用（代价：无频谱/均衡器，起播略慢）。
-        const forceHtml5 = settingsStore.settings.audio.idmCompatMode;
-        const rustOk = forceHtml5 ? false : await tryPlayOnlineViaRust();
+        const rustOk = await tryPlayOnlineViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
         // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态，不要继续出声
         if (cancelledPlayRequestId === requestId) {
           try { await playbackApi.stopAudio(); } catch {}
-          stopNetworkAudio();
           isPlaying.value = false;
           isSongLoaded.value = false;
           stopPlaybackRuntime();
@@ -1123,22 +807,20 @@ export const createPlayerPlayback = ({
         }
 
         if (rustOk) {
-          // 确保后端已接管，音量同步到后端（H5 分支靠 audio.volume，Rust 分支靠 setVolume）
+          // 确保后端已接管，音量同步到后端
           try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
           finishRustPlaybackStart();
         } else {
-          // 回退（或用户强制 H5）：彻底停掉后端可能半启动的播放
-          // （stop 会 sink.stop + 清空 sink + 重置进度，而 pause 只暂停不清理，
-          // 可能与随后的 H5 播放抢占音频设备或双重出声），再走 HTML5
+          // [在线播放重构] Rust 失败时直接报告错误并停止
           try { await playbackApi.stopAudio(); } catch {}
-          await playOnlineViaHtml5();
+          isPlaying.value = false;
+          isSongLoaded.value = false;
+          stopPlaybackRuntime();
+          console.error('[Audio] 在线音频播放失败（Rust 后端起播失败）');
+          return;
         }
       } else {
         // 本地音频走 Rust 后端播放
-        // [修复] 先彻底停掉可能残留的网络音频，否则从在线歌切到本地歌时，
-        // 上一首在线歌会继续播放，且 pause/seek 会误操作到它上面
-        stopNetworkAudio();
-
         await playbackApi.playAudio({
           path: actualAudioPath,
           title: getSmtcTitle(song),
@@ -1249,11 +931,7 @@ export const createPlayerPlayback = ({
     }
 
     isPlaying.value = false;
-    if (networkAudio) {
-      networkAudio.pause();
-    } else {
-      await playbackApi.pauseAudio();
-    }
+    await playbackApi.pauseAudio();
     stopPlaybackRuntime();
   };
 
@@ -1275,11 +953,7 @@ export const createPlayerPlayback = ({
         cancelledPlayRequestId = playRequestId;
       }
 
-      if (networkAudio) {
-        networkAudio.pause();
-      } else {
-        await playbackApi.pauseAudio();
-      }
+      await playbackApi.pauseAudio();
       isPlaying.value = false;
       stopPlaybackRuntime();
       return;
@@ -1294,13 +968,8 @@ export const createPlayerPlayback = ({
       return;
     }
 
-    if (networkAudio) {
-      await networkAudio.play().catch(() => {});
-      sessionStartTime = Date.now();
-    } else {
-      await playbackApi.resumeAudio();
-      sessionStartTime = Date.now();
-    }
+    await playbackApi.resumeAudio();
+    sessionStartTime = Date.now();
 
     isPlaying.value = true;
     startPlaybackRuntime();
@@ -1324,16 +993,6 @@ export const createPlayerPlayback = ({
       : Math.max(0, newTime);
     const requestId = ++latestSeekRequestId;
     reanchorPlaybackClock(targetTime);
-
-    if (networkAudio) {
-      // [落雪] 网络音频直接操作 HTML5 Audio 元素
-      networkAudio.currentTime = targetTime;
-      isSeeking = false;
-      if (isPlaying.value) {
-        startPlaybackRuntime();
-      }
-      return;
-    }
 
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
@@ -1392,8 +1051,6 @@ export const createPlayerPlayback = ({
   const dispose = () => {
     stopPlaybackRuntime();
     stopPowerModeWatcher();
-    // 防止销毁后残留的网络音频继续播放
-    stopNetworkAudio();
   };
 
   const stopPowerModeWatcher = watch(isMainWindowLowPower, () => {

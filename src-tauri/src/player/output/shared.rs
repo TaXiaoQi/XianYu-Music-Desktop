@@ -1,13 +1,20 @@
 use crate::player::equalizer::EqualizerHandle;
 use crate::player::output::{OutputBackend, OutputError};
 use crate::player::types::{SharedProgress, TimedSource};
+use crate::remote::cache::RemoteStreamSource;
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read, Seek};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// 组合 Read + Seek 的 trait，用于 trait object（Rust 不允许 `dyn Read + Seek`）。
+/// Decoder::new 需要 `R: Read + Seek + Send + Sync + 'static`，
+/// `Box<dyn ReadSeek + Send + Sync>` 满足此约束（通过 Box<T> 的 blanket impl）。
+pub(crate) trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
 
 pub(crate) struct SharedOutputBackend {
     _stream: OutputStream,
@@ -68,6 +75,7 @@ pub(crate) fn progress_seconds_from_samples(samples: u64, rate: u32, channels: u
     samples as f64 / (rate as u64 * channels as u64) as f64
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn restore_current_playback(
     output: &Option<SharedOutputBackend>,
     current_sink: &mut Option<Sink>,
@@ -76,6 +84,8 @@ pub(crate) fn restore_current_playback(
     progress: &Arc<SharedProgress>,
     equalizer_handle: Arc<EqualizerHandle>,
     user_volume: Arc<AtomicU32>,
+    remote_stream: Option<&RemoteStreamSource>,
+    streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
     if current_path.is_empty() {
         return;
@@ -90,8 +100,37 @@ pub(crate) fn restore_current_playback(
         let time_played = progress_seconds_from_samples(current_samples, rate, channels);
         let jump_target = Duration::from_secs_f64(time_played);
 
-        if let Ok(file) = File::open(current_path) {
-            let reader = BufReader::with_capacity(512 * 1024, file);
+        // [在线播放重构] 优先使用 StreamingTempFileReader 恢复（边下边播）
+        // 其次使用 RemoteRangeReader（WebDAV/旧路径）
+        // 最后用 File::open（本地文件）
+        let reader_result: Result<Box<dyn ReadSeek + Send + Sync>, ()> =
+            if let Some(state) = streaming_state {
+                match state.new_reader() {
+                    Ok(reader) => Ok(Box::new(reader)),
+                    Err(e) => {
+                        eprintln!("[Audio][rust] restore 重建流式临时文件失败: {e}");
+                        Err(())
+                    }
+                }
+            } else if let Some(stream) = remote_stream {
+                match crate::player::runtime::RemoteRangeReader::new(stream.clone()) {
+                    Ok(reader) => Ok(Box::new(BufReader::with_capacity(512 * 1024, reader))),
+                    Err(e) => {
+                        eprintln!("[Audio][rust] restore 重建远程流失败: {e}");
+                        Err(())
+                    }
+                }
+            } else {
+                match File::open(current_path) {
+                    Ok(file) => Ok(Box::new(BufReader::with_capacity(512 * 1024, file))),
+                    Err(e) => {
+                        eprintln!("[Audio][rust] restore 打开本地文件失败: {e}");
+                        Err(())
+                    }
+                }
+            };
+
+        if let Ok(reader) = reader_result {
             if let Ok(source) = Decoder::new(reader) {
                 let skipped = source.convert_samples::<f32>().skip_duration(jump_target);
 

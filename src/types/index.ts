@@ -454,6 +454,8 @@ export interface AudioSettings {
   onlineFailureBehavior: OnlineFailureBehavior;
   /** 在线歌曲默认音质播放失败时的音质回退行为，默认 'lower'（播放更低音质） */
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
+  /** 在线流式播放缓存上限（MB），默认 500MB */
+  streamCacheSizeMB: number;
 }
 
 export type ShortcutActionId =

@@ -63,6 +63,56 @@ const isLibraryScanActive = computed(
   () => !!libraryScanProgress.value && !libraryScanProgress.value.done
 );
 
+// --- 在线播放流式缓存管理 ---
+const STREAM_CACHE_SIZE_OPTIONS = [
+  { label: '100 MB', value: 100 },
+  { label: '500 MB', value: 500 },
+  { label: '1 GB', value: 1024 },
+  { label: '2 GB', value: 2048 },
+  { label: '5 GB', value: 5120 },
+];
+
+const streamCacheCurrent = ref(0);
+const streamCacheMax = ref(0);
+const isClearingStreamCache = ref(false);
+
+const formatStreamCacheBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const refreshStreamCacheInfo = async () => {
+  try {
+    const info = await playbackApi.getStreamCacheInfo();
+    streamCacheCurrent.value = info.current;
+    streamCacheMax.value = info.max;
+  } catch {
+    // 非 Tauri 环境静默忽略
+  }
+};
+
+const patchStreamCacheSize = (mb: number) => {
+  settings.value.audio.streamCacheSizeMB = mb;
+  void playbackApi.setStreamCacheMaxSize(mb * 1024 * 1024).then(refreshStreamCacheInfo);
+};
+
+const handleClearStreamCache = async () => {
+  if (isClearingStreamCache.value) return;
+  isClearingStreamCache.value = true;
+  try {
+    await playbackApi.clearStreamCache();
+    await refreshStreamCacheInfo();
+    showToast('在线播放缓存已清理', 'success');
+  } catch (error) {
+    console.error('Failed to clear stream cache:', error);
+    showToast('清理在线播放缓存失败', 'error');
+  } finally {
+    isClearingStreamCache.value = false;
+  }
+};
+
 const lyricsSyncOffsetMs = computed({
   get: () => Math.round(settings.value.lyricsSyncOffset * 1000),
   set: (value: number | string) => {
@@ -243,6 +293,10 @@ onMounted(async () => {
   });
   window.addEventListener('pointerdown', handleDocumentPointerDown);
   window.addEventListener('keydown', handleDocumentKeydown);
+
+  // 同步在线播放缓存上限到后端并读取当前用量
+  void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
+    .then(refreshStreamCacheInfo);
 });
 
 onScopeDispose(() => {
@@ -518,6 +572,53 @@ onScopeDispose(() => {
             {{ isClearingCache ? '清除中...' : '清除' }}
           </button>
         </div>
+
+        <!-- 在线播放缓存上限 -->
+        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">在线播放缓存上限</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              在线歌曲流式下载后缓存到本地，再次播放无需重新下载。缓存满后自动清理最久未播放的曲目。
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
+            <button
+              v-for="opt in STREAM_CACHE_SIZE_OPTIONS" :key="opt.value"
+              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
+              :class="settings.audio.streamCacheSizeMB === opt.value
+                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+              @click="patchStreamCacheSize(opt.value)"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+
+        <!-- 清理在线播放缓存 -->
+        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+              清理在线播放缓存
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                {{ formatStreamCacheBytes(streamCacheCurrent) }} / {{ formatStreamCacheBytes(streamCacheMax) }}
+              </span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              清理后正在播放的在线歌曲不受影响，但已缓存的其他曲目需重新下载。
+            </div>
+          </div>
+          <button
+            type="button"
+            :disabled="isClearingStreamCache || streamCacheCurrent === 0"
+            @click="handleClearStreamCache"
+            class="settings-action-button shrink-0"
+            :class="isClearingStreamCache || streamCacheCurrent === 0
+              ? 'settings-action-button--disabled'
+              : 'settings-action-button--soft'"
+          >
+            {{ isClearingStreamCache ? '清理中...' : '清理' }}
+          </button>
+        </div>
+
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">重置数据</div>

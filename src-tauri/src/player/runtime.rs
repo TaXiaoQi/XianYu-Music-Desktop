@@ -106,6 +106,8 @@ fn restore_preferred_output(
     volume_balance_gain: f32,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    current_remote_stream: Option<&RemoteStreamSource>,
+    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
     *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
     *active_device_name = output
@@ -160,6 +162,8 @@ fn restore_preferred_output(
         progress,
         equalizer_handle,
         user_volume,
+        current_remote_stream,
+        current_streaming_state,
     );
 }
 
@@ -174,6 +178,8 @@ fn restore_shared_output(
     progress: &Arc<SharedProgress>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    current_remote_stream: Option<&RemoteStreamSource>,
+    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
     *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
     *active_device_name = output
@@ -187,6 +193,8 @@ fn restore_shared_output(
         progress,
         equalizer_handle,
         user_volume,
+        current_remote_stream,
+        current_streaming_state,
     );
 }
 
@@ -238,9 +246,17 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
     controls
 }
 
-const REMOTE_STREAM_CHUNK_BYTES: u64 = 1024 * 1024;
+const REMOTE_STREAM_CHUNK_BYTES: u64 = 2 * 1024 * 1024;
 
-struct RemoteRangeReader {
+/// 后台预读线程返回的结果。start 用于校验结果是否对应当前需要的位置，
+/// 避免旧线程的过期结果被误用（seek 后 start 不匹配会被丢弃）。
+enum PrefetchResult {
+    Bytes { start: u64, data: Vec<u8> },
+    NoRange { data: Vec<u8> },
+    Error { start: u64, message: String },
+}
+
+pub(crate) struct RemoteRangeReader {
     client: reqwest::blocking::Client,
     source: RemoteStreamSource,
     pos: u64,
@@ -252,10 +268,18 @@ struct RemoteRangeReader {
     /// 这修复了「不支持 Range 的 CDN 直链只能播首个 1MB 块后中断」的问题。
     no_range: bool,
     full_body: Option<Vec<u8>>,
+    /// [预读] 在当前 buffer 消耗过半时，后台线程提前下载下一块。
+    /// 避免 buffer 耗尽时同步阻塞导致音频卡顿（每块的 HTTP 请求耗时数百毫秒到数秒）。
+    /// prefetch_state 存储结果，prefetch_in_flight 标记线程是否仍在运行。
+    /// 不存储 JoinHandle（它不是 Sync），改为 detach 线程——结果通过 Arc 共享。
+    prefetch_state: Arc<Mutex<Option<PrefetchResult>>>,
+    prefetch_in_flight: Arc<AtomicBool>,
+    /// 当前预读请求的起始位置，用于校验结果是否对应当前需要的 pos
+    prefetch_start: u64,
 }
 
 impl RemoteRangeReader {
-    fn new(source: RemoteStreamSource) -> Result<Self, String> {
+    pub(crate) fn new(source: RemoteStreamSource) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
@@ -275,6 +299,9 @@ impl RemoteRangeReader {
             buffer: Vec::new(),
             no_range: false,
             full_body: None,
+            prefetch_state: Arc::new(Mutex::new(None)),
+            prefetch_in_flight: Arc::new(AtomicBool::new(false)),
+            prefetch_start: 0,
         })
     }
 
@@ -409,7 +436,109 @@ impl RemoteRangeReader {
         }
     }
 
+    /// 在后台线程提前下载从 start 位置开始的下一块数据。
+    /// 不阻塞当前线程——结果通过 prefetch_state 传递，ensure_buffer 在需要时取用。
+    /// 不存储 JoinHandle（非 Sync），改为 detach 线程，用 AtomicBool 跟踪完成状态。
+    fn start_prefetch(&mut self, start: u64) {
+        // 已知文件长度时，不预读超出末尾的范围（避免无意义的 HTTP 请求）
+        if let Some(len) = self.len {
+            if start >= len {
+                return;
+            }
+        }
+        // 清除旧结果，标记新预读进行中
+        *self.prefetch_state.lock().unwrap() = None;
+        self.prefetch_in_flight.store(true, Ordering::Relaxed);
+        self.prefetch_start = start;
+
+        let client = self.client.clone();
+        let source = self.source.clone();
+        let state = self.prefetch_state.clone();
+        let in_flight = self.prefetch_in_flight.clone();
+        let end = start.saturating_add(REMOTE_STREAM_CHUNK_BYTES - 1);
+
+        thread::spawn(move || {
+            let request = client
+                .get(&source.url)
+                .header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
+            let result = match Self::auth(request, &source).send() {
+                Ok(mut response) => {
+                    if response.status() == reqwest::StatusCode::OK {
+                        // 服务器忽略 Range 直接返回 200 全量
+                        let mut bytes = Vec::new();
+                        match response.read_to_end(&mut bytes) {
+                            Ok(_) => PrefetchResult::NoRange { data: bytes },
+                            Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+                        }
+                    } else if response.status().is_success()
+                        || response.status() == reqwest::StatusCode::PARTIAL_CONTENT
+                    {
+                        let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
+                        let mut bytes = Vec::new();
+                        match limited.read_to_end(&mut bytes) {
+                            Ok(_) => PrefetchResult::Bytes { start, data: bytes },
+                            Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+                        }
+                    } else {
+                        PrefetchResult::Error {
+                            start,
+                            message: format!("HTTP {}", response.status()),
+                        }
+                    }
+                }
+                Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+            };
+            *state.lock().unwrap() = Some(result);
+            in_flight.store(false, Ordering::Relaxed);
+        });
+    }
+
+    /// 尝试获取已完成的后台预读结果。如果预读线程尚未完成则返回 None（不阻塞）。
+    fn try_take_prefetched(&mut self) -> Option<PrefetchResult> {
+        // in_flight 为 true 表示线程仍在运行，结果尚未就绪
+        if self.prefetch_in_flight.load(Ordering::Relaxed) {
+            return None;
+        }
+        self.prefetch_state.lock().unwrap().take()
+    }
+
+    /// 是否有预读正在进行
+    fn is_prefetch_in_flight(&self) -> bool {
+        self.prefetch_in_flight.load(Ordering::Relaxed)
+    }
+
+    /// 取消未完成的预读（seek 后旧结果不再有用）
+    fn cancel_prefetch(&mut self) {
+        self.prefetch_in_flight.store(false, Ordering::Relaxed);
+        *self.prefetch_state.lock().unwrap() = None;
+    }
+
     fn fetch_at(&mut self, start: u64) -> std::io::Result<()> {
+        // 优先使用后台预读结果（位置匹配且已完成）
+        if let Some(result) = self.try_take_prefetched() {
+            match result {
+                PrefetchResult::Bytes { start: res_start, data } if res_start == start => {
+                    self.buffer_start = start;
+                    self.buffer = data;
+                    return Ok(());
+                }
+                PrefetchResult::NoRange { data } => {
+                    self.len = Some(data.len() as u64);
+                    self.full_body = Some(data);
+                    self.no_range = true;
+                    return Ok(());
+                }
+                PrefetchResult::Error { start: res_start, message } if res_start == start => {
+                    eprintln!("[Audio][rust] 预读失败，回退同步下载: {}", message);
+                    // 继续走同步下载
+                }
+                _ => {
+                    // 旧预读结果（start 不匹配），丢弃并同步下载
+                }
+            }
+        }
+
+        // 同步下载（原始逻辑）
         let end = start.saturating_add(REMOTE_STREAM_CHUNK_BYTES - 1);
         let request = self
             .client
@@ -457,9 +586,22 @@ impl RemoteRangeReader {
     fn ensure_buffer(&mut self) -> std::io::Result<()> {
         let buffer_end = self.buffer_start.saturating_add(self.buffer.len() as u64);
         if self.pos >= self.buffer_start && self.pos < buffer_end {
+            // buffer 仍有效：当剩余数据不足一半时，提前在后台下载下一块
+            let remaining = buffer_end - self.pos;
+            if remaining <= REMOTE_STREAM_CHUNK_BYTES / 2 && !self.is_prefetch_in_flight() {
+                self.start_prefetch(buffer_end);
+            }
             return Ok(());
         }
-        self.fetch_at(self.pos)
+        // buffer 已耗尽：fetch_at 会优先取用已完成的后台预读结果，
+        // 没有命中才同步阻塞下载
+        self.fetch_at(self.pos)?;
+        // 同步下载完成后，立刻预读下一块，为后续播放做准备
+        let next_start = self.buffer_start.saturating_add(self.buffer.len() as u64);
+        if !self.is_prefetch_in_flight() {
+            self.start_prefetch(next_start);
+        }
+        Ok(())
     }
 }
 
@@ -528,6 +670,8 @@ impl Seek for RemoteRangeReader {
                 "跳转位置不能小于 0",
             ));
         }
+        // seek 后旧的预读结果不再有用，取消后台预读线程
+        self.cancel_prefetch();
         self.pos = next as u64;
         Ok(self.pos)
     }
@@ -667,9 +811,33 @@ fn handle_play(
                 }
             }
         }
+        AudioSource::StreamingTempFile(state) => {
+            // [在线播放重构] 从流式临时文件创建 reader，边下边播
+            match state.new_reader() {
+                Ok(reader) => append_decoded_source(
+                    reader,
+                    output,
+                    current_sink,
+                    progress,
+                    start_offset,
+                    volume_balance_gain,
+                    current_normalizer_handle,
+                    equalizer_handle,
+                    user_volume,
+                ),
+                Err(e) => {
+                    eprintln!(
+                        "[Audio][rust] 流式临时文件 reader 创建失败 path={}: {e}",
+                        state.path
+                    );
+                    progress.start_failed.store(true, Ordering::Relaxed);
+                }
+            }
+        }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_seek(
     time: f64,
     is_playing: bool,
@@ -685,6 +853,7 @@ fn handle_seek(
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
     remote_stream: Option<&RemoteStreamSource>,
+    streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
     let clamped_time = time.max(0.0);
     let jump_target = Duration::from_secs_f64(clamped_time);
@@ -719,7 +888,25 @@ fn handle_seek(
 
                 // append_decoded_source 内部会重建 sink、装配处理链并开始播放
                 let start_offset = Some(jump_target);
-                if let Some(stream) = remote_stream.cloned() {
+                // [在线播放重构] 优先使用 StreamingTempFileReader 重建（边下边播）
+                if let Some(state) = streaming_state {
+                    match state.new_reader() {
+                        Ok(reader) => append_decoded_source(
+                            reader,
+                            output,
+                            current_sink,
+                            progress,
+                            start_offset,
+                            volume_balance_gain,
+                            current_normalizer_handle,
+                            equalizer_handle,
+                            user_volume,
+                        ),
+                        Err(e) => {
+                            eprintln!("[Audio][rust] seek 重建流式临时文件失败: {e}");
+                        }
+                    }
+                } else if let Some(stream) = remote_stream.cloned() {
                     match RemoteRangeReader::new(stream) {
                         Ok(reader) => append_decoded_source(
                             reader,
@@ -816,6 +1003,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
         // 因为远程流的 current_path 是 URL，不能用 File::open 打开。
         let mut current_remote_stream: Option<RemoteStreamSource> = None;
+        // [在线播放重构] 流式临时文件状态。设备切换恢复时需要用它重建 StreamingTempFileReader。
+        let mut current_streaming_state: Option<
+            crate::player::stream_cache::StreamingTempFileState,
+        > = None;
 
         if let Some(output) = &output {
             current_sink = output.create_sink().ok();
@@ -849,6 +1040,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         current_remote_stream = match &source {
                             AudioSource::RemoteWebDav(stream) => Some(stream.clone()),
                             AudioSource::LocalFile(_) => None,
+                            AudioSource::StreamingTempFile(_) => None,
+                        };
+                        // [在线播放重构] 保存流式临时文件状态，用于设备切换恢复
+                        current_streaming_state = match &source {
+                            AudioSource::StreamingTempFile(state) => Some(state.clone()),
+                            _ => None,
                         };
 
                         if let Some(sink) = &current_sink {
@@ -1028,6 +1225,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
                             current_remote_stream.as_ref(),
+                            current_streaming_state.as_ref(),
                         )
                     }
                     AudioCommand::SetVolume(vol) => {
@@ -1062,6 +1260,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_volume_balance_gain,
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
+                            current_remote_stream.as_ref(),
+                            current_streaming_state.as_ref(),
                         );
                         if selected_device_name.is_none() {
                             last_default_device_name = default_output_device_name(&host);
@@ -1105,6 +1305,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_volume_balance_gain,
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
+                            current_remote_stream.as_ref(),
+                            current_streaming_state.as_ref(),
                         );
                         if selected_device_name.is_none() {
                             last_default_device_name = default_output_device_name(&host);
@@ -1166,6 +1368,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 &thread_progress,
                                 thread_eq_handle.clone(),
                                 thread_user_volume.clone(),
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
                             );
                             if selected_device_name.is_none() {
                                 last_default_device_name = default_output_device_name(&host);
@@ -1216,6 +1420,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 current_volume_balance_gain,
                                 thread_eq_handle.clone(),
                                 thread_user_volume.clone(),
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
                             );
 
                             emit_output_status(
@@ -1259,8 +1465,8 @@ mod tests {
         let url = format!("http://{addr}/audio");
 
         let handle = std::thread::spawn(move || {
-            // 处理若干次连接（HEAD 探测、content_len 的 Range:0-0、正式读取等）
-            for _ in 0..16 {
+            // 处理若干次连接（HEAD 探测、content_len 的 Range:0-0、正式读取、后台预读等）
+            for _ in 0..32 {
                 let Ok((mut stream, _)) = listener.accept() else { break };
                 let mut buf = [0u8; 2048];
                 let n = stream.read(&mut buf).unwrap_or(0);
@@ -1289,6 +1495,14 @@ mod tests {
                         let spec = range.split('=').nth(1).unwrap_or("").trim().to_string();
                         let mut parts = spec.split('-');
                         let start: usize = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+                        // start 超出文件末尾时返回 416，避免 body[start..=end] 越界 panic
+                        if start >= total {
+                            let resp = format!(
+                                "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total}\r\nConnection: close\r\n\r\n"
+                            );
+                            let _ = stream.write_all(resp.as_bytes());
+                            continue;
+                        }
                         let end: usize = parts
                             .next()
                             .and_then(|v| v.trim().parse().ok())
@@ -1337,7 +1551,7 @@ mod tests {
 
     #[test]
     fn remote_reader_reads_full_body_with_range_support() {
-        // 2.5MB 数据，跨越多个 1MB 分块，验证支持 Range 的服务器能完整读取
+        // 2.5MB 数据，跨越多个 2MB 分块，验证支持 Range 的服务器能完整读取
         let body: Vec<u8> = (0..(2_500_000_usize)).map(|i| (i % 251) as u8).collect();
         let (url, handle) = spawn_mock_server(body.clone(), true);
         let got = read_all_via_reader(&url);
@@ -1349,7 +1563,7 @@ mod tests {
     #[test]
     fn remote_reader_reads_full_body_when_range_ignored() {
         // 关键回归测试：服务器忽略 Range 返回 200 全量（不支持 Range 的 CDN 直链）。
-        // 旧逻辑只能播首个 1MB 块后中断（进度条鬼畜）；修复后应触发整曲下载并完整读取。
+        // 旧逻辑只能播首个块后中断（进度条鬼畜）；修复后应触发整曲下载并完整读取。
         let body: Vec<u8> = (0..(2_500_000_usize)).map(|i| (i % 251) as u8).collect();
         let (url, handle) = spawn_mock_server(body.clone(), false);
         let got = read_all_via_reader(&url);

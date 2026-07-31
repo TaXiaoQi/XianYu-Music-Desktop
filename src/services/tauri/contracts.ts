@@ -410,6 +410,18 @@ export interface TauriCommandMap {
     payload: { enabled: boolean; preamp: number; gains: number[] };
     response: void;
   };
+  set_stream_cache_max_size: {
+    payload: { bytes: number };
+    response: void;
+  };
+  get_stream_cache_info: {
+    payload: undefined;
+    response: { current: number; max: number };
+  };
+  clear_stream_cache: {
+    payload: undefined;
+    response: void;
+  };
   file_exists: {
     payload: { path: string };
     response: boolean;
