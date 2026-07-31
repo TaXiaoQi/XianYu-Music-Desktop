@@ -520,6 +520,7 @@ export interface AppSettings {
   download: DownloadSettings;
   upload: UploadSettings;
   plugins: PluginSettings;
+  autoSync: AutoSyncConfig;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
@@ -553,6 +554,41 @@ export interface UploadSettings {
   favorites: boolean;
   plugins: boolean;
   settings: boolean;
+}
+
+/** 自动同步配置 */
+export interface AutoSyncConfig {
+  /** 是否启用自动同步 */
+  enabled: boolean;
+  /** 同步间隔-小时 */
+  syncIntervalHours: number;
+  /** 同步间隔-分钟 */
+  syncIntervalMinutes: number;
+  /** 同步间隔-秒 */
+  syncIntervalSeconds: number;
+  /** 当服务器繁忙时自动延后的最大延迟（分钟） */
+  maxDelayMinutes: number;
+  /** 已延后的同步次数 */
+  delayedCount: number;
+  /** 最后一次同步尝试的时间戳 */
+  lastSyncAttemptAt: number;
+  /** 最后一次成功同步的时间戳 */
+  lastSyncSuccessAt: number;
+  /** 下一次计划同步的时间戳 */
+  nextSyncAt: number;
+}
+
+export interface ServerLoadStatus {
+  /** 是否启用流量限制 */
+  rateLimited: boolean;
+  /** 当前并发同步用户数 */
+  activeSyncCount: number;
+  /** 服务器是否繁忙（带宽或负载过高） */
+  busy: boolean;
+  /** 建议的延迟时间（秒） */
+  suggestedDelaySeconds: number;
+  /** 带宽利用率（百分比） */
+  bandwidthUsagePercent: number;
 }
 
 export interface SaveArtistAvatarResponse {
