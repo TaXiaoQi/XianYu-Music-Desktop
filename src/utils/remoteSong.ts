@@ -1,4 +1,5 @@
 import { LX_SOURCE_NAMES, type LxSourceId } from '../services/lxMusicSdk';
+import { getStoredPlugins, pluginsVersion } from '../services/pluginEngine';
 
 export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) =>
   song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true;
@@ -19,19 +20,45 @@ export const parseIntervalToSeconds = (interval?: string | null): number => {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 };
 
+// 插件名缓存：基于 pluginsVersion 失效，避免列表渲染时重复 JSON.parse(localStorage)
+let pluginNameCacheVersion = -1;
+let pluginNameCache = new Map<string, string>();
+
+function getPluginNameById(pluginId: string): string | null {
+  if (pluginNameCacheVersion !== pluginsVersion.value) {
+    pluginNameCacheVersion = pluginsVersion.value;
+    pluginNameCache = new Map();
+    for (const p of getStoredPlugins()) {
+      pluginNameCache.set(p.id, p.name);
+    }
+  }
+  return pluginNameCache.get(pluginId) ?? null;
+}
+
 /**
  * 获取歌曲的来源标签。
  *
- * 落雪音源歌曲（`lx://<source>/<songmid>`）返回对应的音源名称（如"小蜗音乐"），
+ * 落雪音源歌曲（`lx://<source>/<songmid>`）返回对应的音源名称（如"小蜗音乐"）；
+ * MusicFree 插件歌曲（`plugin://<platform>/<id>`）返回对应插件的显示名称；
  * 其他远程歌曲（WebDAV 等）返回"远程"。
  */
 export const getSongSourceLabel = (
-  song: { path?: string; source_type?: string } | null | undefined,
+  song: { path?: string; source_type?: string; plugin_id?: string; rawData?: any } | null | undefined,
 ): string => {
   const path = song?.path;
   if (path?.startsWith('lx://')) {
     const sourceId = path.slice('lx://'.length).split('/')[0] as LxSourceId;
     return LX_SOURCE_NAMES[sourceId] ?? '在线';
+  }
+
+  if (path?.startsWith('plugin://')) {
+    // 优先用 song.plugin_id（持久化字段），回退到 rawData.pluginId（运行时字段）
+    const pluginId = song?.plugin_id || song?.rawData?.pluginId;
+    if (pluginId) {
+      const name = getPluginNameById(pluginId);
+      if (name) return name;
+    }
+    return '在线';
   }
 
   return '远程';

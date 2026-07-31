@@ -1062,6 +1062,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       duration: Math.floor((item.duration || 0) / 1000),
       cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
       source_type: 'remote',
+      plugin_id: item.pluginId,
       remote_source_id: musicInfo.url,
       remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
       rawData: item,
@@ -1101,6 +1102,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
         duration: Math.floor((mfItem.duration || 0) / 1000),
         cover_thumb_path: mfItem.coverUrl || '',
         source_type: 'remote' as const,
+        plugin_id: mfItem.pluginId,
         rawData: mfItem,
       } as Song;
     });
@@ -1141,6 +1143,7 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
     duration: item.duration || 0,
     cover_thumb_path: item.coverUrl || '',
     source_type: 'remote',
+    plugin_id: item.pluginId,
     remote_source_id: `plugin://${item.platform}/${item.id}`,
     rawData: item,
   } as any;

@@ -138,7 +138,6 @@ const personalShortcuts: Shortcut[] = [
 const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
   { key: 'favorite_count', label: '收藏' },
   { key: 'playlist_count', label: '歌单' },
-  { key: 'starred_count', label: '星标' },
   { key: 'history_count', label: '历史' },
 ];
 
