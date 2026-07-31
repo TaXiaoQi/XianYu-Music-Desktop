@@ -399,6 +399,10 @@ const {
 .desktop-lyric-word-main {
   display: inline-block;
   white-space: pre-wrap;
+  /* 显式声明描边与绘制顺序：描边置于 fill 之上，避免与 background-clip:text
+     渐变填充组合时描边被覆盖/随渐变进度抖动，保证播放与未播放状态下描边一致稳定 */
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  paint-order: fill stroke;
 }
 
 .desktop-lyric-word-romaji {
