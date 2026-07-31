@@ -26,6 +26,7 @@ const initialTab = (() => {
 
 const activeTab = ref<TabId>(initialTab);
 const mainRef = ref<HTMLElement | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
 
 // 支持外部通过 ?tab=xxx 跳转到指定标签
 watch(() => route.query.tab, (q) => {
@@ -47,35 +48,20 @@ watch(activeTab, () => {
     if (mainRef.value) {
       mainRef.value.scrollTop = 0;
     }
+    // 容器整体先动：切换 tab 后，容器整体做淡入动画，
+    // 内部组件内容在容器内具体渲染。这样无论内容多复杂，
+    // 容器先动起来，视觉上即有过渡效果，不会出现"内容渲染完才动"的割裂。
+    if (contentRef.value) {
+      contentRef.value.animate(
+        [
+          { opacity: 0, transform: 'translateY(10px)' },
+          { opacity: 1, transform: 'translateY(0)' },
+        ],
+        { duration: 300, easing: 'ease', fill: 'both' }
+      );
+    }
   });
 });
-
-// 切换 tab 时用 Web Animations API 显式控制 enter/leave 动画。
-// 确保从 opacity:0 起点开始播放，避免内容复杂页面（如插件页）因首帧布局耗时
-// 导致 CSS transition/keyframes 动画起点状态被跳过、淡入失效。
-// :css="false" 关闭 CSS 驱动的过渡，完全由 JS 钩子控制时序。
-function onEnter(el: Element, done: () => void) {
-  const animation = (el as HTMLElement).animate(
-    [
-      { opacity: 0, transform: 'translateY(10px)' },
-      { opacity: 1, transform: 'translateY(0)' },
-    ],
-    { duration: 300, easing: 'ease', delay: 50, fill: 'both' }
-  );
-  animation.onfinish = () => done();
-}
-
-function onLeave(el: Element, done: () => void) {
-  // 旧元素快速淡出（0.05s），几乎瞬间消失，避免新旧元素在正常流中堆叠造成割裂。
-  const animation = (el as HTMLElement).animate(
-    [
-      { opacity: 1, transform: 'translateY(0)' },
-      { opacity: 0, transform: 'translateY(-10px)' },
-    ],
-    { duration: 50, easing: 'ease', fill: 'both' }
-  );
-  animation.onfinish = () => done();
-}
 
 const tabs = [
   { id: 'account', name: '账号' },
@@ -113,25 +99,23 @@ const tabs = [
     </aside>
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
-      <div class="w-full pb-16">
-        <transition :css="false" @enter="onEnter" @leave="onLeave">
-          <SettingsGeneral v-if="activeTab === 'general'" key="general" />
-          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
-          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
-          <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
-          <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
-          <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
-          <SettingsDownload v-else-if="activeTab === 'download'" key="download" />
-          <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
-          <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
-          <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
-          <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
+      <div ref="contentRef" :key="activeTab" class="w-full pb-16">
+        <SettingsGeneral v-if="activeTab === 'general'" />
+        <SettingsPlugins v-else-if="activeTab === 'plugins'" />
+        <SettingsAccount v-else-if="activeTab === 'account'" />
+        <SettingsTheme v-else-if="activeTab === 'theme'" />
+        <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" />
+        <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" />
+        <SettingsDownload v-else-if="activeTab === 'download'" />
+        <SettingsToolbox v-else-if="activeTab === 'toolbox'" />
+        <SettingsLibrary v-else-if="activeTab === 'library'" />
+        <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
+        <SettingsAbout v-else-if="activeTab === 'about'" />
 
-          <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
-            <div class="text-4xl opacity-50">施工中</div>
-            <div>当前设置模块正在整理中。</div>
-          </div>
-        </transition>
+        <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
+          <div class="text-4xl opacity-50">施工中</div>
+          <div>当前设置模块正在整理中。</div>
+        </div>
       </div>
     </main>
   </div>
