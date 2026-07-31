@@ -50,6 +50,33 @@ watch(activeTab, () => {
   });
 });
 
+// 切换 tab 时用 Web Animations API 显式控制 enter/leave 动画。
+// 确保从 opacity:0 起点开始播放，避免内容复杂页面（如插件页）因首帧布局耗时
+// 导致 CSS transition/keyframes 动画起点状态被跳过、淡入失效。
+// :css="false" 关闭 CSS 驱动的过渡，完全由 JS 钩子控制时序。
+function onEnter(el: Element, done: () => void) {
+  const animation = (el as HTMLElement).animate(
+    [
+      { opacity: 0, transform: 'translateY(10px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ],
+    { duration: 300, easing: 'ease', delay: 50, fill: 'both' }
+  );
+  animation.onfinish = () => done();
+}
+
+function onLeave(el: Element, done: () => void) {
+  // 旧元素快速淡出（0.05s），几乎瞬间消失，避免新旧元素在正常流中堆叠造成割裂。
+  const animation = (el as HTMLElement).animate(
+    [
+      { opacity: 1, transform: 'translateY(0)' },
+      { opacity: 0, transform: 'translateY(-10px)' },
+    ],
+    { duration: 50, easing: 'ease', fill: 'both' }
+  );
+  animation.onfinish = () => done();
+}
+
 const tabs = [
   { id: 'account', name: '账号' },
   { id: 'general', name: '常规' },
@@ -87,7 +114,7 @@ const tabs = [
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
       <div class="w-full pb-16">
-        <transition name="settings-tab">
+        <transition :css="false" @enter="onEnter" @leave="onLeave">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
           <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
@@ -109,21 +136,3 @@ const tabs = [
     </main>
   </div>
 </template>
-
-<style scoped>
-/* 设置页切换动画：与主页 page-fade 一致，不使用 mode="out-in" 避免快速切换空白 */
-.settings-tab-enter-active,
-.settings-tab-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.settings-tab-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.settings-tab-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-</style>
