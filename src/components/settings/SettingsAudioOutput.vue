@@ -11,13 +11,6 @@ const { settings, patchSettings } = useSettings();
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 
-const ONLINE_QUALITY_OPTIONS: { label: string; value: OnlineDefaultQuality; description: string }[] =
-  ALL_QUALITY_KEYS.map(k => ({
-    label: QUALITY_META[k].label,
-    value: k,
-    description: QUALITY_META[k].description,
-  }));
-
 /** 按 3 列 4 行分组（从低到高横向排布），用于按钮选择网格 */
 const QUALITY_GRID: OnlineDefaultQuality[][] = (() => {
   const grid: OnlineDefaultQuality[][] = [];
@@ -239,7 +232,7 @@ const idmCompatDialogContent = [
               :class="settings.audio.onlineQualityFallbackBehavior === opt.value
                 ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
                 : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
-              @click="patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: opt.value } })"
+              @click="patchSettings({ audio: { ...settings.audio, onlineQualityFallbackBehavior: opt.value } })"
             >{{ opt.label }}</button>
           </div>
         </div>

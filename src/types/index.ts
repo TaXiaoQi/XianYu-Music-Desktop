@@ -36,6 +36,10 @@ export interface SongCore {
   comment?: string;
   /** 原始歌词文本（在线歌曲或内嵌歌词加载时可直接解析） */
   lyrics_raw?: string;
+  /** 在线歌曲的原始插件搜索结果数据（用于 plugin:// 协议歌曲的后续解析） */
+  rawData?: any;
+  /** 在线歌曲的防盗链 headers（预获取直链时保存） */
+  remote_headers?: Record<string, string>;
 }
 
 export interface Song extends SongCore {}
@@ -228,6 +232,7 @@ export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
+  keepWindowMaterialOnBlur: boolean;
   flowColorBoost: number;
   flowDepth: number;
   flowSpeed: number;
@@ -480,6 +485,12 @@ export interface ShortcutSettings {
   global: ShortcutBindingMap;
 }
 
+export interface PluginSettings {
+  autoUpdateOnStartup: boolean;
+  lazyLoad: boolean;
+  skipVersionCheck: boolean;
+}
+
 export interface AppSettings {
   closeToTray: boolean;
   showDesktopLyrics: boolean;
@@ -506,6 +517,7 @@ export interface AppSettings {
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;
   upload: UploadSettings;
+  plugins: PluginSettings;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
