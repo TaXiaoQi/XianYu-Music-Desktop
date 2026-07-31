@@ -408,4 +408,12 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: boolean;
   };
+  write_state_json: {
+    payload: { key: string; value: string };
+    response: void;
+  };
+  read_state_json: {
+    payload: { key: string };
+    response: string | null;
+  };
 }

@@ -4,6 +4,9 @@ import { storeToRefs } from 'pinia';
 import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
+import { fetchLeaderboard, type LeaderboardEntry } from '../../services/leaderboardService';
+
+const authStore = useAuthStore();
 
 const TEXT = {
   totalListenDuration: '总听歌时长',
@@ -29,76 +32,33 @@ const TEXT = {
   you: '你',
 };
 
-// 听歌排行榜类型
-type LeaderboardEntry = {
-  rank: number;
-  username: string;
-  nickname: string;
-  avatar?: string;
-  duration: number; // 秒
-  isMe?: boolean;
-};
-
-// 生成模拟排行榜数据（前端 Mock）
-function generateMockLeaderboard(currentUsername: string, currentNickname: string, currentAvatar?: string): LeaderboardEntry[] {
-  const mockUsers = [
-    { username: 'melody_master', nickname: '旋律大师', duration: 53280 },
-    { username: 'music_lover', nickname: '音乐发烧友', duration: 47620 },
-    { username: 'night_owl', nickname: '夜猫子', duration: 41250 },
-    { username: 'chill_vibes', nickname: ' Chill爱好者', duration: 38940 },
-    { username: 'beat_keeper', nickname: '节奏掌控', duration: 35600 },
-    { username: 'vinyl_collector', nickname: '黑胶收藏家', duration: 32180 },
-    { username: 'lofi_dreamer', nickname: 'Lofi梦想家', duration: 28960 },
-    { username: 'bass_head', nickname: '低音炮', duration: 26450 },
-    { username: 'acoustic_fan', nickname: '原声迷', duration: 23890 },
-    { username: 'indie_soul', nickname: '独立灵魂', duration: 21340 },
-    { username: 'synth_wave', nickname: '合成波', duration: 18750 },
-    { username: 'classical_ear', nickname: '古典耳朵', duration: 16280 },
-    { username: 'rock_roller', nickname: '摇滚青年', duration: 13940 },
-    { username: 'pop_addict', nickname: '流行上瘾', duration: 11680 },
-    { username: 'jazzy_cat', nickname: '爵士猫', duration: 9520 },
-    { username: 'ambient_drift', nickname: '氛围漂流', duration: 8430 },
-    { username: 'edm_dancer', nickname: '电音舞者', duration: 7210 },
-    { username: 'folk_wanderer', nickname: '民谣流浪者', duration: 6180 },
-    { username: 'metal_head', nickname: '金属头', duration: 5340 },
-    { username: 'rnb_smooth', nickname: 'R&B柔情', duration: 4520 },
-  ];
-  // 当前用户的模拟时长
-  const myDuration = 12600;
-  const all: LeaderboardEntry[] = mockUsers.map(u => ({ ...u, rank: 0, isMe: false }));
-  all.push({
-    rank: 0,
-    username: currentUsername,
-    nickname: currentNickname,
-    avatar: currentAvatar,
-    duration: myDuration,
-    isMe: true,
-  });
-  // 按时长降序排序
-  all.sort((a, b) => b.duration - a.duration);
-  // 计算排名
-  all.forEach((u, i) => { u.rank = i + 1; });
-  return all;
-}
+// 听歌排行榜：LeaderboardEntry 类型从 leaderboardService 导入
 
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(false);
+const leaderboardError = ref<string | null>(null);
 
 async function loadLeaderboard() {
-  const authStore = useAuthStore();
   if (!authStore.isLoggedIn) {
     leaderboard.value = [];
     return;
   }
   leaderboardLoading.value = true;
-  // 模拟网络延迟
-  await new Promise(resolve => setTimeout(resolve, 600));
-  leaderboard.value = generateMockLeaderboard(
-    authStore.user?.username || 'guest',
-    authStore.user?.nickname || authStore.user?.username || '游客',
-    authStore.user?.avatar || undefined,
-  );
-  leaderboardLoading.value = false;
+  leaderboardError.value = null;
+  try {
+    const data = await fetchLeaderboard(50);
+    leaderboard.value = data.leaderboard;
+    // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
+    if (data.me && !leaderboard.value.some(u => u.isMe)) {
+      leaderboard.value.push(data.me);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    leaderboardError.value = msg;
+    leaderboard.value = [];
+  } finally {
+    leaderboardLoading.value = false;
+  }
 }
 
 // 前15名 + 始终返回自己的排名（用于底部固定显示）
@@ -314,9 +274,21 @@ const losslessRatio = computed(() => {
             ></div>
           </div>
 
-          <!-- 未登录提示 -->
-          <div v-else-if="leaderboardDisplay.top.length === 0" class="py-8 text-center">
-            <p class="text-black/50 dark:text-white/50 text-sm">登录后可查看听歌排行榜</p>
+          <!-- 未登录或无数据提示 -->
+          <div v-else-if="leaderboardDisplay.top.length === 0 && !leaderboardError" class="py-8 text-center">
+            <p class="text-black/50 dark:text-white/50 text-sm">{{ authStore.isLoggedIn ? '暂无排行榜数据' : '登录后可查看听歌排行榜' }}</p>
+          </div>
+
+          <!-- 加载失败提示 -->
+          <div v-else-if="leaderboardError && leaderboardDisplay.top.length === 0" class="py-8 text-center">
+            <p class="text-black/50 dark:text-white/50 text-sm">排行榜加载失败</p>
+            <button
+              type="button"
+              class="mt-2 text-[clamp(0.7rem,0.9vw,0.8rem)] text-[#EC4141] font-medium transition cursor-pointer"
+              @click="loadLeaderboard"
+            >
+              点击重试
+            </button>
           </div>
 
           <!-- 排行榜列表 -->

@@ -86,6 +86,30 @@ export const useCollectionsStore = defineStore('collections', () => {
     return true;
   };
 
+  /** 绑定云端歌单 ID（同步后调用） */
+  const setPlaylistCloudId = (id: string, cloudId: number) => {
+    const playlist = getPlaylistById(id);
+    if (playlist) {
+      playlist.cloudId = cloudId;
+      return true;
+    }
+    return false;
+  };
+
+  /** 设置云端封面 URL */
+  const setPlaylistCloudCoverUrl = (id: string, cloudCoverUrl: string) => {
+    const playlist = getPlaylistById(id);
+    if (playlist) {
+      playlist.cloudCoverUrl = cloudCoverUrl;
+      return true;
+    }
+    return false;
+  };
+
+  /** 根据云端歌单 ID 查找本地歌单 */
+  const getPlaylistByCloudId = (cloudId: number) =>
+    playlists.value.find(item => item.cloudId === cloudId);
+
   const getPlaylistById = (playlistId: string) =>
     playlists.value.find(item => item.id === playlistId);
 
@@ -320,6 +344,9 @@ export const useCollectionsStore = defineStore('collections', () => {
     deletePlaylist,
     renamePlaylist,
     setPlaylistCover,
+    setPlaylistCloudId,
+    setPlaylistCloudCoverUrl,
+    getPlaylistByCloudId,
     getPlaylistById,
     addToPlaylist,
     removeFromPlaylist,

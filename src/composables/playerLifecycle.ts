@@ -53,7 +53,7 @@ interface CreatePlayerLifecycleDeps {
   flushBufferedLibraryScanBatch: () => void;
   handleSeekCompleted: (payload: SeekCompletedPayload) => void;
   schedulePersistedState: () => void;
-  flushPersistedState: () => void;
+  flushPersistedState: () => Promise<void>;
   restorePathBackedState: () => Promise<void>;
   restoreRecentHistory: () => Promise<void>;
   refreshStateSongReferences: () => void;
@@ -537,7 +537,7 @@ export const createPlayerLifecycle = ({
     const playbackTimePersistTimer = setInterval(persistCurrentPlaybackTime, 2000);
 
     const beforeUnloadHandler = () => {
-      flushPersistedState();
+      flushPersistedState().catch(() => {});
       persistCurrentPlaybackTime();
     };
 
@@ -590,7 +590,7 @@ export const createPlayerLifecycle = ({
         libraryStore.setExtraSongs(queueExtraSongs);
       }
 
-      collectionsStore.setPlaylists(playerStorage.readPlaylists());
+      collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
 
       // 诊断：检查恢复的歌单是否包含 songs 缓存
       const restoredPls = collectionsStore.playlists;

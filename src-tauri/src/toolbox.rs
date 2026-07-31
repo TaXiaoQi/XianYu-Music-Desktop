@@ -5,6 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -789,5 +790,37 @@ pub fn run_installer(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 将 JSON 字符串写入 app_data_dir/state/{key}.json，用于持久化超过 localStorage 配额的大数据（如含 9000+ 歌曲的歌单）。
+#[tauri::command]
+pub async fn write_state_json(app_handle: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
+    let state_dir = app_dir.join("state");
+    tokio::fs::create_dir_all(&state_dir)
+        .await
+        .map_err(|e| format!("创建 state 目录失败: {e}"))?;
+    let file_path = state_dir.join(format!("{key}.json"));
+    tokio::fs::write(&file_path, &value)
+        .await
+        .map_err(|e| format!("写入 state 文件失败: {e}"))?;
+    Ok(())
+}
 
-
+/// 从 app_data_dir/state/{key}.json 读取 JSON 字符串。文件不存在时返回 null。
+#[tauri::command]
+pub async fn read_state_json(app_handle: tauri::AppHandle, key: String) -> Result<Option<String>, String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
+    let file_path = app_dir.join("state").join(format!("{key}.json"));
+    if !file_path.exists() {
+        return Ok(None);
+    }
+    let content = tokio::fs::read_to_string(&file_path)
+        .await
+        .map_err(|e| format!("读取 state 文件失败: {e}"))?;
+    Ok(Some(content))
+}

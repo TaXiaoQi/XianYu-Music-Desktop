@@ -300,8 +300,8 @@ async function handleAvatarFileChange(event: Event) {
     showToast(tip, 'error');
     return;
   }
-  if (file.size > 2 * 1024 * 1024) {
-    const tip = '头像不能超过 2MB';
+  if (file.size > 5 * 1024 * 1024) {
+    const tip = '头像不能超过 5MB';
     showToast(tip, 'error');
     return;
   }

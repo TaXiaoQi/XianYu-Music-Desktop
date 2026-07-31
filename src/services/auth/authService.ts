@@ -159,25 +159,93 @@ function buildSignedHeaders(body: string): Record<string, string> {
   };
 }
 
+/** 读取响应体的超时时间（毫秒），防止 response.json()/text() 在 Tauri 中挂起 */
+const RESPONSE_BODY_TIMEOUT_MS = 15_000;
+
+/** 带超时的响应体读取：先用 text() 读取再手动 JSON.parse，避免 Tauri 的 response.json() 挂起 */
+async function readResponseBody(response: Response, action: string): Promise<string> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`响应体读取超时（${RESPONSE_BODY_TIMEOUT_MS / 1000}s），action=${action}`));
+    }, RESPONSE_BODY_TIMEOUT_MS);
+  });
+
+  const text = await Promise.race([
+    response.text(),
+    timeoutPromise,
+  ]);
+  return text;
+}
+
+/** fetch 本身的超时时间（毫秒），比 signedRequest 的 30s 短，确保 fetch 被正确中止 */
+const FETCH_TIMEOUT_MS = 25_000;
+
 /** 发起带签名的 POST 请求，返回完整响应信封 */
 async function requestEnvelope<T>(
   action: string,
   body: Record<string, unknown>,
+  fetchTimeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<ApiEnvelope<T>> {
   const raw = JSON.stringify(body);
   const headers = buildSignedHeaders(raw);
   const url = `${currentBaseUrl}/?action=${action}`;
-  const response = await crossOriginFetch(url, { method: 'POST', headers, body: raw });
+  const bodySize = raw.length;
+  console.log(`[signedRequest] → POST ${url} (action=${action}, bodyLen=${bodySize})`);
 
-  let payload: ApiEnvelope<T> | null = null;
+  const startTime = Date.now();
+  let response: Response;
   try {
-    payload = (await response.json()) as ApiEnvelope<T>;
-  } catch {
-    // 响应非 JSON（如 HTML 错误页）
+    // 使用 AbortController 给 fetch 本身加超时，防止 Tauri HTTP 插件的连接挂起
+    // 导致后续请求受连接池污染影响（如 404、连接复用错误等）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
+    try {
+      response = await crossOriginFetch(url, { method: 'POST', headers, body: raw, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (fetchError) {
+    const elapsed = Date.now() - startTime;
+    // Tauri HTTP 插件的 abort 不一定抛 DOMException，可能抛普通 Error 且 message 为 "Request canceled"
+    const fetchMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+    const isAbort = (fetchError instanceof DOMException && fetchError.name === 'AbortError')
+      || /cancel|abort/i.test(fetchMsg);
+    const errMsg = isAbort
+      ? `请求超时（${fetchTimeoutMs / 1000}s），action=${action}`
+      : `网络请求失败（action=${action}, ${elapsed}ms）: ${fetchMsg}`;
+    console.error(`[signedRequest] ✗ fetch 异常 action=${action}, elapsed=${elapsed}ms, isAbort=${isAbort}, error=`, fetchError);
+    throw new Error(errMsg);
   }
 
-  if (!payload) {
-    throw new Error(`请求失败（HTTP ${response.status}）`);
+  const fetchElapsed = Date.now() - startTime;
+  console.log(`[signedRequest] ← HTTP ${response.status} (action=${action}, fetchElapsed=${fetchElapsed}ms)`);
+
+  // 用 text() + JSON.parse 替代 response.json()，避免 Tauri HTTP 插件的流式解析挂起
+  let payload: ApiEnvelope<T> | null = null;
+  let rawText = '';
+  try {
+    rawText = await readResponseBody(response, action);
+    payload = JSON.parse(rawText) as ApiEnvelope<T>;
+  } catch (parseError) {
+    const totalElapsed = Date.now() - startTime;
+    const errStr = parseError instanceof Error ? parseError.message : String(parseError);
+    console.error(`[signedRequest] ✗ 响应体读取/解析失败, action=${action}, status=${response.status}, elapsed=${totalElapsed}ms, error=${errStr}`);
+    console.error(`[signedRequest] 响应体前500字符:`, rawText.substring(0, 500));
+    // 检测宝塔 WAF / nginx 错误页面（HTTP 200 但返回 HTML）
+    if (rawText.includes('宝塔WAF') || rawText.includes('缓冲区溢出')) {
+      throw new Error(`服务器WAF拦截（action=${action}, HTTP ${response.status}）: 请求体过大，触发Nginx缓冲区溢出`);
+    }
+    // 对非 200 HTTP 状态码返回更明确的错误，包含 HTTP 状态码信息
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}（action=${action}）: 服务器返回非 JSON 响应`);
+    }
+    throw new Error(`响应解析失败（action=${action}, HTTP ${response.status}）: ${errStr}`);
+  }
+
+  const totalElapsed = Date.now() - startTime;
+  console.log(`[signedRequest] code=${payload.code}, msg="${payload.msg ?? ''}", totalElapsed=${totalElapsed}ms, action=${action}`);
+  if (payload.code !== 200) {
+    console.warn(`[signedRequest] ⚠ 接口返回非200: action=${action}, code=${payload.code}, msg="${payload.msg}"`);
   }
   return payload;
 }
@@ -186,12 +254,47 @@ async function requestEnvelope<T>(
 async function requestAction<T>(
   action: string,
   body: Record<string, unknown>,
+  fetchTimeoutMs?: number,
 ): Promise<T> {
-  const payload = await requestEnvelope<T>(action, body);
+  const payload = await requestEnvelope<T>(action, body, fetchTimeoutMs);
   if (Number(payload.code) !== 200) {
     throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
   }
   return payload.data ?? ({} as T);
+}
+
+/** signedRequest 的可选参数 */
+export type SignedRequestOptions = {
+  /** fetch 超时时间（毫秒），默认 25s。大文件上传等场景可设更长 */
+  fetchTimeoutMs?: number;
+  /** signedRequest 外层 Promise.race 超时时间（毫秒），默认 30s */
+  timeoutMs?: number;
+};
+
+/**
+ * 导出带签名的 API 请求方法，供歌单同步等模块复用。
+ * 与 authService 内部使用相同的签名算法和基地址。
+ * 内置超时保护，避免网络挂起导致同步卡死。
+ * 可通过 options 自定义超时时间（如大文件分块上传需更长超时）。
+ */
+export async function signedRequest<T>(
+  action: string,
+  body: Record<string, unknown>,
+  options?: SignedRequestOptions,
+): Promise<T> {
+  const TIMEOUT_MS = options?.timeoutMs ?? 30_000; // 默认 30 秒超时
+  const fetchTimeoutMs = options?.fetchTimeoutMs; // 默认使用 requestEnvelope 内部的 FETCH_TIMEOUT_MS
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`请求超时（${TIMEOUT_MS / 1000}s），action=${action}`));
+    }, TIMEOUT_MS);
+  });
+
+  return Promise.race([
+    requestAction<T>(action, body, fetchTimeoutMs),
+    timeoutPromise,
+  ]);
 }
 
 /** 将登录接口返回的 data 映射为前端统一的 AuthUser */
@@ -422,39 +525,91 @@ export async function updateProfile(
 }
 
 /**
- * 上传头像。该接口为白名单接口（无需签名），使用 FormData 提交。
+ * 使用 Canvas 压缩图片为 base64 data URL。
+ * Tauri HTTP 插件不支持 FormData 文件上传，因此改为 base64 JSON 方式。
+ */
+function compressImageToDataUrl(
+  file: Blob,
+  maxWidth = 256,
+  quality = 0.75,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round(height * (maxWidth / width));
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas 上下文不可用'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('图片加载失败'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * 上传头像。使用 Canvas 压缩后以 base64 JSON 方式提交（兼容 Tauri HTTP 插件）。
  * POST /api/?action=upload_avatar
  */
 export async function uploadAvatar(
   file: Blob,
-  fileName = 'avatar.jpg',
 ): Promise<{ user: AuthUser; avatar?: string }> {
   const token = getAuthToken();
   const current = getStoredUser();
   if (!token || !current) throw new Error('未登录');
 
-  const form = new FormData();
-  form.append('token', token);
-  form.append('avatar', file, fileName);
+  console.log('[uploadAvatar] 开始压缩图片, size=', file.size, 'type=', file.type);
+  // 前端压缩：256px 宽度，JPEG 质量 75%
+  const avatarData = await compressImageToDataUrl(file, 256, 0.75);
+  console.log('[uploadAvatar] 压缩完成, base64 长度=', avatarData.length);
 
   try {
-    const response = await crossOriginFetch(`${currentBaseUrl}/?action=upload_avatar`, {
-      method: 'POST',
-      body: form,
+    // 头像上传首次请求可能触发 ALTER TABLE（varchar→LONGTEXT），需要更长超时
+    const TIMEOUT_MS = 60_000;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`请求超时（${TIMEOUT_MS / 1000}s），action=upload_avatar`));
+      }, TIMEOUT_MS);
     });
-    if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`);
-    const payload = (await response.json()) as ApiEnvelope<{ user?: AuthUser; avatar?: string }>;
-    if (!payload || Number(payload.code) !== 200) {
-      throw new Error(payload?.msg || '头像上传失败');
-    }
-    const data = payload.data ?? {};
-    const nextUser: AuthUser = data.user ?? {
+
+    const data = await Promise.race([
+      requestAction<{ avatar_url?: string; avatar?: string }>(
+        'upload_avatar',
+        {
+          ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+          avatar_data: avatarData,
+        },
+        55_000, // fetch 超时 55s，留 5s 给外层
+      ),
+      timeoutPromise,
+    ]);
+
+    const avatarUrl = data.avatar ?? data.avatar_url ?? '';
+    const nextUser: AuthUser = {
       ...current,
-      avatar: data.avatar ?? current.avatar,
+      avatar: avatarUrl || current.avatar,
     };
     saveAuth({ token, user: nextUser });
-    return { user: nextUser, avatar: data.avatar };
+    console.log('[uploadAvatar] 上传成功, avatar 长度=', avatarUrl.length);
+    return { user: nextUser, avatar: avatarUrl };
   } catch (error) {
+    console.error('[uploadAvatar] 上传失败:', error);
     throw new Error(getAuthErrorMessage(error, '头像上传失败'));
   }
 }

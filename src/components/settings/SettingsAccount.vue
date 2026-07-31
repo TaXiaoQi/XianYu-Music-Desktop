@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { useToast } from '../../composables/toast';
+import { usePlaylistSync } from '../../composables/usePlaylistSync';
 import {
   DEFAULT_AUTH_BASE_URL,
   getAuthBaseUrl,
@@ -15,6 +16,7 @@ const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
 const { showToast } = useToast();
 const router = useRouter();
+const playlistSync = usePlaylistSync();
 
 const draftBaseUrl = ref(getAuthBaseUrl());
 const isDirty = computed(() => draftBaseUrl.value.trim() !== getAuthBaseUrl());
@@ -58,8 +60,6 @@ function confirmLogout() {
 // 上传选项
 const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [
   { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
-  { key: 'history', label: '播放历史', desc: '同步播放记录到云端' },
-  { key: 'favorites', label: '收藏', desc: '同步收藏的歌曲' },
   { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
 ];
 
@@ -71,6 +71,56 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
     },
   });
 }
+
+// 歌单同步
+const formattedLastSync = computed(() => {
+  if (!playlistSync.lastSyncTime.value) return null;
+  const date = new Date(playlistSync.lastSyncTime.value);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+
+const syncSummary = computed(() => {
+  const r = playlistSync.lastSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploadedPlaylists > 0) parts.push(`上传 ${r.uploadedPlaylists} 个歌单`);
+  if (r.downloadedPlaylists > 0) parts.push(`下载 ${r.downloadedPlaylists} 个歌单`);
+  if (r.uploadedSongs > 0) parts.push(`${r.uploadedSongs} 首歌曲`);
+  if (r.downloadedSongs > 0) parts.push(`${r.downloadedSongs} 首歌曲`);
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+
+const syncErrors = computed(() => {
+  const r = playlistSync.lastSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
+
+// 插件同步
+const formattedLastPluginSync = computed(() => {
+  if (!playlistSync.lastPluginSyncTime.value) return null;
+  const date = new Date(playlistSync.lastPluginSyncTime.value);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+
+const pluginSyncSummary = computed(() => {
+  const r = playlistSync.lastPluginSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploadedPlugins > 0) parts.push(`上传 ${r.uploadedPlugins} 个插件`);
+  if (r.downloadedPlugins > 0) parts.push(`恢复 ${r.downloadedPlugins} 个插件`);
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+
+const pluginSyncErrors = computed(() => {
+  const r = playlistSync.lastPluginSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
 </script>
 
 <template>
@@ -213,6 +263,166 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
       </div>
     </section>
 
+    <!-- 歌单同步 -->
+    <section v-if="authStore.isLoggedIn" class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        歌单同步
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
+        将本地歌单同步到云端，或从云端拉取歌单到本地。支持多设备间歌单共享。
+      </p>
+
+      <!-- 同步状态 -->
+      <div v-if="playlistSync.syncing.value" class="sync-status sync-status--active">
+        <div class="sync-spinner"></div>
+        <span class="sync-status-text">{{ playlistSync.syncProgress.value || '正在同步...' }}</span>
+      </div>
+      <div v-else-if="syncSummary" class="sync-status" :class="{ 'sync-status--error': syncErrors.length > 0 }">
+        <svg v-if="syncErrors.length === 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div class="min-w-0 flex-1">
+          <div class="sync-status-text">上次同步：{{ syncSummary }}</div>
+          <div v-if="formattedLastSync" class="sync-status-time">{{ formattedLastSync }}</div>
+          <!-- 错误详情列表 -->
+          <div v-if="syncErrors.length > 0" class="sync-error-list">
+            <div v-for="(err, idx) in syncErrors" :key="idx" class="sync-error-item">
+              {{ err }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 同步按钮 -->
+      <div class="flex items-stretch gap-2 flex-wrap">
+        <button
+          type="button"
+          class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.syncing.value"
+          @click="playlistSync.syncPlaylists()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+          </svg>
+          立即同步
+        </button>
+        <button
+          type="button"
+          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.syncing.value"
+          @click="playlistSync.uploadOnly()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          仅上传
+        </button>
+        <button
+          type="button"
+          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.syncing.value"
+          @click="playlistSync.downloadOnly()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          仅下载
+        </button>
+      </div>
+
+      <!-- 同步说明 -->
+      <div v-if="!playlistSync.isUploadEnabled()" class="sync-notice">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>歌单上传已关闭，同步时仅下载云端歌单。可在上方「上传」设置中开启。</span>
+      </div>
+    </section>
+
+    <!-- 插件同步 -->
+    <section v-if="authStore.isLoggedIn" class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        插件同步
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
+        将已安装的插件同步到云端，或从云端恢复插件到本地。支持多设备间插件共享。
+      </p>
+
+      <!-- 同步状态 -->
+      <div v-if="playlistSync.pluginSyncing.value" class="sync-status sync-status--active">
+        <div class="sync-spinner"></div>
+        <span class="sync-status-text">{{ playlistSync.pluginSyncProgress.value || '正在同步...' }}</span>
+      </div>
+      <div v-else-if="pluginSyncSummary" class="sync-status" :class="{ 'sync-status--error': pluginSyncErrors.length > 0 }">
+        <svg v-if="pluginSyncErrors.length === 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div class="min-w-0 flex-1">
+          <div class="sync-status-text">上次同步：{{ pluginSyncSummary }}</div>
+          <div v-if="formattedLastPluginSync" class="sync-status-time">{{ formattedLastPluginSync }}</div>
+          <!-- 错误详情列表 -->
+          <div v-if="pluginSyncErrors.length > 0" class="sync-error-list">
+            <div v-for="(err, idx) in pluginSyncErrors" :key="idx" class="sync-error-item">
+              {{ err }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 同步按钮 -->
+      <div class="flex items-stretch gap-2 flex-wrap">
+        <button
+          type="button"
+          class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.pluginSyncing.value"
+          @click="playlistSync.syncPlugins()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+          </svg>
+          立即同步
+        </button>
+        <button
+          type="button"
+          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.pluginSyncing.value"
+          @click="playlistSync.uploadPluginsOnly()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          仅上传
+        </button>
+        <button
+          type="button"
+          class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          :disabled="playlistSync.pluginSyncing.value"
+          @click="playlistSync.downloadPluginsOnly()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          仅下载
+        </button>
+      </div>
+
+      <!-- 同步说明 -->
+      <div v-if="!playlistSync.isPluginUploadEnabled()" class="sync-notice">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>插件上传已关闭，同步时仅下载云端插件。可在上方「上传」设置中开启。</span>
+      </div>
+    </section>
+
     <!-- 退出登录确认弹窗 -->
     <Teleport to="body">
       <Transition name="logout-modal">
@@ -340,6 +550,113 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
 
 .upload-switch.is-on .upload-switch-thumb {
   transform: translateX(18px);
+}
+
+/* 歌单同步 */
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.sync-status--active {
+  background: rgba(236, 65, 65, 0.06);
+  border-color: rgba(236, 65, 65, 0.2);
+}
+
+:global(.dark) .sync-status {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .sync-status--active {
+  background: rgba(236, 65, 65, 0.1);
+  border-color: rgba(236, 65, 65, 0.3);
+}
+
+.sync-status-text {
+  font-size: 0.78rem;
+  color: var(--text-primary, #1f2937);
+  line-height: 1.4;
+}
+
+:global(.dark) .sync-status-text {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.sync-status-time {
+  font-size: 0.68rem;
+  color: var(--text-secondary, #6b7280);
+  margin-top: 2px;
+}
+
+:global(.dark) .sync-status-time {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sync-status--error {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+:global(.dark) .sync-status--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.sync-error-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sync-error-item {
+  font-size: 0.68rem;
+  color: #dc2626;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+:global(.dark) .sync-error-item {
+  color: rgba(248, 113, 113, 0.9);
+}
+
+.sync-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(236, 65, 65, 0.2);
+  border-top-color: #EC4141;
+  border-radius: 50%;
+  animation: sync-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sync-spin {
+  to { transform: rotate(360deg); }
+}
+
+.sync-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #92400e;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+:global(.dark) .sync-notice {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: rgba(252, 211, 77, 0.9);
 }
 
 /* 退出登录确认弹窗 */

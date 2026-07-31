@@ -75,7 +75,7 @@ const createLifecycleDeps = (loadLyrics = vi.fn()) => ({
   flushBufferedLibraryScanBatch: vi.fn(),
   handleSeekCompleted: vi.fn(),
   schedulePersistedState: vi.fn(),
-  flushPersistedState: vi.fn(),
+  flushPersistedState: vi.fn().mockResolvedValue(undefined),
   restorePathBackedState: vi.fn().mockResolvedValue(undefined),
   restoreRecentHistory: vi.fn().mockResolvedValue(undefined),
   refreshStateSongReferences: vi.fn(),
