@@ -46,7 +46,9 @@ async function loadLeaderboard() {
   leaderboardLoading.value = true;
   leaderboardError.value = null;
   try {
-    const data = await fetchLeaderboard(50);
+    // 传递本地统计的听歌时长，先上报到后端再获取排行榜
+    const localDuration = behaviorStats.value?.total_duration ?? 0;
+    const data = await fetchLeaderboard(50, localDuration);
     leaderboard.value = data.leaderboard;
     // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
     if (data.me && !leaderboard.value.some(u => u.isMe)) {
@@ -88,7 +90,7 @@ const { canonicalSongs } = useLibraryBrowse();
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();
   await statisticsStore.ensureLoaded('All');
-  // 非阻塞加载排行榜数据
+  // 统计数据加载完成后，再加载排行榜（需要 total_duration 上报到后端）
   void loadLeaderboard();
 });
 
