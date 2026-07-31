@@ -231,12 +231,14 @@ const QUALITY_OPTIONS = computed(() => {
   return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
 });
 
-/** 当前选择的音质 Key：优先底栏会话覆盖（仅对当前歌生效），回退到设置页默认音质。
- *  底栏改音质只写 sessionQualityOverride，不污染 settings.onlineDefaultQuality，
- *  这样设置播放页的音质选择不受底栏临时切换影响。切歌后 sessionQualityOverride 清空，回退到设置默认。 */
+/**
+ * 当前选择的音质 Key。
+ * 优先使用底部栏会话级临时覆盖（sessionQualityOverride），未设置时回退到设置页的在线播放音质。
+ * 注意：底部栏切换音质只写入 sessionQualityOverride，不修改 settings，因此不会同步到设置页。
+ */
 const selectedQualityKey = computed<QualityKey>(
   () => sessionQualityOverride.value
-    ?? ((settings.value.audio.onlineDefaultQuality as QualityKey) || '320k'),
+    ?? (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
 );
 /** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带）
  *  优先使用实际播放音质（经回退逻辑解析后真正命中的档位），
@@ -289,8 +291,8 @@ const toggleQualityMenu = (e: MouseEvent) => {
 
 const selectQuality = async (qualityKey: QualityKey) => {
   const prev = selectedQualityKey.value;
-  // [底栏音质覆盖] 只写入会话覆盖，不修改 settings.onlineDefaultQuality，
-  // 避免底栏临时切换污染设置播放页的默认音质选择。切歌后自动清空回退到设置默认。
+  // 仅写入会话级临时覆盖，不修改 settings，避免同步到设置页的「在线播放音质」。
+  // 播放链路（playerPlayback）会优先读取 sessionQualityOverride。
   setSessionQualityOverride(qualityKey);
   showQualityMenu.value = false;
 

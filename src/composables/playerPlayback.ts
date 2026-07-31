@@ -93,9 +93,7 @@ export const createPlayerPlayback = ({
     playMode,
     tempQueue,
     currentAvailableQualities,
-    sessionQualityOverride,
   } = storeToRefs(playbackStore);
-  const { setSessionQualityOverride } = playbackStore;
   const { showPlayerDetail } = storeToRefs(uiStore);
 
   const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) => {
@@ -366,12 +364,6 @@ export const createPlayerPlayback = ({
     const requestId = ++playRequestId;
     const previousSong = currentSong.value;
 
-    // [底栏音质覆盖] 切歌（song 变化）时清空会话音质覆盖，回退到设置页默认音质。
-    // 同一首歌重播（底栏改音质触发）时保留覆盖，让新音质生效。
-    if (previousSong?.path && previousSong.path !== song.path) {
-      setSessionQualityOverride(null);
-    }
-
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
     // [渐入渐出] 切歌时取消正在进行的淡入淡出动画
@@ -402,6 +394,11 @@ export const createPlayerPlayback = ({
 
     // [音质跟踪] 切歌时重置实际播放音质，URL 解析成功后重新设置
     playbackStore.currentPlayingQuality = null;
+    // [会话音质] 切换到不同歌曲时清空底部栏会话级音质覆盖，让新歌优先应用设置页的在线播放音质。
+    // 同一首歌重播（如底部栏切音质触发的 replay）保留覆盖，以确保切音质立即生效。
+    if (previousSong && previousSong.path !== song.path) {
+      playbackStore.sessionQualityOverride = null;
+    }
 
     // [歌词获取] LX/plugin:// 歌曲的异步歌词获取已移至 URL 解析之后，
     // 确保插件实例已初始化且 musicUrl 请求已完成（部分插件依赖 song-specific 状态）。
@@ -522,67 +519,6 @@ export const createPlayerPlayback = ({
     let pluginHeaders: Record<string, string> | null = null;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
-    // [歌词获取·并行] 与 URL 解析并行启动异步歌词请求，避免歌词获取失败拖累或阻断播放。
-    // - LX 歌曲：fetchLxSongLyricsRaw 自带 ensure 逻辑，不依赖 URL 解析结果
-    // - plugin:// 歌曲：pluginGetLyric 只依赖插件实例与 rawData，不依赖 musicUrl
-    // 设置 lyrics_raw 时保留 song 引用与 playQueue 同步；切歌后通过 requestId 守卫丢弃过期结果
-    if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
-      void fetchLxSongLyricsRaw(song)
-        .then((lyricsRaw) => {
-          if (!lyricsRaw) {
-            console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
-            return;
-          }
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            console.log('[Lyrics] LX 歌词获取成功但已被切歌:', song.path);
-            return;
-          }
-          if (song.lyrics_raw?.trim()) return; // 已被其它路径填充则跳过
-          song.lyrics_raw = lyricsRaw;
-          const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
-          playQueue.value = playQueue.value.map(item => (
-            item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
-          ));
-          currentSong.value = songWithLyrics;
-          console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
-          void loadLyrics();
-        })
-        .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
-    } else if (song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
-      const pluginSearchResult = song.rawData;
-      if (pluginSearchResult?.pluginId) {
-        void (async () => {
-          try {
-            const { getStoredPlugins, pluginGetLyric } = await import('../services/pluginEngine');
-            const plugins = getStoredPlugins();
-            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-            if (!pluginSource) {
-              console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
-              return;
-            }
-            const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
-            if (!lyricData?.lyricsRaw) {
-              console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
-              return;
-            }
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-              return;
-            }
-            if (song.lyrics_raw?.trim()) return; // 已被 pluginGetMusicInfo 等路径填充则跳过
-            song.lyrics_raw = lyricData.lyricsRaw;
-            const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricData.lyricsRaw };
-            playQueue.value = playQueue.value.map(item => (
-              item.path === song.path ? { ...item, lyrics_raw: lyricData.lyricsRaw } : item
-            ));
-            currentSong.value = songWithLyrics;
-            void loadLyrics();
-          } catch (error) {
-            console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
-          }
-        })();
-      }
-    }
-
     // [音质列表] 在 URL 解析前等待音质列表获取完成，确保后续音质回退逻辑能正确过滤
     await qualityListPromise;
 
@@ -606,9 +542,9 @@ export const createPlayerPlayback = ({
             await ensureLxPluginInstance(matchedPlugin);
             // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
             const cachedInfo = getCachedLxSong(lxSource, songmid);
-            // 读取用户在设置中选择的默认音质（统一 12 档）
-            const requestedQuality = sessionQualityOverride.value
-              ?? (settingsStore.settings.audio.onlineDefaultQuality || '320k');
+            // 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
+            const requestedQuality = playbackStore.sessionQualityOverride
+              || settingsStore.settings.audio.onlineDefaultQuality || '320k';
             const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
 
             // [统一音质解析] 使用 resolveOnlinePlayQuality 构建有序尝试列表：
@@ -675,8 +611,8 @@ export const createPlayerPlayback = ({
             const plugins = getStoredPlugins();
             const pluginSource = plugins.find(p => p.id === song.rawData!.pluginId && p.enabled);
             if (pluginSource) {
-              const requestedQuality = sessionQualityOverride.value
-                ?? (settingsStore.settings.audio.onlineDefaultQuality || '320k');
+              const requestedQuality = playbackStore.sessionQualityOverride
+                || settingsStore.settings.audio.onlineDefaultQuality || '320k';
               const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
               const musicInfo = await pluginGetMusicInfo(pluginSource, song.rawData, requestedQuality, fallbackBehavior, playbackStore.currentAvailableQualities);
               if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
@@ -722,10 +658,10 @@ export const createPlayerPlayback = ({
             const plugins = getStoredPlugins();
             const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
             if (pluginSource) {
-              // 读取用户在设置中选择的统一音质，直接传给插件
+              // 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
               // pluginGetMusicInfo 内部会先尝试新键值（Toskysun 插件），再回退到旧三档（原版 MusicFree）
-              const requestedQuality = sessionQualityOverride.value
-                ?? (settingsStore.settings.audio.onlineDefaultQuality || '320k');
+              const requestedQuality = playbackStore.sessionQualityOverride
+                || settingsStore.settings.audio.onlineDefaultQuality || '320k';
               const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
               const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, requestedQuality, fallbackBehavior, playbackStore.currentAvailableQualities);
               if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
@@ -765,6 +701,72 @@ export const createPlayerPlayback = ({
             console.warn(`[Audio] Failed to resolve plugin:// URL: ${e?.message}`);
           }
         }
+      }
+    }
+
+    // [歌词获取] URL 解析完成后启动异步歌词请求。
+    // 移至此处确保插件实例已初始化且 musicUrl 请求已完成（部分 LX 插件依赖 song-specific 状态才能获取歌词）。
+    // LX 歌曲：通过落雪插件引擎或直接 API 获取歌词
+    if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
+      void fetchLxSongLyricsRaw(song)
+        .then((lyricsRaw) => {
+          if (!lyricsRaw) {
+            console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
+            return;
+          }
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+            console.log('[Lyrics] LX 歌词获取成功但已被切歌:', song.path);
+            return;
+          }
+
+          song.lyrics_raw = lyricsRaw;
+          const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
+          playQueue.value = playQueue.value.map(item => (
+            item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
+          ));
+          currentSong.value = songWithLyrics;
+          console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
+          void loadLyrics();
+        })
+        .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
+    }
+
+    // [歌词获取] plugin:// 歌曲：通过 pluginGetLyric 补获歌词（支持逐字歌词）
+    // 播放入口可能已通过 pluginGetMusicInfo 获取歌词并设置到 lyrics_raw，此处仅在为空时补获
+    if (song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
+      const pluginSearchResult = song.rawData;
+      if (pluginSearchResult?.pluginId) {
+        void (async () => {
+          try {
+            const { getStoredPlugins, pluginGetLyric } = await import('../services/pluginEngine');
+            const plugins = getStoredPlugins();
+            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+            if (!pluginSource) {
+              console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
+              return;
+            }
+            const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
+            if (!lyricData?.lyricsRaw) {
+              console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
+              return;
+            }
+            if (
+              requestId !== playRequestId
+              || currentSong.value?.path !== song.path
+            ) {
+              return;
+            }
+            song.lyrics_raw = lyricData.lyricsRaw;
+            const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricData.lyricsRaw };
+            playQueue.value = playQueue.value.map(item => (
+              item.path === song.path ? { ...item, lyrics_raw: lyricData.lyricsRaw } : item
+            ));
+            currentSong.value = songWithLyrics;
+            void loadLyrics();
+          } catch (error) {
+            console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
+          }
+        })();
       }
     }
 
