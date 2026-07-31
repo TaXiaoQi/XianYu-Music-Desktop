@@ -627,7 +627,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       };
     }
 
-    const highlightStop = `${Math.round(progress * 100)}%`;
+    const highlightStop = `${(progress * 100).toFixed(2)}%`;
 
     return {
       backgroundImage: `linear-gradient(90deg, var(--desktop-accent-a) 0%, var(--desktop-accent-b) ${highlightStop}, var(--desktop-text-primary) ${highlightStop}, var(--desktop-text-primary) 100%)`,
@@ -650,7 +650,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       };
     }
 
-    const highlightStop = `${Math.round(progress * 100)}%`;
+    const highlightStop = `${(progress * 100).toFixed(2)}%`;
 
     return {
       backgroundImage: `linear-gradient(90deg, var(--desktop-romaji-played-color) 0%, var(--desktop-romaji-played-color) ${highlightStop}, var(--desktop-romaji-unplayed-color) ${highlightStop}, var(--desktop-romaji-unplayed-color) 100%)`,
@@ -675,7 +675,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       };
     }
 
-    const highlightStop = `${Math.round(progress * 100)}%`;
+    const highlightStop = `${(progress * 100).toFixed(2)}%`;
 
     return {
       backgroundImage: `linear-gradient(90deg, var(--desktop-romaji-played-color) 0%, var(--desktop-romaji-played-color) ${highlightStop}, var(--desktop-romaji-unplayed-color) ${highlightStop}, var(--desktop-romaji-unplayed-color) 100%)`,
