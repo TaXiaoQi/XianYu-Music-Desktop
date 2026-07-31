@@ -1,10 +1,12 @@
 import { computed, ref } from 'vue';
 
+import type { Song } from '../../types';
 import { useToast } from '../../composables/toast';
 import { useCollectionsStore } from './store';
 
 const isAddToPlaylistDialogVisible = ref(false);
 const addToPlaylistTargetSongPaths = ref<string[]>([]);
+const addToPlaylistTargetSongs = ref<Song[]>([]);
 let afterAddToPlaylist: (() => void) | null = null;
 
 const normalizeSongPaths = (songPaths: string | string[]) => {
@@ -19,12 +21,13 @@ export function useAddToPlaylistDialog() {
   const closeAddToPlaylistDialog = () => {
     isAddToPlaylistDialogVisible.value = false;
     addToPlaylistTargetSongPaths.value = [];
+    addToPlaylistTargetSongs.value = [];
     afterAddToPlaylist = null;
   };
 
   const openAddToPlaylistDialog = (
     songPaths: string | string[],
-    options: { onAdded?: () => void } = {},
+    options: { onAdded?: () => void; songs?: Song[] } = {},
   ) => {
     const nextSongPaths = normalizeSongPaths(songPaths);
     if (nextSongPaths.length === 0) {
@@ -32,6 +35,7 @@ export function useAddToPlaylistDialog() {
     }
 
     addToPlaylistTargetSongPaths.value = nextSongPaths;
+    addToPlaylistTargetSongs.value = options.songs ?? [];
     isAddToPlaylistDialogVisible.value = true;
     afterAddToPlaylist = options.onAdded ?? null;
     return true;
@@ -41,6 +45,7 @@ export function useAddToPlaylistDialog() {
     const addedCount = collectionsStore.addSongsToPlaylist(
       playlistId,
       addToPlaylistTargetSongPaths.value,
+      addToPlaylistTargetSongs.value.length > 0 ? addToPlaylistTargetSongs.value : undefined,
     );
     const onAdded = afterAddToPlaylist;
 

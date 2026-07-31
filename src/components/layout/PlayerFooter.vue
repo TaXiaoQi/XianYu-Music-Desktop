@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -9,6 +9,8 @@ import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 import DownloadDialog from '../player/DownloadDialog.vue';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
+import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import type { RemoteDownloadProgress } from '../../types';
@@ -18,11 +20,12 @@ import {
   readStoredProgressHidden
 } from './playerFooterProgress';
 
-const { 
+const {
   currentSong,
+  currentAvailableQualities,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute, toggleMode, togglePlaylist,
-  togglePlayerDetail, seekTo, formatDuration
+  togglePlayerDetail, seekTo, formatDuration, playSong,
 } = usePlaybackController();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
 
@@ -31,14 +34,68 @@ const handleOpenDetail = () => {
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
+const { settings, patchSettings: patchAudioSettings } = useSettings();
 
 // --- 下载功能 ---
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
 const showDownloadDialog = ref(false);
+
+// 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
+const downloadedRecord = ref<DownloadRecord | null>(null);
+const showRedownloadConfirm = ref(false);
+// 防止快速切歌时旧的异步检测结果覆盖新歌状态
+let downloadCheckId = 0;
+
+/** 检测当前歌曲是否已下载（文件仍存在）。文件已被删除时记录会被自动清理。 */
+const refreshDownloadedState = async () => {
+  const requestId = ++downloadCheckId;
+  const song = currentSong.value;
+  const songPath = song?.cue_source_path || song?.path || '';
+
+  if (!isOnlineSong.value || !songPath) {
+    downloadedRecord.value = null;
+    return;
+  }
+
+  const record = await checkDownloadExists(songPath);
+  // 检测期间已切歌，丢弃这次结果
+  if (requestId !== downloadCheckId) return;
+  downloadedRecord.value = record;
+};
+
+watch(
+  () => currentSong.value?.cue_source_path || currentSong.value?.path,
+  () => { void refreshDownloadedState(); },
+  { immediate: true },
+);
+
 const handleDownloadClick = () => {
   if (!isOnlineSong.value) return;
+  // 已下载过：先弹确认，让用户决定是否重新下载
+  if (downloadedRecord.value) {
+    showRedownloadConfirm.value = true;
+    return;
+  }
   showDownloadDialog.value = true;
 };
+
+/** 确认重新下载：打开原本的下载对话框（确认弹窗由 ModernModal 自行关闭） */
+const handleConfirmRedownload = () => {
+  showDownloadDialog.value = true;
+};
+
+const downloadButtonTitle = computed(() => {
+  if (!isOnlineSong.value) return '本地歌曲无法下载';
+  if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}`;
+  return '下载歌曲';
+});
+
+const redownloadContent = computed(() => {
+  const name = downloadedRecord.value?.fileName || '';
+  return name
+    ? `此歌曲已下载过了（${name}），是否要重新下载？`
+    : '此歌曲已下载过了，是否要重新下载？';
+});
 
 // --- Context Menu State ---
 const showContextMenu = ref(false);
@@ -62,27 +119,83 @@ const isProgressHidden = ref(readStoredProgressHidden(localStorage));
 const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
 
-// 音质选择（UI 占位，功能待后端开发完毕合并）
-const QUALITY_OPTIONS = [
-  { label: '标准', value: 'standard' },
-  { label: 'HQ', value: 'hq' },
-  { label: 'SQ', value: 'sq' },
-  { label: 'Hi-Res', value: 'hires' },
-] as const;
+// 音质选择：使用统一 QualityKey（12 档：mgg / 128k / 192k / 320k / flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master）
+const ONLINE_QUALITY_KEY = 'online_quality';
+import type { QualityKey } from '../../types';
+import { QUALITY_META } from '../../types';
 
-const currentQuality = ref('标准');
+/** 全部音质选项（按 rank 排序） */
+const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description: string }> =
+  (Object.keys(QUALITY_META) as QualityKey[])
+    .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
+    .map(k => ({
+      label: QUALITY_META[k].label,
+      value: k,
+      description: QUALITY_META[k].description,
+    }));
+
+/** 当前歌曲可用的音质选项（根据插件/音源实际支持过滤，null 时回退到全部） */
+const QUALITY_OPTIONS = computed(() => {
+  const supported = currentAvailableQualities.value;
+  if (!supported || supported.length === 0) return ALL_QUALITY_OPTIONS;
+  return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
+});
+
+/** 当前选择的音质 Key，来源于 settings store（默认 '320k' = HQ） */
+const selectedQualityKey = computed<QualityKey>(
+  () => (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
+);
+// 保持 localStorage 与 settings store 一致（playerPlayback 通过 localStorage 读取音质）
+watch(selectedQualityKey, (value) => {
+  localStorage.setItem(ONLINE_QUALITY_KEY, value);
+}, { immediate: true });
+/** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带） */
+const currentQualityLabel = computed(
+  () => QUALITY_META[selectedQualityKey.value]?.label ?? 'HQ',
+);
+
+/** 本地歌曲：取 format/codec/container 字段，或从路径末尾提取扩展名，全大写显示 */
+const localFormatLabel = computed(() => {
+  const song = currentSong.value;
+  if (!song) return '';
+  const raw = song.format || song.codec || song.container;
+  if (raw) return raw.toUpperCase();
+  const ext = song.path.split('.').pop();
+  return ext ? ext.toUpperCase() : '';
+});
+
+/** 按钮实际显示文字：在线歌曲显示音质标签，本地歌曲显示格式后缀名 */
+const qualityButtonLabel = computed(() =>
+  isQualitySelectableSong.value ? currentQualityLabel.value : localFormatLabel.value,
+);
+
+/** 是否是支持音质切换的在线歌曲（lx:// 或 plugin:// 协议） */
+const isQualitySelectableSong = computed(() => {
+  const path = currentSong.value?.path ?? '';
+  return path.startsWith('lx://') || path.startsWith('plugin://');
+});
+
 const showQualityMenu = ref(false);
 const qualityButtonRef = ref<HTMLElement | null>(null);
 const qualityMenuRef = ref<HTMLElement | null>(null);
 
 const toggleQualityMenu = (e: MouseEvent) => {
+  if (!isQualitySelectableSong.value) return; // 本地歌曲或不支持的在线歌曲：禁用
   e.stopPropagation();
   showQualityMenu.value = !showQualityMenu.value;
 };
 
-const selectQuality = (label: string) => {
-  currentQuality.value = label;
+const selectQuality = async (qualityKey: QualityKey) => {
+  const prev = selectedQualityKey.value;
+  // 写入 settings store（持久化 + 设置页联动），并同步 localStorage 供 playerPlayback 读取
+  patchAudioSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: qualityKey } });
+  localStorage.setItem(ONLINE_QUALITY_KEY, qualityKey);
   showQualityMenu.value = false;
+
+  // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
+  if (qualityKey !== prev && isQualitySelectableSong.value && currentSong.value) {
+    await playSong(currentSong.value, { startTime: currentTime.value, preserveQueue: true });
+  }
 };
 
 const toggleVisualizer = () => {
@@ -236,8 +349,6 @@ const footerToolsRef = ref<HTMLElement | null>(null);
 const toggleFooterTools = () => {
   showFooterTools.value = !showFooterTools.value;
 };
-
-const { settings } = useSettings();
 
 watch(
   () => settings.value.audio.showEqualizerInFooter,
@@ -546,19 +657,27 @@ onUnmounted(() => {
       class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
-      <!-- 音质选择按钮 -->
+      <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲变暗并显示禁止指针 -->
       <div class="relative flex items-center justify-center h-full z-[70]">
         <button
           ref="qualityButtonRef"
           @click="toggleQualityMenu"
           class="flex shrink-0 items-center gap-1 whitespace-nowrap px-2 h-7 text-[11px] font-semibold rounded-full transition-colors select-none"
-          :class="showQualityMenu
-            ? 'text-[#EC4141] bg-[#EC4141]/10'
-            : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
-          title="音质选择"
+          :class="[
+            !isQualitySelectableSong
+              ? (showPlayerDetail
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-gray-300 dark:text-white/20 cursor-not-allowed')
+              : showQualityMenu
+                ? 'text-[#EC4141] bg-[#EC4141]/10'
+                : (showPlayerDetail
+                    ? 'text-white/60 hover:text-white hover:bg-white/10'
+                    : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')
+          ]"
+          :title="isQualitySelectableSong ? '音质选择' : '本地歌曲不支持音质切换'"
         >
           <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
-          <span class="whitespace-nowrap">{{ currentQuality }}</span>
+          <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
         </button>
 
         <transition name="fade-scale">
@@ -574,14 +693,15 @@ onUnmounted(() => {
               <button
                 v-for="opt in QUALITY_OPTIONS"
                 :key="opt.value"
-                @click="selectQuality(opt.label)"
+                @click="selectQuality(opt.value)"
                 class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="currentQuality === opt.label
+                :class="selectedQualityKey === opt.value
                   ? 'text-[#EC4141] bg-[#EC4141]/8'
                   : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
               >
                 <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span v-if="currentQuality === opt.label" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                <span v-if="selectedQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
               </button>
             </div>
           </div>
@@ -632,21 +752,27 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 在线歌曲下载：位于更多工具与音量设置之间 -->
+      <!-- 在线歌曲下载：位于更多工具与音量设置之间。
+           已下载且文件仍存在时显示对勾图标，点击后先确认是否重新下载 -->
       <button
         @mousedown.stop
         @click.stop="handleDownloadClick"
         class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
-        :class="isOnlineSong
+        :class="!isOnlineSong
           ? (showPlayerDetail
-            ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
-            : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
-          : (showPlayerDetail
             ? 'text-white/30 cursor-not-allowed'
-            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')"
-        :title="isOnlineSong ? '下载歌曲' : '本地歌曲无法下载'"
+            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')
+          : downloadedRecord
+            ? (showPlayerDetail
+              ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
+              : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+            : (showPlayerDetail
+              ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+              : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
+        :title="downloadButtonTitle"
       >
-        <Download class="h-5 w-5" />
+        <CircleCheck v-if="isOnlineSong && downloadedRecord" class="h-5 w-5" />
+        <Download v-else class="h-5 w-5" />
       </button>
 
       <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/桌面歌词/均衡器/固定） -->
@@ -752,7 +878,22 @@ onUnmounted(() => {
 
         />
 
-        <DownloadDialog v-model:visible="showDownloadDialog" :song="currentSong" />
+        <DownloadDialog
+          v-model:visible="showDownloadDialog"
+          :song="currentSong"
+          @downloaded="refreshDownloadedState"
+        />
+
+        <!-- 已下载确认：询问是否重新下载 -->
+        <ModernModal
+          v-model:visible="showRedownloadConfirm"
+          title="歌曲已下载"
+          :content="redownloadContent"
+          cancel-text="取消"
+          confirm-text="重新下载"
+          type="info"
+          @confirm="handleConfirmRedownload"
+        />
 
       </footer>
 

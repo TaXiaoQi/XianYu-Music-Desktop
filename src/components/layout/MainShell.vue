@@ -172,7 +172,7 @@ onMounted(() => {
                 :is="Component"
                 :key="route.path"
               />
-              <KeepAlive v-else include="Home">
+              <KeepAlive v-else include="Home,Search">
                 <component
                   :is="Component"
                   :key="String(route.name ?? route.path)"

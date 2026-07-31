@@ -3,14 +3,22 @@ import { computed, ref, watch, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { usePlaybackStore } from '../../features/playback/store';
 import { useLibraryStore } from '../../features/library/store';
 
 const libraryStore = useLibraryStore();
 const { sourceSongs } = storeToRefs(libraryStore);
 const { playQueue, currentSong, playSong, formatDuration } = usePlaybackController();
+const playbackStore = usePlaybackStore();
+const { tempQueue } = storeToRefs(playbackStore);
 
+// 合并显示：下一首播放（tempQueue）在前，播放队列（playQueue）在后；
+// 两者皆空时回退到当前视图歌曲列表
 const queue = computed(() => {
-  return playQueue.value.length > 0 ? playQueue.value : sourceSongs.value;
+  if (playQueue.value.length > 0 || tempQueue.value.length > 0) {
+    return [...tempQueue.value, ...playQueue.value];
+  }
+  return sourceSongs.value;
 });
 
 const itemRefs = ref<HTMLElement[]>([]);

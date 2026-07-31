@@ -9,6 +9,8 @@ export const windowApi = {
     tauriInvoke('set_dark_mode_for_window', { dark }),
   getWindowMaterialCapabilities: () =>
     tauriInvoke('get_window_material_capabilities') as Promise<WindowMaterialCapabilities>,
+  refreshWindowMaterialActiveState: (keepActive: boolean) =>
+    tauriInvoke('refresh_window_material_active_state', { keepActive }),
   getForegroundFullscreenState: () =>
     tauriInvoke('get_foreground_fullscreen_state') as Promise<ForegroundFullscreenState>,
   refreshCurrentWindowTopmost: (enabled: boolean) =>

@@ -53,8 +53,8 @@
     <!-- 搜索结果列表 -->
     <div class="flex-1 flex overflow-hidden relative">
       <section class="flex-1 flex overflow-hidden">
-        <!-- 非音乐类型 + 非本地源：开发中提示 -->
-        <div v-if="activeSearchType !== 'track' && !isLocalSource" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+        <!-- 非音乐类型 + LX 插件：开发中提示（本地与 MusicFree 已支持） -->
+        <div v-if="activeSearchType !== 'track' && !isLocalSource && selectedSourceItem?.type === 'lx'" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
@@ -185,7 +185,7 @@
                   {{ item.album }}
                 </td>
                 <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-                  {{ item.duration ? formatMfDuration(item.duration) : '--:--' }}
+                  {{ item.duration ? formatMfDuration(Math.floor(item.duration / 1000)) : '--:--' }}
                 </td>
               </tr>
               <!-- 本地搜索结果 -->
@@ -241,9 +241,10 @@
           </div>
         </div>
 
-        <!-- 歌手搜索结果（本地） -->
+        <!-- 歌手搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'artist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地歌手 -->
             <button
               v-for="artist in localArtistResults"
               :key="artist.id"
@@ -266,12 +267,30 @@
               <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50">{{ artist.count }} 首</p>
             </button>
+            <!-- 插件歌手 -->
+            <button
+              v-for="artist in pluginArtistResults"
+              :key="`p-artist-${artist.id}`"
+              type="button"
+              class="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginArtistClick(artist)"
+            >
+              <div class="w-20 h-20 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="artist.avatarUrl" :src="artist.avatarUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50">{{ artist.songCount ? `${artist.songCount} 首` : '查看' }}</p>
+            </button>
           </div>
         </div>
 
-        <!-- 专辑搜索结果（本地） -->
+        <!-- 专辑搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'album'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地专辑 -->
             <button
               v-for="album in localAlbumResults"
               :key="album.key"
@@ -294,12 +313,30 @@
               <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
             </button>
+            <!-- 插件专辑 -->
+            <button
+              v-for="album in pluginAlbumResults"
+              :key="`p-album-${album.id}`"
+              type="button"
+              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginAlbumClick(album)"
+            >
+              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="album.coverUrl" :src="album.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
+            </button>
           </div>
         </div>
 
-        <!-- 歌单搜索结果（本地） -->
+        <!-- 歌单搜索结果（本地 + 插件） -->
         <div v-else-if="activeSearchType === 'playlist'" class="flex-1 overflow-y-auto custom-scrollbar p-4">
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <!-- 本地歌单 -->
             <button
               v-for="playlist in localPlaylistResults"
               :key="playlist.id"
@@ -322,6 +359,23 @@
               <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.name }}</p>
               <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.songPaths.length }} 首</p>
             </button>
+            <!-- 插件歌单 -->
+            <button
+              v-for="playlist in pluginPlaylistResults"
+              :key="`p-playlist-${playlist.id}`"
+              type="button"
+              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
+              @click="handlePluginPlaylistClick(playlist)"
+            >
+              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
+                <img v-if="playlist.coverUrl" :src="playlist.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.title }}</p>
+              <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.trackCount ? `${playlist.trackCount} 首` : '查看' }}</p>
+            </button>
           </div>
         </div>
       </section>
@@ -335,14 +389,17 @@
       :y="contextMenuY"
       :song="contextMenuTargetSong"
       :is-playlist-view="false"
+      :is-online-search="true"
       @close="showContextMenu = false"
       @add-to-playlist="openAddToPlaylistSelection"
+      @view-online-artist="handleOnlineViewArtist"
+      @view-online-album="handleOnlineViewAlbum"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -353,6 +410,8 @@ import { useNavigationStore } from '../shared/stores/navigation';
 import { useLibraryStore } from '../features/library/store';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
 import { useCollectionsStore } from '../features/collections/store';
+import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
+import { useToast } from '../composables/toast';
 import {
   lxSearch,
   lxGetPic,
@@ -362,8 +421,20 @@ import {
 } from '../services/lxMusicSdk';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
-import { getStoredPlugins, pluginSearch, pluginGetMusicInfo, pluginGetLyric, pluginGetCover } from '../services/pluginEngine';
-import type { PluginSource, PluginSearchResult } from '../types';
+import {
+  getStoredPlugins,
+  pluginSearch,
+  pluginGetMusicInfo,
+  pluginGetLyric,
+  pluginGetCover,
+  pluginArtistSearch,
+  pluginAlbumSearch,
+  pluginPlaylistSearch,
+  pluginSupportsSearchType,
+} from '../services/pluginEngine';
+import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
+import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
+import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -375,6 +446,8 @@ const uiStore = useUiStore();
 const navigationStore = useNavigationStore();
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+const { showToast } = useToast();
 const { searchQuery } = storeToRefs(navigationStore);
 const { canonicalSongs } = storeToRefs(libraryStore);
 const { artistList, albumList } = useLibraryBrowse();
@@ -472,6 +545,10 @@ const localSearchResults = shallowRef<Song[]>([]);
 const localArtistResults = shallowRef<ArtistCatalogItem[]>([]);
 const localAlbumResults = shallowRef<AlbumCatalogItem[]>([]);
 const localPlaylistResults = shallowRef<Playlist[]>([]);
+// 插件来源的歌手/专辑/歌单搜索结果
+const pluginArtistResults = shallowRef<PluginArtistResult[]>([]);
+const pluginAlbumResults = shallowRef<PluginAlbumResult[]>([]);
+const pluginPlaylistResults = shallowRef<PluginPlaylistSearchResult[]>([]);
 const resultsScrollRef = ref<HTMLElement | null>(null);
 
 // 封面加载任务版本号，用于在新搜索时取消旧任务
@@ -496,6 +573,10 @@ const resultCount = computed(() => {
     if (activeSearchType.value === 'album') return localAlbumResults.value.length;
     if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length;
   }
+  // 插件来源
+  if (activeSearchType.value === 'artist') return pluginArtistResults.value.length;
+  if (activeSearchType.value === 'album') return pluginAlbumResults.value.length;
+  if (activeSearchType.value === 'playlist') return pluginPlaylistResults.value.length;
   return 0;
 });
 
@@ -504,9 +585,15 @@ const hasNoResults = computed(() => {
   if (activeSearchType.value === 'track') {
     return lxSearchResults.value.length === 0 && pluginSearchResults.value.length === 0 && localSearchResults.value.length === 0;
   }
-  if (activeSearchType.value === 'artist') return localArtistResults.value.length === 0;
-  if (activeSearchType.value === 'album') return localAlbumResults.value.length === 0;
-  if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length === 0;
+  if (isLocalSource.value) {
+    if (activeSearchType.value === 'artist') return localArtistResults.value.length === 0;
+    if (activeSearchType.value === 'album') return localAlbumResults.value.length === 0;
+    if (activeSearchType.value === 'playlist') return localPlaylistResults.value.length === 0;
+  }
+  // 插件来源
+  if (activeSearchType.value === 'artist') return pluginArtistResults.value.length === 0;
+  if (activeSearchType.value === 'album') return pluginAlbumResults.value.length === 0;
+  if (activeSearchType.value === 'playlist') return pluginPlaylistResults.value.length === 0;
   return true;
 });
 
@@ -522,12 +609,15 @@ const performSearch = async () => {
     localArtistResults.value = [];
     localAlbumResults.value = [];
     localPlaylistResults.value = [];
+    pluginArtistResults.value = [];
+    pluginAlbumResults.value = [];
+    pluginPlaylistResults.value = [];
     hasMore.value = false;
     return;
   }
 
-  // 非音乐类型搜索仅支持本地来源
-  if (activeSearchType.value !== 'track' && !isLocalSource.value) {
+  // 非音乐类型搜索：本地来源与 MusicFree 插件支持；LX 插件不支持（仅音乐）
+  if (activeSearchType.value !== 'track' && selectedSourceItem.value?.type === 'lx') {
     return;
   }
 
@@ -549,6 +639,9 @@ const performSearch = async () => {
       // 本地搜索：根据搜索类型分别索引
       pluginSearchResults.value = [];
       lxSearchResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
       // 清空所有类型结果，仅填充当前类型
       localSearchResults.value = [];
       localArtistResults.value = [];
@@ -584,6 +677,9 @@ const performSearch = async () => {
     } else if (source.type === 'lx' && source.lxSourceId) {
       // 落雪 LX 插件搜索
       pluginSearchResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
       localSearchResults.value = [];
       const result = await lxSearch(source.lxSourceId, query, 1);
       if (searchAbortController.signal.aborted) return;
@@ -594,10 +690,53 @@ const performSearch = async () => {
       // MusicFree 插件搜索
       lxSearchResults.value = [];
       localSearchResults.value = [];
-      const results = await pluginSearch(source.source, query, 1, 30);
-      if (searchAbortController.signal.aborted) return;
-      pluginSearchResults.value = results;
-      hasMore.value = results.length >= 30;
+      localArtistResults.value = [];
+      localAlbumResults.value = [];
+      localPlaylistResults.value = [];
+
+      if (activeSearchType.value === 'track') {
+        // 音乐搜索
+        pluginArtistResults.value = [];
+        pluginAlbumResults.value = [];
+        pluginPlaylistResults.value = [];
+        const results = await pluginSearch(source.source, query, 1, 30);
+        if (searchAbortController.signal.aborted) return;
+        pluginSearchResults.value = results;
+        hasMore.value = results.length >= 30;
+      } else if (activeSearchType.value === 'artist') {
+        // 歌手搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'artist')) {
+          const results = await pluginArtistSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginArtistResults.value = results;
+        } else {
+          pluginArtistResults.value = [];
+        }
+        hasMore.value = false;
+      } else if (activeSearchType.value === 'album') {
+        // 专辑搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'album')) {
+          const results = await pluginAlbumSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginAlbumResults.value = results;
+        } else {
+          pluginAlbumResults.value = [];
+        }
+        hasMore.value = false;
+      } else if (activeSearchType.value === 'playlist') {
+        // 歌单搜索
+        pluginSearchResults.value = [];
+        if (pluginSupportsSearchType(source.source, 'sheet')) {
+          const results = await pluginPlaylistSearch(source.source, query, 1);
+          if (searchAbortController.signal.aborted) return;
+          pluginPlaylistResults.value = results;
+        } else {
+          pluginPlaylistResults.value = [];
+        }
+        hasMore.value = false;
+      }
     }
   } catch (err) {
     if (!searchAbortController.signal.aborted) {
@@ -608,6 +747,9 @@ const performSearch = async () => {
       localArtistResults.value = [];
       localAlbumResults.value = [];
       localPlaylistResults.value = [];
+      pluginArtistResults.value = [];
+      pluginAlbumResults.value = [];
+      pluginPlaylistResults.value = [];
     }
   } finally {
     if (!searchAbortController.signal.aborted) {
@@ -857,8 +999,8 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
   const pluginSrc = mfSource.source;
 
   try {
-    // 1. 通过插件获取播放 URL（与 MusicFree PluginMethods.getMediaSource 完全一致）
-    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, 'standard');
+    // 1. 通过插件获取播放 URL（必须，阻塞播放）
+    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, '320k');
     if (!musicInfo?.url) {
       console.warn('[MusicFree] 无法获取播放URL:', item.title);
       return;
@@ -868,7 +1010,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     const song: Song = {
       name: item.title,
       title: item.title,
-      path: musicInfo.url,
+      path: `plugin://${item.platform}/${item.id}`,
       artist: item.artist || '未知歌手',
       artist_names: artistNames,
       effective_artist_names: artistNames,
@@ -881,9 +1023,11 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
       source_type: 'remote',
       remote_source_id: musicInfo.url,
+      remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
+      rawData: item,
     } as any;
 
-    // 2. 从 getMediaSource 返回值中提取歌词
+    // 从 getMediaSource 返回值中提取歌词（如果有）
     if (musicInfo.lyric) {
       (song as any).lyrics_raw = musicInfo.lyric;
       if (musicInfo.tlyric) {
@@ -891,36 +1035,13 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       }
     }
 
-    // 3. 如果没有歌词，通过插件获取
-    if (!(song as any).lyrics_raw) {
-      try {
-        const lyricData = await pluginGetLyric(pluginSrc, item);
-        if (lyricData?.lyric) {
-          (song as any).lyrics_raw = lyricData.lyric;
-          if (lyricData.tlyric) {
-            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
-          }
-        }
-      } catch { /* ignore */ }
-    }
-
-    // 4. 如果没有封面，通过插件获取
-    if (!song.cover_thumb_path) {
-      try {
-        const coverUrl = await pluginGetCover(pluginSrc, item);
-        if (coverUrl) {
-          song.cover_thumb_path = coverUrl;
-        }
-      } catch { /* ignore */ }
-    }
-
-    // 5. 设置播放队列（与 YinDongMusic 完全一致）
+    // 2. 设置播放队列（所有歌曲统一使用 plugin:// 协议前缀并携带 rawData）
     const allSongs = pluginSearchResults.value.map((mfItem) => {
       const aNames = mfItem.artist ? mfItem.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
       return {
         name: mfItem.title,
         title: mfItem.title,
-        path: '',
+        path: `plugin://${mfItem.platform}/${mfItem.id}`,
         artist: mfItem.artist || '未知歌手',
         artist_names: aNames,
         effective_artist_names: aNames,
@@ -932,6 +1053,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
         duration: Math.floor((mfItem.duration || 0) / 1000),
         cover_thumb_path: mfItem.coverUrl || '',
         source_type: 'remote' as const,
+        rawData: mfItem,
       } as Song;
     });
     const songIndex = allSongs.findIndex(s => s.name === song.name && s.artist === song.artist);
@@ -939,7 +1061,26 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       allSongs[songIndex] = song;
     }
 
+    // 3. 立即播放（不等歌词/封面，让用户尽快听到声音）
     void playSong(song, { insertAfterCurrent: true });
+
+    // 4. 后台异步获取歌词和封面（不阻塞播放）
+    // playSong 内部已有歌词/封面补获逻辑，这里仅作为预获取优化
+    if (!(song as any).lyrics_raw) {
+      void pluginGetLyric(pluginSrc, item).then((lyricData) => {
+        if (lyricData?.lyric) {
+          (song as any).lyrics_raw = lyricData.lyric;
+          if (lyricData.tlyric) {
+            (song as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
+          }
+        }
+      }).catch(() => {});
+    }
+    if (!song.cover_thumb_path) {
+      void pluginGetCover(pluginSrc, item).then((coverUrl) => {
+        if (coverUrl) song.cover_thumb_path = coverUrl;
+      }).catch(() => {});
+    }
   } catch (e: any) {
     console.warn('[MusicFree] 播放失败:', e?.message);
   }
@@ -964,6 +1105,7 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
     cover_thumb_path: item.coverUrl || '',
     source_type: 'remote',
     remote_source_id: `plugin://${item.platform}/${item.id}`,
+    rawData: item,
   } as any;
   contextMenuX.value = e.clientX;
   contextMenuY.value = e.clientY;
@@ -973,6 +1115,23 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
 // 右键菜单
 const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
   e.preventDefault();
+  // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
+  // 下一首播放/添加到队尾等操作会延迟调用 playSong，必须提前缓存否则解析失败
+  cacheLxSong(item);
+  cacheLxSongInfo(item.source, item.songmid, {
+    songmid: item.songmid,
+    hash: item.hash,
+    name: item.name,
+    singer: item.singer,
+    albumName: item.albumName,
+    interval: item.interval,
+    songId: item.songId,
+    strMediaMid: item.strMediaMid,
+    albumMid: item.albumMid,
+    albumId: item.albumId,
+    copyrightId: item.copyrightId,
+    source: item.source,
+  });
   const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
   contextMenuTargetSong.value = {
     name: item.name,
@@ -1002,8 +1161,100 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
 };
 
 const openAddToPlaylistSelection = () => {
-  const songPaths = contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : [];
-  console.warn('Add lx song to playlist - path:', songPaths);
+  const song = contextMenuTargetSong.value;
+  if (!song) return;
+
+  // 缓存在线歌曲元信息到 extraSongPool，确保歌单中能正确显示
+  libraryStore.setExtraSong(song);
+
+  // 触发原生收藏到歌单弹窗，同时传入完整 Song 对象用于持久化
+  openAddToPlaylistDialog([song.path], { songs: [song] });
+};
+
+// ==================== 在线搜索右键：歌手/专辑导航 ====================
+
+const handleOnlineViewArtist = async (song: Song) => {
+  const artistName = song.effective_artist_names?.[0] || song.artist_names?.[0] || song.artist || '';
+  if (!artistName || artistName === '未知歌手') {
+    showToast('当前歌曲缺少歌手信息', 'info');
+    return;
+  }
+
+  const pluginSource = selectedSourceItem.value?.source;
+  if (!pluginSource) {
+    showToast('当前音源不支持查看歌手', 'info');
+    return;
+  }
+
+  // MusicFree 插件：搜索歌手后跳转到歌手详情页
+  if (selectedSourceItem.value?.type === 'musicfree') {
+    try {
+      const results = await pluginArtistSearch(pluginSource, artistName, 1);
+      if (results.length === 0) {
+        showToast('未找到该歌手', 'info');
+        return;
+      }
+      const artist = results[0];
+      onlineDetailStore.setContext({
+        type: 'artist',
+        title: artist.name,
+        subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+        coverUrl: artist.avatarUrl,
+        pluginSource,
+        rawData: artist.rawData,
+        sourceSearchType: activeSearchType.value as SourceSearchType,
+      });
+      void router.push({ path: '/online-detail', query: { type: 'artist' } });
+    } catch (e: any) {
+      showToast(`查看歌手失败: ${e?.message || e}`, 'error');
+    }
+    return;
+  }
+
+  // LX 落雪源暂不支持歌手详情页
+  showToast('当前音源暂不支持查看歌手', 'info');
+};
+
+const handleOnlineViewAlbum = async (song: Song) => {
+  const albumName = song.album || '';
+  if (!albumName || albumName === '未知专辑') {
+    showToast('当前歌曲缺少专辑信息', 'info');
+    return;
+  }
+
+  const pluginSource = selectedSourceItem.value?.source;
+  if (!pluginSource) {
+    showToast('当前音源不支持查看专辑', 'info');
+    return;
+  }
+
+  // MusicFree 插件：搜索专辑后跳转到专辑详情页
+  if (selectedSourceItem.value?.type === 'musicfree') {
+    try {
+      const results = await pluginAlbumSearch(pluginSource, albumName, 1);
+      if (results.length === 0) {
+        showToast('未找到该专辑', 'info');
+        return;
+      }
+      const album = results[0];
+      onlineDetailStore.setContext({
+        type: 'album',
+        title: album.name,
+        subtitle: album.artist,
+        coverUrl: album.coverUrl,
+        pluginSource,
+        rawData: album.rawData,
+        sourceSearchType: activeSearchType.value as SourceSearchType,
+      });
+      void router.push({ path: '/online-detail', query: { type: 'album' } });
+    } catch (e: any) {
+      showToast(`查看专辑失败: ${e?.message || e}`, 'error');
+    }
+    return;
+  }
+
+  // LX 落雪源暂不支持专辑详情页
+  showToast('当前音源暂不支持查看专辑', 'info');
 };
 
 // ==================== 本地歌曲播放与右键菜单 ====================
@@ -1052,6 +1303,74 @@ const handleAlbumClick = (album: AlbumCatalogItem) => {
 
 const handlePlaylistClick = (playlist: Playlist) => {
   void router.push({ path: '/', query: { view: 'playlist', filter: playlist.id } });
+};
+
+// ==================== 插件歌手/专辑/歌单导航 ====================
+
+const onlineDetailStore = useOnlineDetailStore();
+
+/** 根据 pluginId 查找对应的 PluginSource */
+function findPluginSource(pluginId: string): PluginSource | undefined {
+  const item = pluginSourceList.value.find(s => s.id === pluginId && s.type === 'musicfree');
+  return item?.source;
+}
+
+const handlePluginArtistClick = (artist: PluginArtistResult) => {
+  const pluginSource = findPluginSource(artist.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: artist.name } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'artist',
+    title: artist.name,
+    subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+    coverUrl: artist.avatarUrl,
+    pluginSource,
+    rawData: artist.rawData,
+    sourceSearchType: 'artist' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'artist' } });
+};
+
+const handlePluginAlbumClick = (album: PluginAlbumResult) => {
+  const pluginSource = findPluginSource(album.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: album.name } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'album',
+    title: album.name,
+    subtitle: album.artist,
+    coverUrl: album.coverUrl,
+    pluginSource,
+    rawData: album.rawData,
+    sourceSearchType: 'album' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'album' } });
+};
+
+const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
+  const pluginSource = findPluginSource(playlist.pluginId);
+  if (!pluginSource) {
+    void router.push({ path: '/search', query: { q: playlist.title } });
+    return;
+  }
+  onlineDetailStore.setContext({
+    type: 'playlist',
+    title: playlist.title,
+    subtitle: playlist.trackCount ? `${playlist.trackCount} 首` : (playlist.artist || ''),
+    coverUrl: playlist.coverUrl,
+    pluginSource,
+    rawData: playlist.rawData,
+    sourceSearchType: 'playlist' as SourceSearchType,
+  });
+  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
+};
+
+const handlePluginImgError = (e: Event) => {
+  (e.target as HTMLImageElement).style.display = 'none';
 };
 
 const getLocalArtistCover = (artist: ArtistCatalogItem): string => {
@@ -1119,8 +1438,20 @@ onMounted(() => {
   if (allSourceList.value.length > 0) {
     selectedSourceId.value = allSourceList.value[0].id;
   }
+  // 从在线详情返回时，恢复对应的搜索 tab（"从哪儿来回哪儿去"）
+  const pendingType = onlineDetailStore.consumePendingSearchType();
+  if (pendingType) {
+    activeSearchType.value = pendingType;
+  }
   if (!hasQuery.value) return;
   performSearch();
+});
+
+// keep-alive 激活时：保持原有状态（滚动位置、选中 tab、搜索结果等）
+// 仅消费 pendingSearchType 避免残留，不强制改变当前 tab
+onActivated(() => {
+  uiStore.showPlayerDetail = false;
+  onlineDetailStore.consumePendingSearchType();
 });
 </script>
 

@@ -1,0 +1,78 @@
+<script setup lang="ts">
+import type { Song } from '../../types';
+
+const props = defineProps<{
+  songs: Song[];
+}>();
+
+const emit = defineEmits<{
+  (e: 'play', song: Song): void;
+  (e: 'contextmenu', event: MouseEvent, song: Song): void;
+}>();
+
+const formatDuration = (seconds: number): string => {
+  if (!seconds || seconds <= 0) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+const handleImgError = (e: Event) => {
+  (e.target as HTMLImageElement).style.display = 'none';
+};
+</script>
+
+<template>
+  <table class="w-full text-left">
+    <thead class="sticky top-0 z-10">
+      <tr class="border-b border-black/5 dark:border-white/5 text-xs text-black/40 dark:text-white/40">
+        <th class="w-10 py-2 px-4 text-center font-normal">#</th>
+        <th class="w-14 py-2 px-2 font-normal"></th>
+        <th class="py-2 px-2 font-normal">歌曲</th>
+        <th class="py-2 px-2 font-normal">歌手</th>
+        <th class="py-2 px-2 font-normal">专辑</th>
+        <th class="w-16 py-2 px-4 text-right font-normal">时长</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr
+        v-for="(item, index) in props.songs"
+        :key="`${item.path}-${index}`"
+        class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+        @dblclick="emit('play', item)"
+        @contextmenu="emit('contextmenu', $event, item)"
+      >
+        <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
+          {{ index + 1 }}
+        </td>
+        <td class="py-2 px-2">
+          <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+            <img
+              v-if="item.cover_thumb_path"
+              :src="item.cover_thumb_path"
+              class="w-full h-full object-cover"
+              alt=""
+              loading="lazy"
+              @error="handleImgError"
+            />
+            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+          </div>
+        </td>
+        <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
+          {{ item.title || item.name }}
+        </td>
+        <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
+          {{ item.artist }}
+        </td>
+        <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
+          {{ item.album }}
+        </td>
+        <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
+          {{ formatDuration(item.duration) }}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</template>

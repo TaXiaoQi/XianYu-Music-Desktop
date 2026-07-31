@@ -3,15 +3,19 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Check, ChevronDown, FolderOpen, Download, X, Loader2 } from 'lucide-vue-next';
-import type { DownloadQuality, Song } from '../../types';
+import type { DownloadFileNameStyle, DownloadQuality, Song, QualityKey } from '../../types';
+import { QUALITY_META, ALL_QUALITY_KEYS_DESC } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
   downloadSong,
   probeAvailableQualities,
   formatFileSize,
+  buildFileNameBase,
+  sanitizeFileName,
   type ProbedQuality,
 } from '../../services/downloadService';
+import { recordDownload, fileNameFromPath } from '../../services/downloadHistory';
 
 const props = defineProps<{
   visible: boolean;
@@ -20,60 +24,88 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
+  /** 下载成功并写入记录后触发，供父组件刷新「已下载」状态 */
+  (e: 'downloaded'): void;
 }>();
 
 const { settings } = useSettings();
 const { showToast } = useToast();
 
 /**
- * UI 音质选项。可用性由 probeAvailableQualities 探测到的 lx 档位映射而来：
- *   flac24bit / flac → lossless，320k → high，128k → standard
+ * UI 音质选项。probeAvailableQualities 按 quality 键直接返回（12 档统一标准），
+ * 这里把探测得到的大小/扩展名与 12 档元信息合并，按品质从高到低展示。
  */
 type QualityOption = {
-  value: DownloadQuality;
-  label: string;
-  desc: string;
+  value: DownloadQuality; // = QualityKey
+  label: string;          // 中文标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带）
+  desc: string;           // 比特率/格式文案
   /** 探测得到的大小文案（空串表示未知） */
   sizeText: string;
   /** 探测得到的文件扩展名（含点） */
   ext: string;
 };
-const BASE_QUALITY_META: Record<DownloadQuality, { label: string; desc: string }> = {
-  lossless: { label: '无损', desc: '最高音质，文件较大' },
-  high: { label: '高品', desc: '320kbps，平衡音质与体积' },
-  standard: { label: '标准', desc: '128kbps，文件较小' },
-};
 
-// 对话框内的当次选择（初始化自全局设置，但不强制回写）
-const selectedQuality = ref<DownloadQuality>('high');
+// 对话框内的当次选择（初始化自全局设置，默认 '320k' = HQ）
+const selectedQuality = ref<DownloadQuality>('320k');
 const selectedDir = ref('');
 const rememberPath = ref(false);
 const withLyrics = ref(true);
 const isQualityMenuOpen = ref(false);
+
+// 文件名样式
+const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
+const isFileNameMenuOpen = ref(false);
+
+const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string }[] = [
+  { value: 'artist-title', label: '歌手 - 歌名' },
+  { value: 'title-artist', label: '歌名 - 歌手' },
+  { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑' },
+];
+
+const selectedFileNameStyleLabel = computed(
+  () => FILE_NAME_STYLE_OPTIONS.find((o) => o.value === selectedFileNameStyle.value)?.label
+    ?? '歌手 - 歌名',
+);
+
+/** 实时预览最终文件名（扩展名取当前选中音质的探测结果） */
+const fileNamePreview = computed(() => {
+  if (!props.song) return '';
+  const base = buildFileNameBase(props.song, selectedFileNameStyle.value);
+  const ext = selectedQualityOption.value?.ext || '';
+  return sanitizeFileName(base) + ext;
+});
+
+function toggleFileNameMenu() {
+  if (isDownloading.value) return;
+  isFileNameMenuOpen.value = !isFileNameMenuOpen.value;
+}
+
+function selectFileNameStyle(value: DownloadFileNameStyle) {
+  selectedFileNameStyle.value = value;
+  isFileNameMenuOpen.value = false;
+}
 
 // 探测状态：打开对话框时立即探测音源，探测完成后才能选择音质
 const isProbing = ref(false);
 const probeError = ref('');
 const probedList = ref<ProbedQuality[]>([]);
 
+/**
+ * 可用音质选项列表：从 probeAvailableQualities 返回的 ProbedQuality 列表
+ * 直接映射为 12 档 UI 选项，保持从高到低顺序（ALL_QUALITY_KEYS_DESC）。
+ * 支持插件返回任意 12 档内的音质（如 mgg / 192k / hires / vinyl / dolby / atmos / master）。
+ */
 const availableQualityOptions = computed<QualityOption[]>(() => {
-  const chosen = new Map<DownloadQuality, ProbedQuality>();
+  const byQuality = new Map<QualityKey, ProbedQuality>();
   for (const p of probedList.value) {
-    let ui: DownloadQuality | null = null;
-    if (p.quality === 'flac24bit' || p.quality === 'flac') ui = 'lossless';
-    else if (p.quality === '320k') ui = 'high';
-    else if (p.quality === '128k') ui = 'standard';
-    if (!ui) continue;
-    // probedList 已按品质由高到低排序，先到者优先
-    if (!chosen.has(ui)) chosen.set(ui, p);
+    if (!byQuality.has(p.quality as QualityKey)) byQuality.set(p.quality as QualityKey, p);
   }
-  const order: DownloadQuality[] = ['lossless', 'high', 'standard'];
-  return order
-    .filter((v) => chosen.has(v))
-    .map<QualityOption>((v) => {
-      const info = chosen.get(v)!;
-      const meta = BASE_QUALITY_META[v];
-      return { value: v, label: meta.label, desc: meta.desc, sizeText: info.sizeText, ext: info.ext };
+  return ALL_QUALITY_KEYS_DESC
+    .filter((q) => byQuality.has(q))
+    .map<QualityOption>((q) => {
+      const info = byQuality.get(q)!;
+      const meta = QUALITY_META[q];
+      return { value: q, label: meta.label, desc: meta.description, sizeText: info.sizeText, ext: info.ext };
     });
 });
 
@@ -106,7 +138,7 @@ const selectedQualityOption = computed(() =>
 const selectedQualityLabel = computed(() =>
   selectedQualityOption.value
     ? formatQualityBadge(selectedQualityOption.value)
-    : BASE_QUALITY_META[selectedQuality.value]?.label ?? '高品',
+    : QUALITY_META[selectedQuality.value as QualityKey]?.label ?? 'HQ',
 );
 
 // 探测当前歌曲实际可下载的档位
@@ -144,6 +176,8 @@ watch(
       selectedDir.value = settings.value.download.downloadPath;
       rememberPath.value = settings.value.download.rememberDownloadPath;
       withLyrics.value = settings.value.download.downloadLyrics;
+      selectedFileNameStyle.value = settings.value.download.fileNameStyle ?? 'artist-title';
+      isFileNameMenuOpen.value = false;
       isQualityMenuOpen.value = false;
       isDownloading.value = false;
       progress.value = 0;
@@ -211,6 +245,9 @@ async function startDownload() {
     // 忽略监听失败，不影响下载
   }
 
+  // 文件名样式：记住本次选择，下次打开对话框沿用
+  settings.value.download.fileNameStyle = selectedFileNameStyle.value;
+
   // 记忆下载位置：写回全局设置
   if (rememberPath.value) {
     settings.value.download.rememberDownloadPath = true;
@@ -224,6 +261,7 @@ async function startDownload() {
       quality: selectedQuality.value,
       downloadDir: selectedDir.value,
       keepSourceFilename: settings.value.download.keepSourceFilename,
+      fileNameStyle: selectedFileNameStyle.value,
       overwriteExisting: settings.value.download.overwriteExisting,
       downloadLyrics: withLyrics.value,
       lyricsFormat: settings.value.download.lyricsFormat,
@@ -232,19 +270,26 @@ async function startDownload() {
       },
     });
     progress.value = 100;
+
+    // 记录本次下载（位置 + 文件名），供后续播放到该歌曲时显示「已下载」状态
+    await recordDownload({
+      songPath: props.song.cue_source_path || props.song.path,
+      filePath: result.filePath,
+      fileName: fileNameFromPath(result.filePath),
+      quality: result.hitQuality,
+      downloadedAt: Date.now(),
+      title: props.song.title || props.song.name,
+      artist: props.song.artist,
+    });
+    emit('downloaded');
+
     const lyricNote = result.lyricsSaved ? '（含歌词）' : '';
     // 命中的实际档位可能低于用户所选（无版权自动降级）
-    const qualityLabelMap: Record<string, string> = {
-      flac24bit: '24bit 无损',
-      flac: '无损',
-      '320k': '高品 320k',
-      '128k': '标准 128k',
-    };
-    const hitLabel = qualityLabelMap[result.hitQuality] ?? result.hitQuality;
-    const requestedTop = ({ lossless: 'flac24bit', high: '320k', standard: '128k' } as const)[
-      selectedQuality.value
-    ];
-    const degraded = result.hitQuality !== requestedTop;
+    const hitMeta = QUALITY_META[result.hitQuality as QualityKey];
+    const hitLabel = hitMeta ? `${hitMeta.label} ${hitMeta.description}` : result.hitQuality;
+    // 比较 rank：命中音质 rank 低于用户选择的 rank 即为降级（rank 越大音质越好）
+    const selectedMeta = QUALITY_META[selectedQuality.value as QualityKey];
+    const degraded = selectedMeta && hitMeta ? hitMeta.rank < selectedMeta.rank : result.hitQuality !== selectedQuality.value;
     const note = degraded ? `（实际下载音质：${hitLabel}）` : '';
     showToast(`下载完成${note}${lyricNote}`, degraded ? 'info' : 'success');
     emit('update:visible', false);
@@ -358,6 +403,45 @@ onUnmounted(() => {
                     </button>
                   </div>
                 </transition>
+              </div>
+            </div>
+
+            <!-- 文件名样式 -->
+            <div class="space-y-1.5">
+              <div class="text-xs font-semibold text-gray-500 dark:text-white/50">文件名样式</div>
+              <div class="download-select">
+                <button
+                  type="button"
+                  class="download-select__trigger"
+                  :class="{ 'download-select__trigger--open': isFileNameMenuOpen }"
+                  :disabled="isDownloading"
+                  @click="toggleFileNameMenu"
+                >
+                  <span>{{ selectedFileNameStyleLabel }}</span>
+                  <ChevronDown
+                    class="download-select__icon"
+                    :class="{ 'download-select__icon--open': isFileNameMenuOpen }"
+                  />
+                </button>
+                <transition name="download-menu">
+                  <div v-if="isFileNameMenuOpen" class="download-select__menu">
+                    <button
+                      v-for="option in FILE_NAME_STYLE_OPTIONS"
+                      :key="option.value"
+                      type="button"
+                      class="download-select__option"
+                      :class="{ 'download-select__option--selected': selectedFileNameStyle === option.value }"
+                      @click="selectFileNameStyle(option.value)"
+                    >
+                      <div class="min-w-0 flex-1 text-[13px] font-semibold">{{ option.label }}</div>
+                      <Check v-if="selectedFileNameStyle === option.value" class="h-4 w-4 flex-none" />
+                    </button>
+                  </div>
+                </transition>
+              </div>
+              <!-- 最终文件名预览 -->
+              <div class="download-filename-preview" :title="fileNamePreview">
+                {{ fileNamePreview }}
               </div>
             </div>
 
@@ -582,6 +666,20 @@ onUnmounted(() => {
   font-weight: 400;
   color: rgba(100, 116, 139, 0.85);
   margin-top: 2px;
+}
+
+.download-filename-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+  font-size: 11px;
+  color: rgba(100, 116, 139, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+:global(.dark) .download-filename-preview {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .download-select__ext-badge {

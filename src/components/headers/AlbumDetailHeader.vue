@@ -11,6 +11,10 @@ const props = defineProps<{
   isBatchMode: boolean;
   selectedCount?: number;
   songs?: Array<{ path: string }>;
+  /** 只读模式：禁用管理按钮、排序按钮和排序菜单 */
+  readOnly?: boolean;
+  /** 在线封面 URL（readOnly 模式下优先使用） */
+  coverUrlOverride?: string;
 }>();
 
 const emit = defineEmits([
@@ -73,8 +77,15 @@ const handleGlobalClick = (e: MouseEvent) => {
 onMounted(() => window.addEventListener('click', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
 
-watch([albumCacheKey, () => props.songs], async ([cacheKey, newSongs]) => {
+watch([albumCacheKey, () => props.songs, () => props.coverUrlOverride], async ([cacheKey, newSongs, coverOverride]) => {
   const requestId = ++coverRequestId;
+
+  // readOnly 模式优先使用在线封面 URL
+  if (props.readOnly && coverOverride) {
+    coverUrl.value = coverOverride;
+    isLoading.value = false;
+    return;
+  }
 
   if (!newSongs || newSongs.length === 0) {
     coverUrl.value = '';
@@ -191,16 +202,31 @@ const getGradientForAlbum = (name: string) => {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 5.5v13l10-6.5-10-6.5Z" />
             </svg>
-            播放
+            全部播放
           </button>
 
-          <button @click="emit('update:isBatchMode', true)" title="批量操作" class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20">
+          <button
+            @click="emit('addToPlaylist')"
+            title="收藏至歌单"
+            class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            收藏至歌单
+          </button>
+
+          <button
+            v-if="!readOnly"
+            @click="emit('update:isBatchMode', true)"
+            title="批量操作"
+            class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
+          >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
             管理
           </button>
 
+          <template v-if="!readOnly">
           <button
             @click.stop="handleSortClick"
             title="排序方式"
@@ -248,6 +274,7 @@ const getGradientForAlbum = (name: string) => {
               </div>
             </div>
           </Teleport>
+          </template>
         </div>
       </div>
     </div>

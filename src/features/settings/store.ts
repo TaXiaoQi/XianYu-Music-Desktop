@@ -9,17 +9,19 @@ import type {
   EqualizerPreset,
   ImportedLyricsFont,
   LyricsSettings,
+  PluginSettings,
   SidebarSettings,
   ThemeSettings,
   UploadSettings,
 } from '../../types';
+import { ALL_QUALITY_KEYS } from '../../types';
 import {
   createDefaultDesktopLyricsSettings,
   createDefaultLyricsSettings,
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics/constants';
+} from '../../composables/lyrics';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,
@@ -50,9 +52,10 @@ export type AudioSettingsPatch = Partial<Omit<AudioSettings, 'volumeBalance'>> &
 export type ImportedLyricsFontsPatch = ImportedLyricsFont[];
 export type DownloadSettingsPatch = Partial<DownloadSettings>;
 export type UploadSettingsPatch = Partial<UploadSettings>;
+export type PluginSettingsPatch = Partial<PluginSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
@@ -62,6 +65,7 @@ export interface AppSettingsPatch
   customLyricsFonts?: ImportedLyricsFontsPatch;
   download?: DownloadSettingsPatch;
   upload?: UploadSettingsPatch;
+  plugins?: PluginSettingsPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -76,6 +80,7 @@ export const defaultThemeSettings: ThemeSettings = {
   mode: 'light',
   dynamicBgType: 'none',
   windowMaterial: 'none',
+  keepWindowMaterialOnBlur: false,
   flowColorBoost: 25,
   flowDepth: 30,
   flowSpeed: 52,
@@ -124,16 +129,20 @@ export const defaultAudioSettings: AudioSettings = {
   },
   showEqualizerInFooter: true,
   idmCompatMode: false,
+  onlineDefaultQuality: '320k',
+  onlineFailureBehavior: 'skip',
+  onlineInterruptBehavior: 'pause',
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
   downloadPath: '',
   format: 'mp3',
-  quality: 'high',
+  quality: '320k',
   downloadLyrics: true,
   lyricsFormat: 'lrc',
   overwriteExisting: false,
   keepSourceFilename: false,
+  fileNameStyle: 'artist-title',
   rememberDownloadPath: false,
 };
 
@@ -142,6 +151,12 @@ export const defaultUploadSettings: UploadSettings = {
   history: true,
   favorites: true,
   plugins: true,
+};
+
+export const defaultPluginSettings: PluginSettings = {
+  autoUpdateOnStartup: false,
+  lazyLoad: false,
+  skipVersionCheck: false,
 };
 
 export const defaultAppSettings: AppSettings = {
@@ -170,6 +185,7 @@ export const defaultAppSettings: AppSettings = {
   writeArtistAvatarToTags: false,
   download: defaultDownloadSettings,
   upload: defaultUploadSettings,
+  plugins: defaultPluginSettings,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -215,8 +231,13 @@ export const mergeUploadSettings = (
 });
 
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
-const VALID_DOWNLOAD_QUALITIES: DownloadSettings['quality'][] = ['lossless', 'high', 'standard'];
+const VALID_DOWNLOAD_QUALITIES = ALL_QUALITY_KEYS;
 const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
+const VALID_FILE_NAME_STYLES: DownloadSettings['fileNameStyle'][] = [
+  'artist-title',
+  'title-artist',
+  'title-artist-album',
+];
 
 export const mergeDownloadSettings = (
   base: DownloadSettings,
@@ -231,6 +252,9 @@ export const mergeDownloadSettings = (
   const lyricsFormat = patch.lyricsFormat && VALID_LYRICS_FORMATS.includes(patch.lyricsFormat)
     ? patch.lyricsFormat
     : base.lyricsFormat;
+  const fileNameStyle = patch.fileNameStyle && VALID_FILE_NAME_STYLES.includes(patch.fileNameStyle)
+    ? patch.fileNameStyle
+    : base.fileNameStyle;
 
   return {
     downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
@@ -240,6 +264,7 @@ export const mergeDownloadSettings = (
     lyricsFormat,
     overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
+    fileNameStyle,
     rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
   };
 };
@@ -335,6 +360,10 @@ export const mergeAudioSettings = (
       ? patch.outputMode
       : base.outputMode ?? 'shared';
 
+  const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
+  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'retry'];
+  const VALID_INTERRUPT_BEHAVIORS = ['pause', 'skip'];
+
   return {
     ...base,
     outputMode: nextOutputMode,
@@ -353,6 +382,15 @@ export const mergeAudioSettings = (
     idmCompatMode: typeof patch.idmCompatMode === 'boolean'
       ? patch.idmCompatMode
       : base.idmCompatMode ?? false,
+    onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as any)
+      ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
+      : base.onlineDefaultQuality ?? '320k',
+    onlineFailureBehavior: VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)
+      ? (patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'])
+      : base.onlineFailureBehavior ?? 'skip',
+    onlineInterruptBehavior: VALID_INTERRUPT_BEHAVIORS.includes(patch.onlineInterruptBehavior as string)
+      ? (patch.onlineInterruptBehavior as AudioSettings['onlineInterruptBehavior'])
+      : base.onlineInterruptBehavior ?? 'pause',
   };
 };
 
@@ -382,8 +420,15 @@ export const mergeAppSettings = (
     shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
     download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
     upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
+    plugins: mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins ?? {}),
   };
 };
+
+const mergePluginSettings = (base: PluginSettings, patch: Partial<PluginSettings>): PluginSettings => ({
+  autoUpdateOnStartup: typeof patch.autoUpdateOnStartup === 'boolean' ? patch.autoUpdateOnStartup : base.autoUpdateOnStartup,
+  lazyLoad: typeof patch.lazyLoad === 'boolean' ? patch.lazyLoad : base.lazyLoad,
+  skipVersionCheck: typeof patch.skipVersionCheck === 'boolean' ? patch.skipVersionCheck : base.skipVersionCheck,
+});
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(createDefaultAppSettings());

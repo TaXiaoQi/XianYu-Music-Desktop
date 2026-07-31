@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
-import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
-import SortModeIcon from '../common/SortModeIcon.vue';
+import SortModeButton from '../common/SortModeButton.vue';
 
 defineProps<{
   isBatchMode: boolean;
@@ -20,51 +18,7 @@ const emit = defineEmits([
   'addAllToQueue',
 ]);
 
-const {
-  localSortMode,
-  setLocalSortMode,
-} = usePlayerViewState();
-
 const pageTitle = useSearchAwareTitle('本地音乐');
-
-const sortLabelMap = {
-  title: '\u6b4c\u66f2\u540d',
-  artist: '\u6b4c\u624b',
-  added_at: '\u6dfb\u52a0\u65f6\u95f4',
-  file_modified_at: '\u4fee\u6539\u65f6\u95f4',
-  custom: '\u81ea\u5b9a\u4e49',
-} as const;
-
-const showSortMenu = ref(false);
-const sortMenuX = ref(0);
-const sortMenuY = ref(0);
-const sortMenuIsRightAligned = ref(false);
-
-const handleSortClick = (e: MouseEvent) => {
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const windowWidth = window.innerWidth;
-
-  if (rect.left > windowWidth / 2) {
-    sortMenuIsRightAligned.value = true;
-    sortMenuX.value = windowWidth - rect.right;
-  } else {
-    sortMenuIsRightAligned.value = false;
-    sortMenuX.value = rect.left;
-  }
-
-  sortMenuY.value = rect.bottom + 8;
-  showSortMenu.value = !showSortMenu.value;
-};
-
-const handleGlobalClick = (e: MouseEvent) => {
-  const target = e.target as HTMLElement;
-  if (!target.closest('.sort-menu-trigger')) {
-    showSortMenu.value = false;
-  }
-};
-
-onMounted(() => window.addEventListener('click', handleGlobalClick));
-onUnmounted(() => window.removeEventListener('click', handleGlobalClick));
 
 const handleRefreshAll = () => {
   emit('refreshAll');
@@ -154,50 +108,7 @@ const handleEnterBatchMode = () => {
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
         </button>
 
-        <button
-          @click.stop="handleSortClick"
-          class="sort-menu-trigger bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
-          title="&#25490;&#24207;&#26041;&#24335;"
-        >
-          <SortModeIcon class="h-4 w-4" />
-        </button>
-
-        <Teleport to="body">
-          <div
-            v-if="showSortMenu"
-            class="fixed z-[9999] bg-white dark:bg-[#2b2b2b] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
-            :style="sortMenuIsRightAligned
-              ? { right: sortMenuX + 'px', top: sortMenuY + 'px' }
-              : { left: sortMenuX + 'px', top: sortMenuY + 'px' }"
-          >
-            <div
-              v-for="mode in (['title', 'artist', 'added_at', 'file_modified_at', 'custom'] as const)"
-              :key="mode"
-              @click="
-                if (mode === 'added_at') {
-                  setLocalSortMode(localSortMode === 'added_at' ? 'added_at_asc' : 'added_at');
-                } else if (mode === 'file_modified_at') {
-                  setLocalSortMode(localSortMode === 'file_modified_at' ? 'file_modified_at_asc' : 'file_modified_at');
-                } else {
-                  setLocalSortMode(mode);
-                }
-                showSortMenu = false;
-              "
-              class="px-3 py-2 text-xs cursor-pointer flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              :class="(localSortMode || '').startsWith(mode) ? 'text-blue-500 font-medium' : 'text-gray-600 dark:text-gray-300'"
-            >
-              <span>{{ sortLabelMap[mode] }}</span>
-              <div v-if="(localSortMode || '').startsWith(mode)" class="flex items-center gap-1.5">
-                <svg v-if="mode === 'added_at' || mode === 'file_modified_at'" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 transition-transform duration-200" :class="{ 'rotate-180': localSortMode === 'added_at_asc' || localSortMode === 'file_modified_at_asc' }" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l2.293-2.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                </svg>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </Teleport>
+        <SortModeButton />
       </div>
     </div>
   </div>

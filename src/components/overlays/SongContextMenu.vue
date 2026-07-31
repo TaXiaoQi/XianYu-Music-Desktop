@@ -50,9 +50,12 @@ const props = defineProps<{
   isPlaylistView: boolean;
   isFolderView?: boolean;
   isManagementMode?: boolean;
+  isOnlineSearch?: boolean;
+  /** 在线详情页容器类型：用于在歌手/专辑容器中隐藏"查看歌手/查看专辑" */
+  onlineDetailType?: 'artist' | 'album' | 'playlist';
 }>();
 
-const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk']);
+const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album']);
 
 const route = useRoute();
 const router = useRouter();
@@ -176,30 +179,52 @@ addAlbumToQueueTail: {
 };
 
 const menuEntries = computed<SongMenuEntry[]>(() => {
+  const online = props.isOnlineSearch;
+
   const entries: SongMenuEntry[] = [
     { type: 'action', key: 'play', label: '播放' },
     { type: 'action', key: 'playNext', label: '下一首播放' },
     { type: 'action', key: 'addToQueueTail', label: '添加到队尾' },
   ];
 
-  if (props.song && hasAlbumMetadata(props.song)) {
+  // 在线搜索模式不显示"整张专辑添加到队尾"
+  if (!online && props.song && hasAlbumMetadata(props.song)) {
     entries.push({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
   }
 
-  entries.push(
-    { type: 'divider', key: 'divider-primary' },
-    { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
-    { type: 'action', key: 'viewArtist', label: '查看歌手' },
-    { type: 'action', key: 'viewAlbum', label: '查看专辑' },
-    { type: 'divider', key: 'divider-secondary' },
-    { type: 'action', key: 'openFolder', label: '打开文件所在目录' },
-    { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息' },
-    { type: 'divider', key: 'divider-danger' },
-    { type: 'action', key: 'removeFromList', label: '从列表移除' },
-  );
+  if (online) {
+    // 在线搜索模式：查看歌手、查看专辑，最后是收藏至歌单
+    // 歌手/专辑容器中隐藏"查看歌手/查看专辑"，歌单容器和搜索页显示完整菜单
+    const hideViewNavigation = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
 
-  if (showDeleteFromDisk.value) {
-    entries.push({ type: 'action', key: 'deleteFromDisk', label: '从本地移除', danger: true });
+    if (!hideViewNavigation) {
+      entries.push(
+        { type: 'divider', key: 'divider-primary' },
+        { type: 'action', key: 'viewArtist', label: '查看歌手' },
+        { type: 'action', key: 'viewAlbum', label: '查看专辑' },
+      );
+    }
+
+    entries.push(
+      { type: 'divider', key: 'divider-secondary' },
+      { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
+    );
+  } else {
+    entries.push(
+      { type: 'divider', key: 'divider-primary' },
+      { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
+      { type: 'action', key: 'viewArtist', label: '查看歌手' },
+      { type: 'action', key: 'viewAlbum', label: '查看专辑' },
+      { type: 'divider', key: 'divider-secondary' },
+      { type: 'action', key: 'openFolder', label: '打开文件所在目录' },
+      { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息' },
+      { type: 'divider', key: 'divider-danger' },
+      { type: 'action', key: 'removeFromList', label: '从列表移除' },
+    );
+
+    if (showDeleteFromDisk.value) {
+      entries.push({ type: 'action', key: 'deleteFromDisk', label: '从本地移除', danger: true });
+    }
   }
 
   return entries;
@@ -442,6 +467,11 @@ const handleAction = (action: SongMenuAction) => {
       emit('add-to-playlist');
       break;
     case 'viewArtist':
+      if (props.isOnlineSearch) {
+        emit('view-online-artist', props.song);
+        emit('close');
+        return;
+      }
       if (!hasArtistMetadata(props.song)) {
         showToast('当前歌曲缺少歌手信息', 'info');
         break;
@@ -453,6 +483,11 @@ const handleAction = (action: SongMenuAction) => {
       navigateToArtist(resolvePrimaryArtistName(props.song));
       return;
     case 'viewAlbum':
+      if (props.isOnlineSearch) {
+        emit('view-online-album', props.song);
+        emit('close');
+        return;
+      }
       if (!hasAlbumMetadata(props.song)) {
         showToast('当前歌曲缺少专辑信息', 'info');
         break;

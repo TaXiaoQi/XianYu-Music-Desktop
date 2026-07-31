@@ -1,7 +1,7 @@
 {
   "name": "lycia-music",
   "private": true,
-  "version": "1.0.5-fix9",
+  "version": "1.0.7-beta8",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
