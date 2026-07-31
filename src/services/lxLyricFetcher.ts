@@ -14,7 +14,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import CryptoJS from 'crypto-js';
 import type { Song } from '../types';
-import { buildLyricsRaw } from '../composables/lyrics/parser';
+import { buildLyricsRaw } from '../composables/lyrics';
 
 // ==================== Types ====================
 
