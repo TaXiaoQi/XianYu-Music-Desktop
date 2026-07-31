@@ -341,6 +341,22 @@ export const useLibraryStore = defineStore('library', () => {
     songCatalogVersion.value += 1;
   };
 
+  /**
+   * 就地更新 songPool / extraSongPool 中已存在歌曲的元数据（如 lyrics_raw）。
+   * 仅当 path 已在某个池中时才更新，不会新增条目。
+   * 解决在线歌曲异步获取歌词后 currentSong computed 仍返回旧对象（无 lyrics_raw）的问题。
+   */
+  const patchSongMeta = (path: string, patch: Partial<LibrarySong>) => {
+    if (!path) return;
+    if (songPool.has(path)) {
+      songPool.set(path, { ...songPool.get(path)!, ...patch });
+      songCatalogVersion.value += 1;
+    } else if (extraSongPool.has(path)) {
+      extraSongPool.set(path, { ...extraSongPool.get(path)!, ...patch });
+      songCatalogVersion.value += 1;
+    }
+  };
+
   /** 批量写入额外歌曲元信息（启动恢复时用） */
   const setExtraSongs = (songs: LibrarySong[]) => {
     let changed = false;
@@ -583,6 +599,7 @@ export const useLibraryStore = defineStore('library', () => {
     setSongRecord,
     setExtraSong,
     setExtraSongs,
+    patchSongMeta,
     removeExtraSong,
     libraryFolders,
     libraryHierarchy,

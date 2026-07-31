@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Loader2, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Loader2, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -772,7 +772,6 @@ onUnmounted(() => {
           ]"
           :title="isQualitySelectableSong ? '音质选择' : '本地歌曲不支持音质切换'"
         >
-          <Music class="h-3.5 w-3.5 shrink-0" :stroke-width="2.2" />
           <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
         </button>
 
