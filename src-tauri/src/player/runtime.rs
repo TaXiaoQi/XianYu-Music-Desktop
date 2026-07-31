@@ -295,8 +295,32 @@ impl RemoteRangeReader {
                 response.status()
             )));
         }
+        // 检查 Content-Type：部分音源在 URL 失效或需要特定 headers 时返回 HTML 错误页，
+        // 直接当作音频解码会报 "Unrecognized format"。提前检测并给出更明确的错误信息。
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_lowercase();
+        let is_html = content_type.contains("text/html")
+            || content_type.contains("application/json")
+            || content_type.contains("text/plain");
         let mut bytes = Vec::new();
         response.read_to_end(&mut bytes)?;
+        if is_html {
+            let preview = String::from_utf8_lossy(&bytes[..bytes.len().min(200)]);
+            eprintln!(
+                "[Audio][rust] 服务器返回非音频内容 (Content-Type: {})，可能为错误页面或试听片段 url={}\n  内容预览: {}",
+                content_type,
+                self.source.url,
+                preview.chars().take(200).collect::<String>()
+            );
+            return Err(std::io::Error::other(format!(
+                "服务器返回非音频内容 (Content-Type: {})，可能需要防盗链 headers 或 URL 已失效",
+                content_type
+            )));
+        }
         self.len = Some(bytes.len() as u64);
         self.full_body = Some(bytes);
         self.no_range = true;

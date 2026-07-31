@@ -553,16 +553,23 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
 /**
  * 构建用于存储到 lyrics_raw 的歌词文本
  *
- * 优先级：
- * 1. 如果有 lxlyric（逐字歌词），转换为 Enhanced LRC 格式作为主歌词
- * 2. 如果有 tlyric（翻译歌词），作为附加行追加
- * 3. 如果有 rlyric（罗马音歌词），作为附加行追加
- * 4. 如果没有 lxlyric，使用普通 lyric + tlyric + rlyric
+ * 优先级（所有逐字格式都加入原文，由后端 parse_raw_lyrics 自动选择最优解析结果，
+ * 若高优先级格式解析失败，会自动回退到下一档）：
+ * 1. yrc（网易云逐字格式）— 直接追加
+ * 2. qrc（QQ 音乐逐字格式，可能为 hex 加密串）— 直接追加
+ * 3. lxlyric（lx-music-desktop 逐字格式）— 转换为 Enhanced LRC 后追加
+ * 4. lyric（普通 LRC 行歌词）— 作为兜底主歌词
+ *
+ * 翻译歌词（tlyric）和罗马音歌词（rlyric）作为附加行追加在末尾。
+ * 后端会按时间戳将附加行聚类为 translation/romanization 轨道，
+ * 与主歌词（yrc/qrc/lxlyric/lyric 中的胜出者）配对显示。
  *
  * @param lyric 普通歌词
  * @param tlyric 翻译歌词（可选）
  * @param rlyric 罗马音歌词（可选）
  * @param lxlyric 逐字歌词（可选，lx-music-desktop 格式）
+ * @param yrc 逐字歌词（可选，网易云 YRC 格式）
+ * @param qrc 逐字歌词（可选，QQ 音乐 QRC 格式，可为 hex 加密串）
  * @returns 用于存储到 lyrics_raw 的歌词文本
  */
 export function buildLyricsRaw(
@@ -570,33 +577,39 @@ export function buildLyricsRaw(
   tlyric?: string | null,
   rlyric?: string | null,
   lxlyric?: string | null,
+  yrc?: string | null,
+  qrc?: string | null,
 ): string {
-  // 如果有逐字歌词，优先使用
+  const parts: string[] = [];
+
+  // 逐字格式按优先级加入，后端 parse_raw_lyrics 会自动选择可解析的格式作为主歌词
+  if (yrc && yrc.trim()) {
+    parts.push(yrc.trim());
+  }
+  if (qrc && qrc.trim()) {
+    parts.push(qrc.trim());
+  }
   if (lxlyric && lxlyric.trim()) {
     const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
     if (enhancedLrc) {
-      // 追加翻译歌词（作为普通 LRC 行）
-      const parts = [enhancedLrc];
-      if (tlyric && tlyric.trim()) {
-        parts.push(tlyric.trim());
-      }
-      if (rlyric && rlyric.trim()) {
-        parts.push(rlyric.trim());
-      }
-      return parts.join('\n');
+      parts.push(enhancedLrc);
     }
   }
-
-  // 没有逐字歌词，使用普通歌词
-  const parts: string[] = [];
   if (lyric && lyric.trim()) {
     parts.push(lyric.trim());
   }
+
+  if (parts.length === 0) {
+    return '';
+  }
+
+  // 翻译和罗马音作为附加行追加（后端按时间戳聚类为 translation/romanization 轨道）
   if (tlyric && tlyric.trim()) {
     parts.push(tlyric.trim());
   }
   if (rlyric && rlyric.trim()) {
     parts.push(rlyric.trim());
   }
+
   return parts.join('\n');
 }

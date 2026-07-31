@@ -15,7 +15,6 @@ import {
   pluginGetAlbumSongs,
   pluginGetPlaylistDetail,
   pluginGetMusicInfo,
-  pluginGetLyric,
   pluginGetCover,
   pluginArtistSearch,
   pluginAlbumSearch,
@@ -170,27 +169,16 @@ async function handlePlaySong(song: Song) {
       cover_thumb_path: song.cover_thumb_path || musicInfo.coverUrl || '',
     } as any;
 
-    if (musicInfo.lyric) {
-      (playableSong as any).lyrics_raw = musicInfo.lyric;
-      if (musicInfo.tlyric) {
-        (playableSong as any).lyrics_raw += '\n[offset:0]\n' + musicInfo.tlyric;
-      }
+    // 从 getMediaSource 返回值中提取歌词（已由 buildLyricsRaw 构建为 lyricsRaw，支持逐字歌词）
+    if (musicInfo.lyricsRaw) {
+      (playableSong as any).lyrics_raw = musicInfo.lyricsRaw;
     }
 
     // 立即播放（不等歌词/封面，让用户尽快听到声音）
+    // playSong 内部会异步补获歌词（支持逐字歌词），此处不再重复获取
     void playSong(playableSong, { insertAfterCurrent: true });
 
-    // 后台异步获取歌词和封面（不阻塞播放）
-    if (!(playableSong as any).lyrics_raw) {
-      void pluginGetLyric(ctx.value.pluginSource, mfItem).then((lyricData) => {
-        if (lyricData?.lyric) {
-          (playableSong as any).lyrics_raw = lyricData.lyric;
-          if (lyricData.tlyric) {
-            (playableSong as any).lyrics_raw += '\n[offset:0]\n' + lyricData.tlyric;
-          }
-        }
-      }).catch(() => {});
-    }
+    // 后台异步获取封面（不阻塞播放，歌词已由 playSong 内部异步获取）
     if (!playableSong.cover_thumb_path) {
       void pluginGetCover(ctx.value.pluginSource, mfItem).then((cover) => {
         if (cover) playableSong.cover_thumb_path = cover;

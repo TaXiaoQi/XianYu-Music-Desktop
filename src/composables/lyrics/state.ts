@@ -108,7 +108,26 @@ export async function loadLyrics() {
       return;
     }
 
+    // [在线歌曲歌词重试] lx:// 和 plugin:// 协议歌曲的歌词是异步获取的，
+    // playSong 中的 loadLyrics() 可能在歌词获取完成前就被调用。
+    // 此时不要走文件路径读取（对在线歌曲无意义），而是延迟重试等待 lyrics_raw 就绪。
     const lyricsPath = song.cue_source_path || song.path;
+    const isOnlineSong = lyricsPath.startsWith('lx://') || lyricsPath.startsWith('plugin://');
+    if (isOnlineSong) {
+      lyricsStatus.value = 'loading';
+      // 延迟重试：等待 IIFE 异步获取歌词完成
+      setTimeout(() => {
+        // 仅当仍是同一首歌且仍是最新请求时才重试
+        if (
+          playbackStore.currentSong?.path === song.path
+          && requestId === loadRequestId
+        ) {
+          void loadLyrics();
+        }
+      }, 800);
+      return;
+    }
+
     const payload = await invoke<LyricsPayload>('get_song_lyrics_payload', { path: lyricsPath });
 
     if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
@@ -140,19 +159,37 @@ export async function loadLyrics() {
 // 解决切歌时 loadLyrics() 未被调用或读取到旧 song 对象导致歌词不更新的问题
 // 延迟注册 watcher，避免模块导入时 Pinia 尚未初始化导致 getActivePinia() 报错
 let lastWatchedSongPath: string | null = null;
+let lastWatchedLyricsRaw: string | null = null;
 let songPathWatcherInitialized = false;
 
 function ensureSongPathWatcher() {
   if (songPathWatcherInitialized) return;
   songPathWatcherInitialized = true;
+  // 同时监听 path 和 lyrics_raw 的变化：
+  // - path 变化：切歌时重新加载歌词
+  // - lyrics_raw 变化：在线歌曲异步获取歌词后（path 不变）自动刷新
   watch(
-    () => usePlaybackStore().currentSong?.path ?? null,
-    (newPath) => {
-      if (newPath !== lastWatchedSongPath) {
-        lastWatchedSongPath = newPath;
+    () => {
+      const song = usePlaybackStore().currentSong;
+      return { path: song?.path ?? null, lyricsRaw: song?.lyrics_raw ?? null };
+    },
+    (newVal) => {
+      if (newVal.path !== lastWatchedSongPath) {
+        lastWatchedSongPath = newVal.path;
+        lastWatchedLyricsRaw = newVal.lyricsRaw;
         void loadLyrics();
+        return;
+      }
+      // path 没变但 lyrics_raw 变了（在线歌曲异步获取歌词完成）
+      if (newVal.lyricsRaw !== lastWatchedLyricsRaw) {
+        lastWatchedLyricsRaw = newVal.lyricsRaw;
+        // 仅在 lyrics_raw 从空变为非空时刷新（避免重复加载）
+        if (newVal.lyricsRaw) {
+          void loadLyrics();
+        }
       }
     },
+    { deep: false },
   );
 }
 

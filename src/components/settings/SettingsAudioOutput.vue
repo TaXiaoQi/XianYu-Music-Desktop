@@ -4,7 +4,7 @@ import { CircleAlert } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
 import ModernModal from '../common/ModernModal.vue';
-import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineInterruptBehavior } from '../../types';
+import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 
 const { settings, patchSettings } = useSettings();
@@ -18,15 +18,25 @@ const ONLINE_QUALITY_OPTIONS: { label: string; value: OnlineDefaultQuality; desc
     description: QUALITY_META[k].description,
   }));
 
+/** 按 3 列 4 行分组（从低到高横向排布），用于按钮选择网格 */
+const QUALITY_GRID: OnlineDefaultQuality[][] = (() => {
+  const grid: OnlineDefaultQuality[][] = [];
+  for (let i = 0; i < ALL_QUALITY_KEYS.length; i += 3) {
+    grid.push(ALL_QUALITY_KEYS.slice(i, i + 3));
+  }
+  return grid;
+})();
+
 const FAILURE_BEHAVIOR_OPTIONS: { label: string; value: OnlineFailureBehavior }[] = [
   { label: '跳到下一首', value: 'skip' },
   { label: '停止播放',   value: 'stop' },
   { label: '重试一次',   value: 'retry' },
 ];
 
-const INTERRUPT_BEHAVIOR_OPTIONS: { label: string; value: OnlineInterruptBehavior }[] = [
-  { label: '暂停等待', value: 'pause' },
-  { label: '跳到下一首', value: 'skip' },
+const QUALITY_FALLBACK_OPTIONS: { label: string; value: OnlineQualityFallbackBehavior }[] = [
+  { label: '暂停', value: 'pause' },
+  { label: '播放更低音质', value: 'lower' },
+  { label: '播放更高音质', value: 'higher' },
 ];
 
 /** 切换在线音质：同时写入 settings store 和 localStorage（playerPlayback 读 localStorage） */
@@ -201,20 +211,37 @@ const idmCompatDialogContent = [
         <div class="desktop-setting-row rounded-t-xl border-b border-gray-200/20 dark:border-gray-800/20">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              播放在线歌曲时优先请求的音质档位。实际可用档位取决于歌曲源；若请求档位不存在，插件将自动回退。
-              支持 12 档统一标准：低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比全景声/臻品音质/臻品全景声/臻品母带。
-            </div>
           </div>
-          <select
-            class="shrink-0 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/40"
-            :value="settings.audio.onlineDefaultQuality"
-            @change="(e: Event) => patchOnlineQuality((e.target as HTMLSelectElement).value as OnlineDefaultQuality)"
-          >
-            <option v-for="opt in ONLINE_QUALITY_OPTIONS" :key="opt.value" :value="opt.value">
-              {{ opt.label }} ({{ opt.description }})
-            </option>
-          </select>
+          <div class="grid grid-cols-3 gap-1.5 shrink-0" style="min-width: 280px;">
+            <button
+              v-for="qKey in QUALITY_GRID.flat()"
+              :key="qKey"
+              type="button"
+              class="px-2 py-1.5 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap"
+              :class="settings.audio.onlineDefaultQuality === qKey
+                ? 'bg-[#EC4141] text-white shadow-sm'
+                : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+              :title="QUALITY_META[qKey].description"
+              @click="patchOnlineQuality(qKey)"
+            >{{ QUALITY_META[qKey].label }}</button>
+          </div>
+        </div>
+
+        <!-- 默认音质播放失败行为 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认音质播放失败行为</div>
+          </div>
+          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
+            <button
+              v-for="opt in QUALITY_FALLBACK_OPTIONS" :key="opt.value"
+              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
+              :class="settings.audio.onlineQualityFallbackBehavior === opt.value
+                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+              @click="patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: opt.value } })"
+            >{{ opt.label }}</button>
+          </div>
         </div>
 
         <!-- 起播失败行为 -->
@@ -233,26 +260,6 @@ const idmCompatDialogContent = [
                 ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
                 : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
               @click="patchSettings({ audio: { ...settings.audio, onlineFailureBehavior: opt.value } })"
-            >{{ opt.label }}</button>
-          </div>
-        </div>
-
-        <!-- 中途被打断行为 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
-          <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">中途被打断行为</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              在线歌曲播放过程中遭遇卡顿、网络错误或解码异常时的处理方式。
-            </div>
-          </div>
-          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
-            <button
-              v-for="opt in INTERRUPT_BEHAVIOR_OPTIONS" :key="opt.value"
-              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors"
-              :class="settings.audio.onlineInterruptBehavior === opt.value
-                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
-                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
-              @click="patchSettings({ audio: { ...settings.audio, onlineInterruptBehavior: opt.value } })"
             >{{ opt.label }}</button>
           </div>
         </div>
