@@ -1,7 +1,7 @@
 {
   "name": "lycia-music",
   "private": true,
-  "version": "1.0.9-bate3",
+  "version": "1.0.9-bate5",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

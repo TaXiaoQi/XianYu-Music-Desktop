@@ -385,6 +385,10 @@ export const useLibraryStore = defineStore('library', () => {
   };
 
   const getSongByPath = (path: string | null | undefined, fallback?: Song | null) => {
+    // [响应式追踪] 读取版本号，使 patchSongMeta 等池子更新操作能触发依赖本函数的 computed 重新计算。
+    // 否则 currentSong 等 computed 会缓存旧对象，导致在线歌曲异步获取歌词后 UI 仍读到空 lyrics_raw。
+    void songCatalogVersion.value;
+
     if (!path) {
       return fallback ?? null;
     }

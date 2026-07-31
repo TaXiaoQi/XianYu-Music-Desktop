@@ -302,7 +302,7 @@ function handleRequest(context, data) {
               lyric: response.lyric,
               tlyric: (typeof response.tlyric == 'string' && response.tlyric.length < 5120) ? response.tlyric : null,
               rlyric: (typeof response.rlyric == 'string' && response.rlyric.length < 5120) ? response.rlyric : null,
-              lxlyric: (typeof response.lxlyric == 'string' && response.lxlyric.length < 8192) ? response.lxlyric : null,
+              lxlyric: (typeof response.lxlyric == 'string' && response.lxlyric.length < 51200) ? response.lxlyric : null,
             }
           };
           break;
@@ -1303,7 +1303,7 @@ export async function lxPluginRequest(
               lyric: response.lyric,
               tlyric: (typeof response.tlyric === 'string' && response.tlyric.length < 5120) ? response.tlyric : null,
               rlyric: (typeof response.rlyric === 'string' && response.rlyric.length < 5120) ? response.rlyric : null,
-              lxlyric: (typeof response.lxlyric === 'string' && response.lxlyric.length < 8192) ? response.lxlyric : null,
+              lxlyric: (typeof response.lxlyric === 'string' && response.lxlyric.length < 51200) ? response.lxlyric : null,
             },
           };
         case 'pic':
