@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Music, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Loader2, Music, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -7,14 +7,14 @@ import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
-import DownloadDialog from '../player/DownloadDialog.vue';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
-import { isDownloadableOnlineSong } from '../../services/downloadService';
-import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
+import { isDownloadableOnlineSong, downloadSong } from '../../services/downloadService';
+import { checkDownloadExists, recordDownload, fileNameFromPath, type DownloadRecord } from '../../services/downloadHistory';
 import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
-import type { RemoteDownloadProgress } from '../../types';
+import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
+import { QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
   getProgressVisualState,
@@ -39,12 +39,14 @@ const { settings, patchSettings: patchAudioSettings } = useSettings();
 const { showToast } = useToast();
 
 // --- 下载功能 ---
+// 底栏下载：点击展开音质下拉（复用播放音质选择 UI），选择音质后直接触发下载。
+// 下载设置（目录/文件名样式/歌词等）在设置-下载页配置，底栏不再弹对话框。
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
-const showDownloadDialog = ref(false);
 
 // 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
 const downloadedRecord = ref<DownloadRecord | null>(null);
 const showRedownloadConfirm = ref(false);
+const isDownloading = ref(false);
 // 防止快速切歌时旧的异步检测结果覆盖新歌状态
 let downloadCheckId = 0;
 
@@ -71,24 +73,101 @@ watch(
   { immediate: true },
 );
 
+// 下载音质下拉菜单（与播放音质选择器 UI 一致，复用 currentAvailableQualities 预取结果）
+const showDownloadQualityMenu = ref(false);
+const downloadQualityButtonRef = ref<HTMLElement | null>(null);
+const downloadQualityMenuRef = ref<HTMLElement | null>(null);
+
+/** 当前歌曲可用的下载音质选项（与播放音质共用 currentAvailableQualities 预取结果） */
+const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
+  const supported = currentAvailableQualities.value;
+  if (!supported || supported.length === 0) return ALL_QUALITY_OPTIONS;
+  return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
+});
+
+/** 当前选择的下载音质（来自设置 store，默认 '320k'） */
+const selectedDownloadQuality = computed<DownloadQuality>(
+  () => (settings.value.download.quality as DownloadQuality) ?? '320k',
+);
+
 const handleDownloadClick = () => {
-  if (!isOnlineSong.value) return;
+  if (!isOnlineSong.value || isDownloading.value) return;
   // 已下载过：先弹确认，让用户决定是否重新下载
   if (downloadedRecord.value) {
     showRedownloadConfirm.value = true;
     return;
   }
-  showDownloadDialog.value = true;
+  // 关闭播放音质菜单，避免两个下拉同时打开
+  showQualityMenu.value = false;
+  showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
 };
 
-/** 确认重新下载：打开原本的下载对话框（确认弹窗由 ModernModal 自行关闭） */
+/** 确认重新下载：确认后展开音质下拉选择档位 */
 const handleConfirmRedownload = () => {
-  showDownloadDialog.value = true;
+  showDownloadQualityMenu.value = true;
+};
+
+/** 选择下载音质并立即开始下载 */
+const startDownload = async (qualityKey: DownloadQuality) => {
+  showDownloadQualityMenu.value = false;
+  if (!currentSong.value) return;
+
+  const downloadDir = settings.value.download.downloadPath;
+  if (!downloadDir) {
+    showToast('请先在设置 - 下载中选择下载目录', 'error');
+    return;
+  }
+
+  const song = currentSong.value;
+  const songLabel = song.title || song.name || '未知歌曲';
+
+  isDownloading.value = true;
+  showToast(`开始下载：${songLabel}`, 'info');
+
+  try {
+    const result = await downloadSong(song, {
+      quality: qualityKey,
+      downloadDir,
+      keepSourceFilename: settings.value.download.keepSourceFilename,
+      fileNameStyle: settings.value.download.fileNameStyle,
+      overwriteExisting: settings.value.download.overwriteExisting,
+      downloadLyrics: settings.value.download.downloadLyrics,
+      lyricsFormat: settings.value.download.lyricsFormat,
+    });
+
+    // 记录本次下载（位置 + 文件名），供后续播放到该歌曲时显示「已下载」状态
+    await recordDownload({
+      songPath: song.cue_source_path || song.path,
+      filePath: result.filePath,
+      fileName: fileNameFromPath(result.filePath),
+      quality: result.hitQuality,
+      downloadedAt: Date.now(),
+      title: song.title || song.name,
+      artist: song.artist,
+    });
+
+    void refreshDownloadedState();
+
+    // 命中的实际档位可能低于用户所选（无版权自动降级）
+    const hitMeta = QUALITY_META[result.hitQuality as QualityKey];
+    const selectedMeta = QUALITY_META[qualityKey as QualityKey];
+    const degraded = selectedMeta && hitMeta ? hitMeta.rank < selectedMeta.rank : result.hitQuality !== qualityKey;
+    const lyricNote = result.lyricsSaved ? '（含歌词）' : '';
+    const note = degraded ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）` : '';
+    showToast(`下载完成${note}${lyricNote}`, degraded ? 'info' : 'success');
+  } catch (e: any) {
+    const msg = typeof e === 'string' ? e : (e?.message || JSON.stringify(e));
+    console.error('[Download] 下载失败:', e);
+    showToast(`下载失败：${msg}`, 'error');
+  } finally {
+    isDownloading.value = false;
+  }
 };
 
 const downloadButtonTitle = computed(() => {
   if (!isOnlineSong.value) return '本地歌曲无法下载';
-  if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}`;
+  if (isDownloading.value) return '下载中…';
+  if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}（点击重新下载）`;
   return '下载歌曲';
 });
 
@@ -132,8 +211,6 @@ let unlistenRemoteDownload: UnlistenFn | null = null;
 
 // 音质选择：使用统一 QualityKey（12 档：mgg / 128k / 192k / 320k / flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master）
 const ONLINE_QUALITY_KEY = 'online_quality';
-import type { QualityKey } from '../../types';
-import { QUALITY_META } from '../../types';
 
 /** 全部音质选项（按 rank 排序） */
 const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description: string }> =
@@ -193,6 +270,8 @@ const qualityMenuRef = ref<HTMLElement | null>(null);
 const toggleQualityMenu = (e: MouseEvent) => {
   if (!isQualitySelectableSong.value) return; // 本地歌曲或不支持的在线歌曲：禁用
   e.stopPropagation();
+  // 关闭下载音质菜单，避免两个下拉同时打开
+  showDownloadQualityMenu.value = false;
   showQualityMenu.value = !showQualityMenu.value;
 };
 
@@ -385,6 +464,11 @@ const handleWindowClick = (e: MouseEvent) => {
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
       showQualityMenu.value = false;
+    }
+  }
+  if (showDownloadQualityMenu.value && downloadQualityMenuRef.value && downloadQualityButtonRef.value) {
+    if (!downloadQualityMenuRef.value.contains(target) && !downloadQualityButtonRef.value.contains(target)) {
+      showDownloadQualityMenu.value = false;
     }
   }
 };
@@ -750,28 +834,65 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 在线歌曲下载：位于更多工具与音量设置之间。
+      <!-- 在线歌曲下载：点击展开音质下拉（与播放音质选择器 UI 一致），选择音质后直接触发下载。
            已下载且文件仍存在时显示对勾图标，点击后先确认是否重新下载 -->
-      <button
-        @mousedown.stop
-        @click.stop="handleDownloadClick"
-        class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
-        :class="!isOnlineSong
-          ? (showPlayerDetail
-            ? 'text-white/30 cursor-not-allowed'
-            : 'text-gray-300 dark:text-white/30 cursor-not-allowed')
-          : downloadedRecord
+      <div class="relative flex items-center justify-center h-full z-[70]">
+        <button
+          ref="downloadQualityButtonRef"
+          @mousedown.stop
+          @click.stop="handleDownloadClick"
+          class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
+          :class="!isOnlineSong
             ? (showPlayerDetail
-              ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
-              : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
-            : (showPlayerDetail
-              ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
-              : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
-        :title="downloadButtonTitle"
-      >
-        <CircleCheck v-if="isOnlineSong && downloadedRecord" class="h-5 w-5" />
-        <Download v-else class="h-5 w-5" />
-      </button>
+              ? 'text-white/30 cursor-not-allowed'
+              : 'text-gray-300 dark:text-white/30 cursor-not-allowed')
+            : isDownloading
+              ? (showPlayerDetail
+                ? 'text-white/80 hover:bg-white/10 cursor-wait'
+                : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 cursor-wait')
+              : downloadedRecord
+                ? (showPlayerDetail
+                  ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
+                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+                : (showPlayerDetail
+                  ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+                  : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
+          :title="downloadButtonTitle"
+        >
+          <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
+          <CircleCheck v-else-if="isOnlineSong && downloadedRecord" class="h-5 w-5" />
+          <Download v-else class="h-5 w-5" />
+        </button>
+
+        <!-- 下载音质下拉菜单：与播放音质选择器一致的 UI，复用 currentAvailableQualities 预取结果 -->
+        <transition name="fade-scale">
+          <div
+            v-if="showDownloadQualityMenu"
+            ref="downloadQualityMenuRef"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+          >
+            <div
+              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+            >
+              <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
+              <button
+                v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
+                :key="opt.value"
+                @click.stop="startDownload(opt.value)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                :class="selectedDownloadQuality === opt.value
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+          </div>
+        </transition>
+      </div>
 
       <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/桌面歌词/均衡器/固定） -->
       <div ref="footerToolsRef" class="relative flex items-center justify-center h-full z-[70]">
@@ -884,12 +1005,6 @@ onUnmounted(() => {
 
           @close="showContextMenu = false"
 
-        />
-
-        <DownloadDialog
-          v-model:visible="showDownloadDialog"
-          :song="currentSong"
-          @downloaded="refreshDownloadedState"
         />
 
         <!-- 已下载确认：询问是否重新下载 -->
