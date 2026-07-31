@@ -34,6 +34,13 @@ import {
   downloadPlugins as downloadPluginsFromCloud,
   type PluginSyncResult,
 } from '../services/pluginSync';
+import {
+  uploadSettings as uploadSettingsToCloud,
+  downloadSettings as downloadSettingsFromCloud,
+  type SettingsSyncResult,
+} from '../services/settingsSync';
+import { playerStorage } from '../services/storage/playerStorage';
+import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
 import type { Playlist, Song } from '../types';
 
 export type SyncDirection = 'upload' | 'download' | 'sync';
@@ -67,6 +74,12 @@ export function usePlaylistSync() {
   const lastPluginSyncTime = ref<number | null>(null);
   const lastPluginSyncResult = ref<PluginSyncResult | null>(null);
 
+  // 设置同步独立状态
+  const settingsSyncing = ref(false);
+  const settingsSyncProgress = ref('');
+  const lastSettingsSyncTime = ref<number | null>(null);
+  const lastSettingsSyncResult = ref<SettingsSyncResult | null>(null);
+
   /** 检查是否可以同步（已登录 + 开启了歌单上传） */
   function canSync(): boolean {
     return authStore.isLoggedIn && !!authStore.user?.ciyuanxi_id;
@@ -80,6 +93,11 @@ export function usePlaylistSync() {
   /** 检查插件上传是否在设置中启用 */
   function isPluginUploadEnabled(): boolean {
     return settingsStore.settings.upload.plugins;
+  }
+
+  /** 检查设置上传是否在设置中启用 */
+  function isSettingsUploadEnabled(): boolean {
+    return settingsStore.settings.upload.settings;
   }
 
   /**
@@ -553,6 +571,170 @@ export function usePlaylistSync() {
   }
 
   /**
+   * 仅上传设置到云端
+   */
+  async function uploadSettingsOnly(): Promise<void> {
+    logSync('========== uploadSettingsOnly 开始 ==========');
+    if (!canSync()) {
+      logSyncError('uploadSettingsOnly: 未登录或无弦予号');
+      showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    if (!isSettingsUploadEnabled()) {
+      logSync('uploadSettingsOnly: 设置同步未开启');
+      showToast('设置同步已关闭，请在设置中开启', 'info');
+      return;
+    }
+
+    settingsSyncing.value = true;
+    settingsSyncProgress.value = '正在上传设置到云端...';
+
+    try {
+      const result = await uploadSettingsToCloud(settingsStore.settings);
+      lastSettingsSyncTime.value = Date.now();
+      lastSettingsSyncResult.value = result;
+      logSync(`uploadSettingsOnly 完成: uploaded=${result.uploaded}, errors=${result.errors.length}`);
+
+      if (result.errors.length > 0) {
+        showToast(`设置上传完成（${result.errors.length} 个错误）`, 'error');
+      } else if (result.uploaded) {
+        showToast('设置已上传到云端', 'success');
+      } else {
+        showToast('设置上传失败', 'info');
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logSyncError(`uploadSettingsOnly 异常: ${msg}`, error);
+      showToast(`设置上传失败：${msg}`, 'error');
+    } finally {
+      settingsSyncing.value = false;
+      settingsSyncProgress.value = '';
+    }
+  }
+
+  /**
+   * 仅从云端下载设置
+   */
+  async function downloadSettingsOnly(): Promise<void> {
+    logSync('========== downloadSettingsOnly 开始 ==========');
+    if (!canSync()) {
+      logSyncError('downloadSettingsOnly: 未登录或无弦予号');
+      showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    settingsSyncing.value = true;
+    settingsSyncProgress.value = '正在从云端下载设置...';
+
+    try {
+      const { settings: cloudSettings, result } = await downloadSettingsFromCloud();
+      lastSettingsSyncTime.value = Date.now();
+      lastSettingsSyncResult.value = result;
+      logSync(`downloadSettingsOnly 完成: downloaded=${result.downloaded}, errors=${result.errors.length}`);
+
+      if (result.errors.length > 0) {
+        showToast(`设置下载完成（${result.errors.length} 个错误）`, 'error');
+      } else if (cloudSettings) {
+        // 合并云端设置到本地：以本地默认值为 base，用云端 patch 覆盖
+        // 保留本地设备相关字段（downloadPath 等）
+        const currentSettings = settingsStore.settings;
+        const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
+        // 恢复本地设备相关字段
+        merged.download.downloadPath = currentSettings.download.downloadPath;
+        merged.upload = currentSettings.upload; // upload 设置不同步，保持本地
+        merged.organizeRoot = currentSettings.organizeRoot; // organizeRoot 是设备相关路径
+        settingsStore.replaceSettings(merged);
+
+        // 持久化到 localStorage
+        playerStorage.writeSettings(merged);
+
+        showToast('设置已从云端恢复', 'success');
+      } else {
+        showToast('云端暂无设置数据', 'info');
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logSyncError(`downloadSettingsOnly 异常: ${msg}`, error);
+      showToast(`设置下载失败：${msg}`, 'error');
+    } finally {
+      settingsSyncing.value = false;
+      settingsSyncProgress.value = '';
+    }
+  }
+
+  /**
+   * 双向同步设置：先上传本地设置，再下载云端设置
+   */
+  async function syncSettings(): Promise<SettingsSyncResult> {
+    logSync('========== syncSettings 开始 ==========');
+    if (!canSync()) {
+      logSyncError('syncSettings: 未登录或无弦予号，取消同步');
+      showToast('请先登录后再同步', 'error');
+      return { uploaded: false, downloaded: false, errors: ['未登录'] };
+    }
+
+    settingsSyncing.value = true;
+    settingsSyncProgress.value = '正在同步设置...';
+    lastSettingsSyncResult.value = null;
+
+    try {
+      let uploadResult: SettingsSyncResult = { uploaded: false, downloaded: false, errors: [] };
+
+      if (isSettingsUploadEnabled()) {
+        logSync('syncSettings: 步骤 1/2 - 开始上传设置');
+        settingsSyncProgress.value = '正在上传本地设置到云端...';
+        uploadResult = await uploadSettingsToCloud(settingsStore.settings);
+        logSync('syncSettings: 步骤 1/2 - 上传设置完成', uploadResult);
+      } else {
+        logSync('syncSettings: 步骤 1/2 - 设置上传未开启，跳过');
+      }
+
+      // 第二步：下载
+      logSync('syncSettings: 步骤 2/2 - 开始下载设置');
+      settingsSyncProgress.value = '正在从云端拉取设置...';
+      const { settings: cloudSettings, result: downloadResult } = await downloadSettingsFromCloud();
+      logSync('syncSettings: 步骤 2/2 - 下载设置完成', downloadResult);
+
+      if (cloudSettings) {
+        const currentSettings = settingsStore.settings;
+        const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
+        merged.download.downloadPath = currentSettings.download.downloadPath;
+        merged.upload = currentSettings.upload;
+        merged.organizeRoot = currentSettings.organizeRoot;
+        settingsStore.replaceSettings(merged);
+        playerStorage.writeSettings(merged);
+      }
+
+      const combined: SettingsSyncResult = {
+        uploaded: uploadResult.uploaded,
+        downloaded: downloadResult.downloaded,
+        errors: [...uploadResult.errors, ...downloadResult.errors],
+      };
+
+      lastSettingsSyncResult.value = combined;
+      lastSettingsSyncTime.value = Date.now();
+
+      if (combined.errors.length > 0) {
+        showToast(`设置同步完成（${combined.errors.length} 个错误）`, 'error');
+      } else {
+        showToast('设置同步完成', 'success');
+      }
+
+      logSync('========== syncSettings 结束 ==========');
+      return combined;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logSyncError(`syncSettings 异常: ${msg}`, error);
+      showToast(`设置同步失败：${msg}`, 'error');
+      return { uploaded: false, downloaded: false, errors: [msg] };
+    } finally {
+      settingsSyncing.value = false;
+      settingsSyncProgress.value = '';
+    }
+  }
+
+  /**
    * 仅上传插件到云端
    */
   async function uploadPluginsOnly(): Promise<void> {
@@ -641,15 +823,23 @@ export function usePlaylistSync() {
     pluginSyncProgress,
     lastPluginSyncTime,
     lastPluginSyncResult,
+    settingsSyncing,
+    settingsSyncProgress,
+    lastSettingsSyncTime,
+    lastSettingsSyncResult,
     canSync,
     isUploadEnabled,
     isPluginUploadEnabled,
+    isSettingsUploadEnabled,
     syncPlaylists,
     syncPlugins,
+    syncSettings,
     uploadOnly,
     downloadOnly,
     uploadPluginsOnly,
     downloadPluginsOnly,
+    uploadSettingsOnly,
+    downloadSettingsOnly,
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,

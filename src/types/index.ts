@@ -550,6 +550,7 @@ export interface UploadSettings {
   history: boolean;
   favorites: boolean;
   plugins: boolean;
+  settings: boolean;
 }
 
 export interface SaveArtistAvatarResponse {
