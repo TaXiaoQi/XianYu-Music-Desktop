@@ -25,6 +25,7 @@ import { Buffer } from 'buffer';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   PluginSource,
+  PluginSubscription,
   PluginSearchResult,
   PluginMusicInfo,
   QualityKey,
@@ -2199,6 +2200,266 @@ export async function restorePluginFromSync(
     log(`restorePluginFromSync: 恢复失败 ${source.name} - ${e?.message || e}`);
     return false;
   }
+}
+
+// ==================== 订阅管理 ====================
+
+/**
+ * 订阅管理 —— 参考 MusicFreeDesktop 订阅管理设计
+ *
+ * 数据模型 PluginSubscription 见 src/types/index.ts
+ * 持久化到 localStorage（key: lycia_plugin_subscriptions），与插件存储风格一致
+ * 安装逻辑复用 loadPluginFromScript + addPluginSource，支持单插件脚本与批量 JSON 两种订阅源格式
+ */
+
+const PLUGIN_SUBSCRIPTIONS_KEY = 'lycia_plugin_subscriptions';
+
+/** 读取全部订阅 */
+export function getSubscriptions(): PluginSubscription[] {
+  try {
+    const raw = localStorage.getItem(PLUGIN_SUBSCRIPTIONS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 写入全部订阅（内部） */
+function saveSubscriptions(list: PluginSubscription[]): void {
+  try {
+    localStorage.setItem(PLUGIN_SUBSCRIPTIONS_KEY, JSON.stringify(list));
+  } catch { /* ignore */ }
+}
+
+/**
+ * URL 校验：必须 http(s) 且以 .js/.json 结尾（与 MusicFreeDesktop 一致）
+ * 允许末尾带查询参数（如 plugin.json?v=2）
+ */
+export function isValidSubscriptionUrl(url: string): boolean {
+  return /^https?:\/\/.+\.(js|json)(\?.*)?$/i.test(url.trim());
+}
+
+/** 生成订阅 ID（与组件内既有命名风格一致） */
+function genSubscriptionId(): string {
+  return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * 新增订阅（含 URL 校验 + 去重）
+ * @returns 新增的订阅项；URL 非法或已存在时返回 null
+ */
+export function addSubscription(input: { name: string; url: string }): PluginSubscription | null {
+  const url = input.url.trim();
+  if (!isValidSubscriptionUrl(url)) return null;
+
+  const list = getSubscriptions();
+  if (list.some(s => s.url === url)) return null;
+
+  // 从 URL 提取默认名称（取域名 + 末段路径）
+  let name = input.name.trim();
+  if (!name) {
+    try {
+      const u = new URL(url);
+      const lastSeg = u.pathname.split('/').pop() || '';
+      name = u.hostname + (lastSeg ? `/${lastSeg}` : '');
+    } catch {
+      name = url;
+    }
+  }
+
+  const sub: PluginSubscription = {
+    id: genSubscriptionId(),
+    name,
+    url,
+    addedAt: Date.now(),
+  };
+  list.push(sub);
+  saveSubscriptions(list);
+  return sub;
+}
+
+/** 更新订阅（用于编辑名称或 URL） */
+export function updateSubscription(
+  id: string,
+  updates: Partial<Pick<PluginSubscription, 'name' | 'url' | 'lastSyncAt' | 'lastSyncStatus' | 'lastSyncMessage' | 'lastSyncCount'>>,
+): void {
+  const list = getSubscriptions();
+  const idx = list.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  // URL 更新时需校验
+  if (updates.url !== undefined && !isValidSubscriptionUrl(updates.url)) return;
+  list[idx] = { ...list[idx], ...updates };
+  saveSubscriptions(list);
+}
+
+/** 移除订阅 */
+export function removeSubscription(id: string): void {
+  saveSubscriptions(getSubscriptions().filter(s => s.id !== id));
+}
+
+/** 单次订阅同步安装结果 */
+export interface SubscriptionInstallResult {
+  /** 成功安装的插件数 */
+  successCount: number;
+  /** 失败数 */
+  failCount: number;
+  /** 成功安装的插件名列表 */
+  names: string[];
+  /** 错误信息列表 */
+  errors: string[];
+}
+
+/** 拉取远程内容（先浏览器 fetch，失败回退 Tauri 后端代理） */
+async function fetchSubscriptionContent(url: string): Promise<string> {
+  let content = '';
+  try {
+    const resp = await fetchWithTimeout(url, 15000);
+    if (resp.ok) content = await resp.text();
+  } catch { /* ignore, try Tauri backend */ }
+  if (!content) {
+    try {
+      const { pluginApi } = await import('./tauri/pluginApi');
+      content = await pluginApi.fetchPluginUrl(url);
+    } catch { /* ignore */ }
+  }
+  return content || '';
+}
+
+/**
+ * 安装单个插件脚本（含版本校验）
+ * 复用 SettingsPlugins.vue installPluginFromScript 的版本比较逻辑
+ */
+async function installSinglePluginScript(
+  script: string,
+  filePath: string,
+  skipVersionCheck: boolean,
+): Promise<{ ok: boolean; name?: string; error?: string }> {
+  const source = await loadPluginFromScript(script, filePath);
+  if (!source) {
+    return { ok: false, error: '插件加载失败' };
+  }
+
+  // 版本校验：跳过更旧或相同版本
+  if (!skipVersionCheck) {
+    const existing = getStoredPlugins().find(p => p.name === source.name);
+    if (existing && compareVersions(source.version, existing.version) <= 0) {
+      return { ok: false, error: `已存在 v${existing.version}，新版本未更高，已跳过` };
+    }
+  }
+
+  addPluginSource(source);
+  return { ok: true, name: source.name };
+}
+
+/**
+ * 从单个订阅 URL 拉取并安装插件
+ *
+ * 支持两种订阅源格式：
+ *  1. 单插件脚本（.js 文本）→ 直接 loadPluginFromScript + addPluginSource
+ *  2. 批量 JSON：{plugins:[{name,url,version}]} 或 [{name,url}] → 逐个 fetch 子 URL 安装
+ *
+ * @param url 订阅源 URL
+ * @param options.skipVersionCheck 跳过版本校验（与设置"安装时不校验版本"联动）
+ */
+export async function installFromSubscriptionUrl(
+  url: string,
+  options: { skipVersionCheck?: boolean } = {},
+): Promise<SubscriptionInstallResult> {
+  const result: SubscriptionInstallResult = { successCount: 0, failCount: 0, names: [], errors: [] };
+  const skipVersionCheck = !!options.skipVersionCheck;
+
+  const content = await fetchSubscriptionContent(url);
+  if (!content || !content.trim()) {
+    result.failCount = 1;
+    result.errors.push('获取订阅内容失败，请检查 URL');
+    return result;
+  }
+
+  // ===== 检测批量 JSON 格式（与 SettingsPlugins.vue handleInstallFromUrl 逻辑一致） =====
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const json = JSON.parse(trimmed);
+      const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
+      // 仅当是 {url,...} 数组时按批量处理
+      if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
+        for (const item of pluginList) {
+          if (!item.url) continue;
+          try {
+            const script = await fetchSubscriptionContent(item.url);
+            if (!script || !script.trim()) {
+              result.failCount++;
+              result.errors.push(`${item.name || item.url}: 获取脚本失败`);
+              continue;
+            }
+            const r = await installSinglePluginScript(script, item.url, skipVersionCheck);
+            if (r.ok) {
+              result.successCount++;
+              result.names.push(r.name || item.name || '');
+            } else {
+              result.failCount++;
+              result.errors.push(`${item.name || item.url}: ${r.error}`);
+            }
+          } catch (e: any) {
+            result.failCount++;
+            result.errors.push(`${item.name || item.url}: ${e?.message || e}`);
+          }
+        }
+        return result;
+      }
+    } catch { /* 不是有效 JSON，当作单插件脚本处理 */ }
+  }
+
+  // ===== 单插件脚本 =====
+  const r = await installSinglePluginScript(content, url, skipVersionCheck);
+  if (r.ok) {
+    result.successCount = 1;
+    result.names.push(r.name || '');
+  } else {
+    result.failCount = 1;
+    result.errors.push(r.error || '插件加载失败');
+  }
+  return result;
+}
+
+/**
+ * 一键同步所有订阅，逐个拉取安装，并更新每个订阅的 lastSync* 字段
+ * @param onProgress 每完成一个订阅回调（index 从 0 开始，total 订阅总数，sub 当前订阅，result 安装结果）
+ */
+export async function installAllSubscriptions(
+  onProgress?: (index: number, total: number, sub: PluginSubscription, result: SubscriptionInstallResult) => void,
+): Promise<{ totalSubs: number; totalInstalled: number; failedSubs: number }> {
+  const subs = getSubscriptions();
+  const summary = { totalSubs: subs.length, totalInstalled: 0, failedSubs: 0 };
+
+  for (let i = 0; i < subs.length; i++) {
+    const sub = subs[i];
+    let result: SubscriptionInstallResult;
+    try {
+      result = await installFromSubscriptionUrl(sub.url);
+    } catch (e: any) {
+      result = { successCount: 0, failCount: 1, names: [], errors: [e?.message || String(e)] };
+    }
+
+    // 更新该订阅的同步状态
+    const status: PluginSubscription['lastSyncStatus'] =
+      result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed');
+    updateSubscription(sub.id, {
+      lastSyncAt: Date.now(),
+      lastSyncStatus: status,
+      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`,
+      lastSyncCount: result.successCount,
+    });
+
+    summary.totalInstalled += result.successCount;
+    if (result.successCount === 0) summary.failedSubs++;
+
+    onProgress?.(i, subs.length, sub, result);
+  }
+
+  return summary;
 }
 
 // ==================== 导出 ====================
