@@ -319,7 +319,7 @@ async function handleAvatarFileChange(event: Event) {
 
   avatarUploading.value = true;
   try {
-    const result = await uploadAvatar(file, file.name || 'avatar.jpg');
+    const result = await uploadAvatar(file);
     if (result?.user) authStore.setUser(result.user);
     avatarDraft.value = result.user.avatar || result.avatar || '';
     showToast('头像已上传', 'success');
