@@ -2,6 +2,7 @@
 import CustomSkinModal from './CustomSkinModal.vue';
 import SettingsSidebar from './SettingsSidebar.vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import SettingHint from './SettingHint.vue';
 
 const TEXT = {
   paletteTitle: '\u914d\u8272\u65b9\u6848',
@@ -134,24 +135,14 @@ const {
     </section>
 
     <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ TEXT.dynamicTitle }}
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.dynamicTitle }}
+        </span>
+        <SettingHint :text="isDynamicBgDisabled ? `${TEXT.dynamicHint} ${TEXT.dynamicDisabledHint}` : TEXT.dynamicHint" />
       </h2>
       <div class="space-y-4">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium">
-          <span
-            :class="isDynamicBgDisabled
-              ? 'text-gray-500 dark:text-white/45'
-              : 'text-gray-800 dark:text-gray-200'"
-          >
-            {{ TEXT.dynamicHint }}
-          </span>
-          <span v-if="isDynamicBgDisabled" class="text-amber-600 dark:text-amber-400">
-            {{ TEXT.dynamicDisabledHint }}
-          </span>
-        </div>
-
         <div :class="isDynamicBgDisabled ? 'pointer-events-none opacity-50' : ''">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <button
@@ -321,9 +312,19 @@ const {
     </section>
 
     <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ TEXT.windowMaterialTitle }}
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.windowMaterialTitle }}
+        </span>
+        <SettingHint
+          v-if="windowMaterialDisabledReason"
+          :text="windowMaterialDisabledReason === 'windows'
+            ? TEXT.windowMaterialUnsupportedHint
+            : windowMaterialDisabledReason === 'transparency'
+              ? TEXT.windowMaterialTransparencyHint
+              : TEXT.windowMaterialConflictHint"
+        />
       </h2>
       <div
         class=""
@@ -412,10 +413,7 @@ const {
           class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/70 bg-white/45 px-4 py-3 transition-all dark:border-white/10 dark:bg-black/20"
           :class="materialMode === 'none' ? 'cursor-not-allowed opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/60 dark:hover:bg-white/10'"
         >
-          <span class="min-w-0">
-            <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
-            <span class="mt-0.5 block text-xs text-gray-500 dark:text-white/50">{{ TEXT.keepWindowMaterialOnBlurHint }}</span>
-          </span>
+          <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
           <input
             type="checkbox"
             class="sr-only"
@@ -423,14 +421,17 @@ const {
             :disabled="materialMode === 'none'"
             @change="setKeepWindowMaterialOnBlur(($event.target as HTMLInputElement).checked)"
           />
-          <span
-            class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
-            :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
-          >
+          <span class="flex items-center gap-3">
+            <SettingHint :text="TEXT.keepWindowMaterialOnBlurHint" />
             <span
-              class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
-              :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'translate-x-5' : ''"
-            ></span>
+              class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+              :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
+            >
+              <span
+                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+                :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'translate-x-5' : ''"
+              ></span>
+            </span>
           </span>
         </label>
 
@@ -464,15 +465,6 @@ const {
           </div>
         </transition>
       </div>
-      <p v-if="windowMaterialDisabledReason === 'windows'" class="text-xs text-amber-600 dark:text-amber-400">
-        {{ TEXT.windowMaterialUnsupportedHint }}
-      </p>
-      <p v-else-if="windowMaterialDisabledReason === 'transparency'" class="text-xs text-amber-600 dark:text-amber-400">
-        {{ TEXT.windowMaterialTransparencyHint }}
-      </p>
-      <p v-else-if="windowMaterialDisabledReason === 'theme-conflict'" class="text-xs text-amber-600 dark:text-amber-400">
-        {{ TEXT.windowMaterialConflictHint }}
-      </p>
     </section>
 
     <!-- 侧边栏管理（并入外观） -->

@@ -10,6 +10,7 @@ import {
   normalizeSidebarOrder,
 } from '../../features/settings/sidebarItems';
 import type { SidebarItemKey } from '../../types';
+import SettingHint from './SettingHint.vue';
 
 const { settings } = useSettings();
 const { showToast } = useToast();
@@ -200,13 +201,13 @@ onUnmounted(stopDragging);
 <template>
   <div class="w-full space-y-8">
     <section v-if="settings.sidebar" class="space-y-3">
-      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        侧边栏管理
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          侧边栏管理
+        </span>
+        <SettingHint text="拖动左侧手柄或使用上下箭头调整排列顺序，右侧开关控制是否在侧边栏显示。" />
       </h2>
-      <p class="text-xs text-gray-500 dark:text-white/50">
-        拖动左侧手柄或使用上下箭头调整排列顺序，右侧开关控制是否在侧边栏显示。
-      </p>
 
       <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden">
         <!-- 首页：固定置顶，不可隐藏、不可排序 -->
@@ -217,12 +218,14 @@ onUnmounted(stopDragging);
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
             </div>
             <div class="min-w-0">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">首页</div>
-              <div class="text-xs text-gray-600 dark:text-white/60 mt-0.5 truncate">核心功能 (固定在顶部)</div>
+              <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">首页</div>
             </div>
           </div>
-          <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-[#EC4141] opacity-50">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
+          <div class="flex items-center gap-3">
+            <SettingHint text="核心功能（固定在顶部）" />
+            <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-[#EC4141] opacity-50">
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
+            </div>
           </div>
         </div>
 
@@ -272,18 +275,14 @@ onUnmounted(stopDragging);
             </div>
 
             <div class="min-w-0">
-              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ item.label }}</div>
-              <div
-                v-if="item.description"
-                class="text-xs text-gray-600 dark:text-white/60 mt-0.5 truncate"
-              >
-                {{ item.description }}
-              </div>
+              <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.label }}</div>
             </div>
           </div>
 
-          <div class="flex shrink-0 items-center gap-1.5">
-            <button
+          <div class="flex shrink-0 items-center gap-3">
+            <SettingHint v-if="item.description" :text="item.description" />
+            <div class="flex items-center gap-1.5">
+              <button
               type="button"
               class="settings-sidebar-move"
               title="上移"
@@ -291,8 +290,8 @@ onUnmounted(stopDragging);
               @click.stop="moveUp(index)"
             >
               <ArrowUp class="h-3.5 w-3.5" />
-            </button>
-            <button
+              </button>
+              <button
               type="button"
               class="settings-sidebar-move"
               title="下移"
@@ -300,9 +299,9 @@ onUnmounted(stopDragging);
               @click.stop="moveDown(index)"
             >
               <ArrowDown class="h-3.5 w-3.5" />
-            </button>
+              </button>
 
-            <button
+              <button
               type="button"
               class="relative ml-1.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
               :class="[
@@ -317,7 +316,8 @@ onUnmounted(stopDragging);
                 class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
                 :class="isVisible(item.key) ? 'translate-x-6' : 'translate-x-1'"
               />
-            </button>
+              </button>
+            </div>
           </div>
           </div>
         </TransitionGroup>
