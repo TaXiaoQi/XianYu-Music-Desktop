@@ -68,7 +68,7 @@ export const desktopLyricsSettings = createSettingsProxy<DesktopLyricsSettings>(
   (patch) => useLyricsSettingsStore().patchDesktopLyricsSettings(patch),
 );
 
-export async function loadLyrics() {
+export async function loadLyrics(overrideLyricsRaw?: string) {
   ensureSongPathWatcher();
   const requestId = ++loadRequestId;
   const playbackStore = usePlaybackStore();
@@ -96,14 +96,17 @@ export async function loadLyrics() {
   parsedLyrics.value = [];
 
   try {
+    // [修复] 优先使用调用方直接传入的歌词文本（在线歌曲异步获取歌词后直接传入），
+    // 避免 currentSong computed 响应式传播延迟导致读到空的 lyrics_raw。
+    const lyricsRaw = overrideLyricsRaw ?? song.lyrics_raw;
     // If the song carries pre-fetched lyrics (e.g. from network music API),
     // parse them directly instead of looking up by file path.
-    if (song.lyrics_raw) {
-      const payload = await invoke<LyricsPayload>('parse_lyrics_text', { text: song.lyrics_raw });
+    if (lyricsRaw) {
+      const payload = await invoke<LyricsPayload>('parse_lyrics_text', { text: lyricsRaw });
 
       if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
-      rawLyrics.value = song.lyrics_raw;
+      rawLyrics.value = lyricsRaw;
       lyricDocument.value = payload?.document ?? null;
       semanticLyrics.value = payload?.semanticLines ?? [];
       // [修复]: 不再生成假逐字时间，直接使用后端解析的真实逐字时间
@@ -181,37 +184,22 @@ export async function loadLyrics() {
 // 解决切歌时 loadLyrics() 未被调用或读取到旧 song 对象导致歌词不更新的问题
 // 延迟注册 watcher，避免模块导入时 Pinia 尚未初始化导致 getActivePinia() 报错
 let lastWatchedSongPath: string | null = null;
-let lastWatchedLyricsRaw: string | null = null;
 let songPathWatcherInitialized = false;
 
 function ensureSongPathWatcher() {
   if (songPathWatcherInitialized) return;
   songPathWatcherInitialized = true;
-  // 同时监听 path 和 lyrics_raw 的变化：
-  // - path 变化：切歌时重新加载歌词
-  // - lyrics_raw 变化：在线歌曲异步获取歌词后（path 不变）自动刷新
+  // 仅监听 path 变化：切歌时重新加载歌词。
+  // lyrics_raw 的异步刷新由调用方（playerPlayback.ts）在设置歌词后通过 loadLyrics(raw) 传参显式触发，
+  // 这里若再监听 lyrics_raw 变化会与传参加载并发竞争，导致 parsedLyrics 被覆盖、歌词错乱无法滚动。
   watch(
-    () => {
-      const song = usePlaybackStore().currentSong;
-      return { path: song?.path ?? null, lyricsRaw: song?.lyrics_raw ?? null };
-    },
-    (newVal) => {
-      if (newVal.path !== lastWatchedSongPath) {
-        lastWatchedSongPath = newVal.path;
-        lastWatchedLyricsRaw = newVal.lyricsRaw;
+    () => usePlaybackStore().currentSong?.path ?? null,
+    (newPath) => {
+      if (newPath !== lastWatchedSongPath) {
+        lastWatchedSongPath = newPath;
         void loadLyrics();
-        return;
-      }
-      // path 没变但 lyrics_raw 变了（在线歌曲异步获取歌词完成）
-      if (newVal.lyricsRaw !== lastWatchedLyricsRaw) {
-        lastWatchedLyricsRaw = newVal.lyricsRaw;
-        // 仅在 lyrics_raw 从空变为非空时刷新（避免重复加载）
-        if (newVal.lyricsRaw) {
-          void loadLyrics();
-        }
       }
     },
-    { deep: false },
   );
 }
 

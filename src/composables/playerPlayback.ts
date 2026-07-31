@@ -27,7 +27,7 @@ interface SeekCompletedPayload {
 interface CreatePlayerPlaybackDeps {
   getDisplaySongList: () => Song[];
   addToHistory: (song: Song) => void | Promise<void>;
-  loadLyrics: () => void | Promise<void>;
+  loadLyrics: (overrideLyricsRaw?: string) => void | Promise<void>;
   handleAutoNext: () => void;
   onBeforePlay?: (song: Song, options: PlaySongOptions) => void;
 }
@@ -733,7 +733,7 @@ export const createPlayerPlayback = ({
           ));
           currentSong.value = songWithLyrics;
           console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
-          void loadLyrics();
+          void loadLyrics(lyricsRaw);
         })
         .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
     }
@@ -771,7 +771,7 @@ export const createPlayerPlayback = ({
               item.path === song.path ? { ...item, lyrics_raw: lyricData.lyricsRaw } : item
             ));
             currentSong.value = songWithLyrics;
-            void loadLyrics();
+            void loadLyrics(lyricData.lyricsRaw);
           } catch (error) {
             console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
           }

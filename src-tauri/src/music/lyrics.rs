@@ -2933,17 +2933,27 @@ fn build_hard_role_semantic_line_from_cluster(
                     (*first_line, *second_line)
                 };
 
-            Some(build_hard_role_semantic_line(
-                main_line,
-                Some(translation_line),
-                None,
-            ))
+            // [修复] 落雪歌词中 lyric 与 tlyric 可能内容完全相同（如源未提供翻译，
+            // tlyric 复用了 lyric），此时不应把同一句再当翻译显示，避免主副词重复。
+            if sanitize_line_text(&main_line.text) == sanitize_line_text(&translation_line.text) {
+                Some(build_hard_role_semantic_line(main_line, None, None))
+            } else {
+                Some(build_hard_role_semantic_line(
+                    main_line,
+                    Some(translation_line),
+                    None,
+                ))
+            }
         }
-        [roman_line, main_line, translation_line] => Some(build_hard_role_semantic_line(
-            main_line,
-            Some(translation_line),
-            Some(roman_line),
-        )),
+        [roman_line, main_line, translation_line] => {
+            // [修复] 同理：若主词与翻译文本完全相同，则丢弃重复翻译，仅保留主词+罗马音
+            let translation = if sanitize_line_text(&main_line.text) == sanitize_line_text(&translation_line.text) {
+                None
+            } else {
+                Some(*translation_line)
+            };
+            Some(build_hard_role_semantic_line(main_line, translation, Some(roman_line)))
+        },
         _ => None,
     }
 }
@@ -3666,5 +3676,30 @@ mod tests {
         assert!(
             score_romanized_latin_text(romaji_line) > score_romanized_latin_text(english_phrase)
         );
+    }
+
+    #[test]
+    fn hard_role_rules_deduplicate_identical_main_and_translation() {
+        // 模拟落雪歌词 lyric 与 tlyric 内容完全相同（源未提供真实翻译）
+        let payload = build_structured_lyrics_payload(
+            ["[00:01.000]相同歌词", "[00:01.000]相同歌词"].join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(payload.display_lines[0].text, "相同歌词");
+        assert_eq!(payload.display_lines[0].translation, "");
+        assert_eq!(payload.display_lines[0].romaji, "");
+    }
+
+    #[test]
+    fn hard_role_rules_keep_different_main_and_translation() {
+        // 真实翻译场景：lyric 与 tlyric 不同，应保留翻译
+        let payload = build_structured_lyrics_payload(
+            ["[00:01.000]Hello", "[00:01.000]你好"].join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 1);
+        assert_eq!(payload.display_lines[0].text, "Hello");
+        assert_eq!(payload.display_lines[0].translation, "你好");
     }
 }
