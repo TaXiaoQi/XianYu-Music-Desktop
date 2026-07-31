@@ -1305,12 +1305,15 @@ fn rebuild_statistics_aggregates(conn: &rusqlite::Connection) -> Result<(), Stri
     clear_aggregate_statistics(conn)?;
 
     {
+        // 使用 LEFT JOIN 以包含在线歌曲（song_id 为 NULL 的记录）
+        // 对于在线歌曲，s.title/s.artist/s.album 等字段为 NULL，
+        // resolve_song_identity 会用 song_path 作为 fallback 提取标题
         let mut stmt = conn
             .prepare(
-                "SELECT s.path, s.title, s.artist, s.album, s.duration, s.track_number, ph.played_at, ph.played_seconds
+                "SELECT ph.song_path, s.title, s.artist, s.album, s.duration, s.track_number, ph.played_at, ph.played_seconds
                  FROM play_history ph
-                 INNER JOIN songs s ON ph.song_id = s.id
-                 WHERE ph.event = 'play' AND ph.song_id IS NOT NULL
+                 LEFT JOIN songs s ON ph.song_id = s.id
+                 WHERE ph.event = 'play'
                  ORDER BY ph.played_at ASC, ph.id ASC",
             )
             .map_err(|e| e.to_string())?;
@@ -2362,7 +2365,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
     // 规范化路径，确保与数据库中的路径格式一致
     let normalized_path = normalize_path(&payload.song_path);
 
-    // 通过 path 查找 song_id
+    // 通过 path 查找 song_id（本地歌曲在 songs 表中可找到，在线歌曲找不到）
     let song_id: Option<i64> = conn
         .query_row(
             "SELECT id FROM songs WHERE path = ?1",
@@ -2371,24 +2374,21 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
         )
         .ok();
 
-    // 如果找不到歌曲，静默返回（歌曲可能已删除）
-    let song_id = match song_id {
-        Some(id) => id,
-        None => return Ok(()),
-    };
-
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
 
     let played_seconds = (payload.listened_ms.max(0) / 1000).max(0);
+
+    // 插入播放历史记录（song_id 可为 NULL，表示在线歌曲不在本地曲库中）
     conn.execute(
         "INSERT INTO play_history (song_path, song_id, played_at, played_seconds, event) VALUES (?1, ?2, ?3, ?4, 'play')",
         rusqlite::params![&normalized_path, song_id, now, played_seconds],
     )
     .map_err(|e| e.to_string())?;
 
+    // 无论歌曲是否在本地曲库中，都记录聚合统计（全局统计、歌曲统计、每日/每小时统计等）
     let identity = resolve_song_identity(
         &payload.title,
         &payload.artist,
