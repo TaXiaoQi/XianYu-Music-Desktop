@@ -581,6 +581,26 @@ export interface PluginSource {
   sortOrder?: number;
 }
 
+/** 插件订阅源（参考 MusicFreeDesktop 订阅管理设计） */
+export interface PluginSubscription {
+  /** 唯一 ID（sub_<时间戳>_<随机>） */
+  id: string;
+  /** 订阅名称（用户可编辑） */
+  name: string;
+  /** 订阅源 URL（必须以 .js 或 .json 结尾） */
+  url: string;
+  /** 添加时间戳 */
+  addedAt: number;
+  /** 上次同步时间戳 */
+  lastSyncAt?: number;
+  /** 上次同步状态 */
+  lastSyncStatus?: 'success' | 'failed' | 'partial';
+  /** 上次同步消息 */
+  lastSyncMessage?: string;
+  /** 上次同步成功安装的插件数 */
+  lastSyncCount?: number;
+}
+
 /** 插件 HTTP 响应 */
 export interface PluginHttpResponse {
   status: number;
