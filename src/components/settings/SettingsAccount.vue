@@ -246,8 +246,8 @@ const pluginSyncErrors = computed(() => {
           class="upload-item"
         >
           <div class="upload-copy">
-            <div class="upload-label">{{ item.label }}</div>
-            <div class="upload-desc">{{ item.desc }}</div>
+            <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
+            <div class="upload-desc text-gray-500 dark:text-white/50">{{ item.desc }}</div>
           </div>
           <button
             type="button"
@@ -276,7 +276,7 @@ const pluginSyncErrors = computed(() => {
       <!-- 同步状态 -->
       <div v-if="playlistSync.syncing.value" class="sync-status sync-status--active">
         <div class="sync-spinner"></div>
-        <span class="sync-status-text">{{ playlistSync.syncProgress.value || '正在同步...' }}</span>
+        <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.syncProgress.value || '正在同步...' }}</span>
       </div>
       <div v-else-if="syncSummary" class="sync-status" :class="{ 'sync-status--error': syncErrors.length > 0 }">
         <svg v-if="syncErrors.length === 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -286,8 +286,8 @@ const pluginSyncErrors = computed(() => {
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
         <div class="min-w-0 flex-1">
-          <div class="sync-status-text">上次同步：{{ syncSummary }}</div>
-          <div v-if="formattedLastSync" class="sync-status-time">{{ formattedLastSync }}</div>
+          <div class="sync-status-text text-gray-900 dark:text-white/85">上次同步：{{ syncSummary }}</div>
+          <div v-if="formattedLastSync" class="sync-status-time text-gray-500 dark:text-white/50">{{ formattedLastSync }}</div>
           <!-- 错误详情列表 -->
           <div v-if="syncErrors.length > 0" class="sync-error-list">
             <div v-for="(err, idx) in syncErrors" :key="idx" class="sync-error-item">
@@ -356,7 +356,7 @@ const pluginSyncErrors = computed(() => {
       <!-- 同步状态 -->
       <div v-if="playlistSync.pluginSyncing.value" class="sync-status sync-status--active">
         <div class="sync-spinner"></div>
-        <span class="sync-status-text">{{ playlistSync.pluginSyncProgress.value || '正在同步...' }}</span>
+        <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.pluginSyncProgress.value || '正在同步...' }}</span>
       </div>
       <div v-else-if="pluginSyncSummary" class="sync-status" :class="{ 'sync-status--error': pluginSyncErrors.length > 0 }">
         <svg v-if="pluginSyncErrors.length === 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -366,8 +366,8 @@ const pluginSyncErrors = computed(() => {
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
         <div class="min-w-0 flex-1">
-          <div class="sync-status-text">上次同步：{{ pluginSyncSummary }}</div>
-          <div v-if="formattedLastPluginSync" class="sync-status-time">{{ formattedLastPluginSync }}</div>
+          <div class="sync-status-text text-gray-900 dark:text-white/85">上次同步：{{ pluginSyncSummary }}</div>
+          <div v-if="formattedLastPluginSync" class="sync-status-time text-gray-500 dark:text-white/50">{{ formattedLastPluginSync }}</div>
           <!-- 错误详情列表 -->
           <div v-if="pluginSyncErrors.length > 0" class="sync-error-list">
             <div v-for="(err, idx) in pluginSyncErrors" :key="idx" class="sync-error-item">
@@ -497,22 +497,12 @@ const pluginSyncErrors = computed(() => {
 .upload-label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--text-primary, #1f2937);
   margin-bottom: 2px;
-}
-
-:global(.dark) .upload-label {
-  color: rgba(255, 255, 255, 0.92);
 }
 
 .upload-desc {
   font-size: 0.72rem;
-  color: var(--text-secondary, #6b7280);
   line-height: 1.4;
-}
-
-:global(.dark) .upload-desc {
-  color: rgba(255, 255, 255, 0.5);
 }
 
 .upload-switch {
@@ -580,22 +570,12 @@ const pluginSyncErrors = computed(() => {
 
 .sync-status-text {
   font-size: 0.78rem;
-  color: var(--text-primary, #1f2937);
   line-height: 1.4;
-}
-
-:global(.dark) .sync-status-text {
-  color: rgba(255, 255, 255, 0.85);
 }
 
 .sync-status-time {
   font-size: 0.68rem;
-  color: var(--text-secondary, #6b7280);
   margin-top: 2px;
-}
-
-:global(.dark) .sync-status-time {
-  color: rgba(255, 255, 255, 0.5);
 }
 
 .sync-status--error {

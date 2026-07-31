@@ -16,6 +16,7 @@ type SongMenuAction =
   | 'playNext'
   | 'addToQueueTail'
   | 'addAlbumToQueueTail'
+  | 'favorite'
   | 'addToPlaylist'
   | 'viewArtist'
   | 'viewAlbum'
@@ -61,7 +62,7 @@ const route = useRoute();
 const router = useRouter();
 const { showToast } = useToast();
 const { playSong, playNext, addSongToQueue, addAlbumToQueueTail, removeSongFromList, openInFinder, currentViewMode } = usePlayer();
-const { removeFromPlaylist } = useLibraryCollections();
+const { removeFromPlaylist, isFavorite, toggleFavorite } = useLibraryCollections();
 const { filterCondition } = usePlayerViewState();
 const { openSongInfo } = useSongInfoDialog();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
@@ -124,6 +125,13 @@ addAlbumToQueueTail: {
       { d: 'M5.5 12h13' },
     ],
   },
+  favorite: {
+    fill: false,
+    viewBox: '0 0 24 24',
+    paths: [
+      { d: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' },
+    ],
+  },
   viewArtist: {
     fill: false,
     viewBox: '0 0 24 24',
@@ -180,6 +188,8 @@ addAlbumToQueueTail: {
 
 const menuEntries = computed<SongMenuEntry[]>(() => {
   const online = props.isOnlineSearch;
+  const isFavorited = props.song ? isFavorite(props.song) : false;
+  const favoriteLabel = isFavorited ? '取消收藏' : '收藏歌曲';
 
   const entries: SongMenuEntry[] = [
     { type: 'action', key: 'play', label: '播放' },
@@ -193,7 +203,7 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
   }
 
   if (online) {
-    // 在线搜索模式：查看歌手、查看专辑，最后是收藏至歌单
+    // 在线搜索模式：查看歌手、查看专辑，最后是添加到歌单
     // 歌手/专辑容器中隐藏"查看歌手/查看专辑"，歌单容器和搜索页显示完整菜单
     const hideViewNavigation = props.onlineDetailType === 'artist' || props.onlineDetailType === 'album';
 
@@ -207,12 +217,14 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
 
     entries.push(
       { type: 'divider', key: 'divider-secondary' },
-      { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
+      { type: 'action', key: 'favorite', label: favoriteLabel },
+      { type: 'action', key: 'addToPlaylist', label: '添加到歌单' },
     );
   } else {
     entries.push(
       { type: 'divider', key: 'divider-primary' },
-      { type: 'action', key: 'addToPlaylist', label: '收藏到歌单' },
+      { type: 'action', key: 'favorite', label: favoriteLabel },
+      { type: 'action', key: 'addToPlaylist', label: '添加到歌单' },
       { type: 'action', key: 'viewArtist', label: '查看歌手' },
       { type: 'action', key: 'viewAlbum', label: '查看专辑' },
       { type: 'divider', key: 'divider-secondary' },
@@ -462,6 +474,9 @@ const handleAction = (action: SongMenuAction) => {
       break;
     case 'addAlbumToQueueTail':
       addAlbumToQueueTail(props.song);
+      break;
+    case 'favorite':
+      showToast(toggleFavorite(props.song) ? '已收藏' : '已取消收藏', 'info');
       break;
     case 'addToPlaylist':
       emit('add-to-playlist');

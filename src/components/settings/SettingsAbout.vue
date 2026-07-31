@@ -122,7 +122,7 @@ async function handleDialogConfirm() {
 </script>
 
 <template>
-  <div class="flex min-h-full min-w-0 flex-col items-center px-4 pb-[clamp(16px,3vh,32px)] animate-in fade-in slide-in-from-bottom-2 duration-300">
+  <div class="flex min-h-full min-w-0 flex-col items-center pb-[clamp(16px,3vh,32px)] animate-in fade-in slide-in-from-bottom-2 duration-300">
     <div class="flex w-full flex-1 flex-col items-center justify-center gap-[clamp(12px,2.5vh,28px)] py-[clamp(8px,2vh,20px)]">
       <div class="flex min-w-0 flex-col items-center gap-[clamp(8px,1.5vh,20px)] text-center">
       <div class="flex items-center justify-center">

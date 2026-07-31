@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
+import { useRoute } from 'vue-router';
 import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
@@ -35,14 +36,17 @@ const TEXT = {
 // 听歌排行榜：LeaderboardEntry 类型从 leaderboardService 导入
 
 const leaderboard = ref<LeaderboardEntry[]>([]);
-const leaderboardLoading = ref(false);
+const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
 
 async function loadLeaderboard() {
   if (!authStore.isLoggedIn) {
     leaderboard.value = [];
+    leaderboardLoading.value = false;
     return;
   }
+  // 先清空数据并显示骨架屏
+  leaderboard.value = [];
   leaderboardLoading.value = true;
   leaderboardError.value = null;
   try {
@@ -88,6 +92,14 @@ const {
 const { canonicalSongs } = useLibraryBrowse();
 
 let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+const route = useRoute();
+// 监听路由变化：从其他页面切回首页时重新加载排行榜（显示骨架屏动画）
+watch(() => route.path, (newPath, oldPath) => {
+  if (newPath === '/' && oldPath && oldPath !== '/') {
+    void loadLeaderboard();
+  }
+});
 
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();

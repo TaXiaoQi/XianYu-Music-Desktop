@@ -1787,20 +1787,6 @@ async function copyPluginLink() {
   }
 }
 
-:global(.dark) .plugin-drag-handle {
-  color: rgba(255, 255, 255, 0.3);
-}
-
-:global(.dark) .plugin-drag-handle:hover {
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-:global(.dark) .settings-plugin-card--dragging {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(236, 65, 65, 0.1);
-}
-
 .settings-plugin-tag {
   display: inline-flex;
   align-items: center;
@@ -1842,153 +1828,6 @@ async function copyPluginLink() {
   max-height: 400px;
 }
 
-:global(.dark) .settings-plugin-button--secondary {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.85);
-}
-
-:global(.dark) .settings-plugin-button--secondary:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.96);
-}
-
-:global(.dark) .settings-plugin-button--active {
-  border-color: rgba(236, 65, 65, 0.55);
-  background: rgba(236, 65, 65, 0.2);
-  color: #ff8b8b;
-}
-
-:global(.dark) .settings-plugin-button--active:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.65);
-  background: rgba(236, 65, 65, 0.24);
-}
-
-:global(.dark) .settings-plugin-button--ghost {
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.65);
-}
-
-:global(.dark) .settings-plugin-button--ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .settings-plugin-button--disabled,
-:global(.dark) .settings-plugin-button:disabled {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.35);
-}
-
-:global(.dark) .settings-plugin-input {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.92);
-}
-
-:global(.dark) .settings-plugin-input:focus {
-  border-color: rgba(236, 65, 65, 0.4);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-:global(.dark) .settings-plugin-inline-panel {
-  border-top-color: rgba(255, 255, 255, 0.08);
-}
-
-:global(.dark) .settings-plugin-dropzone {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-:global(.dark) .settings-plugin-dropzone:hover {
-  border-color: rgba(236, 65, 65, 0.45);
-  background: rgba(236, 65, 65, 0.06);
-}
-
-:global(.dark) .settings-plugin-dropzone--active {
-  border-color: rgba(236, 65, 65, 0.6);
-  background: rgba(236, 65, 65, 0.1);
-}
-
-:global(.dark) .settings-plugin-dropzone-icon {
-  background: rgba(236, 65, 65, 0.14);
-  color: #ff6b6b;
-}
-
-:global(.dark) .settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
-  background: rgba(236, 65, 65, 0.22);
-}
-
-:global(.dark) .settings-plugin-dropzone-title {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .settings-plugin-dropzone-hint {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-:global(.dark) .settings-plugin-search {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-:global(.dark) .settings-plugin-search:focus-within {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-:global(.dark) .settings-plugin-empty {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-:global(.dark) .settings-plugin-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-:global(.dark) .settings-plugin-card:hover {
-  border-color: rgba(236, 65, 65, 0.3);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
-}
-
-:global(.dark) .settings-plugin-tag {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-:global(.dark) .settings-plugin-tag--accent {
-  background: rgba(236, 65, 65, 0.18);
-  color: #ff8b8b;
-}
-
-:global(.dark) .settings-plugin-icon-button {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-:global(.dark) .settings-plugin-icon-button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.96);
-}
-
-:global(.dark) .settings-plugin-icon-button--danger:hover {
-  background: rgba(220, 38, 38, 0.18);
-  color: #ff6b6b;
-}
-
-:global(.dark) .settings-plugin-icon-button--update-available {
-  background: rgba(236, 65, 65, 0.2);
-  color: #ff8b8b;
-}
-
-:global(.dark) .settings-plugin-icon-button--update-available:hover {
-  background: rgba(236, 65, 65, 0.28);
-  color: #ffa6a6;
-}
-
 /* 导入歌单按钮 */
 .settings-plugin-import-btn {
   display: inline-flex;
@@ -2024,17 +1863,6 @@ async function copyPluginLink() {
   .settings-plugin-import-btn {
     padding: 0 8px;
   }
-}
-
-:global(.dark) .settings-plugin-import-btn {
-  border-color: rgba(249, 115, 22, 0.2);
-  background: rgba(249, 115, 22, 0.1);
-  color: rgb(251, 146, 60);
-}
-
-:global(.dark) .settings-plugin-import-btn:hover {
-  border-color: rgba(249, 115, 22, 0.36);
-  background: rgba(249, 115, 22, 0.16);
 }
 
 /* 插件详情弹窗 */
@@ -2149,41 +1977,215 @@ async function copyPluginLink() {
   opacity: 0;
   transform: scale(0.92) translateY(8px);
 }
+</style>
 
-/* 深色模式 */
-:global(.dark) .plugin-detail-card {
+<style>
+/* ==================== 暗色模式适配 ==================== */
+.dark .plugin-drag-handle {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dark .plugin-drag-handle:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark .settings-plugin-card--dragging {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.1);
+}
+
+.dark .settings-plugin-button--secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dark .settings-plugin-button--secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.dark .settings-plugin-button--active {
+  border-color: rgba(236, 65, 65, 0.55);
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+.dark .settings-plugin-button--active:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.65);
+  background: rgba(236, 65, 65, 0.24);
+}
+
+.dark .settings-plugin-button--ghost {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.dark .settings-plugin-button--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.dark .settings-plugin-button--disabled,
+.dark .settings-plugin-button:disabled {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.dark .settings-plugin-input {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.dark .settings-plugin-input:focus {
+  border-color: rgba(236, 65, 65, 0.4);
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
+}
+
+.dark .settings-plugin-inline-panel {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .settings-plugin-dropzone {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dark .settings-plugin-dropzone:hover {
+  border-color: rgba(236, 65, 65, 0.45);
+  background: rgba(236, 65, 65, 0.06);
+}
+
+.dark .settings-plugin-dropzone--active {
+  border-color: rgba(236, 65, 65, 0.6);
+  background: rgba(236, 65, 65, 0.1);
+}
+
+.dark .settings-plugin-dropzone-icon {
+  background: rgba(236, 65, 65, 0.14);
+  color: #ff6b6b;
+}
+
+.dark .settings-plugin-dropzone--active .settings-plugin-dropzone-icon {
+  background: rgba(236, 65, 65, 0.22);
+}
+
+.dark .settings-plugin-dropzone-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.dark .settings-plugin-dropzone-hint {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .settings-plugin-search {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark .settings-plugin-search:focus-within {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
+}
+
+.dark .settings-plugin-empty {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.dark .settings-plugin-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .settings-plugin-card:hover {
+  border-color: rgba(236, 65, 65, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+}
+
+.dark .settings-plugin-tag {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dark .settings-plugin-tag--accent {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
+}
+
+.dark .settings-plugin-icon-button {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dark .settings-plugin-icon-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 1);
+}
+
+.dark .settings-plugin-icon-button--danger:hover {
+  background: rgba(220, 38, 38, 0.18);
+  color: #ff6b6b;
+}
+
+.dark .settings-plugin-icon-button--update-available {
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+.dark .settings-plugin-icon-button--update-available:hover {
+  background: rgba(236, 65, 65, 0.28);
+  color: #ffa6a6;
+}
+
+.dark .settings-plugin-import-btn {
+  border-color: rgba(249, 115, 22, 0.2);
+  background: rgba(249, 115, 22, 0.1);
+  color: rgb(251, 146, 60);
+}
+
+.dark .settings-plugin-import-btn:hover {
+  border-color: rgba(249, 115, 22, 0.36);
+  background: rgba(249, 115, 22, 0.16);
+}
+
+.dark .plugin-detail-card {
   background: #1f1f23;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .plugin-detail-header {
+.dark .plugin-detail-header {
   border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .plugin-detail-close {
+.dark .plugin-detail-close {
   color: rgba(255, 255, 255, 0.7);
 }
 
-:global(.dark) .plugin-detail-close:hover {
+.dark .plugin-detail-close:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .plugin-detail-label {
+.dark .plugin-detail-label {
   color: rgba(255, 255, 255, 0.5);
 }
 
-:global(.dark) .plugin-detail-value {
+.dark .plugin-detail-value {
   color: rgba(255, 255, 255, 0.88);
 }
 
-:global(.dark) .plugin-detail-link {
+.dark .plugin-detail-link {
   background: rgba(236, 65, 65, 0.14);
   color: #ff8b8b;
 }
 
-:global(.dark) .plugin-detail-link:hover {
+.dark .plugin-detail-link:hover {
   background: rgba(236, 65, 65, 0.22);
 }
 </style>

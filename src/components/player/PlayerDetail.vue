@@ -258,10 +258,16 @@ const staggerStyle = (phase: number, translateDir: 'Y' | 'X' = 'Y', distance = 2
   const visible = showPlayerDetail.value || staggerPhase.value >= phase;
   const translate = translateDir === 'Y' ? `translateY(${distance}px)` : `translateX(${distance}px)`;
 
+  // 展开时由 CSS animation (detail-enter-*) 控制显隐，这里不设置 opacity/transform 避免覆盖动画
+  // 收起时用 inline style + transition 实现淡出
+  if (showPlayerDetail.value) {
+    return {};
+  }
+
   return {
     opacity: visible ? 1 : 0,
     transform: visible ? 'translate(0, 0)' : translate,
-    transition: `opacity 400ms cubic-bezier(0.22,1,0.36,1) ${showPlayerDetail.value ? phase * 100 : 0}ms, transform 400ms cubic-bezier(0.22,1,0.36,1) ${showPlayerDetail.value ? phase * 100 : 0}ms`,
+    transition: `opacity 400ms cubic-bezier(0.22,1,0.36,1) 0ms, transform 400ms cubic-bezier(0.22,1,0.36,1) 0ms`,
   };
 };
 
@@ -459,6 +465,7 @@ const handleChangeLyrics = async () => {
 
       <div
         class="relative z-[60] h-16"
+        :class="showPlayerDetail ? 'detail-enter-top' : ''"
         :style="staggerStyle(1, 'Y', -10)"
         @mouseenter="showTopChrome"
         @mousemove="showTopChrome"
@@ -546,8 +553,8 @@ const handleChangeLyrics = async () => {
       <!-- 歌名（始终显示，位于顶部工具栏下方） -->
       <div
         v-if="currentSong"
-        class="pointer-events-none relative z-[55] flex min-w-0 items-baseline justify-center gap-3 px-6 pb-[clamp(2px,1vh,16px)] text-center transition-opacity duration-500"
-        :class="showPlayerDetail ? 'opacity-100' : 'opacity-0'"
+        class="pointer-events-none relative z-[55] flex min-w-0 items-baseline justify-center gap-3 px-6 pb-[clamp(2px,1vh,16px)] text-center"
+        :class="showPlayerDetail ? 'detail-enter-title' : 'opacity-0'"
         :style="staggerStyle(1, 'Y', -6)"
       >
         <span class="truncate text-[clamp(15px,2.2vh,24px)] font-semibold tracking-wide text-white drop-shadow-md">
@@ -567,7 +574,7 @@ const handleChangeLyrics = async () => {
           class="flex h-full min-h-0 flex-1 flex-col justify-center pt-0 pb-0"
           :class="[
             coverHidden ? 'px-[8%] lyrics-force-center' : 'pl-2 pr-8',
-            showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
+            showPlayerDetail ? 'pointer-events-auto detail-enter-lyrics' : 'pointer-events-none opacity-0',
           ]"
           :style="staggerStyle(2, 'X', 20)"
         >
@@ -646,6 +653,30 @@ const handleChangeLyrics = async () => {
 
 .text-shadow-sm {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 详情页展开进入动画：从左下角方向滑入 + 淡入 */
+@keyframes player-detail-enter {
+  from {
+    opacity: 0;
+    transform: translate(-30px, 30px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+.detail-enter-top {
+  animation: player-detail-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
+}
+
+.detail-enter-title {
+  animation: player-detail-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both;
+}
+
+.detail-enter-lyrics {
+  animation: player-detail-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both;
 }
 
 /* 封面隐藏时强制歌词居中 */
