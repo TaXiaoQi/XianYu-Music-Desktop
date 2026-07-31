@@ -83,7 +83,7 @@ const fontPanelStyle = computed(() => ({
   ...fontPanelDynamicStyle.value,
 }));
 
-/** 检测歌词样式面板是否溢出视口左边界，溢出时动态调整位置 */
+/** 检测歌词样式面板是否溢出视口，溢出时动态调整位置/宽度 */
 function updateFontPanelPosition() {
   if (!fontPanelRef.value) return;
 
@@ -93,33 +93,61 @@ function updateFontPanelPosition() {
   const containerRect = container.getBoundingClientRect();
   const viewportWidth = window.innerWidth;
   const safeMargin = 16;
-  const panelMinWidth = 260;
+
+  // 面板自然宽度（与 CSS width: min(320px, calc(34vw - 24px)) + min-w-[260px] 一致）
+  // 用公式计算而非 offsetWidth，避免动态设置 width 后产生测量反馈震荡
+  const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
+  const panelWidth = Math.max(260, naturalWidth);
 
   // 默认 margin-right（与 CSS 中 14vw / 2xl:22vw 一致）
   const defaultMr = viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
 
   // 左侧可用空间 = 歌词视图左边缘到视口左边缘
-  const availableSpace = containerRect.left - safeMargin;
+  const availableSpaceLeft = containerRect.left - safeMargin;
+  // 右侧可用空间 = 视口右边缘到歌词视图右边缘
+  const availableSpaceRight = viewportWidth - containerRect.right - safeMargin;
 
-  // 最大允许 margin-right = 可用空间 - 面板最小宽度
-  const maxMr = availableSpace - panelMinWidth;
+  // 左侧能容纳的最大 margin-right = 左侧可用空间 - 面板实际宽度
+  const maxMrLeft = availableSpaceLeft - panelWidth;
 
-  if (maxMr < 0) {
-    // 左侧空间完全不够：切换到歌词视图右侧
+  if (maxMrLeft >= 0) {
+    // 左侧能放下：按需收紧 margin-right
+    if (defaultMr > maxMrLeft) {
+      fontPanelDynamicStyle.value = {
+        marginRight: `${Math.round(maxMrLeft)}px`,
+      };
+    } else {
+      fontPanelDynamicStyle.value = {};
+    }
+    return;
+  }
+
+  // 左侧放不下：检查右侧
+  if (availableSpaceRight >= panelWidth) {
+    // 右侧能放下：切换到歌词视图右侧
     fontPanelDynamicStyle.value = {
       right: 'auto',
       left: '100%',
       marginLeft: `${safeMargin}px`,
       marginRight: '0',
     };
-  } else if (defaultMr > maxMr) {
-    // 默认 margin 太大：限制到 maxMr
+    return;
+  }
+
+  // 两侧都放不下：选空间较大的一侧贴边显示，并收紧面板宽度
+  if (availableSpaceLeft >= availableSpaceRight) {
     fontPanelDynamicStyle.value = {
-      marginRight: `${Math.round(maxMr)}px`,
+      marginRight: '0px',
+      width: `${Math.max(240, Math.round(availableSpaceLeft))}px`,
     };
   } else {
-    // 正常：使用默认值
-    fontPanelDynamicStyle.value = {};
+    fontPanelDynamicStyle.value = {
+      right: 'auto',
+      left: '100%',
+      marginLeft: `${safeMargin}px`,
+      marginRight: '0',
+      width: `${Math.max(240, Math.round(availableSpaceRight))}px`,
+    };
   }
 }
 

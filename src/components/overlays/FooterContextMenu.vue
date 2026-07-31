@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, nextTick, type Component } from 'vue';
 import { useRouter } from 'vue-router';
-import { Disc3, Folder, Info, Plus, UserRound } from 'lucide-vue-next';
+import { Disc3, Folder, Heart, Info, Plus, UserRound } from 'lucide-vue-next';
 
 import { usePlayer } from '../../composables/player';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useToast } from '../../composables/toast';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { getSongAlbumKey, getSongArtistNames } from '../../features/library/playerLibraryViewShared';
 import type { Song } from '../../types';
 
 type FooterMenuAction =
+  | 'favorite'
   | 'addToPlaylist'
   | 'viewArtist'
   | 'viewAlbum'
@@ -35,6 +37,7 @@ const { openInFinder } = usePlayer();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { openSongInfo } = useSongInfoDialog();
 const { showToast } = useToast();
+const { isFavorite, toggleFavorite } = useLibraryCollections();
 const router = useRouter();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 const menuRef = ref<HTMLElement | null>(null);
@@ -42,14 +45,29 @@ const menuRef = ref<HTMLElement | null>(null);
 // 存储菜单尺寸
 const menuSize = ref({ width: 0, height: 0 });
 
-const menuEntries: FooterMenuEntry[] = [
-  { type: 'action', key: 'addToPlaylist', label: '收藏到歌单', icon: Plus },
-  { type: 'action', key: 'viewArtist', label: '查看歌手', icon: UserRound },
-  { type: 'action', key: 'viewAlbum', label: '查看专辑', icon: Disc3 },
-  { type: 'divider', key: 'divider-file' },
-  { type: 'action', key: 'openFolder', label: '打开文件所在目录', icon: Folder },
-  { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息', icon: Info },
-];
+const menuEntries = computed<FooterMenuEntry[]>(() => {
+  const isFavorited = props.song ? isFavorite(props.song) : false;
+  const favoriteLabel = isFavorited ? '取消收藏' : '收藏歌曲';
+  const isOnline = props.song?.source_type === 'remote';
+
+  const entries: FooterMenuEntry[] = [
+    { type: 'action', key: 'favorite', label: favoriteLabel, icon: Heart },
+    { type: 'action', key: 'addToPlaylist', label: '添加到歌单', icon: Plus },
+    { type: 'action', key: 'viewArtist', label: '查看歌手', icon: UserRound },
+    { type: 'action', key: 'viewAlbum', label: '查看专辑', icon: Disc3 },
+  ];
+
+  if (!isOnline) {
+    entries.push(
+      { type: 'divider', key: 'divider-file' },
+      { type: 'action', key: 'openFolder', label: '打开文件所在目录', icon: Folder },
+    );
+  }
+
+  entries.push({ type: 'action', key: 'viewSongInfo', label: '查看歌曲信息', icon: Info });
+
+  return entries;
+});
 
 // 当菜单显示时，立即测量其尺寸
 watch(() => props.visible, async (newVal) => {
@@ -123,6 +141,9 @@ const handleAction = (action: FooterMenuAction) => {
   }
 
   switch (action) {
+    case 'favorite':
+      showToast(toggleFavorite(props.song) ? '已收藏' : '已取消收藏', 'info');
+      break;
     case 'addToPlaylist':
       openAddToPlaylistDialog(props.song.path);
       break;

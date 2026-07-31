@@ -3,6 +3,7 @@ import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Music, Slide
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
+import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
@@ -33,8 +34,9 @@ const handleOpenDetail = () => {
   togglePlayerDetail();
 };
 
-const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
+const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
 const { settings, patchSettings: patchAudioSettings } = useSettings();
+const { showToast } = useToast();
 
 // --- 下载功能 ---
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
@@ -112,7 +114,16 @@ const handleContextMenu = (e: MouseEvent) => {
 
 const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; };
 const toggleLyricsPlayerSettings = () => {
+  // 无歌词时不打开面板，提示用户
+  if (!showLyricsPlayerSettingsPanel.value && parsedLyrics.value.length === 0) {
+    showToast('当前歌曲无歌词', 'info');
+    return;
+  }
   showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value;
+  // 打开歌词样式面板时收起底栏工具弹窗，避免弹窗遮挡歌词样式面板
+  if (showLyricsPlayerSettingsPanel.value) {
+    showFooterTools.value = false;
+  }
 };
 const isVisualizerEnabled = ref(localStorage.getItem('footer_visualizer_enabled') !== 'false');
 const isProgressHidden = ref(readStoredProgressHidden(localStorage));
@@ -599,19 +610,6 @@ onUnmounted(() => {
       class="flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     >
-      <button
-        v-if="showPlayerDetail"
-        @mousedown.stop
-        @click.stop="toggleLyricsPlayerSettings"
-        class="flex items-center justify-center text-base font-semibold tracking-[0.02em] transition-colors"
-        :class="showLyricsPlayerSettingsPanel
-          ? 'text-white'
-          : 'text-white/60 hover:text-white'"
-        title="歌词样式"
-      >
-        A
-      </button>
-
       <button @click="toggleMode" class="transition-colors" 
         :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
         :title="['列表循环', '单曲循环', '随机播放'][playMode]">
@@ -807,6 +805,16 @@ onUnmounted(() => {
               title="桌面歌词"
             >
               词
+            </button>
+
+            <button
+              v-if="showPlayerDetail"
+              @mousedown.stop
+              @click.stop="toggleLyricsPlayerSettings"
+              :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/80 hover:text-white hover:bg-white/10']"
+              title="歌词样式"
+            >
+              A
             </button>
 
             <!-- 均衡器按钮与弹出面板 -->
