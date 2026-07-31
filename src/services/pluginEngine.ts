@@ -30,7 +30,7 @@ import type {
   PluginMusicInfo,
   QualityKey,
 } from '../types';
-import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS } from '../types';
+import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
@@ -1083,6 +1083,7 @@ export async function pluginGetMusicInfo(
   item: PluginSearchResult,
   quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
   fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
+  availableQualities: QualityKey[] | null = null,
 ): Promise<PluginMusicInfo | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
@@ -1104,71 +1105,97 @@ export async function pluginGetMusicInfo(
   const supportsNewKeys = Array.isArray(supportedNewQualities) && supportedNewQualities.length > 0;
 
   const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
-  const tryQualities: string[] = [];
-  if (isQualityKey(quality)) {
+
+  // [音质解析] 当有可用音质列表时，使用 resolveOnlinePlayQuality 统一解析
+  // 返回有序 (pluginString, QualityKey) 对，确保能追踪实际播放音质
+  const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
+
+  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
+    // 使用统一解析函数：首选 → 回退行为 → 最高可用兜底
+    const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
     if (supportsNewKeys) {
-      // Toskysun 插件：使用新键值列表（mgg→96k）
+      for (const q of resolvedKeys) {
+        tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
+      }
+    } else {
+      // 原版 MF 插件：多 QualityKey 映射到同一三档，需去重
+      const seen = new Set<string>();
+      for (const q of resolvedKeys) {
+        const mfQ = qualityKeyToMfQuality(q);
+        if (!seen.has(mfQ)) {
+          seen.add(mfQ);
+          tryPairs.push({ pluginQ: mfQ, qualityKey: q });
+        }
+      }
+    }
+  } else if (isQualityKey(quality)) {
+    // 无可用音质列表时，回退到原始行为（不按可用列表过滤）
+    if (supportsNewKeys) {
       if (fallbackBehavior === 'pause') {
-        // 仅尝试请求的音质，不回退
-        tryQualities.push(qualityKeyToPluginString(quality));
+        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
       } else if (fallbackBehavior === 'higher') {
-        // 从请求音质开始向上升级直到最高档
         const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
         if (startIdx !== -1) {
           for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
-            tryQualities.push(qualityKeyToPluginString(ALL_QUALITY_KEYS[i]));
+            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS[i]), qualityKey: ALL_QUALITY_KEYS[i] });
           }
         } else {
-          tryQualities.push(qualityKeyToPluginString(quality));
+          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
         }
       } else {
-        // lower：从请求音质开始向下降级直到最低档（默认行为）
         const { ALL_QUALITY_KEYS_DESC } = await import('../types');
         const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
         if (startIdx !== -1) {
           for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
-            tryQualities.push(qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]));
+            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]), qualityKey: ALL_QUALITY_KEYS_DESC[i] });
           }
         } else {
-          tryQualities.push(qualityKeyToPluginString(quality));
+          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
         }
       }
     } else {
-      // 原版 MusicFree 插件：映射到旧三档
       const mfQ = qualityKeyToMfQuality(quality);
       if (fallbackBehavior === 'pause') {
-        tryQualities.push(mfQ);
+        tryPairs.push({ pluginQ: mfQ, qualityKey: quality });
       } else if (fallbackBehavior === 'higher') {
-        // 向上升级：standard → high → lossless
         if (mfQ === 'standard') {
-          tryQualities.push('standard', 'high', 'lossless');
+          tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
+          tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
+          tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
         } else if (mfQ === 'high') {
-          tryQualities.push('high', 'lossless');
+          tryPairs.push({ pluginQ: 'high', qualityKey: quality });
+          tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
         } else {
-          tryQualities.push('lossless');
+          tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
         }
       } else {
-        // lower：向下降级（默认）：lossless → high → standard
         if (mfQ === 'lossless') {
-          tryQualities.push('lossless', 'high', 'standard');
+          tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
+          tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
+          tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
         } else if (mfQ === 'high') {
-          tryQualities.push('high', 'standard');
+          tryPairs.push({ pluginQ: 'high', qualityKey: quality });
+          tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
         } else {
-          tryQualities.push('standard');
+          tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
         }
       }
     }
   } else {
     // 旧版 standard/high/lossless 直接使用
-    tryQualities.push(quality);
+    tryPairs.push({ pluginQ: quality, qualityKey: '320k' });
   }
+
+  const tryQualities = tryPairs.map(p => p.pluginQ);
 
   log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
 
   let result: any = null;
   let lastError: any = null;
+  let successPairIdx = -1;
 
-  for (const q of tryQualities) {
+  for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
+    const q = tryQualities[pairIdx];
     // 与 MusicFree 第269行一致，带重试
     for (let retry = 0; retry <= 1; retry++) {
       try {
@@ -1182,7 +1209,10 @@ export async function pluginGetMusicInfo(
         }
       }
     }
-    if (result?.url) break;
+    if (result?.url) {
+      successPairIdx = pairIdx;
+      break;
+    }
     log(`[getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
     result = null;
   }
@@ -1212,14 +1242,17 @@ export async function pluginGetMusicInfo(
     return null;
   }
 
+  // 实际播放音质（用于底部栏同步显示）
+  const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
+
   // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
   const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
     ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
     : '';
 
   const headerKeys = Object.keys(headers);
-  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}`);
-  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl };
+  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, actualQuality=${actualQuality}`);
+  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
 }
 
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================

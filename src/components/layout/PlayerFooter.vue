@@ -24,6 +24,9 @@ import {
 const {
   currentSong,
   currentAvailableQualities,
+  currentPlayingQuality,
+  sessionQualityOverride,
+  setSessionQualityOverride,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute, toggleMode, togglePlaylist,
   togglePlayerDetail, seekTo, formatDuration, playSong,
@@ -35,7 +38,7 @@ const handleOpenDetail = () => {
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
-const { settings, patchSettings: patchAudioSettings } = useSettings();
+const { settings } = useSettings();
 const { showToast } = useToast();
 
 // --- 下载功能 ---
@@ -210,7 +213,6 @@ const remoteDownloadProgress = ref<RemoteDownloadProgress | null>(null);
 let unlistenRemoteDownload: UnlistenFn | null = null;
 
 // 音质选择：使用统一 QualityKey（12 档：mgg / 128k / 192k / 320k / flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master）
-const ONLINE_QUALITY_KEY = 'online_quality';
 
 /** 全部音质选项（按 rank 排序） */
 const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description: string }> =
@@ -229,17 +231,20 @@ const QUALITY_OPTIONS = computed(() => {
   return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
 });
 
-/** 当前选择的音质 Key，来源于 settings store（默认 '320k' = HQ） */
+/** 当前选择的音质 Key：优先底栏会话覆盖（仅对当前歌生效），回退到设置页默认音质。
+ *  底栏改音质只写 sessionQualityOverride，不污染 settings.onlineDefaultQuality，
+ *  这样设置播放页的音质选择不受底栏临时切换影响。切歌后 sessionQualityOverride 清空，回退到设置默认。 */
 const selectedQualityKey = computed<QualityKey>(
-  () => (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
+  () => sessionQualityOverride.value
+    ?? ((settings.value.audio.onlineDefaultQuality as QualityKey) || '320k'),
 );
-// 保持 localStorage 与 settings store 一致（playerPlayback 通过 localStorage 读取音质）
-watch(selectedQualityKey, (value) => {
-  localStorage.setItem(ONLINE_QUALITY_KEY, value);
-}, { immediate: true });
-/** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带） */
+/** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带）
+ *  优先使用实际播放音质（经回退逻辑解析后真正命中的档位），
+ *  避免出现底部栏选择的音质和播放的音质不符的情况。
+ *  仅当实际播放音质未知（如尚未解析完成）时回退到用户设置的首选音质。
+ */
 const currentQualityLabel = computed(
-  () => QUALITY_META[selectedQualityKey.value]?.label ?? 'HQ',
+  () => QUALITY_META[currentPlayingQuality.value ?? selectedQualityKey.value]?.label ?? 'HQ',
 );
 
 /** 本地歌曲：取 format/codec/container 字段，或从路径末尾提取扩展名，全大写显示 */
@@ -263,6 +268,13 @@ const isQualitySelectableSong = computed(() => {
   return path.startsWith('lx://') || path.startsWith('plugin://');
 });
 
+/** 下拉菜单中应高亮的音质：在线歌曲优先使用实际播放音质，
+ *  尚未解析完成或本地歌曲回退到用户设置的首选音质。
+ *  这样即使因回退逻辑命中的档位与首选不同，下拉也能准确反映当前播放状态。 */
+const activeQualityKey = computed<QualityKey>(
+  () => currentPlayingQuality.value ?? selectedQualityKey.value,
+);
+
 const showQualityMenu = ref(false);
 const qualityButtonRef = ref<HTMLElement | null>(null);
 const qualityMenuRef = ref<HTMLElement | null>(null);
@@ -277,9 +289,9 @@ const toggleQualityMenu = (e: MouseEvent) => {
 
 const selectQuality = async (qualityKey: QualityKey) => {
   const prev = selectedQualityKey.value;
-  // 写入 settings store（持久化 + 设置页联动），并同步 localStorage 供 playerPlayback 读取
-  patchAudioSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: qualityKey } });
-  localStorage.setItem(ONLINE_QUALITY_KEY, qualityKey);
+  // [底栏音质覆盖] 只写入会话覆盖，不修改 settings.onlineDefaultQuality，
+  // 避免底栏临时切换污染设置播放页的默认音质选择。切歌后自动清空回退到设置默认。
+  setSessionQualityOverride(qualityKey);
   showQualityMenu.value = false;
 
   // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
@@ -777,13 +789,13 @@ onUnmounted(() => {
                 :key="opt.value"
                 @click="selectQuality(opt.value)"
                 class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="selectedQualityKey === opt.value
+                :class="activeQualityKey === opt.value
                   ? 'text-[#EC4141] bg-[#EC4141]/8'
                   : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
               >
                 <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
                 <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-                <span v-if="selectedQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                <span v-if="activeQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
               </button>
             </div>
           </div>

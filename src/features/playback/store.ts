@@ -25,6 +25,14 @@ export const usePlaybackStore = defineStore('playback', () => {
   const currentCoverFull = ref('');
   /** 当前播放歌曲支持的音质列表（null 表示未知，UI 回退到全部显示） */
   const currentAvailableQualities = ref<QualityKey[] | null>(null);
+  /** 当前实际播放的音质（经回退逻辑解析后真正使用的音质，null 表示未知/本地歌曲） */
+  const currentPlayingQuality = ref<QualityKey | null>(null);
+  /** 底栏音质覆盖：仅对当前歌曲生效，切歌后清空，回退到设置页的默认音质。
+   *  用于解耦底栏音质选择与设置页 onlineDefaultQuality，避免底栏临时切换污染全局默认。 */
+  const sessionQualityOverride = ref<QualityKey | null>(null);
+  const setSessionQualityOverride = (q: QualityKey | null) => {
+    sessionQualityOverride.value = q;
+  };
 
   const pruneFallbackSongs = () => {
     const queuedPaths = new Set<string>([
@@ -124,6 +132,8 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCoverPath.value = '';
     currentCoverFull.value = '';
     currentAvailableQualities.value = null;
+    currentPlayingQuality.value = null;
+    sessionQualityOverride.value = null;
   };
 
   const hasExternalStartupFile = ref(false);
@@ -164,6 +174,9 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCoverPath,
     currentCoverFull,
     currentAvailableQualities,
+    currentPlayingQuality,
+    sessionQualityOverride,
+    setSessionQualityOverride,
     resetPlaybackState,
     hasExternalStartupFile,
     isStartupPathsResolved,

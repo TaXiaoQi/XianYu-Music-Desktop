@@ -1,22 +1,20 @@
-//! 在线音频流式缓存模块
+//! 在线音频流式内存缓存模块
 //!
-//! 核心思路：把在线音乐流式下载到本地缓存文件，同时用 StreamingTempFileReader
-//! 包装该文件供本地引擎（rodio Decoder）播放。这样所有音乐都走统一的
-//! File::open + Decoder 路径，设备切换恢复天然支持，无需维护 RemoteRangeReader。
+//! 核心思路：把在线音乐流式下载到内存缓冲（Vec<u8>），同时用 StreamingMemoryReader
+//! 包装该缓冲供本地引擎（rodio Decoder）播放。这样所有音乐都走统一的
+//! 内存读取 + Decoder 路径，设备切换恢复天然支持，无需维护 RemoteRangeReader，
+//! 也不需要磁盘 I/O。
 //!
 //! 流程：
-//! 1. start_streaming_download 创建缓存文件 + 启动后台下载线程
+//! 1. start_streaming_download 创建内存缓冲 + 启动后台下载线程
 //! 2. 下载够最小缓冲（512KB）后即可开始播放
-//! 3. StreamingTempFileReader 在读取追上下载进度时阻塞等待
+//! 3. StreamingMemoryReader 在读取追上下载进度时阻塞等待
 //! 4. 下载完成后标记 complete，reader 正常读到 EOF
-//! 5. 缓存持久化到 app_data_dir，重启后自动扫描重建索引
-//! 6. LRU 策略淘汰旧缓存，上限用户可配置
+//! 5. LRU 策略淘汰旧缓存，上限用户可配置；进程退出即释放，不做持久化
 
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -24,25 +22,31 @@ use std::time::{Duration, SystemTime};
 /// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿
 pub const MIN_BUFFER_BYTES: u64 = 512 * 1024;
 
-/// 流式临时文件读取器：包装 File，实现 Read + Seek。
+/// 内存缓冲类型：下载线程写入，多个 reader 读取。
+/// 用 Mutex 短暂持锁拷贝，避免长时间阻塞下载线程。
+pub type BufferRef = Arc<Mutex<Vec<u8>>>;
+
+/// 流式内存读取器：从内存缓冲读取数据，实现 Read + Seek。
 /// 读取位置接近下载进度时阻塞等待，直到数据就绪。
-pub struct StreamingTempFileReader {
-    file: File,
+pub struct StreamingMemoryReader {
+    buffer: BufferRef,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
     pos: u64,
     total_bytes: Option<u64>,
 }
 
-impl Read for StreamingTempFileReader {
+impl Read for StreamingMemoryReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         loop {
             let downloaded = self.downloaded_bytes.load(Ordering::Relaxed);
             if self.pos < downloaded {
                 let max_read = (downloaded - self.pos).min(buf.len() as u64) as usize;
-                let n = self.file.read(&mut buf[..max_read])?;
-                self.pos += n as u64;
-                return Ok(n);
+                let buffer = self.buffer.lock().unwrap();
+                let start = self.pos as usize;
+                buf[..max_read].copy_from_slice(&buffer[start..start + max_read]);
+                self.pos += max_read as u64;
+                return Ok(max_read);
             }
             if self.download_complete.load(Ordering::Relaxed) {
                 return Ok(0);
@@ -52,20 +56,14 @@ impl Read for StreamingTempFileReader {
     }
 }
 
-impl Seek for StreamingTempFileReader {
+impl Seek for StreamingMemoryReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let target = match pos {
             SeekFrom::Start(n) => n,
             SeekFrom::Current(n) => (self.pos as i64 + n).max(0) as u64,
             SeekFrom::End(n) => {
                 if let Some(total) = self.total_bytes {
-                    return self
-                        .file
-                        .seek(SeekFrom::End(n))
-                        .map(|p| {
-                            self.pos = p;
-                            p
-                        });
+                    return Ok((total as i64 + n).max(0) as u64);
                 }
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
@@ -78,20 +76,23 @@ impl Seek for StreamingTempFileReader {
             let downloaded = self.downloaded_bytes.load(Ordering::Relaxed);
             if target < downloaded || self.download_complete.load(Ordering::Relaxed) {
                 self.pos = target;
-                return self.file.seek(SeekFrom::Start(target)).map(|_| target);
+                return Ok(target);
             }
             std::thread::sleep(Duration::from_millis(50));
         }
     }
 }
 
-/// 流式临时文件状态：在 AudioSource 中传递，设备切换恢复时重建 reader。
+/// 流式内存状态：在 AudioSource 中传递，设备切换恢复时重建 reader。
 #[derive(Clone)]
 pub struct StreamingTempFileState {
-    pub path: String,
+    /// 内存缓冲（下载线程写，reader 读）
+    pub buffer: BufferRef,
     pub downloaded_bytes: Arc<AtomicU64>,
     pub download_complete: Arc<AtomicBool>,
     pub total_bytes: Option<u64>,
+    /// 仅用于日志显示（保留旧字段名以最小化上游改动）
+    pub path: String,
 }
 
 impl std::fmt::Debug for StreamingTempFileState {
@@ -112,10 +113,9 @@ impl std::fmt::Debug for StreamingTempFileState {
 }
 
 impl StreamingTempFileState {
-    pub fn new_reader(&self) -> std::io::Result<StreamingTempFileReader> {
-        let file = File::open(&self.path)?;
-        Ok(StreamingTempFileReader {
-            file,
+    pub fn new_reader(&self) -> std::io::Result<StreamingMemoryReader> {
+        Ok(StreamingMemoryReader {
+            buffer: self.buffer.clone(),
             downloaded_bytes: self.downloaded_bytes.clone(),
             download_complete: self.download_complete.clone(),
             pos: 0,
@@ -133,7 +133,7 @@ impl StreamingTempFileState {
 }
 
 struct CacheEntry {
-    path: PathBuf,
+    buffer: BufferRef,
     size: u64,
     last_accessed: SystemTime,
     downloaded_bytes: Arc<AtomicU64>,
@@ -143,7 +143,7 @@ struct CacheEntry {
 }
 
 struct StreamCacheManager {
-    /// key = url_hash（文件名，也是持久化到磁盘的标识）
+    /// key = url_hash
     entries: HashMap<String, CacheEntry>,
     max_size_bytes: u64,
     current_size: u64,
@@ -152,15 +152,17 @@ struct StreamCacheManager {
 impl StreamCacheManager {
     fn evict_if_needed(&mut self) {
         while self.current_size > self.max_size_bytes && !self.entries.is_empty() {
+            // 注意：正在下载中的条目不参与淘汰（避免删除正在写的缓冲）
             let oldest_key = self
                 .entries
                 .iter()
+                .filter(|(_, entry)| entry.download_complete.load(Ordering::Relaxed))
                 .min_by_key(|(_, entry)| entry.last_accessed)
                 .map(|(k, _)| k.clone());
 
             if let Some(key) = oldest_key {
                 if let Some(entry) = self.entries.remove(&key) {
-                    let _ = std::fs::remove_file(&entry.path);
+                    // buffer drop 后内存自动释放
                     self.current_size = self.current_size.saturating_sub(entry.size);
                 }
             } else {
@@ -176,70 +178,17 @@ impl StreamCacheManager {
             self.current_size += new_size;
         }
     }
-
-    /// 扫描持久化缓存目录，重建 LRU 索引。
-    /// 使用文件修改时间作为 last_accessed，使 LRU 跨重启仍然有效。
-    fn init_from_disk(&mut self) {
-        let dir = cache_dir();
-        let read_dir = match std::fs::read_dir(&dir) {
-            Ok(rd) => rd,
-            Err(_) => return,
-        };
-
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("dat") {
-                continue;
-            }
-
-            let hash = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(h) => h.to_string(),
-                None => continue,
-            };
-
-            if self.entries.contains_key(&hash) {
-                continue;
-            }
-
-            let metadata = match entry.metadata() {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-
-            let size = metadata.len();
-            let last_modified = metadata
-                .modified()
-                .ok()
-                .unwrap_or_else(SystemTime::now);
-
-            self.entries.insert(
-                hash,
-                CacheEntry {
-                    path: path.clone(),
-                    size,
-                    last_accessed: last_modified,
-                    downloaded_bytes: Arc::new(AtomicU64::new(size)),
-                    download_complete: Arc::new(AtomicBool::new(true)),
-                    _download_handle: None,
-                },
-            );
-            self.current_size += size;
-        }
-
-        self.evict_if_needed();
-    }
 }
 
 static STREAM_CACHE: OnceLock<Mutex<StreamCacheManager>> = OnceLock::new();
 
 fn cache() -> &'static Mutex<StreamCacheManager> {
     STREAM_CACHE.get_or_init(|| {
-        let mut mgr = StreamCacheManager {
+        let mgr = StreamCacheManager {
             entries: HashMap::new(),
             max_size_bytes: 500 * 1024 * 1024,
             current_size: 0,
         };
-        mgr.init_from_disk();
         Mutex::new(mgr)
     })
 }
@@ -261,33 +210,13 @@ pub fn max_cache_size() -> u64 {
     cache().lock().unwrap().max_size_bytes
 }
 
-/// 持久化缓存目录：
-/// Windows: %APPDATA%\com.xymusic.desktop\stream_cache\
-/// 其他平台: ~/com.xymusic.desktop/stream_cache/（回退 temp_dir）
-fn cache_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            let dir = PathBuf::from(appdata)
-                .join("com.xymusic.desktop")
-                .join("stream_cache");
-            let _ = std::fs::create_dir_all(&dir);
-            return dir;
-        }
-    }
-
-    let dir = std::env::temp_dir().join("xy-music-stream-cache");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
-}
-
 fn url_hash(url: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(url.as_bytes());
     hex::encode(&hasher.finalize()[..16])
 }
 
-/// 为在线音频创建流式缓存文件并启动后台下载。
+/// 为在线音频创建内存缓冲并启动后台下载。
 /// 如果同一 URL 的缓存已存在（下载完成），直接复用。
 pub fn start_streaming_download(
     url: &str,
@@ -303,32 +232,25 @@ pub fn start_streaming_download(
         if entry.download_complete.load(Ordering::Relaxed) {
             let downloaded = entry.size;
             return Ok(StreamingTempFileState {
-                path: entry.path.to_string_lossy().to_string(),
+                buffer: entry.buffer.clone(),
                 downloaded_bytes: Arc::new(AtomicU64::new(downloaded)),
                 download_complete: Arc::new(AtomicBool::new(true)),
                 total_bytes: Some(downloaded),
+                path: url.to_string(),
             });
         }
-        // 下载进行中：复用同一个文件和下载状态
+        // 下载进行中：复用同一个缓冲和下载状态
         return Ok(StreamingTempFileState {
-            path: entry.path.to_string_lossy().to_string(),
+            buffer: entry.buffer.clone(),
             downloaded_bytes: entry.downloaded_bytes.clone(),
             download_complete: entry.download_complete.clone(),
             total_bytes: None,
+            path: url.to_string(),
         });
     }
 
-    // 创建缓存文件
-    let temp_path = cache_dir().join(format!("{}.dat", hash));
-
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&temp_path)
-        .map_err(|e| format!("创建缓存文件失败: {}", e))?;
-    drop(file);
-
+    // 创建内存缓冲
+    let buffer = Arc::new(Mutex::new(Vec::<u8>::with_capacity(64 * 1024)));
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let download_complete = Arc::new(AtomicBool::new(false));
 
@@ -337,19 +259,19 @@ pub fn start_streaming_download(
     let hash_clone = hash.clone();
     let headers_clone = headers.cloned();
     let ua_clone = user_agent.map(|s| s.to_string());
-    let path_clone = temp_path.clone();
+    let buf_clone = buffer.clone();
     let dl_bytes = downloaded_bytes.clone();
     let dl_complete = download_complete.clone();
 
     let handle = std::thread::spawn(move || {
         download_thread(&url_clone, &hash_clone, headers_clone.as_ref(), ua_clone.as_deref(),
-                         path_clone, dl_bytes, dl_complete);
+                         buf_clone, dl_bytes, dl_complete);
     });
 
     mgr.entries.insert(
         hash,
         CacheEntry {
-            path: temp_path.clone(),
+            buffer: buffer.clone(),
             size: 0,
             last_accessed: SystemTime::now(),
             downloaded_bytes: downloaded_bytes.clone(),
@@ -360,10 +282,11 @@ pub fn start_streaming_download(
     mgr.evict_if_needed();
 
     Ok(StreamingTempFileState {
-        path: temp_path.to_string_lossy().to_string(),
+        buffer,
         downloaded_bytes,
         download_complete,
         total_bytes: None,
+        path: url.to_string(),
     })
 }
 
@@ -372,7 +295,7 @@ fn download_thread(
     hash: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
-    path: PathBuf,
+    buffer: BufferRef,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
 ) {
@@ -450,15 +373,6 @@ fn download_thread(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
 
-    let mut file = match OpenOptions::new().write(true).open(&path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("[StreamCache] 打开缓存文件写入失败: {}", e);
-            download_complete.store(true, Ordering::Relaxed);
-            return;
-        }
-    };
-
     let mut response = response;
     let mut buf = [0u8; 64 * 1024];
     let mut bytes_written = 0u64;
@@ -467,9 +381,9 @@ fn download_thread(
         match response.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                if let Err(e) = file.write_all(&buf[..n]) {
-                    eprintln!("[StreamCache] 写入缓存文件失败: {}", e);
-                    break;
+                {
+                    let mut buffer = buffer.lock().unwrap();
+                    buffer.extend_from_slice(&buf[..n]);
                 }
                 bytes_written += n as u64;
                 downloaded_bytes.store(bytes_written, Ordering::Relaxed);
@@ -481,7 +395,6 @@ fn download_thread(
         }
     }
 
-    let _ = file.flush();
     download_complete.store(true, Ordering::Relaxed);
 
     // 更新缓存大小
@@ -544,9 +457,7 @@ pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
 pub fn clear_all() {
     if let Some(mgr) = STREAM_CACHE.get() {
         if let Ok(mut mgr) = mgr.lock() {
-            for (_, entry) in mgr.entries.drain() {
-                let _ = std::fs::remove_file(&entry.path);
-            }
+            mgr.entries.drain();
             mgr.current_size = 0;
         }
     }
