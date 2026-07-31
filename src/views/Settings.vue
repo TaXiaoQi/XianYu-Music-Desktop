@@ -11,9 +11,10 @@ import SettingsShortcuts from "../components/settings/SettingsShortcuts.vue";
 import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
+import SettingsDownload from "../components/settings/SettingsDownload.vue";
 
-type TabId = 'general' | 'theme' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'plugins' | 'shortcuts' | 'account' | 'about';
-const VALID_TABS: TabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'about'];
+type TabId = 'general' | 'theme' | 'desktopLyrics' | 'audioOutput' | 'download' | 'toolbox' | 'library' | 'plugins' | 'shortcuts' | 'account' | 'about';
+const VALID_TABS: TabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -55,6 +56,7 @@ const tabs = [
   { id: 'plugins', name: '插件' },
   { id: 'theme', name: '外观' },
   { id: 'audioOutput', name: '播放' },
+  { id: 'download', name: '下载' },
   { id: 'library', name: '音乐库' },
   { id: 'toolbox', name: '工具箱' },
   { id: 'desktopLyrics', name: '桌面歌词' },
@@ -92,6 +94,7 @@ const tabs = [
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
           <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
+          <SettingsDownload v-else-if="activeTab === 'download'" key="download" />
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
