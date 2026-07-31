@@ -8,7 +8,7 @@
  * 同时请求头模拟浏览器媒体流（Referer/UA/Accept），进一步降低被识别为“下载”的概率。
  *
  * 消息协议：
- *   主线程 → Worker: { url: string }
+ *   主线程 → Worker: { url: string, headers?: Record<string, string> | null }
  *   Worker → 主线程: { type: 'progress', received, total }
  *                    | { type: 'done', buffer: ArrayBuffer }   (buffer 为 transferable)
  *                    | { type: 'error', message: string }
@@ -16,23 +16,28 @@
 
 interface DownloadRequest {
   url: string;
+  headers?: Record<string, string> | null;
 }
 
 self.onmessage = async (event: MessageEvent<DownloadRequest>) => {
-  const { url } = event.data;
+  const { url, headers } = event.data;
   try {
     const ACCEPT =
       'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5';
+
+    // 合并插件返回的自定义 headers 与默认媒体流 headers
+    const buildHeaders = (withRange: boolean): Record<string, string> => {
+      const h: Record<string, string> = { Accept: ACCEPT };
+      if (withRange) h.Range = 'bytes=0-';
+      if (headers) Object.assign(h, headers);
+      return h;
+    };
 
     // 先尝试带 Range 的媒体流请求（伪装成浏览器音频播放，规避 IDM 等下载器拦截）；
     // 部分音源 CDN 对开放式 Range 会返回 502/416/403（高品、无损直链的节点尤其常见），
     // 此时去掉 Range 重试一次普通 GET。
     const doFetch = (withRange: boolean) =>
-      fetch(url, {
-        headers: withRange
-          ? { Accept: ACCEPT, Range: 'bytes=0-' }
-          : { Accept: ACCEPT },
-      });
+      fetch(url, { headers: buildHeaders(withRange) });
 
     let resp = await doFetch(true);
     if (

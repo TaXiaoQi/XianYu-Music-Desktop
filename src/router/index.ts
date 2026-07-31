@@ -10,6 +10,7 @@ const Plugins = () => import('../views/Plugins.vue');
 const Settings = () => import('../views/Settings.vue');
 const Auth = () => import('../views/Auth.vue');
 const Search = () => import('../views/Search.vue');
+const OnlineDetail = () => import('../views/OnlineDetailView.vue');
 
 const routes: Array<RouteRecordRaw> = [
   { path: '/', name: 'Home', component: Home, meta: { keepAlive: true } },
@@ -20,7 +21,8 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/plugins', name: 'Plugins', component: Plugins },
   { path: '/settings', name: 'Settings', component: Settings },
   { path: '/auth', name: 'Auth', component: Auth },
-  { path: '/search', name: 'Search', component: Search },
+  { path: '/search', name: 'Search', component: Search, meta: { keepAlive: true } },
+  { path: '/online-detail', name: 'OnlineDetail', component: OnlineDetail },
 ];
 
 const router = createRouter({

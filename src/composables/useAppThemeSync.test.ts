@@ -9,6 +9,7 @@ const setTheme = vi.fn(() => Promise.resolve());
 const onFocusChanged = vi.fn(() => Promise.resolve(() => undefined));
 const applyWindowMaterial = vi.fn(() => Promise.resolve('none'));
 const rebuildWindowMaterialForCompositor = vi.fn(() => Promise.resolve('none'));
+const refreshWindowMaterialActiveState = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const loadWindowMaterialCapabilities = vi.fn(() => Promise.resolve({
   isWindows: true,
   supportsAcrylic: true,
@@ -36,6 +37,12 @@ vi.mock('./windowMaterial', () => ({
   }),
 }));
 
+vi.mock('../services/tauri/windowApi', () => ({
+  windowApi: {
+    refreshWindowMaterialActiveState,
+  },
+}));
+
 async function flushThemeSync() {
   await nextTick();
   await Promise.resolve();
@@ -59,9 +66,26 @@ describe('useAppThemeSync', () => {
     setTheme.mockClear();
     onFocusChanged.mockClear();
     applyWindowMaterial.mockClear();
+    applyWindowMaterial.mockResolvedValue('none');
     rebuildWindowMaterialForCompositor.mockClear();
+    rebuildWindowMaterialForCompositor.mockResolvedValue('none');
+    refreshWindowMaterialActiveState.mockClear();
     loadWindowMaterialCapabilities.mockClear();
     activeWindowMaterial.value = 'none';
+  });
+
+  it('refreshes native material active state when a material is applied', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.patchTheme({
+      windowMaterial: 'acrylic',
+      keepWindowMaterialOnBlur: true,
+    });
+    applyWindowMaterial.mockResolvedValue('acrylic');
+
+    scope?.run(() => useAppThemeSync());
+    await flushThemeSync();
+
+    expect(refreshWindowMaterialActiveState).toHaveBeenCalledWith(true);
   });
 
   afterEach(() => {

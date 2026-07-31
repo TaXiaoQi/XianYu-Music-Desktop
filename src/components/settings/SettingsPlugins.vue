@@ -6,14 +6,24 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult } from '../../services/pluginEngine';
+import { useSettings } from '../../features/settings/useSettings';
 import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 
 const { showToast } = useToast();
+const { settings, patchSettings } = useSettings();
 
-// 启动时加载已启用的插件，并检查歌单导入支持
+// 插件设置快捷访问
+const pluginSettings = computed(() => settings.value.plugins);
+function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVersionCheck') {
+  patchSettings({
+    plugins: { [key]: !pluginSettings.value[key] },
+  });
+}
+
+// 启动时加载已启用的插件
 onMounted(async () => {
-  await loadPlugins();
+  await loadPlugins(pluginSettings.value.lazyLoad);
   plugins.value = getStoredPlugins();
   void checkImportSupport();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
@@ -24,6 +34,7 @@ onUnmounted(() => {
   unlistenDragDrop?.();
   unlistenDragOver?.();
   unlistenDragLeave?.();
+  stopDragging();
 });
 
 // UI 状态
@@ -78,14 +89,14 @@ watch(plugins, () => {
   void checkImportSupport();
 }, { deep: true });
 
-/** 插件排序：落雪(lx) 始终在上，其次 MusicFree，同组内按 sortOrder 排列 */
+/** 插件排序：完全按用户自定义的 sortOrder 排列，不强制按格式分组 */
 function sortPlugins(list: PluginSource[]): PluginSource[] {
-  const formatPriority: Record<string, number> = { lx: 0, musicfree: 1, unknown: 2 };
   return [...list].sort((a, b) => {
-    const pa = formatPriority[a.format] ?? 3;
-    const pb = formatPriority[b.format] ?? 3;
-    if (pa !== pb) return pa - pb;
-    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    const sa = a.sortOrder ?? 0;
+    const sb = b.sortOrder ?? 0;
+    if (sa !== sb) return sa - sb;
+    // sortOrder 相同时保持原始顺序（兼容旧数据）
+    return list.indexOf(a) - list.indexOf(b);
   });
 }
 
@@ -100,74 +111,166 @@ const filteredPlugins = computed(() => {
   );
 });
 
-// ==================== 拖拽排序 ====================
-const draggedId = ref<string | null>(null);
-const dragOverId = ref<string | null>(null);
+// ==================== 拖拽排序（基于 pointer 事件）====================
+// 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
+// 会导致页面内原生 DnD 失效，因此这里用 pointer 事件自行实现。
+const draggingIndex = ref<number | null>(null);
+const listRef = ref<HTMLElement | null>(null);
+const scrollContainer = ref<HTMLElement | null>(null);
+let latestPointerY = 0;
+let autoScrollFrame: number | null = null;
 
-function onDragStart(e: DragEvent, plugin: PluginSource) {
+const AUTO_SCROLL_EDGE_SIZE = 80;
+const AUTO_SCROLL_MAX_SPEED = 8;
+
+/** 查找列表所在的纵向滚动容器 */
+const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+  let current = element.parentElement;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+};
+
+/**
+ * 根据指针位置和当前拖拽索引推导目标索引。
+ * 只在越过相邻项中线后换位，避免列表重排后指针反向命中原位置而抖动。
+ */
+const resolveTargetIndex = (clientY: number, currentIndex: number): number | null => {
+  const listEl = listRef.value;
+  if (!listEl) return null;
+
+  const rows = Array.from(
+    listEl.querySelectorAll<HTMLElement>('[data-plugin-row]'),
+  );
+  if (rows.length === 0) return null;
+
+  let target = currentIndex;
+
+  // 向上扫描
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) target = i;
+    else break;
+  }
+
+  if (target !== currentIndex) return target;
+
+  // 向下扫描
+  for (let i = currentIndex + 1; i < rows.length; i++) {
+    const rect = rows[i].getBoundingClientRect();
+    if (clientY > rect.top + rect.height / 2) target = i;
+    else break;
+  }
+
+  return target;
+};
+
+/** 在已排序列表中移动插件（仅内存操作，拖拽结束后持久化） */
+const movePluginItem = (from: number, to: number) => {
+  if (from < 0 || from >= filteredPlugins.value.length || to < 0 || to >= filteredPlugins.value.length || from === to) return;
+  const sorted = [...filteredPlugins.value];
+  const [moved] = sorted.splice(from, 1);
+  sorted.splice(to, 0, moved);
+  // 更新内存中的 sortOrder，触发 filteredPlugins 重新排序
+  sorted.forEach((p, i) => {
+    const plugin = plugins.value.find(item => item.id === p.id);
+    if (plugin) plugin.sortOrder = i;
+  });
+};
+
+const updateDraggedItemPosition = (clientY: number) => {
+  const currentIndex = draggingIndex.value;
+  if (currentIndex === null) return;
+
+  const target = resolveTargetIndex(clientY, currentIndex);
+  if (target === null || target === currentIndex) return;
+
+  movePluginItem(currentIndex, target);
+  // 实时重排后，被拖拽项已移动到新位置
+  draggingIndex.value = target;
+};
+
+/** 指针靠近滚动区域边缘时，持续滚动并同步更新拖拽位置 */
+const runAutoScroll = () => {
+  autoScrollFrame = null;
+  if (draggingIndex.value === null) return;
+
+  const container = scrollContainer.value;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  let speed = 0;
+
+  if (latestPointerY < rect.top + AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (rect.top + AUTO_SCROLL_EDGE_SIZE - latestPointerY) / AUTO_SCROLL_EDGE_SIZE);
+    speed = -AUTO_SCROLL_MAX_SPEED * intensity;
+  } else if (latestPointerY > rect.bottom - AUTO_SCROLL_EDGE_SIZE) {
+    const intensity = Math.min(1, (latestPointerY - (rect.bottom - AUTO_SCROLL_EDGE_SIZE)) / AUTO_SCROLL_EDGE_SIZE);
+    speed = AUTO_SCROLL_MAX_SPEED * intensity;
+  }
+
+  if (speed === 0) return;
+
+  const previousScrollTop = container.scrollTop;
+  container.scrollTop += speed;
+  if (container.scrollTop !== previousScrollTop) {
+    updateDraggedItemPosition(latestPointerY);
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
+};
+
+const scheduleAutoScroll = () => {
+  if (autoScrollFrame === null) {
+    autoScrollFrame = requestAnimationFrame(runAutoScroll);
+  }
+};
+
+const handlePointerMove = (event: PointerEvent) => {
+  if (draggingIndex.value === null) return;
+  event.preventDefault();
+
+  latestPointerY = event.clientY;
+  updateDraggedItemPosition(event.clientY);
+  scheduleAutoScroll();
+};
+
+const stopDragging = () => {
+  // 拖拽结束时持久化到 localStorage
+  if (draggingIndex.value !== null) {
+    const finalOrder = sortPlugins(plugins.value).map(p => p.id);
+    reorderPlugins(finalOrder);
+    plugins.value = getStoredPlugins();
+  }
+  draggingIndex.value = null;
+  scrollContainer.value = null;
+  if (autoScrollFrame !== null) {
+    cancelAnimationFrame(autoScrollFrame);
+    autoScrollFrame = null;
+  }
+  window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointerup', stopDragging);
+  window.removeEventListener('pointercancel', stopDragging);
+};
+
+const startDragging = (index: number, event: PointerEvent) => {
   // 搜索模式下禁止拖拽
-  if (searchQuery.value.trim()) { e.preventDefault(); return; }
-  draggedId.value = plugin.id;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', plugin.id);
-  }
-}
+  if (searchQuery.value.trim()) return;
+  // 只响应主键/触摸
+  if (event.button !== 0) return;
+  event.preventDefault();
 
-function onDragOver(e: DragEvent, plugin: PluginSource) {
-  if (searchQuery.value.trim() || !draggedId.value) return;
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  if (draggedId.value !== plugin.id) {
-    dragOverId.value = plugin.id;
-  } else {
-    dragOverId.value = null;
-  }
-}
-
-function onDrop(e: DragEvent, targetPlugin: PluginSource) {
-  e.preventDefault();
-  if (!draggedId.value || searchQuery.value.trim()) return;
-
-  const draggedPlugin = plugins.value.find(p => p.id === draggedId.value);
-  if (!draggedPlugin || draggedPlugin.id === targetPlugin.id) {
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-
-  // 仅允许在同一格式组内拖拽
-  if (draggedPlugin.format !== targetPlugin.format) {
-    showToast('只能在同一类型的插件内调整顺序', 'info');
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-
-  // 在已排序列表中执行移动
-  const sorted = sortPlugins(plugins.value);
-  const draggedIdx = sorted.findIndex(p => p.id === draggedId.value);
-  const targetIdx = sorted.findIndex(p => p.id === targetPlugin.id);
-  if (draggedIdx === -1 || targetIdx === -1) {
-    draggedId.value = null;
-    dragOverId.value = null;
-    return;
-  }
-  const [moved] = sorted.splice(draggedIdx, 1);
-  sorted.splice(targetIdx, 0, moved);
-
-  // 持久化新顺序
-  reorderPlugins(sorted.map(p => p.id));
-  plugins.value = getStoredPlugins();
-
-  draggedId.value = null;
-  dragOverId.value = null;
-}
-
-function onDragEnd() {
-  draggedId.value = null;
-  dragOverId.value = null;
-}
+  draggingIndex.value = index;
+  latestPointerY = event.clientY;
+  scrollContainer.value = listRef.value ? findScrollContainer(listRef.value) : null;
+  window.addEventListener('pointermove', handlePointerMove, { passive: false });
+  window.addEventListener('pointerup', stopDragging);
+  window.addEventListener('pointercancel', stopDragging);
+};
 
 const pluginStatsLabel = computed(() => {
   const total = plugins.value.length;
@@ -391,6 +494,19 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
 
 // ==================== 核心安装逻辑 ====================
 
+/** 简单版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同 */
+function compareVer(a: string, b: string): number {
+  const pa = (a || '0').split(/[.-]/).filter(Boolean);
+  const pb = (b || '0').split(/[.-]/).filter(Boolean);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = parseInt(pa[i]) || 0;
+    const nb = parseInt(pb[i]) || 0;
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
 async function installPluginFromScript(script: string, filePath: string) {
   // 使用 pluginEngine 的 loadPluginFromScript，自动检测格式（LX 或 MusicFree）
   const { loadPluginFromScript } = await import('../../services/pluginEngine');
@@ -399,6 +515,19 @@ async function installPluginFromScript(script: string, filePath: string) {
     showToast('插件加载失败', 'error');
     return;
   }
+
+  // 版本校验：检查是否已存在同名插件且版本更高或相同
+  if (!pluginSettings.value.skipVersionCheck) {
+    const existing = getStoredPlugins().find(p => p.name === source.name);
+    if (existing) {
+      const cmp = compareVer(source.version, existing.version);
+      if (cmp <= 0) {
+        showToast(`已存在同名插件 v${existing.version}，新版本 v${source.version} 未高于已安装版本，已跳过`, 'info');
+        return;
+      }
+    }
+  }
+
   addPluginSource(source);
   refreshPluginList();
   showToast(`成功安装插件: ${source.name} (${source.format === 'lx' ? '落雪' : 'MusicFree'})`, 'success');
@@ -422,6 +551,25 @@ function confirmUninstallAll() {
   showToast('已卸载全部插件', 'success');
 }
 
+// 单个插件卸载二次确认
+const showUninstallPluginConfirm = ref(false);
+const pendingUninstallPlugin = ref<PluginSource | null>(null);
+
+function handleUninstallPlugin(plugin: PluginSource) {
+  pendingUninstallPlugin.value = plugin;
+  showUninstallPluginConfirm.value = true;
+}
+
+function confirmUninstallPlugin() {
+  const plugin = pendingUninstallPlugin.value;
+  if (!plugin) return;
+  removePluginSource(plugin.id);
+  refreshPluginList();
+  showUninstallPluginConfirm.value = false;
+  pendingUninstallPlugin.value = null;
+  showToast(`已卸载 ${plugin.name}`, 'success');
+}
+
 async function handleTogglePlugin(plugin: PluginSource) {
   const result = await togglePlugin(plugin.id);
   if (result.success) {
@@ -432,14 +580,73 @@ async function handleTogglePlugin(plugin: PluginSource) {
   }
 }
 
+// 更新检查结果缓存
+const updateCheckResults = ref<Map<string, PluginUpdateCheckResult>>(new Map());
+const checkingUpdates = ref(false);
+const updatingPluginId = ref<string | null>(null);
+
 async function handleUpdatePlugin(plugin: PluginSource) {
-  showToast(`请重新导入 ${plugin.name} 以更新`, 'info');
+  // 如果已有缓存结果且确认有更新，直接执行更新
+  const cached = updateCheckResults.value.get(plugin.id);
+  if (cached?.hasUpdate && cached.newScript) {
+    updatingPluginId.value = plugin.id;
+    try {
+      const result = await performPluginUpdate(plugin, cached);
+      if (result.success) {
+        showToast(`${plugin.name} 已更新到 v${cached.newVersion}`, 'success');
+        updateCheckResults.value.delete(plugin.id);
+        await refreshPluginList();
+      } else {
+        showToast(result.message || '更新失败', 'error');
+      }
+    } catch (e: any) {
+      showToast(`更新失败: ${e?.message || e}`, 'error');
+    } finally {
+      updatingPluginId.value = null;
+    }
+    return;
+  }
+
+  // 否则先检查更新
+  updatingPluginId.value = plugin.id;
+  try {
+    const result = await checkPluginUpdate(plugin);
+    if (!result) {
+      showToast(`${plugin.name} 无可用更新源`, 'info');
+    } else if (result.hasUpdate) {
+      updateCheckResults.value.set(plugin.id, result);
+      showToast(`${plugin.name} 发现新版本 v${result.newVersion}，再次点击更新`, 'info');
+    } else {
+      showToast(`${plugin.name} 已是最新版本`, 'info');
+    }
+  } catch (e: any) {
+    showToast(`检查更新失败: ${e?.message || e}`, 'error');
+  } finally {
+    updatingPluginId.value = null;
+  }
 }
 
-async function handleUninstallPlugin(plugin: PluginSource) {
-  removePluginSource(plugin.id);
-  refreshPluginList();
-  showToast(`已卸载 ${plugin.name}`, 'success');
+async function handleCheckAllUpdates() {
+  if (checkingUpdates.value) return;
+  checkingUpdates.value = true;
+  try {
+    const results = await checkAllPluginUpdates();
+    updateCheckResults.value = results;
+    let updateCount = 0;
+    for (const [, result] of results) {
+      if (result.hasUpdate) updateCount++;
+    }
+    if (updateCount > 0) {
+      showToast(`发现 ${updateCount} 个插件可更新`, 'info');
+    } else {
+      showToast('所有插件均为最新版本', 'info');
+    }
+    await refreshPluginList();
+  } catch (e: any) {
+    showToast(`批量检查失败: ${e?.message || e}`, 'error');
+  } finally {
+    checkingUpdates.value = false;
+  }
 }
 
 // 打开订阅设置
@@ -522,10 +729,22 @@ function handleInstallFromSubscription(sub: Subscription) {
   showToast(`从订阅 ${sub.name} 安装：等待后端接入`, 'info');
 }
 
-// 移除订阅源
+// 移除订阅源（二次确认）
+const showRemoveSubscriptionConfirm = ref(false);
+const pendingRemoveSubscription = ref<Subscription | null>(null);
+
 function handleRemoveSubscription(sub: Subscription) {
+  pendingRemoveSubscription.value = sub;
+  showRemoveSubscriptionConfirm.value = true;
+}
+
+function confirmRemoveSubscription() {
+  const sub = pendingRemoveSubscription.value;
+  if (!sub) return;
   // TODO: 调用后端移除订阅
   subscriptions.value = subscriptions.value.filter((s) => s.id !== sub.id);
+  showRemoveSubscriptionConfirm.value = false;
+  pendingRemoveSubscription.value = null;
   showToast(`已移除订阅 ${sub.name}`, 'success');
 }
 
@@ -758,6 +977,70 @@ async function copyPluginLink() {
       </div>
     </section>
 
+    <!-- 插件设置 -->
+    <section class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        插件设置
+      </h2>
+      <div class="space-y-1 rounded-lg border border-black/5 dark:border-white/5 divide-y divide-black/5 dark:divide-white/5 overflow-hidden">
+        <!-- 启动时自动更新插件 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">启动时自动更新插件</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">软件启动时自动检查并安装插件更新</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.autoUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('autoUpdateOnStartup')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+        <!-- 插件懒加载 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">插件懒加载</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">首次使用时才初始化插件，加快启动速度</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.lazyLoad ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('lazyLoad')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+        <!-- 安装时不校验版本 -->
+        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+          <div class="flex items-center gap-3 min-w-0">
+            <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">安装时不校验版本</p>
+              <p class="text-xs text-gray-400 dark:text-white/40 truncate">允许安装相同或更低版本的插件</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+            :class="pluginSettings.skipVersionCheck ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="togglePluginSetting('skipVersionCheck')"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- 插件列表 -->
     <section class="space-y-3">
       <div class="flex items-center justify-between">
@@ -765,8 +1048,20 @@ async function copyPluginLink() {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           已安装插件
         </h2>
-        <div class="text-xs text-gray-500 dark:text-white/55">
-          {{ pluginStatsLabel }}
+        <div class="flex items-center gap-3">
+          <div class="text-xs text-gray-500 dark:text-white/55">
+            {{ pluginStatsLabel }}
+          </div>
+          <button
+            type="button"
+            class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+            :disabled="checkingUpdates || plugins.length === 0"
+            :class="{ 'settings-plugin-button--disabled': checkingUpdates || plugins.length === 0 }"
+            @click="handleCheckAllUpdates"
+          >
+            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': checkingUpdates }" />
+            {{ checkingUpdates ? '检查中...' : '检查全部更新' }}
+          </button>
         </div>
       </div>
 
@@ -804,25 +1099,26 @@ async function copyPluginLink() {
       </div>
 
       <!-- 插件卡片 -->
-      <div v-else class="flex flex-col gap-2">
+      <div v-else ref="listRef">
+      <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col gap-2">
         <div
-          v-for="plugin in filteredPlugins"
+          v-for="(plugin, index) in filteredPlugins"
           :key="plugin.id"
+          data-plugin-row
           class="settings-plugin-card"
           :class="{
-            'settings-plugin-card--dragging': draggedId === plugin.id,
-            'settings-plugin-card--drag-over': dragOverId === plugin.id,
+            'settings-plugin-card--dragging': draggingIndex === index,
           }"
-          @dragover="onDragOver($event, plugin)"
-          @drop="onDrop($event, plugin)"
         >
           <!-- 拖拽手柄 -->
           <div
-            class="plugin-drag-handle"
-            :class="{ 'plugin-drag-handle--disabled': !!searchQuery.trim() }"
-            draggable="true"
-            @dragstart="onDragStart($event, plugin)"
-            @dragend="onDragEnd"
+            class="plugin-drag-handle touch-none select-none"
+            :class="{
+              'plugin-drag-handle--disabled': !!searchQuery.trim(),
+              'cursor-grabbing': draggingIndex === index,
+              'cursor-grab': draggingIndex !== index,
+            }"
+            @pointerdown="startDragging(index, $event)"
           >
             <GripVertical class="h-5 w-5" />
           </div>
@@ -887,10 +1183,17 @@ async function copyPluginLink() {
             <button
               type="button"
               class="settings-plugin-icon-button"
-              title="更新此插件"
+              :class="{
+                'settings-plugin-icon-button--updating': updatingPluginId === plugin.id,
+                'settings-plugin-icon-button--update-available': !!updateCheckResults.get(plugin.id)?.hasUpdate,
+              }"
+              :disabled="updatingPluginId === plugin.id"
+              :title="updateCheckResults.get(plugin.id)?.hasUpdate
+                ? `${plugin.name} 可更新到 v${updateCheckResults.get(plugin.id)?.newVersion}，点击执行更新`
+                : (updatingPluginId === plugin.id ? '正在更新...' : `检查 ${plugin.name} 的更新`)"
               @click="handleUpdatePlugin(plugin)"
             >
-              <RefreshCw class="h-4 w-4" />
+              <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': updatingPluginId === plugin.id }" />
             </button>
             <button
               type="button"
@@ -912,6 +1215,7 @@ async function copyPluginLink() {
             </button>
           </div>
         </div>
+      </TransitionGroup>
       </div>
     </section>
 
@@ -962,6 +1266,116 @@ async function copyPluginLink() {
                 >
                   <Trash2 class="h-4 w-4" />
                   确认卸载
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 卸载单个插件确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="plugin-detail">
+        <div
+          v-if="showUninstallPluginConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showUninstallPluginConfirm = false"
+        >
+          <div class="plugin-detail-card">
+            <div class="plugin-detail-header">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
+                  <Trash2 class="h-5 w-5" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">卸载插件</div>
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="plugin-detail-close"
+                aria-label="关闭"
+                @click="showUninstallPluginConfirm = false"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </div>
+            <div class="plugin-detail-body">
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
+                确认要卸载插件 <strong class="text-[#EC4141]">{{ pendingUninstallPlugin?.name }}</strong> 吗？卸载后无法恢复，需重新安装。
+              </p>
+              <div class="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--ghost"
+                  @click="showUninstallPluginConfirm = false"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--danger"
+                  @click="confirmUninstallPlugin"
+                >
+                  <Trash2 class="h-4 w-4" />
+                  确认卸载
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 移除订阅确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="plugin-detail">
+        <div
+          v-if="showRemoveSubscriptionConfirm"
+          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showRemoveSubscriptionConfirm = false"
+        >
+          <div class="plugin-detail-card">
+            <div class="plugin-detail-header">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center shrink-0 text-red-500">
+                  <Trash2 class="h-5 w-5" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">移除订阅</div>
+                  <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5">此操作不可撤销</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="plugin-detail-close"
+                aria-label="关闭"
+                @click="showRemoveSubscriptionConfirm = false"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </div>
+            <div class="plugin-detail-body">
+              <p class="text-sm text-gray-600 dark:text-white/70 leading-relaxed">
+                确认要移除订阅 <strong class="text-[#EC4141]">{{ pendingRemoveSubscription?.name }}</strong> 吗？移除后需重新添加。
+              </p>
+              <div class="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--ghost"
+                  @click="showRemoveSubscriptionConfirm = false"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="settings-plugin-button settings-plugin-button--danger"
+                  @click="confirmRemoveSubscription"
+                >
+                  <Trash2 class="h-4 w-4" />
+                  确认移除
                 </button>
               </div>
             </div>
@@ -1179,6 +1593,29 @@ async function copyPluginLink() {
   color: rgb(220 38 38);
 }
 
+/* 更新进行中：禁用并保留图标颜色 */
+.settings-plugin-icon-button--updating {
+  cursor: progress;
+  opacity: 0.7;
+  transform: none;
+}
+
+.settings-plugin-icon-button--updating:hover {
+  background: transparent;
+  transform: none;
+}
+
+/* 有可用更新：醒目高亮，提示用户点击执行更新 */
+.settings-plugin-icon-button--update-available {
+  background: rgba(236, 65, 65, 0.12);
+  color: #ec4141;
+}
+
+.settings-plugin-icon-button--update-available:hover {
+  background: rgba(236, 65, 65, 0.2);
+  color: #c42f2f;
+}
+
 .settings-plugin-input {
   min-height: 38px;
   padding: 0 14px;
@@ -1333,15 +1770,21 @@ async function copyPluginLink() {
 
 /* 拖拽中的卡片 */
 .settings-plugin-card--dragging {
-  opacity: 0.4;
-  border-style: dashed;
+  border-color: rgba(236, 65, 65, 0.35);
+  background: rgba(236, 65, 65, 0.06);
+  box-shadow: 0 8px 20px rgba(236, 65, 65, 0.12);
 }
 
-/* 拖拽悬停目标 */
-.settings-plugin-card--drag-over {
-  border-color: rgba(34, 197, 94, 0.5);
-  background: rgba(34, 197, 94, 0.06);
-  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.12);
+/* FLIP 排序动画 */
+.plugin-sort-move {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plugin-sort-move {
+    transition: none;
+  }
 }
 
 :global(.dark) .plugin-drag-handle {
@@ -1353,9 +1796,9 @@ async function copyPluginLink() {
   background: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .settings-plugin-card--drag-over {
-  border-color: rgba(34, 197, 94, 0.4);
-  background: rgba(34, 197, 94, 0.08);
+:global(.dark) .settings-plugin-card--dragging {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.1);
 }
 
 .settings-plugin-tag {
@@ -1534,6 +1977,16 @@ async function copyPluginLink() {
 :global(.dark) .settings-plugin-icon-button--danger:hover {
   background: rgba(220, 38, 38, 0.18);
   color: #ff6b6b;
+}
+
+:global(.dark) .settings-plugin-icon-button--update-available {
+  background: rgba(236, 65, 65, 0.2);
+  color: #ff8b8b;
+}
+
+:global(.dark) .settings-plugin-icon-button--update-available:hover {
+  background: rgba(236, 65, 65, 0.28);
+  color: #ffa6a6;
 }
 
 /* 导入歌单按钮 */

@@ -26,6 +26,8 @@ pub(crate) struct RemoteStreamSource {
     pub user_agent: Option<String>,
     /// 自定义 Referer（部分音源防盗链校验来源）
     pub referer: Option<String>,
+    /// 插件返回的自定义请求头（如 Cookie、Referer 等防盗链 headers）
+    pub headers: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Clone, Debug)]

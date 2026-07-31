@@ -48,8 +48,8 @@ export function useLibraryCollections() {
   const removeFromPlaylist = (playlistId: string, path: string) =>
     collectionsStore.removeFromPlaylist(playlistId, path);
 
-  const addSongsToPlaylist = (playlistId: string, songPaths: string[]) =>
-    collectionsStore.addSongsToPlaylist(playlistId, songPaths);
+  const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) =>
+    collectionsStore.addSongsToPlaylist(playlistId, songPaths, fullSongs);
 
   const reorderPlaylists = (from: number, to: number) =>
     collectionsStore.reorderPlaylists(from, to);

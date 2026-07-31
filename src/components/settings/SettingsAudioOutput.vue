@@ -4,17 +4,43 @@ import { CircleAlert } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import EqualizerPanel from '../player/EqualizerPanel.vue';
 import ModernModal from '../common/ModernModal.vue';
+import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineInterruptBehavior } from '../../types';
+import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 
 const { settings, patchSettings } = useSettings();
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
+
+const ONLINE_QUALITY_OPTIONS: { label: string; value: OnlineDefaultQuality; description: string }[] =
+  ALL_QUALITY_KEYS.map(k => ({
+    label: QUALITY_META[k].label,
+    value: k,
+    description: QUALITY_META[k].description,
+  }));
+
+const FAILURE_BEHAVIOR_OPTIONS: { label: string; value: OnlineFailureBehavior }[] = [
+  { label: '跳到下一首', value: 'skip' },
+  { label: '停止播放',   value: 'stop' },
+  { label: '重试一次',   value: 'retry' },
+];
+
+const INTERRUPT_BEHAVIOR_OPTIONS: { label: string; value: OnlineInterruptBehavior }[] = [
+  { label: '暂停等待', value: 'pause' },
+  { label: '跳到下一首', value: 'skip' },
+];
+
+/** 切换在线音质：同时写入 settings store 和 localStorage（playerPlayback 读 localStorage） */
+const patchOnlineQuality = (value: OnlineDefaultQuality) => {
+  patchSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: value } });
+  localStorage.setItem('online_quality', value);
+};
 
 // 规范更新：启用/禁用均衡器
 const toggleEqualizer = () => {
   const currentEq = settings.value.audio.equalizer;
   patchSettings({
     audio: {
-      ...settings.value.audio, // 展开以保护其他 audio 状态不受非深合并影响
+      ...settings.value.audio,
       equalizer: {
         ...currentEq,
         enabled: !currentEq.enabled,
@@ -27,7 +53,7 @@ const toggleEqualizer = () => {
 const toggleShowEqualizerInFooter = () => {
   patchSettings({
     audio: {
-      ...settings.value.audio, // 展开以保护其他 audio 状态不受非深合并影响
+      ...settings.value.audio,
       showEqualizerInFooter: !settings.value.audio.showEqualizerInFooter,
     },
   });
@@ -163,14 +189,76 @@ const idmCompatDialogContent = [
       </div>
     </section>
 
-    <!-- 在线播放兼容性 -->
+    <!-- 在线播放设置 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         在线播放
       </h2>
       <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="desktop-setting-row rounded-xl">
+
+        <!-- 默认播放音质 -->
+        <div class="desktop-setting-row rounded-t-xl border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认播放音质</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              播放在线歌曲时优先请求的音质档位。实际可用档位取决于歌曲源；若请求档位不存在，插件将自动回退。
+              支持 12 档统一标准：低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比全景声/臻品音质/臻品全景声/臻品母带。
+            </div>
+          </div>
+          <select
+            class="shrink-0 rounded-lg border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/40"
+            :value="settings.audio.onlineDefaultQuality"
+            @change="(e: Event) => patchOnlineQuality((e.target as HTMLSelectElement).value as OnlineDefaultQuality)"
+          >
+            <option v-for="opt in ONLINE_QUALITY_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }} ({{ opt.description }})
+            </option>
+          </select>
+        </div>
+
+        <!-- 起播失败行为 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">起播失败行为</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              在线歌曲因网络错误或音源失效无法开始播放时的处理方式。
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
+            <button
+              v-for="opt in FAILURE_BEHAVIOR_OPTIONS" :key="opt.value"
+              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors"
+              :class="settings.audio.onlineFailureBehavior === opt.value
+                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+              @click="patchSettings({ audio: { ...settings.audio, onlineFailureBehavior: opt.value } })"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+
+        <!-- 中途被打断行为 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">中途被打断行为</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              在线歌曲播放过程中遭遇卡顿、网络错误或解码异常时的处理方式。
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center rounded-lg bg-gray-100 dark:bg-white/5 p-0.5 gap-0.5">
+            <button
+              v-for="opt in INTERRUPT_BEHAVIOR_OPTIONS" :key="opt.value"
+              class="px-3 py-1 text-xs font-semibold rounded-md transition-colors"
+              :class="settings.audio.onlineInterruptBehavior === opt.value
+                ? 'bg-white dark:bg-white/15 text-[#EC4141] shadow-sm'
+                : 'text-gray-500 dark:text-white/50 hover:text-gray-700 dark:hover:text-white/70'"
+              @click="patchSettings({ audio: { ...settings.audio, onlineInterruptBehavior: opt.value } })"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+
+        <!-- 兼容播放模式 -->
+        <div class="desktop-setting-row rounded-b-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">兼容播放模式</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
@@ -192,6 +280,7 @@ const idmCompatDialogContent = [
             </button>
           </div>
         </div>
+
       </div>
     </section>
 

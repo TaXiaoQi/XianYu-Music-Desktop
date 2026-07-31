@@ -7,15 +7,13 @@ import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.
 import SettingsGeneral from "../components/settings/SettingsGeneral.vue";
 import SettingsLibrary from "../components/settings/SettingsLibrary.vue";
 import SettingsPlugins from "../components/settings/SettingsPlugins.vue";
-import SettingsRemoteLibrary from "../components/settings/SettingsRemoteLibrary.vue";
 import SettingsShortcuts from "../components/settings/SettingsShortcuts.vue";
-import SettingsSidebar from "../components/settings/SettingsSidebar.vue";
 import SettingsTheme from "../components/settings/SettingsTheme.vue";
 import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 
-type TabId = 'general' | 'theme' | 'sidebar' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'remoteLibrary' | 'plugins' | 'shortcuts' | 'account' | 'about';
-const VALID_TABS: TabId[] = ['general', 'theme', 'sidebar', 'desktopLyrics', 'audioOutput', 'toolbox', 'library', 'remoteLibrary', 'plugins', 'shortcuts', 'account', 'about'];
+type TabId = 'general' | 'theme' | 'desktopLyrics' | 'audioOutput' | 'toolbox' | 'library' | 'plugins' | 'shortcuts' | 'account' | 'about';
+const VALID_TABS: TabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -56,12 +54,10 @@ const tabs = [
   { id: 'account', name: '账号' },
   { id: 'plugins', name: '插件' },
   { id: 'theme', name: '外观' },
-  { id: 'sidebar', name: '侧边栏管理' },
   { id: 'desktopLyrics', name: '桌面歌词' },
   { id: 'audioOutput', name: '音频输出' },
   { id: 'toolbox', name: '工具箱' },
-  { id: 'library', name: '本地音乐库' },
-  { id: 'remoteLibrary', name: '远程音乐库' },
+  { id: 'library', name: '音乐库' },
   { id: 'shortcuts', name: '快捷键' },
   { id: 'about', name: '关于' },
 ];
@@ -89,17 +85,15 @@ const tabs = [
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
       <div class="w-full pb-16">
-        <transition name="settings-tab" mode="out-in">
+        <transition name="settings-tab">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
           <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
-          <SettingsSidebar v-else-if="activeTab === 'sidebar'" key="sidebar" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
           <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
-          <SettingsRemoteLibrary v-else-if="activeTab === 'remoteLibrary'" key="remoteLibrary" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
 
@@ -114,19 +108,19 @@ const tabs = [
 </template>
 
 <style scoped>
-/* 设置页切换动画：旧面板淡出+轻微下移，新面板淡入+轻微上移 */
+/* 设置页切换动画：与主页 page-fade 一致，不使用 mode="out-in" 避免快速切换空白 */
 .settings-tab-enter-active,
 .settings-tab-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 .settings-tab-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
 }
 
 .settings-tab-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-10px);
 }
 </style>

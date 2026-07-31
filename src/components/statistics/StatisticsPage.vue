@@ -15,7 +15,7 @@ const TEXT = {
   losslessRatio: '无损占比',
   totalSongs: '总歌曲',
   playCount: '播放次数',
-  longestPlayed: '最长播放',
+  longestPlayed: '常听歌曲',
   hourlyDistribution: '24小时播放分布',
   leaderboard: '听歌排行榜',
   leaderboardSubtitle: '单日听歌时长排行',
@@ -144,7 +144,7 @@ function formatFileSize(bytes: number): string {
 }
 
 const longestPlayed = computed(() => {
-  const top = behaviorStats.value?.top_songs_by_duration?.[0];
+  const top = behaviorStats.value?.top_songs?.[0];
   if (!top) {
     return null;
   }
@@ -156,7 +156,7 @@ const longestPlayed = computed(() => {
     return {
       title: song.title || song.name || TEXT.unknownSong,
       artist: song.artist || TEXT.unknownArtist,
-      duration: top.value,
+      playCount: top.play_count,
     };
   }
 
@@ -164,7 +164,7 @@ const longestPlayed = computed(() => {
   return {
     title: fileName,
     artist: TEXT.unknownArtist,
-    duration: top.value,
+    playCount: top.play_count,
   };
 });
 
@@ -230,22 +230,22 @@ const losslessRatio = computed(() => {
           </div>
         </section>
 
-        <!-- 总听歌时长 + 播放次数 + 最长播放 -->
+        <!-- 总听歌时长 + 播放次数 + 常听歌曲 -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 100ms;">
-            <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-            <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 100ms;">
+            <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
           </section>
 
-          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 200ms;">
+          <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start md:ml-[clamp(3.25rem,5.75vw,5.5rem)]" style="animation-delay: 200ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
             <p class="text-black dark:text-white text-[clamp(1.5rem,3vw,1.875rem)] font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
           </section>
 
-          <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-end" style="animation-delay: 300ms;">
+          <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 300ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
             <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
-            <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ formatDuration(longestPlayed.duration) }}</p>
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ longestPlayed.playCount }}次</p>
           </section>
         </div>
 
@@ -307,18 +307,18 @@ const losslessRatio = computed(() => {
                 <span v-else>{{ item.nickname.slice(0, 1).toUpperCase() }}</span>
               </div>
               <div class="leaderboard-info">
-                <div class="leaderboard-name">
+                <div class="leaderboard-name text-gray-800 dark:text-white/90">
                   {{ item.nickname }}
                   <span v-if="item.isMe" class="leaderboard-tag">{{ TEXT.you }}</span>
                 </div>
-                <div class="leaderboard-username">@{{ item.username }}</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ item.username }}</div>
               </div>
-              <div class="leaderboard-duration">{{ formatLeaderboardDuration(item.duration) }}</div>
+              <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(item.duration) }}</div>
             </div>
 
             <!-- 自己的排名（始终固定在底部显示） -->
             <template v-if="leaderboardDisplay.me">
-              <div class="leaderboard-divider">
+              <div class="leaderboard-divider text-black/30 dark:text-white/30">
                 <span>···</span>
               </div>
               <div class="leaderboard-row is-me is-sticky">
@@ -330,13 +330,13 @@ const losslessRatio = computed(() => {
                   <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
                 </div>
                 <div class="leaderboard-info">
-                  <div class="leaderboard-name">
+                  <div class="leaderboard-name text-gray-800 dark:text-white/90">
                     {{ leaderboardDisplay.me.nickname }}
                     <span class="leaderboard-tag">{{ TEXT.you }}</span>
                   </div>
-                  <div class="leaderboard-username">@{{ leaderboardDisplay.me.username }}</div>
+                  <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.username }}</div>
                 </div>
-                <div class="leaderboard-duration">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
+                <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
               </div>
             </template>
           </div>
@@ -401,28 +401,6 @@ const losslessRatio = computed(() => {
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
 }
 
-:global(.dark) .leaderboard-row.is-sticky {
-  background: rgba(30, 30, 30, 0.92);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
-}
-
-:global(.dark) .leaderboard-row {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-:global(.dark) .leaderboard-row:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-:global(.dark) .leaderboard-row.is-top-3 {
-  background: rgba(236, 65, 65, 0.08);
-}
-
-:global(.dark) .leaderboard-row.is-me {
-  background: rgba(236, 65, 65, 0.12);
-  border-color: rgba(236, 65, 65, 0.35);
-}
-
 .leaderboard-rank {
   display: grid;
   place-items: center;
@@ -431,14 +409,13 @@ const losslessRatio = computed(() => {
   border-radius: 8px;
   font-size: 0.8rem;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.5);
-  background: rgba(0, 0, 0, 0.05);
   flex-shrink: 0;
 }
 
-:global(.dark) .leaderboard-rank {
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+/* 普通排名（非前三）的颜色，通过 Tailwind 在模板上控制 */
+.leaderboard-rank.rank-normal {
+  color: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .leaderboard-rank.rank-1 {
@@ -473,10 +450,6 @@ const losslessRatio = computed(() => {
   flex-shrink: 0;
 }
 
-:global(.dark) .leaderboard-avatar {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .leaderboard-info {
   flex: 1;
   min-width: 0;
@@ -485,17 +458,12 @@ const losslessRatio = computed(() => {
 .leaderboard-name {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #1f2937;
   display: flex;
   align-items: center;
   gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-:global(.dark) .leaderboard-name {
-  color: rgba(255, 255, 255, 0.92);
 }
 
 .leaderboard-tag {
@@ -512,40 +480,25 @@ const losslessRatio = computed(() => {
 
 .leaderboard-username {
   font-size: 0.7rem;
-  color: rgba(0, 0, 0, 0.45);
   margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-:global(.dark) .leaderboard-username {
-  color: rgba(255, 255, 255, 0.45);
-}
-
 .leaderboard-duration {
   font-size: 0.85rem;
   font-weight: 700;
-  color: #1f2937;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-}
-
-:global(.dark) .leaderboard-duration {
-  color: rgba(255, 255, 255, 0.92);
 }
 
 .leaderboard-divider {
   display: grid;
   place-items: center;
   padding: 4px 0;
-  color: rgba(0, 0, 0, 0.3);
   font-size: 0.75rem;
   letter-spacing: 2px;
-}
-
-:global(.dark) .leaderboard-divider {
-  color: rgba(255, 255, 255, 0.3);
 }
 </style>
 
@@ -576,5 +529,38 @@ const losslessRatio = computed(() => {
     transform: none;
     filter: none;
   }
+}
+
+/* ==================== 听歌排行榜深色模式适配 ==================== */
+.dark .leaderboard-row {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark .leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark .leaderboard-row.is-top-3 {
+  background: rgba(236, 65, 65, 0.08);
+}
+
+.dark .leaderboard-row.is-me {
+  background: rgba(236, 65, 65, 0.12);
+  border-color: rgba(236, 65, 65, 0.35);
+}
+
+/* is-sticky 放在 is-me 之后，确保 sticky 行的模糊背景优先于 is-me 的红色背景 */
+.dark .leaderboard-row.is-sticky {
+  background: rgba(30, 30, 30, 0.92);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.dark .leaderboard-rank.rank-normal {
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .leaderboard-avatar {
+  background: rgba(255, 255, 255, 0.1);
 }
 </style>

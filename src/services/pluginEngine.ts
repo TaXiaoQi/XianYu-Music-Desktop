@@ -27,8 +27,10 @@ import type {
   PluginSource,
   PluginSearchResult,
   PluginMusicInfo,
+  QualityKey,
 } from '../types';
-import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin } from './lxPluginEngine';
+import { QUALITY_META, qualityKeyToMfQuality } from '../types';
+import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
 
 // ==================== 常量 ====================
 
@@ -406,6 +408,33 @@ const pluginInstances: Map<string, PluginInstance> = _globalThis.__pluginInstanc
 // ==================== resetMediaItem（与 MusicFree mediaUtils.ts 完全一致）====================
 
 /**
+ * 去除 HTML 标签 —— 部分插件（如酷我）搜索结果中歌手/专辑名带有 <em> 等高亮标签
+ */
+function stripHtmlTags(str: unknown): string {
+  if (!str || typeof str !== 'string') return '';
+  return str.replace(/<[^>]*>/g, '');
+}
+
+/**
+ * 提取封面 URL —— 兼容各插件（网易云等）不同的字段命名
+ */
+function extractCoverUrl(item: any): string {
+  let url = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
+  // 网易云歌曲：al.picUrl / album.picUrl
+  if (!url && item.al?.picUrl) url = item.al.picUrl;
+  if (!url && item.album?.picUrl) url = item.album.picUrl;
+  if (!url && item.album?.blurPicUrl) url = item.album.blurPicUrl;
+  // 网易云歌单：coverImgUrl / picUrl
+  if (!url && item.coverImgUrl) url = item.coverImgUrl;
+  if (!url && item.picUrl) url = item.picUrl;
+  // HTTP → HTTPS 升级（网易云 p1.music.126.net 等图片不支持 HTTP）
+  if (url && url.startsWith('http://')) {
+    url = url.replace('http://', 'https://');
+  }
+  return url;
+}
+
+/**
  * 重置媒体项 —— 与 MusicFree resetMediaItem() 完全一致
  *
  * 核心作用：确保每个搜索结果/播放项都有正确的 platform 字段
@@ -674,15 +703,15 @@ export async function pluginPlaylistSearch(
     return result.data.map((item: any) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.songId || item.musicId || '';
-      const title = item.title || item.name || '';
-      const coverUrl = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
+      const title = stripHtmlTags(item.title || item.name || '');
+      const coverUrl = extractCoverUrl(item);
       return {
         id,
         title,
         coverUrl,
         playCount: item.playCount ?? item.playcount ?? item.play_count,
         trackCount: item.trackCount ?? item.trackcount ?? item.track_count,
-        artist: item.artist || item.author || '',
+        artist: stripHtmlTags(item.artist || item.author || ''),
         platform: item.platform || source.name,
         platformId: id,
         pluginId: source.id,
@@ -697,6 +726,18 @@ export async function pluginPlaylistSearch(
 
 // ==================== 插件歌单详情 ====================
 
+/** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
+function extractResultList(result: any): any[] {
+  if (!result) return [];
+  // 常见格式: { data: [...] }
+  if (Array.isArray(result.data)) return result.data;
+  // MusicFree 部分插件格式: { musicList: [...] }
+  if (Array.isArray(result.musicList)) return result.musicList;
+  // 直接返回数组
+  if (Array.isArray(result)) return result;
+  return [];
+}
+
 export async function pluginGetPlaylistDetail(
   source: PluginSource,
   sheetItem: any,
@@ -709,12 +750,103 @@ export async function pluginGetPlaylistDetail(
     if (typeof inst.instance.getMusicSheetInfo !== 'function') return [];
 
     const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
-    if (!result?.data || !Array.isArray(result.data)) return [];
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
 
-    result.data.forEach((_: any) => { resetMediaItem(_, source.name); });
-    return result.data.map((item: any) => toPluginSearchResult(item, source));
+    list.forEach((_: any) => { resetMediaItem(_, source.name); });
+    return list.map((item: any) => toPluginSearchResult(item, source));
   } catch (e: any) {
     log(`[${source.name}] 获取歌单详情失败: ${e?.message}`);
+    return [];
+  }
+}
+
+// ==================== 歌手作品（歌曲） ====================
+
+export async function pluginGetArtistWorks(
+  source: PluginSource,
+  artistItem: any,
+  page: number = 1,
+): Promise<PluginSearchResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.getArtistWorks !== 'function') return [];
+
+    const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
+
+    list.forEach((_: any) => { resetMediaItem(_, source.name); });
+    return list.map((item: any) => toPluginSearchResult(item, source));
+  } catch (e: any) {
+    log(`[${source.name}] 获取歌手作品失败: ${e?.message}`);
+    return [];
+  }
+}
+
+// ==================== 歌手作品（专辑） ====================
+
+export async function pluginGetArtistAlbums(
+  source: PluginSource,
+  artistItem: any,
+  page: number = 1,
+): Promise<PluginAlbumResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.getArtistWorks !== 'function') return [];
+
+    const result = await inst.instance.getArtistWorks(artistItem, page, 'album');
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
+
+    return list.map((item: any) => {
+      resetMediaItem(item, source.name);
+      const id = item.id || item.albumId || '';
+      const name = stripHtmlTags(item.title || item.name || item.album || '');
+      const artist = extractArtist(item);
+      const coverUrl = extractCoverUrl(item);
+      return {
+        id,
+        name,
+        artist,
+        coverUrl,
+        platform: item.platform || source.name,
+        platformId: id,
+        pluginId: source.id,
+        rawData: item,
+      };
+    });
+  } catch (e: any) {
+    log(`[${source.name}] 获取歌手专辑失败: ${e?.message}`);
+    return [];
+  }
+}
+
+// ==================== 专辑详情 ====================
+
+export async function pluginGetAlbumSongs(
+  source: PluginSource,
+  albumItem: any,
+  page: number = 1,
+): Promise<PluginSearchResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.getAlbumInfo !== 'function') return [];
+
+    const result = await inst.instance.getAlbumInfo(albumItem, page);
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
+
+    list.forEach((_: any) => { resetMediaItem(_, source.name); });
+    return list.map((item: any) => toPluginSearchResult(item, source));
+  } catch (e: any) {
+    log(`[${source.name}] 获取专辑详情失败: ${e?.message}`);
     return [];
   }
 }
@@ -920,6 +1052,17 @@ export async function checkPluginsImportSupport(sources: PluginSource[]): Promis
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
 
 /**
+ * 将 QualityKey 映射为插件可识别的音质字符串。
+ *
+ * Toskysun 系列（BakaMusic）插件直接使用 12 档新键值（如 '320k'、'flac'、'master'），
+ * 但 'mgg' 需映射为 '96k'（Toskysun 体系用 96k 表示低清）。
+ * 原版 MusicFree 插件使用 'standard'/'high'/'lossless'，由 qualityKeyToMfQuality 处理。
+ */
+function qualityKeyToPluginString(q: QualityKey): string {
+  return q === 'mgg' ? '96k' : q;
+}
+
+/**
  * 获取播放 URL
  *
  * MusicFree PluginMethodsWrapper.getMediaSource() 核心逻辑：
@@ -927,11 +1070,15 @@ export async function checkPluginsImportSupport(sources: PluginSource[]): Promis
  *     ?? { url: musicItem?.qualities?.[quality]?.url };
  *   if (!url) { throw new Error("NOT RETRY"); }
  *   // 重试逻辑：retryCount > 0 && e?.message !== "NOT RETRY" → delay(150) → 递归重试
+ *
+ * 音质适配策略（兼容 Toskysun 系列插件与原版 MusicFree 插件）：
+ *   1. 先用 QualityKey 直接传入（Toskysun 插件原生支持 12 档键值）
+ *   2. 若返回空/失败，回退到 standard/high/lossless（原版 MusicFree 插件）
  */
 export async function pluginGetMusicInfo(
   source: PluginSource,
   item: PluginSearchResult,
-  quality = 'standard',
+  quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
 ): Promise<PluginMusicInfo | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
@@ -947,22 +1094,48 @@ export async function pluginGetMusicInfo(
     ? resetMediaItem(item.rawData, source.name)
     : resetMediaItem(item, source.name);
 
-  log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, quality=${quality}`);
+  // 构建音质尝试列表
+  // 先检测插件是否声明了 supportedQualities（Toskysun 系列插件特有字段）
+  const supportedNewQualities = (inst.instance as any).supportedQualities;
+  const supportsNewKeys = Array.isArray(supportedNewQualities) && supportedNewQualities.length > 0;
 
-  // 与 MusicFree 第269行一致，带重试
+  const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
+  const tryQualities: string[] = [];
+  if (isQualityKey(quality)) {
+    if (supportsNewKeys) {
+      // Toskysun 插件：直接使用新键值（mgg→96k）
+      tryQualities.push(qualityKeyToPluginString(quality));
+    } else {
+      // 原版 MusicFree 插件：直接使用旧三档映射，跳过无效的新键值尝试
+      tryQualities.push(qualityKeyToMfQuality(quality));
+    }
+  } else {
+    // 旧版 standard/high/lossless 直接使用
+    tryQualities.push(quality);
+  }
+
+  log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
+
   let result: any = null;
   let lastError: any = null;
-  for (let retry = 0; retry <= 1; retry++) {
-    try {
-      result = await inst.instance.getMediaSource(musicItem, quality);
-      if (result?.url) break;
-    } catch (e: any) {
-      lastError = e;
-      log(`[getMediaSource] 第${retry + 1}次异常: ${e?.message || e}`);
-      if (retry < 1) {
-        await new Promise(r => setTimeout(r, 150));
+
+  for (const q of tryQualities) {
+    // 与 MusicFree 第269行一致，带重试
+    for (let retry = 0; retry <= 1; retry++) {
+      try {
+        result = await inst.instance.getMediaSource(musicItem, q);
+        if (result?.url) break;
+      } catch (e: any) {
+        lastError = e;
+        log(`[getMediaSource] quality=${q} 第${retry + 1}次异常: ${e?.message || e}`);
+        if (retry < 1) {
+          await new Promise(r => setTimeout(r, 150));
+        }
       }
     }
+    if (result?.url) break;
+    log(`[getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
+    result = null;
   }
 
   if (!result || typeof result !== 'object') {
@@ -1064,6 +1237,168 @@ export async function pluginGetCover(
   }
 }
 
+// ==================== 歌手搜索 ====================
+
+export interface PluginArtistResult {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  description?: string;
+  songCount?: number;
+  albumCount?: number;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}
+
+export async function pluginArtistSearch(
+  source: PluginSource,
+  keyword: string,
+  page: number,
+): Promise<PluginArtistResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.search !== 'function') return [];
+
+    // 检查插件是否支持歌手搜索
+    const supported = inst.instance.supportedSearchType ?? [];
+    if (!supported.includes('artist')) return [];
+
+    const result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
+    if (!Array.isArray(result.data)) return [];
+
+    return result.data.map((item: any) => {
+      resetMediaItem(item, source.name);
+      const id = item.id || item.artistId || item.singerId || '';
+      const name = stripHtmlTags(item.name || item.title || item.artist || '');
+      const avatarUrl = extractCoverUrl(item) || item.avatar || '';
+      return {
+        id,
+        name,
+        avatarUrl,
+        description: item.description || item.desc || '',
+        songCount: item.songCount || item.musicCount || undefined,
+        albumCount: item.albumCount || undefined,
+        platform: item.platform || source.name,
+        platformId: id,
+        pluginId: source.id,
+        rawData: item,
+      };
+    });
+  } catch (e: any) {
+    log(`[pluginArtistSearch] ${source.name} 失败: ${e?.message || e}`);
+    return [];
+  }
+}
+
+// ==================== 专辑搜索 ====================
+
+export interface PluginAlbumResult {
+  id: string;
+  name: string;
+  artist: string;
+  coverUrl: string;
+  description?: string;
+  year?: string;
+  songCount?: number;
+  platform: string;
+  platformId: string;
+  pluginId: string;
+  rawData?: any;
+}
+
+export async function pluginAlbumSearch(
+  source: PluginSource,
+  keyword: string,
+  page: number,
+): Promise<PluginAlbumResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.search !== 'function') return [];
+
+    // 检查插件是否支持专辑搜索
+    const supported = inst.instance.supportedSearchType ?? [];
+    if (!supported.includes('album')) return [];
+
+    const result = (await inst.instance.search(keyword, page, 'album')) ?? {};
+    if (!Array.isArray(result.data)) return [];
+
+    return result.data.map((item: any) => {
+      resetMediaItem(item, source.name);
+      const id = item.id || item.albumId || '';
+      const name = stripHtmlTags(item.title || item.name || item.album || '');
+      const artist = extractArtist(item);
+      const coverUrl = extractCoverUrl(item);
+      return {
+        id,
+        name,
+        artist,
+        coverUrl,
+        description: item.description || item.desc || '',
+        year: item.year || item.publishTime || undefined,
+        songCount: item.songCount || item.musicCount || undefined,
+        platform: item.platform || source.name,
+        platformId: id,
+        pluginId: source.id,
+        rawData: item,
+      };
+    });
+  } catch (e: any) {
+    log(`[pluginAlbumSearch] ${source.name} 失败: ${e?.message || e}`);
+    return [];
+  }
+}
+
+// ==================== 检查插件搜索能力 ====================
+
+/**
+ * 检查插件支持的搜索类型
+ */
+export function getPluginSupportedSearchTypes(source: PluginSource): string[] {
+  const inst = pluginInstances.get(source.id);
+  if (!inst) return [];
+  return inst.instance.supportedSearchType ?? [];
+}
+
+/**
+ * 检查插件是否支持指定搜索类型
+ */
+export function pluginSupportsSearchType(source: PluginSource, type: 'music' | 'sheet' | 'artist' | 'album'): boolean {
+  const supported = getPluginSupportedSearchTypes(source);
+  if (supported.length === 0) return type === 'music'; // 无声明默认支持音乐搜索
+  return supported.includes(type);
+}
+
+/**
+ * 获取插件声明的支持音质列表。
+ *
+ * Toskysun 系列（BakaMusic）插件在实例上声明 `supportedQualities` 字段，
+ * 使用 12 档新键值（如 '320k'、'flac'、'master'）。
+ * 原版 MusicFree 插件无此字段，仅支持 standard/high/lossless 三档，
+ * 返回对应的 3 档代表音质（128k / 320k / flac），由 qualityKeyToMfQuality 完成实际映射。
+ *
+ * 返回的键值已映射为本项目的 QualityKey（'96k' → 'mgg'）。
+ */
+export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return null;
+  const raw = (inst.instance as any).supportedQualities;
+  if (Array.isArray(raw) && raw.length > 0) {
+    // Toskysun 插件：映射 96k → mgg，其余保持原样；过滤未知键值
+    return raw
+      .map((q: string) => (q === '96k' ? 'mgg' : q))
+      .filter((q: string) => q in QUALITY_META) as QualityKey[];
+  }
+  // 原版 MusicFree 插件：仅支持 standard/high/lossless 三档
+  // 返回 3 档代表音质，选择时由 qualityKeyToMfQuality 映射回 MF 三档
+  return ['128k', '320k', 'flac'];
+}
+
 // ==================== 辅助函数 ====================
 
 /**
@@ -1133,15 +1468,11 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
  */
 function toPluginSearchResult(item: any, source: PluginSource): PluginSearchResult {
   const id = item.id || item.songId || item.musicId || '';
-  const title = item.title || item.name || item.songname || '';
+  const title = stripHtmlTags(item.title || item.name || item.songname || '');
   const artist = extractArtist(item);
   const album = extractAlbum(item);
-  let coverUrl = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
-  // B站 CDN 图片需要 HTTPS + 避免 Referer 403
-  if (coverUrl && coverUrl.startsWith('http://') && (coverUrl.includes('hdslb.com') || coverUrl.includes('bilivideo.com') || coverUrl.includes('bilibili.com'))) {
-    coverUrl = coverUrl.replace('http://', 'https://');
-  }
-  const duration = parseDuration(item.duration || item.interval);
+  const coverUrl = extractCoverUrl(item);
+  const duration = parseDuration(item.duration || item.interval || item.dt);
 
   return {
     id,
@@ -1159,18 +1490,24 @@ function toPluginSearchResult(item: any, source: PluginSource): PluginSearchResu
 }
 
 function extractArtist(item: any): string {
-  if (item.artist && typeof item.artist === 'string') return item.artist;
-  if (item.singer && typeof item.singer === 'string') return item.singer;
+  if (item.artist && typeof item.artist === 'string') return stripHtmlTags(item.artist);
+  if (item.singer && typeof item.singer === 'string') return stripHtmlTags(item.singer);
   if (Array.isArray(item.artists)) {
-    return item.artists.map((a: any) => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean).join('/');
+    return stripHtmlTags(item.artists.map((a: any) => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean).join('/'));
+  }
+  // 网易云: item.ar 数组
+  if (Array.isArray(item.ar)) {
+    return stripHtmlTags(item.ar.map((a: any) => a?.name || '').filter(Boolean).join('/'));
   }
   return '';
 }
 
 function extractAlbum(item: any): string {
-  if (typeof item.album === 'string') return item.album;
-  if (item.album?.name) return item.album.name;
-  if (item.albumName) return item.albumName;
+  if (typeof item.album === 'string') return stripHtmlTags(item.album);
+  if (item.album?.name) return stripHtmlTags(item.album.name);
+  if (item.albumName) return stripHtmlTags(item.albumName);
+  // 网易云: item.al.name
+  if (item.al?.name) return stripHtmlTags(item.al.name);
   return '';
 }
 
@@ -1218,9 +1555,8 @@ export function addPluginSource(source: PluginSource) {
   if (existing >= 0) {
     plugins[existing] = source;
   } else {
-    // 设置初始排序权重：新插件排到同格式组的末尾
-    const sameFormatCount = plugins.filter(p => p.format === source.format).length;
-    source.sortOrder = sameFormatCount;
+    // 设置初始排序权重：新插件排到所有插件的末尾
+    source.sortOrder = plugins.length;
     plugins.push(source);
   }
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(plugins));
@@ -1377,11 +1713,18 @@ export async function loadBuiltinPlugins(): Promise<void> {
   if (failed > 0) log(`loadBuiltinPlugins: ${failed} 个插件加载被拒绝`);
 }
 
-export async function loadPlugins(): Promise<void> {
+export async function loadPlugins(lazyLoad: boolean = false): Promise<void> {
   // 清理旧版本遗留的内置插件条目（已无内置插件）
   await loadBuiltinPlugins();
 
   const plugins = getStoredPlugins();
+
+  // 懒加载模式：仅加载插件列表到内存，不预初始化实例
+  // 实例将在 ensurePluginInstance 被调用时按需初始化
+  if (lazyLoad) {
+    log(`[loadPlugins] 懒加载模式：跳过 ${plugins.length} 个插件的预初始化`);
+    return;
+  }
 
   // [修复防御]: 并行加载所有插件，避免串行 await 导致 N 个插件 = N × 单插件耗时
   // 落雪插件每个最多等待 15s 初始化超时，串行 3 个 = 45s，并行后 = 15s
@@ -1450,6 +1793,227 @@ export async function loadPlugins(): Promise<void> {
       log(`插件 ${source.name} 加载失败: ${e?.message || e}`);
     }
   }));
+}
+
+// ==================== 插件更新 ====================
+
+/**
+ * 版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同
+ * 支持语义化版本如 "1.0.5", "1.0.5-fix7", "2.0.0-beta.1"
+ */
+function compareVersions(a: string, b: string): number {
+  const parseVer = (v: string) => {
+    const parts = v.split(/[-.]/);
+    return parts.map(p => {
+      const n = parseInt(p);
+      return isNaN(n) ? 0 : n;
+    });
+  };
+  const va = parseVer(a);
+  const vb = parseVer(b);
+  const maxLen = Math.max(va.length, vb.length);
+  for (let i = 0; i < maxLen; i++) {
+    const diff = (va[i] || 0) - (vb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/** 从远程 URL 获取插件脚本 */
+async function fetchPluginScript(url: string): Promise<string | null> {
+  try {
+    const resp = await fetchWithTimeout(url, 10000);
+    if (resp.ok) return await resp.text();
+  } catch { /* ignore */ }
+  try {
+    const { pluginApi } = await import('./tauri/pluginApi');
+    return await pluginApi.fetchPluginUrl(url);
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** 从 MusicFree 脚本中提取版本号（不执行脚本） */
+function extractMusicFreeVersion(script: string): string | null {
+  const match = script.match(/version\s*[=:]\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : null;
+}
+
+/** 从 MusicFree 脚本中提取 srcUrl（不执行脚本） */
+function extractMusicFreeSrcUrl(script: string): string | null {
+  const match = script.match(/srcUrl\s*[=:]\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : null;
+}
+
+export interface PluginUpdateCheckResult {
+  hasUpdate: boolean;
+  currentVersion: string;
+  newVersion: string;
+  newScript: string | null;
+  updateUrl: string;
+}
+
+/**
+ * 检查插件是否有可用更新
+ * - MusicFree 插件：优先使用实例的 srcUrl，回退到 filePath（如果是 http URL）
+ * - LX 插件：使用 parseLxScriptInfo 提取的 @homepage，回退到 filePath
+ */
+export async function checkPluginUpdate(source: PluginSource): Promise<PluginUpdateCheckResult | null> {
+  let updateUrl: string | undefined;
+
+  if (source.format === 'musicfree') {
+    // 优先从实例中获取 srcUrl
+    const inst = await ensurePluginInstance(source);
+    const instanceSrcUrl = (inst?.instance as any)?.srcUrl as string | undefined;
+
+    if (instanceSrcUrl) {
+      updateUrl = instanceSrcUrl;
+    } else if (source.filePath.startsWith('http')) {
+      // 回退到 filePath（导入时的 URL）
+      updateUrl = source.filePath;
+    }
+
+    // 如果都没有，尝试从脚本中提取 srcUrl
+    if (!updateUrl) {
+      let script = '';
+      try {
+        if (source.filePath.startsWith('http')) {
+          script = await fetchPluginScript(source.filePath) || '';
+        } else if (source.filePath) {
+          const { pluginApi } = await import('./tauri/pluginApi');
+          script = await pluginApi.readPluginFile(source.filePath);
+        }
+      } catch { /* ignore */ }
+      if (script) {
+        updateUrl = extractMusicFreeSrcUrl(script) || undefined;
+      }
+    }
+  } else if (source.format === 'lx') {
+    // LX 插件：从脚本注释中提取 @homepage
+    let script = '';
+    try {
+      if (source.filePath.startsWith('http')) {
+        script = await fetchPluginScript(source.filePath) || '';
+      } else if (source.filePath) {
+        const { pluginApi } = await import('./tauri/pluginApi');
+        script = await pluginApi.readPluginFile(source.filePath);
+      }
+    } catch { /* ignore */ }
+
+    if (script) {
+      const info = parseLxScriptInfo(script);
+      if (info.homepage) {
+        updateUrl = info.homepage;
+      }
+    }
+
+    if (!updateUrl && source.filePath.startsWith('http')) {
+      updateUrl = source.filePath;
+    }
+  }
+
+  if (!updateUrl) {
+    log(`[checkPluginUpdate] ${source.name} 无可用更新源`);
+    return null;
+  }
+
+  log(`[checkPluginUpdate] ${source.name} 检查更新: ${updateUrl}`);
+  const newScript = await fetchPluginScript(updateUrl);
+  if (!newScript) {
+    log(`[checkPluginUpdate] ${source.name} 获取脚本失败`);
+    return null;
+  }
+
+  // 提取新版本号（不执行脚本）
+  let newVersion = '';
+  if (source.format === 'musicfree') {
+    newVersion = extractMusicFreeVersion(newScript) || '';
+  } else if (source.format === 'lx') {
+    const info = parseLxScriptInfo(newScript);
+    newVersion = info.version;
+  }
+
+  if (!newVersion) {
+    log(`[checkPluginUpdate] ${source.name} 无法从新脚本提取版本号`);
+    return null;
+  }
+
+  const hasUpdate = compareVersions(newVersion, source.version) > 0;
+  log(`[checkPluginUpdate] ${source.name}: 当前=${source.version}, 远程=${newVersion}, 有更新=${hasUpdate}`);
+
+  return {
+    hasUpdate,
+    currentVersion: source.version,
+    newVersion,
+    newScript: hasUpdate ? newScript : null,
+    updateUrl,
+  };
+}
+
+/**
+ * 执行插件更新：重新加载新脚本并替换旧插件
+ */
+export async function performPluginUpdate(
+  source: PluginSource,
+  checkResult: PluginUpdateCheckResult,
+): Promise<{ success: boolean; newSource: PluginSource | null; message: string }> {
+  if (!checkResult.newScript) {
+    return { success: false, newSource: null, message: '无新脚本可更新' };
+  }
+
+  try {
+    // 加载新脚本
+    const newSource = await loadPluginFromScript(checkResult.newScript, checkResult.updateUrl);
+    if (!newSource) {
+      return { success: false, newSource: null, message: '新脚本加载失败' };
+    }
+
+    // 保留原有的 enabled 和 sortOrder 状态
+    newSource.enabled = source.enabled;
+    newSource.sortOrder = source.sortOrder;
+
+    // 如果新插件 ID 不同，删除旧插件
+    if (newSource.id !== source.id) {
+      removePluginSource(source.id);
+    }
+
+    // 添加新插件
+    addPluginSource(newSource);
+
+    // 如果是 LX 插件且启用，重新初始化
+    if (newSource.format === 'lx' && newSource.enabled) {
+      destroyLxPlugin(source.id);
+      await initLxPlugin(newSource);
+    }
+
+    log(`[performPluginUpdate] ${source.name} 更新成功: ${source.version} → ${newSource.version}`);
+    return { success: true, newSource, message: `${source.name} 已更新到 ${newSource.version}` };
+  } catch (e: any) {
+    log(`[performPluginUpdate] ${source.name} 更新失败: ${e?.message || e}`);
+    return { success: false, newSource: null, message: `更新失败: ${e?.message || e}` };
+  }
+}
+
+/**
+ * 批量检查所有插件的更新
+ */
+export async function checkAllPluginUpdates(): Promise<Map<string, PluginUpdateCheckResult>> {
+  const plugins = getStoredPlugins();
+  const results = new Map<string, PluginUpdateCheckResult>();
+
+  await Promise.allSettled(plugins.map(async (source) => {
+    try {
+      const result = await checkPluginUpdate(source);
+      if (result) {
+        results.set(source.id, result);
+        // 更新 updateAvailable 标记
+        updatePluginSource(source.id, { updateAvailable: result.hasUpdate });
+      }
+    } catch (e: any) {
+      log(`[checkAllPluginUpdates] ${source.name} 检查失败: ${e?.message || e}`);
+    }
+  }));
+
+  return results;
 }
 
 /** 带超时的 fetch，避免请求挂起 */

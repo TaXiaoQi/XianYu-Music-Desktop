@@ -16,6 +16,15 @@ pub fn get_window_material_capabilities() -> WindowMaterialCapabilities {
     platform_capabilities()
 }
 
+#[tauri::command]
+pub fn refresh_window_material_active_state(app: tauri::AppHandle, keep_active: bool) {
+    #[cfg(target_os = "windows")]
+    refresh_platform_window_material_active_state(app, keep_active);
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = (app, keep_active);
+}
+
 #[cfg(target_os = "windows")]
 fn platform_capabilities() -> WindowMaterialCapabilities {
     let build = query_windows_build_number();
@@ -30,6 +39,42 @@ fn platform_capabilities() -> WindowMaterialCapabilities {
         supports_blur,
         system_transparency_enabled: query_transparency_enabled(),
         windows_build_number: build,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn refresh_platform_window_material_active_state(app: tauri::AppHandle, keep_active: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use tauri::Manager;
+    use windows_sys::Win32::Foundation::{LPARAM, WPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, PostMessageW, WM_NCACTIVATE,
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let binding = window.as_ref().window();
+    let Ok(handle) = binding.window_handle() else {
+        return;
+    };
+
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+
+    let hwnd = win32.hwnd.get() as *mut core::ffi::c_void;
+    let is_foreground = unsafe { GetForegroundWindow() == hwnd };
+    let active = keep_active || is_foreground;
+
+    unsafe {
+        PostMessageW(
+            hwnd,
+            WM_NCACTIVATE,
+            (if active { 1 } else { 0 }) as WPARAM,
+            -1_isize as LPARAM,
+        );
     }
 }
 

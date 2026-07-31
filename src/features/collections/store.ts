@@ -134,7 +134,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     return beforeLength !== playlist.songPaths.length;
   };
 
-  const addSongsToPlaylist = (playlistId: string, songPaths: string[]) => {
+  const addSongsToPlaylist = (playlistId: string, songPaths: string[], fullSongs?: Song[]) => {
     const playlist = getPlaylistById(playlistId);
     if (!playlist) {
       return 0;
@@ -145,6 +145,18 @@ export const useCollectionsStore = defineStore('collections', () => {
       if (!playlist.songPaths.includes(path)) {
         playlist.songPaths.push(path);
         addedCount += 1;
+      }
+    }
+
+    // 同时缓存完整 Song 对象（在线歌曲需要，确保重启后仍可显示和播放）
+    if (fullSongs && fullSongs.length > 0) {
+      if (!playlist.songs) {
+        playlist.songs = [];
+      }
+      for (const song of fullSongs) {
+        if (song?.path && !playlist.songs.find(s => s.path === song.path)) {
+          playlist.songs.push({ ...song });
+        }
       }
     }
 
@@ -175,13 +187,10 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
 
     // 回退到按 path 从 libraryStore 查找
-    const songMap = new Map<string, Song>();
-    libraryStore.songList.forEach(song => {
-      songMap.set(song.path, song);
-    });
-
+    // 使用 songLookup（与歌单详情页一致），以包含 extraSongPool 中的在线收藏歌曲
+    const lookup = libraryStore.songLookup;
     return playlist.songPaths
-      .map(path => songMap.get(path))
+      .map(path => lookup.get(path))
       .filter((song): song is Song => !!song);
   };
 

@@ -52,10 +52,20 @@ const baseOptions = {
 };
 
 describe('downloadService: quality candidates', () => {
-  it('maps UI quality to ordered lx candidates with fallback', () => {
-    expect(qualityToLxCandidates('lossless')).toEqual(['flac24bit', 'flac', '320k', '128k']);
-    expect(qualityToLxCandidates('high')).toEqual(['320k', '128k']);
-    expect(qualityToLxCandidates('standard')).toEqual(['128k', '320k']);
+  it('maps UI quality to ordered lx candidates with fallback (12档从高到低)', () => {
+    // 'master'（最高）→ 全部12档
+    expect(qualityToLxCandidates('master')).toEqual([
+      'master', 'atmos_plus', 'atmos', 'dolby', 'vinyl', 'hires',
+      'flac24bit', 'flac', '320k', '192k', '128k', 'mgg',
+    ]);
+    // '320k' → 320k及以下
+    expect(qualityToLxCandidates('320k')).toEqual(['320k', '192k', '128k', 'mgg']);
+    // 'flac' → flac及以下
+    expect(qualityToLxCandidates('flac')).toEqual([
+      'flac', '320k', '192k', '128k', 'mgg',
+    ]);
+    // '128k' → 128k及以下
+    expect(qualityToLxCandidates('128k')).toEqual(['128k', 'mgg']);
   });
 
   it('sanitizes illegal filename characters', () => {
@@ -74,7 +84,7 @@ describe('downloadService: download fallback across qualities', () => {
   });
 
   it('falls back to lower quality when the higher one fails to download (502)', async () => {
-    // 320k 解析出链接但下载报 502；128k 解析并下载成功
+    // 320k 解析出链接但下载报 502；192k 解析并下载成功
     (lxPluginGetMusicUrl as any).mockImplementation(
       async (_p: unknown, _s: unknown, _info: unknown, q: string) => ({
         type: q,
@@ -96,16 +106,16 @@ describe('downloadService: download fallback across qualities', () => {
 
     const result = await downloadSong(makeOnlineSong(), {
       ...baseOptions,
-      quality: 'high',
+      quality: '320k',
     });
 
-    // 最终命中 128k 并成功落盘
-    expect(result.hitQuality).toBe('128k');
+    // 最终命中 192k 并成功落盘（320k → 192k）
+    expect(result.hitQuality).toBe('192k');
     expect(result.filePath).toContain('测试歌手 - 测试歌曲');
 
-    // 确认确实先尝试了 320k 再回退 128k
+    // 确认确实先尝试了 320k 再回退 192k
     const attemptedQualities = (lxPluginGetMusicUrl as any).mock.calls.map((c: any[]) => c[3]);
-    expect(attemptedQualities).toEqual(['320k', '128k']);
+    expect(attemptedQualities).toEqual(['320k', '192k']);
   });
 
   it('throws an aggregated error when every quality fails to download', async () => {
@@ -126,14 +136,15 @@ describe('downloadService: download fallback across qualities', () => {
     });
 
     await expect(
-      downloadSong(makeOnlineSong(), { ...baseOptions, quality: 'high' }),
+      downloadSong(makeOnlineSong(), { ...baseOptions, quality: '320k' }),
     ).rejects.toThrow(/502/);
   });
 
   it('skips a quality whose url resolution returns empty and downloads the next one', async () => {
+    // 320k 返回空URL（解析失败），自动跳过并尝试 192k
     (lxPluginGetMusicUrl as any).mockImplementation(
       async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
-        q === '320k' ? { type: q, url: '' } : { type: q, url: 'https://cdn.example.com/128k.mp3' },
+        q === '320k' ? { type: q, url: '' } : { type: q, url: `https://cdn.example.com/${q}.mp3` },
     );
 
     (invoke as any).mockImplementation(async (cmd: string, args: any) => {
@@ -143,7 +154,8 @@ describe('downloadService: download fallback across qualities', () => {
       return null;
     });
 
-    const result = await downloadSong(makeOnlineSong(), { ...baseOptions, quality: 'high' });
-    expect(result.hitQuality).toBe('128k');
+    const result = await downloadSong(makeOnlineSong(), { ...baseOptions, quality: '320k' });
+    // 320k 解析失败 → 跳过 → 命中 192k
+    expect(result.hitQuality).toBe('192k');
   });
 });

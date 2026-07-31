@@ -260,6 +260,7 @@ export function useMiniPlayerWindowBridge() {
     isPlaying,
     volume,
     playQueue,
+    tempQueue,
     songList,
     togglePlay,
     prevSong,
@@ -288,7 +289,9 @@ export function useMiniPlayerWindowBridge() {
       isPlaying: isPlaying.value,
       isDarkTheme: isDarkTheme.value,
       volume: volume.value,
-      queue: playQueue.value.length > 0 ? playQueue.value : songList.value,
+      queue: playQueue.value.length > 0 || tempQueue.value.length > 0
+        ? [...tempQueue.value, ...playQueue.value]
+        : songList.value,
       lyricText: currentLyricLine.value?.text ?? '',
     };
   };
@@ -489,6 +492,7 @@ export function useMiniPlayerWindowBridge() {
       isPlaying,
       volume,
       playQueue,
+      tempQueue,
       songList,
       isDarkTheme,
       () => currentLyricLine.value?.text,

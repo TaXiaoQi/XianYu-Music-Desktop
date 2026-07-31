@@ -27,6 +27,12 @@ export function useSettingsThemeControls() {
       setWindowMaterial(value);
     },
   });
+  const keepWindowMaterialOnBlur = computed({
+    get: () => theme.value.keepWindowMaterialOnBlur,
+    set: (value: boolean) => {
+      patchTheme({ keepWindowMaterialOnBlur: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -161,6 +167,10 @@ export function useSettingsThemeControls() {
     patchTheme({ windowBlurTint: clampFlowValue(value) });
   };
 
+  const setKeepWindowMaterialOnBlur = (value: boolean) => {
+    keepWindowMaterialOnBlur.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -170,6 +180,7 @@ export function useSettingsThemeControls() {
     showCustomModal,
     colorScheme,
     materialMode,
+    keepWindowMaterialOnBlur,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -190,5 +201,6 @@ export function useSettingsThemeControls() {
     setFlowSpeed,
     setFlowTexture,
     setWindowBlurTint,
+    setKeepWindowMaterialOnBlur,
   };
 }

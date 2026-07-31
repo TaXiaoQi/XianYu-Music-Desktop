@@ -321,6 +321,16 @@ impl RemoteRangeReader {
         if let Some(referer) = source.referer.as_deref().filter(|value| !value.is_empty()) {
             request = request.header(reqwest::header::REFERER, referer);
         }
+        // 插件返回的自定义请求头（如 Cookie、Referer 等防盗链 headers）
+        if let Some(ref headers) = source.headers {
+            for (key, value) in headers {
+                if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
+                    if let Ok(val) = reqwest::header::HeaderValue::from_str(value) {
+                        request = request.header(name, val);
+                    }
+                }
+            }
+        }
         request
     }
 

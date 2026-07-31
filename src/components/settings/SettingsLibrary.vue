@@ -89,6 +89,9 @@
       </div>
     </div>
 
+    <!-- 远程音乐库（并入音乐库） -->
+    <SettingsRemoteLibrary />
+
     <ConfirmModal
       :visible="showConfirm"
       title="移除文件夹"
@@ -110,6 +113,7 @@ import {
   useSettingsStore,
 } from '../../features/settings/store';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
+import SettingsRemoteLibrary from './SettingsRemoteLibrary.vue';
 
 const { addLibraryFolderLinked, removeLibraryFolderLinked } = usePlayer();
 const libraryStore = useLibraryStore();
