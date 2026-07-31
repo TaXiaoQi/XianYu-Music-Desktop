@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { useAuthStore } from '../../features/auth/store';
@@ -25,6 +25,21 @@ watch(
   () => authStore.baseUrl,
   (value) => {
     draftBaseUrl.value = value;
+  },
+);
+
+// 组件挂载时初始化自动同步调度器
+onMounted(() => {
+  playlistSync.initAutoSync();
+});
+
+// 登录状态变化时检查自动同步
+watch(
+  () => authStore.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      playlistSync.checkAutoSync();
+    }
   },
 );
 
@@ -146,6 +161,71 @@ const settingsSyncErrors = computed(() => {
   if (!r || r.errors.length === 0) return [];
   return r.errors;
 });
+
+// 自动同步
+const nextSyncTimeDisplay = computed(() => {
+  const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt;
+  if (!nextSyncAt || nextSyncAt <= 0) return null;
+  const date = new Date(nextSyncAt);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+});
+
+function toggleAutoSync() {
+  const enabled = !settingsStore.settings.autoSync.enabled;
+  playlistSync.patchAutoSyncConfig({ enabled });
+  if (enabled) {
+    showToast('自动同步已开启', 'success');
+  } else {
+    showToast('自动同步已关闭', 'info');
+  }
+}
+
+function updateAutoSyncIntervalHours(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const value = parseInt(target.value, 10);
+  const current = settingsStore.settings.autoSync;
+  // 如果三个都是 0，强制分钟为 1
+  const patch: Partial<{ syncIntervalHours: number; syncIntervalMinutes: number }> = { syncIntervalHours: value };
+  if (value === 0 && current.syncIntervalMinutes === 0 && current.syncIntervalSeconds === 0) {
+    patch.syncIntervalMinutes = 1;
+    showToast('同步间隔不能为 0，已自动设为 1 分钟', 'info');
+  }
+  playlistSync.patchAutoSyncConfig(patch);
+}
+
+function updateAutoSyncIntervalMinutes(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const value = parseInt(target.value, 10);
+  const current = settingsStore.settings.autoSync;
+  const patch: Partial<{ syncIntervalMinutes: number; syncIntervalSeconds: number }> = { syncIntervalMinutes: value };
+  if (current.syncIntervalHours === 0 && value === 0 && current.syncIntervalSeconds === 0) {
+    patch.syncIntervalSeconds = 1;
+    showToast('同步间隔不能为 0，已自动设为 1 秒', 'info');
+  }
+  playlistSync.patchAutoSyncConfig(patch);
+}
+
+function updateAutoSyncIntervalSeconds(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const value = parseInt(target.value, 10);
+  const current = settingsStore.settings.autoSync;
+  const patch: Partial<{ syncIntervalSeconds: number; syncIntervalMinutes: number }> = { syncIntervalSeconds: value };
+  if (current.syncIntervalHours === 0 && current.syncIntervalMinutes === 0 && value === 0) {
+    patch.syncIntervalMinutes = 1;
+    showToast('同步间隔不能为 0，已自动设为 1 分钟', 'info');
+  }
+  playlistSync.patchAutoSyncConfig(patch);
+}
+
+function updateAutoSyncMaxDelay(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  const value = parseInt(target.value, 10);
+  if (value > 0) {
+    playlistSync.patchAutoSyncConfig({ maxDelayMinutes: value });
+    showToast('最大延迟已更新', 'success');
+  }
+}
 </script>
 
 <template>
@@ -528,6 +608,103 @@ const settingsSyncErrors = computed(() => {
       </div>
     </section>
 
+    <!-- 自动同步 -->
+    <section v-if="authStore.isLoggedIn" class="space-y-3">
+      <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+        <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+        自动同步
+      </h2>
+      <p class="text-xs text-gray-500 dark:text-white/60 m-0 leading-relaxed">
+        按设定的时间自动同步数据到云端。当服务器繁忙时会自动延后并提示，避免带宽拥塞。
+      </p>
+
+      <!-- 自动同步开关 -->
+      <div class="upload-item">
+        <div class="upload-copy">
+          <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
+          <div class="upload-desc text-gray-500 dark:text-white/50">开启后在指定时间自动执行同步</div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="settingsStore.settings.autoSync.enabled"
+          class="upload-switch"
+          :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
+          @click="toggleAutoSync()"
+        >
+          <span class="upload-switch-thumb"></span>
+        </button>
+      </div>
+
+      <!-- 自动同步配置 -->
+      <div v-if="settingsStore.settings.autoSync.enabled" class="space-y-3">
+        <!-- 同步间隔 -->
+        <div class="auto-sync-config-row">
+          <label class="auto-sync-label text-gray-900 dark:text-white/90">同步间隔</label>
+          <div class="flex items-center gap-1.5">
+            <select
+              :value="settingsStore.settings.autoSync.syncIntervalHours"
+              class="auto-sync-input auto-sync-input-sm"
+              @change="updateAutoSyncIntervalHours($event)"
+            >
+              <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ h - 1 }} 时</option>
+            </select>
+            <select
+              :value="settingsStore.settings.autoSync.syncIntervalMinutes"
+              class="auto-sync-input auto-sync-input-sm"
+              @change="updateAutoSyncIntervalMinutes($event)"
+            >
+              <option v-for="m in 60" :key="m - 1" :value="m - 1">{{ m - 1 }} 分</option>
+            </select>
+            <select
+              :value="settingsStore.settings.autoSync.syncIntervalSeconds"
+              class="auto-sync-input auto-sync-input-sm"
+              @change="updateAutoSyncIntervalSeconds($event)"
+            >
+              <option v-for="s in 60" :key="s - 1" :value="s - 1">{{ s - 1 }} 秒</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 最大延迟 -->
+        <div class="auto-sync-config-row">
+          <label class="auto-sync-label text-gray-900 dark:text-white/90">最大延迟</label>
+          <select
+            :value="settingsStore.settings.autoSync.maxDelayMinutes"
+            class="auto-sync-input"
+            @change="updateAutoSyncMaxDelay($event)"
+          >
+            <option :value="10">10 分钟</option>
+            <option :value="30">30 分钟</option>
+            <option :value="60">1 小时</option>
+            <option :value="120">2 小时</option>
+          </select>
+        </div>
+
+        <!-- 同步内容提示 -->
+        <div class="sync-notice">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>自动同步将按上方「上传」设置中开启的项目执行（歌单、插件、本地设置）。</span>
+        </div>
+
+        <!-- 自动同步状态 -->
+        <div v-if="playlistSync.autoSyncStatus.value" class="sync-status" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
+          <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
+          <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
+        </div>
+
+        <!-- 下次同步时间 -->
+        <div v-if="nextSyncTimeDisplay" class="auto-sync-next-time text-gray-500 dark:text-white/50">
+          下次同步：{{ nextSyncTimeDisplay }}
+        </div>
+      </div>
+    </section>
+
     <!-- 退出登录确认弹窗 -->
     <Teleport to="body">
       <Transition name="logout-modal">
@@ -869,5 +1046,78 @@ const settingsSyncErrors = computed(() => {
 :global(.dark) .logout-btn--ghost:hover {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.96);
+}
+
+/* 自动同步配置 */
+.auto-sync-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .auto-sync-config-row {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.auto-sync-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.auto-sync-input {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.8);
+  color: #1f2937;
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.auto-sync-input:focus {
+  border-color: #EC4141;
+}
+
+.auto-sync-input-sm {
+  height: 28px;
+  min-width: auto;
+  padding: 0 6px;
+  font-size: 0.72rem;
+}
+
+:global(.dark) .auto-sync-input {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:global(.dark) .auto-sync-input:focus {
+  border-color: #EC4141;
+}
+
+.auto-sync-input option {
+  background: #ffffff;
+  color: #1f2937;
+}
+
+:global(.dark) .auto-sync-input option {
+  background: #1f1f23;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.auto-sync-next-time {
+  font-size: 0.72rem;
+  padding: 4px 14px;
+  line-height: 1.5;
 }
 </style>

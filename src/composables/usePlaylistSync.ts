@@ -39,9 +39,12 @@ import {
   downloadSettings as downloadSettingsFromCloud,
   type SettingsSyncResult,
 } from '../services/settingsSync';
+import {
+  getAutoSyncScheduler,
+} from '../services/autoSync';
 import { playerStorage } from '../services/storage/playerStorage';
 import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
-import type { Playlist, Song } from '../types';
+import type { AutoSyncConfig, Playlist, Song } from '../types';
 
 export type SyncDirection = 'upload' | 'download' | 'sync';
 
@@ -79,6 +82,11 @@ export function usePlaylistSync() {
   const settingsSyncProgress = ref('');
   const lastSettingsSyncTime = ref<number | null>(null);
   const lastSettingsSyncResult = ref<SettingsSyncResult | null>(null);
+
+  // 自动同步状态
+  const autoSyncStatus = ref('');
+  const autoSyncDelayed = ref(false);
+  let autoSyncInitialized = false;
 
   /** 检查是否可以同步（已登录 + 开启了歌单上传） */
   function canSync(): boolean {
@@ -814,6 +822,105 @@ export function usePlaylistSync() {
     }
   }
 
+  /**
+   * 根据上传设置执行自动同步
+   * 按用户开启的同步项依次执行
+   */
+  async function performAutoSync(): Promise<void> {
+    logSync('performAutoSync: 开始自动同步');
+    const upload = settingsStore.settings.upload;
+    let hasError = false;
+
+    if (upload.playlists) {
+      try {
+        logSync('performAutoSync: 同步歌单');
+        await syncPlaylists();
+      } catch (e) {
+        logSyncError('performAutoSync: 同步歌单失败', e);
+        hasError = true;
+      }
+    }
+
+    if (upload.plugins) {
+      try {
+        logSync('performAutoSync: 同步插件');
+        await syncPlugins();
+      } catch (e) {
+        logSyncError('performAutoSync: 同步插件失败', e);
+        hasError = true;
+      }
+    }
+
+    if (upload.settings) {
+      try {
+        logSync('performAutoSync: 同步设置');
+        await syncSettings();
+      } catch (e) {
+        logSyncError('performAutoSync: 同步设置失败', e);
+        hasError = true;
+      }
+    }
+
+    logSync('performAutoSync: 自动同步完成');
+    if (hasError) {
+      throw new Error('部分同步项失败');
+    }
+  }
+
+  /** 更新自动同步配置 */
+  function patchAutoSyncConfig(patch: Partial<AutoSyncConfig>) {
+    settingsStore.patchSettings({
+      autoSync: patch,
+    });
+    // 配置变更后重启调度器
+    getAutoSyncScheduler().restart();
+  }
+
+  /** 初始化自动同步调度器 */
+  function initAutoSync() {
+    if (autoSyncInitialized) return;
+    autoSyncInitialized = true;
+
+    const scheduler = getAutoSyncScheduler();
+    scheduler.init({
+      getConfig: () => settingsStore.settings.autoSync,
+      updateConfig: (patch) => settingsStore.patchSettings({ autoSync: patch }),
+      canSync: () => canSync(),
+      onSync: performAutoSync,
+      onSyncStart: () => {
+        autoSyncStatus.value = '正在自动同步...';
+        autoSyncDelayed.value = false;
+      },
+      onSyncComplete: (success) => {
+        autoSyncStatus.value = success ? '自动同步完成' : '自动同步未完成';
+        setTimeout(() => {
+          autoSyncStatus.value = '';
+        }, 5000);
+      },
+      onDelayed: (delaySeconds, attempt) => {
+        autoSyncDelayed.value = true;
+        const delayMin = Math.ceil(delaySeconds / 60);
+        autoSyncStatus.value = `服务器繁忙，自动延后 ${delayMin} 分钟（第 ${attempt} 次）`;
+        showToast(`服务器当前同步用户过多，已自动延后 ${delayMin} 分钟`, 'info');
+      },
+    });
+
+    // 如果已登录且已启用，启动调度器
+    if (canSync() && settingsStore.settings.autoSync.enabled) {
+      scheduler.start();
+    }
+  }
+
+  /** 手动触发自动同步检查 */
+  function checkAutoSync() {
+    const scheduler = getAutoSyncScheduler();
+    if (settingsStore.settings.autoSync.enabled && canSync()) {
+      scheduler.restart();
+    } else {
+      scheduler.stop();
+    }
+  }
+
   return {
     syncing,
     syncProgress,
@@ -827,6 +934,8 @@ export function usePlaylistSync() {
     settingsSyncProgress,
     lastSettingsSyncTime,
     lastSettingsSyncResult,
+    autoSyncStatus,
+    autoSyncDelayed,
     canSync,
     isUploadEnabled,
     isPluginUploadEnabled,
@@ -843,5 +952,9 @@ export function usePlaylistSync() {
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,
+    initAutoSync,
+    checkAutoSync,
+    patchAutoSyncConfig,
+    performAutoSync,
   };
 }
