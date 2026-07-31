@@ -81,7 +81,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             type="button"
             class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.download.rememberDownloadPath ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="patchSettings({ download: { ...settings.value.download, rememberDownloadPath: !settings.value.download.rememberDownloadPath } })"
+            @click="patchSettings({ download: { ...settings.download, rememberDownloadPath: !settings.download.rememberDownloadPath } })"
           >
             <span
               class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
@@ -153,7 +153,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             type="button"
             class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.download.keepSourceFilename ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="patchSettings({ download: { ...settings.value.download, keepSourceFilename: !settings.value.download.keepSourceFilename } })"
+            @click="patchSettings({ download: { ...settings.download, keepSourceFilename: !settings.download.keepSourceFilename } })"
           >
             <span
               class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
@@ -171,7 +171,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             type="button"
             class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.download.downloadLyrics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="patchSettings({ download: { ...settings.value.download, downloadLyrics: !settings.value.download.downloadLyrics } })"
+            @click="patchSettings({ download: { ...settings.download, downloadLyrics: !settings.download.downloadLyrics } })"
           >
             <span
               class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
@@ -214,7 +214,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             type="button"
             class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
             :class="settings.download.overwriteExisting ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="patchSettings({ download: { ...settings.value.download, overwriteExisting: !settings.value.download.overwriteExisting } })"
+            @click="patchSettings({ download: { ...settings.download, overwriteExisting: !settings.download.overwriteExisting } })"
           >
             <span
               class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
