@@ -397,7 +397,7 @@ export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse
 /** 现在使用统一的 QualityKey */
 export type OnlineDefaultQuality = QualityKey;
 /** 在线歌曲起播失败时的行为 */
-export type OnlineFailureBehavior = 'skip' | 'stop' | 'retry';
+export type OnlineFailureBehavior = 'skip' | 'stop' | 'wait';
 /** 在线歌曲默认音质播放失败时的音质回退行为 */
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
@@ -443,11 +443,6 @@ export interface AudioSettings {
   };
   equalizer: EqualizerSettings;
   showEqualizerInFooter: boolean; // 运行态必选属性
-  /**
-   * IDM 兼容模式：在线歌曲改为在 Worker 线程拉取完整音频后用本地 blob 播放，
-   * 避免音频直链出现在主线程请求中被 IDM 等下载器劫持。
-   */
-  idmCompatMode: boolean;
   /** 在线播放默认音质，默认 '320k'（HQ） */
   onlineDefaultQuality: OnlineDefaultQuality;
   /** 在线歌曲起播失败时的行为，默认 'skip'（跳到下一首） */
@@ -456,6 +451,10 @@ export interface AudioSettings {
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
   /** 在线流式播放缓存上限（MB），默认 500MB */
   streamCacheSizeMB: number;
+  /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
+  fadeInOutEnabled: boolean;
+  /** 渐入渐出时长（毫秒），默认 300ms */
+  fadeInOutDurationMs: number;
 }
 
 export type ShortcutActionId =
@@ -546,7 +545,12 @@ export interface DownloadSettings {
   /** 文件名样式（keepSourceFilename 为真时不生效） */
   fileNameStyle: DownloadFileNameStyle;
   rememberDownloadPath: boolean;
+  /** 下载音质缺失时的回退行为，默认 'lower'（下载更低音质） */
+  qualityFallbackBehavior: DownloadQualityFallbackBehavior;
 }
+
+/** 下载音质缺失行为 */
+export type DownloadQualityFallbackBehavior = 'lower' | 'higher';
 
 export interface UploadSettings {
   playlists: boolean;

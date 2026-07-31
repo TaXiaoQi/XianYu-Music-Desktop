@@ -130,7 +130,9 @@ export async function loadLyrics() {
       // 歌词获取成功时 lyrics_raw 会被设置并触发 watcher 调用 loadLyrics，
       // 此时 lyrics_raw 非空不会进入此分支，所以 maxRetry 只限制"等待歌词"的重试
       onlineLyricsRetryCount += 1;
+      console.log(`[Lyrics] 在线歌曲等待歌词 (${onlineLyricsRetryCount}/${MAX_ONLINE_LYRICS_RETRIES}):`, song.path);
       if (onlineLyricsRetryCount > MAX_ONLINE_LYRICS_RETRIES) {
+        console.warn('[Lyrics] 在线歌曲歌词获取超时，置为空:', song.path);
         lyricsStatus.value = 'empty';
         onlineLyricsRetryCount = 0;
         return;

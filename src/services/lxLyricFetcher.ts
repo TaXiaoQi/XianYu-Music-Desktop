@@ -95,13 +95,19 @@ async function tauriHttpFetch(
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    timeout?: number;
+    follow?: number;
   } = {},
 ): Promise<TauriHttpResponse> {
+  // [修复] 显式传递 timeout/follow 参数，与 pluginApi.pluginHttpRequest 保持一致
+  // Tauri 2.x 的 invoke 要求所有命令参数都在 JSON 对象中传递，缺失可能导致反序列化失败
   return invoke<TauriHttpResponse>('plugin_http_request', {
     method: options.method || 'GET',
     url,
     headers: options.headers || null,
     body: options.body || null,
+    timeout: options.timeout ?? null,
+    follow: options.follow ?? null,
   });
 }
 
@@ -111,6 +117,8 @@ async function tauriHttpFetchBinary(
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    timeout?: number;
+    follow?: number;
   } = {},
 ): Promise<TauriHttpBinaryResponse> {
   return invoke<TauriHttpBinaryResponse>('plugin_http_request_binary', {
@@ -118,6 +126,8 @@ async function tauriHttpFetchBinary(
     url,
     headers: options.headers || null,
     body: options.body || null,
+    timeout: options.timeout ?? null,
+    follow: options.follow ?? null,
   });
 }
 
@@ -1460,14 +1470,11 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     source,
   };
 
-  // 优先直接从音乐平台 API 获取歌词（更快、更可靠）
-  const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
-  if (lyrics) {
-    return buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
-  }
+  console.log('[LX Lyrics] 开始获取歌词:', { source, songmid, name: songInfo.name, hasCache: !!cached, duration: song.duration, _interval: songInfo._interval });
 
-  // [后备] 直接 API 失败时，回退到 LX 插件的 lyric 接口
-  // 某些音源直接 API 可能被限流/封锁，但 LX 插件内部可能有不同的请求策略
+  // [修复] 优先使用 LX 插件获取歌词（与 MF/Baka 插件相同的机制，更可靠）
+  // LX 插件的 requestHandler 已在 URL 解析时初始化，直接调用 lyric 接口
+  // 直接 API 作为后备：某些场景下插件可能不支持该音源的歌词，此时回退到直接 API
   try {
     const { getStoredPlugins } = await import('./pluginEngine');
     const { ensureLxPluginInstance, lxPluginGetLyric } = await import('./lxPluginEngine');
@@ -1478,17 +1485,35 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
       await ensureLxPluginInstance(matchedPlugin);
       const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
       if (pluginLyrics?.lyric) {
-        return buildLyricsRaw(
+        const result = buildLyricsRaw(
           pluginLyrics.lyric,
           pluginLyrics.tlyric,
           pluginLyrics.rlyric,
           pluginLyrics.lxlyric,
         );
+        console.log('[LX Lyrics] LX 插件获取成功:', { resultLen: result.length, lyricLen: pluginLyrics.lyric.length, lxlyricLen: pluginLyrics.lxlyric?.length || 0 });
+        return result;
       }
+      console.warn('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');
+    } else {
+      console.warn('[LX Lyrics] 未找到可用的 LX 插件，尝试直接 API 后备');
     }
   } catch (e) {
-    console.warn('[fetchLxSongLyricsRaw] LX 插件歌词后备获取失败:', e);
+    console.warn('[fetchLxSongLyricsRaw] LX 插件歌词获取失败，尝试直接 API 后备:', e);
   }
 
+  // [后备] LX 插件失败时，直接从音乐平台 API 获取歌词
+  // 某些插件可能不支持特定音源的歌词，直接 API 作为兜底
+  if (LX_SOURCES.has(source)) {
+    const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+    if (lyrics) {
+      const result = buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
+      console.log('[LX Lyrics] 直接 API 后备获取成功:', { lyricLen: lyrics.lyric.length, lxlyricLen: lyrics.lxlyric?.length || 0, resultLen: result.length });
+      return result;
+    }
+    console.warn('[LX Lyrics] 直接 API 后备也失败');
+  }
+
+  console.warn('[LX Lyrics] 所有歌词获取方式均失败:', { source, songmid, name: songInfo.name });
   return '';
 }
