@@ -281,6 +281,39 @@ export interface SidebarSettings {
   order: SidebarItemKey[];
 }
 
+/**
+ * 底部栏可配置控件标识。
+ * - 封面、歌名/艺人、进度条为固定核心元素，不参与排序。
+ * - 上一首/播放暂停/下一首为"播放三大件"，固定在中间容器中央，不可移动。
+ */
+export type FooterItemKey =
+  | 'download'        // 下载按钮（仅左侧容器）
+  | 'favorite'        // 收藏按钮（仅左侧容器）
+  | 'playMode'        // 播放模式（仅中间左侧）
+  | 'desktopLyrics'  // 桌面歌词（仅中间右侧）
+  | 'quality'         // 音质选择（仅右侧容器）
+  | 'speed'           // 倍速（仅右侧容器）
+  | 'volume'          // 音量（仅右侧容器）
+  | 'equalizer'       // 均衡器（仅右侧容器）
+  | 'playlist';       // 播放队列（仅右侧容器）
+
+/** 底部栏容器标识 */
+export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';
+
+/**
+ * 底部栏布局配置。
+ * - left: 左侧容器控件顺序（最多 2 个；封面与歌名/艺人固定显示）
+ * - middleLeft / middleRight: 中间容器紧邻"播放三大件"左右各 1 个（null 表示留空）
+ * - right: 右侧容器控件顺序（最多 5 个）
+ * 未在任何容器中出现的控件会自动收入工具收纳菜单。
+ */
+export interface FooterLayoutSettings {
+  left: FooterItemKey[];
+  middleLeft: FooterItemKey | null;
+  middleRight: FooterItemKey | null;
+  right: FooterItemKey[];
+}
+
 export type LyricsPlayerAlignment = 'left' | 'center' | 'right';
 export type DesktopLyricsPlayerAlignment = LyricsPlayerAlignment | 'split-corners';
 export type LyricsColorScheme = 'auto' | 'default' | 'pink' | 'blue' | 'green' | 'white' | 'custom';
@@ -571,6 +604,7 @@ export interface AppSettings {
   desktopLyrics: DesktopLyricsSettings;
   theme: ThemeSettings;
   sidebar: SidebarSettings;
+  footerLayout: FooterLayoutSettings;
   shortcuts: ShortcutSettings;
   showTaskbarPlayer: boolean;
   taskbarPlayerCanDrag: boolean;
