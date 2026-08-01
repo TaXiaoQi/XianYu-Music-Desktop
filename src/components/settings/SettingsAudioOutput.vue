@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown, CircleAlert } from 'lucide-vue-next';
+import { Check, ChevronDown, CircleAlert, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useToast } from '../../composables/toast';
@@ -16,6 +16,12 @@ import {
   getSelectedOutputDeviceLabel,
 } from './audioOutputDeviceLabels';
 import SettingHint from './SettingHint.vue';
+import {
+  LYRICS_SYNC_OFFSET_MAX_MS,
+  LYRICS_SYNC_OFFSET_MIN_MS,
+  LYRICS_SYNC_OFFSET_STEP_MS,
+  normalizeLyricsSyncOffsetMs,
+} from '../../features/settings/lyricsSyncOffset';
 
 const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
@@ -123,10 +129,10 @@ const wasapiExclusiveSideEffectTip = '开启后会独占播放设备：其他软
 let unlistenAudioOutput: UnlistenFn | null = null;
 
 const lyricsSyncOffsetMs = computed({
-  get: () => Math.round(settings.value.lyricsSyncOffset * 1000),
+  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000),
   set: (value: number | string) => {
     const numericValue = typeof value === 'string' ? parseFloat(value) : value;
-    const next = Number.isFinite(numericValue) ? Math.max(-1000, Math.min(1000, Math.round(numericValue))) : 0;
+    const next = normalizeLyricsSyncOffsetMs(numericValue);
     settings.value.lyricsSyncOffset = next / 1000;
   }
 });
@@ -135,7 +141,7 @@ const lyricsSyncOffsetMs = computed({
 const handleLyricsSyncOffsetChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const numericValue = parseFloat(target.value);
-  const next = Number.isFinite(numericValue) ? Math.max(-1000, Math.min(1000, Math.round(numericValue))) : 0;
+  const next = normalizeLyricsSyncOffsetMs(numericValue);
   target.value = String(next);
   lyricsSyncOffsetMs.value = next;
 };
@@ -210,6 +216,10 @@ const toggleWasapiExclusive = async () => {
 
 const resetLyricsSyncOffset = () => {
   lyricsSyncOffsetMs.value = 0;
+};
+
+const adjustLyricsSyncOffset = (delta: number) => {
+  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta;
 };
 
 onMounted(async () => {
@@ -667,21 +677,41 @@ onScopeDispose(() => {
             <div v-if="showLyricsSyncOffsetPanel" class="px-4 pb-4">
               <div class="settings-expand-panel">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center">
-                  <input
-                    v-model="lyricsSyncOffsetMs"
-                    type="range"
-                    min="-1000"
-                    max="1000"
-                    step="10"
-                    class="settings-slider flex-1"
-                  />
+                  <div class="flex min-w-[240px] flex-1 items-center gap-2">
+                    <button
+                      type="button"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                      :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS"
+                      aria-label="歌词偏移减少 5 毫秒"
+                      @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"
+                    >
+                      <Minus class="h-4 w-4" />
+                    </button>
+                    <input
+                      v-model="lyricsSyncOffsetMs"
+                      type="range"
+                      :min="LYRICS_SYNC_OFFSET_MIN_MS"
+                      :max="LYRICS_SYNC_OFFSET_MAX_MS"
+                      :step="LYRICS_SYNC_OFFSET_STEP_MS"
+                      class="settings-slider min-w-0 flex-1"
+                    />
+                    <button
+                      type="button"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                      :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS"
+                      aria-label="歌词偏移增加 5 毫秒"
+                      @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"
+                    >
+                      <Plus class="h-4 w-4" />
+                    </button>
+                  </div>
                   <div class="flex items-center gap-3">
                     <input
                       :value="lyricsSyncOffsetMs"
                       type="number"
-                      min="-1000"
-                      max="1000"
-                      step="10"
+                      :min="LYRICS_SYNC_OFFSET_MIN_MS"
+                      :max="LYRICS_SYNC_OFFSET_MAX_MS"
+                      :step="LYRICS_SYNC_OFFSET_STEP_MS"
                       class="settings-number-input"
                       @change="handleLyricsSyncOffsetChange"
                     />

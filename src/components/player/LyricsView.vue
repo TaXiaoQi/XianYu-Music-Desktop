@@ -44,6 +44,7 @@ const AmlLyricPlayer = defineAsyncComponent({
   timeout: 10000,
 });
 import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
+import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
 const {
   parsedLyrics,
@@ -91,64 +92,7 @@ function updateFontPanelPosition() {
   if (!container) return;
 
   const containerRect = container.getBoundingClientRect();
-  const viewportWidth = window.innerWidth;
-  const safeMargin = 16;
-
-  // 面板自然宽度（与 CSS width: min(320px, calc(34vw - 24px)) + min-w-[260px] 一致）
-  // 用公式计算而非 offsetWidth，避免动态设置 width 后产生测量反馈震荡
-  const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
-  const panelWidth = Math.max(260, naturalWidth);
-
-  // 默认 margin-right（与 CSS 中 14vw / 2xl:22vw 一致）
-  const defaultMr = viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
-
-  // 左侧可用空间 = 歌词视图左边缘到视口左边缘
-  const availableSpaceLeft = containerRect.left - safeMargin;
-  // 右侧可用空间 = 视口右边缘到歌词视图右边缘
-  const availableSpaceRight = viewportWidth - containerRect.right - safeMargin;
-
-  // 左侧能容纳的最大 margin-right = 左侧可用空间 - 面板实际宽度
-  const maxMrLeft = availableSpaceLeft - panelWidth;
-
-  if (maxMrLeft >= 0) {
-    // 左侧能放下：按需收紧 margin-right
-    if (defaultMr > maxMrLeft) {
-      fontPanelDynamicStyle.value = {
-        marginRight: `${Math.round(maxMrLeft)}px`,
-      };
-    } else {
-      fontPanelDynamicStyle.value = {};
-    }
-    return;
-  }
-
-  // 左侧放不下：检查右侧
-  if (availableSpaceRight >= panelWidth) {
-    // 右侧能放下：切换到歌词视图右侧
-    fontPanelDynamicStyle.value = {
-      right: 'auto',
-      left: '100%',
-      marginLeft: `${safeMargin}px`,
-      marginRight: '0',
-    };
-    return;
-  }
-
-  // 两侧都放不下：选空间较大的一侧贴边显示，并收紧面板宽度
-  if (availableSpaceLeft >= availableSpaceRight) {
-    fontPanelDynamicStyle.value = {
-      marginRight: '0px',
-      width: `${Math.max(240, Math.round(availableSpaceLeft))}px`,
-    };
-  } else {
-    fontPanelDynamicStyle.value = {
-      right: 'auto',
-      left: '100%',
-      marginLeft: `${safeMargin}px`,
-      marginRight: '0',
-      width: `${Math.max(240, Math.round(availableSpaceRight))}px`,
-    };
-  }
+  fontPanelDynamicStyle.value = getLyricsStylePanelPosition(containerRect, window.innerWidth);
 }
 
 const amllLines = computed<AmlLyricLine[]>(() => {
@@ -433,7 +377,7 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
       <transition name="font-panel">
         <div
           v-if="showLyricsPlayerSettingsPanel"
-          class="pointer-events-auto flex max-h-[100%] min-h-0 w-full flex-col rounded-3xl border border-white/10 bg-black/30 text-white shadow-[0_28px_70px_rgba(0,0,0,0.36)] backdrop-blur-2xl"
+          class="lyrics-settings-glass pointer-events-auto flex max-h-[100%] min-h-0 w-full flex-col rounded-3xl border border-white/15 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
           @click.stop
           @mousedown.stop
         >
@@ -724,7 +668,7 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
             <transition name="font-preset-menu">
               <div
                 v-if="false"
-                class="absolute left-[calc(100%+14px)] top-1/2 z-20 w-[280px] -translate-y-1/2 flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.36)] backdrop-blur-2xl"
+                class="lyrics-settings-glass absolute left-[calc(100%+14px)] top-1/2 z-20 w-[280px] -translate-y-1/2 flex flex-col overflow-hidden rounded-3xl border border-white/15 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
               >
                 <div class="min-h-0 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
                   <button
@@ -794,7 +738,7 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
         <div
           v-if="isFontPresetMenuOpen"
           ref="fontPresetMenuRef"
-          class="z-[120] flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.36)] backdrop-blur-2xl"
+          class="lyrics-settings-glass z-[120] flex flex-col overflow-hidden rounded-3xl border border-white/15 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
           :style="fontPresetMenuStyle"
           @click.stop
           @mousedown.stop
@@ -826,6 +770,12 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
 </template>
 
 <style scoped>
+.lyrics-settings-glass {
+  background: rgba(10, 10, 14, 0.68);
+  -webkit-backdrop-filter: blur(32px) saturate(135%);
+  backdrop-filter: blur(32px) saturate(135%);
+}
+
 .lyrics-mask-shell {
   position: relative;
   overflow: hidden;

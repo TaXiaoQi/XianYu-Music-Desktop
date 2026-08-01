@@ -34,7 +34,7 @@ const emit = defineEmits<{
   (event: 'complete'): void;
 }>();
 
-const { settings } = useSettings();
+const { settings, patchSettings } = useSettings();
 const { showToast } = useToast();
 const authStore = useAuthStore();
 const {
@@ -47,11 +47,13 @@ const {
 } = useSettingsThemeControls();
 
 const SPLASH_HINT_DELAY = 800;
+const SPLASH_AUTO_ADVANCE_DELAY = 5000;
 
 const step = ref<Step>('splash');
 const splashVisible = ref(true);
 const splashHintVisible = ref(false);
-const splashTimer = ref<any>(null);
+let splashHintTimer: ReturnType<typeof setTimeout> | null = null;
+let splashAutoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- 快捷键录入 ---
 type ShortcutScope = 'local' | 'global';
@@ -95,7 +97,7 @@ const stopCapture = () => {
 };
 
 const restoreDefaultShortcuts = () => {
-  settings.value.shortcuts = createDefaultShortcutSettings();
+  patchSettings({ shortcuts: createDefaultShortcutSettings() });
   stopCapture();
   showToast('已恢复默认快捷键', 'success');
 };
@@ -105,8 +107,26 @@ const updateShortcut = (
   actionId: ShortcutActionId,
   nextBinding: ReturnType<typeof getShortcutBindingFromEvent>,
 ) => {
-  settings.value.shortcuts[scope][actionId] = nextBinding;
+  patchSettings({
+    shortcuts: {
+      ...settings.value.shortcuts,
+      [scope]: {
+        ...settings.value.shortcuts[scope],
+        [actionId]: nextBinding,
+      },
+    },
+  });
 };
+
+const onboardingSurfaceClass = computed(() => {
+  if (materialMode.value === 'none') {
+    return 'bg-white dark:bg-[#0a0a0a]';
+  }
+
+  return materialMode.value === 'mica'
+    ? 'bg-white/62 dark:bg-[#0a0a0a]/58'
+    : 'bg-white/50 dark:bg-[#0a0a0a]/48';
+});
 
 const handleShortcutCapture = (
   scope: ShortcutScope,
@@ -206,6 +226,18 @@ const setMaterialToNone = () => {
   }
 };
 
+type OnboardingWindowMaterial = 'none' | 'mica' | 'acrylic' | 'blur';
+
+const selectWindowMaterial = (mode: OnboardingWindowMaterial) => {
+  if (materialMode.value === mode) return;
+  if (mode === 'none') {
+    setMaterialToNone();
+    return;
+  }
+  if (isWindowMaterialButtonDisabled(mode)) return;
+  toggleWindowMaterial(mode);
+};
+
 // --- 点击"自定义"主题：暂不支持，弹提示 ---
 const showCustomUnsupported = ref(false);
 
@@ -296,19 +328,30 @@ const handleAuthSubmit = async () => {
   }
 };
 
-// --- 启动画面计时 ---
-// 不再自动跳转到下一步，改由用户点击"继续"按钮进入，这里只负责延迟显示提示与按钮
-const startSplashTimers = () => {
-  splashTimer.value = setTimeout(() => {
-    splashHintVisible.value = true;
-  }, SPLASH_HINT_DELAY);
+const clearSplashTimers = () => {
+  if (splashHintTimer) {
+    clearTimeout(splashHintTimer);
+    splashHintTimer = null;
+  }
+  if (splashAutoAdvanceTimer) {
+    clearTimeout(splashAutoAdvanceTimer);
+    splashAutoAdvanceTimer = null;
+  }
 };
 
-const clearSplashTimers = () => {
-  if (splashTimer.value) {
-    clearTimeout(splashTimer.value);
-    splashTimer.value = null;
-  }
+const continueFromSplash = () => {
+  if (step.value !== 'splash') return;
+  clearSplashTimers();
+  nextStep();
+};
+
+// --- 启动画面计时 ---
+const startSplashTimers = () => {
+  clearSplashTimers();
+  splashHintTimer = setTimeout(() => {
+    splashHintVisible.value = true;
+  }, SPLASH_HINT_DELAY);
+  splashAutoAdvanceTimer = setTimeout(continueFromSplash, SPLASH_AUTO_ADVANCE_DELAY);
 };
 
 watch(
@@ -339,13 +382,15 @@ onUnmounted(() => {
     <transition name="onboarding-fade">
       <div
         v-if="visible"
-        class="fixed inset-0 z-[9998] flex flex-col overflow-hidden bg-white dark:bg-[#0a0a0a]"
+        class="fixed inset-0 z-[9998] flex flex-col overflow-hidden transition-colors duration-300"
+        :class="onboardingSurfaceClass"
       >
         <!-- 启动画面 -->
         <transition name="splash-fade">
           <div
             v-if="step === 'splash'"
-            class="absolute inset-0 flex flex-col items-center justify-center text-center px-[clamp(1.5rem,4vw,4rem)]"
+            class="absolute inset-0 flex cursor-pointer select-none flex-col items-center justify-center text-center px-[clamp(1.5rem,4vw,4rem)]"
+            @click="continueFromSplash"
           >
             <transition name="splash-title">
               <div v-if="splashVisible" class="flex flex-col items-center">
@@ -380,15 +425,8 @@ onUnmounted(() => {
                   class="text-black/60 dark:text-white/60 font-light tracking-wide"
                   style="font-size: clamp(20px, 1.6vw, 26px);"
                 >
-                  初次启动，我们需要进行一些设置
+                  点击任意位置以继续
                 </div>
-                <button
-                  type="button"
-                  class="mt-2 rounded-full bg-[#EC4141] px-8 py-2.5 text-base font-medium text-white shadow-lg shadow-red-500/20 transition active:scale-95 hover:bg-[#d13a3a] cursor-pointer"
-                  @click="nextStep"
-                >
-                  继续
-                </button>
               </div>
             </transition>
           </div>
@@ -554,11 +592,13 @@ onUnmounted(() => {
                     </header>
 
                     <div class="grid grid-cols-2 gap-[clamp(1rem,2vw,2rem)]">
-                      <div
-                        class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
+                      <button
+                        type="button"
+                        class="group relative flex cursor-pointer items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="materialMode === 'none'
                           ? 'border-b-2 border-[#EC4141]'
                           : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50'"
+                        @click="selectWindowMaterial('none')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center transition-transform group-hover:scale-105"
@@ -580,27 +620,19 @@ onUnmounted(() => {
                             无透明效果
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer"
-                          :class="materialMode === 'none'
-                            ? 'bg-[#EC4141]/10 text-[#EC4141] cursor-default'
-                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
-                          :disabled="materialMode === 'none'"
-                          @click="setMaterialToNone"
-                        >
-                          {{ materialMode === 'none' ? '已生效' : '生效' }}
-                        </button>
-                      </div>
+                      </button>
 
-                      <div
+                      <button
+                        type="button"
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'mica'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('mica') ? 'opacity-30' : '',
+                          isWindowMaterialButtonDisabled('mica') ? 'cursor-not-allowed opacity-30' : 'cursor-pointer',
                         ]"
+                        :disabled="isWindowMaterialButtonDisabled('mica')"
+                        @click="selectWindowMaterial('mica')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -622,27 +654,19 @@ onUnmounted(() => {
                             {{ isWindows11 ? '云母材质' : '仅 Win11' }}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
-                          :class="materialMode === 'mica'
-                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
-                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
-                          :disabled="materialMode === 'mica' || isWindowMaterialButtonDisabled('mica')"
-                          @click="toggleWindowMaterial('mica')"
-                        >
-                          {{ materialMode === 'mica' ? '已生效' : '生效' }}
-                        </button>
-                      </div>
+                      </button>
 
-                      <div
+                      <button
+                        type="button"
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'acrylic'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('acrylic') ? 'opacity-30' : '',
+                          isWindowMaterialButtonDisabled('acrylic') ? 'cursor-not-allowed opacity-30' : 'cursor-pointer',
                         ]"
+                        :disabled="isWindowMaterialButtonDisabled('acrylic')"
+                        @click="selectWindowMaterial('acrylic')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-md flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -664,27 +688,19 @@ onUnmounted(() => {
                             {{ isWindows11 ? '亚克力半透明' : '仅 Win11' }}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
-                          :class="materialMode === 'acrylic'
-                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
-                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
-                          :disabled="materialMode === 'acrylic' || isWindowMaterialButtonDisabled('acrylic')"
-                          @click="toggleWindowMaterial('acrylic')"
-                        >
-                          {{ materialMode === 'acrylic' ? '已生效' : '生效' }}
-                        </button>
-                      </div>
+                      </button>
 
-                      <div
+                      <button
+                        type="button"
                         class="group relative flex items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
                         :class="[
                           materialMode === 'blur'
                             ? 'border-b-2 border-[#EC4141]'
                             : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50',
-                          isWindowMaterialButtonDisabled('blur') ? 'opacity-30' : '',
+                          isWindowMaterialButtonDisabled('blur') ? 'cursor-not-allowed opacity-30' : 'cursor-pointer',
                         ]"
+                        :disabled="isWindowMaterialButtonDisabled('blur')"
+                        @click="selectWindowMaterial('blur')"
                       >
                         <div
                           class="w-[clamp(48px,6vw,72px)] h-[clamp(48px,6vw,72px)] rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-lg flex items-center justify-center border border-black/10 dark:border-white/10 transition-transform group-hover:scale-105"
@@ -706,18 +722,7 @@ onUnmounted(() => {
                             高斯模糊背景
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          class="ml-auto shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
-                          :class="materialMode === 'blur'
-                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
-                            : 'bg-[#EC4141] text-white hover:bg-[#d13a3a]'"
-                          :disabled="materialMode === 'blur' || isWindowMaterialButtonDisabled('blur')"
-                          @click="toggleWindowMaterial('blur')"
-                        >
-                          {{ materialMode === 'blur' ? '已生效' : '生效' }}
-                        </button>
-                      </div>
+                      </button>
                     </div>
                   </div>
 

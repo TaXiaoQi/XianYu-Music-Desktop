@@ -72,6 +72,17 @@ export function useThemeSettings() {
   };
 
   const toggleThemeMode = () => {
+    const currentTheme = theme.value;
+    if (currentTheme.mode === 'custom' && currentTheme.customBackground.imagePath) {
+      const foregroundStyle = normalizeForegroundStyle(currentTheme.customBackground.foregroundStyle);
+      patchTheme({
+        customBackground: {
+          foregroundStyle: foregroundStyle === 'light' ? 'dark' : 'light',
+        },
+      });
+      return;
+    }
+
     setThemeMode(isDarkTheme.value ? 'light' : 'dark');
   };
 

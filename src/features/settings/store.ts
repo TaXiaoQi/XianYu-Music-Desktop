@@ -32,6 +32,7 @@ import {
 import { DEFAULT_SIDEBAR_ORDER, normalizeSidebarOrder } from './sidebarItems';
 import { DEFAULT_FOOTER_LAYOUT, normalizeFooterLayout } from './footerItems';
 import { playerStorage } from '../../services/storage/playerStorage';
+import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
 
 const createUserPresetId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -476,6 +477,9 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
+    lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
+      patch.lyricsSyncOffset ?? base.lyricsSyncOffset,
+    ),
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
       libraryMinDurationSeconds ?? base.libraryMinDurationSeconds,
     ),

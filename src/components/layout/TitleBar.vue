@@ -15,7 +15,7 @@ const route = useRoute();
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
 const { settings } = useSettings();
-const { isDarkTheme, toggleThemeMode } = useThemeSettings();
+const { theme, isDarkTheme, toggleThemeMode } = useThemeSettings();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const authStore = useAuthStore();
 const navigationStore = useNavigationStore();
@@ -23,7 +23,16 @@ const rotation = ref(0); // For settings icon animation
 const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
 const isSettingsRoute = computed(() => route.path === '/settings');
 const isAuthRoute = computed(() => route.path === '/auth');
-const themeToggleTitle = computed(() => (isDarkTheme.value ? '切换浅色' : '切换深色'));
+const hasCustomBackground = computed(() => (
+  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
+));
+const themeToggleTitle = computed(() => {
+  if (hasCustomBackground.value) {
+    return isDarkTheme.value ? '切换深色字体' : '切换浅色字体';
+  }
+
+  return isDarkTheme.value ? '切换浅色' : '切换深色';
+});
 
 // --- 搜索历史 ---
 const showHistory = ref(false);

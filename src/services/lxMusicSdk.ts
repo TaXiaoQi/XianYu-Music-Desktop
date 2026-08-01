@@ -646,6 +646,223 @@ async function searchMg(str: string, page = 1, limit = 20, retryNum = 0): Promis
   };
 }
 
+// ==================== Catalog Search ====================
+
+export interface LxArtistSearchResult {
+  id: string;
+  name: string;
+  avatarUrl: string;
+  songCount?: number;
+  rawData: unknown;
+}
+
+export interface LxAlbumSearchResult {
+  id: string;
+  name: string;
+  artist: string;
+  coverUrl: string;
+  songCount?: number;
+  rawData: unknown;
+}
+
+export interface LxPlaylistSearchResult {
+  id: string;
+  title: string;
+  coverUrl: string;
+  artist?: string;
+  trackCount?: number;
+  playCount?: number;
+  rawData: unknown;
+}
+
+function splitLxArtists(value: string): string[] {
+  return value
+    .split(/[、,/&]/)
+    .map(name => name.trim())
+    .filter(Boolean);
+}
+
+export function deriveLxArtistResults(list: LxSearchResultItem[]): LxArtistSearchResult[] {
+  const artists = new Map<string, LxArtistSearchResult>();
+
+  for (const song of list) {
+    for (const name of splitLxArtists(song.singer)) {
+      const key = name.toLocaleLowerCase();
+      const existing = artists.get(key);
+      if (existing) {
+        existing.songCount = (existing.songCount ?? 0) + 1;
+        if (!existing.avatarUrl && song.img) existing.avatarUrl = song.img;
+        continue;
+      }
+      artists.set(key, {
+        id: `${song.source}:artist:${name}`,
+        name,
+        avatarUrl: song.img || '',
+        songCount: 1,
+        rawData: { source: song.source, name },
+      });
+    }
+  }
+
+  return [...artists.values()];
+}
+
+export function deriveLxAlbumResults(list: LxSearchResultItem[]): LxAlbumSearchResult[] {
+  const albums = new Map<string, LxAlbumSearchResult>();
+
+  for (const song of list) {
+    const name = song.albumName?.trim();
+    if (!name) continue;
+    const id = String(song.albumId || song.albumMid || name);
+    const key = `${song.source}:${id}`;
+    const existing = albums.get(key);
+    if (existing) {
+      existing.songCount = (existing.songCount ?? 0) + 1;
+      if (!existing.coverUrl && song.img) existing.coverUrl = song.img;
+      continue;
+    }
+    albums.set(key, {
+      id: `${song.source}:album:${id}`,
+      name,
+      artist: song.singer,
+      coverUrl: song.img || '',
+      songCount: 1,
+      rawData: { source: song.source, id, name, artist: song.singer },
+    });
+  }
+
+  return [...albums.values()];
+}
+
+function firstValue(item: any, keys: string[]): any {
+  for (const key of keys) {
+    const value = item?.[key];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
+}
+
+export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]): LxPlaylistSearchResult[] {
+  const results: LxPlaylistSearchResult[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of rawItems.flat(2)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const idValue = firstValue(raw, ['id', 'ID', 'playlistId', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']);
+    const titleValue = firstValue(raw, ['title', 'name', 'playlistName', 'specialname', 'dissname', 'songListName', 'songlistName', 'NAME']);
+    if (idValue === undefined || !titleValue) continue;
+    const id = String(idValue);
+    const dedupeKey = `${source}:${id}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const creator = raw.creator;
+    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'PIC']) || '');
+    if (coverUrl.startsWith('//')) coverUrl = `https:${coverUrl}`;
+    else if (coverUrl.startsWith('http://')) coverUrl = coverUrl.replace('http://', 'https://');
+    results.push({
+      id: `${source}:playlist:${id}`,
+      title: decodeName(String(titleValue).replace(/<[^>]*>/g, '')),
+      coverUrl,
+      artist: String(firstValue(raw, ['artist', 'author', 'nickname', 'uname', 'UNAME']) || creator?.name || creator?.nickname || ''),
+      trackCount: Number(firstValue(raw, ['trackCount', 'trackcount', 'songCount', 'song_count', 'songnum', 'SONGNUM'])) || undefined,
+      playCount: Number(firstValue(raw, ['playCount', 'playcount', 'play_count', 'listennum', 'LISTENNUM'])) || undefined,
+      rawData: raw,
+    });
+  }
+
+  return results;
+}
+
+async function searchLxPlaylists(source: LxSourceId, keyword: string, page: number, limit: number): Promise<LxPlaylistSearchResult[]> {
+  if (source === 'kw') {
+    const data = await httpGetJson(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(keyword)}&pn=${page - 1}&rn=${limit}&ft=playlist&encoding=utf8&rformat=json`);
+    return normalizeLxPlaylistResults(source, data?.abslist || data?.data || []);
+  }
+
+  if (source === 'kg') {
+    const data = await httpGetJson(`https://songsearch.kugou.com/special_search?keyword=${encodeURIComponent(keyword)}&page=${page}&pagesize=${limit}&userid=-1&clientver=&platform=WebFilter&filter=0&iscorrection=1&privilege_filter=0`);
+    return normalizeLxPlaylistResults(source, data?.data?.lists || data?.data?.list || []);
+  }
+
+  if (source === 'wy') {
+    const offset = limit * (page - 1);
+    const data = await httpGetJson(`https://music.163.com/api/search/get/web?s=${encodeURIComponent(keyword)}&type=1000&offset=${offset}&limit=${limit}`, {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      Referer: 'https://music.163.com',
+      Cookie: 'MUSIC_A=1',
+    });
+    return normalizeLxPlaylistResults(source, data?.result?.playlists || []);
+  }
+
+  if (source === 'tx') {
+    const requestData = {
+      comm: { ct: '11', cv: '14090508', v: '14090508', tmeAppID: 'qqmusic' },
+      req: {
+        module: 'music.search.SearchCgiService',
+        method: 'DoSearchForQQMusicMobile',
+        param: {
+          search_type: 3,
+          searchid: Math.random().toString().slice(2),
+          query: keyword,
+          page_num: page,
+          num_per_page: limit,
+          highlight: 0,
+          nqc_flag: 0,
+          multi_zhida: 0,
+          cat: 2,
+          grp: 1,
+          sin: 0,
+          sem: 0,
+        },
+      },
+    };
+    const sign = await zzcSign(JSON.stringify(requestData));
+    const data = await httpPostJson(
+      `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+      JSON.stringify(requestData),
+      { 'User-Agent': 'QQMusic 14090508(android 12)', 'Content-Type': 'application/json' },
+    );
+    const body = data?.req?.data?.body;
+    return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || []);
+  }
+
+  const time = Date.now().toString();
+  const signData = mgCreateSignature(time, keyword);
+  const searchSwitch = encodeURIComponent(JSON.stringify({
+    song: 0,
+    album: 0,
+    singer: 0,
+    tagSong: 0,
+    mvSong: 0,
+    bestShow: 0,
+    songlist: 1,
+    lyricSong: 0,
+  }));
+  const data = await httpGetJson(`https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=${searchSwitch}&pageSize=${limit}&text=${encodeURIComponent(keyword)}&pageNo=${page}&sort=0&sid=USS`, {
+    uiVersion: 'A_music_3.6.1',
+    deviceId: signData.deviceId,
+    timestamp: time,
+    sign: signData.sign,
+    channel: '0146921',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 11)',
+  });
+  const resultData = data?.songListResultData || data?.songlistResultData || {};
+  return normalizeLxPlaylistResults(source, resultData.resultList || resultData.list || []);
+}
+
+export async function lxCatalogSearch(
+  source: LxSourceId,
+  keyword: string,
+  type: 'artist' | 'album' | 'playlist',
+  page = 1,
+  limit = 30,
+): Promise<LxArtistSearchResult[] | LxAlbumSearchResult[] | LxPlaylistSearchResult[]> {
+  if (type === 'playlist') return searchLxPlaylists(source, keyword, page, limit);
+  const result = await lxSearch(source, keyword, page, limit);
+  return type === 'artist' ? deriveLxArtistResults(result.list) : deriveLxAlbumResults(result.list);
+}
+
 // ==================== Main Export ====================
 
 export type LxSourceId = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
