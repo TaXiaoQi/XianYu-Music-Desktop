@@ -12,6 +12,7 @@ export default tseslint.config(
       "node_modules/**",
       "src-tauri/**",
       "tag_test/**",
+      ".webpack/**",
     ],
   },
   js.configs.recommended,

@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginsImportSupport, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl } from '../../services/pluginEngine';
 import { useSettings } from '../../features/settings/useSettings';
-import ImportMusicSheetModal from '../overlays/ImportMusicSheetModal.vue';
 import SettingHint from './SettingHint.vue';
 
 const { showToast } = useToast();
@@ -26,7 +25,6 @@ function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVers
 onMounted(async () => {
   await loadPlugins(pluginSettings.value.lazyLoad);
   plugins.value = getStoredPlugins();
-  void checkImportSupport();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
 });
@@ -59,30 +57,6 @@ const showAddSubscriptionInput = ref(false);
 const newSubscriptionUrl = ref('');
 
 const isPluginBusy = ref(false);
-
-// ==================== 歌单导入 ====================
-/** 支持歌单导入的插件 ID 集合 */
-const importSupportedPlugins = ref<Set<string>>(new Set());
-/** 导入歌单弹窗 */
-const showImportModal = ref(false);
-/** 当前要导入歌单的插件 */
-const importTargetPlugin = ref<PluginSource | null>(null);
-
-/** 检查已安装的 MusicFree 插件是否支持歌单导入 */
-async function checkImportSupport() {
-  const musicfreePlugins = plugins.value.filter(p => p.enabled && p.format === 'musicfree');
-  if (musicfreePlugins.length === 0) {
-    importSupportedPlugins.value = new Set();
-    return;
-  }
-  const supported = await checkPluginsImportSupport(musicfreePlugins);
-  importSupportedPlugins.value = supported;
-}
-
-// 插件列表变化时重新检查导入支持
-watch(plugins, () => {
-  void checkImportSupport();
-}, { deep: true });
 
 /** 插件排序：完全按用户自定义的 sortOrder 排列，不强制按格式分组 */
 function sortPlugins(list: PluginSource[]): PluginSource[] {
@@ -305,7 +279,6 @@ function pluginColorClasses(format: PluginSource['format']) {
 
 function refreshPluginList() {
   plugins.value = getStoredPlugins();
-  void checkImportSupport();
 }
 
 // ==================== 从本地文件安装 ====================
@@ -1272,19 +1245,6 @@ async function copyPluginLink() {
 
           <!-- 右侧：操作 -->
           <div class="flex items-center gap-1.5 shrink-0">
-            <!-- 导入歌单按钮已隐藏 -->
-            <!--
-            <button
-              v-if="plugin.format === 'musicfree' && importSupportedPlugins.has(plugin.id)"
-              type="button"
-              class="settings-plugin-import-btn"
-              title="导入歌单"
-              @click="handleImportMusicSheet(plugin)"
-            >
-              <ListMusic class="h-4 w-4" />
-              <span class="settings-plugin-import-btn__text">导入歌单</span>
-            </button>
-            -->
             <button
               type="button"
               class="settings-plugin-icon-button"
@@ -1573,12 +1533,6 @@ async function copyPluginLink() {
     </Teleport>
   </div>
 
-  <!-- 导入歌单弹窗 -->
-  <ImportMusicSheetModal
-    :visible="showImportModal"
-    :plugin="importTargetPlugin"
-    @close="showImportModal = false; importTargetPlugin = null"
-  />
 </template>
 
 <style scoped>

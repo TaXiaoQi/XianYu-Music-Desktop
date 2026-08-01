@@ -223,7 +223,7 @@ export interface ParsedLink {
   playlistId: string;
 }
 
-const URL_EXTRACTOR = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+const URL_EXTRACTOR = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 
 /** 从用户输入文本中解析歌单链接 */
 export function parseLink(input: string): ParsedLink | null {

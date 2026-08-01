@@ -98,6 +98,7 @@ function isPluginSong(song: { cue_source_path?: string; path?: string }): boolea
 /** 清洗文件名中的非法字符（Windows 与跨平台通用） */
 export function sanitizeFileName(name: string): string {
   return name
+    // eslint-disable-next-line no-control-regex -- 控制字符在文件名中非法，需主动剔除
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()

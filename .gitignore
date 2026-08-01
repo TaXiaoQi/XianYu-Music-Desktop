@@ -7,6 +7,9 @@ dist-ssr/
 *.local
 releases/
 
+# --- 🗑️ 旧版 Electron Forge 构建产物（项目已迁移至 Tauri + Vite）---
+.webpack/
+
 # --- 🦀 Tauri/Rust 后端核心 (最重要部分) ---
 # Rust 的编译产物，体积极大，包含大量二进制文件
 src-tauri/target/
