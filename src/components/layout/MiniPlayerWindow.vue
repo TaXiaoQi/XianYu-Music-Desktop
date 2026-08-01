@@ -21,6 +21,7 @@ import {
   type MiniPlayerStatePayload,
 } from '../../features/miniPlayer/shared';
 import type { Song } from '../../types';
+import { formatDuration } from '../../utils/format';
 
 const appWindow = getCurrentWindow();
 const currentSong = ref<Song | null>(null);
@@ -55,14 +56,6 @@ const VOLUME_POPOVER_GAP = 8;
 const VOLUME_POPOVER_MARGIN = 8;
 
 const displayQueue = computed(() => queue.value);
-
-const formatDuration = (seconds: number) => {
-  if (!seconds) return '00:00';
-
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
 
 const sendAction = (action: MiniPlayerAction) => {
   void emitTo('main', MINI_PLAYER_ACTION_EVENT, action);

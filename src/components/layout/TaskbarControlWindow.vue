@@ -20,6 +20,7 @@ import {
 import { writeSavedPositionX, type TaskbarTrayGeometry } from '../../composables/useTaskbarPlayerBridge';
 import { windowApi } from '../../services/tauri/windowApi';
 import type { Song } from '../../types';
+import { clamp } from '../../utils/math';
 
 const appWindow = getCurrentWindow();
 
@@ -39,8 +40,6 @@ interface DragBounds {
   maxX: number;
   y: number;
 }
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const finishDrag = async () => {
   if (!isDragging.value) return;

@@ -6,6 +6,7 @@ import type {
   Router,
 } from 'vue-router';
 import type { FolderNode } from '../types';
+import { normalizePath } from '../utils/path';
 
 type SyncedHomeViewMode = 'all' | 'folder' | 'artist' | 'album' | 'playlist' | 'statistics';
 
@@ -62,9 +63,6 @@ const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
       return { viewMode: 'statistics', filter: '', folder: '' };
   }
 };
-
-const normalizePath = (path: string | null | undefined) =>
-  (path || '').replace(/\\/g, '/').replace(/\/+$/, '');
 
 const findOwningRootPath = (nodes: FolderNode[], targetPath: string) => {
   const normalizedTarget = normalizePath(targetPath);

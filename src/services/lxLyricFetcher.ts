@@ -1383,18 +1383,6 @@ async function fetchWyLyric(songInfo: LxSongInfo): Promise<LxLyricResult | null>
   };
 }
 
-// ==================== lxlyric 格式归一化 ====================
-
-/**
- * 按音源归一化 lxlyric 格式
- * 所有音源（kg/kw/tx/wy）的 lxlyric 都已是相对行首偏移格式，无需归一化。
- * Go 源码的 handleKw/handleWyy 等都不做归一化。
- * 此函数保留仅为向后兼容，直接返回原数据。
- */
-export function normalizeLxlyricBySource(_source: string, lxlyric: string): string {
-  return lxlyric;
-}
-
 // ==================== Unified Entry Point ====================
 
 /**

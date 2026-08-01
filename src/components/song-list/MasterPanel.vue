@@ -12,6 +12,7 @@ import ModernInputModal from '../common/ModernInputModal.vue';
 import ModernModal from '../common/ModernModal.vue';
 import FolderContextMenu from '../overlays/FolderContextMenu.vue';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
+import { normalizePath } from '../../utils/path';
 
 const props = withDefaults(defineProps<{
   isManagementMode?: boolean;
@@ -137,8 +138,6 @@ watch(currentFolderFilter, async newPath => {
     console.error('Failed to expand folder path:', error);
   }
 });
-
-const normalizePath = (path: string | null) => (path || '').replace(/\\/g, '/').replace(/\/+$/, '');
 
 const restoreFolderViewState = async () => {
   if (folderTree.value.length === 0) {

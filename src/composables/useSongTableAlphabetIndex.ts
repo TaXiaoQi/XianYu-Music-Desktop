@@ -15,6 +15,7 @@ import {
   getAlphabetIndexKey,
   type AlphabetIndexKey,
 } from '../utils/alphabetIndex';
+import { normalizePath, getParentFolderPath } from '../utils/path';
 
 const ROW_HEIGHT = 72;
 const INDEX_PROXIMITY_PX = 72;
@@ -119,11 +120,6 @@ export function useSongTableAlphabetIndex({
 
     return songs.value.findIndex((song) => song.path === currentSong.value?.path);
   });
-
-  const normalizePath = (path: string | null | undefined) =>
-    (path || '').replace(/\\/g, '/').replace(/\/+$/, '');
-
-  const getParentFolderPath = (path: string) => path.replace(/[\\/][^\\/]+$/, '');
 
   const findOwningRootPath = (targetPath: string) => {
     const normalizedTarget = normalizePath(targetPath);

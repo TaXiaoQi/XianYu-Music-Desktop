@@ -39,6 +39,7 @@ import {
   collectSongPathsInFolderScope,
   isPathInFolderScope,
 } from './libraryRemovalCleanup';
+import { formatDuration } from '../utils/format';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -132,16 +133,6 @@ const createSongLookup = (fallbackSongs: Song[] = []) => {
 const resolveSongsFromPaths = (paths: string[], fallbackSongs: Song[] = []) => {
   const libraryStore = useLibraryStore();
   return libraryStore.resolveSongsByPaths(paths, fallbackSongs);
-};
-
-const formatDuration = (seconds: number) => {
-  if (!seconds) {
-    return '00:00';
-  }
-
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
 const formatTimeAgo = (timestamp: number) => {
@@ -284,9 +275,7 @@ function createPlayerCore() {
 
   const playerPlaylist = createPlayerPlaylist();
 
-  const playerHistoryFavorites = createPlayerHistoryFavorites({
-    legacyPlayerHistoryKey: LEGACY_PLAYER_HISTORY_KEY,
-  });
+  const playerHistoryFavorites = createPlayerHistoryFavorites();
 
   const collectionsActions = useCollectionsActions({
     playerPlaylist,
