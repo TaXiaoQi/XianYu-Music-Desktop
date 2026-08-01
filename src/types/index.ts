@@ -287,15 +287,15 @@ export interface SidebarSettings {
  * - 上一首/播放暂停/下一首为"播放三大件"，固定在中间容器中央，不可移动。
  */
 export type FooterItemKey =
-  | 'download'        // 下载按钮（仅左侧容器）
-  | 'favorite'        // 收藏按钮（仅左侧容器）
-  | 'playMode'        // 播放模式（仅中间左侧）
-  | 'desktopLyrics'  // 桌面歌词（仅中间右侧）
-  | 'quality'         // 音质选择（仅右侧容器）
-  | 'speed'           // 倍速（仅右侧容器）
-  | 'volume'          // 音量（仅右侧容器）
-  | 'equalizer'       // 均衡器（仅右侧容器）
-  | 'playlist';       // 播放队列（仅右侧容器）
+  | 'download'        // 下载按钮
+  | 'favorite'        // 收藏按钮
+  | 'playMode'        // 播放模式
+  | 'desktopLyrics'  // 桌面歌词
+  | 'quality'         // 音质选择
+  | 'speed'           // 倍速
+  | 'volume'          // 音量
+  | 'equalizer'       // 均衡器
+  | 'playlist';       // 播放队列
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';

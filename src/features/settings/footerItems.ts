@@ -12,30 +12,50 @@ export const FOOTER_CONTAINER_LIMITS: Record<FooterContainerKey, number> = {
   right: 5,
 };
 
+/** 所有容器（用于设置面板遍历） */
+export const FOOTER_CONTAINERS: FooterContainerKey[] = ['left', 'middleLeft', 'middleRight', 'right'];
+
+/** 默认底部栏布局（恢复默认时使用） */
+export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
+  left: ['favorite', 'download'],
+  middleLeft: 'playMode',
+  middleRight: 'desktopLyrics',
+  right: ['quality', 'speed', 'volume', 'equalizer', 'playlist'],
+};
+
+/** 容器显示信息 */
+export const FOOTER_CONTAINER_LABELS: Record<FooterContainerKey, { label: string; hint: string }> = {
+  left: { label: '左侧容器', hint: '紧邻封面与歌曲信息' },
+  middleLeft: { label: '中间左侧', hint: '紧邻上一首按钮' },
+  middleRight: { label: '中间右侧', hint: '紧邻下一首按钮' },
+  right: { label: '右侧容器', hint: '紧邻窗口右边缘' },
+};
+
+/** 移动目标（包括收纳菜单） */
+export type FooterMoveTarget = FooterContainerKey | 'collapsed';
+
 export interface FooterItemMeta {
   key: FooterItemKey;
   label: string;
   description: string;
-  /** 允许放置的容器列表 */
-  allowedContainers: FooterContainerKey[];
   /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
   icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist';
 }
 
 /**
  * 底部栏可配置控件元数据。
- * 控件与容器的允许关系约束了"移动到"菜单的可选项，避免不合理布局（如下载按钮放到右侧导致菜单定位错乱）。
+ * 每个控件均可放置到任意容器中，实现完全自定义布局。
  */
 export const FOOTER_ITEMS: FooterItemMeta[] = [
-  { key: 'favorite',       label: '收藏',       description: '当前歌曲收藏切换', allowedContainers: ['left'],       icon: 'heart' },
-  { key: 'download',       label: '下载',       description: '在线歌曲下载、本地歌曲显示完成', allowedContainers: ['left'], icon: 'download' },
-  { key: 'playMode',       label: '播放模式',   description: '列表循环/单曲循环/随机播放', allowedContainers: ['middleLeft'], icon: 'repeat' },
-  { key: 'desktopLyrics', label: '桌面歌词',   description: '开关桌面歌词悬浮窗', allowedContainers: ['middleRight'], icon: 'lyrics' },
-  { key: 'quality',        label: '音质',       description: '在线歌曲音质切换、本地歌曲音质标签', allowedContainers: ['right'], icon: 'gauge' },
-  { key: 'speed',          label: '倍速',       description: '0.5x ~ 2.0x 播放倍速', allowedContainers: ['right'], icon: 'gauge' },
-  { key: 'volume',         label: '音量',       description: '音量调节与静音', allowedContainers: ['right'], icon: 'volume' },
-  { key: 'equalizer',      label: '均衡器',     description: 'EQ 频段调节', allowedContainers: ['right'], icon: 'equalizer' },
-  { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', allowedContainers: ['right'], icon: 'playlist' },
+  { key: 'favorite',       label: '收藏',       description: '当前歌曲收藏切换', icon: 'heart' },
+  { key: 'download',       label: '下载',       description: '在线歌曲下载、本地歌曲显示完成', icon: 'download' },
+  { key: 'playMode',       label: '播放模式',   description: '列表循环/单曲循环/随机播放', icon: 'repeat' },
+  { key: 'desktopLyrics',  label: '桌面歌词',   description: '开关桌面歌词悬浮窗', icon: 'lyrics' },
+  { key: 'quality',        label: '音质',       description: '在线歌曲音质切换、本地歌曲音质标签', icon: 'gauge' },
+  { key: 'speed',          label: '倍速',       description: '0.5x ~ 2.0x 播放倍速', icon: 'gauge' },
+  { key: 'volume',         label: '音量',       description: '音量调节与静音', icon: 'volume' },
+  { key: 'equalizer',      label: '均衡器',     description: 'EQ 频段调节', icon: 'equalizer' },
+  { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', icon: 'playlist' },
 ];
 
 export const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(item => item.key);
@@ -45,30 +65,16 @@ const FOOTER_ITEM_KEY_SET = new Set<FooterItemKey>(FOOTER_ITEM_KEYS);
 export const getFooterItemMeta = (key: FooterItemKey): FooterItemMeta | undefined =>
   FOOTER_ITEMS.find(item => item.key === key);
 
-/**
- * 默认底部栏布局（与历史版本保持一致）。
- * 左侧：收藏 → 下载
- * 中间：播放模式 → 上一首/播放暂停/下一首 → 桌面歌词
- * 右侧：音质 → 倍速 → 音量 → 均衡器 → 播放队列
- */
-export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
-  left: ['favorite', 'download'],
-  middleLeft: 'playMode',
-  middleRight: 'desktopLyrics',
-  right: ['quality', 'speed', 'volume', 'equalizer', 'playlist'],
-};
-
-const isItemAllowedIn = (key: FooterItemKey, container: FooterContainerKey): boolean => {
-  const meta = getFooterItemMeta(key);
-  return meta ? meta.allowedContainers.includes(container) : false;
-};
+/** 所有容器（含中间），按优先补齐顺序排列 */
+const ALL_CONTAINERS_ORDERED: FooterContainerKey[] = ['left', 'middleLeft', 'middleRight', 'right'];
 
 /**
  * 将任意输入归一化为合法的底部栏布局：
  * - 剔除非法 key、去重
  * - 超出容器容量的尾部项自动溢出
- * - 缺失的 key 补回到其允许的第一个仍有空位的容器（若已满则进入折叠）
+ * - 缺失的 key 补回到第一个仍有空位的容器（若已满则进入折叠）
  * - middleLeft / middleRight 为单值，若 key 非法或已占用则置 null
+ * 每个控件均可放入任意容器，无 allowedContainers 限制。
  */
 export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   const base = typeof value === 'object' && value !== null ? value as Partial<FooterLayoutSettings> : {};
@@ -83,34 +89,29 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
       if (typeof item !== 'string') continue;
       const key = item as FooterItemKey;
       if (!FOOTER_ITEM_KEY_SET.has(key) || seen.has(key)) continue;
-      if (!isItemAllowedIn(key, container)) continue;
       seen.add(key);
       result.push(key);
     }
     return result;
   };
 
-  const cleanSingle = (raw: unknown, container: FooterContainerKey): FooterItemKey | null => {
+  const cleanSingle = (raw: unknown): FooterItemKey | null => {
     if (typeof raw !== 'string') return null;
     const key = raw as FooterItemKey;
     if (!FOOTER_ITEM_KEY_SET.has(key) || seen.has(key)) return null;
-    if (!isItemAllowedIn(key, container)) return null;
     seen.add(key);
     return key;
   };
 
-  // 用 let 让后续补齐循环可以直接赋值
   const left = cleanList(base.left, 'left');
   const right = cleanList(base.right, 'right');
-  let middleLeft = cleanSingle(base.middleLeft, 'middleLeft');
-  let middleRight = cleanSingle(base.middleRight, 'middleRight');
+  let middleLeft = cleanSingle(base.middleLeft);
+  let middleRight = cleanSingle(base.middleRight);
 
-  // 补齐缺失项：按元数据顺序，把未分配的 key 放回其允许的第一个仍有空位的容器
+  // 补齐缺失项：按元数据顺序，把未分配的 key 放回第一个仍有空位的容器
   for (const key of FOOTER_ITEM_KEYS) {
     if (seen.has(key)) continue;
-    const meta = getFooterItemMeta(key);
-    if (!meta) continue;
-    for (const container of meta.allowedContainers) {
+    for (const container of ALL_CONTAINERS_ORDERED) {
       if (container === 'middleLeft') {
         if (middleLeft === null) {
           middleLeft = key;
@@ -135,7 +136,7 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
         break;
       }
     }
-    // 所有允许容器都满时，留在折叠区
+    // 所有容器都满时，留在折叠区
   }
 
   return { left, middleLeft, middleRight, right };
@@ -152,16 +153,30 @@ export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemK
   return FOOTER_ITEM_KEYS.filter(key => !assigned.has(key));
 };
 
-/** 将控件从原位置移除并尝试放入目标容器；目标已满或 key 不被允许时返回 null */
-export const moveFooterItem = (
+/** 查找控件当前所在的容器（不在任何容器则返回 'collapsed'） */
+export const findItemContainer = (
   layout: FooterLayoutSettings,
   key: FooterItemKey,
-  target: FooterContainerKey,
-): FooterLayoutSettings | null => {
-  const meta = getFooterItemMeta(key);
-  if (!meta || !meta.allowedContainers.includes(target)) return null;
-  const limit = FOOTER_CONTAINER_LIMITS[target];
+): FooterMoveTarget => {
+  if (layout.left.includes(key)) return 'left';
+  if (layout.middleLeft === key) return 'middleLeft';
+  if (layout.middleRight === key) return 'middleRight';
+  if (layout.right.includes(key)) return 'right';
+  return 'collapsed';
+};
 
+/**
+ * 将控件移动到目标容器（或收入折叠）。
+ * - 移动到 collapsed：从所有容器移除
+ * - 移动到列表容器（left/right）：若已满则返回 null
+ * - 移动到中间容器（middleLeft/middleRight）：若已占用则返回 null
+ * 返回 null 表示目标已满/已占用，调用方应给出提示。
+ */
+export const moveFooterItemTo = (
+  layout: FooterLayoutSettings,
+  key: FooterItemKey,
+  target: FooterMoveTarget,
+): FooterLayoutSettings | null => {
   // 从所有容器移除该 key
   const next: FooterLayoutSettings = {
     left: layout.left.filter(k => k !== key),
@@ -170,8 +185,15 @@ export const moveFooterItem = (
     right: layout.right.filter(k => k !== key),
   };
 
+  // 收入折叠：移除即可
+  if (target === 'collapsed') {
+    return normalizeFooterLayout(next);
+  }
+
+  const limit = FOOTER_CONTAINER_LIMITS[target];
+
   if (target === 'middleLeft') {
-    if (next.middleLeft !== null) return null; // 已占用
+    if (next.middleLeft !== null) return null;
     next.middleLeft = key;
     return normalizeFooterLayout(next);
   }
