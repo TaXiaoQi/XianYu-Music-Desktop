@@ -1,16 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { open } from '@tauri-apps/plugin-dialog';
-import { loadLyrics } from '../../composables/lyrics';
-import { useCoverCache } from '../../composables/useCoverCache';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
-import { useLibraryStore } from '../../features/library/store';
 import type { SongDetail } from '../../types';
 import { tauriInvoke } from '../../services/tauri/invoke';
 import LyricsView from './LyricsView.vue';
@@ -23,8 +18,6 @@ const {
   showPlayerDetail,
   showQueue,
   currentSong,
-  currentCover,
-  currentCoverFull,
   closePlayerDetail,
 } = usePlaybackController();
 
@@ -32,9 +25,7 @@ const { settings } = useSettings();
 
 
 const { staggerPhase } = useSharedTransition();
-const { loadCover, loadFullCover, clearCoverCaches } = useCoverCache();
 const { showToast } = useToast();
-const libraryStore = useLibraryStore();
 const { loadSongDetail, clearSongDetailCache } = useSongDetailCache();
 
 const TOP_CHROME_HIDE_DELAY = 2500;
@@ -304,8 +295,6 @@ const metaInfo = computed(() => {
 const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
-const isCoverUpdating = ref(false);
-const isLyricsUpdating = ref(false);
 
 // 封面隐藏模式（点击封面切换为纯字幕居中）
 const coverHidden = ref(false);
@@ -333,104 +322,6 @@ const handleContextMenu = (e: MouseEvent) => {
 
 const closeContextMenu = () => {
   contextMenuVisible.value = false;
-};
-
-const handleMenuAction = (action: 'changeCover' | 'changeLyrics') => {
-  if (action === 'changeCover') {
-    void handleChangeCover();
-  } else if (action === 'changeLyrics') {
-    void handleChangeLyrics();
-  }
-};
-
-const handleChangeCover = async () => {
-  const song = currentSong.value;
-  const songPath = song?.path;
-  if (!song || !songPath || isCoverUpdating.value) return;
-
-  isCoverUpdating.value = true;
-  try {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      title: '选择歌曲封面',
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
-    });
-    if (!selected || Array.isArray(selected)) return;
-
-    // 用现有歌曲信息填充 payload，仅更新 coverPath
-    const result = await tauriInvoke('save_song_info', {
-      path: songPath,
-      payload: {
-        title: song.title || song.name,
-        artist: song.artist,
-        album: song.album,
-        trackNumber: song.track_number ?? null,
-        discNumber: song.disc_number ?? null,
-        year: song.year ?? null,
-        coverPath: selected,
-      },
-    });
-
-    libraryStore.setSongRecord(result.song);
-
-    // 清缓存并刷新当前封面
-    await tauriInvoke('clear_cover_cache');
-    clearCoverCaches();
-    const [thumb, full] = await Promise.all([
-      loadCover(songPath),
-      loadFullCover(songPath),
-    ]);
-    currentCover.value = thumb || '';
-    currentCoverFull.value = full || '';
-
-    showToast('封面已更新', 'success');
-  } catch (error) {
-    showToast(`更新封面失败: ${String(error)}`, 'error');
-  } finally {
-    isCoverUpdating.value = false;
-  }
-};
-
-const handleChangeLyrics = async () => {
-  const song = currentSong.value;
-  const songPath = song?.path;
-  if (!song || !songPath || isLyricsUpdating.value) return;
-
-  isLyricsUpdating.value = true;
-  try {
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      title: '选择 LRC 歌词文件',
-      filters: [{ name: '歌词', extensions: ['lrc', 'txt'] }],
-    });
-    if (!selected || Array.isArray(selected)) return;
-
-    // 通过 convertFileSrc 读取本地文本文件
-    const url = convertFileSrc(selected);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`无法读取文件 (HTTP ${response.status})`);
-    }
-    const lyricsText = await response.text();
-
-    await tauriInvoke('save_song_lyrics', {
-      path: songPath,
-      lyrics: lyricsText,
-      source: 'sidecar',
-      sourcePath: null,
-    });
-
-    // 重新加载歌词
-    await loadLyrics();
-
-    showToast('字幕已更新', 'success');
-  } catch (error) {
-    showToast(`更新字幕失败: ${String(error)}`, 'error');
-  } finally {
-    isLyricsUpdating.value = false;
-  }
 };
 </script>
 
@@ -596,7 +487,6 @@ const handleChangeLyrics = async () => {
       :y="contextMenuY"
       :song="currentSong"
       @close="closeContextMenu"
-      @action="handleMenuAction"
     />
   </div>
 </template>
