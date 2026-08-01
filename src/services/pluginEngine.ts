@@ -2212,6 +2212,7 @@ async function installSinglePluginScript(
  *  2. 批量 JSON：{plugins:[{name,url,version}]} 或 [{name,url}] → 逐个 fetch 子 URL 安装
  *
  * @param url 订阅源 URL
+ * @param options
  * @param options.skipVersionCheck 跳过版本校验（与设置"安装时不校验版本"联动）
  */
 export async function installFromSubscriptionUrl(

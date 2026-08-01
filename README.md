@@ -49,7 +49,7 @@
 
 | 🎵 首页概览 | 💿 沉浸式播放页 |
 | --- | --- |
-| ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E9%A6%96%E9%A1%B5.png?msec=1785131438610) | ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E6%92%AD%E6%94%BE%E9%A1%B5.png?msec=1785131439231) |
+| ![](./screenshots/首页.png) | ![](./screenshots/播放页.png) |
 
 <details>
 <summary>📂 点击展开查看更多功能截图</summary>
@@ -58,25 +58,25 @@
 
 | 📂 文件夹视图 | ⚙️ 文件夹管理模式 |
 | --- | --- |
-| ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E6%96%87%E4%BB%B6%E5%A4%B9.png?msec=1785131438616) | ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E6%96%87%E4%BB%B6%E5%A4%B9-%E7%AE%A1%E7%90%86%E6%A8%A1%E5%BC%8F.png?msec=1785131438611) |
+| ![](./screenshots/文件夹.png) | ![](./screenshots/文件夹-管理模式.png) |
 
 ### 歌单、统计与辅助功能
 
 | 🎶 歌单页面 | 📊 听歌历史统计 |
 | --- | --- |
-| ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E6%AD%8C%E5%8D%95%E9%A1%B5%E9%9D%A2.png?msec=1785131438559) | ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E7%BB%9F%E8%AE%A1.png?msec=1785131438574) |
+| ![](./screenshots/歌单页面.png) | ![](./screenshots/统计.png) |
 
 ### 设置与个性化
 
 | 🔧 常规设置 | 📦 音乐库设置 |
 | --- | --- |
-| ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E8%AE%BE%E7%BD%AE-%E5%B8%B8%E8%A7%84.png?msec=1785131438547) | ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E8%AE%BE%E7%BD%AE-%E9%9F%B3%E4%B9%90%E5%BA%93.png?msec=1785131439314) |
+| ![](./screenshots/设置-常规.png) | ![](./screenshots/设置-音乐库.png) |
 
 ### 外置功能集成
 
 | 🔗 支持 Lyricify 歌词集成 |
 | --- |
-| ![](file://C:\Users\11832\Desktop\1\XY-Music-Desktop\screenshots\%E6%94%AF%E6%8C%81Lyricify.png?msec=1785131439334) |
+| ![](./screenshots/支持Lyricify.png) |
 
 </details>
 

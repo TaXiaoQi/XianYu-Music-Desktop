@@ -262,7 +262,7 @@ function matchPlatform(text: string): ParsedLink | null {
 }
 
 // 网易云正则
-const wyRegex1 = /^.+(?:\?|&)id=(\d+)(?:&.*$|#.*$|$)/;
+const wyRegex1 = /^.+[?&]id=(\d+)(?:&.*$|#.*$|$)/;
 const wyRegex2 = /^.+\/playlist\/(\d+)\/\d+\/.+$/;
 
 function matchWy(text: string): ParsedLink | null {
@@ -864,11 +864,11 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
   if (!id) return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
 
   // 通过 specialid 获取歌单详情（HTML 解析）
-  const url = `http://www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`;
+  const url = `https://www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`;
   const resp = await httpFetch(url, 'GET');
   const body = typeof resp.body === 'string' ? resp.body : '';
 
-  const listDataMatch = body.match(/global\.data\s*=\s*(\[.+\]);/s);
+  const listDataMatch = body.match(/global\.data\s*=\s*(\[.+]);/s);
   if (!listDataMatch) {
     return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
   }
@@ -886,7 +886,7 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
     if (parsed) songs.push(parsed);
   }
 
-  const listInfoMatch = body.match(/global\s*=\s*\{[\s\S]+?name:\s*"(.+?)"[\s\S]+?pic:\s*"(.+?)"[\s\S]+?\};/);
+  const listInfoMatch = body.match(/global\s*=\s*\{[\s\S]+?name:\s*"(.+?)"[\s\S]+?pic:\s*"(.+?)"[\s\S]+?};/);
   const info: PlaylistInfo = {
     name: listInfoMatch ? decodeName(listInfoMatch[1]) : '',
     img: listInfoMatch ? listInfoMatch[2] : '',
