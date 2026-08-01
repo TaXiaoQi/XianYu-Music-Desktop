@@ -214,7 +214,7 @@ async function requestEnvelope<T>(
       ? `请求超时（${fetchTimeoutMs / 1000}s），action=${action}`
       : `网络请求失败（action=${action}, ${elapsed}ms）: ${fetchMsg}`;
     console.error(`[signedRequest] ✗ fetch 异常 action=${action}, elapsed=${elapsed}ms, isAbort=${isAbort}, error=`, fetchError);
-    throw new Error(errMsg);
+    throw new Error(errMsg, { cause: fetchError });
   }
 
   const fetchElapsed = Date.now() - startTime;
@@ -233,13 +233,13 @@ async function requestEnvelope<T>(
     console.error(`[signedRequest] 响应体前500字符:`, rawText.substring(0, 500));
     // 检测宝塔 WAF / nginx 错误页面（HTTP 200 但返回 HTML）
     if (rawText.includes('宝塔WAF') || rawText.includes('缓冲区溢出')) {
-      throw new Error(`服务器WAF拦截（action=${action}, HTTP ${response.status}）: 请求体过大，触发Nginx缓冲区溢出`);
+      throw new Error(`服务器WAF拦截（action=${action}, HTTP ${response.status}）: 请求体过大，触发Nginx缓冲区溢出`, { cause: parseError });
     }
     // 对非 200 HTTP 状态码返回更明确的错误，包含 HTTP 状态码信息
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}（action=${action}）: 服务器返回非 JSON 响应`);
+      throw new Error(`HTTP ${response.status}（action=${action}）: 服务器返回非 JSON 响应`, { cause: parseError });
     }
-    throw new Error(`响应解析失败（action=${action}, HTTP ${response.status}）: ${errStr}`);
+    throw new Error(`响应解析失败（action=${action}, HTTP ${response.status}）: ${errStr}`, { cause: parseError });
   }
 
   const totalElapsed = Date.now() - startTime;
@@ -352,7 +352,7 @@ export async function login(username: string, password: string): Promise<AuthPay
     saveAuth(payload);
     return payload;
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '登录失败'));
+    throw new Error(getAuthErrorMessage(error, '登录失败'), { cause: error });
   }
 }
 
@@ -371,7 +371,7 @@ export async function loginByCode(email: string, verifyCode: string): Promise<Au
     saveAuth(payload);
     return payload;
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '验证码登录失败'));
+    throw new Error(getAuthErrorMessage(error, '验证码登录失败'), { cause: error });
   }
 }
 
@@ -398,7 +398,7 @@ export async function register(
       throw new Error('注册成功，但自动登录失败，请手动登录');
     }
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '注册失败'));
+    throw new Error(getAuthErrorMessage(error, '注册失败'), { cause: error });
   }
 }
 
@@ -420,7 +420,7 @@ export async function sendEmailCode(
     }
     return { success: true, message: payload.msg || '验证码已发送到邮箱' };
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '验证码发送失败'));
+    throw new Error(getAuthErrorMessage(error, '验证码发送失败'), { cause: error });
   }
 }
 
@@ -444,7 +444,7 @@ export async function resetPassword(
     }
     return { message: payload.msg || '密码修改成功' };
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '重置密码失败'));
+    throw new Error(getAuthErrorMessage(error, '重置密码失败'), { cause: error });
   }
 }
 
@@ -471,7 +471,7 @@ export async function changePassword(
     }
     return { message: payload.msg || '密码修改成功' };
   } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '修改密码失败'));
+    throw new Error(getAuthErrorMessage(error, '修改密码失败'), { cause: error });
   }
 }
 
@@ -610,7 +610,7 @@ export async function uploadAvatar(
     return { user: nextUser, avatar: avatarUrl };
   } catch (error) {
     console.error('[uploadAvatar] 上传失败:', error);
-    throw new Error(getAuthErrorMessage(error, '头像上传失败'));
+    throw new Error(getAuthErrorMessage(error, '头像上传失败'), { cause: error });
   }
 }
 

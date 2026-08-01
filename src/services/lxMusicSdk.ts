@@ -855,14 +855,14 @@ export async function lxGetMusicUrl(
         method: 'GET',
         headers: { 'User-Agent': 'lx-music request' },
       });
-      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试');
+      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试', { cause: e });
       const body2 = JSON.parse(resp2.body);
       if (body2.code === 0 && body2.data) {
         return { type, url: body2.data };
       }
-      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`);
+      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`, { cause: e });
     } catch (e2: any) {
-      throw new Error(`获取播放链接失败: ${e2.message}`);
+      throw new Error(`获取播放链接失败: ${e2.message}`, { cause: e2 });
     }
   }
 }
@@ -918,7 +918,7 @@ export async function lxGetLyric(songInfo: LxSearchResultItem): Promise<{ lyric:
         method: 'GET',
         headers: { 'User-Agent': 'lx-music request' },
       });
-      if (resp2.status === 429) throw new Error('请求过于频繁');
+      if (resp2.status === 429) throw new Error('请求过于频繁', { cause: e });
       const body2 = JSON.parse(resp2.body);
       if (body2.code === 0 && body2.data) {
         const data = body2.data;
