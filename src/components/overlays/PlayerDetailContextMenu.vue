@@ -13,8 +13,6 @@ import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../s
 import type { Song } from '../../types';
 
 type DetailMenuAction =
-  | 'changeCover'
-  | 'changeLyrics'
   | 'viewArtist'
   | 'viewAlbum'
   | 'viewSongInfo'
@@ -35,7 +33,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'action', action: 'changeCover' | 'changeLyrics'): void;
 }>();
 
 const router = useRouter();
@@ -57,25 +54,6 @@ const isOnlineSong = computed(() => {
 
 /** 图标定义 */
 const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
-  changeCover: {
-    viewBox: '0 0 24 24',
-    fill: false,
-    paths: [
-      { d: 'M4 5h16v14H4z' },
-      { d: 'M4 16l4.5-4.5 3 3L16 10l4 4' },
-      { d: 'M9 9.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z' },
-    ],
-  },
-  changeLyrics: {
-    viewBox: '0 0 24 24',
-    fill: false,
-    paths: [
-      { d: 'M5 4h14v16H5z' },
-      { d: 'M8 8h8' },
-      { d: 'M8 12h8' },
-      { d: 'M8 16h5' },
-    ],
-  },
   viewArtist: {
     viewBox: '0 0 24 24',
     fill: false,
@@ -111,7 +89,7 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
   },
 };
 
-/** 菜单项：歌手/专辑 → 歌曲信息(仅本地) → 分隔线 → 添加到歌单 → 分隔线 → 封面/字幕(仅本地，最下) */
+/** 菜单项：歌手/专辑 → 歌曲信息(仅本地) → 分隔线 → 添加到歌单 */
 const menuEntries = computed<MenuEntry[]>(() => {
   const entries: MenuEntry[] = [
     {
@@ -135,39 +113,18 @@ const menuEntries = computed<MenuEntry[]>(() => {
     });
   }
 
-  // 添加到歌单
+  // 添加到歌单放置在最后
   entries.push({
     key: 'addToPlaylist',
     label: '添加到歌单',
     icon: menuIcons.addToPlaylist,
   });
 
-  // 修改封面/字幕：仅本地歌曲显示，放置在菜单最下面
-  if (!isOnlineSong.value) {
-    entries.push({
-      key: 'changeCover',
-      label: '为此歌曲修改封面',
-      icon: menuIcons.changeCover,
-    });
-    entries.push({
-      key: 'changeLyrics',
-      label: '为此歌曲修改字幕',
-      icon: menuIcons.changeLyrics,
-    });
-  }
-
   return entries;
 });
 
-/** 分隔线位置：在 addToPlaylist 后（与封面/字幕组分隔），在 viewSongInfo 后（与添加到歌单组分隔） */
-const dividerAfterKeys = computed(() => {
-  const keys = new Set<string>(['viewSongInfo']);
-  // 当有封面/字幕项时，addToPlaylist 后也需要分隔线
-  if (!isOnlineSong.value) {
-    keys.add('addToPlaylist');
-  }
-  return keys;
-});
+/** 分隔线位置：在 viewSongInfo 后（与添加到歌单组分隔） */
+const dividerAfterKeys = computed(() => new Set(['viewSongInfo']));
 
 watch(
   () => props.visible,
@@ -338,12 +295,6 @@ const handleAction = (action: DetailMenuAction) => {
   if (!props.song) return;
 
   switch (action) {
-    case 'changeCover':
-      emit('action', 'changeCover');
-      break;
-    case 'changeLyrics':
-      emit('action', 'changeLyrics');
-      break;
     case 'viewArtist':
       if (isOnlineSong.value) {
         void handleOnlineViewArtist(props.song);
