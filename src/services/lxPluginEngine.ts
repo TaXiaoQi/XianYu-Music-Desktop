@@ -203,12 +203,12 @@ export function isLxPluginScript(script: string): boolean {
   // 2. 明文引用 EVENT_NAMES.request
   if (/EVENT_NAMES\s*\.\s*request/.test(trimmed)) return true;
   // 3. 混淆插件通过 globalThis.lx 访问（包括 globalThis['lx']、globalThis.lx 等）
-  if (/globalThis\s*\[\s*['"]lx['"]\s*\]/.test(trimmed)) return true;
+  if (/globalThis\s*\[\s*['"]lx['"]\s*]/.test(trimmed)) return true;
   if (/globalThis\s*\.\s*lx\b/.test(trimmed)) return true;
   // 4. 混淆插件可能在解构时引用 globalThis.lx（如 const { EVENT_NAMES } = globalThis.lx）
-  if (/globalThis/.test(trimmed) && /\bEVENT_NAMES\b/.test(trimmed)) return true;
+  return /globalThis/.test(trimmed) && /\bEVENT_NAMES\b/.test(trimmed);
 
-  return false;
+
 }
 
 export function parseLxScriptInfo(script: string): {

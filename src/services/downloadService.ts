@@ -632,7 +632,7 @@ async function fetchLyricText(song: Song, format: 'lrc' | 'txt'): Promise<string
 
     if (format === 'txt') {
       // 去掉时间轴标签
-      return lyric.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '').trim();
+      return lyric.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '').trim();
     }
     return lyric;
   } catch (e: any) {
@@ -660,7 +660,7 @@ async function fetchPluginLyricText(song: Song, format: 'lrc' | 'txt'): Promise<
     const combined = result.tlyric ? `${lyric}\n[offset:0]\n${result.tlyric}` : lyric;
 
     if (format === 'txt') {
-      return combined.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '').trim();
+      return combined.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '').trim();
     }
     return combined;
   } catch (e: any) {
@@ -729,7 +729,7 @@ async function downloadFromUrl(
 ): Promise<string> {
   // 优先在 Web Worker 线程里 fetch 拉取音频（模仿 MusicFree，规避 IDM 对主线程的拦截），
   // 再交给 Rust 写盘。若 Worker 下载失败（被拦截/CORS/网络异常/HTTP 错误），
-  // 回退到 Rust reqwest 直接下载（Rust 侧带完整性校验，数据不完整会删除坏文件并报错）。
+  // 回退到 Rust request 直接下载（Rust 侧带完整性校验，数据不完整会删除坏文件并报错）。
   try {
     const bytes = await fetchViaWorker(url, onProgress);
     if (bytes.length === 0) {
