@@ -54,17 +54,8 @@
     <div class="flex-1 flex overflow-hidden relative">
       <section class="flex-1 flex overflow-hidden">
         <transition name="page-fade" mode="out-in">
-        <!-- 非音乐类型 + LX 插件：开发中提示（本地与 MusicFree 已支持） -->
-        <div v-if="activeSearchType !== 'track' && !isLocalSource && selectedSourceItem?.type === 'lx'" key="dev-placeholder" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-          </svg>
-          <p class="text-base font-medium">{{ searchTabs.find(t => t.type === activeSearchType)?.label }}搜索</p>
-          <p class="text-sm mt-1">该类型搜索功能开发中</p>
-        </div>
-
         <!-- 加载中 -->
-        <div v-else-if="searching" key="searching" class="flex-1 flex items-center justify-center">
+        <div v-if="searching" key="searching" class="flex-1 flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -402,7 +393,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -418,8 +409,12 @@ import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDia
 import { useToast } from '../composables/toast';
 import {
   lxSearch,
+  lxCatalogSearch,
   lxGetPic,
   LX_SOURCE_NAMES,
+  type LxArtistSearchResult,
+  type LxAlbumSearchResult,
+  type LxPlaylistSearchResult,
   type LxSearchResultItem,
   type LxSourceId,
 } from '../services/lxMusicSdk';
@@ -636,11 +631,6 @@ const performSearch = async () => {
     return;
   }
 
-  // 非音乐类型搜索：本地来源与 MusicFree 插件支持；LX 插件不支持（仅音乐）
-  if (activeSearchType.value !== 'track' && selectedSourceItem.value?.type === 'lx') {
-    return;
-  }
-
   // 取消上一次搜索
   if (searchAbortController) {
     searchAbortController.abort();
@@ -701,11 +691,48 @@ const performSearch = async () => {
       pluginAlbumResults.value = [];
       pluginPlaylistResults.value = [];
       localSearchResults.value = [];
-      const result = await lxSearch(source.lxSourceId, query, 1);
-      if (searchAbortController.signal.aborted) return;
-      lxSearchResults.value = result.list;
-      hasMore.value = result.list.length >= result.limit;
-      triggerCoverLoading();
+      const pluginId = source.source?.id || source.id;
+
+      if (activeSearchType.value === 'track') {
+        const result = await lxSearch(source.lxSourceId, query, 1);
+        if (searchAbortController.signal.aborted) return;
+        lxSearchResults.value = result.list;
+        hasMore.value = result.list.length >= result.limit;
+        triggerCoverLoading();
+      } else if (activeSearchType.value === 'artist') {
+        lxSearchResults.value = [];
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[];
+        if (searchAbortController.signal.aborted) return;
+        pluginArtistResults.value = results.map(item => ({
+          ...item,
+          platform: source.lxSourceId!,
+          platformId: item.id,
+          pluginId,
+        }));
+        hasMore.value = false;
+      } else if (activeSearchType.value === 'album') {
+        lxSearchResults.value = [];
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[];
+        if (searchAbortController.signal.aborted) return;
+        pluginAlbumResults.value = results.map(item => ({
+          ...item,
+          platform: source.lxSourceId!,
+          platformId: item.id,
+          pluginId,
+        }));
+        hasMore.value = false;
+      } else {
+        lxSearchResults.value = [];
+        const results = await lxCatalogSearch(source.lxSourceId, query, 'playlist', 1) as LxPlaylistSearchResult[];
+        if (searchAbortController.signal.aborted) return;
+        pluginPlaylistResults.value = results.map(item => ({
+          ...item,
+          platform: source.lxSourceId!,
+          platformId: item.id,
+          pluginId,
+        }));
+        hasMore.value = false;
+      }
     } else if (source.type === 'musicfree' && source.source) {
       // MusicFree 插件搜索
       lxSearchResults.value = [];
@@ -1357,7 +1384,16 @@ function findPluginSource(pluginId: string): PluginSource | undefined {
   return item?.source;
 }
 
+function openLxCatalogTracks(query: string) {
+  searchQuery.value = query;
+  activeSearchType.value = 'track';
+}
+
 const handlePluginArtistClick = (artist: PluginArtistResult) => {
+  if (selectedSourceItem.value?.type === 'lx') {
+    openLxCatalogTracks(artist.name);
+    return;
+  }
   const pluginSource = findPluginSource(artist.pluginId);
   if (!pluginSource) {
     void router.push({ path: '/search', query: { q: artist.name } });
@@ -1376,6 +1412,10 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
 };
 
 const handlePluginAlbumClick = (album: PluginAlbumResult) => {
+  if (selectedSourceItem.value?.type === 'lx') {
+    openLxCatalogTracks(album.name);
+    return;
+  }
   const pluginSource = findPluginSource(album.pluginId);
   if (!pluginSource) {
     void router.push({ path: '/search', query: { q: album.name } });
@@ -1394,6 +1434,10 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
 };
 
 const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
+  if (selectedSourceItem.value?.type === 'lx') {
+    openLxCatalogTracks(playlist.title);
+    return;
+  }
   const pluginSource = findPluginSource(playlist.pluginId);
   if (!pluginSource) {
     void router.push({ path: '/search', query: { q: playlist.title } });
@@ -1489,17 +1533,15 @@ onMounted(() => {
   performSearch();
 });
 
-// keep-alive 激活时：保持原有状态（滚动位置、选中 tab、搜索结果等）
-// 仅消费 pendingSearchType 避免残留，不强制改变当前 tab
-onActivated(() => {
-  uiStore.showPlayerDetail = false;
-  onlineDetailStore.consumePendingSearchType();
-});
-
-// [修复] 离开搜索页时清空 tempQueue（下一首播放暂存），避免一直暂存
-// tempQueue 中的歌曲是搜索页"下一首播放"添加的，离开搜索场景后应清空
-// 已经从 tempQueue 取出播放的歌曲不受影响（已从 tempQueue 移除）
-onDeactivated(() => {
+// 搜索页不再缓存。离开时终止未完成任务并释放只属于搜索页的临时状态。
+onBeforeUnmount(() => {
+  searchAbortController?.abort();
+  searchAbortController = null;
+  coverLoadVersion += 1;
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
   if (playbackStore.tempQueue.length > 0) {
     playbackStore.tempQueue = [];
   }

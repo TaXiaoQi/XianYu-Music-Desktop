@@ -4,12 +4,18 @@ import { storeToRefs } from 'pinia';
 import { useRoute } from 'vue-router';
 import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
+import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { fetchLeaderboard, type LeaderboardEntry } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 
 const authStore = useAuthStore();
+const { theme } = useSettings();
+
+const hasCustomBackground = computed(() => (
+  theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
+));
 
 const TEXT = {
   totalListenDuration: '总听歌时长',
@@ -94,11 +100,20 @@ const {
 const { canonicalSongs } = useLibraryBrowse();
 
 let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+const isLeaderboardReady = ref(false);
 
 const route = useRoute();
 // 监听路由变化：从其他页面切回首页时重新加载排行榜（显示骨架屏动画）
 watch(() => route.path, (newPath, oldPath) => {
   if (newPath === '/' && oldPath && oldPath !== '/') {
+    void loadLeaderboard();
+  }
+});
+
+// 启动时登录态由标题栏异步恢复。首次请求若早于恢复完成会得到空列表，
+// 因此在统计数据就绪后，登录成功时补充加载一次排行榜。
+watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
+  if (isLoggedIn && !wasLoggedIn && isLeaderboardReady.value) {
     void loadLeaderboard();
   }
 });
@@ -111,6 +126,7 @@ onMounted(async () => {
     await statisticsStore.ensureLoaded('All');
   }
   // 统计数据加载完成后，再加载排行榜（需要 total_duration 上报到后端）
+  isLeaderboardReady.value = true;
   void loadLeaderboard();
 
   // 每 30 秒自动刷新行为统计，让「总听歌时长」准实时更新
@@ -344,6 +360,7 @@ const losslessRatio = computed(() => {
               </div>
               <div
                 class="leaderboard-row is-me is-sticky animate-fade-in-up"
+                :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
                 :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
               >
                 <div
@@ -427,6 +444,13 @@ const losslessRatio = computed(() => {
   background: rgba(255, 255, 255, 0.92);
   border-color: rgba(236, 65, 65, 0.35);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* 自定义壁纸下保留壁纸层次，同时保证底部个人排名清晰可读。 */
+.leaderboard-row.is-sticky.leaderboard-row--glass-on-custom-background {
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
 
 .leaderboard-rank {
@@ -601,6 +625,10 @@ const losslessRatio = computed(() => {
 .dark .leaderboard-row.is-sticky {
   background: rgba(30, 30, 30, 0.92);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.dark .leaderboard-row.is-sticky.leaderboard-row--glass-on-custom-background {
+  background: rgba(30, 30, 30, 0.58);
 }
 
 .dark .leaderboard-rank.rank-normal {

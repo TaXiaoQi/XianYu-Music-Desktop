@@ -34,6 +34,7 @@ const {
   currentViewMode,
   filterCondition,
   currentFolderFilter,
+  setSearch,
 } = usePlayerViewState();
 
 const {
@@ -236,6 +237,7 @@ const handleOpenAllView = () => {
 };
 
 const handleOpenHomeView = () => {
+  setSearch('');
   void openHomeStatistics();
 };
 
@@ -280,7 +282,13 @@ const sidebarSelectHandlers: Record<SidebarItemKey, () => void> = {
 };
 
 const handleSidebarSelect = (key: SidebarItemKey) => {
+  setSearch('');
   sidebarSelectHandlers[key]?.();
+};
+
+const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
+  setSearch('');
+  handlePlaylistClick(event, id);
 };
 </script>
 
@@ -312,7 +320,7 @@ const handleSidebarSelect = (key: SidebarItemKey) => {
         @createPlaylist="handleCreatePlaylist"
         @pointerDown="handlePointerDown"
         @itemPointerMove="handleItemPointerMove"
-        @playlistClick="handlePlaylistClick"
+        @playlistClick="handleSidebarPlaylistClick"
         @playlistContextMenu="handlePlaylistContextMenu"
         @deletePlaylist="handleDeletePlaylist"
       />

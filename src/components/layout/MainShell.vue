@@ -180,7 +180,7 @@ onMounted(() => {
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
             <transition :name="skipNextPageTransition ? '' : 'page-fade'" mode="out-in">
-              <KeepAlive include="Home,Search">
+              <KeepAlive include="Home">
                 <component
                   :is="Component"
                   :key="String(route.name ?? route.path)"

@@ -39,6 +39,7 @@ import {
   type DesktopLyricsWorkArea,
   type DesktopLyricsWindowBounds,
 } from '../features/desktopLyrics/shared';
+import { normalizeLyricsSyncOffsetSeconds } from '../features/settings/lyricsSyncOffset';
 
 let desktopLyricsWindowPromise: Promise<WebviewWindow> | null = null;
 const DESKTOP_LYRICS_PLAYBACK_SYNC_INTERVAL_MS = 400;
@@ -473,8 +474,9 @@ export function useDesktopLyricsWindowBridge() {
         break;
       case 'adjust-offset': {
         const currentOffset = settingsStore.settings.lyricsSyncOffset;
-        const nextOffset = Math.max(-5, Math.min(5, currentOffset + action.delta));
-        settingsStore.settings.lyricsSyncOffset = Number(nextOffset.toFixed(2));
+        settingsStore.settings.lyricsSyncOffset = normalizeLyricsSyncOffsetSeconds(
+          currentOffset + action.delta,
+        );
         break;
       }
       case 'close':
