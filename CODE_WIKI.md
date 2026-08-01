@@ -1322,7 +1322,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
 - `file_exists(path) -> bool`。
 - `set_gpu_acceleration(enabled)`：写入 `gpu_config.json`。
 - `should_disable_gpu_for_startup`、`append_webview2_browser_arg`：启动期 GPU 控制。
-- `check_update_by_rust(source: UpdateSource)`：从官方或 GitHub 拉取更新信息 JSON。
+- `check_update_by_rust(owner, repo)`：从 GitHub Releases 拉取指定仓库（`owner/repo`）的最新发布信息 JSON，仓库地址由前端统一传入。
 - `download_update_file(url)`：下载更新包，GitHub 链接自动通过 `gh-proxy.com` 代理加速，`emit` `download-progress` 事件。
 - `run_installer(path)`：运行安装包。
 - `RenameConfig.mode`：`"tags"`（基于元数据模板 `{artist} - {title}`）、`"rules"`（去除音轨号前缀 `^\d+[\.\-\s]+`、去除来源前缀 `^\s*\[.*?\]\s*`）、`"auto"`（先 tags 后 rules 兜底）。
@@ -1536,7 +1536,7 @@ export default defineConfig(async () => ({
 - `productName: "XY-Music-Desktop"`、`identifier: "com.xymusic.desktop"`。
 - `build.beforeDevCommand: "npm run dev"`、`devUrl: "http://localhost:1420"`、`frontendDist: "../dist"`。
 - 主窗口：1200×800，min 960×600，`decorations: false`（无系统标题栏），`transparent: true`（透明背景），`visible: false`（启动后由代码控制显示）。
-- `security.csp`：严格 CSP，仅允许 `self`、`ipc:`、`asset:`、特定 HTTPS 域名（`api.github.com`、`lycia.prettyboy.fun`）。
+- `security.csp`：严格 CSP，仅允许 `self`、`ipc:`、`asset:`、特定 HTTPS 域名（`api.github.com`）。
 - `bundle.targets: ["nsis"]`：仅构建 NSIS 安装包。
 - `bundle.fileAssociations`：关联 11 种音频格式（`aac/aif/aiff/flac/m4a/m4b/mp3/mp4/oga/ogg/wav`）。
 - `bundle.windows.webviewInstallMode.type: "skip"`：默认跳过 WebView2 检测（Portable 模式）。

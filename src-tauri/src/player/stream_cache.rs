@@ -58,7 +58,7 @@ impl Seek for StreamingTempFileReader {
             SeekFrom::Start(n) => n,
             SeekFrom::Current(n) => (self.pos as i64 + n).max(0) as u64,
             SeekFrom::End(n) => {
-                if let Some(total) = self.total_bytes {
+                if self.total_bytes.is_some() {
                     return self
                         .file
                         .seek(SeekFrom::End(n))
