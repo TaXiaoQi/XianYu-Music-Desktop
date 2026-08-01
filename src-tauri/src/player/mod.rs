@@ -9,8 +9,8 @@ mod stream_cache;
 mod types;
 
 pub use commands::{
-    clear_stream_cache, get_audio_visualizer_samples, get_playback_progress, get_playback_ready,
-    get_playback_start_failed, get_stream_cache_info, get_track_loudness_info,
+    clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_playback_progress,
+    get_playback_ready, get_playback_start_failed, get_stream_cache_info, get_track_loudness_info,
     is_stream_cached, pause_audio, play_audio, resume_audio, seek_audio,
     set_equalizer_settings, set_stream_cache_max_size, set_volume, stop_audio,
     update_loudness_settings, update_playback_metadata, wait_stream_complete,

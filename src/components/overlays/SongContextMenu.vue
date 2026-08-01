@@ -9,12 +9,15 @@ import { useToast } from '../../composables/toast';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { getSongAlbumKey, getSongArtistNames } from '../../features/library/playerLibraryViewShared';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
+import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import type { Song } from '../../types';
 
 type SongMenuAction =
   | 'play'
   | 'playNext'
   | 'addToQueueTail'
+  | 'downloadToLocal'
   | 'addAlbumToQueueTail'
   | 'favorite'
   | 'addToPlaylist'
@@ -102,6 +105,15 @@ const menuIcons: Record<SongMenuAction, SongMenuIcon> = {
       { d: 'M5 7.5h14' },
       { d: 'M5 12h14' },
       { d: 'M5 16.5h14' },
+    ],
+  },
+  downloadToLocal: {
+    fill: false,
+    viewBox: '0 0 24 24',
+    paths: [
+      { d: 'M12 4v11' },
+      { d: 'M8 11l4 4 4-4' },
+      { d: 'M5 19h14' },
     ],
   },
 addAlbumToQueueTail: {
@@ -196,6 +208,11 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
     { type: 'action', key: 'playNext', label: '下一首播放' },
     { type: 'action', key: 'addToQueueTail', label: '添加到队尾' },
   ];
+
+  // 在线搜索模式：在"添加到队尾"后追加"下载至本地"（仅对可下载的在线歌曲）
+  if (online && props.song && isDownloadableOnlineSong(props.song)) {
+    entries.push({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
+  }
 
   // 在线搜索模式不显示"整张专辑添加到队尾"
   if (!online && props.song && hasAlbumMetadata(props.song)) {
@@ -457,6 +474,14 @@ const handleEntryMouseEnter = (action: SongMenuAction) => {
   closeArtistSubmenu();
 };
 
+/**
+ * 下载至本地：复用共享下载逻辑（useDownloadToLocal），
+ * 状态写入 download store，自动联动底栏下载 UI 动画。
+ */
+const handleDownloadToLocal = async (song: Song) => {
+  await downloadToLocal(song);
+};
+
 const handleAction = (action: SongMenuAction) => {
   if (!props.song) {
     return;
@@ -471,6 +496,9 @@ const handleAction = (action: SongMenuAction) => {
       break;
     case 'addToQueueTail':
       addSongToQueue(props.song);
+      break;
+    case 'downloadToLocal':
+      void handleDownloadToLocal(props.song);
       break;
     case 'addAlbumToQueueTail':
       addAlbumToQueueTail(props.song);

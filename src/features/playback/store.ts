@@ -28,6 +28,13 @@ export const usePlaybackStore = defineStore('playback', () => {
   /** 当前实际播放的音质（经回退逻辑解析后真正使用的音质，null 表示未知/本地歌曲） */
   const currentPlayingQuality = ref<QualityKey | null>(null);
   /**
+   * 当前播放歌曲的实际音频直链 URL（经插件解析后的 http(s) 直链）。
+   * 用于下载时复用播放缓存：若下载目标音质与播放音质一致且该 URL 已缓存完成，
+   * 可直接复制缓存文件而非重新下载。null 表示未知/本地歌曲/未解析。
+   * 仅运行时有效，切歌/重置时清空。
+   */
+  const currentPlayingAudioUrl = ref<string | null>(null);
+  /**
    * 会话级临时音质覆盖（底部栏音质切换按钮写入）。
    * 仅影响播放链路取用的音质，不写入 settings，因此不会同步到设置页的「在线播放音质」。
    * 切歌时保留（尊重用户本次会话的选择），仅在 resetPlaybackState / 应用重启时清空。
@@ -137,6 +144,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCoverFull.value = '';
     currentAvailableQualities.value = null;
     currentPlayingQuality.value = null;
+    currentPlayingAudioUrl.value = null;
     sessionQualityOverride.value = null;
   };
 
@@ -179,6 +187,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCoverFull,
     currentAvailableQualities,
     currentPlayingQuality,
+    currentPlayingAudioUrl,
     sessionQualityOverride,
     setSessionQualityOverride,
     resetPlaybackState,

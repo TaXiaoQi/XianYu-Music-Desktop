@@ -511,6 +511,28 @@ pub fn is_url_cached(url: &str) -> bool {
     false
 }
 
+/// 将指定 URL 的播放缓存复制为目标下载文件。
+/// 仅当该 URL 已完整缓存（download_complete && size > 0）时执行复制，
+/// 避免重复下载。返回写入的字节数。
+pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
+    let hash = url_hash(url);
+    let src_path = {
+        let mut mgr = cache().lock().unwrap();
+        let entry = mgr
+            .entries
+            .get_mut(&hash)
+            .ok_or_else(|| "缓存不存在".to_string())?;
+        if !entry.download_complete.load(Ordering::Relaxed) || entry.size == 0 {
+            return Err("缓存未下载完成".to_string());
+        }
+        // 刷新访问时间，避免复制期间被 LRU 淘汰
+        entry.last_accessed = SystemTime::now();
+        entry.path.clone()
+    };
+    std::fs::copy(&src_path, dest_path)
+        .map_err(|e| format!("复制缓存文件失败: {}", e))
+}
+
 /// 等待指定 URL 缓存下载完成（轮询，供前端 'wait' 失败行为使用）。
 /// 返回最终是否完成且有效（字节数 > 0）。
 pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
