@@ -42,9 +42,30 @@ const handleOpenDetail = () => {
 };
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
-const { settings } = useSettings();
+const { settings, footerLayout } = useSettings();
 const { showToast } = useToast();
 const downloadStore = useDownloadStore();
+
+// --- 底部栏容器化布局 ---
+// footerLayout 来自 settings store，设置页直接修改即可在底栏实时反映（无需 Apply）。
+// 各容器容量由 FOOTER_CONTAINER_LIMITS 约束；未分配的控件自动进入折叠收纳菜单。
+import {
+  computeCollapsedItems,
+  normalizeFooterLayout,
+} from '../../features/settings/footerItems';
+
+/** 归一化后的当前布局（防御性处理，确保任何来源都合法） */
+const normalizedLayout = computed(() => normalizeFooterLayout(footerLayout.value));
+/** 左侧容器控件（最多 2 个） */
+const leftItems = computed(() => normalizedLayout.value.left);
+/** 中间左侧控件（最多 1 个，紧邻"上一首"） */
+const middleLeftItem = computed(() => normalizedLayout.value.middleLeft);
+/** 中间右侧控件（最多 1 个，紧邻"下一首"） */
+const middleRightItem = computed(() => normalizedLayout.value.middleRight);
+/** 右侧容器控件（最多 5 个） */
+const rightItems = computed(() => normalizedLayout.value.right);
+/** 折叠收纳菜单中的控件（未分配到任何容器） */
+const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value));
 
 // --- 下载功能 ---
 // 底栏下载：点击展开音质下拉（复用播放音质选择 UI），选择音质后直接触发下载。
@@ -432,6 +453,8 @@ const checkMarquee = () => {
 
 watch(songTitleText, () => checkMarquee());
 watch(showPlayerDetail, () => checkMarquee());
+// 封面加载完成后容器宽度可能变化，重新检测滚动
+watch(currentSong, () => nextTick(() => checkMarquee()), { deep: false });
 
 // --- 音量拖拽逻辑 ---
 const isDraggingVolume = ref(false);
@@ -795,92 +818,96 @@ onUnmounted(() => {
         </div>
         </div>
 
-        <!-- 收藏按钮：加大居中，放置在下载按钮左边 -->
-        <button
-          v-if="currentSong"
-          @click="toggleFavorite(currentSong)"
-          class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
-          :class="isFavorite(currentSong)
-            ? 'text-[#EC4141]'
-            : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-          :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
-        >
-          <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-          </svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5"
-            fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        </button>
-
-        <!-- 下载按钮：本地歌曲显示绿色已完成图标，在线歌曲支持下载 -->
-        <div class="relative flex items-center justify-center h-full z-[70] shrink-0 ml-1">
+        <!-- 左侧容器可配置控件（按 leftItems 顺序渲染，最多 2 个） -->
+        <template v-for="key in leftItems" :key="key">
+          <!-- 收藏按钮 -->
           <button
-            ref="downloadQualityButtonRef"
-            @mousedown.stop
-            @click.stop="handleDownloadClick"
-            class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
-            :class="!isOnlineSong
-              ? (showPlayerDetail
-                ? 'text-emerald-300 cursor-default'
-                : 'text-emerald-600 dark:text-emerald-400 cursor-default')
-              : isDownloading
-                ? (showPlayerDetail
-                  ? 'text-white/80 hover:bg-white/10 cursor-wait'
-                  : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 cursor-wait')
-                : downloadedRecord
-                  ? (showPlayerDetail
-                    ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
-                    : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
-                  : (showPlayerDetail
-                    ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
-                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
-            :title="downloadButtonTitle"
+            v-if="key === 'favorite' && currentSong"
+            @click="toggleFavorite(currentSong)"
+            class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
+            :class="isFavorite(currentSong)
+              ? 'text-[#EC4141]'
+              : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+            :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
           >
-            <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
-            <CircleCheck v-else-if="(!isOnlineSong) || (isOnlineSong && downloadedRecord)" class="h-5 w-5" />
-            <Download v-else class="h-5 w-5" />
+            <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+            </svg>
           </button>
 
-          <!-- 下载音质下拉菜单：与播放音质选择器一致的 UI，复用 currentAvailableQualities 预取结果 -->
-          <transition name="fade-scale">
-            <div
-              v-if="showDownloadQualityMenu"
-              ref="downloadQualityMenuRef"
-              class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+          <!-- 下载按钮：本地歌曲显示绿色已完成图标，在线歌曲支持下载 -->
+          <div v-else-if="key === 'download'" class="relative flex items-center justify-center h-full z-[70] shrink-0 ml-1">
+            <button
+              ref="downloadQualityButtonRef"
+              @mousedown.stop
+              @click.stop="handleDownloadClick"
+              class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
+              :class="!isOnlineSong
+                ? (showPlayerDetail
+                  ? 'text-emerald-300 cursor-default'
+                  : 'text-emerald-600 dark:text-emerald-400 cursor-default')
+                : isDownloading
+                  ? (showPlayerDetail
+                    ? 'text-white/80 hover:bg-white/10 cursor-wait'
+                    : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 cursor-wait')
+                  : downloadedRecord
+                    ? (showPlayerDetail
+                      ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
+                      : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+                    : (showPlayerDetail
+                      ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+                      : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
+              :title="downloadButtonTitle"
             >
+              <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
+              <CircleCheck v-else-if="(!isOnlineSong) || (isOnlineSong && downloadedRecord)" class="h-5 w-5" />
+              <Download v-else class="h-5 w-5" />
+            </button>
+
+            <!-- 下载音质下拉菜单：与播放音质选择器一致的 UI，复用 currentAvailableQualities 预取结果 -->
+            <transition name="fade-scale">
               <div
-                class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-                :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+                v-if="showDownloadQualityMenu"
+                ref="downloadQualityMenuRef"
+                class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
               >
-                <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
-                <button
-                  v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
-                  :key="opt.value"
-                  @click.stop="startDownload(opt.value)"
-                  class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                  :class="selectedDownloadQuality === opt.value
-                    ? 'text-[#EC4141] bg-[#EC4141]/8'
-                    : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+                <div
+                  class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+                  :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
                 >
-                  <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                  <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-                  <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-                </button>
+                  <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
+                  <button
+                    v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
+                    :key="opt.value"
+                    @click.stop="startDownload(opt.value)"
+                    class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                    :class="selectedDownloadQuality === opt.value
+                      ? 'text-[#EC4141] bg-[#EC4141]/8'
+                      : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+                  >
+                    <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                    <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                    <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                  </button>
+                </div>
               </div>
-            </div>
-          </transition>
-        </div>
+            </transition>
+          </div>
+        </template>
       </div>
     </div>
 
-    <div 
+    <div
       class="flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     >
-      <button @click="toggleMode" class="transition-colors" 
+      <!-- 中间左侧可配置控件（紧邻"上一首"，最多 1 个） -->
+      <button v-if="middleLeftItem === 'playMode'" @click="toggleMode" class="transition-colors"
         :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
         :title="['列表循环', '单曲循环', '随机播放'][playMode]">
         <svg v-if="playMode === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -888,17 +915,17 @@ onUnmounted(() => {
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
       </button>
 
-      <button @click="prevSong" 
+      <button @click="prevSong"
         class="transition-colors hover:scale-110 transform duration-200"
         :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
       </button>
 
-      <button @click="togglePlay" 
+      <button @click="togglePlay"
         class="flex items-center justify-center transition-all active:scale-95 shrink-0 w-11 h-11 rounded-full border"
-        :class="showPlayerDetail 
-          ? 'text-white bg-white/10 hover:bg-white/20 border-white/5' 
+        :class="showPlayerDetail
+          ? 'text-white bg-white/10 hover:bg-white/20 border-white/5'
           : 'text-gray-800 dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 border-black/5 dark:border-white/5'"
       >
         <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
@@ -912,8 +939,9 @@ onUnmounted(() => {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
       </button>
 
-      <!-- 桌面歌词：从工具收纳中放出，放置在下一首右边 -->
+      <!-- 中间右侧可配置控件（紧邻"下一首"，最多 1 个） -->
       <button
+        v-if="middleRightItem === 'desktopLyrics'"
         @click="toggleLyrics"
         class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-[14px] font-bold"
         :class="showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
@@ -927,179 +955,266 @@ onUnmounted(() => {
       class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
-      <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲显示匹配的音质标签 -->
-      <div class="relative flex items-center justify-center h-full z-[70]">
-        <button
-          ref="qualityButtonRef"
-          @click="toggleQualityMenu"
-          class="flex shrink-0 items-center justify-center whitespace-nowrap w-9 h-9 text-[12px] font-semibold rounded-full transition-colors select-none"
-          :class="[
-            !isQualitySelectableSong
-              ? (showPlayerDetail
-                  ? 'text-white/80 cursor-default'
-                  : 'text-gray-700 dark:text-white/80 cursor-default')
-              : showQualityMenu
-                ? 'text-[#EC4141] bg-[#EC4141]/10'
-                : (showPlayerDetail
-                    ? 'text-white/80 hover:text-white hover:bg-white/10'
-                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
-          ]"
-          :title="isQualitySelectableSong ? '音质选择' : '本地音质'"
-        >
-          <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
-        </button>
-
-        <transition name="fade-scale">
-          <div
-            v-if="showQualityMenu"
-            ref="qualityMenuRef"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+      <!-- 右侧容器可配置控件（按 rightItems 顺序渲染，最多 5 个） -->
+      <template v-for="key in rightItems" :key="key">
+        <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲显示匹配的音质标签 -->
+        <div v-if="key === 'quality'" class="relative flex items-center justify-center h-full z-[70]">
+          <button
+            ref="qualityButtonRef"
+            @click="toggleQualityMenu"
+            class="flex shrink-0 items-center justify-center whitespace-nowrap w-9 h-9 text-[12px] font-semibold rounded-full transition-colors select-none"
+            :class="[
+              !isQualitySelectableSong
+                ? (showPlayerDetail
+                    ? 'text-white/80 cursor-default'
+                    : 'text-gray-700 dark:text-white/80 cursor-default')
+                : showQualityMenu
+                  ? 'text-[#EC4141] bg-[#EC4141]/10'
+                  : (showPlayerDetail
+                      ? 'text-white/80 hover:text-white hover:bg-white/10'
+                      : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
+            ]"
+            :title="isQualitySelectableSong ? '音质选择' : '本地音质'"
           >
+            <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
+          </button>
+
+          <transition name="fade-scale">
             <div
-              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+              v-if="showQualityMenu"
+              ref="qualityMenuRef"
+              class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
             >
-              <button
-                v-for="opt in QUALITY_OPTIONS"
-                :key="opt.value"
-                @click="selectQuality(opt.value)"
-                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="activeQualityKey === opt.value
-                  ? 'text-[#EC4141] bg-[#EC4141]/8'
-                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              <div
+                class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+                :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
               >
-                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-                <span v-if="activeQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-              </button>
+                <button
+                  v-for="opt in QUALITY_OPTIONS"
+                  :key="opt.value"
+                  @click="selectQuality(opt.value)"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                  :class="activeQualityKey === opt.value
+                    ? 'text-[#EC4141] bg-[#EC4141]/8'
+                    : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+                >
+                  <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                  <span v-if="activeQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                </button>
+              </div>
             </div>
-          </div>
-        </transition>
-      </div>
+          </transition>
+        </div>
 
-      <!-- 倍速控制：悬停弹出竖向滑块，调节逻辑与音量一致 -->
-      <div
-        class="relative flex items-center justify-center h-full z-[70]"
-        @mouseenter="handleSpeedEnter"
-        @mouseleave="handleSpeedLeave"
-        @wheel.prevent.stop="handlePlaybackSpeedWheel"
-      >
+        <!-- 倍速控制：悬停弹出竖向滑块，调节逻辑与音量一致 -->
         <div
-          v-if="showSpeedSlider || isDraggingSpeed"
-          class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+          v-else-if="key === 'speed'"
+          class="relative flex items-center justify-center h-full z-[70]"
+          @mouseenter="handleSpeedEnter"
+          @mouseleave="handleSpeedLeave"
+          @wheel.prevent.stop="handlePlaybackSpeedWheel"
         >
-          <div class="absolute top-full left-0 w-full h-4"></div>
-          <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
-            :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
-          >
-            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
-              :class="playbackSpeed !== 1.0
-                ? 'text-[#EC4141]'
-                : (showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60')"
-            >{{ speedLabel }}</div>
-            <div ref="speedBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
-                 :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
-                 @pointerdown="startSpeedDrag">
-               <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: speedPercent + '%' }"></div>
-               <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${speedPercent}% - 7px)` }"></div>
-            </div>
-          </div>
-        </div>
-        <button @click="resetPlaybackSpeed"
-          class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
-          :class="playbackSpeed !== 1.0
-            ? 'text-[#EC4141]'
-            : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-          title="倍速（点击恢复1.0x）"
-        >
-          <Gauge class="h-5 w-5" />
-        </button>
-      </div>
-
-      <div
-        class="relative flex items-center justify-center h-full z-[70]"
-        @mouseenter="handleVolumeEnter"
-        @mouseleave="handleVolumeLeave"
-        @wheel.prevent.stop="handleVolumeWheel"
-      >
-        <!-- 音量滑块弹窗 -->
-        <div 
-          v-if="showVolumeSlider || isDraggingVolume"
-          class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
-        >
-          <!-- 透明桥接层：防止鼠标从图标移动到滑块时断触 -->
-          <div class="absolute top-full left-0 w-full h-4"></div>
-          
-          <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
-            :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
-          >
-            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
-              :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
-            >{{ volume }}%</div>
-            <div ref="volumeBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]" 
-                 :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
-                 @pointerdown="startDrag">
-               <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: volume + '%' }"></div>
-               <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${volume}% - 7px)` }"></div>
-            </div>
-          </div>
-        </div>
-        <button @click="toggleMute" 
-          class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
-          :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
-          title="音量"
-        > 
-          <!-- 静音 -->
-          <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-          <!-- 弱音量 -->
-          <svg v-else-if="volume > 0 && volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon></svg>
-          <!-- 中音量 -->
-          <svg v-else-if="volume >= 30 && volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-          <!-- 大音量 -->
-          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-        </button>
-      </div>
-
-      <!-- 均衡器按钮与弹出面板：从工具收纳中放出 -->
-      <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center h-full z-[70]">
-        <button
-          ref="eqButtonRef"
-          @click="toggleEqPanel"
-          :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-          title="均衡器 (EQ)"
-        >
-          <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
-        </button>
-
-        <transition name="fade-scale">
           <div
-            v-if="showEqPanel"
-            ref="eqPanelRef"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
+            v-if="showSpeedSlider || isDraggingSpeed"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
           >
-            <EqualizerPanel />
+            <div class="absolute top-full left-0 w-full h-4"></div>
+            <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+            >
+              <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
+                :class="playbackSpeed !== 1.0
+                  ? 'text-[#EC4141]'
+                  : (showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60')"
+              >{{ speedLabel }}</div>
+              <div ref="speedBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
+                   :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
+                   @pointerdown="startSpeedDrag">
+                 <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: speedPercent + '%' }"></div>
+                 <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${speedPercent}% - 7px)` }"></div>
+              </div>
+            </div>
           </div>
-        </transition>
-      </div>
+          <button @click="resetPlaybackSpeed"
+            class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+            :class="playbackSpeed !== 1.0
+              ? 'text-[#EC4141]'
+              : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+            title="倍速（点击恢复1.0x）"
+          >
+            <Gauge class="h-5 w-5" />
+          </button>
+        </div>
 
-      <!-- 播放队列：从中间区域移至原下载按钮位置 -->
-      <div class="relative flex items-center justify-center h-full z-[70]">
-        <button @click="togglePlaylist"
-          class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
-          :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-          title="播放队列"
+        <!-- 音量控制 -->
+        <div
+          v-else-if="key === 'volume'"
+          class="relative flex items-center justify-center h-full z-[70]"
+          @mouseenter="handleVolumeEnter"
+          @mouseleave="handleVolumeLeave"
+          @wheel.prevent.stop="handleVolumeWheel"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-        </button>
-      </div>
+          <div
+            v-if="showVolumeSlider || isDraggingVolume"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+          >
+            <div class="absolute top-full left-0 w-full h-4"></div>
+            <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+            >
+              <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
+                :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
+              >{{ volume }}%</div>
+              <div ref="volumeBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
+                   :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
+                   @pointerdown="startDrag">
+                 <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: volume + '%' }"></div>
+                 <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${volume}% - 7px)` }"></div>
+              </div>
+            </div>
+          </div>
+          <button @click="toggleMute"
+            class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+            :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+            title="音量"
+          >
+            <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+            <svg v-else-if="volume > 0 && volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon></svg>
+            <svg v-else-if="volume >= 30 && volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+          </button>
+        </div>
 
-      <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/歌词样式/固定） -->
+        <!-- 均衡器按钮与弹出面板 -->
+        <div v-else-if="key === 'equalizer'" class="relative flex items-center justify-center h-full z-[70]">
+          <button
+            ref="eqButtonRef"
+            @click="toggleEqPanel"
+            :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+            title="均衡器 (EQ)"
+          >
+            <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
+          </button>
+
+          <transition name="fade-scale">
+            <div
+              v-if="showEqPanel"
+              ref="eqPanelRef"
+              class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
+            >
+              <EqualizerPanel />
+            </div>
+          </transition>
+        </div>
+
+        <!-- 播放队列 -->
+        <div v-else-if="key === 'playlist'" class="relative flex items-center justify-center h-full z-[70]">
+          <button @click="togglePlaylist"
+            class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+            :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+            title="播放队列"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          </button>
+        </div>
+      </template>
+
+      <!-- 右侧工具收纳：折叠的控件 + 固定特殊项（隐藏进度条/可视化/歌词样式/固定） -->
       <div ref="footerToolsRef" class="relative flex items-center justify-center h-full z-[70]">
         <transition name="footer-tools">
           <div
             v-if="showFooterTools"
             class="absolute bottom-full right-0 pb-3 flex flex-col items-center gap-2 z-[75]"
           >
+            <!-- 折叠的控件（未分配到任何容器的可配置控件） -->
+            <template v-for="key in collapsedItems" :key="'collapsed-' + key">
+              <button
+                v-if="key === 'favorite' && currentSong"
+                @click="toggleFavorite(currentSong)"
+                class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full transition-colors"
+                :class="isFavorite(currentSong) ? 'text-[#EC4141]' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+                :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
+              >
+                <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
+              </button>
+              <button
+                v-else-if="key === 'download'"
+                @click="handleDownloadClick"
+                class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
+                :class="!isOnlineSong ? (showPlayerDetail ? 'text-emerald-300' : 'text-emerald-600 dark:text-emerald-400') : (showPlayerDetail ? 'text-white/80 hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10')"
+                :title="downloadButtonTitle"
+              >
+                <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
+                <CircleCheck v-else-if="(!isOnlineSong) || (isOnlineSong && downloadedRecord)" class="h-5 w-5" />
+                <Download v-else class="h-5 w-5" />
+              </button>
+              <button
+                v-else-if="key === 'playMode'"
+                @click="toggleMode"
+                class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+                :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+                :title="['列表循环', '单曲循环', '随机播放'][playMode]"
+              >
+                <svg v-if="playMode === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                <svg v-else-if="playMode === 1" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /><text x="12" y="16" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="currentColor" stroke="none">1</text></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
+              </button>
+              <button
+                v-else-if="key === 'desktopLyrics'"
+                @click="toggleLyrics"
+                class="transition-colors w-8 h-8 flex items-center justify-center rounded-full text-[14px] font-bold"
+                :class="showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+                title="桌面歌词"
+              >词</button>
+              <button
+                v-else-if="key === 'quality'"
+                @click="toggleQualityMenu"
+                class="flex shrink-0 items-center justify-center whitespace-nowrap w-8 h-8 text-[12px] font-semibold rounded-full transition-colors"
+                :class="showQualityMenu ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+                title="音质选择"
+              >{{ qualityButtonLabel }}</button>
+              <button
+                v-else-if="key === 'speed'"
+                @click="resetPlaybackSpeed"
+                class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+                :class="playbackSpeed !== 1.0 ? 'text-[#EC4141]' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+                title="倍速（点击恢复1.0x）"
+              ><Gauge class="h-5 w-5" /></button>
+              <button
+                v-else-if="key === 'volume'"
+                @click="toggleMute"
+                class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+                :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+                title="音量"
+              >
+                <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                <svg v-else-if="volume > 0 && volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon></svg>
+                <svg v-else-if="volume >= 30 && volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+              </button>
+              <button
+                v-else-if="key === 'equalizer'"
+                @click="toggleEqPanel"
+                :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+                title="均衡器 (EQ)"
+              ><SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" /></button>
+              <button
+                v-else-if="key === 'playlist'"
+                @click="togglePlaylist"
+                class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+                :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+                title="播放队列"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              </button>
+            </template>
+
+            <!-- 分隔线：折叠项与固定特殊项之间 -->
+            <div v-if="collapsedItems.length > 0" class="w-6 h-px bg-white/10 my-1"></div>
+
+            <!-- 固定特殊项（仅播放详情页可见） -->
             <button
               v-if="showPlayerDetail"
               @click="toggleProgressVisibility"
@@ -1134,9 +1249,7 @@ onUnmounted(() => {
               :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
               :title="isPinned ? '取消固定 (当前已常驻)' : '固定状态栏 (当前离开后消失)'"
             >
-              <!-- 已固定：完整图钉 -->
               <svg v-if="isPinned" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-              <!-- 未固定：带取消斜线的图钉 -->
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0-1.16.37"/></svg>
             </button>
           </div>
