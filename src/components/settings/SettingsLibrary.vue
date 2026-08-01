@@ -31,12 +31,13 @@
         </div>
         <label class="short-audio-input-wrap">
           <input
-            v-model.number="libraryMinDurationSeconds"
+            :value="libraryMinDurationSeconds"
             class="short-audio-input"
             type="number"
             min="0"
             step="1"
             inputmode="numeric"
+            @change="handleMinDurationChange"
           />
           <span>秒</span>
         </label>
@@ -129,6 +130,14 @@ const libraryMinDurationSeconds = computed({
     settings.value.libraryMinDurationSeconds = normalizeLibraryMinDurationSeconds(value);
   },
 });
+
+/** 输入浮点防御：四舍五入并回写显示值 */
+const handleMinDurationChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const rounded = normalizeLibraryMinDurationSeconds(parseFloat(target.value));
+  target.value = String(rounded);
+  libraryMinDurationSeconds.value = rounded;
+};
 const scanStatusLabel = computed(() => {
   switch (libraryScanProgress.value?.phase) {
     case 'collecting':
