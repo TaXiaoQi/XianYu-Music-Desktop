@@ -98,15 +98,6 @@ const emit = defineEmits(['close', 'action']);
             >
               我知道了
             </button>
-            <template v-if="announcement.actionUrl">
-              <div class="w-[1px] bg-gray-100 dark:bg-white/10"></div>
-              <button
-                @click="emit('action', announcement.actionUrl)"
-                class="flex-1 py-3 text-sm text-[#EC4141] font-medium hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors focus:outline-none"
-              >
-                {{ announcement.actionText || '查看详情' }}
-              </button>
-            </template>
           </div>
         </div>
       </div>
