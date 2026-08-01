@@ -27,6 +27,14 @@ vi.mock('./lxSongCache', () => ({
   getCachedLxSong: vi.fn().mockReturnValue(null),
 }));
 
+vi.mock('../features/playback/store', () => ({
+  usePlaybackStore: vi.fn().mockReturnValue({
+    currentPlayingAudioUrl: null,
+    currentPlayingQuality: null,
+    currentSong: null,
+  }),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
 import { getStoredPlugins } from './pluginEngine';
 import { lxPluginGetMusicUrl } from './lxPluginEngine';
@@ -79,8 +87,6 @@ describe('downloadService: download fallback across qualities', () => {
     (getStoredPlugins as any).mockReturnValue([
       { id: 'p1', enabled: true, format: 'lx', sources: ['kg'], name: 'plugin', filePath: 'x.js' },
     ]);
-    // Worker 在测试环境不可用，fetchViaWorker 会失败并回退到 Rust invoke
-    vi.stubGlobal('Worker', undefined);
   });
 
   it('falls back to lower quality when the higher one fails to download (502)', async () => {
@@ -100,7 +106,6 @@ describe('downloadService: download fallback across qualities', () => {
         return args.destPath;
       }
       if (cmd === 'file_exists') return false;
-      if (cmd === 'save_download_bytes') throw new Error('worker unavailable');
       return null;
     });
 
@@ -131,7 +136,6 @@ describe('downloadService: download fallback across qualities', () => {
         throw new Error('下载服务器返回错误状态: 502 Bad Gateway');
       }
       if (cmd === 'file_exists') return false;
-      if (cmd === 'save_download_bytes') throw new Error('worker unavailable');
       return null;
     });
 
@@ -150,7 +154,6 @@ describe('downloadService: download fallback across qualities', () => {
     (invoke as any).mockImplementation(async (cmd: string, args: any) => {
       if (cmd === 'download_online_song') return args.destPath;
       if (cmd === 'file_exists') return false;
-      if (cmd === 'save_download_bytes') throw new Error('worker unavailable');
       return null;
     });
 

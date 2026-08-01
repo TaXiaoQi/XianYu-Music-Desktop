@@ -36,7 +36,7 @@ use music::{
     scan_folder_as_playlists, scan_library, scan_music_folder, show_in_folder,
 };
 use player::{
-    clear_stream_cache, get_audio_visualizer_samples, get_current_output_device,
+    clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_current_output_device,
     get_output_devices, get_playback_progress, get_playback_ready, get_playback_start_failed,
     get_stream_cache_info, get_track_loudness_info, is_stream_cached, pause_audio, play_audio,
     resume_audio, seek_audio, set_audio_output_mode, set_equalizer_settings, set_output_device,
@@ -148,6 +148,7 @@ get_song_lyrics_payload,            get_song_lyrics_for_edit,
             get_stream_cache_info,
             clear_stream_cache,
             is_stream_cached,
+            copy_stream_cache,
             wait_stream_complete,
             get_library_folders,
             is_directory,

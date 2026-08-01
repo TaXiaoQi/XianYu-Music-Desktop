@@ -394,6 +394,8 @@ export const createPlayerPlayback = ({
 
     // [音质跟踪] 切歌时重置实际播放音质，URL 解析成功后重新设置
     playbackStore.currentPlayingQuality = null;
+    // [缓存复用] 切歌时清空上一首的音频直链，URL 解析成功后重新记录
+    playbackStore.currentPlayingAudioUrl = null;
     // [会话音质] 切换到不同歌曲时清空底部栏会话级音质覆盖，让新歌优先应用设置页的在线播放音质。
     // 同一首歌重播（如底部栏切音质触发的 replay）保留覆盖，以确保切音质立即生效。
     if (previousSong && previousSong.path !== song.path) {
@@ -577,6 +579,7 @@ export const createPlayerPlayback = ({
               if (musicUrl && /^https?:/.test(musicUrl)) {
                 audioFilePath = musicUrl;
                 playbackStore.currentPlayingQuality = q;
+                playbackStore.currentPlayingAudioUrl = musicUrl;
                 break;
               }
             }
@@ -621,6 +624,7 @@ export const createPlayerPlayback = ({
                 if (musicInfo.actualQuality) {
                   playbackStore.currentPlayingQuality = musicInfo.actualQuality;
                 }
+                playbackStore.currentPlayingAudioUrl = musicInfo.url;
                 if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
                   pluginHeaders = musicInfo.headers;
                 }
@@ -645,6 +649,8 @@ export const createPlayerPlayback = ({
         }
         if (usePreUrlDirectly) {
           audioFilePath = preUrl;
+          // 记录实际播放直链，供下载时复用播放缓存
+          playbackStore.currentPlayingAudioUrl = preUrl;
           if (song.remote_headers) {
             pluginHeaders = song.remote_headers;
           }
@@ -669,6 +675,7 @@ export const createPlayerPlayback = ({
                 if (musicInfo.actualQuality) {
                   playbackStore.currentPlayingQuality = musicInfo.actualQuality;
                 }
+                playbackStore.currentPlayingAudioUrl = musicInfo.url;
                 // 保存插件返回的防盗链 headers
                 if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
                   pluginHeaders = musicInfo.headers;

@@ -8,10 +8,12 @@ import { usePlaybackController } from '../../features/playback/usePlaybackContro
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 import EqualizerPanel from '../player/EqualizerPanel.vue';
-import { isDownloadableOnlineSong, downloadSong } from '../../services/downloadService';
-import { checkDownloadExists, recordDownload, fileNameFromPath, type DownloadRecord } from '../../services/downloadHistory';
+import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
 import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
+import { useDownloadStore } from '../../features/download/store';
+import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
 import { QUALITY_META } from '../../types';
@@ -40,6 +42,7 @@ const handleOpenDetail = () => {
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
 const { settings } = useSettings();
 const { showToast } = useToast();
+const downloadStore = useDownloadStore();
 
 // --- 下载功能 ---
 // 底栏下载：点击展开音质下拉（复用播放音质选择 UI），选择音质后直接触发下载。
@@ -49,7 +52,14 @@ const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value))
 // 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
 const downloadedRecord = ref<DownloadRecord | null>(null);
 const showRedownloadConfirm = ref(false);
-const isDownloading = ref(false);
+// [下载联动] isDownloading 来自共享 store：右键菜单下载同一首歌时底栏也会显示「下载中」动画
+const isDownloading = computed(() => {
+  if (!downloadStore.isDownloading) return false;
+  const song = currentSong.value;
+  if (!song) return false;
+  const songPath = song.cue_source_path || song.path;
+  return downloadStore.downloadingSongPath === songPath;
+});
 // 防止快速切歌时旧的异步检测结果覆盖新歌状态
 let downloadCheckId = 0;
 
@@ -74,6 +84,17 @@ watch(
   () => currentSong.value?.cue_source_path || currentSong.value?.path,
   () => { void refreshDownloadedState(); },
   { immediate: true },
+);
+
+// [下载联动] 任意下载完成（store.isDownloading 从 true→false）时刷新当前歌曲的已下载状态，
+// 确保右键菜单下载当前歌曲后底栏立即显示「已下载」对勾
+watch(
+  () => downloadStore.isDownloading,
+  (downloading, wasDownloading) => {
+    if (wasDownloading && !downloading) {
+      void refreshDownloadedState();
+    }
+  },
 );
 
 // 下载音质下拉菜单（与播放音质选择器 UI 一致，复用 currentAvailableQualities 预取结果）
@@ -110,61 +131,11 @@ const handleConfirmRedownload = () => {
   showDownloadQualityMenu.value = true;
 };
 
-/** 选择下载音质并立即开始下载 */
+/** 选择下载音质并立即开始下载（复用共享下载逻辑，状态写入 download store 驱动底栏动画） */
 const startDownload = async (qualityKey: DownloadQuality) => {
   showDownloadQualityMenu.value = false;
   if (!currentSong.value) return;
-
-  const downloadDir = settings.value.download.downloadPath;
-  if (!downloadDir) {
-    showToast('请先在设置 - 下载中选择下载目录', 'error');
-    return;
-  }
-
-  const song = currentSong.value;
-  const songLabel = song.title || song.name || '未知歌曲';
-
-  isDownloading.value = true;
-  showToast(`开始下载：${songLabel}`, 'info');
-
-  try {
-    const result = await downloadSong(song, {
-      quality: qualityKey,
-      downloadDir,
-      keepSourceFilename: settings.value.download.keepSourceFilename,
-      fileNameStyle: settings.value.download.fileNameStyle,
-      overwriteExisting: settings.value.download.overwriteExisting,
-      downloadLyrics: settings.value.download.downloadLyrics,
-      lyricsFormat: settings.value.download.lyricsFormat,
-    });
-
-    // 记录本次下载（位置 + 文件名），供后续播放到该歌曲时显示「已下载」状态
-    await recordDownload({
-      songPath: song.cue_source_path || song.path,
-      filePath: result.filePath,
-      fileName: fileNameFromPath(result.filePath),
-      quality: result.hitQuality,
-      downloadedAt: Date.now(),
-      title: song.title || song.name,
-      artist: song.artist,
-    });
-
-    void refreshDownloadedState();
-
-    // 命中的实际档位可能低于用户所选（无版权自动降级）
-    const hitMeta = QUALITY_META[result.hitQuality as QualityKey];
-    const selectedMeta = QUALITY_META[qualityKey as QualityKey];
-    const degraded = selectedMeta && hitMeta ? hitMeta.rank < selectedMeta.rank : result.hitQuality !== qualityKey;
-    const lyricNote = result.lyricsSaved ? '（含歌词）' : '';
-    const note = degraded ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）` : '';
-    showToast(`下载完成${note}${lyricNote}`, degraded ? 'info' : 'success');
-  } catch (e: any) {
-    const msg = typeof e === 'string' ? e : (e?.message || JSON.stringify(e));
-    console.error('[Download] 下载失败:', e);
-    showToast(`下载失败：${msg}`, 'error');
-  } finally {
-    isDownloading.value = false;
-  }
+  await downloadToLocal(currentSong.value, qualityKey);
 };
 
 const downloadButtonTitle = computed(() => {

@@ -6,61 +6,14 @@
  * 调用 Rust 命令流式下载，并可选下载歌词。
  */
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { DownloadFileNameStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
+import { usePlaybackStore } from '../features/playback/store';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 export type LxQuality = QualityKey;
-
-/**
- * 在 Web Worker 线程里用 fetch 拉取音频数据（模仿 MusicFreeDesktop）。
- * IDM 等下载器对 WebView2 的拦截主要作用于主线程，Worker 线程的请求通常能逃过。
- * 返回音频字节；失败（含被拦截、CORS、网络异常）时抛错，由调用方回退到 Rust 下载。
- */
-export function fetchViaWorker(
-  url: string,
-  onProgress?: (percent: number) => void,
-  headers?: Record<string, string> | null,
-): Promise<Uint8Array> {
-  return new Promise<Uint8Array>((resolve, reject) => {
-    let worker: Worker;
-    try {
-      worker = new Worker(new URL('./downloadWorker.ts', import.meta.url), { type: 'module' });
-    } catch (e: any) {
-      reject(new Error(`无法创建下载 Worker: ${e?.message || e}`));
-      return;
-    }
-
-    const cleanup = () => {
-      try { worker.terminate(); } catch { /* ignore */ }
-    };
-
-    worker.onmessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (!data) return;
-      if (data.type === 'progress') {
-        if (data.total > 0) {
-          onProgress?.(Math.min(99, Math.round((data.received / data.total) * 100)));
-        }
-      } else if (data.type === 'done') {
-        cleanup();
-        onProgress?.(100);
-        resolve(new Uint8Array(data.buffer as ArrayBuffer));
-      } else if (data.type === 'error') {
-        cleanup();
-        reject(new Error(data.message || 'Worker 下载失败'));
-      }
-    };
-
-    worker.onerror = (err) => {
-      cleanup();
-      reject(new Error(`Worker 错误: ${err.message || 'unknown'}`));
-    };
-
-    worker.postMessage({ url, headers });
-  });
-}
 
 /**
  * 从目标音质向下降级，生成候选音质列表（用于自动回退）。
@@ -719,34 +672,33 @@ export interface DownloadSongResult {
 }
 
 /**
- * 下载单个直链到目标路径：优先 Worker fetch，失败回退到 Rust reqwest。
- * 任一路径成功即返回文件路径；两者都失败则抛错，交由上层按音质候选回退。
+ * 下载单个直链到目标路径：使用 Rust reqwest 流式下载。
+ *
+ * Rust 在后台 tokio 线程分块写盘 + 完整性校验 + 502/416/403 回退，
+ * 不阻塞 WebView 主线程。reqwest 是原生 HTTP 客户端，IDM 等下载器仅 hook
+ * WebView 进程，不会拦截 Rust 的请求。进度通过 `song-download-progress` 事件回报。
  */
 async function downloadFromUrl(
   url: string,
   destPath: string,
   onProgress?: (percent: number) => void,
 ): Promise<string> {
-  // 优先在 Web Worker 线程里 fetch 拉取音频（模仿 MusicFree，规避 IDM 对主线程的拦截），
-  // 再交给 Rust 写盘。若 Worker 下载失败（被拦截/CORS/网络异常/HTTP 错误），
-  // 回退到 Rust request 直接下载（Rust 侧带完整性校验，数据不完整会删除坏文件并报错）。
+  // 监听 Rust 进度事件，驱动 onProgress 回调
+  let unlisten: UnlistenFn | null = null;
+  if (onProgress) {
+    try {
+      unlisten = await listen<{ progress: number }>('song-download-progress', (event) => {
+        onProgress(Math.min(99, Math.round(event.payload.progress)));
+      });
+    } catch { /* 事件监听失败不影响下载 */ }
+  }
+
   try {
-    const bytes = await fetchViaWorker(url, onProgress);
-    if (bytes.length === 0) {
-      throw new Error('下载数据为空');
-    }
-    const filePath = await invoke<string>('save_download_bytes', {
-      data: bytes,
-      destPath,
-    });
+    const filePath = await invoke<string>('download_online_song', { url, destPath });
     onProgress?.(100);
     return filePath;
-  } catch (workerErr: any) {
-    console.warn('[Download] Worker 下载失败，回退到后端下载:', workerErr?.message || workerErr);
-    return invoke<string>('download_online_song', {
-      url,
-      destPath,
-    });
+  } finally {
+    unlisten?.();
   }
 }
 
@@ -791,6 +743,49 @@ export async function downloadSong(
   const errors: string[] = [];
 
   for (const q of candidates) {
+    // [缓存复用] 若当前正在播放同一首歌，且播放实际命中的音质与候选档位一致，
+    // 且该 URL 的播放缓存已下载完成，则直接复制缓存文件，跳过重复下载与直链解析。
+    // 这样用户"听过→想下载"时可零成本复用播放缓存，无需再次请求音源。
+    const playbackStore = usePlaybackStore();
+    const playingUrl = playbackStore.currentPlayingAudioUrl;
+    const playingQuality = playbackStore.currentPlayingQuality;
+    const currentSongPath = playbackStore.currentSong?.path;
+    if (
+      playingUrl
+      && playingQuality === q
+      && currentSongPath === song.path
+    ) {
+      try {
+        const cached = await invoke<boolean>('is_stream_cached', { url: playingUrl });
+        if (cached) {
+          const fileName = buildDownloadFileName(
+            song,
+            playingUrl,
+            q,
+            options.keepSourceFilename,
+            options.fileNameStyle ?? 'artist-title',
+          );
+          let destPath = joinPath(options.downloadDir, fileName);
+          if (!options.overwriteExisting) {
+            destPath = await resolveNonConflictingPath(destPath);
+          }
+          try {
+            await invoke<number>('copy_stream_cache', { url: playingUrl, destPath });
+            options.onProgress?.(100);
+            filePath = destPath;
+            hitQuality = q;
+            console.info(`[Download] 命中播放缓存，直接复制：${q}`);
+            break;
+          } catch (e: any) {
+            console.warn(`[Download] 复制缓存失败，回退到正常下载:`, e?.message || e);
+            options.onProgress?.(0);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Download] 缓存复用探测失败，回退到正常下载:', e?.message || e);
+      }
+    }
+
     let url: string;
     try {
       const resolvedUrl = await resolveUrl(q);

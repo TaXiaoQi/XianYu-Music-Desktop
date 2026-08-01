@@ -42,6 +42,7 @@ commands.allow = [
   "get_stream_cache_info",
   "clear_stream_cache",
   "is_stream_cached",
+  "copy_stream_cache",
   "wait_stream_complete",
   "get_library_folders",
   "is_directory",
