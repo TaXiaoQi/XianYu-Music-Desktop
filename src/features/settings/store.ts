@@ -445,17 +445,18 @@ export const mergeAppSettings = (
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
       libraryMinDurationSeconds ?? base.libraryMinDurationSeconds,
     ),
-    lyrics: mergeLyricsSettings(base.lyrics, patch.lyrics ?? {}),
-    desktopLyrics: mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics ?? {}),
-    audio: mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio ?? {}),
-    customLyricsFonts: normalizeImportedLyricsFonts(patch.customLyricsFonts ?? base.customLyricsFonts),
-    theme: mergeThemeSettings(base.theme, patch.theme ?? {}),
-    sidebar: mergeSidebarSettings(base.sidebar, patch.sidebar ?? {}),
-    shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
-    download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
-    upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
-    plugins: mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins ?? {}),
-    autoSync: mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync ?? {}),
+    // 仅在 patch 含对应子对象时才 merge，避免无谓重建引用触发下游 computed 重算
+    lyrics: patch.lyrics ? mergeLyricsSettings(base.lyrics, patch.lyrics) : base.lyrics,
+    desktopLyrics: patch.desktopLyrics ? mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics) : base.desktopLyrics,
+    audio: patch.audio ? mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio) : (base.audio ?? createDefaultAudioSettings()),
+    customLyricsFonts: patch.customLyricsFonts ? normalizeImportedLyricsFonts(patch.customLyricsFonts) : base.customLyricsFonts,
+    theme: patch.theme ? mergeThemeSettings(base.theme, patch.theme) : base.theme,
+    sidebar: patch.sidebar ? mergeSidebarSettings(base.sidebar, patch.sidebar) : base.sidebar,
+    shortcuts: patch.shortcuts ? mergeShortcutSettings(base.shortcuts, patch.shortcuts) : base.shortcuts,
+    download: patch.download ? mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download) : (base.download ?? createDefaultDownloadSettings()),
+    upload: patch.upload ? mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload) : (base.upload ?? createDefaultUploadSettings()),
+    plugins: patch.plugins ? mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins) : (base.plugins ?? defaultPluginSettings),
+    autoSync: patch.autoSync ? mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync) : (base.autoSync ?? createDefaultAutoSyncConfig()),
   };
 };
 
