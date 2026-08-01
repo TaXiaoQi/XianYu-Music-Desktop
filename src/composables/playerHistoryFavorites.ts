@@ -1,13 +1,7 @@
 import type { Song } from '../types';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 
-interface CreatePlayerHistoryFavoritesDeps {
-  legacyPlayerHistoryKey: string;
-}
-
-export const createPlayerHistoryFavorites = ({
-  legacyPlayerHistoryKey: _legacyPlayerHistoryKey,
-}: CreatePlayerHistoryFavoritesDeps) => {
+export const createPlayerHistoryFavorites = () => {
   const libraryCollections = useLibraryCollections();
 
   const isFavorite = (song: Song | null) => {

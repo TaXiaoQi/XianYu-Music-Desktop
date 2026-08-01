@@ -134,7 +134,7 @@ export const defaultAudioSettings: AudioSettings = {
   onlineDefaultQuality: '320k',
   onlineFailureBehavior: 'skip',
   onlineQualityFallbackBehavior: 'lower',
-  streamCacheSizeMB: 500,
+  streamCacheSizeMB: 512,
   fadeInOutEnabled: false,
   fadeInOutDurationMs: 300,
 };
@@ -168,9 +168,7 @@ export const defaultPluginSettings: PluginSettings = {
 
 export const defaultAutoSyncConfig: AutoSyncConfig = {
   enabled: false,
-  syncIntervalHours: 1,
-  syncIntervalMinutes: 2,
-  syncIntervalSeconds: 38,
+  syncIntervalSeconds: 10800,
   maxDelayMinutes: 30,
   delayedCount: 0,
   lastSyncAttemptAt: 0,
@@ -391,7 +389,7 @@ export const mergeAudioSettings = (
       : base.outputMode ?? 'shared';
 
   const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
-  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'wait'];
+  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop'];
   const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
 
   return {
@@ -420,7 +418,7 @@ export const mergeAudioSettings = (
       : base.onlineQualityFallbackBehavior ?? 'lower',
     streamCacheSizeMB: Number.isFinite(patch.streamCacheSizeMB) && patch.streamCacheSizeMB! > 0
       ? Math.round(patch.streamCacheSizeMB!)
-      : base.streamCacheSizeMB ?? 500,
+      : base.streamCacheSizeMB ?? 512,
     fadeInOutEnabled: typeof patch.fadeInOutEnabled === 'boolean'
       ? patch.fadeInOutEnabled
       : base.fadeInOutEnabled ?? false,
@@ -469,9 +467,7 @@ const mergePluginSettings = (base: PluginSettings, patch: Partial<PluginSettings
 
 const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: Partial<AutoSyncConfig>): AutoSyncConfig => ({
   enabled: typeof patch.enabled === 'boolean' ? patch.enabled : base.enabled,
-  syncIntervalHours: typeof patch.syncIntervalHours === 'number' && patch.syncIntervalHours >= 0 ? patch.syncIntervalHours : base.syncIntervalHours,
-  syncIntervalMinutes: typeof patch.syncIntervalMinutes === 'number' && patch.syncIntervalMinutes >= 0 && patch.syncIntervalMinutes < 60 ? patch.syncIntervalMinutes : base.syncIntervalMinutes,
-  syncIntervalSeconds: typeof patch.syncIntervalSeconds === 'number' && patch.syncIntervalSeconds >= 0 && patch.syncIntervalSeconds < 60 ? patch.syncIntervalSeconds : base.syncIntervalSeconds,
+  syncIntervalSeconds: typeof patch.syncIntervalSeconds === 'number' && patch.syncIntervalSeconds >= 0 ? patch.syncIntervalSeconds : base.syncIntervalSeconds,
   maxDelayMinutes: typeof patch.maxDelayMinutes === 'number' && patch.maxDelayMinutes >= 0 ? patch.maxDelayMinutes : base.maxDelayMinutes,
   delayedCount: typeof patch.delayedCount === 'number' ? patch.delayedCount : base.delayedCount,
   lastSyncAttemptAt: typeof patch.lastSyncAttemptAt === 'number' ? patch.lastSyncAttemptAt : base.lastSyncAttemptAt,

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { decodeName, formatSingerName } from '../utils/musicFormat';
 
 // ==================== Types ====================
 export interface LxSearchResultItem {
@@ -46,30 +47,6 @@ function sizeFormate(bytes: number | undefined | null): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + 'GB';
-}
-
-function decodeName(str: string | undefined | null): string {
-  if (!str) return '';
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
-}
-
-function formatSingerName(singers: any[] | string | null | undefined, nameKey = 'name', join = '、'): string {
-  if (Array.isArray(singers)) {
-    const names: string[] = [];
-    singers.forEach(item => {
-      const name = item[nameKey];
-      if (name) names.push(name);
-    });
-    return decodeName(names.join(join));
-  }
-  return decodeName(String(singers ?? ''));
 }
 
 // ==================== HTTP Request via Tauri ====================
@@ -855,14 +832,14 @@ export async function lxGetMusicUrl(
         method: 'GET',
         headers: { 'User-Agent': 'lx-music request' },
       });
-      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试');
+      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试', { cause: e });
       const body2 = JSON.parse(resp2.body);
       if (body2.code === 0 && body2.data) {
         return { type, url: body2.data };
       }
-      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`);
+      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`, { cause: e });
     } catch (e2: any) {
-      throw new Error(`获取播放链接失败: ${e2.message}`);
+      throw new Error(`获取播放链接失败: ${e2.message}`, { cause: e2 });
     }
   }
 }
@@ -918,7 +895,7 @@ export async function lxGetLyric(songInfo: LxSearchResultItem): Promise<{ lyric:
         method: 'GET',
         headers: { 'User-Agent': 'lx-music request' },
       });
-      if (resp2.status === 429) throw new Error('请求过于频繁');
+      if (resp2.status === 429) throw new Error('请求过于频繁', { cause: e });
       const body2 = JSON.parse(resp2.body);
       if (body2.code === 0 && body2.data) {
         const data = body2.data;

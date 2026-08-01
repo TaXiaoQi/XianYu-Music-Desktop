@@ -58,3 +58,25 @@ button:focus {
   outline: none !important;
 }
 
+/* 🟢 统一弹窗开/关过渡动效（遮罩淡入淡出 + 内容缩放位移） */
+.modal-pop-enter-active,
+.modal-pop-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.modal-pop-enter-active .modal-content,
+.modal-pop-leave-active .modal-content {
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease;
+}
+
+.modal-pop-enter-from,
+.modal-pop-leave-to {
+  opacity: 0;
+}
+
+.modal-pop-enter-from .modal-content,
+.modal-pop-leave-to .modal-content {
+  opacity: 0;
+  transform: scale(0.92) translateY(12px);
+}
+

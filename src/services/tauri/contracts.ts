@@ -180,11 +180,7 @@ export interface ForegroundFullscreenState {
 
 export interface TauriCommandMap {
   add_library_folder: { payload: { path: string }; response: void };
-  // Deprecated compat command. Do not use in new main-flow code.
-  add_sidebar_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
-  // Deprecated compat command. Do not use in new main-flow code.
-  remove_sidebar_folder: { payload: { path: string }; response: void };
   get_library_hierarchy: { payload: undefined; response: FolderNode[] };
   get_library_artist_catalog: { payload: undefined; response: ArtistCatalogItem[] };
   save_artist_avatar: { payload: { artistId: number; imagePath: string; writeToTags: boolean }; response: SaveArtistAvatarResponse };
@@ -220,8 +216,6 @@ export interface TauriCommandMap {
   get_remote_cache_usage: { payload: undefined; response: RemoteCacheUsage };
   clear_remote_cache: { payload: undefined; response: RemoteCacheUsage };
   list_remote_directory: { payload: { sourceId: string; path: string }; response: RemoteFileEntry[] };
-  // Deprecated compat command. Main folder-tree flow must use get_library_hierarchy.
-  get_sidebar_hierarchy: { payload: undefined; response: FolderNode[] };
   create_folder: { payload: { parentPath: string; folderName: string }; response: string };
   refresh_folder_songs: {
     payload: { folderPath: string; minimumDurationSeconds?: number };

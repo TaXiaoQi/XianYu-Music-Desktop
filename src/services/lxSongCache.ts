@@ -20,7 +20,3 @@ export function cacheLxSong(item: LxSearchResultItem): void {
 export function getCachedLxSong(source: string, songmid: string): LxSearchResultItem | null {
   return _cache.get(makeKey(source, songmid)) ?? null;
 }
-
-export function clearLxSongCache(): void {
-  _cache.clear();
-}

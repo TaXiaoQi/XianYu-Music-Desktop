@@ -412,6 +412,14 @@ const lyricsSyncOffsetMs = computed({
   },
 });
 
+/** 输入浮点防御：四舍五入并回写显示值 */
+const handleLyricsSyncOffsetChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const next = clampLyricsSyncOffset(Number(target.value));
+  target.value = String(next);
+  lyricsSyncOffsetMs.value = next;
+};
+
 const lyricsSyncOffsetLabel = computed(() => {
   const offset = lyricsSyncOffsetMs.value;
   if (offset === 0) return '0 ms';
@@ -663,11 +671,17 @@ function dragCustomPickerArea(event: PointerEvent) {
   updateCustomPickerArea(event);
 }
 
-function setCustomPickerRgb(channel: 'r' | 'g' | 'b', value: number | string) {
+function setCustomPickerRgb(channel: 'r' | 'g' | 'b', value: number | string, event?: Event) {
   const rgb = customPickerRgb.value;
+  const clamped = clampRgb(typeof value === 'string' ? Number(value) : value);
+  // 输入浮点防御：四舍五入并回写显示值
+  if (event) {
+    const target = event.target as HTMLInputElement;
+    target.value = String(clamped);
+  }
   const next = {
     ...rgb,
-    [channel]: clampRgb(typeof value === 'string' ? Number(value) : value),
+    [channel]: clamped,
   };
   syncCustomPickerFromColor(rgbToHex(next.r, next.g, next.b));
   applyCustomPickerColor();
@@ -994,12 +1008,13 @@ onUnmounted(() => {
                 />
                 <div class="flex items-center gap-3">
                   <input
-                    v-model="lyricsSyncOffsetMs"
+                    :value="lyricsSyncOffsetMs"
                     type="number"
                     min="-1000"
                     max="1000"
                     step="10"
                     class="w-28 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
+                    @change="handleLyricsSyncOffsetChange"
                   />
                   <button
                     type="button"
@@ -1510,7 +1525,7 @@ onUnmounted(() => {
                     min="0"
                     max="255"
                     :value="customPickerRgb.r"
-                    @input="setCustomPickerRgb('r', ($event.target as HTMLInputElement).value)"
+                    @change="setCustomPickerRgb('r', ($event.target as HTMLInputElement).value, $event)"
                   >
                   <span>R</span>
                 </label>
@@ -1520,7 +1535,7 @@ onUnmounted(() => {
                     min="0"
                     max="255"
                     :value="customPickerRgb.g"
-                    @input="setCustomPickerRgb('g', ($event.target as HTMLInputElement).value)"
+                    @change="setCustomPickerRgb('g', ($event.target as HTMLInputElement).value, $event)"
                   >
                   <span>G</span>
                 </label>
@@ -1530,7 +1545,7 @@ onUnmounted(() => {
                     min="0"
                     max="255"
                     :value="customPickerRgb.b"
-                    @input="setCustomPickerRgb('b', ($event.target as HTMLInputElement).value)"
+                    @change="setCustomPickerRgb('b', ($event.target as HTMLInputElement).value, $event)"
                   >
                   <span>B</span>
                 </label>

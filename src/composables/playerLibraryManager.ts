@@ -6,6 +6,7 @@ import { libraryApi } from '../services/tauri/libraryApi';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
+import { normalizePath } from '../utils/path';
 
 interface ProcessExternalPathsOptions {
   source?: 'drop' | 'open';
@@ -44,7 +45,6 @@ export const createPlayerLibraryManager = ({
   const libraryStore = useLibraryStore();
   const playbackStore = usePlaybackStore();
   const settingsStore = useSettingsStore();
-  const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   const isWithinLibraryRoot = (path: string, root: string) => {
     const normalizedPath = normalizePath(path);
     const normalizedRoot = normalizePath(root);

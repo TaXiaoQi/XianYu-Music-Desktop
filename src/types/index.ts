@@ -397,7 +397,7 @@ export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse
 /** 现在使用统一的 QualityKey */
 export type OnlineDefaultQuality = QualityKey;
 /** 在线歌曲起播失败时的行为 */
-export type OnlineFailureBehavior = 'skip' | 'stop' | 'wait';
+export type OnlineFailureBehavior = 'skip' | 'stop';
 /** 在线歌曲默认音质播放失败时的音质回退行为 */
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
@@ -509,7 +509,7 @@ export interface AudioSettings {
   onlineFailureBehavior: OnlineFailureBehavior;
   /** 在线歌曲默认音质播放失败时的音质回退行为，默认 'lower'（播放更低音质） */
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
-  /** 在线流式播放缓存上限（MB），默认 500MB */
+  /** 在线流式播放缓存上限（MB），默认 512MB */
   streamCacheSizeMB: number;
   /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
   fadeInOutEnabled: boolean;
@@ -624,11 +624,7 @@ export interface UploadSettings {
 export interface AutoSyncConfig {
   /** 是否启用自动同步 */
   enabled: boolean;
-  /** 同步间隔-小时 */
-  syncIntervalHours: number;
-  /** 同步间隔-分钟 */
-  syncIntervalMinutes: number;
-  /** 同步间隔-秒 */
+  /** 同步间隔（秒），0 表示使用最小间隔 */
   syncIntervalSeconds: number;
   /** 当服务器繁忙时自动延后的最大延迟（分钟） */
   maxDelayMinutes: number;

@@ -4,14 +4,13 @@ import { storeToRefs } from 'pinia';
 import { useLibraryStore } from '../features/library/store';
 import { libraryApi } from '../services/tauri/libraryApi';
 import type { FolderNode } from '../types';
+import { normalizePath } from '../utils/path';
 
 interface CreatePlayerFolderTreeDeps {
   addLibraryFolderPath: (path: string) => Promise<void>;
   removeLibraryFolderPath: (path: string) => Promise<void>;
   showToast: (message: string, type: 'success' | 'info' | 'error') => void;
 }
-
-const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
 const isSameOrAncestorPath = (ancestorPath: string, targetPath: string) => {
   const normalizedAncestor = normalizePath(ancestorPath);
