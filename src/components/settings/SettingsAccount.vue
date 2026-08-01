@@ -19,6 +19,9 @@ const { showToast } = useToast();
 const router = useRouter();
 const playlistSync = usePlaylistSync();
 
+/** 两位数字补零 */
+const pad = (n: number) => n.toString().padStart(2, '0');
+
 const draftBaseUrl = ref(getAuthBaseUrl());
 const isDirty = computed(() => draftBaseUrl.value.trim() !== getAuthBaseUrl());
 
@@ -93,7 +96,6 @@ function toggleUpload(key: keyof typeof settingsStore.settings.upload) {
 const formattedLastSync = computed(() => {
   if (!playlistSync.lastSyncTime.value) return null;
   const date = new Date(playlistSync.lastSyncTime.value);
-  const pad = (n: number) => n.toString().padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
@@ -119,7 +121,6 @@ const syncErrors = computed(() => {
 const formattedLastPluginSync = computed(() => {
   if (!playlistSync.lastPluginSyncTime.value) return null;
   const date = new Date(playlistSync.lastPluginSyncTime.value);
-  const pad = (n: number) => n.toString().padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
@@ -143,7 +144,6 @@ const pluginSyncErrors = computed(() => {
 const formattedLastSettingsSync = computed(() => {
   if (!playlistSync.lastSettingsSyncTime.value) return null;
   const date = new Date(playlistSync.lastSettingsSyncTime.value);
-  const pad = (n: number) => n.toString().padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
@@ -168,7 +168,6 @@ const nextSyncTimeDisplay = computed(() => {
   const nextSyncAt = settingsStore.settings.autoSync.nextSyncAt;
   if (!nextSyncAt || nextSyncAt <= 0) return null;
   const date = new Date(nextSyncAt);
-  const pad = (n: number) => n.toString().padStart(2, '0');
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 });
 

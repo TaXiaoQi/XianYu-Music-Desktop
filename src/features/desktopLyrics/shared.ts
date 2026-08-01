@@ -5,6 +5,7 @@ import type {
   LyricLine,
 } from '../../composables/lyrics';
 import type { Song } from '../../types';
+import { clamp } from '../../utils/math';
 
 export const DESKTOP_LYRICS_WINDOW_LABEL = 'desktop-lyrics';
 export const DESKTOP_LYRICS_STATE_EVENT = 'desktop-lyrics:state';
@@ -102,10 +103,6 @@ export function createDesktopLyricsSongSnapshot(song: Song | null): DesktopLyric
     artist: song.artist || 'Unknown Artist',
     duration: song.duration,
   };
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function getWorkAreaRight(workArea: DesktopLyricsWorkArea) {

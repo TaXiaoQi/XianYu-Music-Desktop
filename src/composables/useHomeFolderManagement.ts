@@ -1,6 +1,7 @@
 import { ref, watch, type Ref } from 'vue';
 
 import type { FolderNode, Song } from '../types';
+import { normalizePath, getParentFolderPath } from '../utils/path';
 
 interface ConfirmOptions {
   title: string;
@@ -49,8 +50,6 @@ export function useHomeFolderManagement({
   const folderToDeletePath = ref('');
   const skipNextRootSync = ref(false);
 
-  const normalizePath = (path: string | null) => (path || '').replace(/\\/g, '/').replace(/\/+$/, '');
-
   const getOwningRootPath = (path: string) => {
     const normalizedTarget = normalizePath(path);
     const matchedRoots = libraryHierarchy.value
@@ -63,8 +62,6 @@ export function useHomeFolderManagement({
 
     return matchedRoots[0] || activeRootPath.value || null;
   };
-
-  const getParentFolderPath = (path: string) => path.replace(/[\\/][^\\/]+$/, '');
 
   const syncRootSelection = async (path: string | null, options: { forceRefresh?: boolean } = {}) => {
     const normalizedPath = path || '';

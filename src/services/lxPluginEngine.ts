@@ -3,16 +3,18 @@
  *
  * 核心设计（与 lx-music-desktop 一致）：
  *   lx-music-desktop 使用独立 BrowserWindow + contextBridge 隔离运行插件脚本
- *   本引擎使用隐藏 iframe + postMessage 实现同等隔离
+ *   本引擎直接在主窗口 eval 插件脚本，通过 globalThis.lx 对象暴露 API 与插件通信
+ *   （与 lx-music-desktop webFrame.executeJavaScript + contextBridge.exposeInMainWorld 等价）
  *
- * 通信协议：
- *   主窗口 → iframe:  { type: 'lx-init', script, scriptInfo }
- *   主窗口 → iframe:  { type: 'lx-request', requestKey, data }
- *   iframe → 主窗口:  { type: 'lx-inited', info } | { type: 'lx-inited-error', message }
- *   iframe → 主窗口:  { type: 'lx-response', requestKey, result } | { type: 'lx-response-error', requestKey, message }
- *   iframe → 主窗口:  { type: 'lx-log', messages }
- *   iframe → 主窗口:  { type: 'lx-http-request', requestId, method, url, headers, body }
- *   主窗口 → iframe:  { type: 'lx-http-response', requestId, response } | { type: 'lx-http-error', requestId, error }
+ * 通信机制：
+ *   主窗口 → 插件:  globalThis.lx = lxApi（暴露 EVENT_NAMES / request / send / on / utils 等）
+ *   插件 → 主窗口:  lx.send(EVENT_NAMES.inited, info) 声明初始化完成
+ *   插件 → 主窗口:  lx.on(EVENT_NAMES.request, handler) 注册请求处理器
+ *   主窗口 → 插件:  调用 requestHandler({ source, action, info }) 触发请求
+ *   插件 → 主窗口:  lx.request(url, options, callback) 发起 HTTP 请求（由主窗口 Tauri 后端代理）
+ *
+ * 多插件隔离：
+ *   多插件共享 globalThis.lx，通过初始化锁与请求锁串行化，调用时临时设置 globalThis.lx 指向对应插件
  */
 
 import CryptoJs from 'crypto-js';
@@ -84,7 +86,6 @@ interface LxPluginState {
   initInfo: LxInitInfo | null;
   status: 'loading' | 'ready' | 'error';
   errorMessage?: string;
-  iframe: HTMLIFrameElement | null;  // 保留字段兼容旧代码，新方案不再使用 iframe
   requestHandler: ((data: any) => any) | null;  // [新方案] 插件注册的 request 处理器
   lxApi: any;  // [修复防御] 保存 globalThis.lx 对象引用，供 lxPluginRequest 调用时临时设置
   pendingRequests: Map<string, {
@@ -265,7 +266,7 @@ async function lxNativeRequest(
 
 /**
  * 加载落雪 LX 插件脚本
- * 使用隐藏 iframe 隔离执行（与 lx-music-desktop 使用独立 BrowserWindow 隔离一致）
+ * 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）
  */
 export async function loadLxPluginFromScript(
   script: string,
@@ -310,7 +311,6 @@ export async function loadLxPluginFromScript(
     source: null as any,
     initInfo: null,
     status: 'loading',
-    iframe: null,  // [新方案] 不再使用 iframe
     requestHandler: null,
     lxApi: null,  // [修复防御] 初始为 null，创建 lx 对象后赋值
     pendingRequests: new Map(),
@@ -673,15 +673,6 @@ export async function loadLxPluginFromScript(
   return source;
 }
 
-/** 销毁 iframe */
-function destroyIframe(iframe: HTMLIFrameElement | null) {
-  if (!iframe) return;
-  try {
-    iframe.srcdoc = '';
-    iframe.remove();
-  } catch { /* ignore */ }
-}
-
 // ==================== 请求方法 ====================
 
 /**
@@ -894,11 +885,9 @@ export function destroyLxPlugin(sourceId: string) {
     pending.reject(new Error('Plugin destroyed'));
     state.pendingRequests.delete(key);
   }
-  // [新方案] 清理 requestHandler，不再使用 iframe
+  // [新方案] 清理 requestHandler
   state.requestHandler = null;
   state.lxApi = null;  // [修复防御] 清理 lxApi 引用，避免销毁后仍能调用
-  destroyIframe(state.iframe);
-  state.iframe = null;
   state.status = 'error';
   state.initInfo = null;
   lxPlugins.delete(sourceId);
@@ -908,7 +897,7 @@ export function destroyLxPlugin(sourceId: string) {
 // ==================== 插件启用时初始化 ====================
 
 /**
- * 启用落雪插件时调用 —— 读取脚本并创建 iframe 初始化
+ * 启用落雪插件时调用 —— 读取脚本并直接 eval 初始化
  * 与 lx-music-desktop setUserApi → createWindow → initEnv 流程一致
  */
 export async function initLxPlugin(source: PluginSource): Promise<boolean> {

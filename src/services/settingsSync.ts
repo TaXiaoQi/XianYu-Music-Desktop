@@ -133,32 +133,3 @@ export async function downloadSettings(): Promise<{ settings: AppSettings | null
     return { settings: null, result };
   }
 }
-
-// ==================== 状态查询 ====================
-
-/** 查询云端设置同步状态 */
-export async function getSettingsSyncStatus(): Promise<{
-  hasData: boolean;
-  uploadedAt: string | null;
-}> {
-  const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId) {
-    return { hasData: false, uploadedAt: null };
-  }
-
-  try {
-    const data = await signedRequest<{
-      has_data: boolean;
-      meta: { uploaded_at: string; timestamp: number } | null;
-    }>('settings_sync_status', {
-      user_id: ciyuanxiId,
-    });
-
-    return {
-      hasData: data.has_data ?? false,
-      uploadedAt: data.meta?.uploaded_at ?? null,
-    };
-  } catch {
-    return { hasData: false, uploadedAt: null };
-  }
-}

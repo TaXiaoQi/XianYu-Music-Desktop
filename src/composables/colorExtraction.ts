@@ -1,4 +1,5 @@
 import { MemoryCache } from '../utils/MemoryCache';
+import { clamp } from '../utils/math';
 
 interface HslColor {
   h: number;
@@ -68,10 +69,6 @@ function getCachedPalette(cacheKey: string): string[] | undefined {
 
 function setCachedPalette(cacheKey: string, palette: string[]) {
   paletteCache.set(cacheKey, [...palette]);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function lerp(start: number, end: number, amount: number): number {
