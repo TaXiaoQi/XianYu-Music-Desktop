@@ -53,8 +53,6 @@ let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
-// [在线失败行为] 记录上一次因起播失败而等待过的歌曲路径，避免 'wait' 无限等待
-let lastFailureWaitedPath: string | null = null;
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
@@ -807,7 +805,6 @@ export const createPlayerPlayback = ({
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
-        lastFailureWaitedPath = null; // 起播成功，清除等待标记
         sessionStartTime = Date.now();
         loadLyrics();
         startPlaybackRuntime();
@@ -922,12 +919,21 @@ export const createPlayerPlayback = ({
           try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
           finishRustPlaybackStart();
         } else {
-          // [在线播放重构] Rust 失败时直接报告错误并停止
+          // [在线播放起播失败行为] 仅在线引擎完全无法生效时执行
+          // Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时），而非异常路径
           try { await playbackApi.stopAudio(); } catch {}
           isPlaying.value = false;
           isSongLoaded.value = false;
           stopPlaybackRuntime();
           console.error('[Audio] 在线音频播放失败（Rust 后端起播失败）');
+
+          const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+          if (failureBehavior === 'skip') {
+            setTimeout(() => {
+              if (currentSong.value?.path === song.path) handleAutoNext();
+            }, 400);
+          }
+          // 'stop'：保持停止，不做额外处理
           return;
         }
       } else {
@@ -988,52 +994,14 @@ export const createPlayerPlayback = ({
           .catch(() => {});
       }
     } catch {
+      // [异常兜底] 仅处理状态清理，不执行起播失败行为
+      // 起播失败行为已移至 rustOk===false 路径，仅在线引擎完全无法生效时执行
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
       isPlaying.value = false;
       isSongLoaded.value = false;
       sessionStartTime = null;
       stopPlaybackRuntime();
-
-      // [在线播放起播失败行为] 仅对在线歌曲生效；本地歌曲维持原有「停止」表现
-      const isOnlineSong = song.path.startsWith('lx://')
-        || song.path.startsWith('plugin://')
-        || song.path.startsWith('http://')
-        || song.path.startsWith('https://')
-        || song.path.startsWith('remote://');
-      if (!isOnlineSong) return;
-
-      const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
-      if (failureBehavior === 'skip') {
-        lastFailureWaitedPath = null;
-        setTimeout(() => {
-          if (currentSong.value?.path === song.path) handleAutoNext();
-        }, 400);
-      } else if (failureBehavior === 'wait') {
-        // [等待响应] 等待流式缓存下载完成后重新播放（每首歌只等待一次，避免死循环）
-        // 适用于 Baka 等前置请求易失败的音源：解码失败时缓存可能仍在后台下载
-        const waitUrl = audioFilePath;
-        if (/^https?:/.test(waitUrl) && lastFailureWaitedPath !== song.path) {
-          lastFailureWaitedPath = song.path;
-          console.log('[Audio] 起播失败，等待缓存完成后重试:', waitUrl);
-          void (async () => {
-            try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              const ok = await invoke<boolean>('wait_stream_complete', { url: waitUrl, timeoutSecs: 60 });
-              if (ok && currentSong.value?.path === song.path && requestId === playRequestId) {
-                void playSong(song, { startTime: currentTime.value, preserveQueue: true });
-              } else {
-                console.warn('[Audio] 缓存等待失败或已切歌，放弃重试');
-              }
-            } catch (e: any) {
-              console.warn('[Audio] 等待缓存异常:', e?.message);
-            }
-          })();
-        } else {
-          lastFailureWaitedPath = null;
-        }
-      }
-      // 'stop'：保持停止，不做额外处理
     }
   };
 

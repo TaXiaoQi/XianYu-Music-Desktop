@@ -116,33 +116,35 @@ const handleConfirmCreate = (name: string) => {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="emit('close')">
-      <div class="bg-white rounded-xl shadow-2xl w-80 overflow-hidden animate-in fade-in zoom-in duration-200">
-        <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-          <h3 class="font-bold text-gray-800 text-sm">收藏到歌单</h3>
-          <button @click="emit('close')" class="text-gray-400 hover:text-gray-600">✕</button>
-        </div>
-        <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
-          <div @click="handleCreateClick" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer mb-1 group">
-            <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 group-hover:bg-gray-200 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-            </div>
-            <span class="text-sm text-gray-600">创建新歌单</span>
+    <Transition name="modal-pop">
+      <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="emit('close')">
+        <div class="modal-content bg-white rounded-xl shadow-2xl w-80 overflow-hidden">
+          <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="font-bold text-gray-800 text-sm">收藏到歌单</h3>
+            <button @click="emit('close')" class="text-gray-400 hover:text-gray-600">✕</button>
           </div>
-          <div v-for="pl in playlists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
-            <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-              <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover">
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+          <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
+            <div @click="handleCreateClick" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer mb-1 group">
+              <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 group-hover:bg-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+              </div>
+              <span class="text-sm text-gray-600">创建新歌单</span>
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm text-gray-800 truncate">{{ pl.name }}</div>
-              <div class="text-xs text-gray-400">{{ pl.songPaths.length }}首</div>
+            <div v-for="pl in playlists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+              <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
+                <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover">
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-gray-800 truncate">{{ pl.name }}</div>
+                <div class="text-xs text-gray-400">{{ pl.songPaths.length }}首</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-    
+    </Transition>
+
     <ModernInputModal
       v-model:visible="showCreateModal"
       title="创建并添加到歌单"
