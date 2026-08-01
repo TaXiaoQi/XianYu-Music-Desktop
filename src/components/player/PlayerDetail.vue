@@ -594,6 +594,7 @@ const handleChangeLyrics = async () => {
       :visible="contextMenuVisible"
       :x="contextMenuX"
       :y="contextMenuY"
+      :song="currentSong"
       @close="closeContextMenu"
       @action="handleMenuAction"
     />
