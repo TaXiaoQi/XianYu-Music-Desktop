@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
-  ArrowDown,
-  ArrowUp,
+  ChevronDown,
   Download,
   Gauge,
-  GripVertical,
   Heart,
   ListMusic,
   RotateCcw,
@@ -13,67 +11,30 @@ import {
   Volume2,
   Repeat,
   FileText,
-  Eye,
   EyeOff,
+  Check,
 } from 'lucide-vue-next';
 
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import {
   DEFAULT_FOOTER_LAYOUT,
-  FOOTER_CONTAINER_LIMITS,
-  computeCollapsedItems,
-  getFooterItemMeta,
+  FOOTER_ITEMS,
+  findItemContainer,
+  moveFooterItemTo,
   normalizeFooterLayout,
 } from '../../features/settings/footerItems';
-import type {
-  FooterContainerKey,
-  FooterItemKey,
-  FooterLayoutSettings,
-} from '../../types';
+import type { FooterMoveTarget } from '../../features/settings/footerItems';
+import type { FooterItemKey } from '../../types';
 import SettingHint from './SettingHint.vue';
 
 const { footerLayout, patchFooterLayout } = useSettings();
 const { showToast } = useToast();
 
-/** 归一化后的当前布局（与 PlayerFooter 使用同一份 store，修改即时生效） */
-const layout = computed<FooterLayoutSettings>(() =>
-  normalizeFooterLayout(footerLayout.value),
-);
+/** 归一化后的当前布局（与 PlayerFooter 共享同一 store，修改即时生效） */
+const layout = computed(() => normalizeFooterLayout(footerLayout.value));
 
-const collapsedItems = computed<FooterItemKey[]>(() =>
-  computeCollapsedItems(layout.value),
-);
-
-// --- 容器元数据（用于渲染分组卡片） ---
-interface ContainerMeta {
-  key: FooterContainerKey;
-  label: string;
-  hint: string;
-  capacity: number;
-}
-
-const CONTAINERS: ContainerMeta[] = [
-  { key: 'left', label: '左侧容器', hint: '紧邻封面与歌曲信息', capacity: FOOTER_CONTAINER_LIMITS.left },
-  { key: 'middleLeft', label: '中间左侧', hint: '紧邻「上一首」按钮', capacity: FOOTER_CONTAINER_LIMITS.middleLeft },
-  { key: 'middleRight', label: '中间右侧', hint: '紧邻「下一首」按钮', capacity: FOOTER_CONTAINER_LIMITS.middleRight },
-  { key: 'right', label: '右侧容器', hint: '紧邻窗口右边缘', capacity: FOOTER_CONTAINER_LIMITS.right },
-];
-
-/** 获取容器内当前显示的控件列表（middleLeft/middleRight 转为单元素或空数组） */
-const getContainerItems = (container: FooterContainerKey): FooterItemKey[] => {
-  const l = layout.value;
-  if (container === 'left') return l.left;
-  if (container === 'right') return l.right;
-  if (container === 'middleLeft') return l.middleLeft ? [l.middleLeft] : [];
-  return l.middleRight ? [l.middleRight] : [];
-};
-
-/** 容器当前占用数 */
-const getContainerCount = (container: FooterContainerKey): number =>
-  getContainerItems(container).length;
-
-// --- 图标渲染 ---
+// --- 图标映射 ---
 const ICON_MAP: Record<FooterItemKey, typeof Heart> = {
   favorite: Heart,
   download: Download,
@@ -85,85 +46,83 @@ const ICON_MAP: Record<FooterItemKey, typeof Heart> = {
   equalizer: SlidersHorizontal,
   playlist: ListMusic,
 };
+const getItemIcon = (key: FooterItemKey) => ICON_MAP[key] ?? EyeOff;
 
-const getItemIcon = (key: FooterItemKey) => ICON_MAP[key] ?? Eye;
+/** 查找控件当前所在的容器 */
+const getItemContainer = (key: FooterItemKey): FooterMoveTarget =>
+  findItemContainer(layout.value, key);
 
-// --- 排序操作（仅 left / right 列表型容器） ---
-/**
- * 写回新布局：保留单值容器原值，仅替换被修改的列表。
- * patchFooterLayout 内部会再次归一化，保证合法性。
- */
-const applyLayout = (next: FooterLayoutSettings) => {
+/** 容器/收纳的显示标签 */
+const TARGET_LABELS: Record<FooterMoveTarget, string> = {
+  left: '左侧容器',
+  middleLeft: '中间左侧',
+  middleRight: '中间右侧',
+  right: '右侧容器',
+  collapsed: '收纳菜单',
+};
+
+// --- 移动目标选项 ---
+const MOVE_TARGETS: FooterMoveTarget[] = ['left', 'middleLeft', 'middleRight', 'right', 'collapsed'];
+
+/** 判断目标容器是否已满（不可再放控件） */
+const isTargetFull = (target: FooterMoveTarget): boolean => {
+  if (target === 'collapsed') return false;
+  const l = layout.value;
+  if (target === 'left') return l.left.length >= 2;
+  if (target === 'right') return l.right.length >= 5;
+  if (target === 'middleLeft') return l.middleLeft !== null;
+  if (target === 'middleRight') return l.middleRight !== null;
+  return false;
+};
+
+// --- 悬浮窗状态 ---
+const openPopupKey = ref<FooterItemKey | null>(null);
+const popupRefs = ref<Record<string, HTMLElement | null>>({});
+const popupTriggers = ref<Record<string, HTMLElement | null>>({});
+
+/** 切换悬浮窗 */
+const togglePopup = (key: FooterItemKey) => {
+  openPopupKey.value = openPopupKey.value === key ? null : key;
+};
+
+/** 关闭悬浮窗 */
+const closePopup = () => {
+  openPopupKey.value = null;
+};
+
+/** 点击外部关闭悬浮窗 */
+const handleDocumentClick = (e: MouseEvent) => {
+  if (!openPopupKey.value) return;
+  const key = openPopupKey.value;
+  const popup = popupRefs.value[key];
+  const trigger = popupTriggers.value[key];
+  if (popup && popup.contains(e.target as Node)) return;
+  if (trigger && trigger.contains(e.target as Node)) return;
+  closePopup();
+};
+
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick);
+});
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick);
+});
+
+// --- 移动控件 ---
+const moveItem = (key: FooterItemKey, target: FooterMoveTarget) => {
+  const current = getItemContainer(key);
+  if (current === target) {
+    closePopup();
+    return;
+  }
+  const next = moveFooterItemTo(layout.value, key, target);
+  if (next === null) {
+    const label = TARGET_LABELS[target];
+    showToast(`${label}已满，请先移出其他控件`, 'info');
+    return;
+  }
   patchFooterLayout(next);
-};
-
-const moveInList = (
-  container: 'left' | 'right',
-  from: number,
-  to: number,
-) => {
-  const list = [...getContainerItems(container)];
-  if (from < 0 || from >= list.length || to < 0 || to >= list.length || from === to) return;
-  const [moved] = list.splice(from, 1);
-  list.splice(to, 0, moved);
-  applyLayout({
-    ...layout.value,
-    [container]: list,
-  } as FooterLayoutSettings);
-};
-
-const moveUp = (container: 'left' | 'right', index: number) =>
-  moveInList(container, index, index - 1);
-const moveDown = (container: 'left' | 'right', index: number) =>
-  moveInList(container, index, index + 1);
-
-// --- 显示 / 隐藏（收入折叠） ---
-/** 将控件从其容器移除（进入折叠收纳菜单） */
-const hideItem = (key: FooterItemKey) => {
-  const l = layout.value;
-  const next: FooterLayoutSettings = {
-    left: l.left.filter(k => k !== key),
-    middleLeft: l.middleLeft === key ? null : l.middleLeft,
-    middleRight: l.middleRight === key ? null : l.middleRight,
-    right: l.right.filter(k => k !== key),
-  };
-  applyLayout(next);
-};
-
-/** 将控件从折叠区放回其允许的容器（若容器已满则提示） */
-const showItem = (key: FooterItemKey) => {
-  const meta = getFooterItemMeta(key);
-  if (!meta) return;
-  const l = layout.value;
-
-  // 该控件允许的容器（按元数据顺序取第一个）
-  const target = meta.allowedContainers[0];
-  if (!target) return;
-
-  if (target === 'middleLeft') {
-    if (l.middleLeft !== null) {
-      showToast('中间左侧位置已被占用，请先隐藏当前控件', 'info');
-      return;
-    }
-    applyLayout({ ...l, middleLeft: key });
-    return;
-  }
-  if (target === 'middleRight') {
-    if (l.middleRight !== null) {
-      showToast('中间右侧位置已被占用，请先隐藏当前控件', 'info');
-      return;
-    }
-    applyLayout({ ...l, middleRight: key });
-    return;
-  }
-
-  const list = target === 'left' ? [...l.left] : [...l.right];
-  if (list.length >= FOOTER_CONTAINER_LIMITS[target]) {
-    showToast(`${target === 'left' ? '左侧' : '右侧'}容器已满，请先隐藏其他控件`, 'info');
-    return;
-  }
-  list.push(key);
-  applyLayout({ ...l, [target]: list } as FooterLayoutSettings);
+  closePopup();
 };
 
 // --- 恢复默认 ---
@@ -176,75 +135,6 @@ const restoreDefault = () => {
   });
   showToast('已恢复默认底栏布局', 'success');
 };
-
-// --- 拖拽排序（pointer 事件，参考 SettingsSidebar 实现） ---
-// Tauri WebView2 dragDropEnabled 接管原生 DnD，需用 pointer 自行实现。
-const dragging = ref<{ container: 'left' | 'right'; index: number } | null>(null);
-const listRefs = ref<Record<string, HTMLElement | null>>({});
-
-const resolveTargetIndex = (
-  container: 'left' | 'right',
-  clientY: number,
-  currentIndex: number,
-): number | null => {
-  const listEl = listRefs.value[container];
-  if (!listEl) return null;
-  const rows = Array.from(
-    listEl.querySelectorAll<HTMLElement>('[data-footer-row]'),
-  );
-  if (rows.length === 0) return null;
-
-  let target = currentIndex;
-  for (let i = currentIndex - 1; i >= 0; i--) {
-    const rect = rows[i].getBoundingClientRect();
-    if (clientY < rect.top + rect.height / 2) target = i;
-    else break;
-  }
-  if (target !== currentIndex) return target;
-  for (let i = currentIndex + 1; i < rows.length; i++) {
-    const rect = rows[i].getBoundingClientRect();
-    if (clientY > rect.top + rect.height / 2) target = i;
-    else break;
-  }
-  return target;
-};
-
-const updateDraggedPosition = (clientY: number) => {
-  const drag = dragging.value;
-  if (!drag) return;
-  const target = resolveTargetIndex(drag.container, clientY, drag.index);
-  if (target === null || target === drag.index) return;
-  moveInList(drag.container, drag.index, target);
-  dragging.value = { container: drag.container, index: target };
-};
-
-const handlePointerMove = (event: PointerEvent) => {
-  if (!dragging.value) return;
-  event.preventDefault();
-  updateDraggedPosition(event.clientY);
-};
-
-const stopDragging = () => {
-  dragging.value = null;
-  window.removeEventListener('pointermove', handlePointerMove);
-  window.removeEventListener('pointerup', stopDragging);
-  window.removeEventListener('pointercancel', stopDragging);
-};
-
-const startDragging = (
-  container: 'left' | 'right',
-  index: number,
-  event: PointerEvent,
-) => {
-  if (event.button !== 0) return;
-  event.preventDefault();
-  dragging.value = { container, index };
-  window.addEventListener('pointermove', handlePointerMove, { passive: false });
-  window.addEventListener('pointerup', stopDragging);
-  window.addEventListener('pointercancel', stopDragging);
-};
-
-onUnmounted(stopDragging);
 </script>
 
 <template>
@@ -254,162 +144,95 @@ onUnmounted(stopDragging);
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         底部栏布局
       </span>
-      <SettingHint text="拖动手柄或上下箭头调整顺序，点击眼睛图标隐藏/显示控件。修改即时生效，底部栏会实时更新。" />
+      <SettingHint text="点击右侧标签展开悬浮窗，选择控件显示的位置（含收纳菜单）。修改即时生效。" />
     </h2>
 
-    <!-- 容器卡片 -->
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+    <!-- 控件列表 -->
+    <div class="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/45 dark:border-white/10 dark:bg-black/20">
       <div
-        v-for="container in CONTAINERS"
-        :key="container.key"
-        class="rounded-2xl border border-gray-200/70 bg-white/45 p-4 dark:border-white/10 dark:bg-black/20"
+        v-for="(item, index) in FOOTER_ITEMS"
+        :key="item.key"
+        class="flex items-center justify-between gap-3 px-4 py-3 transition-colors"
+        :class="[
+          index !== FOOTER_ITEMS.length - 1 ? 'border-b border-gray-200/50 dark:border-white/5' : '',
+          openPopupKey === item.key ? 'bg-[#EC4141]/5' : 'hover:bg-white/40 dark:hover:bg-white/5',
+        ]"
       >
-        <div class="mb-3 flex items-center justify-between gap-2">
+        <!-- 左侧：图标 + 名称 + 描述 -->
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+          <div
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            :class="getItemContainer(item.key) === 'collapsed'
+              ? 'bg-gray-100 text-gray-400 dark:bg-white/10 dark:text-white/40'
+              : 'bg-[#EC4141]/10 text-[#EC4141]'"
+          >
+            <component :is="getItemIcon(item.key)" class="h-4 w-4" />
+          </div>
           <div class="min-w-0">
-            <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ container.label }}</div>
-            <div class="text-xs text-gray-500 dark:text-white/50">{{ container.hint }}</div>
-          </div>
-          <div
-            class="rounded-full px-2.5 py-1 text-[11px] font-medium tabular-nums"
-            :class="getContainerCount(container.key) >= container.capacity && container.capacity > 0
-              ? 'bg-[#EC4141]/10 text-[#EC4141]'
-              : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-white/60'"
-          >
-            {{ getContainerCount(container.key) }} / {{ container.capacity }}
+            <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.label }}</div>
+            <div class="truncate text-xs text-gray-500 dark:text-white/50">{{ item.description }}</div>
           </div>
         </div>
 
-        <!-- 列表型容器（left / right） -->
-        <div
-          v-if="container.key === 'left' || container.key === 'right'"
-          :ref="el => { if (el) listRefs[container.key] = el as HTMLElement; }"
-          class="flex flex-col gap-1.5"
-        >
-          <TransitionGroup name="footer-sort" tag="div" class="flex flex-col gap-1.5">
-            <div
-              v-for="(key, index) in getContainerItems(container.key)"
-              :key="key"
-              data-footer-row
-              class="group flex items-center gap-2 rounded-xl border border-gray-200/60 bg-white/60 px-2.5 py-2 transition-colors dark:border-white/8 dark:bg-white/5"
-              :class="dragging && dragging.container === container.key && dragging.index === index
-                ? 'ring-1 ring-inset ring-[#EC4141]/40 bg-[#EC4141]/8'
-                : ''"
-            >
-              <GripVertical
-                class="h-4 w-4 shrink-0 touch-none select-none text-gray-400 transition-colors hover:text-[#EC4141] dark:text-white/35 cursor-grab"
-                :class="dragging && dragging.container === container.key && dragging.index === index ? 'cursor-grabbing text-[#EC4141]' : ''"
-                @pointerdown="startDragging(container.key as 'left' | 'right', index, $event)"
-              />
-              <component
-                :is="getItemIcon(key)"
-                class="h-4 w-4 shrink-0 text-[#EC4141]"
-              />
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {{ getFooterItemMeta(key)?.label ?? key }}
-                </div>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  class="settings-footer-move"
-                  title="上移"
-                  :disabled="index === 0"
-                  @click.stop="moveUp(container.key as 'left' | 'right', index)"
-                >
-                  <ArrowUp class="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  class="settings-footer-move"
-                  title="下移"
-                  :disabled="index === getContainerItems(container.key).length - 1"
-                  @click.stop="moveDown(container.key as 'left' | 'right', index)"
-                >
-                  <ArrowDown class="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  class="settings-footer-move"
-                  title="隐藏到折叠菜单"
-                  @click.stop="hideItem(key)"
-                >
-                  <EyeOff class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          </TransitionGroup>
-
-          <div
-            v-if="getContainerItems(container.key).length === 0"
-            class="rounded-xl border border-dashed border-gray-200/70 px-2.5 py-3 text-center text-xs text-gray-400 dark:border-white/10 dark:text-white/40"
+        <!-- 右侧：当前容器标签（点击展开悬浮窗） -->
+        <div class="relative shrink-0">
+          <button
+            :ref="el => { if (el) popupTriggers[item.key] = el as HTMLElement; }"
+            type="button"
+            class="flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all"
+            :class="openPopupKey === item.key
+              ? 'border-[#EC4141] bg-[#EC4141]/8 text-[#EC4141]'
+              : 'border-gray-200/70 bg-white/60 text-gray-600 hover:border-[#EC4141]/40 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300'"
+            @click.stop="togglePopup(item.key)"
           >
-            空（控件已收入折叠菜单）
-          </div>
-        </div>
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="getItemContainer(item.key) === 'collapsed' ? 'bg-gray-400' : 'bg-[#EC4141]'"
+            />
+            {{ TARGET_LABELS[getItemContainer(item.key)] }}
+            <ChevronDown class="h-3 w-3 transition-transform" :class="openPopupKey === item.key ? 'rotate-180' : ''" />
+          </button>
 
-        <!-- 单值容器（middleLeft / middleRight） -->
-        <div v-else class="flex flex-col gap-1.5">
-          <template v-for="key in getContainerItems(container.key)" :key="key">
+          <!-- 悬浮窗：选择容器位置 -->
+          <transition name="popup">
             <div
-              class="group flex items-center gap-2 rounded-xl border border-gray-200/60 bg-white/60 px-2.5 py-2 dark:border-white/8 dark:bg-white/5"
+              v-if="openPopupKey === item.key"
+              :ref="el => { if (el) popupRefs[item.key] = el as HTMLElement; }"
+              class="absolute right-0 top-full z-50 mt-2 min-w-[180px] rounded-xl border border-gray-200/70 bg-white/95 p-1.5 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/95"
+              @click.stop
             >
-              <component
-                :is="getItemIcon(key)"
-                class="h-4 w-4 shrink-0 text-[#EC4141]"
-              />
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {{ getFooterItemMeta(key)?.label ?? key }}
-                </div>
+              <div class="mb-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-white/40">
+                选择显示位置
               </div>
               <button
+                v-for="target in MOVE_TARGETS"
+                :key="target"
                 type="button"
-                class="settings-footer-move"
-                title="隐藏到折叠菜单"
-                @click.stop="hideItem(key)"
+                class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors"
+                :class="getItemContainer(item.key) === target
+                  ? 'bg-[#EC4141]/8 text-[#EC4141]'
+                  : isTargetFull(target) && getItemContainer(item.key) !== target
+                    ? 'text-gray-300 dark:text-white/25 cursor-not-allowed'
+                    : 'text-gray-600 hover:bg-gray-100/70 hover:text-gray-900 dark:text-white/70 dark:hover:bg-white/8 dark:hover:text-white'"
+                :disabled="isTargetFull(target) && getItemContainer(item.key) !== target"
+                @click="moveItem(item.key, target)"
               >
-                <EyeOff class="h-3.5 w-3.5" />
+                <span
+                  class="h-1.5 w-1.5 rounded-full shrink-0"
+                  :class="target === 'collapsed' ? 'bg-gray-400' : 'bg-[#EC4141]'"
+                />
+                <span class="flex-1 text-left whitespace-nowrap">{{ TARGET_LABELS[target] }}</span>
+                <!-- 容量提示 -->
+                <span v-if="target !== 'collapsed'" class="text-[10px] text-gray-400 dark:text-white/40 tabular-nums">
+                  {{ target === 'left' ? layout.left.length : target === 'right' ? layout.right.length : (layout[target as 'middleLeft'] ? 1 : 0) }}/{{ target === 'left' ? 2 : target === 'right' ? 5 : 1 }}
+                </span>
+                <span v-else class="text-[10px] text-gray-400 dark:text-white/40">已收纳</span>
+                <!-- 当前选中 -->
+                <Check v-if="getItemContainer(item.key) === target" class="h-3.5 w-3.5 shrink-0" />
               </button>
             </div>
-          </template>
-
-          <div
-            v-if="getContainerItems(container.key).length === 0"
-            class="rounded-xl border border-dashed border-gray-200/70 px-2.5 py-3 text-center text-xs text-gray-400 dark:border-white/10 dark:text-white/40"
-          >
-            空（控件已收入折叠菜单）
-          </div>
+          </transition>
         </div>
-      </div>
-    </div>
-
-    <!-- 折叠收纳菜单 -->
-    <div
-      v-if="collapsedItems.length > 0"
-      class="rounded-2xl border border-gray-200/70 bg-white/45 p-4 dark:border-white/10 dark:bg-black/20"
-    >
-      <div class="mb-3 flex items-center justify-between gap-2">
-        <div class="min-w-0">
-          <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">折叠收纳菜单</div>
-          <div class="text-xs text-gray-500 dark:text-white/50">未在容器中显示的控件，将收入底栏右侧的折叠菜单</div>
-        </div>
-        <div class="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-medium tabular-nums text-gray-500 dark:bg-white/10 dark:text-white/60">
-          {{ collapsedItems.length }}
-        </div>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="key in collapsedItems"
-          :key="key"
-          type="button"
-          class="flex items-center gap-1.5 rounded-full border border-gray-200/70 bg-white/60 px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:border-[#EC4141]/40 hover:bg-[#EC4141]/8 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
-          @click="showItem(key)"
-        >
-          <component :is="getItemIcon(key)" class="h-3.5 w-3.5" />
-          {{ getFooterItemMeta(key)?.label ?? key }}
-          <Eye class="h-3 w-3 opacity-60" />
-        </button>
       </div>
     </div>
 
@@ -428,49 +251,14 @@ onUnmounted(stopDragging);
 </template>
 
 <style scoped>
-.footer-sort-move {
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+.popup-enter-active,
+.popup-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .footer-sort-move {
-    transition: none;
-  }
-}
-
-.settings-footer-move {
-  display: inline-flex;
-  height: 26px;
-  width: 26px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(71, 85, 105, 0.85);
-  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
-}
-
-.settings-footer-move:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.34);
-  background: rgba(236, 65, 65, 0.08);
-  color: #ec4141;
-}
-
-.settings-footer-move:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-:global(.dark) .settings-footer-move {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-:global(.dark) .settings-footer-move:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(236, 65, 65, 0.16);
-  color: #ff8b8b;
+.popup-enter-from,
+.popup-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
 }
 </style>
