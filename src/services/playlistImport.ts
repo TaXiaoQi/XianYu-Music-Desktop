@@ -11,8 +11,8 @@
  */
 
 import CryptoJs from 'crypto-js';
-import he from 'he';
 import { pluginApi } from './tauri/pluginApi';
+import { decodeName, formatSingerName } from '../utils/musicFormat';
 import type { PluginSearchResult } from '../types';
 
 // ==================== 音源定义 ====================
@@ -56,27 +56,6 @@ function log(msg: string) {
 }
 
 // ==================== 工具函数 ====================
-
-/** HTML 实体解码（与 LxSdk.decodeName 一致） */
-function decodeName(str: string | null | undefined): string {
-  if (!str) return '';
-  try { return he.decode(str); } catch { return str; }
-}
-
-/** 格式化歌手名（与 LxSdk.formatSingerName 一致） */
-function formatSingerName(singers: any[], nameKey = 'name', join = '、'): string {
-  if (!singers || !Array.isArray(singers)) return '';
-  const names: string[] = [];
-  for (const item of singers) {
-    if (item && typeof item === 'object') {
-      const name = item[nameKey];
-      if (name && typeof name === 'string' && name.trim()) {
-        names.push(decodeName(name));
-      }
-    }
-  }
-  return names.join(join);
-}
 
 /** 格式化播放时间（与 LxSdk.formatPlayTime 一致） */
 function formatPlayTime(seconds: number): string {
@@ -223,7 +202,7 @@ export interface ParsedLink {
   playlistId: string;
 }
 
-const URL_EXTRACTOR = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+const URL_EXTRACTOR = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 
 /** 从用户输入文本中解析歌单链接 */
 export function parseLink(input: string): ParsedLink | null {
@@ -262,7 +241,7 @@ function matchPlatform(text: string): ParsedLink | null {
 }
 
 // 网易云正则
-const wyRegex1 = /^.+(?:\?|&)id=(\d+)(?:&.*$|#.*$|$)/;
+const wyRegex1 = /^.+[?&]id=(\d+)(?:&.*$|#.*$|$)/;
 const wyRegex2 = /^.+\/playlist\/(\d+)\/\d+\/.+$/;
 
 function matchWy(text: string): ParsedLink | null {
@@ -864,11 +843,11 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
   if (!id) return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
 
   // 通过 specialid 获取歌单详情（HTML 解析）
-  const url = `http://www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`;
+  const url = `https://www2.kugou.kugou.com/yueku/v9/special/single/${id}-5-9999.html`;
   const resp = await httpFetch(url, 'GET');
   const body = typeof resp.body === 'string' ? resp.body : '';
 
-  const listDataMatch = body.match(/global\.data\s*=\s*(\[.+\]);/s);
+  const listDataMatch = body.match(/global\.data\s*=\s*(\[.+]);/s);
   if (!listDataMatch) {
     return { source: 'kg', songs: [], total: 0, info: { name: '', img: '', desc: '', author: '', playCount: '' } };
   }
@@ -886,7 +865,7 @@ async function getListDetailKg(rawId: string): Promise<PlaylistImportResult> {
     if (parsed) songs.push(parsed);
   }
 
-  const listInfoMatch = body.match(/global\s*=\s*\{[\s\S]+?name:\s*"(.+?)"[\s\S]+?pic:\s*"(.+?)"[\s\S]+?\};/);
+  const listInfoMatch = body.match(/global\s*=\s*\{[\s\S]+?name:\s*"(.+?)"[\s\S]+?pic:\s*"(.+?)"[\s\S]+?};/);
   const info: PlaylistInfo = {
     name: listInfoMatch ? decodeName(listInfoMatch[1]) : '',
     img: listInfoMatch ? listInfoMatch[2] : '',
@@ -1239,7 +1218,7 @@ export async function importPlaylist(
   let actualSource = source;
   let actualId = input;
 
-  if (input.startsWith('http://') || input.startsWith('https://')) {
+  if (input.startsWith('https://') || input.startsWith('https://')) {
     const parsed = parseLink(input);
     if (parsed) {
       actualSource = parsed.source;

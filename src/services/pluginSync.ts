@@ -233,34 +233,3 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
 
   return result;
 }
-
-// ==================== 状态查询 ====================
-
-/** 查询云端插件同步状态 */
-export async function getPluginSyncStatus(): Promise<{
-  hasData: boolean;
-  uploadedAt: string | null;
-  pluginCount: number;
-}> {
-  const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId) {
-    return { hasData: false, uploadedAt: null, pluginCount: 0 };
-  }
-
-  try {
-    const data = await signedRequest<{
-      has_data: boolean;
-      meta: { uploaded_at: string; timestamp: number; plugin_count: number } | null;
-    }>('plugin_sync_status', {
-      user_id: ciyuanxiId,
-    });
-
-    return {
-      hasData: data.has_data ?? false,
-      uploadedAt: data.meta?.uploaded_at ?? null,
-      pluginCount: data.meta?.plugin_count ?? 0,
-    };
-  } catch {
-    return { hasData: false, uploadedAt: null, pluginCount: 0 };
-  }
-}

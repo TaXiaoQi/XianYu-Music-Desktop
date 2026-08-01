@@ -47,7 +47,7 @@ export async function fetchLatestRelease(owner: string, repo: string): Promise<R
       const rawJson = await invoke<string>('check_update_by_rust', { owner, repo });
       payload = JSON.parse(rawJson);
     } catch (error) {
-      throw new Error(`[Rust Backend] ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`[Rust Backend] ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   } else {
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {

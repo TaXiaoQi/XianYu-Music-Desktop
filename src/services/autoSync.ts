@@ -59,11 +59,7 @@ export async function getServerLoad(): Promise<ServerLoadStatus | null> {
  * 如果用户设置的间隔为 0，返回最小间隔（1 分钟）
  */
 export function getSyncIntervalMs(config: AutoSyncConfig): number {
-  const raw = (
-    (config.syncIntervalHours * 3600 +
-      config.syncIntervalMinutes * 60 +
-      config.syncIntervalSeconds) * 1000
-  );
+  const raw = config.syncIntervalSeconds * 1000;
   return raw > 0 ? raw : MIN_INTERVAL_MS;
 }
 

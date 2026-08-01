@@ -83,6 +83,8 @@ async function main() {
       }
 
       // Run tauri build
+      // 设置 BUILD_RELEASES_MODE 避免 posttauri 钩子 (move-bundles.js) 重复复制
+      process.env.BUILD_RELEASES_MODE = 'true';
       runCommand('npm run tauri build', rootDir);
 
       // Locate the built installer in nsis directory

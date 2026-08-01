@@ -6,6 +6,8 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { fetchLeaderboard, type LeaderboardEntry } from '../../services/leaderboardService';
+import { normalizePath } from '../../utils/path';
+import { formatFileSize } from '../../utils/format';
 
 const authStore = useAuthStore();
 
@@ -137,10 +139,6 @@ async function handleRefresh() {
   }
 }
 
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').toLowerCase();
-}
-
 function formatDuration(seconds: number): string {
   if (!seconds || seconds <= 0) {
     return `0${TEXT.minuteUnit}`;
@@ -159,21 +157,6 @@ function formatDuration(seconds: number): string {
   }
 
   return `${secs}${TEXT.secondUnit}`;
-}
-
-function formatFileSize(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 MB';
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 const longestPlayed = computed(() => {
