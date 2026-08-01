@@ -5,6 +5,7 @@ import {
   dismissAnnouncement,
   type Announcement,
 } from '../utils/announcement';
+import { useToast } from './toast';
 
 // 模块级单例状态，保证全局共享同一份公告状态
 const announcementVisible = ref(false);
@@ -12,6 +13,8 @@ const currentAnnouncement = ref<Announcement | null>(null);
 const isFetchingAnnouncement = ref(false);
 
 export function useAnnouncement() {
+  const { showToast } = useToast();
+
   /**
    * 自动检查公告（应用启动时调用）
    * 已被用户忽略（dismissed）的公告不会再次弹出
@@ -21,7 +24,7 @@ export function useAnnouncement() {
     isFetchingAnnouncement.value = true;
     try {
       const announcement = await fetchAnnouncement();
-      if (announcement && !isAnnouncementDismissed(announcement.id)) {
+      if (announcement && !isAnnouncementDismissed(announcement)) {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
       }
@@ -31,8 +34,9 @@ export function useAnnouncement() {
   };
 
   /**
-   * 手动检查公告（点击标题栏铃铛按钮时调用）
-   * 无论是否曾被忽略，只要有新公告就强制弹出
+   * 手动查看公告（点击标题栏铃铛按钮时调用）
+   * 无论是否已读，只要有公告就显示；无公告或失败时给出提示，避免「点击没反应」
+   * （启动时才做「有新公告才弹」的校验，手动点击始终展示当前公告）
    */
   const manualCheckAnnouncement = async () => {
     if (isFetchingAnnouncement.value) return;
@@ -42,7 +46,13 @@ export function useAnnouncement() {
       if (announcement) {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
+      } else {
+        // fetchAnnouncement 返回 null：可能是无启用公告，也可能是请求失败（已在控制台打印错误）
+        showToast('暂无公告', 'info');
       }
+    } catch (e) {
+      console.error('[Announcement] 手动获取公告失败:', e);
+      showToast('获取公告失败，请稍后重试', 'error');
     } finally {
       isFetchingAnnouncement.value = false;
     }
@@ -50,7 +60,7 @@ export function useAnnouncement() {
 
   const closeAnnouncement = () => {
     if (currentAnnouncement.value) {
-      dismissAnnouncement(currentAnnouncement.value.id);
+      dismissAnnouncement(currentAnnouncement.value);
     }
     announcementVisible.value = false;
   };
