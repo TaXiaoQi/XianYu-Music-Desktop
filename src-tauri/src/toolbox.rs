@@ -349,23 +349,12 @@ pub fn set_gpu_acceleration(
 
 use std::time::Duration;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum UpdateSource {
-    Official,
-    Github,
-}
-
 #[tauri::command]
 pub async fn check_update_by_rust(
-    source: UpdateSource,
+    owner: String,
+    repo: String,
 ) -> Result<String, String> {
-    let url = match source {
-        UpdateSource::Official => "https://lycia.prettyboy.fun/latest.json",
-        UpdateSource::Github => {
-            "https://api.github.com/repos/TaXiaoQi/XY-Music-Desktop/releases/latest"
-        }
-    };
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -374,8 +363,8 @@ pub async fn check_update_by_rust(
         .map_err(|e| format!("创建更新请求失败: {e}"))?;
 
     client
-        .get(url)
-        .header("Accept", "application/json")
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
         .send()
         .await
         .map_err(|e| format!("请求更新接口失败: {e}"))?
@@ -787,45 +776,66 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
 
 #[tauri::command]
 pub async fn fetch_announcement() -> Result<String, String> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-
-    let urls = [
-        format!("https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json?_t={}", timestamp),
-        format!("https://gh-proxy.com/https://raw.githubusercontent.com/TaXiaoQi/XY-Music-Desktop/main/announcement.json?_t={}", timestamp),
-        format!("https://cdn.jsdelivr.net/gh/TaXiaoQi/XY-Music-Desktop@main/announcement.json?_t={}", timestamp),
-    ];
+    // 公告数据源：自建服务器（xy.zh2026.cn），接口返回 {code, msg, data}
+    // data 为公告对象或 null（无启用公告）。这里解包 data 后返回纯公告 JSON，前端接口无需改动。
+    let url = "https://xy.zh2026.cn/chaoguan/public/api/app.php?action=app_announcement";
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
         .user_agent("XY-Music-Updater")
-        .no_proxy()
+        .http1_only() // 强制 HTTP/1.1，规避服务器 TLS 重协商下 HTTP/2 的兼容问题
         .build()
         .map_err(|e| format!("创建请求客户端失败: {e}"))?;
 
-    let mut last_error = String::new();
-    for url in &urls {
-        match client
-            .get(url)
-            .header("Accept", "application/json")
-            .header("Cache-Control", "no-cache")
-            .send()
-            .await
-        {
-            Ok(resp) => match resp.error_for_status() {
-                Ok(resp) => match resp.text().await {
-                    Ok(text) => return Ok(text),
-                    Err(e) => last_error = format!("读取公告数据失败: {e}"),
-                },
-                Err(e) => last_error = format!("公告接口返回错误状态: {e}"),
-            },
-            Err(e) => last_error = format!("请求公告接口失败: {e}"),
-        }
+    let resp = client
+        .get(url)
+        .header("Accept", "application/json")
+        .header("Cache-Control", "no-cache")
+        .send()
+        .await
+        .map_err(|e| {
+            // 打印完整错误链，便于诊断 TLS / DNS / 连接问题
+            let mut msg = format!("请求公告接口失败: {e}");
+            let mut src = std::error::Error::source(&e);
+            while let Some(s) = src {
+                msg.push_str(&format!(" | {s}"));
+                src = s.source();
+            }
+            msg
+        })?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取公告数据失败: {e}"))?;
+
+    if !status.is_success() {
+        let snippet: String = text.chars().take(200).collect();
+        return Err(format!("公告接口返回错误状态: {status} | 响应: {snippet}"));
     }
 
-    Err(last_error)
+    // 解包 {code, msg, data}：仅 code==200 时取 data
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(v) => {
+            let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+            if code == 200 {
+                match v.get("data") {
+                    Some(d) if !d.is_null() => return Ok(d.to_string()),
+                    _ => return Ok("{}".to_string()), // 无启用公告
+                }
+            }
+            let msg = v
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("公告接口返回未知错误");
+            Err(format!("公告接口返回错误: {msg}"))
+        }
+        Err(_) => {
+            let snippet: String = text.chars().take(200).collect();
+            Err(format!("公告数据解析失败，原始响应: {snippet}"))
+        }
+    }
 }
 
 #[tauri::command]

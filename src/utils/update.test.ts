@@ -9,10 +9,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
-  OFFICIAL_LATEST_RELEASE_URL,
   compareVersions,
   extractVersion,
-  fetchOfficialLatestRelease,
   fetchLatestRelease
 } from "./update";
 
@@ -35,84 +33,6 @@ describe("compareVersions", () => {
 
   it("treats missing trailing parts as zero", () => {
     expect(compareVersions("1.2", "1.2.0")).toBe(0);
-  });
-});
-
-describe("fetchOfficialLatestRelease", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    invokeMock.mockReset();
-    isTauriMock.mockReset().mockReturnValue(false);
-  });
-
-  it("fetches the official latest.json and resolves relative download URLs", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        version: "1.4.0",
-        date: "2026-05-08",
-        downloadUrl: "/download/LyciaPlayer_Latest_x64_Setup.exe",
-        changelogUrl: "/changelog.html",
-        changelog: ["新增官网更新通道"]
-      }))
-    );
-
-    await expect(fetchOfficialLatestRelease()).resolves.toEqual({
-      version: "1.4.0",
-      url: "https://lycia.prettyboy.fun/download/LyciaPlayer_Latest_x64_Setup.exe",
-      downloadUrl: "https://lycia.prettyboy.fun/download/LyciaPlayer_Latest_x64_Setup.exe",
-      changelogUrl: "https://lycia.prettyboy.fun/changelog.html",
-      publishedAt: "2026-05-08",
-      notes: "新增官网更新通道",
-      source: "official"
-    });
-    expect(fetchMock).toHaveBeenCalledWith(OFFICIAL_LATEST_RELEASE_URL, {
-      headers: {
-        Accept: "application/json"
-      }
-    });
-    expect(invokeMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects invalid official release metadata", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        date: "2026-05-08",
-        downloadUrl: "/download/LyciaPlayer_Latest_x64_Setup.exe"
-      }))
-    );
-
-    await expect(fetchOfficialLatestRelease()).rejects.toThrow("Official latest release version is missing");
-  });
-
-  it("uses Rust backend in Tauri environment", async () => {
-    isTauriMock.mockReturnValue(true);
-    invokeMock.mockResolvedValue(JSON.stringify({
-      version: "1.4.0",
-      date: "2026-05-08",
-      downloadUrl: "/download/LyciaPlayer_Latest_x64_Setup.exe",
-      changelogUrl: "/changelog.html",
-      changelog: ["新增官网更新通道"]
-    }));
-
-    await expect(fetchOfficialLatestRelease()).resolves.toEqual({
-      version: "1.4.0",
-      url: "https://lycia.prettyboy.fun/download/LyciaPlayer_Latest_x64_Setup.exe",
-      downloadUrl: "https://lycia.prettyboy.fun/download/LyciaPlayer_Latest_x64_Setup.exe",
-      changelogUrl: "https://lycia.prettyboy.fun/changelog.html",
-      publishedAt: "2026-05-08",
-      notes: "新增官网更新通道",
-      source: "official"
-    });
-    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { source: 'official' });
-  });
-
-  it("does NOT fallback to browser fetch in Tauri when invoke fails", async () => {
-    isTauriMock.mockReturnValue(true);
-    invokeMock.mockRejectedValue(new Error("CORS or Network error inside Rust"));
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    await expect(fetchOfficialLatestRelease()).rejects.toThrow("[Rust Backend] CORS or Network error inside Rust");
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -139,7 +59,7 @@ describe("fetchLatestRelease", () => {
       notes: "新增 GitHub 更新通道",
       source: "github"
     });
-    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { source: 'github' });
+    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { owner: 'Billy636', repo: 'LyciaMusic' });
   });
 
   it("does NOT fallback to browser fetch in Tauri when invoke fails for GitHub", async () => {

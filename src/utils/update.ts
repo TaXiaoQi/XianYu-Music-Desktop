@@ -1,9 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 
 const VERSION_PATTERN = /\d+(?:\.\d+)+/;
-export const OFFICIAL_LATEST_RELEASE_URL = 'https://lycia.prettyboy.fun/latest.json';
-
-type ReleaseSource = 'official' | 'github';
 
 export interface ReleaseInfo {
   version: string;
@@ -12,7 +9,7 @@ export interface ReleaseInfo {
   changelogUrl?: string;
   publishedAt?: string;
   notes?: string;
-  source?: ReleaseSource;
+  source?: 'github';
 }
 
 export function extractVersion(value: string): string {
@@ -42,80 +39,25 @@ export function compareVersions(left: string, right: string): number {
   return 0;
 }
 
-function resolveReleaseUrl(value: string, baseUrl: string): string {
-  return new URL(value, baseUrl).toString();
-}
+export async function fetchLatestRelease(owner: string, repo: string): Promise<ReleaseInfo> {
+  let payload: any;
 
-type UpdateSourceType = 'official' | 'github';
-
-async function fetchUpdateJson<T>(
-  source: UpdateSourceType,
-  fallbackUrl: string,
-  headers?: Record<string, string>
-): Promise<T> {
   if (isTauri()) {
     try {
-      const rawJson = await invoke<string>('check_update_by_rust', { source });
-      return JSON.parse(rawJson);
+      const rawJson = await invoke<string>('check_update_by_rust', { owner, repo });
+      payload = JSON.parse(rawJson);
     } catch (error) {
       throw new Error(`[Rust Backend] ${error instanceof Error ? error.message : String(error)}`);
     }
   } else {
-    const response = await fetch(fallbackUrl, { headers });
+    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
     if (!response.ok) {
       throw new Error(`[Browser Fetch] HTTP status ${response.status}`);
     }
-    return await response.json();
+    payload = await response.json();
   }
-}
-
-export async function fetchOfficialLatestRelease(endpoint = OFFICIAL_LATEST_RELEASE_URL): Promise<ReleaseInfo> {
-  const payload = await fetchUpdateJson<any>('official', endpoint, {
-    Accept: 'application/json'
-  });
-  const version = typeof payload.version === 'string' ? extractVersion(payload.version) : '';
-
-  if (!version) {
-    throw new Error('Official latest release version is missing');
-  }
-
-  const rawDownloadUrl = typeof payload.downloadUrl === 'string'
-    ? payload.downloadUrl
-    : typeof payload.download_url === 'string'
-      ? payload.download_url
-      : '';
-
-  if (!rawDownloadUrl) {
-    throw new Error('Official latest release download URL is missing');
-  }
-
-  const downloadUrl = resolveReleaseUrl(rawDownloadUrl, endpoint);
-  const rawChangelogUrl = typeof payload.changelogUrl === 'string'
-    ? payload.changelogUrl
-    : typeof payload.changelog_url === 'string'
-      ? payload.changelog_url
-      : undefined;
-  const changelogUrl = rawChangelogUrl ? resolveReleaseUrl(rawChangelogUrl, endpoint) : undefined;
-  const changelog = Array.isArray(payload.changelog)
-    ? payload.changelog.filter((item: unknown): item is string => typeof item === 'string')
-    : [];
-
-  return {
-    version,
-    url: downloadUrl,
-    downloadUrl,
-    changelogUrl,
-    publishedAt: typeof payload.date === 'string' ? payload.date : undefined,
-    notes: changelog.length > 0 ? changelog.join('\n') : undefined,
-    source: 'official'
-  };
-}
-
-export async function fetchLatestRelease(owner: string, repo: string): Promise<ReleaseInfo> {
-  const fallbackUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-  const payload = await fetchUpdateJson<any>('github', fallbackUrl, {
-    Accept: 'application/vnd.github+json'
-  });
 
   const versionSource = typeof payload.tag_name === 'string' ? payload.tag_name : payload.name;
   const version = typeof versionSource === 'string' ? extractVersion(versionSource) : '';
