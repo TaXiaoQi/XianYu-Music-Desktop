@@ -990,6 +990,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut exclusive_playback: Option<WasapiExclusivePlayback> = None;
         let mut current_path = String::new();
         let mut current_volume = 1.0;
+        let mut current_speed = 1.0;
         let mut is_playing_flag = false;
         let mut requested_output_mode = AudioOutputMode::Shared;
         let mut active_output_mode = AudioOutputMode::Shared;
@@ -1151,7 +1152,13 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
                             thread_user_volume.clone(),
-                        )
+                        );
+                        // 新歌曲 sink 创建后重新应用播放倍速
+                        if current_speed != 1.0 {
+                            if let Some(sink) = &current_sink {
+                                sink.set_speed(current_speed);
+                            }
+                        }
                     }
                     AudioCommand::Pause => {
                         is_playing_flag = false;
@@ -1232,6 +1239,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         current_volume = vol;
                         thread_user_volume.store(vol.to_bits(), Ordering::Relaxed);
                     }
+                    AudioCommand::SetSpeed(speed) => {
+                        current_speed = speed;
+                        if let Some(sink) = &current_sink {
+                            sink.set_speed(speed);
+                        }
+                    }
                     AudioCommand::SetDevice(device_name) => {
                         selected_device_name = device_name;
 
@@ -1263,6 +1276,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                         );
+                        // 设备切换后重新应用播放倍速
+                        if current_speed != 1.0 {
+                            if let Some(sink) = &current_sink {
+                                sink.set_speed(current_speed);
+                            }
+                        }
                         if selected_device_name.is_none() {
                             last_default_device_name = default_output_device_name(&host);
                         }
@@ -1308,6 +1327,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                         );
+                        // 输出模式切换后重新应用播放倍速
+                        if current_speed != 1.0 {
+                            if let Some(sink) = &current_sink {
+                                sink.set_speed(current_speed);
+                            }
+                        }
                         if selected_device_name.is_none() {
                             last_default_device_name = default_output_device_name(&host);
                         }

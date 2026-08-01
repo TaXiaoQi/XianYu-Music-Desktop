@@ -40,7 +40,7 @@ use player::{
     get_output_devices, get_playback_progress, get_playback_ready, get_playback_start_failed,
     get_stream_cache_info, get_track_loudness_info, is_stream_cached, pause_audio, play_audio,
     resume_audio, seek_audio, set_audio_output_mode, set_equalizer_settings, set_output_device,
-    set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
+    set_playback_speed, set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
     update_playback_metadata, wait_stream_complete,
 };
 use remote::{
@@ -131,6 +131,7 @@ get_song_lyrics_payload,            get_song_lyrics_for_edit,
             resume_audio,
             seek_audio,
             set_volume,
+            set_playback_speed,
             get_playback_progress,
             get_playback_ready,
             get_playback_start_failed,
