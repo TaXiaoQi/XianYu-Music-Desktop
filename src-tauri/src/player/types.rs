@@ -162,6 +162,7 @@ pub enum AudioCommand {
         request_id: u64,
     },
     SetVolume(f32),
+    SetSpeed(f32),
     SetVolumeBalance {
         enabled: bool,
         target_gain: f32,

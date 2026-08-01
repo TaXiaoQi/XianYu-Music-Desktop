@@ -34,6 +34,9 @@ interface PlayerUiShellApi {
   handleVolume: (event: Event) => Promise<unknown>;
   handleVolumeWheel: (event: WheelEvent) => Promise<unknown>;
   toggleMute: () => Promise<unknown>;
+  handlePlaybackSpeed: (speed: number) => Promise<unknown>;
+  handlePlaybackSpeedWheel: (event: WheelEvent) => Promise<unknown>;
+  resetPlaybackSpeed: () => Promise<unknown>;
   togglePlaylist: () => void;
   toggleMiniPlaylist: () => void;
   closeMiniPlaylist: () => void;
@@ -68,6 +71,9 @@ export function usePlaybackActions({
   const handleVolume = (event: Event) => playerUiShell.handleVolume(event);
   const handleVolumeWheel = (event: WheelEvent) => playerUiShell.handleVolumeWheel(event);
   const toggleMute = () => playerUiShell.toggleMute();
+  const handlePlaybackSpeed = (speed: number) => playerUiShell.handlePlaybackSpeed(speed);
+  const handlePlaybackSpeedWheel = (event: WheelEvent) => playerUiShell.handlePlaybackSpeedWheel(event);
+  const resetPlaybackSpeed = () => playerUiShell.resetPlaybackSpeed();
   const toggleMode = () => getPlayerQueue().toggleMode();
   const togglePlaylist = () => playerUiShell.togglePlaylist();
   const toggleMiniPlaylist = () => playerUiShell.toggleMiniPlaylist();
@@ -151,6 +157,9 @@ export function usePlaybackActions({
     handleVolume,
     handleVolumeWheel,
     toggleMute,
+    handlePlaybackSpeed,
+    handlePlaybackSpeedWheel,
+    resetPlaybackSpeed,
     toggleMode,
     togglePlaylist,
     toggleMiniPlaylist,

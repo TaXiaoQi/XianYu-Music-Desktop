@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Loader2, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, CircleCheck, Download, Eye, EyeOff, Gauge, Loader2, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -14,7 +14,7 @@ import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
+import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
 import { QUALITY_META } from '../../types';
 import {
@@ -29,8 +29,10 @@ const {
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
-  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
-  togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute, toggleMode, togglePlaylist,
+  isPlaying, volume, playbackSpeed, currentTime, playMode, showPlaylist, showPlayerDetail,
+  togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
+  handlePlaybackSpeed, handlePlaybackSpeedWheel, resetPlaybackSpeed,
+  toggleMode, togglePlaylist,
   togglePlayerDetail, seekTo, formatDuration, playSong,
 } = usePlaybackController();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
@@ -139,7 +141,7 @@ const startDownload = async (qualityKey: DownloadQuality) => {
 };
 
 const downloadButtonTitle = computed(() => {
-  if (!isOnlineSong.value) return '本地歌曲无法下载';
+  if (!isOnlineSong.value) return '本地文件';
   if (isDownloading.value) return '下载中…';
   if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}（点击重新下载）`;
   return '下载歌曲';
@@ -202,6 +204,22 @@ const QUALITY_OPTIONS = computed(() => {
   return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
 });
 
+/** 音质英文缩写映射（底栏按钮显示用，下拉菜单仍用完整中文标签） */
+const QUALITY_ABBR: Record<QualityKey, string> = {
+  mgg: 'LQ',
+  '128k': '128',
+  '192k': '192',
+  '320k': 'HQ',
+  flac: 'SQ',
+  flac24bit: 'HR',
+  hires: 'HRA',
+  vinyl: 'VL',
+  dolby: 'DA',
+  atmos: 'AT',
+  atmos_plus: 'AT+',
+  master: 'MS',
+};
+
 /**
  * 当前选择的音质 Key。
  * 优先使用底部栏会话级临时覆盖（sessionQualityOverride），未设置时回退到设置页的在线播放音质。
@@ -211,13 +229,13 @@ const selectedQualityKey = computed<QualityKey>(
   () => sessionQualityOverride.value
     ?? (settings.value.audio.onlineDefaultQuality as QualityKey) ?? '320k',
 );
-/** 在线歌曲：显示在按钮上的音质标签（低清/普通/中等/HQ/SQ/Hi-Res/高解析度/黑胶/杜比/臻品/全景/母带）
+/** 在线歌曲：显示在按钮上的音质英文缩写（LQ/128/192/HQ/SQ/HR/HRA/VL/DA/AT/AT+/MS）
  *  优先使用实际播放音质（经回退逻辑解析后真正命中的档位），
  *  避免出现底部栏选择的音质和播放的音质不符的情况。
  *  仅当实际播放音质未知（如尚未解析完成）时回退到用户设置的首选音质。
  */
 const currentQualityLabel = computed(
-  () => QUALITY_META[currentPlayingQuality.value ?? selectedQualityKey.value]?.label ?? 'HQ',
+  () => QUALITY_ABBR[currentPlayingQuality.value ?? selectedQualityKey.value] ?? 'HQ',
 );
 
 /** 本地歌曲：取 format/codec/container 字段，或从路径末尾提取扩展名，全大写显示 */
@@ -230,9 +248,31 @@ const localFormatLabel = computed(() => {
   return ext ? ext.toUpperCase() : '';
 });
 
-/** 按钮实际显示文字：在线歌曲显示音质标签，本地歌曲显示格式后缀名 */
+/** 本地歌曲：根据 format/codec/bitrate/bit_depth 映射到音质英文缩写（SQ/HQ/HR 等） */
+const localQualityLabel = computed(() => {
+  const song = currentSong.value;
+  if (!song) return 'HQ';
+  // 24位无损 → HR (Hi-Res)
+  if (song.bit_depth && song.bit_depth >= 24) return QUALITY_ABBR.flac24bit;
+  // 无损格式 → SQ
+  const fmt = (song.format || song.codec || song.container || '').toLowerCase();
+  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf'];
+  if (losslessFormats.some(f => fmt.includes(f))) return QUALITY_ABBR.flac;
+  // 有损格式按比特率映射
+  const bitrateKbps = song.bitrate
+    ? (song.bitrate > 1000 ? Math.round(song.bitrate / 1000) : song.bitrate)
+    : 0;
+  if (bitrateKbps >= 320) return QUALITY_ABBR['320k'];
+  if (bitrateKbps >= 192) return QUALITY_ABBR['192k'];
+  if (bitrateKbps >= 128) return QUALITY_ABBR['128k'];
+  if (bitrateKbps > 0) return QUALITY_ABBR.mgg;
+  // 无法判断时回退到格式名
+  return localFormatLabel.value || 'HQ';
+});
+
+/** 按钮实际显示文字：在线歌曲显示音质标签，本地歌曲显示映射后的音质标签 */
 const qualityButtonLabel = computed(() =>
-  isQualitySelectableSong.value ? currentQualityLabel.value : localFormatLabel.value,
+  isQualitySelectableSong.value ? currentQualityLabel.value : localQualityLabel.value,
 );
 
 /** 是否是支持音质切换的在线歌曲（lx:// 或 plugin:// 协议） */
@@ -358,6 +398,41 @@ const remoteDownloadText = computed(() => {
   return `正在加载远程歌曲 ${Math.round(progress.percent)}%`;
 });
 
+// --- 歌名滚动（marquee）---
+const songTitleWrapperRef = ref<HTMLElement | null>(null);
+const songTitleTextRef = ref<HTMLElement | null>(null);
+const shouldMarquee = ref(false);
+const marqueeDuration = ref(12);
+const isMarqueePaused = ref(false);
+
+const songTitleText = computed(() => {
+  if (!currentSong.value) return '听我想听的音乐';
+  return currentSong.value.title || currentSong.value.name.replace(/\.[^/.]+$/, "");
+});
+
+const checkMarquee = () => {
+  nextTick(() => {
+    const wrapper = songTitleWrapperRef.value;
+    const span = songTitleTextRef.value;
+    if (!wrapper || !span) {
+      shouldMarquee.value = false;
+      return;
+    }
+    const overflow = span.scrollWidth - wrapper.clientWidth;
+    if (overflow > 0) {
+      shouldMarquee.value = true;
+      // 基础 6 秒 + 每 25px 多出 1 秒，范围 8-30 秒，长歌名滚动更慢便于阅读
+      marqueeDuration.value = Math.max(8, Math.min(30, 6 + overflow / 25));
+    } else {
+      shouldMarquee.value = false;
+      isMarqueePaused.value = false;
+    }
+  });
+};
+
+watch(songTitleText, () => checkMarquee());
+watch(showPlayerDetail, () => checkMarquee());
+
 // --- 音量拖拽逻辑 ---
 const isDraggingVolume = ref(false);
 const volumeBarRef = ref<HTMLElement | null>(null);
@@ -380,13 +455,39 @@ const startDrag = (e: PointerEvent) => {
   updateVolume(e.clientY);
 };
 
+// --- 倍速拖拽逻辑（与音量一致） ---
+const isDraggingSpeed = ref(false);
+const speedBarRef = ref<HTMLElement | null>(null);
+// 倍速范围 0.5x ~ 2.0x，映射到滑块 0~100%
+const speedPercent = computed(() => Math.round((playbackSpeed.value - 0.5) / 1.5 * 100));
+
+const updateSpeed = (clientY: number) => {
+  if (!speedBarRef.value) return;
+  const rect = speedBarRef.value.getBoundingClientRect();
+  const height = rect.height;
+  const distance = rect.bottom - clientY;
+  const percent = Math.max(0, Math.min(1, distance / height));
+  const newSpeed = Math.round((0.5 + percent * 1.5) * 100) / 100;
+  handlePlaybackSpeed(newSpeed);
+};
+
+const startSpeedDrag = (e: PointerEvent) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  e.preventDefault();
+  (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
+  isDraggingSpeed.value = true;
+  updateSpeed(e.clientY);
+};
+
 const onGlobalPointerMove = (e: PointerEvent) => {
   if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
+  if (isDraggingSpeed.value) { e.preventDefault(); updateSpeed(e.clientY); }
   if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); }
 };
 
 const onGlobalPointerEnd = (commitProgress = true) => {
   isDraggingVolume.value = false;
+  isDraggingSpeed.value = false;
   stopProgressDrag(commitProgress);
 };
 
@@ -412,6 +513,27 @@ const handleVolumeLeave = () => {
     }
   }, 300);
 };
+
+// --- 倍速滑块显示逻辑（与音量一致） ---
+const showSpeedSlider = ref(false);
+let speedTimer: any = null;
+
+const handleSpeedEnter = () => {
+  if (speedTimer) clearTimeout(speedTimer);
+  showSpeedSlider.value = true;
+  handleFooterMouseEnter();
+};
+
+const handleSpeedLeave = () => {
+  speedTimer = setTimeout(() => {
+    if (!isDraggingSpeed.value) {
+      showSpeedSlider.value = false;
+      startIdleTimer();
+    }
+  }, 300);
+};
+
+const speedLabel = computed(() => `${playbackSpeed.value.toFixed(2)}x`);
 
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
@@ -502,7 +624,7 @@ const togglePin = () => {
 const startIdleTimer = () => {
   if (idleTimer) clearTimeout(idleTimer);
   // Do not hide if context menu, dragging, or volume slider is active
-  if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || showVolumeSlider.value || isPinned.value) return;
+  if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || isDraggingSpeed.value || showVolumeSlider.value || showSpeedSlider.value || isPinned.value) return;
 
   idleTimer = setTimeout(() => {
     if (showPlayerDetail.value) {
@@ -534,21 +656,24 @@ watch(showPlayerDetail, () => {
   startIdleTimer();
 });
 
-onMounted(async () => { 
-  window.addEventListener('pointermove', onGlobalPointerMove); 
-  window.addEventListener('pointerup', onGlobalPointerUp); 
-  window.addEventListener('pointercancel', onGlobalPointerCancel); 
-  window.addEventListener('click', handleWindowClick); 
+onMounted(async () => {
+  window.addEventListener('pointermove', onGlobalPointerMove);
+  window.addEventListener('pointerup', onGlobalPointerUp);
+  window.addEventListener('pointercancel', onGlobalPointerCancel);
+  window.addEventListener('click', handleWindowClick);
+  window.addEventListener('resize', checkMarquee);
+  checkMarquee();
   startIdleTimer(); // Start initial idle timer
   unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => {
     remoteDownloadProgress.value = event.payload;
   });
 });
-onUnmounted(() => { 
-  window.removeEventListener('pointermove', onGlobalPointerMove); 
-  window.removeEventListener('pointerup', onGlobalPointerUp); 
-  window.removeEventListener('pointercancel', onGlobalPointerCancel); 
-  window.removeEventListener('click', handleWindowClick); 
+onUnmounted(() => {
+  window.removeEventListener('pointermove', onGlobalPointerMove);
+  window.removeEventListener('pointerup', onGlobalPointerUp);
+  window.removeEventListener('pointercancel', onGlobalPointerCancel);
+  window.removeEventListener('click', handleWindowClick);
+  window.removeEventListener('resize', checkMarquee);
   if (idleTimer) clearTimeout(idleTimer);
   unlistenRemoteDownload?.();
   unlistenRemoteDownload = null;
@@ -627,34 +752,30 @@ onUnmounted(() => {
       >
       </div>
 
-      <div 
-        class="ml-3 overflow-hidden flex-1 relative h-10 transition-transform duration-500" 
+      <div
+        class="ml-3 flex-1 relative h-10 transition-transform duration-500 flex items-center"
         :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-[0px]'"
       >
+        <div class="overflow-hidden w-28 relative h-full shrink-0">
         <!-- State A: Default View (Title & Artist) -->
-        <div 
+        <div
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
           :class="showPlayerDetail ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0 text-gray-800 dark:text-white'"
         >
-          <div class="flex items-center">
-            <div class="text-sm font-bold tracking-wide truncate pr-2 cursor-default">
-              {{ currentSong ? (currentSong.title || currentSong.name.replace(/\.[^/.]+$/, "")) : '听我想听的音乐' }}
-            </div>
-            <button 
-               v-if="currentSong" 
-               @click="toggleFavorite(currentSong)"
-               class="focus:outline-none transition-transform active:scale-95"
-               :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
+          <div class="overflow-hidden min-w-0" ref="songTitleWrapperRef">
+            <div
+              class="inline-block whitespace-nowrap"
+              :class="{ 'animate-marquee': shouldMarquee }"
+              :style="shouldMarquee ? {
+                '--marquee-duration': marqueeDuration + 's',
+                animationPlayState: isMarqueePaused ? 'paused' : 'running'
+              } : {}"
+              @mouseenter="isMarqueePaused = shouldMarquee"
+              @mouseleave="isMarqueePaused = false"
             >
-              <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#EC4141]" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" 
-                class="h-4 w-4 text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white transition-colors" 
-                fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-            </button>
+              <span class="text-sm font-bold tracking-wide cursor-default pr-2" ref="songTitleTextRef">{{ songTitleText }}</span>
+              <span v-if="shouldMarquee" class="text-sm font-bold tracking-wide cursor-default pr-2">{{ songTitleText }}</span>
+            </div>
           </div>
           <div class="text-[11px] font-medium mt-0.5 cursor-default truncate text-gray-500 dark:text-gray-400">
             {{ isCurrentRemoteDownloadActive ? remoteDownloadText : (currentSong ? currentSong.artist : 'My Music') }}
@@ -662,7 +783,7 @@ onUnmounted(() => {
         </div>
 
         <!-- State B: Player Detail View (Progress) -->
-        <div 
+        <div
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
           :class="showPlayerDetail
             ? (isIdle ? 'opacity-0 translate-y-4 pointer-events-none text-white/90' : 'opacity-100 translate-y-0 text-white/90')
@@ -671,6 +792,86 @@ onUnmounted(() => {
           <div class="text-[12px] font-semibold tabular-nums cursor-default tracking-wide">
             {{ currentTimeStr }} <span class="opacity-50 mx-1">/</span> {{ totalTimeStr }}
           </div>
+        </div>
+        </div>
+
+        <!-- 收藏按钮：加大居中，放置在下载按钮左边 -->
+        <button
+          v-if="currentSong"
+          @click="toggleFavorite(currentSong)"
+          class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
+          :class="isFavorite(currentSong)
+            ? 'text-[#EC4141]'
+            : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+          :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
+        >
+          <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+        </button>
+
+        <!-- 下载按钮：本地歌曲显示绿色已完成图标，在线歌曲支持下载 -->
+        <div class="relative flex items-center justify-center h-full z-[70] shrink-0 ml-1">
+          <button
+            ref="downloadQualityButtonRef"
+            @mousedown.stop
+            @click.stop="handleDownloadClick"
+            class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
+            :class="!isOnlineSong
+              ? (showPlayerDetail
+                ? 'text-emerald-300 cursor-default'
+                : 'text-emerald-600 dark:text-emerald-400 cursor-default')
+              : isDownloading
+                ? (showPlayerDetail
+                  ? 'text-white/80 hover:bg-white/10 cursor-wait'
+                  : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 cursor-wait')
+                : downloadedRecord
+                  ? (showPlayerDetail
+                    ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
+                    : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
+                  : (showPlayerDetail
+                    ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
+                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
+            :title="downloadButtonTitle"
+          >
+            <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
+            <CircleCheck v-else-if="(!isOnlineSong) || (isOnlineSong && downloadedRecord)" class="h-5 w-5" />
+            <Download v-else class="h-5 w-5" />
+          </button>
+
+          <!-- 下载音质下拉菜单：与播放音质选择器一致的 UI，复用 currentAvailableQualities 预取结果 -->
+          <transition name="fade-scale">
+            <div
+              v-if="showDownloadQualityMenu"
+              ref="downloadQualityMenuRef"
+              class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+            >
+              <div
+                class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+                :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+              >
+                <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
+                <button
+                  v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
+                  :key="opt.value"
+                  @click.stop="startDownload(opt.value)"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                  :class="selectedDownloadQuality === opt.value
+                    ? 'text-[#EC4141] bg-[#EC4141]/8'
+                    : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+                >
+                  <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                  <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+                </button>
+              </div>
+            </div>
+          </transition>
         </div>
       </div>
     </div>
@@ -704,19 +905,21 @@ onUnmounted(() => {
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 fill-current" viewBox="0 0 24 24"><path d="M8.3 5v14l11-7z" /></svg>
       </button>
 
-      <button @click="nextSong" 
+      <button @click="nextSong"
         class="transition-colors hover:scale-110 transform duration-200"
         :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
       </button>
 
-      <button @click="togglePlaylist" 
-        class="transition-colors hover:scale-110 transform duration-200"
-        :class="showPlaylist ? 'text-[#EC4141]' : (showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white')"
-        title="播放队列"
+      <!-- 桌面歌词：从工具收纳中放出，放置在下一首右边 -->
+      <button
+        @click="toggleLyrics"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-[14px] font-bold"
+        :class="showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+        title="桌面歌词"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        词
       </button>
     </div>
 
@@ -724,7 +927,7 @@ onUnmounted(() => {
       class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
-      <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲变暗并显示禁止指针 -->
+      <!-- 音质选择按钮：在线歌曲可点击切换；本地歌曲显示匹配的音质标签 -->
       <div class="relative flex items-center justify-center h-full z-[70]">
         <button
           ref="qualityButtonRef"
@@ -733,15 +936,15 @@ onUnmounted(() => {
           :class="[
             !isQualitySelectableSong
               ? (showPlayerDetail
-                  ? 'text-white/20 cursor-not-allowed'
-                  : 'text-gray-300 dark:text-white/20 cursor-not-allowed')
+                  ? 'text-white/80 cursor-default'
+                  : 'text-gray-700 dark:text-white/80 cursor-default')
               : showQualityMenu
                 ? 'text-[#EC4141] bg-[#EC4141]/10'
                 : (showPlayerDetail
                     ? 'text-white/80 hover:text-white hover:bg-white/10'
                     : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
           ]"
-          :title="isQualitySelectableSong ? '音质选择' : '本地歌曲不支持音质切换'"
+          :title="isQualitySelectableSong ? '音质选择' : '本地音质'"
         >
           <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
         </button>
@@ -774,7 +977,46 @@ onUnmounted(() => {
         </transition>
       </div>
 
-      <div 
+      <!-- 倍速控制：悬停弹出竖向滑块，调节逻辑与音量一致 -->
+      <div
+        class="relative flex items-center justify-center h-full z-[70]"
+        @mouseenter="handleSpeedEnter"
+        @mouseleave="handleSpeedLeave"
+        @wheel.prevent.stop="handlePlaybackSpeedWheel"
+      >
+        <div
+          v-if="showSpeedSlider || isDraggingSpeed"
+          class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+        >
+          <div class="absolute top-full left-0 w-full h-4"></div>
+          <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
+            :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+          >
+            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
+              :class="playbackSpeed !== 1.0
+                ? 'text-[#EC4141]'
+                : (showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60')"
+            >{{ speedLabel }}</div>
+            <div ref="speedBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
+                 :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
+                 @pointerdown="startSpeedDrag">
+               <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: speedPercent + '%' }"></div>
+               <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${speedPercent}% - 7px)` }"></div>
+            </div>
+          </div>
+        </div>
+        <button @click="resetPlaybackSpeed"
+          class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+          :class="playbackSpeed !== 1.0
+            ? 'text-[#EC4141]'
+            : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+          title="倍速（点击恢复1.0x）"
+        >
+          <Gauge class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div
         class="relative flex items-center justify-center h-full z-[70]"
         @mouseenter="handleVolumeEnter"
         @mouseleave="handleVolumeLeave"
@@ -818,67 +1060,40 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 在线歌曲下载：点击展开音质下拉（与播放音质选择器 UI 一致），选择音质后直接触发下载。
-           已下载且文件仍存在时显示对勾图标，点击后先确认是否重新下载 -->
-      <div class="relative flex items-center justify-center h-full z-[70]">
+      <!-- 均衡器按钮与弹出面板：从工具收纳中放出 -->
+      <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center h-full z-[70]">
         <button
-          ref="downloadQualityButtonRef"
-          @mousedown.stop
-          @click.stop="handleDownloadClick"
-          class="flex items-center justify-center transition-colors shrink-0 w-8 h-8 rounded-full"
-          :class="!isOnlineSong
-            ? (showPlayerDetail
-              ? 'text-white/30 cursor-not-allowed'
-              : 'text-gray-300 dark:text-white/30 cursor-not-allowed')
-            : isDownloading
-              ? (showPlayerDetail
-                ? 'text-white/80 hover:bg-white/10 cursor-wait'
-                : 'text-gray-700 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 cursor-wait')
-              : downloadedRecord
-                ? (showPlayerDetail
-                  ? 'text-emerald-300 hover:text-emerald-200 hover:bg-white/10 cursor-pointer'
-                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')
-                : (showPlayerDetail
-                  ? 'text-white/80 hover:text-white hover:bg-white/10 cursor-pointer'
-                  : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
-          :title="downloadButtonTitle"
+          ref="eqButtonRef"
+          @click="toggleEqPanel"
+          :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+          title="均衡器 (EQ)"
         >
-          <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
-          <CircleCheck v-else-if="isOnlineSong && downloadedRecord" class="h-5 w-5" />
-          <Download v-else class="h-5 w-5" />
+          <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
         </button>
 
-        <!-- 下载音质下拉菜单：与播放音质选择器一致的 UI，复用 currentAvailableQualities 预取结果 -->
         <transition name="fade-scale">
           <div
-            v-if="showDownloadQualityMenu"
-            ref="downloadQualityMenuRef"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+            v-if="showEqPanel"
+            ref="eqPanelRef"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
           >
-            <div
-              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
-            >
-              <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
-              <button
-                v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
-                :key="opt.value"
-                @click.stop="startDownload(opt.value)"
-                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
-                :class="selectedDownloadQuality === opt.value
-                  ? 'text-[#EC4141] bg-[#EC4141]/8'
-                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
-              >
-                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-                <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-              </button>
-            </div>
+            <EqualizerPanel />
           </div>
         </transition>
       </div>
 
-      <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/桌面歌词/均衡器/固定） -->
+      <!-- 播放队列：从中间区域移至原下载按钮位置 -->
+      <div class="relative flex items-center justify-center h-full z-[70]">
+        <button @click="togglePlaylist"
+          class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+          :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+          title="播放队列"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/歌词样式/固定） -->
       <div ref="footerToolsRef" class="relative flex items-center justify-center h-full z-[70]">
         <transition name="footer-tools">
           <div
@@ -905,14 +1120,6 @@ onUnmounted(() => {
             </button>
 
             <button
-              @click="toggleLyrics"
-              :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-              title="桌面歌词"
-            >
-              词
-            </button>
-
-            <button
               v-if="showPlayerDetail"
               @mousedown.stop
               @click.stop="toggleLyricsPlayerSettings"
@@ -921,34 +1128,6 @@ onUnmounted(() => {
             >
               A
             </button>
-
-            <!-- 均衡器按钮与弹出面板 -->
-            <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center z-[70]">
-              <button
-                ref="eqButtonRef"
-                @click="toggleEqPanel"
-                :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-                title="均衡器 (EQ)"
-              >
-                <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
-              </button>
-
-              <transition name="fade-scale">
-                <div
-                  v-if="showEqPanel"
-                  ref="eqPanelRef"
-                  class="absolute bottom-full right-[-10px] pb-4.5 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
-                >
-                  <!-- 极富流动感、平滑贝塞尔圆弧的气泡指引尾巴 -->
-                  <svg width="32" height="10" viewBox="0 0 32 10" class="absolute bottom-[9px] right-[10px] text-[#FFFFFF] dark:text-[#1E1E1E] fill-current z-[81] overflow-visible">
-                    <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0 Z" />
-                    <path d="M0,0 C8,0 12,8 16,10 C20,8 24,0 32,0" fill="none" class="stroke-gray-100 dark:stroke-gray-800" stroke-width="1" />
-                  </svg>
-
-                  <EqualizerPanel />
-                </div>
-              </transition>
-            </div>
 
             <button @click="togglePin"
               class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
@@ -1039,5 +1218,15 @@ onUnmounted(() => {
   opacity: 1;
   transform: translateY(0) scale(1);
   filter: blur(0);
+}
+
+/* 歌名滚动（marquee）：文字超出容器时无缝滚动，时长由 --marquee-duration 动态控制 */
+@keyframes footer-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: footer-marquee var(--marquee-duration, 12s) linear infinite;
 }
 </style>

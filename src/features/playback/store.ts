@@ -11,6 +11,7 @@ export const usePlaybackStore = defineStore('playback', () => {
   const libraryStore = useLibraryStore();
   const isPlaying = ref(false);
   const volume = ref(100);
+  const playbackSpeed = ref(1.0);
   const currentTime = ref(0);
   const playMode = ref(0);
   const isSongLoaded = ref(false);
@@ -173,6 +174,7 @@ export const usePlaybackStore = defineStore('playback', () => {
   return {
     isPlaying,
     volume,
+    playbackSpeed,
     currentTime,
     playMode,
     isSongLoaded,

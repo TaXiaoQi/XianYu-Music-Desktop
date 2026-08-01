@@ -420,6 +420,14 @@ pub fn set_volume(volume: f32, state: tauri::State<PlayerState>) -> Result<(), S
 }
 
 #[tauri::command]
+pub fn set_playback_speed(speed: f32, state: tauri::State<PlayerState>) -> Result<(), String> {
+    let tx = state.tx.lock().map_err(|e| e.to_string())?;
+    tx.send(AudioCommand::SetSpeed(speed))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     let samples = state.progress.samples_played.load(Ordering::Relaxed);
     let rate = state.progress.sample_rate.load(Ordering::Relaxed);
