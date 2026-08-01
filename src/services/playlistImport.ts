@@ -1239,7 +1239,7 @@ export async function importPlaylist(
   let actualSource = source;
   let actualId = input;
 
-  if (input.startsWith('http://') || input.startsWith('https://')) {
+  if (input.startsWith('https://') || input.startsWith('https://')) {
     const parsed = parseLink(input);
     if (parsed) {
       actualSource = parsed.source;
