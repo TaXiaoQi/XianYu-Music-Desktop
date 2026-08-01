@@ -11,8 +11,8 @@
  */
 
 import CryptoJs from 'crypto-js';
-import he from 'he';
 import { pluginApi } from './tauri/pluginApi';
+import { decodeName, formatSingerName } from '../utils/musicFormat';
 import type { PluginSearchResult } from '../types';
 
 // ==================== 音源定义 ====================
@@ -56,27 +56,6 @@ function log(msg: string) {
 }
 
 // ==================== 工具函数 ====================
-
-/** HTML 实体解码（与 LxSdk.decodeName 一致） */
-function decodeName(str: string | null | undefined): string {
-  if (!str) return '';
-  try { return he.decode(str); } catch { return str; }
-}
-
-/** 格式化歌手名（与 LxSdk.formatSingerName 一致） */
-function formatSingerName(singers: any[], nameKey = 'name', join = '、'): string {
-  if (!singers || !Array.isArray(singers)) return '';
-  const names: string[] = [];
-  for (const item of singers) {
-    if (item && typeof item === 'object') {
-      const name = item[nameKey];
-      if (name && typeof name === 'string' && name.trim()) {
-        names.push(decodeName(name));
-      }
-    }
-  }
-  return names.join(join);
-}
 
 /** 格式化播放时间（与 LxSdk.formatPlayTime 一致） */
 function formatPlayTime(seconds: number): string {

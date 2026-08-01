@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { decodeName, formatSingerName } from '../utils/musicFormat';
 
 // ==================== Types ====================
 export interface LxSearchResultItem {
@@ -46,30 +47,6 @@ function sizeFormate(bytes: number | undefined | null): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + 'GB';
-}
-
-function decodeName(str: string | undefined | null): string {
-  if (!str) return '';
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
-}
-
-function formatSingerName(singers: any[] | string | null | undefined, nameKey = 'name', join = '、'): string {
-  if (Array.isArray(singers)) {
-    const names: string[] = [];
-    singers.forEach(item => {
-      const name = item[nameKey];
-      if (name) names.push(name);
-    });
-    return decodeName(names.join(join));
-  }
-  return decodeName(String(singers ?? ''));
 }
 
 // ==================== HTTP Request via Tauri ====================
