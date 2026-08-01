@@ -6,6 +6,7 @@ import { useAppShell } from '../../composables/useAppShell';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
+import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
@@ -18,6 +19,7 @@ const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToP
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
+const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
 const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
 
 const {
@@ -53,6 +55,15 @@ const {
   handleAnnouncementAction,
 } = useAnnouncement();
 
+// Update check logic（启动时自动检查，由全局单例管理弹窗）
+const {
+  updateVisible,
+  latestUpdate,
+  closeUpdate,
+  openDownload,
+  checkUpdateOnStartup,
+} = useUpdateCheck();
+
 // --- 首次启动引导 ---
 const { showOnboarding, completeOnboarding } = useOnboarding();
 
@@ -61,6 +72,8 @@ const handleOnboardingComplete = () => {
 };
 
 onMounted(() => {
+  // 启动时静默检查更新（后台版本高于本地且未被忽略才弹窗）
+  checkUpdateOnStartup();
   if (!showOnboarding.value) {
     checkAnnouncement();
   }
@@ -215,6 +228,14 @@ onMounted(() => {
       :announcement="currentAnnouncement"
       @close="closeAnnouncement"
       @action="handleAnnouncementAction"
+    />
+
+    <UpdateModal
+      v-if="!isMiniMode"
+      :visible="updateVisible"
+      :update="latestUpdate"
+      @close="closeUpdate"
+      @download="openDownload"
     />
 
     <OnboardingModal
