@@ -1,124 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../../version';
-import ModernModal from '../common/ModernModal.vue';
-import { compareVersions, fetchLatestRelease } from '../../utils/update';
+import { useUpdateCheck } from '../../composables/useUpdateCheck';
 
 const REPO_OWNER = 'ShenYichenCN';
 const REPO_NAME = 'XianYu-Music-Desktop';
 const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
-const RELEASES_URL = `${REPO_URL}/releases`;
 const OFFICIAL_SITE_URL = 'https://xy.zh2026.cn/ciyuanxi/';
 
-const appVersion = ref(APP_VERSION);
-const isCheckingUpdate = ref(false);
+const appVersion = APP_VERSION;
 
-const dialogVisible = ref(false);
-const dialogTitle = ref('');
-const dialogContent = ref('');
-const dialogConfirmText = ref('确定');
-const dialogCancelText = ref('取消');
-const dialogAction = ref<'close' | 'open-release'>('close');
-const dialogOpenUrl = ref(RELEASES_URL);
-
-function showDialog(options: {
-  title: string;
-  content: string;
-  confirmText: string;
-  cancelText: string;
-  action?: 'close' | 'open-release';
-}) {
-  dialogTitle.value = options.title;
-  dialogContent.value = options.content;
-  dialogConfirmText.value = options.confirmText;
-  dialogCancelText.value = options.cancelText;
-  dialogAction.value = options.action ?? 'close';
-  dialogOpenUrl.value = RELEASES_URL;
-  dialogVisible.value = true;
-}
-
-function formatPublishedDate(value?: string) {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(date);
-}
-
-async function handleCheckUpdate() {
-  if (isCheckingUpdate.value) {
-    return;
-  }
-
-  isCheckingUpdate.value = true;
-
-  try {
-    const latestRelease = await fetchLatestRelease(REPO_OWNER, REPO_NAME);
-
-    const comparison = compareVersions(latestRelease.version, appVersion.value);
-    const publishedDate = formatPublishedDate(latestRelease.publishedAt);
-
-    if (comparison > 0) {
-      const publishedText = publishedDate ? `；发布时间：${publishedDate}` : '';
-
-      showDialog({
-        title: '发现新版本',
-        content: `当前版本：v${appVersion.value}；GitHub 最新版本：v${latestRelease.version}${publishedText}。是否前往下载页面？`,
-        confirmText: '前往下载',
-        cancelText: '稍后',
-        action: 'open-release'
-      });
-      dialogOpenUrl.value = latestRelease.url;
-      return;
-    }
-
-    if (comparison < 0) {
-      showDialog({
-        title: '当前版本较新',
-        content: `当前版本 v${appVersion.value} 高于 GitHub 最新发布版本 v${latestRelease.version}。你现在大概率运行的是测试版或未发布版本。`,
-        confirmText: '知道了',
-        cancelText: '关闭'
-      });
-      return;
-    }
-
-    showDialog({
-      title: '已是最新版本',
-      content: `当前版本 v${appVersion.value} 已是 GitHub 最新版本。`,
-      confirmText: '知道了',
-      cancelText: '关闭'
-    });
-  } catch (error) {
-    console.error('Failed to check updates:', error);
-    showDialog({
-      title: '检查更新失败',
-      content: '无法连接到官网更新接口或 GitHub Releases。请确认网络可用，或稍后再试。',
-      confirmText: '知道了',
-      cancelText: '关闭'
-    });
-  } finally {
-    isCheckingUpdate.value = false;
-  }
-}
-
-async function handleDialogConfirm() {
-  dialogVisible.value = false;
-
-  if (dialogAction.value === 'open-release') {
-    await openUrl(dialogOpenUrl.value);
-  }
-}
+// 检查更新改用自建后台（api/version.php），由全局 useUpdateCheck 单例管理弹窗
+const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
 </script>
 
 <template>
@@ -147,7 +39,7 @@ async function handleDialogConfirm() {
       <button
         type="button"
         :disabled="isCheckingUpdate"
-        @click="handleCheckUpdate"
+        @click="checkUpdateManual"
         class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#EC4141] px-3.5 py-2 text-xs font-medium text-white shadow-lg shadow-red-500/20 transition active:scale-95 hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-70"
       >
         <svg v-if="isCheckingUpdate" class="h-3.5 w-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -202,14 +94,5 @@ async function handleDialogConfirm() {
         Copyright © 2026 XY-Music-Desktop Developer. Licensed under AGPL-3.0-only.
       </div>
     </div>
-
-    <ModernModal
-      v-model:visible="dialogVisible"
-      :title="dialogTitle"
-      :content="dialogContent"
-      :confirm-text="dialogConfirmText"
-      :cancel-text="dialogCancelText"
-      @confirm="handleDialogConfirm"
-    />
   </div>
 </template>
