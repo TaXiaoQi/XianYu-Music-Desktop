@@ -266,7 +266,7 @@ const losslessRatio = computed(() => {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 100ms;">
             <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none">{{ formatDuration(behaviorStats.total_duration) }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatDuration(behaviorStats.total_duration) }}</p>
           </section>
 
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start md:ml-[clamp(3.25rem,5.75vw,5.5rem)]" style="animation-delay: 200ms;">
