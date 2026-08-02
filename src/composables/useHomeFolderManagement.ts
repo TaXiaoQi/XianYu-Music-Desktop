@@ -100,6 +100,15 @@ export function useHomeFolderManagement({
       return;
     }
 
+    const normalizedRoot = normalizePath(newPath);
+    const normalizedCurrentFolder = normalizePath(currentFolderFilter.value);
+    if (
+      normalizedCurrentFolder === normalizedRoot ||
+      normalizedCurrentFolder.startsWith(`${normalizedRoot}/`)
+    ) {
+      return;
+    }
+
     void syncRootSelection(newPath);
   });
 

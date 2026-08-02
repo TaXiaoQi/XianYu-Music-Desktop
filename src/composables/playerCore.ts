@@ -48,6 +48,8 @@ interface PlaySongOptions {
   insertAfterCurrent?: boolean;
   /** 起播时间（秒），用于按当前进度切换音质后无缝续播 */
   startTime?: number;
+  /** 后端重启音频但仍属于同一次用户播放（例如切换音质） */
+  continueStatisticsSession?: boolean;
 }
 
 interface LibraryRefreshSummary {

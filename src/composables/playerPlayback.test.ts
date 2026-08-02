@@ -159,6 +159,53 @@ describe('player playback domain', () => {
     playerPlayback.dispose();
   });
 
+  it('reports two plays and 6:30 of listening for two complete 3:15 sessions', async () => {
+    const song = makeSong({ duration: 195 });
+    let periodicFlush: (() => void) | undefined;
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
+      if (delay === 30_000) periodicFlush = callback;
+      return delay;
+    }));
+    vi.stubGlobal('clearInterval', vi.fn());
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    expect(periodicFlush).toBeDefined();
+
+    for (let index = 1; index <= 6; index += 1) {
+      dateNow.mockReturnValue(100_000 + index * 30_000);
+      periodicFlush?.();
+    }
+
+    dateNow.mockReturnValue(295_000);
+    await playerPlayback.playSong(song);
+
+    for (let index = 1; index <= 6; index += 1) {
+      dateNow.mockReturnValue(295_000 + index * 30_000);
+      periodicFlush?.();
+    }
+
+    dateNow.mockReturnValue(490_000);
+    await playerPlayback.pauseSong();
+
+    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
+    expect(recordedPayloads.filter(payload => payload.countAsPlay)).toHaveLength(2);
+    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(390_000);
+
+    playerPlayback.dispose();
+    dateNow.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it('does not auto-advance songs with unknown duration', async () => {
     const song = makeSong({ path: 'remote://source/demo.flac', duration: 0 });
     const handleAutoNext = vi.fn();

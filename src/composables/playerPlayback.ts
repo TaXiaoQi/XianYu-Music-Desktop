@@ -17,6 +17,7 @@ interface PlaySongOptions {
   preserveQueue?: boolean;
   insertAfterCurrent?: boolean;
   startTime?: number;
+  continueStatisticsSession?: boolean;
 }
 
 interface SeekCompletedPayload {
@@ -49,6 +50,7 @@ let playbackAnchorTime = 0;
 let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
+let currentPlayCountRecorded = false;
 let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
@@ -280,9 +282,8 @@ export const createPlayerPlayback = ({
 
     scheduleUpdate(update);
 
-    // [定时刷新] 每 30 秒将当前播放会话刷写到统计数据库，确保「总听歌时长」准实时更新。
-    // flushPlaySession 会重置 accumulatedTime 和 sessionStartTime，
-    // 所以刷新后需立即重启会话计时器，保证后续时长继续累积。
+    // [定时刷新] 每 30 秒将听歌时长刷写到统计数据库。
+    // 同一次播放仅首个有效分片计入播放次数，后续分片只累计时长。
     periodicFlushTimerId = setInterval(() => {
       if (isPlaying.value && currentSong.value) {
         flushPlaySession();
@@ -343,7 +344,10 @@ export const createPlayerPlayback = ({
     }
 
     const totalDuration = accumulatedTime + currentSession;
-    if (totalDuration >= 10) {
+    const shouldPersist = totalDuration >= 10 || (currentPlayCountRecorded && totalDuration > 0);
+    if (shouldPersist) {
+      const countAsPlay = !currentPlayCountRecorded;
+      if (countAsPlay) currentPlayCountRecorded = true;
       playbackApi.recordPlay({
         songPath: song.path,
         listenedMs: Math.floor(totalDuration * 1000),
@@ -352,11 +356,12 @@ export const createPlayerPlayback = ({
         artist: song.artist || '',
         album: song.album || '',
         trackNumber: song.track_number,
+        countAsPlay,
       })
         .catch(error => console.warn('record_play failed:', error));
     }
 
-    accumulatedTime = 0;
+    accumulatedTime = shouldPersist ? 0 : totalDuration;
     sessionStartTime = null;
   };
 
@@ -370,6 +375,10 @@ export const createPlayerPlayback = ({
     cancelFade();
 
     flushPlaySession();
+    if (!options.continueStatisticsSession) {
+      accumulatedTime = 0;
+      currentPlayCountRecorded = false;
+    }
     onBeforePlay?.(song, options);
 
     const preserveQueue = options.preserveQueue ?? false;
@@ -1087,7 +1096,10 @@ export const createPlayerPlayback = ({
 
     if (!isSongLoaded.value) {
       // playSong 内部会自行设置 isPlaying / 启动播放时钟，这里直接返回避免重复
-      await playSong(currentSong.value, { startTime: currentTime.value });
+      await playSong(currentSong.value, {
+        startTime: currentTime.value,
+        continueStatisticsSession: true,
+      });
       return;
     }
 

@@ -33,4 +33,20 @@ describe('OnboardingModal splash', () => {
     expect(source).toContain(':class="onboardingSurfaceClass"');
     expect(source).toContain("materialMode.value === 'none'");
   });
+
+  it('places plugin management after shortcuts and allows deferring it', () => {
+    expect(source).toContain("type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'plugins' | 'account'");
+    expect(source).toContain("['splash', 'theme', 'material', 'shortcuts', 'plugins', 'account']");
+    expect(source).toContain("{ key: 'plugins', label: '插件' }");
+    expect(source).toContain('添加或管理插件');
+    expect(source).toContain("pluginManagerVisited ? '继续' : '稍后添加'");
+    expect(source).not.toContain('sm:border-r border-black/10 dark:border-white/10');
+  });
+
+  it('lazy-loads the existing full plugin manager inside onboarding', () => {
+    expect(source).toContain("() => import('../settings/SettingsPlugins.vue')");
+    expect(source).toContain('<SettingsPlugins overlay-z-class="z-[10000]" />');
+    expect(source).toContain('@click="closePluginManager"');
+    expect(source).toContain('完成管理');
+  });
 });

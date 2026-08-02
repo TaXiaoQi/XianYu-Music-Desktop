@@ -14,6 +14,7 @@ import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
 import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
 import SettingsDownload from "../components/settings/SettingsDownload.vue";
 import SettingsDebug from "../components/settings/SettingsDebug.vue";
+import SettingsAdvanced from "../components/settings/SettingsAdvanced.vue";
 import { useDeveloperMode } from '../features/settings/developerMode';
 import {
   searchSettings,
@@ -23,7 +24,7 @@ import {
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -193,6 +194,7 @@ const baseTabs: Array<{ id: SettingsViewTabId; name: string }> = [
   { id: 'toolbox', name: '工具箱' },
   { id: 'desktopLyrics', name: '桌面歌词' },
   { id: 'shortcuts', name: '快捷键' },
+  { id: 'advanced', name: '高级设置' },
   { id: 'about', name: '关于' },
 ];
 
@@ -290,6 +292,7 @@ const tabs = computed(() => {
         <SettingsToolbox v-else-if="activeTab === 'toolbox'" />
         <SettingsLibrary v-else-if="activeTab === 'library'" />
         <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
+        <SettingsAdvanced v-else-if="activeTab === 'advanced'" />
         <SettingsDebug v-else-if="activeTab === 'debug'" />
         <SettingsAbout v-else-if="activeTab === 'about'" />
 

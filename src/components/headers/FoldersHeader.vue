@@ -1,48 +1,32 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 
-import FolderContextMenu from '../overlays/FolderContextMenu.vue';
 import SortModeIcon from '../common/SortModeIcon.vue';
 import { useToast } from '../../composables/toast';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
-import { dragSession } from '../../composables/dragState';
-import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
-import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions';
 
 const { folderSortMode, setFolderSortMode } = usePlayerViewState();
 
 const props = defineProps<{
   isBatchMode: boolean;
   selectedCount: number;
-  folderTree: any[];
-  activeRootPath: string | null;
   currentFolderFilter: string;
   isManagementMode: boolean;
 }>();
 
 const emit = defineEmits([
   'update:isBatchMode',
-  'update:activeRootPath',
   'playAll',
   'batchPlay',
   'batchDelete',
   'batchMove',
   'addToPlaylist',
-  'rootCreatePlaylist',
   'addFolder',
   'refreshFolder',
-  'removeFolder',
-  'newFolder',
-  'deleteFolderDisk',
   'update:isManagementMode',
 ]);
 
 const toast = useToast();
-
-const targetRootPath = ref('');
-const showRootMenu = ref(false);
-const rootMenuX = ref(0);
-const rootMenuY = ref(0);
 
 const showSortMenu = ref(false);
 const sortMenuX = ref(0);
@@ -69,15 +53,6 @@ const toggleManagementMode = (enable: boolean) => {
   }, 300);
 };
 
-const handleRootContextMenu = (e: MouseEvent, path: string) => {
-  e.preventDefault();
-  targetRootPath.value = path;
-  rootMenuX.value = e.clientX;
-  rootMenuY.value = e.clientY;
-  showRootMenu.value = true;
-  showSortMenu.value = false;
-};
-
 const handleSortClick = (e: MouseEvent) => {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const windowWidth = window.innerWidth;
@@ -92,50 +67,13 @@ const handleSortClick = (e: MouseEvent) => {
 
   sortMenuY.value = rect.bottom + 8;
   showSortMenu.value = !showSortMenu.value;
-  showRootMenu.value = false;
 };
 
 const handleGlobalClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
-  if (!target.closest('.root-folder-menu') && !target.closest('.sort-menu-trigger')) {
-    showRootMenu.value = false;
+  if (!target.closest('.sort-menu-trigger')) {
     showSortMenu.value = false;
   }
-};
-
-const isRootDropTarget = (path: string) =>
-  props.isManagementMode &&
-  dragSession.active &&
-  dragSession.type === 'song' &&
-  dragSession.targetFolder?.path === path;
-
-const emitRootCreatePlaylist = () => {
-  const rootNode = props.folderTree.find(node => node.path === targetRootPath.value);
-  if (!rootNode) {
-    showRootMenu.value = false;
-    return;
-  }
-
-  showRootMenu.value = false;
-  emit('rootCreatePlaylist', rootNode.path, rootNode.name);
-};
-
-const emitRootAddToPlaylist = () => {
-  const rootNode = props.folderTree.find(node => node.path === targetRootPath.value);
-  if (!rootNode) {
-    showRootMenu.value = false;
-    return;
-  }
-
-  showRootMenu.value = false;
-  const { getSongsInFolder } = useLibraryRuntimeActions();
-  const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
-  const songs = getSongsInFolder(rootNode.path);
-  if (songs.length === 0) {
-    toast.showToast('该文件夹下没有可用于添加到歌单的歌曲', 'info');
-    return;
-  }
-  openAddToPlaylistDialog(songs.map(song => song.path));
 };
 
 onMounted(() => window.addEventListener('click', handleGlobalClick));
@@ -147,50 +85,8 @@ onUnmounted(() => {
 <template>
   <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2 overflow-x-auto overflow-y-visible custom-scrollbar no-scrollbar py-2 pl-0 pr-4">
-        <div
-          v-for="rootNode in folderTree"
-          :key="rootNode.path"
-          :data-folder-path="rootNode.path"
-          :data-folder-name="rootNode.name"
-          @click="emit('update:activeRootPath', rootNode.path)"
-          @contextmenu.prevent="handleRootContextMenu($event, rootNode.path)"
-          :class="[
-            'folder-drop-target group relative px-5 py-1.5 rounded-full text-sm font-medium transition-all duration-300 cursor-pointer select-none shrink-0 border border-transparent',
-            activeRootPath === rootNode.path
-              ? 'liquid-glass shadow-md'
-              : 'bg-gray-50 text-gray-500 hover:bg-gray-100 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10',
-            isRootDropTarget(rootNode.path)
-              ? 'ring-2 ring-[#EC4141] ring-inset bg-red-50 text-[#EC4141] dark:bg-red-500/10 dark:text-red-300'
-              : ''
-          ]"
-        >
-          <span>{{ rootNode.name }}</span>
-          <button
-            @click.stop="emit('removeFolder', rootNode.path, rootNode.name)"
-            class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-400 hover:text-white shadow-sm"
-            title="移除文件夹"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <FolderContextMenu
-          :visible="showRootMenu"
-          :x="rootMenuX"
-          :y="rootMenuY"
-          :folder-path="targetRootPath"
-          :selected-count="1"
-          :isManagementMode="isManagementMode"
-          @close="showRootMenu = false"
-          @create-playlist="emitRootCreatePlaylist"
-          @add-to-playlist="emitRootAddToPlaylist"
-          @remove="path => emit('removeFolder', path)"
-          @new-folder="showRootMenu = false; emit('newFolder', targetRootPath)"
-          @delete-disk="showRootMenu = false; emit('deleteFolderDisk', targetRootPath)"
-        />
+      <div class="py-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+        文件夹
       </div>
 
       <div class="flex items-center gap-3">

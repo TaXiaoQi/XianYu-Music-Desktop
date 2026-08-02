@@ -70,14 +70,24 @@ const dragPendingFiles = ref<string[]>([]);
 const moveTarget = ref<{ name: string; path: string } | null>(null);
 let skipNextSelectionExpand = false;
 
-const activeTreeNodes = computed(() => {
-  if (!activeRootPath.value) {
-    return [];
-  }
+const visibleTreeNodes = computed(() => folderTree.value);
 
-  const rootNode = folderTree.value.find(node => node.path === activeRootPath.value);
-  return rootNode?.children ?? [];
-});
+const resolveRootPath = (path: string) => {
+  const normalizedPath = normalizePath(path);
+  return folderTree.value
+    .filter(node => {
+      const normalizedRoot = normalizePath(node.path);
+      return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
+    })
+    .sort((left, right) => normalizePath(right.path).length - normalizePath(left.path).length)[0]?.path ?? null;
+};
+
+const syncActiveRoot = (path: string) => {
+  const rootPath = resolveRootPath(path);
+  if (rootPath) {
+    activeRootPath.value = rootPath;
+  }
+};
 
 const isTargetFolderRoot = computed(() => {
   if (!targetFolder.value) {
@@ -89,9 +99,7 @@ const isTargetFolderRoot = computed(() => {
   );
 });
 
-const treeScrollMemoryKey = computed(() =>
-  ['master-panel-tree', activeRootPath.value || ''].join('::'),
-);
+const treeScrollMemoryKey = computed(() => 'master-panel-tree');
 
 const {
   restoreScrollPosition: restoreTreeScrollPosition,
@@ -106,7 +114,11 @@ watch(
     }
 
     if (!activeRootPath.value || !newTree.find(node => node.path === activeRootPath.value)) {
-      activeRootPath.value = newTree[0].path;
+      activeRootPath.value = resolveRootPath(currentFolderFilter.value) || newTree[0].path;
+    }
+
+    if (!currentFolderFilter.value) {
+      currentFolderFilter.value = activeRootPath.value;
     }
 
     const selectedRoot = newTree.find(node => node.path === activeRootPath.value);
@@ -171,15 +183,18 @@ const restoreFolderViewState = async () => {
 
 const handleTreeSelect = (node: FolderNode) => {
   skipNextSelectionExpand = true;
+  syncActiveRoot(node.path);
   currentFolderFilter.value = node.path;
 };
 
 const handleTreeToggle = async (node: FolderNode) => {
+  syncActiveRoot(node.path);
   await toggleFolderNode(node.path);
 };
 
 const handleTreeContextMenu = ({ event, node }: { event: MouseEvent; node: FolderNode }) => {
   skipNextSelectionExpand = true;
+  syncActiveRoot(node.path);
   currentFolderFilter.value = node.path;
   targetFolder.value = { name: node.name, path: node.path };
   menuX.value = event.clientX;
@@ -549,25 +564,18 @@ onUnmounted(() => {
     <div class="h-full overflow-y-auto custom-scrollbar">
       <div class="flex flex-col h-full bg-transparent">
         <div ref="treeContainerRef" class="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-0.5 mt-1">
-          <div v-if="activeTreeNodes.length > 0">
+          <div v-if="visibleTreeNodes.length > 0">
             <FolderTreeItem
-              v-for="node in activeTreeNodes"
+              v-for="node in visibleTreeNodes"
               :key="node.path"
               :node="node"
               :depth="0"
+              :isRoot="true"
               :selectedPath="currentFolderFilter"
               @select="handleTreeSelect"
               @toggle="handleTreeToggle"
               @contextmenu="handleTreeContextMenu"
             />
-          </div>
-
-          <div
-            v-else-if="activeRootPath"
-            class="flex flex-col items-center justify-center py-10 text-gray-400 dark:text-gray-500 space-y-2 text-center px-4"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span class="text-xs leading-relaxed">当前根目录下没有子文件夹。</span>
           </div>
 
           <div

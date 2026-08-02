@@ -11,6 +11,7 @@ import type {
   FooterLayoutSettings,
   ImportedLyricsFont,
   LyricsSettings,
+  LogSettings,
   PluginSettings,
   SidebarSettings,
   ThemeSettings,
@@ -59,9 +60,10 @@ export type DownloadSettingsPatch = Partial<DownloadSettings>;
 export type UploadSettingsPatch = Partial<UploadSettings>;
 export type PluginSettingsPatch = Partial<PluginSettings>;
 export type AutoSyncConfigPatch = Partial<AutoSyncConfig>;
+export type LogSettingsPatch = Partial<LogSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync' | 'logging'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   footerLayout?: FooterLayoutSettingsPatch;
@@ -74,6 +76,7 @@ export interface AppSettingsPatch
   upload?: UploadSettingsPatch;
   plugins?: PluginSettingsPatch;
   autoSync?: AutoSyncConfigPatch;
+  logging?: LogSettingsPatch;
 }
 
 export interface DeprecatedAppSettingsPatch extends AppSettingsPatch {
@@ -128,6 +131,7 @@ export const defaultFooterLayoutSettings: FooterLayoutSettings = {
   middleLeft: DEFAULT_FOOTER_LAYOUT.middleLeft,
   middleRight: DEFAULT_FOOTER_LAYOUT.middleRight,
   right: [...DEFAULT_FOOTER_LAYOUT.right],
+  hidden: [...DEFAULT_FOOTER_LAYOUT.hidden],
 };
 
 export const defaultAudioSettings: AudioSettings = {
@@ -188,6 +192,12 @@ export const defaultAutoSyncConfig: AutoSyncConfig = {
   nextSyncAt: 0,
 };
 
+export const defaultLogSettings: LogSettings = {
+  minimumLevel: 'info',
+  retentionDays: 14,
+  autoAnalyze: true,
+};
+
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
   showDesktopLyrics: false,
@@ -217,7 +227,7 @@ export const defaultAppSettings: AppSettings = {
   upload: defaultUploadSettings,
   plugins: defaultPluginSettings,
   autoSync: defaultAutoSyncConfig,
-  songClickAction: 'double',
+  logging: defaultLogSettings,
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
@@ -238,6 +248,7 @@ export const createDefaultFooterLayoutSettings = (): FooterLayoutSettings => ({
   middleLeft: defaultFooterLayoutSettings.middleLeft,
   middleRight: defaultFooterLayoutSettings.middleRight,
   right: [...defaultFooterLayoutSettings.right],
+  hidden: [...defaultFooterLayoutSettings.hidden],
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({
@@ -261,6 +272,10 @@ export const createDefaultUploadSettings = (): UploadSettings => ({
 
 export const createDefaultAutoSyncConfig = (): AutoSyncConfig => ({
   ...defaultAutoSyncConfig,
+});
+
+export const createDefaultLogSettings = (): LogSettings => ({
+  ...defaultLogSettings,
 });
 
 export const mergeUploadSettings = (
@@ -341,6 +356,7 @@ export const createDefaultAppSettings = (): AppSettings => ({
   download: createDefaultDownloadSettings(),
   upload: createDefaultUploadSettings(),
   autoSync: createDefaultAutoSyncConfig(),
+  logging: createDefaultLogSettings(),
 });
 
 export const mergeThemeSettings = (
@@ -384,6 +400,7 @@ export const mergeFooterLayoutSettings = (
   middleLeft: patch.middleLeft !== undefined ? patch.middleLeft : base.middleLeft,
   middleRight: patch.middleRight !== undefined ? patch.middleRight : base.middleRight,
   right: patch.right ?? base.right,
+  hidden: patch.hidden ?? base.hidden,
 });
 
 export const mergeAudioSettings = (
@@ -497,6 +514,7 @@ export const mergeAppSettings = (
     upload: patch.upload ? mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload) : (base.upload ?? createDefaultUploadSettings()),
     plugins: patch.plugins ? mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins) : (base.plugins ?? defaultPluginSettings),
     autoSync: patch.autoSync ? mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync) : (base.autoSync ?? createDefaultAutoSyncConfig()),
+    logging: patch.logging ? mergeLogSettings(base.logging ?? createDefaultLogSettings(), patch.logging) : (base.logging ?? createDefaultLogSettings()),
   };
 };
 
@@ -514,6 +532,21 @@ const mergeAutoSyncConfig = (base: AutoSyncConfig, patch: Partial<AutoSyncConfig
   lastSyncAttemptAt: typeof patch.lastSyncAttemptAt === 'number' ? patch.lastSyncAttemptAt : base.lastSyncAttemptAt,
   lastSyncSuccessAt: typeof patch.lastSyncSuccessAt === 'number' ? patch.lastSyncSuccessAt : base.lastSyncSuccessAt,
   nextSyncAt: typeof patch.nextSyncAt === 'number' ? patch.nextSyncAt : base.nextSyncAt,
+});
+
+const LOG_LEVELS: LogSettings['minimumLevel'][] = ['debug', 'info', 'warn', 'error'];
+
+export const mergeLogSettings = (
+  base: LogSettings,
+  patch: Partial<LogSettings>,
+): LogSettings => ({
+  minimumLevel: patch.minimumLevel && LOG_LEVELS.includes(patch.minimumLevel)
+    ? patch.minimumLevel
+    : base.minimumLevel,
+  retentionDays: typeof patch.retentionDays === 'number' && Number.isFinite(patch.retentionDays)
+    ? Math.min(365, Math.max(1, Math.round(patch.retentionDays)))
+    : base.retentionDays,
+  autoAnalyze: typeof patch.autoAnalyze === 'boolean' ? patch.autoAnalyze : base.autoAnalyze,
 });
 
 export const useSettingsStore = defineStore('settings', () => {

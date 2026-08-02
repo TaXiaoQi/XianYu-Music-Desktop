@@ -57,13 +57,17 @@ import {
 /** 归一化后的当前布局（防御性处理，确保任何来源都合法） */
 const normalizedLayout = computed(() => normalizeFooterLayout(footerLayout.value));
 /** 左侧容器控件（最多 2 个） */
-const leftItems = computed(() => normalizedLayout.value.left);
+const leftItems = computed(() => normalizedLayout.value.left.filter(key => !normalizedLayout.value.hidden.includes(key)));
 /** 中间左侧控件（最多 1 个，紧邻"上一首"） */
-const middleLeftItem = computed(() => normalizedLayout.value.middleLeft);
+const middleLeftItem = computed(() => normalizedLayout.value.middleLeft && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleLeft)
+  ? normalizedLayout.value.middleLeft
+  : null);
 /** 中间右侧控件（最多 1 个，紧邻"下一首"） */
-const middleRightItem = computed(() => normalizedLayout.value.middleRight);
+const middleRightItem = computed(() => normalizedLayout.value.middleRight && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleRight)
+  ? normalizedLayout.value.middleRight
+  : null);
 /** 右侧容器控件（最多 5 个） */
-const rightItems = computed(() => normalizedLayout.value.right);
+const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key)));
 /** 折叠收纳菜单中的控件（未分配到任何容器） */
 const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value));
 
@@ -330,7 +334,11 @@ const selectQuality = async (qualityKey: QualityKey) => {
 
   // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
   if (qualityKey !== prev && isQualitySelectableSong.value && currentSong.value) {
-    await playSong(currentSong.value, { startTime: currentTime.value, preserveQueue: true });
+    await playSong(currentSong.value, {
+      startTime: currentTime.value,
+      preserveQueue: true,
+      continueStatisticsSession: true,
+    });
   }
 };
 

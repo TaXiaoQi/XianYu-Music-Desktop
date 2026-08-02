@@ -7,6 +7,7 @@ import App from './App.vue'
 import router from './router'
 import { applyPersistedStartupTheme, shouldApplyStartupThemePaint } from './composables/startupTheme'
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
+import { installApplicationLogger } from './services/applicationLogger'
 
 const currentWindowLabel = (() => {
   try {
@@ -15,6 +16,8 @@ const currentWindowLabel = (() => {
     return 'main'
   }
 })()
+
+installApplicationLogger(currentWindowLabel)
 
 if (shouldApplyStartupThemePaint(currentWindowLabel)) {
   applyPersistedStartupTheme()

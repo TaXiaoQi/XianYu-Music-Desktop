@@ -16,6 +16,7 @@ describe('settings search index', () => {
       'plugins',
       'shortcuts',
       'account',
+      'advanced',
       'about',
     ]));
   });

@@ -320,6 +320,11 @@ const fontPresetTriggerRef = ref<HTMLElement | null>(null);
 const fontPresetMenuRef = ref<HTMLElement | null>(null);
 const isFontPresetMenuOpen = ref(false);
 const fontPresetMenuStyle = ref<Record<string, string>>({});
+const colorSchemeFieldRef = ref<HTMLElement | null>(null);
+const colorSchemeTriggerRef = ref<HTMLElement | null>(null);
+const colorSchemeMenuRef = ref<HTMLElement | null>(null);
+const isColorSchemeMenuOpen = ref(false);
+const colorSchemeMenuStyle = ref<Record<string, string>>({});
 const showLyricsSyncOffsetPanel = ref(false);
 const isResettingWindowBounds = ref(false);
 const isCustomColorModalOpen = ref(false);
@@ -350,6 +355,10 @@ const selectedFontFamily = computed(() => {
   return availableFontOptions.value.find((option) => option.value === localSettings.value.playerFontPreset)?.fontFamily
     ?? getLyricsFontFamily(localSettings.value.playerFontPreset);
 });
+const selectedColorScheme = computed(() => (
+  COLOR_SCHEME_OPTIONS.find(option => option.value === localSettings.value.colorScheme)
+  ?? COLOR_SCHEME_OPTIONS[0]
+));
 
 
 const isCustomShadowColor = computed(() => {
@@ -754,6 +763,7 @@ function updateFontPresetMenuPosition() {
 }
 
 async function toggleFontPresetMenu() {
+  closeColorSchemeMenu();
   isFontPresetMenuOpen.value = !isFontPresetMenuOpen.value;
 
   if (!isFontPresetMenuOpen.value) return;
@@ -780,6 +790,61 @@ function closeFontPresetMenu() {
   isFontPresetMenuOpen.value = false;
 }
 
+function updateColorSchemeMenuPosition() {
+  const trigger = colorSchemeTriggerRef.value;
+  if (!trigger) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportPadding = 16;
+  const gap = 10;
+  const menuWidth = Math.min(Math.max(rect.width, 300), window.innerWidth - viewportPadding * 2);
+  const left = Math.max(
+    viewportPadding,
+    Math.min(rect.right - menuWidth, window.innerWidth - viewportPadding - menuWidth),
+  );
+  const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+  const availableAbove = rect.top - viewportPadding;
+  const shouldOpenUpward = availableBelow < 280 && availableAbove > availableBelow;
+  const availableHeight = shouldOpenUpward ? availableAbove : availableBelow;
+  const maxHeight = Math.max(220, Math.min(420, availableHeight - gap));
+
+  colorSchemeMenuStyle.value = shouldOpenUpward
+    ? {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        bottom: `${Math.round(window.innerHeight - rect.top + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+        maxHeight: `${Math.round(maxHeight)}px`,
+      }
+    : {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(rect.bottom + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+        maxHeight: `${Math.round(maxHeight)}px`,
+      };
+}
+
+async function toggleColorSchemeMenu() {
+  closeFontPresetMenu();
+  isColorSchemeMenuOpen.value = !isColorSchemeMenuOpen.value;
+  if (!isColorSchemeMenuOpen.value) return;
+
+  await nextTick();
+  updateColorSchemeMenuPosition();
+  const activeItem = colorSchemeMenuRef.value?.querySelector('.desktop-color-scheme-option--active') as HTMLElement | null;
+  activeItem?.scrollIntoView({ block: 'nearest' });
+}
+
+function closeColorSchemeMenu() {
+  isColorSchemeMenuOpen.value = false;
+}
+
+function selectColorSchemeFromMenu(value: LyricsColorScheme) {
+  closeColorSchemeMenu();
+  selectDesktopColorScheme(value);
+}
+
 function selectDesktopFontPreset(value: LyricsFontPreset) {
   setDesktopFontPreset(value);
   closeFontPresetMenu();
@@ -790,16 +855,20 @@ function handlePointerDownOutside(event: MouseEvent) {
   if (!target) return;
   if (fontPresetFieldRef.value?.contains(target)) return;
   if (fontPresetMenuRef.value?.contains(target)) return;
+  if (colorSchemeFieldRef.value?.contains(target)) return;
+  if (colorSchemeMenuRef.value?.contains(target)) return;
   if (customColorPanelRef.value?.contains(target)) return;
   if ((target as Element | null)?.closest?.('.desktop-color-input-shell')) return;
 
   activeCustomColorKind.value = null;
   closeFontPresetMenu();
+  closeColorSchemeMenu();
 }
 
 function handleWindowEscape(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     closeFontPresetMenu();
+    closeColorSchemeMenu();
     closeCustomColorModal();
   }
 }
@@ -807,6 +876,9 @@ function handleWindowEscape(event: KeyboardEvent) {
 function handleViewportChange() {
   if (isFontPresetMenuOpen.value) {
     updateFontPresetMenuPosition();
+  }
+  if (isColorSchemeMenuOpen.value) {
+    updateColorSchemeMenuPosition();
   }
 }
 
@@ -1158,20 +1230,20 @@ onUnmounted(() => {
               <div class="desktop-lyric-row desktop-lyric-row--active">
                 <div class="desktop-lyric-main">
                   <span class="desktop-lyric-word" :class="{ 'desktop-lyric-word--with-romaji': lyricsSettings.showRomaji }">
-                    <span class="desktop-lyric-word-main" :style="playedWordStyle">初めての</span>
-                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="playedRomajiWordStyle">ha ji me te no</span>
+                    <span class="desktop-lyric-word-main" :style="playedWordStyle">I'm leaving&nbsp;</span>
+                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="playedRomajiWordStyle">aɪm ˈliːvɪŋ</span>
                   </span>
                   <span class="desktop-lyric-word" :class="{ 'desktop-lyric-word--with-romaji': lyricsSettings.showRomaji }">
-                    <span class="desktop-lyric-word-main" :style="activeWordStyle">ルーブル</span>
-                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="activeRomajiWordStyle">ru u bu ru</span>
+                    <span class="desktop-lyric-word-main" :style="activeWordStyle">home&nbsp;</span>
+                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="activeRomajiWordStyle">hoʊm</span>
                   </span>
                   <span class="desktop-lyric-word" :class="{ 'desktop-lyric-word--with-romaji': lyricsSettings.showRomaji }">
-                    <span class="desktop-lyric-word-main" :style="unplayedWordStyle">は</span>
-                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="unplayedRomajiWordStyle">wa</span>
+                    <span class="desktop-lyric-word-main" :style="unplayedWordStyle">for the coastline</span>
+                    <span v-if="lyricsSettings.showRomaji" class="desktop-lyric-word-romaji" :style="unplayedRomajiWordStyle">fɔːr ðə ˈkoʊstlaɪn</span>
                   </span>
                 </div>
                 <div v-if="lyricsSettings.showTranslation" class="desktop-lyric-sub desktop-lyric-sub--translation">
-                  第一次参观卢浮宫
+                  我要离开家去往海岸线
                 </div>
               </div>
 
@@ -1445,25 +1517,83 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行七：配色方案 (独占一行，展示小圆点 Preset，极致美观与对称) -->
+        <!-- 行七：配色方案 -->
         <div class="desktop-compact-row-full">
           <div class="desktop-compact-cell w-full flex items-center justify-between gap-4">
             <div class="desktop-compact-label shrink-0">配色方案</div>
-            <div class="desktop-compact-selector-scheme flex items-center gap-1.5">
+            <div ref="colorSchemeFieldRef" class="desktop-font-picker w-full max-w-[300px] min-w-0">
               <button
-                v-for="option in COLOR_SCHEME_OPTIONS"
-                :key="option.value"
+                ref="colorSchemeTriggerRef"
                 type="button"
-                class="desktop-compact-color-preset"
-                :class="{
-                  'desktop-compact-color-preset--active': localSettings.colorScheme === option.value,
-                  'desktop-compact-color-preset--custom': option.value === 'custom',
-                  'desktop-compact-color-preset--auto': option.value === 'auto'
-                }"
-                :style="option.value !== 'custom' && option.value !== 'auto' ? { backgroundColor: option.color } : {}"
-                :title="'切换配色方案: ' + option.label"
-                @click="selectDesktopColorScheme(option.value)"
-              />
+                class="desktop-font-trigger desktop-font-trigger--compact flex w-full items-center justify-between"
+                :class="isColorSchemeMenuOpen ? 'desktop-font-trigger--open' : ''"
+                @click="toggleColorSchemeMenu"
+              >
+                <span class="flex min-w-0 flex-1 items-center justify-end gap-2">
+                  <span
+                    class="desktop-color-scheme-swatch"
+                    :class="{
+                      'desktop-color-scheme-swatch--custom': selectedColorScheme.value === 'custom',
+                      'desktop-color-scheme-swatch--auto': selectedColorScheme.value === 'auto',
+                    }"
+                    :style="selectedColorScheme.value !== 'custom' && selectedColorScheme.value !== 'auto'
+                      ? { backgroundColor: selectedColorScheme.color }
+                      : {}"
+                  ></span>
+                  <span class="truncate text-[14px] font-semibold text-gray-800 dark:text-gray-100">
+                    {{ selectedColorScheme.label }}
+                  </span>
+                </span>
+                <ChevronDown :size="14" class="ml-2 shrink-0 text-gray-400" />
+              </button>
+
+              <Teleport to="body">
+                <transition name="desktop-font-menu">
+                  <div
+                    v-if="isColorSchemeMenuOpen"
+                    ref="colorSchemeMenuRef"
+                    class="desktop-font-menu"
+                    :style="colorSchemeMenuStyle"
+                    @click.stop
+                    @mousedown.stop
+                  >
+                    <div class="desktop-font-menu-header">
+                      <span>配色方案</span>
+                      <span>{{ COLOR_SCHEME_OPTIONS.length }} 项</span>
+                    </div>
+                    <div class="desktop-font-menu-list custom-scrollbar">
+                      <button
+                        v-for="option in COLOR_SCHEME_OPTIONS"
+                        :key="option.value"
+                        type="button"
+                        class="desktop-font-option desktop-color-scheme-option"
+                        :class="localSettings.colorScheme === option.value ? 'desktop-color-scheme-option--active' : ''"
+                        @click="selectColorSchemeFromMenu(option.value)"
+                      >
+                        <span
+                          class="desktop-color-scheme-swatch shrink-0"
+                          :class="{
+                            'desktop-color-scheme-swatch--custom': option.value === 'custom',
+                            'desktop-color-scheme-swatch--auto': option.value === 'auto',
+                          }"
+                          :style="option.value !== 'custom' && option.value !== 'auto'
+                            ? { backgroundColor: option.color }
+                            : {}"
+                        ></span>
+                        <span class="min-w-0 flex-1 text-left">
+                          <span class="block truncate text-sm font-semibold">{{ option.label }}</span>
+                          <span class="mt-0.5 block truncate text-xs opacity-55">{{ option.hint }}</span>
+                        </span>
+                        <Check
+                          v-if="localSettings.colorScheme === option.value"
+                          :size="16"
+                          class="shrink-0 text-[#EC4141]"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </transition>
+              </Teleport>
             </div>
           </div>
         </div>
@@ -1553,17 +1683,17 @@ onUnmounted(() => {
 
             <div ref="customPreviewRef" class="desktop-custom-preview">
               <div class="desktop-custom-preview-line">
-                <span :style="customPreviewPlayedStyle">初めての</span>
-                <span :style="customPreviewCurrentStyle">ルーブル</span>
-                <span :style="customPreviewUnplayedStyle">は</span>
+                <span :style="customPreviewPlayedStyle">I'm leaving&nbsp;</span>
+                <span :style="customPreviewCurrentStyle">home&nbsp;</span>
+                <span :style="customPreviewUnplayedStyle">for the coastline</span>
               </div>
               <div v-if="lyricsSettings.showRomaji" class="desktop-custom-preview-sub">
-                <span :style="customPreviewRomajiPlayedStyle">ha ji me te no</span>
-                <span :style="customPreviewRomajiCurrentStyle">ru u bu ru</span>
-                <span :style="customPreviewRomajiUnplayedStyle">wa</span>
+                <span :style="customPreviewRomajiPlayedStyle">aɪm ˈliːvɪŋ</span>
+                <span :style="customPreviewRomajiCurrentStyle">hoʊm</span>
+                <span :style="customPreviewRomajiUnplayedStyle">fɔːr ðə ˈkoʊstlaɪn</span>
               </div>
               <div v-if="lyricsSettings.showTranslation" class="desktop-custom-preview-sub desktop-custom-preview-translation" :style="customPreviewTranslationStyle">
-                第一次参观卢浮宫
+                我要离开家去往海岸线
               </div>
             </div>
 
@@ -2908,23 +3038,35 @@ onUnmounted(() => {
 
 
 
-/* 阴影色块与配色选择器区域 */
-.desktop-compact-selector-shadow,
-.desktop-compact-selector-scheme {
+/* 阴影色块选择器区域 */
+.desktop-compact-selector-shadow {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 28px;
 }
 
-/* 自定义配色圆圈渐变 */
-.desktop-compact-color-preset--custom {
+/* 配色方案下拉中的颜色标识 */
+.desktop-color-scheme-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.desktop-color-scheme-swatch--custom {
   background: linear-gradient(135deg, #EC4141 0%, #60a5fa 50%, #34d399 100%) !important;
 }
 
-/* 封面取色圆圈渐变 */
-.desktop-compact-color-preset--auto {
+.desktop-color-scheme-swatch--auto {
   background: linear-gradient(135deg, #8ec5ff 0%, #ff8cab 33%, #88f3c2 66%, #ffe07d 100%) !important;
+}
+
+:global(.dark) .desktop-color-scheme-swatch {
+  border-color: rgba(0, 0, 0, 0.38);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 /* 阴影预设小圆点 */

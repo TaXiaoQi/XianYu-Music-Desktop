@@ -7,8 +7,10 @@ defineOptions({ inheritAttrs: false });
 const props = withDefaults(defineProps<{
   text: string;
   focusable?: boolean;
+  severity?: 'info' | 'warning';
 }>(), {
   focusable: true,
+  severity: 'info',
 });
 
 const tooltipId = `setting-hint-${useId()}`;
@@ -76,6 +78,7 @@ onBeforeUnmount(() => {
     v-bind="$attrs"
     ref="triggerRef"
     class="setting-hint"
+    :class="{ 'setting-hint--warning': props.severity === 'warning' }"
     :aria-label="props.text"
     :aria-describedby="isVisible ? tooltipId : undefined"
     :role="props.focusable ? 'button' : undefined"
@@ -115,16 +118,28 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  color: #f59e0b;
+  color: #9ca3af;
   cursor: help;
   outline: none;
 }
 
 .setting-hint:focus-visible {
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.22);
 }
 
 :global(.dark) .setting-hint {
+  color: #9ca3af;
+}
+
+.setting-hint--warning {
+  color: #f59e0b;
+}
+
+.setting-hint--warning:focus-visible {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+:global(.dark) .setting-hint--warning {
   color: #fcd34d;
 }
 

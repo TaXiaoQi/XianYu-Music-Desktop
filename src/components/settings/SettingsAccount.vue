@@ -279,7 +279,7 @@ function updateAutoSyncMaxDelay(event: Event) {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           后端地址
         </span>
-        <SettingHint :text="`登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
+        <SettingHint severity="warning" :text="`登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
       </h2>
       <div class="flex items-stretch gap-2 flex-wrap">
         <input

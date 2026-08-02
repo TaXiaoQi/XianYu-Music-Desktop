@@ -648,7 +648,7 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint :text="wasapiExclusiveSideEffectTip" />
+            <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
             <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
               <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
             </button>
@@ -818,7 +818,7 @@ onScopeDispose(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  color: #f59e0b;
+  color: #9ca3af;
   outline: none;
 }
 
@@ -852,7 +852,7 @@ onScopeDispose(() => {
 }
 
 :global(.dark) .audio-tip {
-  color: #fcd34d;
+  color: #9ca3af;
 }
 
 :global(.dark) .audio-tip-popover {

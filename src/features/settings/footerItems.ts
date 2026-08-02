@@ -21,6 +21,7 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   middleLeft: 'playMode',
   middleRight: 'desktopLyrics',
   right: ['quality', 'speed', 'volume', 'equalizer', 'playlist'],
+  hidden: [],
 };
 
 /** 容器显示信息 */
@@ -79,6 +80,18 @@ const ALL_CONTAINERS_ORDERED: FooterContainerKey[] = ['left', 'middleLeft', 'mid
 export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   const base = typeof value === 'object' && value !== null ? value as Partial<FooterLayoutSettings> : {};
   const seen = new Set<FooterItemKey>();
+  const hiddenSeen = new Set<FooterItemKey>();
+
+  const hidden = Array.isArray(base.hidden)
+    ? base.hidden.filter((item): item is FooterItemKey => {
+        if (typeof item !== 'string') return false;
+        const key = item as FooterItemKey;
+        if (!FOOTER_ITEM_KEY_SET.has(key) || hiddenSeen.has(key)) return false;
+        hiddenSeen.add(key);
+        return true;
+      })
+    : [];
+  const hiddenSet = new Set(hidden);
 
   const cleanList = (raw: unknown, container: FooterContainerKey): FooterItemKey[] => {
     const limit = FOOTER_CONTAINER_LIMITS[container];
@@ -108,9 +121,29 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   let middleLeft = cleanSingle(base.middleLeft);
   let middleRight = cleanSingle(base.middleRight);
 
+  // 旧配置只保存了 hidden，没有保留其槽位。迁移时把隐藏项补成不可见占位符：
+  // 左区靠左，因此占位符放末尾；右区靠右，因此占位符放开头。
+  for (const key of hidden) {
+    if (seen.has(key)) continue;
+    if (DEFAULT_FOOTER_LAYOUT.left.includes(key) && left.length < FOOTER_CONTAINER_LIMITS.left) {
+      left.push(key);
+    } else if (DEFAULT_FOOTER_LAYOUT.middleLeft === key && middleLeft === null) {
+      middleLeft = key;
+    } else if (DEFAULT_FOOTER_LAYOUT.middleRight === key && middleRight === null) {
+      middleRight = key;
+    } else if (DEFAULT_FOOTER_LAYOUT.right.includes(key) && right.length < FOOTER_CONTAINER_LIMITS.right) {
+      right.unshift(key);
+    } else if (right.length < FOOTER_CONTAINER_LIMITS.right) {
+      right.unshift(key);
+    } else if (left.length < FOOTER_CONTAINER_LIMITS.left) {
+      left.push(key);
+    }
+    seen.add(key);
+  }
+
   // 补齐缺失项：按元数据顺序，把未分配的 key 放回第一个仍有空位的容器
   for (const key of FOOTER_ITEM_KEYS) {
-    if (seen.has(key)) continue;
+    if (seen.has(key) || hiddenSet.has(key)) continue;
     for (const container of ALL_CONTAINERS_ORDERED) {
       if (container === 'middleLeft') {
         if (middleLeft === null) {
@@ -139,7 +172,7 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
     // 所有容器都满时，留在折叠区
   }
 
-  return { left, middleLeft, middleRight, right };
+  return { left, middleLeft, middleRight, right, hidden };
 };
 
 /** 计算未分配到任何容器的控件（即折叠收纳菜单中的项目） */
@@ -150,7 +183,8 @@ export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemK
     ...(layout.middleRight ? [layout.middleRight] : []),
     ...layout.right,
   ]);
-  return FOOTER_ITEM_KEYS.filter(key => !assigned.has(key));
+  const hidden = new Set(layout.hidden);
+  return FOOTER_ITEM_KEYS.filter(key => !assigned.has(key) && !hidden.has(key));
 };
 
 /** 查找控件当前所在的容器（不在任何容器则返回 'collapsed'） */
@@ -183,6 +217,7 @@ export const moveFooterItemTo = (
     middleLeft: layout.middleLeft === key ? null : layout.middleLeft,
     middleRight: layout.middleRight === key ? null : layout.middleRight,
     right: layout.right.filter(k => k !== key),
+    hidden: layout.hidden.filter(k => k !== key),
   };
 
   // 收入折叠：移除即可
@@ -206,4 +241,167 @@ export const moveFooterItemTo = (
   if (list.length >= limit) return null;
   list.push(key);
   return normalizeFooterLayout(next);
+};
+
+export type FooterPreviewSlot =
+  | 'left-0'
+  | 'left-1'
+  | 'middle-left'
+  | 'middle-right'
+  | 'right-0'
+  | 'right-1'
+  | 'right-2'
+  | 'right-3'
+  | 'right-4';
+
+export const FOOTER_PREVIEW_SLOTS: FooterPreviewSlot[] = [
+  'left-0',
+  'left-1',
+  'middle-left',
+  'middle-right',
+  'right-0',
+  'right-1',
+  'right-2',
+  'right-3',
+  'right-4',
+];
+
+export type FooterPreviewSlotItems = Record<FooterPreviewSlot, FooterItemKey | null>;
+
+export const getFooterPreviewSlotItems = (value: FooterLayoutSettings): FooterPreviewSlotItems => {
+  const layout = normalizeFooterLayout(value);
+  const hidden = new Set(layout.hidden);
+  const visibleItem = (key: FooterItemKey | null | undefined): FooterItemKey | null =>
+    key && !hidden.has(key) ? key : null;
+
+  return {
+    'left-0': visibleItem(layout.left[0]),
+    'left-1': visibleItem(layout.left[1]),
+    'middle-left': visibleItem(layout.middleLeft),
+    'middle-right': visibleItem(layout.middleRight),
+    'right-0': visibleItem(layout.right[0]),
+    'right-1': visibleItem(layout.right[1]),
+    'right-2': visibleItem(layout.right[2]),
+    'right-3': visibleItem(layout.right[3]),
+    'right-4': visibleItem(layout.right[4]),
+  };
+};
+
+const getRawFooterPreviewSlotItems = (value: FooterLayoutSettings): FooterPreviewSlotItems => {
+  const layout = normalizeFooterLayout(value);
+  return {
+    'left-0': layout.left[0] ?? null,
+    'left-1': layout.left[1] ?? null,
+    'middle-left': layout.middleLeft,
+    'middle-right': layout.middleRight,
+    'right-0': layout.right[0] ?? null,
+    'right-1': layout.right[1] ?? null,
+    'right-2': layout.right[2] ?? null,
+    'right-3': layout.right[3] ?? null,
+    'right-4': layout.right[4] ?? null,
+  };
+};
+
+const layoutFromPreviewSlots = (
+  slots: FooterPreviewSlotItems,
+  hidden: FooterItemKey[],
+): FooterLayoutSettings => normalizeFooterLayout({
+  left: [slots['left-0'], slots['left-1']].filter((key): key is FooterItemKey => key !== null),
+  middleLeft: slots['middle-left'],
+  middleRight: slots['middle-right'],
+  right: [
+    slots['right-0'],
+    slots['right-1'],
+    slots['right-2'],
+    slots['right-3'],
+    slots['right-4'],
+  ].filter((key): key is FooterItemKey => key !== null),
+  hidden,
+});
+
+/** 在可视化预览的两个槽位之间交换控件。 */
+export const moveFooterItemToPreviewSlot = (
+  value: FooterLayoutSettings,
+  key: FooterItemKey,
+  targetSlot: FooterPreviewSlot,
+): FooterLayoutSettings => {
+  const layout = normalizeFooterLayout(value);
+  const slots = getRawFooterPreviewSlotItems(layout);
+  const sourceSlot = FOOTER_PREVIEW_SLOTS.find(slot => slots[slot] === key);
+  if (!sourceSlot || sourceSlot === targetSlot) return layout;
+
+  const displacedItem = slots[targetSlot];
+  slots[targetSlot] = key;
+  slots[sourceSlot] = displacedItem;
+  return layoutFromPreviewSlots(slots, layout.hidden.filter(item => item !== key));
+};
+
+const DEFAULT_SLOT_BY_ITEM = Object.fromEntries(
+  Object.entries(getFooterPreviewSlotItems(DEFAULT_FOOTER_LAYOUT))
+    .filter((entry): entry is [FooterPreviewSlot, FooterItemKey] => entry[1] !== null)
+    .map(([slot, key]) => [key, slot]),
+) as Partial<Record<FooterItemKey, FooterPreviewSlot>>;
+
+/** 切换控件显示状态；重新开启时优先回到默认位置，否则放入第一个空槽位。 */
+export const setFooterItemVisibility = (
+  value: FooterLayoutSettings,
+  key: FooterItemKey,
+  visible: boolean,
+): FooterLayoutSettings => {
+  const layout = normalizeFooterLayout(value);
+  const slots = getRawFooterPreviewSlotItems(layout);
+  const currentSlot = FOOTER_PREVIEW_SLOTS.find(slot => slots[slot] === key);
+
+  if (!visible) {
+    const hidden = [...layout.hidden.filter(item => item !== key), key];
+    if (layout.right.includes(key)) {
+      return normalizeFooterLayout({
+        ...layout,
+        right: [key, ...layout.right.filter(item => item !== key)],
+        hidden,
+      });
+    }
+    if (layout.left.includes(key)) {
+      return normalizeFooterLayout({
+        ...layout,
+        left: [...layout.left.filter(item => item !== key), key],
+        hidden,
+      });
+    }
+    return normalizeFooterLayout({ ...layout, hidden });
+  }
+
+  if (currentSlot) {
+    return layout.hidden.includes(key)
+      ? normalizeFooterLayout({ ...layout, hidden: layout.hidden.filter(item => item !== key) })
+      : layout;
+  }
+  const hidden = layout.hidden.filter(item => item !== key);
+  const defaultLeftIndex = DEFAULT_FOOTER_LAYOUT.left.indexOf(key);
+  if (defaultLeftIndex >= 0 && layout.left.length < FOOTER_CONTAINER_LIMITS.left) {
+    const left = [...layout.left];
+    left.splice(Math.min(defaultLeftIndex, left.length), 0, key);
+    return normalizeFooterLayout({ ...layout, left, hidden });
+  }
+  if (DEFAULT_FOOTER_LAYOUT.middleLeft === key && layout.middleLeft === null) {
+    return normalizeFooterLayout({ ...layout, middleLeft: key, hidden });
+  }
+  if (DEFAULT_FOOTER_LAYOUT.middleRight === key && layout.middleRight === null) {
+    return normalizeFooterLayout({ ...layout, middleRight: key, hidden });
+  }
+  const defaultRightIndex = DEFAULT_FOOTER_LAYOUT.right.indexOf(key);
+  if (defaultRightIndex >= 0 && layout.right.length < FOOTER_CONTAINER_LIMITS.right) {
+    const right = [...layout.right];
+    right.splice(Math.min(defaultRightIndex, right.length), 0, key);
+    return normalizeFooterLayout({ ...layout, right, hidden });
+  }
+
+  const preferredSlot = DEFAULT_SLOT_BY_ITEM[key];
+  const targetSlot = preferredSlot && slots[preferredSlot] === null
+    ? preferredSlot
+    : FOOTER_PREVIEW_SLOTS.find(slot => slots[slot] === null);
+  if (!targetSlot) return layout;
+
+  slots[targetSlot] = key;
+  return layoutFromPreviewSlots(slots, hidden);
 };

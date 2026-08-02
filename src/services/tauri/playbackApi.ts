@@ -42,6 +42,7 @@ export const playbackApi = {
     artist: string;
     album: string;
     trackNumber?: string;
+    countAsPlay: boolean;
   }) =>
     tauriInvoke('record_play', { payload }),
   playAudio: (options: PlayAudioOptions): Promise<void> => tauriInvoke('play_audio', options),

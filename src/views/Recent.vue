@@ -15,6 +15,7 @@
       
       <section class="flex-1 flex overflow-hidden">
         <SongTable
+          v-if="recentTab === 'songs'"
           ref="songTableRef"
           :songs="localSongList"
           :isBatchMode="isBatchMode"
@@ -24,6 +25,12 @@
           @contextmenu="handleContextMenu"
           @update:selectedPaths="selectedPaths = $event"
           @drag-start="handleTableDragStart"
+        />
+        <RecentCollectionGrid
+          v-else
+          :items="recentCollectionItems"
+          :emptyMessage="recentTab === 'albums' ? '暂无最近播放的专辑' : '暂无最近播放的歌单'"
+          @open="handleOpenRecentCollection"
         />
       </section>
     </div>
@@ -55,11 +62,14 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
+import { usePlayerViewState } from '../composables/usePlayerViewState';
+import { useHomeNavigation } from '../composables/useHomeNavigation';
 
 // 组件导入
 import RecentHeader from '../components/headers/RecentHeader.vue';
@@ -67,9 +77,20 @@ import SongTable from '../components/song-list/SongTable.vue';
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 import ModernModal from '../components/common/ModernModal.vue';
+import RecentCollectionGrid, {
+  type RecentCollectionGridItem,
+} from '../components/recent/RecentCollectionGrid.vue';
 import { useSongDrag } from '../composables/useSongDrag';
 
-const { displaySongList, searchQuery } = usePlayerLibraryView();
+const {
+  displaySongList,
+  recentAlbumList,
+  recentPlaylistList,
+  searchQuery,
+} = usePlayerLibraryView();
+const { recentTab } = usePlayerViewState();
+const router = useRouter();
+const { openHomeAlbum, openHomePlaylist } = useHomeNavigation(router);
 const { playSong, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const {
@@ -78,6 +99,35 @@ const {
 } = useLibraryCollections();
 
 const localSongList = computed(() => displaySongList.value);
+const recentCollectionItems = computed<RecentCollectionGridItem[]>(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+
+  if (recentTab.value === 'albums') {
+    return recentAlbumList.value
+      .filter(album => !query || `${album.name} ${album.artist}`.toLocaleLowerCase().includes(query))
+      .map(album => ({
+        id: album.key,
+        title: album.name,
+        subtitle: album.artist,
+        firstSongPath: album.firstSongPath,
+        playedAt: album.playedAt,
+      }));
+  }
+
+  if (recentTab.value === 'playlists') {
+    return recentPlaylistList.value
+      .filter(playlist => !query || playlist.name.toLocaleLowerCase().includes(query))
+      .map(playlist => ({
+        id: playlist.id,
+        title: playlist.name,
+        subtitle: `${playlist.count} 首歌曲`,
+        firstSongPath: playlist.firstSongPath,
+        playedAt: playlist.playedAt,
+      }));
+  }
+
+  return [];
+});
 
 // ========== 状态管理 ==========
 const isBatchMode = ref(false);
@@ -98,6 +148,10 @@ const contextMenuTargetSong = ref<Song | null>(null);
 
 // 监听批量模式变化，清空选择
 watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
+watch(recentTab, () => {
+  isBatchMode.value = false;
+  selectedPaths.value.clear();
+});
 
 // ========== 业务逻辑处理 ==========
 
@@ -115,6 +169,14 @@ const handlePlaySong = (song: Song) => {
 
 const handleAddAllToQueue = () => {
   addSongsToQueue(localSongList.value);
+};
+
+const handleOpenRecentCollection = (id: string) => {
+  if (recentTab.value === 'albums') {
+    void openHomeAlbum(id);
+    return;
+  }
+  void openHomePlaylist(id);
 };
 
 // 批量播放

@@ -114,6 +114,10 @@ export const createPlayerFolderTree = ({
     }
 
     if (rootNode.path === targetPath) {
+      if (rootNode.child_count > 0) {
+        await ensureFolderChildrenLoaded(rootNode.path);
+      }
+      rootNode.is_expanded = true;
       return true;
     }
 

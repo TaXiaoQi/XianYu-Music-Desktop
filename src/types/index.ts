@@ -312,6 +312,8 @@ export interface FooterLayoutSettings {
   middleLeft: FooterItemKey | null;
   middleRight: FooterItemKey | null;
   right: FooterItemKey[];
+  /** 用户明确关闭显示的控件，不进入底栏或更多工具菜单。 */
+  hidden: FooterItemKey[];
 }
 
 export type LyricsPlayerAlignment = 'left' | 'center' | 'right';
@@ -350,8 +352,6 @@ export interface DesktopLyricsSettings {
   showDoubleLine: boolean;
   enableWordEffect: boolean;
   enableTextOutline: boolean;
-  textOutlineWidth: number;
-  textOutlineColor: string;
   isLocked: boolean;
   persistLock: boolean;
   centerHorizontally: boolean;
@@ -587,7 +587,13 @@ export interface PluginSettings {
   skipVersionCheck: boolean;
 }
 
-export type SongClickAction = 'double' | 'single';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LogSettings {
+  minimumLevel: LogLevel;
+  retentionDays: number;
+  autoAnalyze: boolean;
+}
 
 export interface AppSettings {
   closeToTray: boolean;
@@ -618,7 +624,7 @@ export interface AppSettings {
   upload: UploadSettings;
   plugins: PluginSettings;
   autoSync: AutoSyncConfig;
-  songClickAction: SongClickAction;
+  logging: LogSettings;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
@@ -802,4 +808,3 @@ export interface PluginPlaylistSearchResult {
   pluginId: string;
   rawData?: any;
 }
-

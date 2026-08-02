@@ -82,13 +82,9 @@ export async function fetchLeaderboard(
   localDuration?: number,
 ): Promise<LeaderboardData> {
   const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId) {
-    console.warn(`${LOG} 未登录，无法获取排行榜`);
-    return { leaderboard: [], me: null, totalUsers: 0 };
-  }
 
-  // 先上报本地听歌时长（非阻断，失败不影响后续获取）
-  if (localDuration && localDuration > 0) {
+  // 只有登录用户才上报个人听歌时长；公共排行榜无需登录即可获取。
+  if (ciyuanxiId && localDuration && localDuration > 0) {
     await reportListenDuration(localDuration);
   }
 
@@ -112,7 +108,7 @@ export async function fetchLeaderboard(
       } | null;
       total_users: number;
     }>('get_leaderboard', {
-      ciyuanxi_id: ciyuanxiId,
+      ...(ciyuanxiId ? { ciyuanxi_id: ciyuanxiId } : {}),
       limit,
     }, {
       fetchTimeoutMs: 12_000,
@@ -126,11 +122,11 @@ export async function fetchLeaderboard(
       nickname: item.nickname || item.username,
       avatar: item.avatar || undefined,
       duration: item.duration,
-      isMe: item.is_me,
+      isMe: Boolean(ciyuanxiId && item.is_me),
     }));
 
     let me: LeaderboardEntry | null = null;
-    if (data.me) {
+    if (ciyuanxiId && data.me) {
       me = {
         rank: data.me.rank,
         username: data.me.username,

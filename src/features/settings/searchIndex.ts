@@ -13,6 +13,7 @@ export type SettingsTabId =
   | 'plugins'
   | 'shortcuts'
   | 'account'
+  | 'advanced'
   | 'about';
 
 export interface SettingsSearchItem {
@@ -43,6 +44,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   toolbox: '工具箱',
   desktopLyrics: '桌面歌词',
   shortcuts: '快捷键',
+  advanced: '高级设置',
   about: '关于',
 };
 
@@ -113,7 +115,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '恢复默认顺序', keywords: '侧边栏 排序 重置' },
   ]),
   ...makeItems('theme', '底部栏布局', [
-    { label: '底部栏布局', keywords: '播放栏 控件 位置 收纳' },
+    { label: '底部栏布局与预览', keywords: '播放栏 按钮 拖拽 排序 显示 隐藏 开关' },
     ...FOOTER_ITEMS.map(item => ({
       label: item.label,
       keywords: `底部栏 播放栏 控件 ${item.description}`,
@@ -253,6 +255,13 @@ const staticItems: SettingsSearchItem[] = [
     { label: '去除序号前缀', keywords: '预处理 文件名' },
     { label: '命名模板', keywords: '重命名 歌手 歌名' },
     { label: '完成前刷新音乐库', keywords: '重新扫描 更新' },
+  ]),
+
+  ...makeItems('advanced', '导出日志', [
+    { label: '日志保留时长', keywords: '日志 保存 自动清理 天数' },
+    { label: '导出全部日志', keywords: '日志 调试 反馈 全部' },
+    { label: '导出错误日志', keywords: '日志 错误 故障 排查' },
+    { label: '删除全部日志', keywords: '日志 清空 删除' },
   ]),
 
   ...makeItems('about', '关于', [

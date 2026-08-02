@@ -436,6 +436,7 @@ export interface TauriCommandMap {
         artist: string;
         album: string;
         trackNumber?: string;
+        countAsPlay: boolean;
       };
     };
     response: void;
@@ -567,6 +568,10 @@ export interface TauriCommandMap {
     response: void;
   };
   consume_pending_open_paths: { payload: undefined; response: string[] };
+  save_download_lyrics: {
+    payload: { content: string; destPath: string };
+    response: string;
+  };
   get_track_loudness_info: {
     payload: { songId: number };
     response: LoudnessRecord | null;

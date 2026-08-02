@@ -354,7 +354,7 @@ const restart = () => {
             <div class="mb-3 flex items-center justify-between gap-4">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">目标文件夹</div>
               <div class="flex items-center gap-3">
-                <SettingHint text="这里决定本次要处理的整批歌曲文件。" />
+                <SettingHint severity="warning" text="这里决定本次要处理的整批歌曲文件。" />
                 <button
                   @click="selectTargetFolder"
                   class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"

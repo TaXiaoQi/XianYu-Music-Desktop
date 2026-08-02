@@ -20,6 +20,7 @@ import { releaseStartupCompositionMask, waitForStartupRevealReadiness } from './
 import { clearStartupThemePaint } from './startupTheme';
 import { useUiStore } from '../shared/stores/ui';
 import { useMainWindowRenderingPower } from './renderingPower';
+import { useOnboarding } from './useOnboarding';
 
 export function useAppShell() {
   const {
@@ -58,6 +59,7 @@ export function useAppShell() {
   const route = useRoute();
   const router = useRouter();
   const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(useUiStore());
+  const { showOnboarding } = useOnboarding();
   const { currentViewMode, filterCondition, currentFolderFilter, activeRootPath } = usePlayerViewState();
   const { folderTree, searchQuery } = usePlayerLibraryView();
   let startupCompositionMaskStartedAt = 0;
@@ -66,14 +68,16 @@ export function useAppShell() {
 
   const prepareStartupTransparentComposition = async () => {
     await whenInitialThemeSynced();
-    startupCompositionMaskVisible.value = hasWindowMaterial.value;
+    startupCompositionMaskVisible.value = hasWindowMaterial.value && !showOnboarding.value;
     startupCompositionMaskStartedAt = startupCompositionMaskVisible.value ? performance.now() : 0;
     clearStartupThemePaint();
-    await runStartupRouteRepaint({
-      router,
-      hasWindowMaterial,
-      skipNextPageTransition,
-    });
+    if (!showOnboarding.value) {
+      await runStartupRouteRepaint({
+        router,
+        hasWindowMaterial,
+        skipNextPageTransition,
+      });
+    }
     if (hasWindowMaterial.value) {
       await rebuildStartupMaterialBeforeShow();
       await waitForStartupRevealReadiness();

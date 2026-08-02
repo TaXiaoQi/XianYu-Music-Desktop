@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { inject, type Ref } from 'vue';
-import { CircleCheck, Download, Gauge, Loader2, SlidersHorizontal } from 'lucide-vue-next';
 import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
+import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/downloadHistory';
 
@@ -149,12 +149,7 @@ const {
       : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
     :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
   >
-    <svg v-if="isFavorite(currentSong)" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-      <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" />
-    </svg>
-    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-    </svg>
+    <FooterControlIcon item-key="favorite" :active="isFavorite(currentSong)" class="h-5 w-5" />
   </button>
 
   <!-- 下载按钮：本地歌曲显示绿色已完成图标，在线歌曲支持下载 -->
@@ -181,9 +176,12 @@ const {
               : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer')"
       :title="downloadButtonTitle"
     >
-      <Loader2 v-if="isOnlineSong && isDownloading" class="h-5 w-5 animate-spin" />
-      <CircleCheck v-else-if="(!isOnlineSong) || (isOnlineSong && downloadedRecord)" class="h-5 w-5" />
-      <Download v-else class="h-5 w-5" />
+      <FooterControlIcon
+        item-key="download"
+        :loading="isOnlineSong && isDownloading"
+        :completed="!isOnlineSong || Boolean(downloadedRecord)"
+        class="h-5 w-5"
+      />
     </button>
 
     <!-- 下载音质下拉菜单 -->
@@ -224,9 +222,7 @@ const {
     :class="showPlayerDetail ? 'text-white/80 hover:text-white' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white'"
     :title="['列表循环', '单曲循环', '随机播放'][playMode]"
   >
-    <svg v-if="playMode === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-    <svg v-else-if="playMode === 1" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /><text x="12" y="16" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="currentColor" stroke="none">1</text></svg>
-    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
+    <FooterControlIcon item-key="playMode" :play-mode="playMode" class="h-5 w-5" />
   </button>
 
   <!-- 桌面歌词 -->
@@ -237,7 +233,7 @@ const {
     :class="showDesktopLyrics ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
     title="桌面歌词"
   >
-    词
+    <FooterControlIcon item-key="desktopLyrics" />
   </button>
 
   <!-- 音质选择按钮 -->
@@ -259,7 +255,7 @@ const {
       ]"
       :title="isQualitySelectableSong ? '音质选择' : '本地音质'"
     >
-      <span class="whitespace-nowrap">{{ qualityButtonLabel }}</span>
+      <FooterControlIcon item-key="quality" :quality-label="qualityButtonLabel" />
     </button>
 
     <transition name="fade-scale">
@@ -326,7 +322,7 @@ const {
         : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
       title="倍速（点击恢复1.0x）"
     >
-      <Gauge class="h-5 w-5" />
+      <FooterControlIcon item-key="speed" class="h-5 w-5" />
     </button>
   </div>
 
@@ -362,10 +358,7 @@ const {
       :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
       title="音量"
     >
-      <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-      <svg v-else-if="volume > 0 && volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon></svg>
-      <svg v-else-if="volume >= 30 && volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-      <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+      <FooterControlIcon item-key="volume" :volume="volume" class="h-5 w-5" />
     </button>
   </div>
 
@@ -377,7 +370,7 @@ const {
       :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
       title="均衡器 (EQ)"
     >
-      <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
+      <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
     </button>
 
     <!-- 本地均衡器面板：自带 Teleport 模态弹窗 + 遮罩 + Transition，无需外层定位包裹 -->
@@ -391,7 +384,7 @@ const {
       :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
       title="播放队列"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      <FooterControlIcon item-key="playlist" class="h-[22px] w-[22px]" />
     </button>
   </div>
 </template>
