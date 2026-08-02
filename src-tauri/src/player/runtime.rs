@@ -722,9 +722,16 @@ fn append_decoded_source<R>(
 
             let skipped_source = source.convert_samples::<f32>().skip_duration(offset);
 
+            // 0. BufferedSource 预读取缓冲：后台线程解码（含网络流式 sleep、解码瞬时慢帧），
+            //    cpal 回调仅做 O(1) 通道读取，隔离系统调度抢占对音频线程的影响。
+            //    配合较大 cpal 输出缓冲（stream.rs），可容忍数十~百毫秒线程抢占而不断音。
+            //    seek 由 handle_seek 的重建路径处理（try_seek 同步 rendezvous 到后台线程）。
+            let buffered_source =
+                crate::player::buffered_source::BufferedSource::new(skipped_source);
+
             // 1. VolumeNormalizer 音量平衡节点
             let (normalized_source, handle) = VolumeNormalizer::new(
-                skipped_source,
+                buffered_source,
                 volume_balance_gain,
                 100, // ramp 100ms
             );

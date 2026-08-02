@@ -11,6 +11,35 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+// 链接 winmm.dll 的 multimedia timer API（FFI，避免依赖 windows/windows-sys 的 feature）。
+#[cfg(target_os = "windows")]
+#[link(name = "winmm")]
+extern "system" {
+    fn timeBeginPeriod(u_period: u32) -> u32;
+}
+
+/// 初始化 Windows 高精度定时器（1ms 精度）。
+///
+/// `std::thread::sleep` 默认精度 ~15.625ms（系统时钟分辨率），会导致音频线程上的
+/// 短 sleep（如 `StreamingTempFileReader::read` 的 3ms 等待）实际阻塞 ~15ms，
+/// 引发 underrun → 卡音破音。`timeBeginPeriod(1)` 全局提升精度到 1ms，进程退出时
+/// 系统自动恢复。这是音频/游戏软件的标准做法。
+#[cfg(target_os = "windows")]
+fn init_high_resolution_timer() {
+    use std::sync::OnceLock;
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        // SAFETY: timeBeginPeriod 是线程安全的 Win32 API，参数 1 表示 1ms 精度。
+        unsafe {
+            let _ = timeBeginPeriod(1);
+        }
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+#[inline]
+fn init_high_resolution_timer() {}
+
 /// 组合 Read + Seek 的 trait，用于 trait object（Rust 不允许 `dyn Read + Seek`）。
 /// Decoder::new 需要 `R: Read + Seek + Send + Sync + 'static`，
 /// `Box<dyn ReadSeek + Send + Sync>` 满足此约束（通过 Box<T> 的 blanket impl）。
@@ -47,6 +76,7 @@ impl SharedOutputBackend {
     }
 
     fn from_device(device: &cpal::Device, active_device_name: String) -> Result<Self, OutputError> {
+        init_high_resolution_timer();
         let (stream, handle) = OutputStream::try_from_device(device)
             .map_err(|error| OutputError::Stream(error.to_string()))?;
 
@@ -136,8 +166,13 @@ pub(crate) fn restore_current_playback(
             if let Ok(source) = Decoder::new(reader) {
                 let skipped = source.convert_samples::<f32>().skip_duration(jump_target);
 
+                // 0. BufferedSource 预读取缓冲（与 runtime.rs 的 append_decoded_source 保持一致）
+                let buffered =
+                    crate::player::buffered_source::BufferedSource::new(skipped);
+
                 // 1. Equalizer
-                let eq_source = crate::player::equalizer::Equalizer::new(skipped, equalizer_handle);
+                let eq_source =
+                    crate::player::equalizer::Equalizer::new(buffered, equalizer_handle);
 
                 // 1.5 SoundEffectSource 音效处理源
                 // 注意：必须与 runtime.rs 的 append_decoded_source 保持一致，

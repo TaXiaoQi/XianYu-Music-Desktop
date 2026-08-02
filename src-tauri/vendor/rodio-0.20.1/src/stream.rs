@@ -1,5 +1,6 @@
 use std::io::{Read, Seek};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 use std::{error, fmt};
 
 use crate::decoder;
@@ -179,11 +180,12 @@ pub(crate) trait CpalDeviceExt {
     fn new_output_stream_with_format(
         &self,
         format: cpal::SupportedStreamConfig,
+        buffer_size: Option<Duration>,
     ) -> Result<(Arc<DynamicMixerController<f32>>, cpal::Stream), cpal::BuildStreamError>;
 
     fn try_new_output_stream_config(
         &self,
-        config: cpal::SupportedStreamConfig,
+        config: SupportedStreamConfig,
     ) -> Result<(Arc<DynamicMixerController<f32>>, cpal::Stream), StreamError>;
 }
 
@@ -191,6 +193,7 @@ impl CpalDeviceExt for cpal::Device {
     fn new_output_stream_with_format(
         &self,
         format: cpal::SupportedStreamConfig,
+        buffer_size: Option<Duration>,
     ) -> Result<(Arc<DynamicMixerController<f32>>, cpal::Stream), cpal::BuildStreamError> {
         let (mixer_tx, mut mixer_rx) =
             dynamic_mixer::mixer::<f32>(format.channels(), format.sample_rate().0);
@@ -202,9 +205,22 @@ impl CpalDeviceExt for cpal::Device {
             eprintln!("an error occurred on output stream: {err}");
         };
 
+        // 将 buffer_size: Option<Duration> 转为真正的 WASAPI 缓冲区大小。
+        // cpal WASAPI 通过 StreamConfig.buffer_size（BufferSize 枚举）传给
+        // IAudioClient::Initialize 的 hnsBufferDuration。Some(d) → BufferSize::Fixed(frames)，
+        // 给设备一个大于引擎周期（~10ms）的总缓冲，可容忍数十~百毫秒的音频线程抢占。
+        // None → BufferSize::Default（设备默认，通常 ~10ms）。
+        // 注意：第 5 参数 timeout（cpal build_output_stream 的 Option<Duration>）是回调超时，
+        // 不是缓冲，这里固定传 None。
+        let mut stream_config = format.config();
+        if let Some(dur) = buffer_size {
+            let frames = ((stream_config.sample_rate.0 as f64 * dur.as_secs_f64()).round() as u32).max(1);
+            stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
+        }
+
         match format.sample_format() {
             cpal::SampleFormat::F32 => self.build_output_stream::<f32, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().unwrap_or(0f32))
@@ -213,7 +229,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::F64 => self.build_output_stream::<f64, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().map(Sample::from_sample).unwrap_or(0f64))
@@ -222,7 +238,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::I8 => self.build_output_stream::<i8, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().map(Sample::from_sample).unwrap_or(0i8))
@@ -231,7 +247,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::I16 => self.build_output_stream::<i16, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().map(Sample::from_sample).unwrap_or(0i16))
@@ -240,7 +256,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::I32 => self.build_output_stream::<i32, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().map(Sample::from_sample).unwrap_or(0i32))
@@ -249,7 +265,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::I64 => self.build_output_stream::<i64, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut()
                         .for_each(|d| *d = mixer_rx.next().map(Sample::from_sample).unwrap_or(0i64))
@@ -258,7 +274,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::U8 => self.build_output_stream::<u8, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut().for_each(|d| {
                         *d = mixer_rx
@@ -271,7 +287,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::U16 => self.build_output_stream::<u16, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut().for_each(|d| {
                         *d = mixer_rx
@@ -284,7 +300,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::U32 => self.build_output_stream::<u32, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut().for_each(|d| {
                         *d = mixer_rx
@@ -297,7 +313,7 @@ impl CpalDeviceExt for cpal::Device {
                 None,
             ),
             cpal::SampleFormat::U64 => self.build_output_stream::<u64, _, _>(
-                &format.config(),
+                &stream_config,
                 move |data, _| {
                     data.iter_mut().for_each(|d| {
                         *d = mixer_rx
@@ -318,13 +334,18 @@ impl CpalDeviceExt for cpal::Device {
         &self,
         config: SupportedStreamConfig,
     ) -> Result<(Arc<DynamicMixerController<f32>>, cpal::Stream), StreamError> {
-        self.new_output_stream_with_format(config).or_else(|err| {
-            // look through all supported formats to see if another works
-            supported_output_formats(self)?
-                .find_map(|format| self.new_output_stream_with_format(format).ok())
-                // return original error if nothing works
-                .ok_or(StreamError::BuildStreamError(err))
-        })
+        // 100ms cpal 输出缓冲：容忍系统调度对音频线程的抢占（可达数十~百毫秒）。
+        // 此前该值导致连续 underrun，根因是 source.next() 慢帧（网络流式 sleep / 解码瞬时慢帧）
+        // 在大缓冲回调中被放大。现已由 BufferedSource（buffered_source.rs）将解码移至后台线程，
+        // cpal 回调仅做 O(1) 通道读取，填充 4410 帧仅需微秒级，100ms 缓冲安全可用。
+        // 失败则回退到设备默认缓冲并扫描所有支持的格式。
+        let target_buffer = Some(Duration::from_millis(100));
+        match self.new_output_stream_with_format(config, target_buffer) {
+            Ok(v) => Ok(v),
+            Err(err) => supported_output_formats(self)?
+                .find_map(|format| self.new_output_stream_with_format(format, None).ok())
+                .ok_or(StreamError::BuildStreamError(err)),
+        }
     }
 }
 
