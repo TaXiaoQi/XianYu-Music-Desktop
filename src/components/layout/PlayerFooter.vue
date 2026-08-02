@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Eye, EyeOff } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Eye, EyeOff, Gauge, SlidersHorizontal } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -7,6 +7,7 @@ import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
 import ModernModal from '../common/ModernModal.vue';
@@ -568,8 +569,6 @@ const speedLabel = computed(() => `${playbackSpeed.value.toFixed(2)}x`);
 
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
-const eqButtonRef = ref<HTMLElement | null>(null);
-const eqPanelRef = ref<HTMLElement | null>(null);
 
 // --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
 const showFooterTools = ref(false);
@@ -594,11 +593,6 @@ const toggleEqPanel = (e: MouseEvent) => {
 
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
-  if (showEqPanel.value && eqPanelRef.value && eqButtonRef.value) {
-    if (!eqPanelRef.value.contains(target) && !eqButtonRef.value.contains(target)) {
-      showEqPanel.value = false;
-    }
-  }
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
       showQualityMenu.value = false;
@@ -750,8 +744,6 @@ provide('footerContext', {
   // 均衡器
   showEqPanel,
   toggleEqPanel,
-  eqButtonRef,
-  eqPanelRef,
   // 播放队列
   showPlaylist,
   togglePlaylist,
@@ -943,7 +935,141 @@ onUnmounted(() => {
       <!-- 右侧容器可配置控件（按 rightItems 顺序渲染，最多 5 个） -->
       <FooterControlItem v-for="key in rightItems" :key="key" :item-key="key" />
 
-      <!-- 右侧工具收纳：折叠的控件 + 固定特殊项（隐藏进度条/可视化/歌词样式/固定） -->
+        <transition name="fade-scale">
+          <div
+            v-if="showQualityMenu"
+            ref="qualityMenuRef"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+          >
+            <div
+              class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
+              :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+            >
+              <button
+                v-for="opt in QUALITY_OPTIONS"
+                :key="opt.value"
+                @click="selectQuality(opt.value)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+                :class="activeQualityKey === opt.value
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
+                <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
+                <span v-if="activeQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+          </div>
+        </transition>
+
+      <!-- 倍速控制：悬停弹出竖向滑块，调节逻辑与音量一致 -->
+      <div
+        class="relative flex items-center justify-center h-full z-[70]"
+        @mouseenter="handleSpeedEnter"
+        @mouseleave="handleSpeedLeave"
+        @wheel.prevent.stop="handlePlaybackSpeedWheel"
+      >
+        <div
+          v-if="showSpeedSlider || isDraggingSpeed"
+          class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+        >
+          <div class="absolute top-full left-0 w-full h-4"></div>
+          <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
+            :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+          >
+            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
+              :class="playbackSpeed !== 1.0
+                ? 'text-[#EC4141]'
+                : (showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60')"
+            >{{ speedLabel }}</div>
+            <div ref="speedBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
+                 :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
+                 @pointerdown="startSpeedDrag">
+               <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: speedPercent + '%' }"></div>
+               <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${speedPercent}% - 7px)` }"></div>
+            </div>
+          </div>
+        </div>
+        <button @click="resetPlaybackSpeed"
+          class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+          :class="playbackSpeed !== 1.0
+            ? 'text-[#EC4141]'
+            : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+          title="倍速（点击恢复1.0x）"
+        >
+          <Gauge class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div
+        class="relative flex items-center justify-center h-full z-[70]"
+        @mouseenter="handleVolumeEnter"
+        @mouseleave="handleVolumeLeave"
+        @wheel.prevent.stop="handleVolumeWheel"
+      >
+        <!-- 音量滑块弹窗 -->
+        <div 
+          v-if="showVolumeSlider || isDraggingVolume"
+          class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+        >
+          <!-- 透明桥接层：防止鼠标从图标移动到滑块时断触 -->
+          <div class="absolute top-full left-0 w-full h-4"></div>
+          
+          <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
+            :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+          >
+            <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
+              :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
+            >{{ volume }}%</div>
+            <div ref="volumeBarRef" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]" 
+                 :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
+                 @pointerdown="startDrag">
+               <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: volume + '%' }"></div>
+               <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${volume}% - 7px)` }"></div>
+            </div>
+          </div>
+        </div>
+        <button @click="toggleMute" 
+          class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+          :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+          title="音量"
+        > 
+          <!-- 静音 -->
+          <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          <!-- 弱音量 -->
+          <svg v-else-if="volume > 0 && volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon></svg>
+          <!-- 中音量 -->
+          <svg v-else-if="volume >= 30 && volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          <!-- 大音量 -->
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+        </button>
+      </div>
+
+      <!-- 均衡器按钮与弹出面板：从工具收纳中放出 -->
+      <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center h-full z-[70]">
+        <button
+          @click="toggleEqPanel"
+          :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
+          title="均衡器 (EQ)"
+        >
+          <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
+        </button>
+
+        <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
+      </div>
+
+      <!-- 播放队列：从中间区域移至原下载按钮位置 -->
+      <div class="relative flex items-center justify-center h-full z-[70]">
+        <button @click="togglePlaylist"
+          class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+          :class="showPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+          title="播放队列"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <!-- 右侧工具收纳：点击 ^ 向上展开（隐藏进度条/可视化/歌词样式/固定） -->
       <div ref="footerToolsRef" class="relative flex items-center justify-center h-full z-[70]">
         <transition name="footer-tools">
           <div

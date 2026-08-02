@@ -80,8 +80,6 @@ const ctx = inject<{
   // 均衡器
   showEqPanel: Ref<boolean>;
   toggleEqPanel: (e: MouseEvent) => void;
-  eqButtonRef: Ref<HTMLElement | null>;
-  eqPanelRef: Ref<HTMLElement | null>;
   // 播放队列
   showPlaylist: Ref<boolean>;
   togglePlaylist: () => void;
@@ -365,7 +363,6 @@ const {
   <!-- 均衡器按钮与弹出面板 -->
   <div v-else-if="itemKey === 'equalizer'" class="relative flex items-center justify-center h-full z-[70]">
     <button
-      :ref="el => { if (el) ctx.eqButtonRef.value = el as HTMLElement; }"
       @click="toggleEqPanel"
       :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
       title="均衡器 (EQ)"
