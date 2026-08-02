@@ -20,6 +20,7 @@ import { remoteLibraryApi } from '../services/tauri/remoteLibraryApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
+import { useSoundEffectStore } from '../features/playback/soundEffectStore';
 import { useSettingsStore } from '../features/settings/store';
 import { defaultDominantColors, useUiStore } from '../shared/stores/ui';
 import { isRemoteSong } from '../utils/remoteSong';
@@ -237,7 +238,16 @@ export const createPlayerLifecycle = ({
   };
 
   const syncEqualizerSettings = async () => {
-    const eq = settings.value.audio.equalizer;
+    // 10 段 EQ 的唯一数据源是 soundEffectStore.eqBands（新音效面板）。
+    // 不再读旧的 settings.audio.equalizer——其默认 enabled=false 会让 Rust Equalizer 整体
+    // 直通，导致新面板 EQ 滑块拖动后听不到任何变化（「均衡器没效果」的根因）。
+    // preamp 固定 0（新面板无 preamp 控件），enabled 由 bypassAll（AB 对比旁通）决定。
+    const soundEffectStore = useSoundEffectStore();
+    const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'] as const;
+    const gains = eqFreqLabels.map(label => soundEffectStore.eqBands[label] ?? 0);
+    const enabled = !soundEffectStore.bypassAll;
+    const preamp = 0;
+    const eq = { enabled, preamp, gains };
     
     // 生成当前即将写入的规范化高精度参数签名
     const currentParamsSignature = createEqualizerSignature(eq.enabled, eq.preamp, eq.gains);

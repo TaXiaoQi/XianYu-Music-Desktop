@@ -1,5 +1,6 @@
 use crate::player::equalizer::EqualizerHandle;
 use crate::player::output::{OutputBackend, OutputError};
+use crate::player::sound_effect::{SoundEffectHandle, SoundEffectSource};
 use crate::player::types::{SharedProgress, TimedSource};
 use crate::remote::cache::RemoteStreamSource;
 use cpal::traits::{DeviceTrait, HostTrait};
@@ -83,6 +84,7 @@ pub(crate) fn restore_current_playback(
     is_playing_flag: bool,
     progress: &Arc<SharedProgress>,
     equalizer_handle: Arc<EqualizerHandle>,
+    sound_effect_handle: Arc<SoundEffectHandle>,
     user_volume: Arc<AtomicU32>,
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
@@ -137,9 +139,14 @@ pub(crate) fn restore_current_playback(
                 // 1. Equalizer
                 let eq_source = crate::player::equalizer::Equalizer::new(skipped, equalizer_handle);
 
+                // 1.5 SoundEffectSource 音效处理源
+                // 注意：必须与 runtime.rs 的 append_decoded_source 保持一致，
+                // 否则设备切换恢复后会丢失全部音效（混响/变调/空间/EQ 等）。
+                let se_source = SoundEffectSource::new(eq_source, sound_effect_handle);
+
                 // 2. UserVolumeSource
                 let vol_source =
-                    crate::player::equalizer::UserVolumeSource::new(eq_source, user_volume);
+                    crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
 
                 // 3. ClipGuardSource
                 let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);

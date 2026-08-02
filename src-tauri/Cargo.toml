@@ -67,5 +67,10 @@ wasapi = "0.23"
 [patch.crates-io]
 rodio = { path = "vendor/rodio-0.20.1" }
 
+[profile.dev]
+# 本地 crate 优化：DSP 热路径（biquad/comb/allpass/OLA）在 opt-level=0 下较慢，
+# 可能导致音频线程 underrun → 卡顿。opt-level=1 提供稳定性能，编译速度影响小。
+opt-level = 1
+
 [profile.dev.package."*"]
 opt-level = 3

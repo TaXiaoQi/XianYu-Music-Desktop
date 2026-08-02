@@ -3,7 +3,7 @@ import { Check, ChevronDown, CircleAlert } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useToast } from '../../composables/toast';
-import EqualizerPanel from '../player/EqualizerPanel.vue';
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import { computed, onMounted, onScopeDispose, ref } from 'vue';
@@ -110,6 +110,8 @@ const toggleShowEqualizerInFooter = () => {
     },
   });
 };
+
+const showEqPanel = ref(false);
 
 // --- 播放设置 ---
 const autoPlay = ref(true);
@@ -466,7 +468,14 @@ onScopeDispose(() => {
           v-if="settings.audio.equalizer.enabled"
           class="flex flex-col border-t border-gray-200/20 dark:border-gray-800/20 bg-gray-50/10 dark:bg-gray-900/10 transition-all duration-300 animate-in fade-in rounded-b-xl p-6"
         >
-          <EqualizerPanel :embedded="true" />
+          <button
+            type="button"
+            class="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            @click="showEqPanel = true"
+          >
+            打开音效面板
+          </button>
+          <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
         </div>
       </div>
     </section>

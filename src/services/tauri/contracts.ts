@@ -165,6 +165,180 @@ export interface SeekAudioOptions {
   requestId: number;
 }
 
+// ===== 音效参数（与 Rust src-tauri/src/player/sound_effect.rs 的 SoundEffectSettings 一一对应）=====
+// 字段单位与 UI 滑块一致（百分比 / dB / Hz / ms），Rust DSP 在各 Source 内部做单位换算。
+// 所有字段均可省略（Rust 侧 #[serde(default)]），便于跨版本前向兼容与增量更新。
+
+export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
+export type SpatialMode = 'none' | 'surround3d' | 'd8' | 'd36' | 'virtual';
+export type DistortionType = 'soft' | 'hard';
+export type DelayType = 'single' | 'pingpong';
+export type VirtualSurroundMode = '5.1' | '7.1';
+
+export interface ModulationParams {
+  enabled: boolean;
+  rate: number;
+  depth: number;
+}
+export interface FlangerParams {
+  enabled: boolean;
+  rate: number;
+  depth: number;
+  feedback: number;
+  mix: number;
+}
+export interface PhaserParams {
+  enabled: boolean;
+  rate: number;
+  depth: number;
+  feedback: number;
+  mix: number;
+}
+export interface DelayParams {
+  enabled: boolean;
+  timeMs: number;
+  feedback: number;
+  mix: number;
+  delayType: DelayType;
+}
+export interface CompressorParams {
+  enabled: boolean;
+  threshold: number;
+  ratio: number;
+  attack: number;
+  release: number;
+}
+export interface MultibandParams {
+  enabled: boolean;
+  lowFreq: number;
+  midFreq: number;
+  threshold: number;
+  ratio: number;
+}
+export interface LimiterParams {
+  enabled: boolean;
+  threshold: number;
+}
+export interface NoiseGateParams {
+  enabled: boolean;
+  threshold: number;
+  attack: number;
+  release: number;
+}
+export interface ExpanderParams {
+  enabled: boolean;
+  threshold: number;
+  ratio: number;
+}
+export interface AgcParams {
+  enabled: boolean;
+  targetLevel: number;
+}
+export interface DeEsserParams {
+  enabled: boolean;
+  threshold: number;
+  frequency: number;
+}
+export interface DistortionParams {
+  enabled: boolean;
+  amount: number;
+  distortionType: DistortionType;
+}
+export interface ExciterParams {
+  enabled: boolean;
+  amount: number;
+  frequency: number;
+}
+export interface SubBassParams {
+  enabled: boolean;
+  amount: number;
+  frequency: number;
+}
+export interface LoFiParams {
+  enabled: boolean;
+  sampleRate: number;
+  bitDepth: number;
+  noise: number;
+}
+export interface BitcrushParams {
+  enabled: boolean;
+  bits: number;
+}
+export interface StereoWidenParams {
+  enabled: boolean;
+  amount: number;
+}
+export interface StereoSepParams {
+  enabled: boolean;
+  width: number;
+  centerLevel: number;
+}
+export interface CrossfeedParams {
+  enabled: boolean;
+  strength: number;
+}
+export interface BassBoostParams {
+  enabled: boolean;
+  gain: number;
+  dynamic: boolean;
+}
+export interface DynamicEqParams {
+  enabled: boolean;
+}
+
+export interface SoundEffectSettings {
+  // 变调/变速
+  pitchShift: number; // 50-200 (百分比，100=原调)
+  playbackRate: number; // 50-200 (百分比，100=原速)
+  preservesPitch: boolean;
+  // 混响
+  reverbKind: ReverbKind;
+  reverbPreset: string;
+  reverbDry: number; // 干信号增益
+  reverbWet: number; // 湿信号增益
+  // 空间
+  spatialMode: SpatialMode;
+  spatialSpeed: number; // 秒/圈
+  spatialRadius: number; // 虚拟距离
+  spatialIntensity: number; // 环绕强度
+  virtualSurroundMode: VirtualSurroundMode;
+  virtualSurroundSpread: number; // 1-20
+  // 调制
+  vibrato: ModulationParams;
+  pitchDrift: ModulationParams;
+  tremolo: ModulationParams;
+  flanger: FlangerParams;
+  phaser: PhaserParams;
+  delay: DelayParams;
+  // 动态
+  compressor: CompressorParams;
+  multiband: MultibandParams;
+  limiter: LimiterParams;
+  noiseGate: NoiseGateParams;
+  expander: ExpanderParams;
+  agc: AgcParams;
+  deEsser: DeEsserParams;
+  // 波形整形
+  distortion: DistortionParams;
+  exciter: ExciterParams;
+  subBass: SubBassParams;
+  loFi: LoFiParams;
+  bitcrush: BitcrushParams;
+  // 声道处理
+  vocalRemoval: boolean;
+  stereoWiden: StereoWidenParams;
+  monoMerge: boolean;
+  channelSwap: boolean;
+  stereoSeparation: StereoSepParams;
+  crossfeed: CrossfeedParams;
+  bassBoost: BassBoostParams;
+  dynamicEq: DynamicEqParams;
+  // 组合
+  v4aEnabled: boolean;
+  bypass: boolean;
+  audioBoost: number; // 0-100
+}
+
 export interface WindowMaterialCapabilities {
   isWindows: boolean;
   supportsAcrylic: boolean;
@@ -403,6 +577,10 @@ export interface TauriCommandMap {
   };
   set_equalizer_settings: {
     payload: { enabled: boolean; preamp: number; gains: number[] };
+    response: void;
+  };
+  set_sound_effect_settings: {
+    payload: { settings: SoundEffectSettings };
     response: void;
   };
   set_stream_cache_max_size: {

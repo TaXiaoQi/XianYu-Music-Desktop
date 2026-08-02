@@ -2,6 +2,7 @@ use crate::database::DbState;
 use crate::music::scanner::apply_scan_changes;
 use crate::music::types::Song;
 use crate::player::equalizer::EqualizerSettings;
+use crate::player::sound_effect::SoundEffectSettings;
 use crate::player::loudness::{
     calculate_playback_gain, get_song_loudness_record, process_song_on_play, LoudnessRecord,
 };
@@ -544,5 +545,25 @@ pub fn set_equalizer_settings(
     tx.send(AudioCommand::SetEqualizerSettings { settings })
         .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+/// 设置音效参数（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）。
+///
+/// 前端 `soundEffectStore` 收集全部音效状态构建 `SoundEffectSettings`，防抖后单次调用本命令。
+/// Rust 侧通过 mpsc 通道转发到音频线程，由 `SoundEffectHandle` 持有，`SoundEffectSource` 读取。
+#[tauri::command]
+pub fn set_sound_effect_settings(
+    settings: SoundEffectSettings,
+    state: tauri::State<'_, PlayerState>,
+) -> Result<(), String> {
+    // 基本校验：关键浮点字段必须有限，防止 NaN/Inf 进入音频线程导致爆音。
+    if !settings.pitch_shift.is_finite() || !settings.playback_rate.is_finite() {
+        return Err("音效参数 pitchShift/playbackRate 必须为有限浮点数".to_string());
+    }
+
+    let tx = state.tx.lock().map_err(|e| e.to_string())?;
+    tx.send(AudioCommand::SetSoundEffectSettings { settings })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
