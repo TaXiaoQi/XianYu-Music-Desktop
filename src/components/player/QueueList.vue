@@ -5,6 +5,10 @@ import { storeToRefs } from 'pinia';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useLibraryStore } from '../../features/library/store';
+import { useSettings } from '../../features/settings/useSettings';
+
+const { settings } = useSettings();
+const songClickAction = computed(() => settings.value.songClickAction || 'double');
 
 const libraryStore = useLibraryStore();
 const { sourceSongs } = storeToRefs(libraryStore);
@@ -50,7 +54,8 @@ const scrollToCurrent = () => {
             :ref="el => { if (el) itemRefs[index] = el as HTMLElement }"
             class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 cursor-pointer group transition-colors duration-200"
             :class="currentSong?.path === song.path ? 'bg-white/15' : ''"
-            @dblclick="playSong(song)"
+            @click="songClickAction === 'single' && playSong(song)"
+            @dblclick="songClickAction !== 'single' && playSong(song)"
        >
           <!-- Playing Indicator or Index -->
           <div class="w-8 flex justify-center text-white/40 text-sm font-medium">

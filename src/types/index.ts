@@ -587,6 +587,8 @@ export interface PluginSettings {
   skipVersionCheck: boolean;
 }
 
+export type SongClickAction = 'double' | 'single';
+
 export interface AppSettings {
   closeToTray: boolean;
   showDesktopLyrics: boolean;
@@ -616,6 +618,7 @@ export interface AppSettings {
   upload: UploadSettings;
   plugins: PluginSettings;
   autoSync: AutoSyncConfig;
+  songClickAction: SongClickAction;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';

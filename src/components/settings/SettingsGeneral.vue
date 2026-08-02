@@ -205,12 +205,30 @@ onMounted(() => {
             </button>
           </div>
         </div>
+
+        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌曲播放触发方式</div>
+          </div>
+          <div class="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-white/10 p-0.5">
+            <button
+              @click="settings.songClickAction = 'single'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap"
+              :class="settings.songClickAction === 'single' ? 'bg-white dark:bg-white/20 text-[#EC4141] shadow-sm' : 'text-gray-600 dark:text-gray-400'"
+            >
+              单击
+            </button>
+            <button
+              @click="settings.songClickAction = 'double'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap"
+              :class="settings.songClickAction === 'double' || !settings.songClickAction ? 'bg-white dark:bg-white/20 text-[#EC4141] shadow-sm' : 'text-gray-600 dark:text-gray-400'"
+            >
+              双击
+            </button>
+          </div>
+        </div>
       </div>
     </section>
-
-
-
-    <!-- Storage -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>

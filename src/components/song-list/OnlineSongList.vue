@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { Song } from '../../types';
+import { useSettings } from '../../features/settings/useSettings';
+
+const { settings } = useSettings();
+const songClickAction = computed(() => settings.value.songClickAction || 'double');
 
 const props = defineProps<{
   songs: Song[];
@@ -39,7 +44,8 @@ const handleImgError = (e: Event) => {
         v-for="(item, index) in props.songs"
         :key="`${item.path}-${index}`"
         class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-        @dblclick="emit('play', item)"
+        @click="songClickAction === 'single' && emit('play', item)"
+        @dblclick="songClickAction !== 'single' && emit('play', item)"
         @contextmenu="emit('contextmenu', $event, item)"
       >
         <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">

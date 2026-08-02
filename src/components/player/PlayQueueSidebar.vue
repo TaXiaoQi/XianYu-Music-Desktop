@@ -3,8 +3,12 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { usePlayer } from '../../composables/player';
 import { useThemeSettings } from '../../composables/useThemeSettings';
+import { useSettings } from '../../features/settings/useSettings';
 import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';
 import ModernModal from '../common/ModernModal.vue';
+
+const { settings } = useSettings();
+const songClickAction = computed(() => settings.value.songClickAction || 'double');
 
 const {
   playQueue,
@@ -123,7 +127,8 @@ watch(
             v-for="(song, index) in displayQueue"
             :key="song.path + index"
             :ref="el => setItemRef(el, index)"
-            @dblclick="playSong(song)"
+            @click="songClickAction === 'single' && playSong(song)"
+            @dblclick="songClickAction !== 'single' && playSong(song)"
             class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border"
             :class="[
               currentSong?.path === song.path

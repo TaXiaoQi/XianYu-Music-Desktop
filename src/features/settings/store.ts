@@ -217,6 +217,7 @@ export const defaultAppSettings: AppSettings = {
   upload: defaultUploadSettings,
   plugins: defaultPluginSettings,
   autoSync: defaultAutoSyncConfig,
+  songClickAction: 'double',
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({

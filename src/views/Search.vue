@@ -108,7 +108,8 @@
                 v-for="(item, index) in lxSearchResults"
                 :key="`lx-${item.source}-${item.songmid}-${index}`"
                 class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @dblclick="handlePlaySong(item)"
+                @click="songClickAction === 'single' && handlePlaySong(item)"
+                @dblclick="songClickAction !== 'single' && handlePlaySong(item)"
                 @contextmenu="handleContextMenu($event, item)"
               >
                 <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
@@ -147,7 +148,8 @@
                 v-for="(item, index) in pluginSearchResults"
                 :key="`mf-${item.platform}-${item.id}-${index}`"
                 class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @dblclick="handlePlayMfSong(item)"
+                @click="songClickAction === 'single' && handlePlayMfSong(item)"
+                @dblclick="songClickAction !== 'single' && handlePlayMfSong(item)"
                 @contextmenu="handleMfContextMenu($event, item)"
               >
                 <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
@@ -186,7 +188,8 @@
                 v-for="(item, index) in localSearchResults"
                 :key="`local-${item.path}-${index}`"
                 class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @dblclick="handlePlayLocalSong(item)"
+                @click="songClickAction === 'single' && handlePlayLocalSong(item)"
+                @dblclick="songClickAction !== 'single' && handlePlayLocalSong(item)"
                 @contextmenu="handleLocalContextMenu($event, item)"
               >
                 <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
@@ -448,6 +451,7 @@ const navigationStore = useNavigationStore();
 const libraryStore = useLibraryStore();
 const collectionsStore = useCollectionsStore();
 const settingsStore = useSettingsStore();
+const songClickAction = computed(() => settingsStore.settings.songClickAction || 'double');
 const playbackStore = usePlaybackStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { showToast } = useToast();
