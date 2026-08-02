@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { inject, type Ref } from 'vue';
 import { CircleCheck, Download, Gauge, Loader2, SlidersHorizontal } from 'lucide-vue-next';
-import EqualizerPanel from '../player/EqualizerPanel.vue';
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
 import type { DownloadRecord } from '../../services/downloadHistory';
 
@@ -380,15 +380,8 @@ const {
       <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
     </button>
 
-    <transition name="fade-scale">
-      <div
-        v-if="showEqPanel"
-        :ref="el => { if (el) ctx.eqPanelRef.value = el as HTMLElement; }"
-        class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
-      >
-        <EqualizerPanel />
-      </div>
-    </transition>
+    <!-- 本地均衡器面板：自带 Teleport 模态弹窗 + 遮罩 + Transition，无需外层定位包裹 -->
+    <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
   </div>
 
   <!-- 播放队列 -->
