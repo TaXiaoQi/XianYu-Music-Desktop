@@ -55,6 +55,7 @@ const shouldHideQualityBadge = (song: Song) =>
   isOnlineSong(song) && downloadedOnlinePaths.value.has(song.path);
 
 const { settings } = useSettings();
+const songClickAction = computed(() => settings.value.songClickAction || 'double');
 const libraryStore = useLibraryStore();
 const { libraryScanProgress, lastLibraryScanError } = storeToRefs(libraryStore);
 const { currentSong, isPlaying, formatDuration } = usePlaybackController();
@@ -677,7 +678,8 @@ const getRowStyle = (songIndex: number, songPath: string) => {
           :key="song.path"
           :data-index="song.virtualIndex"
           @pointerdown="handlePointerDown($event, song, song.virtualIndex)"
-          @dblclick="!isBatchMode && emit('play', song)"
+          @click="!isBatchMode && songClickAction === 'single' && emit('play', song)"
+          @dblclick="!isBatchMode && songClickAction !== 'single' && emit('play', song)"
           @contextmenu.prevent="emit('contextmenu', $event, song)"
           @dragstart.prevent
           class="group w-full min-w-0 border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 select-none cursor-default relative flex items-center px-2 gap-3 [touch-action:none]"
