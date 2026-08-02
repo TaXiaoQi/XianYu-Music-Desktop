@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { LyricLine as AmlLyricLine, LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
 import {
@@ -38,8 +38,11 @@ import { useSettingsStore } from '../../features/settings/store';
 // 依赖预构建未完成时 "Failed to fetch dynamically imported module" 导致白屏。
 const AmlLyricPlayer = defineAsyncComponent({
   loader: () => import('./AmlLyricPlayer.vue'),
-  loadingComponent: { template: '<div class="amll-loading-placeholder" />' },
-  errorComponent: { template: '<div class="amll-load-error">歌词组件加载失败，请刷新</div>' },
+  // 用 h() 渲染函数而非字符串 template：避免依赖 Vue 运行时编译器
+  // （runtime-only 构建不含编译器，字符串 template 会触发警告）。
+  loadingComponent: () => h('div', { class: 'amll-loading-placeholder' }),
+  errorComponent: () =>
+    h('div', { class: 'amll-load-error' }, '歌词组件加载失败，请刷新'),
   delay: 0,
   timeout: 10000,
 });
