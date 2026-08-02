@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { usePlaybackStore } from '../../features/playback/store';
-import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 
 const props = defineProps<{
   isExpanded?: boolean;
@@ -22,18 +21,7 @@ const { getFullCoverUrl, loadFullCover, preloadFullCovers, retainFullCoverPaths 
 const playbackStore = usePlaybackStore();
 const { playQueue, tempQueue } = storeToRefs(playbackStore);
 
-const showContextMenu = ref(false);
-const contextMenuX = ref(0);
-const contextMenuY = ref(0);
 const currentSongPath = computed(() => currentSong.value?.path ?? '');
-
-const handleContextMenu = (e: MouseEvent) => {
-  if (!currentSong.value) return;
-  e.preventDefault();
-  contextMenuX.value = e.clientX;
-  contextMenuY.value = e.clientY;
-  showContextMenu.value = true;
-};
 
 const localCoverUrl = ref('');
 const bigCoverLoaded = ref(false);
@@ -169,7 +157,7 @@ const handleCoverClick = (event: MouseEvent) => {
 </script>
 
 <template>
-  <div class="pointer-events-none" @contextmenu.stop="handleContextMenu">
+  <div class="pointer-events-none">
     
     <!-- Album Art -->
     <div
@@ -210,14 +198,6 @@ const handleCoverClick = (event: MouseEvent) => {
         </div>
       </transition>
     </div>
-
-    <FooterContextMenu 
-      :visible="showContextMenu" 
-      :x="contextMenuX" 
-      :y="contextMenuY" 
-      :song="currentSong"
-      @close="showContextMenu = false"
-    />
 
   </div>
 </template>

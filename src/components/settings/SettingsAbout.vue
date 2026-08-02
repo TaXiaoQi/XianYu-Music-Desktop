@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { APP_VERSION } from '../../../version';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
+import { useToast } from '../../composables/toast';
+import { useDeveloperMode } from '../../features/settings/developerMode';
 
 const REPO_OWNER = 'ShenYichenCN';
 const REPO_NAME = 'XianYu-Music-Desktop';
@@ -8,6 +11,30 @@ const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 const OFFICIAL_SITE_URL = 'https://xy.zh2026.cn/ciyuanxi/';
 
 const appVersion = APP_VERSION;
+const DEVELOPER_MODE_CLICK_COUNT = 5;
+const DEVELOPER_MODE_CLICK_INTERVAL = 1500;
+const developerModeClickCount = ref(0);
+let lastDeveloperModeClickAt = 0;
+
+const { isDeveloperMode, enableDeveloperMode } = useDeveloperMode();
+const { showToast } = useToast();
+
+function handleDeveloperModeClick() {
+  if (isDeveloperMode.value) return;
+
+  const now = Date.now();
+  if (now - lastDeveloperModeClickAt > DEVELOPER_MODE_CLICK_INTERVAL) {
+    developerModeClickCount.value = 0;
+  }
+  lastDeveloperModeClickAt = now;
+  developerModeClickCount.value += 1;
+
+  if (developerModeClickCount.value >= DEVELOPER_MODE_CLICK_COUNT) {
+    developerModeClickCount.value = 0;
+    enableDeveloperMode();
+    showToast('已进入开发者模式', 'success');
+  }
+}
 
 // 检查更新改用自建后台（api/version.php），由全局 useUpdateCheck 单例管理弹窗
 const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
@@ -30,7 +57,10 @@ const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
         <p class="text-sm font-medium text-gray-600 dark:text-white/60">v{{ appVersion }}</p>
       </div>
 
-      <p class="max-w-sm text-sm text-gray-600 dark:text-gray-300">
+      <p
+        class="max-w-sm select-none text-sm text-gray-600 dark:text-gray-300"
+        @click="handleDeveloperModeClick"
+      >
         将音乐给予你
       </p>
     </div>

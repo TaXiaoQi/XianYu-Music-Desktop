@@ -21,16 +21,29 @@ describe('useThemeSettings', () => {
     expect(theme.value.mode).toBe('light');
   });
 
-  it('toggles custom themes from the current resolved display mode', () => {
+  it('toggles custom wallpaper foreground color without leaving custom mode', () => {
     const settingsStore = useSettingsStore();
     const { theme, toggleThemeMode } = useThemeSettings();
 
     settingsStore.patchTheme({
       mode: 'custom',
       customBackground: {
+        imagePath: '/covers/demo.jpg',
         foregroundStyle: 'light',
       },
     });
+
+    toggleThemeMode();
+
+    expect(theme.value.mode).toBe('custom');
+    expect(theme.value.customBackground.foregroundStyle).toBe('dark');
+  });
+
+  it('falls back to switching app theme modes when custom mode has no wallpaper', () => {
+    const settingsStore = useSettingsStore();
+    const { theme, toggleThemeMode } = useThemeSettings();
+
+    settingsStore.patchTheme({ mode: 'custom' });
 
     toggleThemeMode();
 

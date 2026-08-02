@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import CustomSkinModal from './CustomSkinModal.vue';
 import SettingsSidebar from './SettingsSidebar.vue';
+import SettingsFooterLayout from './SettingsFooterLayout.vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import SettingHint from './SettingHint.vue';
 
@@ -469,6 +470,9 @@ const {
 
     <!-- 侧边栏管理（并入外观） -->
     <SettingsSidebar />
+
+    <!-- 底部栏布局（并入外观，修改即时生效） -->
+    <SettingsFooterLayout />
 
     <CustomSkinModal v-if="showCustomModal" @close="showCustomModal = false" />
   </div>

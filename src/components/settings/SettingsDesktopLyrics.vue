@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { emit } from '@tauri-apps/api/event';
-import { Check, ChevronDown, Sun, Moon } from 'lucide-vue-next';
+import { Check, ChevronDown, Minus, Moon, Plus, Sun } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, toRaw } from 'vue';
 
 import {
@@ -30,6 +30,12 @@ import { DESKTOP_LYRICS_RESET_BOUNDS_EVENT } from '../../features/desktopLyrics/
 import { useSettings } from '../../features/settings/useSettings';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import SettingHint from './SettingHint.vue';
+import {
+  LYRICS_SYNC_OFFSET_MAX_MS,
+  LYRICS_SYNC_OFFSET_MIN_MS,
+  LYRICS_SYNC_OFFSET_STEP_MS,
+  normalizeLyricsSyncOffsetMs,
+} from '../../features/settings/lyricsSyncOffset';
 
 
 
@@ -405,7 +411,7 @@ const customPreviewTranslationStyle = computed(() => ({
 }));
 
 const lyricsSyncOffsetMs = computed({
-  get: () => Math.round(settings.value.lyricsSyncOffset * 1000),
+  get: () => normalizeLyricsSyncOffsetMs(settings.value.lyricsSyncOffset * 1000),
   set: (value: number | string) => {
     const next = typeof value === 'string' ? Number(value) : value;
     settings.value.lyricsSyncOffset = clampLyricsSyncOffset(next) / 1000;
@@ -450,8 +456,7 @@ function clampTextShadowStrength(value: number) {
 }
 
 function clampLyricsSyncOffset(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1000, Math.max(-1000, Math.round(value / 10) * 10));
+  return normalizeLyricsSyncOffsetMs(value);
 }
 
 
@@ -700,6 +705,10 @@ function closeCustomColorModal() {
 
 function resetLyricsSyncOffset() {
   lyricsSyncOffsetMs.value = 0;
+}
+
+function adjustLyricsSyncOffset(delta: number) {
+  lyricsSyncOffsetMs.value = lyricsSyncOffsetMs.value + delta;
 }
 
 function updateFontPresetMenuPosition() {
@@ -998,21 +1007,41 @@ onUnmounted(() => {
           <div v-if="showLyricsSyncOffsetPanel" class="desktop-setting-expand">
             <div class="desktop-setting-expand-inner">
               <div class="flex flex-col gap-4 md:flex-row md:items-center">
-                <input
-                  v-model="lyricsSyncOffsetMs"
-                  type="range"
-                  min="-1000"
-                  max="1000"
-                  step="10"
-                  class="desktop-slider flex-1"
-                />
+                <div class="flex min-w-[240px] flex-1 items-center gap-2">
+                  <button
+                    type="button"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                    :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS"
+                    aria-label="歌词偏移减少 5 毫秒"
+                    @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"
+                  >
+                    <Minus class="h-4 w-4" />
+                  </button>
+                  <input
+                    v-model="lyricsSyncOffsetMs"
+                    type="range"
+                    :min="LYRICS_SYNC_OFFSET_MIN_MS"
+                    :max="LYRICS_SYNC_OFFSET_MAX_MS"
+                    :step="LYRICS_SYNC_OFFSET_STEP_MS"
+                    class="desktop-slider min-w-0 flex-1"
+                  />
+                  <button
+                    type="button"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                    :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS"
+                    aria-label="歌词偏移增加 5 毫秒"
+                    @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"
+                  >
+                    <Plus class="h-4 w-4" />
+                  </button>
+                </div>
                 <div class="flex items-center gap-3">
                   <input
                     :value="lyricsSyncOffsetMs"
                     type="number"
-                    min="-1000"
-                    max="1000"
-                    step="10"
+                    :min="LYRICS_SYNC_OFFSET_MIN_MS"
+                    :max="LYRICS_SYNC_OFFSET_MAX_MS"
+                    :step="LYRICS_SYNC_OFFSET_STEP_MS"
                     class="w-28 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
                     @change="handleLyricsSyncOffsetChange"
                   />

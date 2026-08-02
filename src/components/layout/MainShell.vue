@@ -41,7 +41,12 @@ const {
 } = useAppShell();
 
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
-const { isSongInfoVisible, currentSongInfo, closeSongInfo } = useSongInfoDialog();
+const {
+  isSongInfoVisible,
+  currentSongInfo,
+  songInfoInitialAction,
+  closeSongInfo,
+} = useSongInfoDialog();
 const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(useUiStore());
 
 useDesktopLyricsWindowBridge();
@@ -69,13 +74,15 @@ const { showOnboarding, completeOnboarding } = useOnboarding();
 
 const handleOnboardingComplete = () => {
   completeOnboarding();
+  checkAnnouncement();
+  checkUpdateOnStartup();
 };
 
 onMounted(() => {
-  // 启动时静默检查更新（后台版本高于本地且未被忽略才弹窗）
-  checkUpdateOnStartup();
   if (!showOnboarding.value) {
+    // 初始化流程拥有首次启动的最高展示优先级，完成后再检查其他启动弹窗。
     checkAnnouncement();
+    checkUpdateOnStartup();
   }
 });
 </script>
@@ -180,7 +187,7 @@ onMounted(() => {
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
             <transition :name="skipNextPageTransition ? '' : 'page-fade'" mode="out-in">
-              <KeepAlive include="Home,Search">
+              <KeepAlive include="Home">
                 <component
                   :is="Component"
                   :key="String(route.name ?? route.path)"
@@ -219,6 +226,7 @@ onMounted(() => {
       v-if="!isMiniMode"
       :visible="isSongInfoVisible"
       :song="currentSongInfo"
+      :initial-action="songInfoInitialAction"
       @close="closeSongInfo"
     />
 
@@ -242,7 +250,7 @@ onMounted(() => {
       v-if="!isMiniMode"
       :visible="showOnboarding"
       @update:visible="showOnboarding = $event"
-      @complete="handleOnboardingComplete(); checkAnnouncement()"
+      @complete="handleOnboardingComplete"
     />
 
     <Toast />

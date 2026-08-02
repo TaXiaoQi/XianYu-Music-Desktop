@@ -20,8 +20,39 @@ import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabe
 import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
 import { useLibraryStore } from '../../features/library/store';
 import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
-import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';
+import { getSongSourceLabel } from '../../utils/remoteSong';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
+import { getDownloadRecord, loadDownloadHistory } from '../../services/downloadHistory';
+
+/** 在线歌曲：路径以 lx:// 或 plugin:// 开头 */
+const isOnlineSong = (song: Song) => {
+  const path = song?.path ?? '';
+  return path.startsWith('lx://') || path.startsWith('plugin://');
+};
+
+/** 在线歌曲无本地元数据时，显示默认音质标记（HQ） */
+const onlineQualityLabel = (song: Song) => {
+  // 若有本地元数据，QualityBadge 会自动渲染，无需回退
+  if (song.bitrate || song.format || song.codec || song.container) return '';
+  // 在线歌曲默认显示 HQ（高品质）
+  return 'HQ';
+};
+
+/** 已下载的在线歌曲 path 集合（响应式，供模板同步判断） */
+const downloadedOnlinePaths = ref<Set<string>>(new Set());
+const refreshDownloadedPaths = async () => {
+  await loadDownloadHistory();
+  const set = new Set<string>();
+  for (const song of props.songs) {
+    if (isOnlineSong(song) && getDownloadRecord(song.path)) {
+      set.add(song.path);
+    }
+  }
+  downloadedOnlinePaths.value = set;
+};
+/** 已下载的在线歌曲不显示音质标记 */
+const shouldHideQualityBadge = (song: Song) =>
+  isOnlineSong(song) && downloadedOnlinePaths.value.has(song.path);
 
 const { settings } = useSettings();
 const libraryStore = useLibraryStore();
@@ -97,6 +128,9 @@ watch(
   },
   { immediate: true },
 );
+
+// 歌曲列表变化时刷新已下载集合
+watch(() => props.songs, () => { void refreshDownloadedPaths(); });
 
 const tableViewportKey = computed(() =>
   [
@@ -543,10 +577,12 @@ onMounted(() => {
   window.addEventListener('resize', updateContainerHeight);
   updateContainerHeight();
   void restoreActiveViewportCovers();
+  void refreshDownloadedPaths();
 });
 
 onActivated(() => {
   void restoreActiveViewportCovers();
+  void refreshDownloadedPaths();
 });
 
 onDeactivated(() => {
@@ -699,7 +735,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-900 dark:text-gray-100 leading-snug">
               <QualityBadge
-                v-if="settings.showQualityBadges"
+                v-if="settings.showQualityBadges && !shouldHideQualityBadge(song)"
                 class="shrink-0"
                 :bitrate="song.bitrate || 0"
                 :sample-rate="song.sample_rate || 0"
@@ -708,10 +744,12 @@ const getRowStyle = (songIndex: number, songPath: string) => {
                 :codec="song.codec || ''"
                 :container="song.container || ''"
               />
+              <!-- 在线歌曲无本地元数据时显示默认 HQ 音质标记（已下载的在线歌曲不显示） -->
               <span
-                v-if="isRemoteSong(song)"
-                class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-              >{{ getSongSourceLabel(song) }}</span>
+                v-if="settings.showQualityBadges && !shouldHideQualityBadge(song) && isOnlineSong(song) && onlineQualityLabel(song)"
+                class="shrink-0 text-[7px] font-bold border px-0.5 rounded-[3px] select-none flex items-center justify-center h-[12px] leading-none bg-orange-100 text-orange-800 border-transparent dark:bg-orange-500/20 dark:text-orange-300 dark:border-transparent"
+              >{{ onlineQualityLabel(song) }}</span>
+              <!-- 歌手名 -->
               <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">
                 <template v-for="(artistName, artistIndex) in getClickableArtistNames(song)" :key="`${song.path}-${artistName}`">
                   <button type="button" class="truncate hover:text-[#EC4141] transition-colors" @click.stop="handleArtistClick(artistName)">
@@ -720,7 +758,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
                   <span v-if="artistIndex < getClickableArtistNames(song).length - 1" class="opacity-60">/</span>
                 </template>
               </span>
-              <span v-else class="truncate">{{ song.artist }}</span>
+              <span v-else class="truncate" :title="song.artist">{{ song.artist }}</span>
             </div>
           </div>
 
@@ -730,6 +768,18 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 
           <div class="w-14 shrink-0 truncate text-center text-xs font-mono text-gray-500 dark:text-white/50" :title="getSongExtension(song)">
             {{ getSongExtension(song) }}
+          </div>
+
+          <!-- 来源/本地标签（最右侧） -->
+          <div class="shrink-0 flex items-center">
+            <span
+              v-if="isOnlineSong(song)"
+              class="rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
+            >{{ getSongSourceLabel(song) }}</span>
+            <span
+              v-else
+              class="rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
+            >本地</span>
           </div>
 
           <div class="shrink-0 flex items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'opacity-20 pointer-events-none': dragSession.active }">
