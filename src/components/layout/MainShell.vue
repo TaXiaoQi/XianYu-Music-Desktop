@@ -12,6 +12,7 @@ import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
 import GlobalBackground from './GlobalBackground.vue';
+import OnboardingModal from '../onboarding/OnboardingModal.vue';
 
 const PlayQueueSidebar = defineAsyncComponent(() => import('../player/PlayQueueSidebar.vue'));
 const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.vue'));
@@ -20,7 +21,6 @@ const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
 const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
-const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
 
 const {
   isMiniMode,
@@ -91,6 +91,16 @@ onMounted(() => {
   <div
     class="flex flex-col h-screen w-full text-gray-800 dark:text-gray-200 relative overflow-hidden font-sans"
   >
+    <template v-if="showOnboarding">
+      <OnboardingModal
+        v-if="!isMiniMode"
+        visible
+        @update:visible="showOnboarding = $event"
+        @complete="handleOnboardingComplete"
+      />
+    </template>
+
+    <template v-else>
     <transition name="window-restore">
       <GlobalBackground v-if="!isMiniMode" />
     </transition>
@@ -245,13 +255,7 @@ onMounted(() => {
       @close="closeUpdate"
       @download="openDownload"
     />
-
-    <OnboardingModal
-      v-if="!isMiniMode"
-      :visible="showOnboarding"
-      @update:visible="showOnboarding = $event"
-      @complete="handleOnboardingComplete"
-    />
+    </template>
 
     <Toast />
   </div>

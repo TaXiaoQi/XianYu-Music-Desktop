@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useToast } from '../../composables/toast';
@@ -23,7 +23,11 @@ import {
   type VerifyCodeType,
 } from '../../services/auth/authService';
 
-type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'account';
+type Step = 'splash' | 'theme' | 'material' | 'shortcuts' | 'plugins' | 'account';
+
+const SettingsPlugins = defineAsyncComponent(
+  () => import('../settings/SettingsPlugins.vue'),
+);
 
 const props = defineProps<{
   visible: boolean;
@@ -62,11 +66,14 @@ interface CapturingTarget {
   scope: ShortcutScope;
 }
 const capturingTarget = ref<CapturingTarget | null>(null);
+const showPluginManager = ref(false);
+const pluginManagerVisited = ref(false);
 
 const steps: { key: Step; label: string }[] = [
   { key: 'theme', label: '主题' },
   { key: 'material', label: '材质' },
   { key: 'shortcuts', label: '快捷键' },
+  { key: 'plugins', label: '插件' },
   { key: 'account', label: '账号' },
 ];
 
@@ -94,6 +101,15 @@ const startCapture = (scope: ShortcutScope, actionId: ShortcutActionId) => {
 
 const stopCapture = () => {
   capturingTarget.value = null;
+};
+
+const openPluginManager = () => {
+  pluginManagerVisited.value = true;
+  showPluginManager.value = true;
+};
+
+const closePluginManager = () => {
+  showPluginManager.value = false;
 };
 
 const restoreDefaultShortcuts = () => {
@@ -179,7 +195,7 @@ const goToStep = (next: Step) => {
 };
 
 const nextStep = () => {
-  const order: Step[] = ['splash', 'theme', 'material', 'shortcuts', 'account'];
+  const order: Step[] = ['splash', 'theme', 'material', 'shortcuts', 'plugins', 'account'];
   const idx = order.indexOf(step.value);
   if (idx < order.length - 1) {
     goToStep(order[idx + 1]);
@@ -189,7 +205,7 @@ const nextStep = () => {
 };
 
 const prevStep = () => {
-  const order: Step[] = ['theme', 'material', 'shortcuts', 'account'];
+  const order: Step[] = ['theme', 'material', 'shortcuts', 'plugins', 'account'];
   const idx = order.indexOf(step.value);
   if (idx > 0) goToStep(order[idx - 1]);
 };
@@ -359,6 +375,8 @@ watch(
   val => {
     if (val) {
       step.value = 'splash';
+      showPluginManager.value = false;
+      pluginManagerVisited.value = false;
       splashVisible.value = true;
       splashHintVisible.value = false;
       startSplashTimers();
@@ -808,7 +826,72 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <!-- 步骤 4: 账号（搬自 Auth.vue 登录注册 UI）-->
+                  <!-- 步骤 4: 插件管理 -->
+                  <div v-else-if="step === 'plugins'" key="plugins" class="grid grid-cols-1 lg:grid-cols-[1fr_1.45fr] gap-[clamp(2rem,5vw,5rem)] items-center">
+                    <header>
+                      <p
+                        class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
+                        style="font-size: clamp(14px, 1.2vw, 18px);"
+                      >
+                        插件管理
+                      </p>
+                      <h2
+                        class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
+                        style="font-size: clamp(40px, 6vw, 80px);"
+                      >
+                        扩展<br />音乐来源
+                      </h2>
+                      <p
+                        class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
+                        style="font-size: clamp(13px, 1vw, 16px);"
+                      >
+                        安装插件后，可以搜索和播放更多在线音乐。也可以稍后前往设置中的插件管理添加。
+                      </p>
+                    </header>
+
+                    <div class="border-t border-black/10 dark:border-white/10">
+                      <div class="grid grid-cols-1 sm:grid-cols-3 border-b border-black/10 dark:border-white/10">
+                        <div class="py-5 sm:pr-5">
+                          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EC4141]/10 text-[#EC4141]">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+                          </div>
+                          <div class="font-semibold text-black dark:text-white" style="font-size: clamp(14px, 1.1vw, 17px);">本地文件</div>
+                          <div class="mt-1 text-black/45 dark:text-white/45 font-light" style="font-size: clamp(11px, 0.9vw, 13px);">导入 JS 或 JSON 插件</div>
+                        </div>
+                        <div class="py-5 sm:px-5">
+                          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EC4141]/10 text-[#EC4141]">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 0 20"/><path d="M12 2a15.3 15.3 0 0 0 0 20"/></svg>
+                          </div>
+                          <div class="font-semibold text-black dark:text-white" style="font-size: clamp(14px, 1.1vw, 17px);">网络链接</div>
+                          <div class="mt-1 text-black/45 dark:text-white/45 font-light" style="font-size: clamp(11px, 0.9vw, 13px);">通过插件地址安装</div>
+                        </div>
+                        <div class="py-5 sm:pl-5">
+                          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EC4141]/10 text-[#EC4141]">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="m15 5-3 3-3-3"/><rect width="18" height="12" x="3" y="10" rx="2"/><path d="M7 14h.01"/><path d="M11 14h6"/></svg>
+                          </div>
+                          <div class="font-semibold text-black dark:text-white" style="font-size: clamp(14px, 1.1vw, 17px);">订阅管理</div>
+                          <div class="mt-1 text-black/45 dark:text-white/45 font-light" style="font-size: clamp(11px, 0.9vw, 13px);">批量同步多个来源</div>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center justify-between gap-5 py-6">
+                        <div>
+                          <div class="font-semibold text-black dark:text-white" style="font-size: clamp(15px, 1.2vw, 18px);">添加或管理插件</div>
+                          <div class="mt-1 text-black/45 dark:text-white/45 font-light" style="font-size: clamp(12px, 0.9vw, 14px);">安装、启停、更新或移除已有插件</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="shrink-0 rounded-full bg-[#EC4141] px-[clamp(1.5rem,2.5vw,2.5rem)] py-3 font-medium text-white transition hover:bg-red-600 active:scale-95"
+                          style="font-size: clamp(13px, 1vw, 15px);"
+                          @click="openPluginManager"
+                        >
+                          添加或管理插件
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 步骤 5: 账号（搬自 Auth.vue 登录注册 UI）-->
                   <div v-else-if="step === 'account'" key="account" class="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-[clamp(2rem,5vw,5rem)] items-start">
                     <header>
                       <p
@@ -1113,7 +1196,7 @@ onUnmounted(() => {
                   style="font-size: clamp(14px, 1.1vw, 17px); border-radius: 999px;"
                   @click="nextStep"
                 >
-                  下一步
+                  {{ step === 'plugins' ? (pluginManagerVisited ? '继续' : '稍后添加') : '下一步' }}
                 </button>
                 <button
                   v-else
@@ -1175,6 +1258,40 @@ onUnmounted(() => {
                 </div>
               </div>
             </transition>
+          </div>
+        </transition>
+
+        <!-- 初始化期间的插件管理层：按需加载并复用设置中的完整插件管理能力 -->
+        <transition name="step-fade">
+          <div
+            v-if="showPluginManager"
+            class="absolute inset-0 z-[60] flex flex-col overflow-hidden"
+            :class="onboardingSurfaceClass"
+          >
+            <header class="flex items-center justify-between border-b border-black/10 dark:border-white/10 px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)]">
+              <div>
+                <div class="text-black/45 dark:text-white/45 font-light tracking-wider" style="font-size: clamp(11px, 0.9vw, 13px);">初次设置</div>
+                <h2 class="mt-1 font-black tracking-tight text-black dark:text-white" style="font-size: clamp(22px, 2.2vw, 32px);">插件管理</h2>
+              </div>
+              <button
+                type="button"
+                class="rounded-full bg-[#EC4141] px-[clamp(1.5rem,2.5vw,2.5rem)] py-3 font-medium text-white transition hover:bg-red-600 active:scale-95"
+                style="font-size: clamp(13px, 1vw, 15px);"
+                @click="closePluginManager"
+              >
+                完成管理
+              </button>
+            </header>
+            <main class="custom-scrollbar flex-1 overflow-y-auto">
+              <div class="mx-auto w-full max-w-6xl px-[clamp(2rem,5vw,5rem)] py-[clamp(1.5rem,4vh,3.5rem)]">
+                <Suspense>
+                  <SettingsPlugins overlay-z-class="z-[10000]" />
+                  <template #fallback>
+                    <div class="flex min-h-64 items-center justify-center text-black/45 dark:text-white/45 font-light">正在加载插件管理…</div>
+                  </template>
+                </Suspense>
+              </div>
+            </main>
           </div>
         </transition>
 

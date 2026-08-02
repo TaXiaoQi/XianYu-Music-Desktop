@@ -10,6 +10,8 @@ interface PlayerPlaybackApi {
     clearShuffleFuture?: boolean;
     preserveQueue?: boolean;
     insertAfterCurrent?: boolean;
+    startTime?: number;
+    continueStatisticsSession?: boolean;
   }) => Promise<unknown>;
   pauseSong: () => Promise<unknown>;
   togglePlay: () => Promise<unknown>;
@@ -86,6 +88,8 @@ export function usePlaybackActions({
     clearShuffleFuture?: boolean;
     preserveQueue?: boolean;
     insertAfterCurrent?: boolean;
+    startTime?: number;
+    continueStatisticsSession?: boolean;
   }) =>
     getPlayerPlayback().playSong(song, options);
   const pauseSong = () => getPlayerPlayback().pauseSong();

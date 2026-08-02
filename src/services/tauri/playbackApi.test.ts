@@ -24,6 +24,7 @@ describe('playbackApi', () => {
       artist: 'Artist',
       album: 'Album',
       trackNumber: '1',
+      countAsPlay: true,
     };
 
     playbackApi.recordPlay(payload);

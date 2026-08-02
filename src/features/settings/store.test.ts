@@ -142,6 +142,30 @@ describe('settings store', () => {
     expect(settingsStore.settings.closeToTray).toBe(true);
   });
 
+  it('uses safe logging defaults and normalizes persisted log settings', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.settings.logging).toEqual({
+      minimumLevel: 'info',
+      retentionDays: 14,
+      autoAnalyze: true,
+    });
+
+    const merged = mergeAppSettings(settingsStore.settings, {
+      logging: {
+        minimumLevel: 'error',
+        retentionDays: 999,
+        autoAnalyze: false,
+      },
+    });
+
+    expect(merged.logging).toEqual({
+      minimumLevel: 'error',
+      retentionDays: 365,
+      autoAnalyze: false,
+    });
+  });
+
   it('disables short audio exclusion by default and preserves persisted threshold', () => {
     const settingsStore = useSettingsStore();
 

@@ -5,6 +5,7 @@
       :data-folder-path="node.path"
       :data-folder-name="node.name"
       :class="[
+        isRoot ? 'mt-1 py-2 font-semibold' : '',
         isSelected ? 'bg-blue-500/10 text-blue-500 dark:text-blue-400' : 'hover:bg-black/5 dark:hover:bg-white/5',
         isTarget ? 'ring-2 ring-blue-500 bg-blue-50/50 dark:bg-blue-900/20 z-10' : '',
       ]"
@@ -109,11 +110,14 @@ import { sortItemsByAlphabetIndex } from '../../utils/alphabetIndex';
 import type { FolderNode, Song } from '../../types';
 import { getSongFileNameLabel, getSongTitleLabel, isDirectParent, compareSongPathsByTrackNumber } from '../../features/library/playerLibraryViewShared';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   node: FolderNode;
   depth: number;
   selectedPath: string;
-}>();
+  isRoot?: boolean;
+}>(), {
+  isRoot: false,
+});
 
 const emit = defineEmits<{
   (e: 'select', node: FolderNode): void;

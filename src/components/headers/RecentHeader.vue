@@ -124,7 +124,7 @@ const handleEnterBatchMode = () => {
       </span>
 
       <!-- 右侧操作按钮 -->
-      <div class="flex items-center gap-2">
+      <div v-if="recentTab === 'songs'" class="flex items-center gap-2">
         
         <!-- 播放全部 -->
         <button 

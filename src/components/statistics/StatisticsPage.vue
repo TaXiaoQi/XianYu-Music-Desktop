@@ -30,8 +30,6 @@ const TEXT = {
   leaderboardSubtitle: '单日听歌时长排行',
   loadFailed: '加载失败：',
   retry: '重试',
-  noData: '暂无数据',
-  noLibraryHint: '先去设置中添加音乐库文件夹吧',
   unknownSong: '未知歌曲',
   unknownArtist: '未知艺术家',
   deletedSong: '已删除歌曲',
@@ -46,13 +44,10 @@ const TEXT = {
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
+let leaderboardRequestId = 0;
 
 async function loadLeaderboard() {
-  if (!authStore.isLoggedIn) {
-    leaderboard.value = [];
-    leaderboardLoading.value = false;
-    return;
-  }
+  const requestId = ++leaderboardRequestId;
   // 先清空数据并显示骨架屏
   leaderboard.value = [];
   leaderboardLoading.value = true;
@@ -61,17 +56,21 @@ async function loadLeaderboard() {
     // 传递本地统计的听歌时长，先上报到后端再获取排行榜
     const localDuration = behaviorStats.value?.total_duration ?? 0;
     const data = await fetchLeaderboard(50, localDuration);
+    if (requestId !== leaderboardRequestId) return;
     leaderboard.value = data.leaderboard;
     // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
     if (data.me && !leaderboard.value.some(u => u.isMe)) {
       leaderboard.value.push(data.me);
     }
   } catch (e) {
+    if (requestId !== leaderboardRequestId) return;
     const msg = e instanceof Error ? e.message : String(e);
     leaderboardError.value = msg;
     leaderboard.value = [];
   } finally {
-    leaderboardLoading.value = false;
+    if (requestId === leaderboardRequestId) {
+      leaderboardLoading.value = false;
+    }
   }
 }
 
@@ -110,10 +109,9 @@ watch(() => route.path, (newPath, oldPath) => {
   }
 });
 
-// 启动时登录态由标题栏异步恢复。首次请求若早于恢复完成会得到空列表，
-// 因此在统计数据就绪后，登录成功时补充加载一次排行榜。
+// 登录态变化时刷新：登录后补充个人排名，退出后立即移除个人信息。
 watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
-  if (isLoggedIn && !wasLoggedIn && isLeaderboardReady.value) {
+  if (isLoggedIn !== wasLoggedIn && isLeaderboardReady.value) {
     void loadLeaderboard();
   }
 });
@@ -228,12 +226,6 @@ const losslessRatio = computed(() => {
         </button>
       </div>
 
-      <!-- Empty state -->
-      <div v-else-if="stats && stats.total_songs === 0" class="text-center py-24">
-        <p class="text-gray-800 dark:text-gray-200 text-3xl font-light">{{ TEXT.noData }}</p>
-        <p class="text-gray-600 dark:text-gray-300 text-base mt-3">{{ TEXT.noLibraryHint }}</p>
-      </div>
-
       <!-- Main content -->
       <div v-else-if="stats && behaviorStats" class="space-y-[clamp(0.5rem,1vw,0.875rem)]">
         <!-- 总歌曲 + 右侧三个小分支 -->
@@ -306,9 +298,9 @@ const losslessRatio = computed(() => {
             ></div>
           </div>
 
-          <!-- 未登录或无数据提示 -->
+          <!-- 无数据提示 -->
           <div v-else-if="leaderboardDisplay.top.length === 0 && !leaderboardError" class="py-8 text-center">
-            <p class="text-black/50 dark:text-white/50 text-sm">{{ authStore.isLoggedIn ? '暂无排行榜数据' : '登录后可查看听歌排行榜' }}</p>
+            <p class="text-black/50 dark:text-white/50 text-sm">暂无排行榜数据</p>
           </div>
 
           <!-- 加载失败提示 -->
@@ -352,39 +344,60 @@ const losslessRatio = computed(() => {
               </div>
               <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(item.duration) }}</div>
             </div>
-
-            <!-- 自己的排名（始终固定在底部显示） -->
-            <template v-if="leaderboardDisplay.me">
-              <div class="leaderboard-divider text-black/30 dark:text-white/30">
-                <span>···</span>
-              </div>
-              <div
-                class="leaderboard-row is-me is-sticky animate-fade-in-up"
-                :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
-                :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
-              >
-                <div
-                  class="leaderboard-rank animate-rank-pop"
-                  :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`"
-                  :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 400}ms` }"
-                >
-                  {{ leaderboardDisplay.me.rank }}
-                </div>
-                <div class="leaderboard-avatar">
-                  <img v-if="leaderboardDisplay.me.avatar" :src="leaderboardDisplay.me.avatar" alt="" class="h-full w-full object-cover" />
-                  <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
-                </div>
-                <div class="leaderboard-info">
-                  <div class="leaderboard-name text-gray-800 dark:text-white/90">
-                    {{ leaderboardDisplay.me.nickname }}
-                    <span class="leaderboard-tag">{{ TEXT.you }}</span>
-                  </div>
-                  <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.username }}</div>
-                </div>
-                <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
-              </div>
-            </template>
           </div>
+
+          <!-- 个人排名（始终固定在底部显示） -->
+          <template v-if="!leaderboardLoading && leaderboardDisplay.me">
+            <div class="leaderboard-divider text-black/30 dark:text-white/30">
+              <span>···</span>
+            </div>
+            <div
+              class="leaderboard-row is-me is-sticky animate-fade-in-up"
+              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
+              :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
+            >
+              <div
+                class="leaderboard-rank animate-rank-pop"
+                :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`"
+                :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 400}ms` }"
+              >
+                {{ leaderboardDisplay.me.rank }}
+              </div>
+              <div class="leaderboard-avatar">
+                <img v-if="leaderboardDisplay.me.avatar" :src="leaderboardDisplay.me.avatar" alt="" class="h-full w-full object-cover" />
+                <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
+              </div>
+              <div class="leaderboard-info">
+                <div class="leaderboard-name text-gray-800 dark:text-white/90">
+                  {{ leaderboardDisplay.me.nickname }}
+                  <span class="leaderboard-tag">{{ TEXT.you }}</span>
+                </div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.username }}</div>
+              </div>
+              <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
+            </div>
+          </template>
+
+          <!-- 未登录时保留个人排名栏，但不展示任何个人数据 -->
+          <template v-else-if="!leaderboardLoading && !authStore.isLoggedIn">
+            <div class="leaderboard-divider text-black/30 dark:text-white/30">
+              <span>···</span>
+            </div>
+            <div
+              class="leaderboard-row is-me is-sticky"
+              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
+            >
+              <div class="leaderboard-rank rank-normal">—</div>
+              <div class="leaderboard-avatar">
+                <span>未</span>
+              </div>
+              <div class="leaderboard-info">
+                <div class="leaderboard-name text-gray-800 dark:text-white/90">未登录</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">登录后查看个人排名</div>
+              </div>
+              <div class="leaderboard-duration text-gray-800 dark:text-white/90">—</div>
+            </div>
+          </template>
         </section>
       </div>
     </div>

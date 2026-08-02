@@ -16,6 +16,7 @@ import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
 import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
 import { loadPlugins, checkAllPluginUpdates, performPluginUpdate } from './services/pluginEngine';
+import { configureApplicationLogger } from './services/applicationLogger';
 
 const currentWindowLabel = (() => {
   try {
@@ -31,6 +32,11 @@ const isTrayMenuWindow = currentWindowLabel === TRAY_MENU_WINDOW_LABEL;
 const isTaskbarPlayerWindow = currentWindowLabel === TASKBAR_PLAYER_WINDOW_LABEL;
 
 const { settings } = useSettings();
+watch(
+  () => settings.value.logging,
+  logging => configureApplicationLogger(logging),
+  { deep: true, immediate: true },
+);
 watch(
   () => settings.value.customLyricsFonts,
   (fonts) => registerImportedLyricsFonts(fonts),

@@ -10,6 +10,12 @@ import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, lo
 import { useSettings } from '../../features/settings/useSettings';
 import SettingHint from './SettingHint.vue';
 
+withDefaults(defineProps<{
+  overlayZClass?: string;
+}>(), {
+  overlayZClass: 'z-[200]',
+});
+
 const { showToast } = useToast();
 const { settings, patchSettings } = useSettings();
 
@@ -825,7 +831,7 @@ async function copyPluginLink() {
         <!-- 描述 -->
         <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
-          <SettingHint text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。" />
+          <SettingHint severity="warning" text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。" />
         </div>
 
         <!-- 操作按钮组 -->
@@ -887,7 +893,7 @@ async function copyPluginLink() {
                 <div class="settings-plugin-dropzone-title">
                   点击选择文件或拖拽到此处
                 </div>
-                <SettingHint class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" />
+                <SettingHint severity="warning" class="absolute right-4 top-4" text="支持 .js 或 .json 格式的插件文件" />
               </div>
               <div class="flex justify-end mt-3">
                 <button
@@ -909,7 +915,7 @@ async function copyPluginLink() {
               <div class="flex items-center justify-between gap-4">
                 <div class="shrink-0 text-sm font-medium text-gray-800 dark:text-gray-200">插件地址</div>
                 <div class="flex min-w-0 flex-1 items-center gap-3">
-                  <SettingHint text="粘贴插件的 JS 文件直链或 JSON 索引地址" />
+                  <SettingHint severity="warning" text="粘贴插件的 JS 文件直链或 JSON 索引地址" />
                   <input
                     v-model="installUrl"
                     type="text"
@@ -945,7 +951,7 @@ async function copyPluginLink() {
               <div class="flex items-center justify-between mb-3 gap-2">
                 <div class="text-sm font-medium text-gray-800 dark:text-gray-200">订阅管理</div>
                 <div class="flex shrink-0 items-center gap-3">
-                  <SettingHint text="订阅可自动同步远端插件列表，方便一次性安装多个来源" />
+                  <SettingHint severity="warning" text="订阅可自动同步远端插件列表，方便一次性安装多个来源" />
                   <button
                     type="button"
                     class="settings-plugin-button settings-plugin-button--sm settings-plugin-button--secondary"
@@ -1077,7 +1083,7 @@ async function copyPluginLink() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint text="软件启动时自动检查并安装插件更新" />
+            <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" />
             <button
               type="button"
               class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
@@ -1113,7 +1119,7 @@ async function copyPluginLink() {
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint text="允许安装相同或更低版本的插件" />
+            <SettingHint severity="warning" text="允许安装相同或更低版本的插件" />
             <button
               type="button"
               class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
@@ -1297,7 +1303,8 @@ async function copyPluginLink() {
       <Transition name="plugin-detail">
         <div
           v-if="showUninstallAllConfirm"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          :class="overlayZClass"
           @click.self="showUninstallAllConfirm = false"
         >
           <div class="plugin-detail-card">
@@ -1352,7 +1359,8 @@ async function copyPluginLink() {
       <Transition name="plugin-detail">
         <div
           v-if="showUninstallPluginConfirm"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          :class="overlayZClass"
           @click.self="showUninstallPluginConfirm = false"
         >
           <div class="plugin-detail-card">
@@ -1407,7 +1415,8 @@ async function copyPluginLink() {
       <Transition name="plugin-detail">
         <div
           v-if="showRemoveSubscriptionConfirm"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          :class="overlayZClass"
           @click.self="showRemoveSubscriptionConfirm = false"
         >
           <div class="plugin-detail-card">
@@ -1462,7 +1471,8 @@ async function copyPluginLink() {
       <Transition name="plugin-detail">
         <div
           v-if="detailPlugin"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          :class="overlayZClass"
           @click.self="closePluginDetail"
         >
           <div class="plugin-detail-card">

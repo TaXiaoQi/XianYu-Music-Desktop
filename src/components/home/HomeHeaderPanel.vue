@@ -60,22 +60,15 @@ const isManagementModeModel = computed({
   <FoldersHeader
     v-if="localViewMode === 'folder'"
     v-model:isBatchMode="isBatchModeModel"
-    :activeRootPath="activeRootPath"
     :selectedCount="selectedCount"
-    :folderTree="folderTree"
     :currentFolderFilter="currentFolderFilter"
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
     @addToPlaylist="$emit('showAddToPlaylist')"
-    @rootCreatePlaylist="(path, name) => $emit('rootCreatePlaylist', path, name)"
     @batchDelete="$emit('folderBatchDelete')"
     @batchMove="$emit('batchMove')"
     @addFolder="$emit('addFolder')"
     @refreshFolder="$emit('refreshFolder')"
-    @removeFolder="(path, name) => $emit('removeFolder', path, name)"
-    @newFolder="(path) => $emit('rootCreateFolder', path)"
-    @deleteFolderDisk="(path) => $emit('rootDeleteFolder', path)"
-    @update:activeRootPath="$emit('activeRootChange', $event)"
     v-model:isManagementMode="isManagementModeModel"
   />
 

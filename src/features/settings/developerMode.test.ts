@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import aboutSource from '../../components/settings/SettingsAbout.vue?raw';
+import advancedSource from '../../components/settings/SettingsAdvanced.vue?raw';
 import debugSource from '../../components/settings/SettingsDebug.vue?raw';
+import logExportSource from '../../components/settings/LogExportActions.vue?raw';
 import settingsSource from '../../views/Settings.vue?raw';
 import { disableDeveloperMode, enableDeveloperMode, useDeveloperMode } from './developerMode';
 
@@ -29,5 +31,20 @@ describe('developer mode settings entry', () => {
     expect(debugSource).toContain('退出开发者模式');
     expect(debugSource).toContain('播放初始化动画');
     expect(debugSource).toContain('@click="triggerOnboarding"');
+    expect(debugSource).toContain('showClearConfirmation');
+    expect(debugSource).toContain('确认清空全部日志');
+  });
+
+  it('shows advanced settings to regular users and keeps log export there', () => {
+    expect(settingsSource).toContain("{ id: 'advanced', name: '高级设置' }");
+    expect(settingsSource).toContain("activeTab === 'advanced'");
+    expect(advancedSource).toContain('<LogExportActions />');
+    expect(debugSource).toContain('<LogExportActions />');
+    expect(logExportSource).toContain('导出全部日志');
+    expect(logExportSource).toContain('导出错误日志');
+    expect(advancedSource).toContain('删除全部日志');
+    expect(advancedSource).toContain('日志保留时长');
+    expect(advancedSource).toContain('settings.logging.retentionDays');
+    expect(advancedSource).toContain('showDeleteConfirmation');
   });
 });

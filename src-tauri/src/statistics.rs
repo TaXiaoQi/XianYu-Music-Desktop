@@ -188,6 +188,7 @@ pub struct RecordPlayPayload {
     pub artist: String,
     pub album: String,
     pub track_number: Option<String>,
+    pub count_as_play: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -584,12 +585,14 @@ fn record_aggregate_play(
     listened_ms: i64,
     is_full_play: bool,
     is_skip: bool,
+    count_as_play: bool,
 ) -> Result<(), String> {
+    let play_count = if count_as_play { 1 } else { 0 };
     let played_at_iso = unix_seconds_to_iso(played_at)?;
     merge_global_stats(
         conn,
         &PortableGlobalStats {
-            total_play_count: 1,
+            total_play_count: play_count,
             total_play_time_ms: listened_ms.max(0),
             first_played_at: Some(played_at_iso.clone()),
             last_played_at: Some(played_at_iso.clone()),
@@ -600,10 +603,10 @@ fn record_aggregate_play(
         conn,
         identity,
         &PortableSongStats {
-            play_count: 1,
+            play_count,
             play_time_ms: listened_ms.max(0),
-            full_play_count: if is_full_play { 1 } else { 0 },
-            skip_count: if is_skip { 1 } else { 0 },
+            full_play_count: if count_as_play && is_full_play { 1 } else { 0 },
+            skip_count: if count_as_play && is_skip { 1 } else { 0 },
             first_played_at: Some(played_at_iso.clone()),
             last_played_at: Some(played_at_iso.clone()),
         },
@@ -615,7 +618,7 @@ fn record_aggregate_play(
         conn,
         &PortableDailyStats {
             date,
-            play_count: 1,
+            play_count,
             play_time_ms: listened_ms.max(0),
             unique_songs: if is_new_song { 1 } else { 0 },
             unique_artists: if is_new_artist { 1 } else { 0 },
@@ -627,24 +630,26 @@ fn record_aggregate_play(
         conn,
         &PortableHourlyStats {
             hour,
-            play_count: 1,
+            play_count,
             play_time_ms: listened_ms.max(0),
         },
     )?;
 
-    insert_recent_play(
-        conn,
-        &PortableRecentPlay {
-            played_at: played_at_iso,
-            title: identity.title.clone(),
-            artist: identity.artist.clone(),
-            album: identity.album.clone(),
-            duration_ms: identity.duration_ms,
-            listened_ms: listened_ms.max(0),
-            is_full_play,
-            is_skip,
-        },
-    )?;
+    if count_as_play {
+        insert_recent_play(
+            conn,
+            &PortableRecentPlay {
+                played_at: played_at_iso,
+                title: identity.title.clone(),
+                artist: identity.artist.clone(),
+                album: identity.album.clone(),
+                duration_ms: identity.duration_ms,
+                listened_ms: listened_ms.max(0),
+                is_full_play,
+                is_skip,
+            },
+        )?;
+    }
 
     Ok(())
 }
@@ -1310,10 +1315,10 @@ fn rebuild_statistics_aggregates(conn: &rusqlite::Connection) -> Result<(), Stri
         // resolve_song_identity 会用 song_path 作为 fallback 提取标题
         let mut stmt = conn
             .prepare(
-                "SELECT ph.song_path, s.title, s.artist, s.album, s.duration, s.track_number, ph.played_at, ph.played_seconds
+                "SELECT ph.song_path, s.title, s.artist, s.album, s.duration, s.track_number, ph.played_at, ph.played_seconds, ph.event
                  FROM play_history ph
                  LEFT JOIN songs s ON ph.song_id = s.id
-                 WHERE ph.event = 'play'
+                 WHERE ph.event IN ('play', 'play_time')
                  ORDER BY ph.played_at ASC, ph.id ASC",
             )
             .map_err(|e| e.to_string())?;
@@ -1329,6 +1334,7 @@ fn rebuild_statistics_aggregates(conn: &rusqlite::Connection) -> Result<(), Stri
                     row.get::<_, Option<String>>(5)?,
                     row.get::<_, i64>(6)?,
                     row.get::<_, i64>(7).unwrap_or(0),
+                    row.get::<_, String>(8)?,
                 ))
             })
             .map_err(|e| e.to_string())?;
@@ -1343,8 +1349,21 @@ fn rebuild_statistics_aggregates(conn: &rusqlite::Connection) -> Result<(), Stri
                 Some(&row.0),
             );
             let listened_ms = row.7.max(0) * 1000;
-            let (is_full_play, is_skip) = derive_play_flags(listened_ms, identity.duration_ms);
-            record_aggregate_play(conn, &identity, row.6, listened_ms, is_full_play, is_skip)?;
+            let count_as_play = row.8 == "play";
+            let (is_full_play, is_skip) = if count_as_play {
+                derive_play_flags(listened_ms, identity.duration_ms)
+            } else {
+                (false, false)
+            };
+            record_aggregate_play(
+                conn,
+                &identity,
+                row.6,
+                listened_ms,
+                is_full_play,
+                is_skip,
+                count_as_play,
+            )?;
         }
     }
 
@@ -2381,10 +2400,12 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
 
     let played_seconds = (payload.listened_ms.max(0) / 1000).max(0);
 
-    // 插入播放历史记录（song_id 可为 NULL，表示在线歌曲不在本地曲库中）
+    // 定时刷写只累计时长；同一次实际播放仅保留一条 event='play' 记录。
+    let count_as_play = payload.count_as_play.unwrap_or(true);
+    let history_event = if count_as_play { "play" } else { "play_time" };
     conn.execute(
-        "INSERT INTO play_history (song_path, song_id, played_at, played_seconds, event) VALUES (?1, ?2, ?3, ?4, 'play')",
-        rusqlite::params![&normalized_path, song_id, now, played_seconds],
+        "INSERT INTO play_history (song_path, song_id, played_at, played_seconds, event) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![&normalized_path, song_id, now, played_seconds, history_event],
     )
     .map_err(|e| e.to_string())?;
 
@@ -2405,6 +2426,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
         payload.listened_ms,
         is_full_play,
         is_skip,
+        count_as_play,
     )?;
 
     Ok(())
@@ -2474,7 +2496,7 @@ pub fn get_behavior_stats(
 
     // 指标 A2: 播放总时长
     let sql_duration = format!(
-        "SELECT COALESCE(SUM(ph.played_seconds), 0) {} WHERE ph.event = 'play' AND ph.song_id IS NOT NULL {}",
+        "SELECT COALESCE(SUM(ph.played_seconds), 0) {} WHERE ph.event IN ('play', 'play_time') AND ph.song_id IS NOT NULL {}",
         base_join, time_condition
     );
     let total_duration: i64 = conn
@@ -2513,7 +2535,7 @@ pub fn get_behavior_stats(
     let sql_top_duration = format!(
         "SELECT s.path, COALESCE(SUM(ph.played_seconds), 0) as duration 
          {} 
-         WHERE ph.event = 'play' AND ph.song_id IS NOT NULL {} 
+         WHERE ph.event IN ('play', 'play_time') AND ph.song_id IS NOT NULL {}
          GROUP BY ph.song_id 
          ORDER BY duration DESC 
          LIMIT 5",
@@ -2636,7 +2658,7 @@ pub fn get_behavior_stats(
                     COALESCE(SUM(ph.played_seconds), 0) as duration 
              FROM play_history ph 
              INNER JOIN songs s ON ph.song_id = s.id 
-             WHERE ph.played_at >= {} AND ph.event = 'play' AND ph.song_id IS NOT NULL 
+             WHERE ph.played_at >= {} AND ph.event IN ('play', 'play_time') AND ph.song_id IS NOT NULL
              GROUP BY day_offset",
             start_time, day_seconds, start_time
         );
@@ -2664,4 +2686,60 @@ pub fn get_behavior_stats(
         hour_distribution,
         recent_activity,
     })
+}
+
+#[cfg(test)]
+mod playback_count_tests {
+    use super::*;
+
+    #[test]
+    fn periodic_time_flushes_only_increment_play_count_once() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+        crate::database::ensure_base_schema(&conn).expect("create schema");
+        let identity = PortableSongIdentity {
+            title: "Demo".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            duration_ms: 195_000,
+            track_number: Some(1),
+        };
+
+        record_aggregate_play(
+            &conn,
+            &identity,
+            1_700_000_000,
+            30_000,
+            false,
+            false,
+            true,
+        )
+        .expect("record initial play chunk");
+        for offset in 1..=12 {
+            record_aggregate_play(
+                &conn,
+                &identity,
+                1_700_000_000 + offset,
+                30_000,
+                false,
+                false,
+                false,
+            )
+            .expect("record time-only chunk");
+        }
+
+        let (play_count, play_time_ms): (i64, i64) = conn
+            .query_row(
+                "SELECT total_play_count, total_play_time_ms FROM global_stats WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read global stats");
+        assert_eq!(play_count, 1);
+        assert_eq!(play_time_ms, 390_000);
+
+        let recent_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM recent_plays", [], |row| row.get(0))
+            .expect("read recent plays");
+        assert_eq!(recent_count, 1);
+    }
 }
