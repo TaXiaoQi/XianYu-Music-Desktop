@@ -214,7 +214,6 @@ async function getDesktopLyricsWindow() {
 }
 
 export function createDesktopLyricsWindowOptions({
-  alwaysOnTop,
   hasStoredBounds,
 }: {
   alwaysOnTop: boolean;
@@ -232,9 +231,10 @@ export function createDesktopLyricsWindowOptions({
     transparent: true,
     shadow: false,
     skipTaskbar: true,
-    alwaysOnTop,
+    alwaysOnTop: true,
     focus: false,
     focusable: true,
+    minimizable: false,
     center: !hasStoredBounds,
   };
 }
@@ -327,6 +327,8 @@ export function useDesktopLyricsWindowBridge() {
       showDoubleLine: desktopLyricsSettings.showDoubleLine,
       enableWordEffect: desktopLyricsSettings.enableWordEffect,
       enableTextOutline: desktopLyricsSettings.enableTextOutline,
+      textOutlineWidth: desktopLyricsSettings.textOutlineWidth,
+      textOutlineColor: desktopLyricsSettings.textOutlineColor,
       isLocked: desktopLyricsSettings.isLocked,
       persistLock: desktopLyricsSettings.persistLock,
       colorScheme: desktopLyricsSettings.colorScheme,

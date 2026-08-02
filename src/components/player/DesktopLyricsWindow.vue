@@ -299,7 +299,7 @@ const {
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   transform-origin: var(--lyrics-line-transform-origin, 50%) center;
   opacity: var(--desktop-text-opacity, 1);
-  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: stroke fill;
   transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
 }
@@ -401,7 +401,7 @@ const {
   white-space: pre-wrap;
   /* 显式声明描边与绘制顺序：描边置于 fill 之上，避免与 background-clip:text
      渐变填充组合时描边被覆盖/随渐变进度抖动，保证播放与未播放状态下描边一致稳定 */
-  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: fill stroke;
 }
 
@@ -516,7 +516,7 @@ const {
 .desktop-empty-state {
   color: var(--desktop-text-secondary);
   font-size: 1.1rem;
-  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: stroke fill;
   font-weight: 600;
   letter-spacing: 0.02em;

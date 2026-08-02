@@ -65,19 +65,41 @@ fn platform_is_foreground_fullscreen() -> bool {
         }
 
         let monitor_rect = monitor_info.rcMonitor;
+        let work_area = monitor_info.rcWork;
         let tolerance = 2;
 
-        let width_delta =
-            ((rect.right - rect.left) - (monitor_rect.right - monitor_rect.left)).abs();
-        let height_delta =
-            ((rect.bottom - rect.top) - (monitor_rect.bottom - monitor_rect.top)).abs();
-        let left_delta = (rect.left - monitor_rect.left).abs();
-        let top_delta = (rect.top - monitor_rect.top).abs();
+        // 如果前景窗口的大小仅覆盖工作区（排除任务栏），这是最大化窗口，不是全屏
+        // 真正的全屏窗口会覆盖整个显示器包括任务栏区域
+        let work_width = work_area.right - work_area.left;
+        let work_height = work_area.bottom - work_area.top;
+        let win_width = rect.right - rect.left;
+        let win_height = rect.bottom - rect.top;
 
-        width_delta <= tolerance
-            && height_delta <= tolerance
-            && left_delta <= tolerance
-            && top_delta <= tolerance
+        // 如果窗口大小接近工作区（最大化）而非整个显示器，不是全屏
+        let monitor_width = monitor_rect.right - monitor_rect.left;
+        let monitor_height = monitor_rect.bottom - monitor_rect.top;
+
+        // 只有窗口真正覆盖了整个显示器（包括任务栏）才算全屏
+        let covers_full_monitor =
+            (win_width - monitor_width).abs() <= tolerance
+            && (win_height - monitor_height).abs() <= tolerance
+            && (rect.left - monitor_rect.left).abs() <= tolerance
+            && (rect.top - monitor_rect.top).abs() <= tolerance;
+
+        // 如果显示器和工作区大小相同（任务栏自动隐藏），则需要额外检查窗口样式
+        if covers_full_monitor && (monitor_width - work_width).abs() <= tolerance && (monitor_height - work_height).abs() <= tolerance {
+            // 任务栏隐藏时，最大化窗口也覆盖整个显示器
+            // 用窗口样式区分：有 WS_THICKFRAME（可调整大小边框）的是最大化窗口
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                GetWindowLongW, GWL_STYLE, WS_THICKFRAME, WS_MAXIMIZE,
+            };
+            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+            if (style & WS_THICKFRAME) != 0 && (style & WS_MAXIMIZE) != 0 {
+                return false;
+            }
+        }
+
+        covers_full_monitor
     }
 }
 

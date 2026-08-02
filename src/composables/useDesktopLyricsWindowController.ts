@@ -218,8 +218,8 @@ export function useDesktopLyricsWindowController(options: {
       const x = position.x - winPos.x;
       const y = position.y - winPos.y;
 
-      const toleranceY = 48 * scaleFactor;
-      const toleranceX = 28 * scaleFactor;
+      const toleranceY = 80 * scaleFactor;
+      const toleranceX = 56 * scaleFactor;
 
       const centerX = W / 2;
       const isOver = y >= 0 && y <= toleranceY && x >= centerX - toleranceX && x <= centerX + toleranceX;
@@ -586,8 +586,9 @@ export function useDesktopLyricsWindowController(options: {
 
   watch(
     () => settings.value.isAlwaysOnTop,
-    (enabled) => {
-      void applyAlwaysOnTopState(enabled);
+    () => {
+      // 桌面歌词窗口始终置顶，忽略设置值
+      void applyAlwaysOnTopState(true);
     },
     { immediate: true },
   );
