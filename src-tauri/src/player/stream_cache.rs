@@ -21,8 +21,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
-/// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿
-pub const MIN_BUFFER_BYTES: u64 = 512 * 1024;
+/// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
+/// 2MB ≈ 125s @ 128kbps，能吸收大部分网络抖动，避免播放中追上下载进度导致音频线程阻塞。
+pub const MIN_BUFFER_BYTES: u64 = 2 * 1024 * 1024;
 
 /// 流式临时文件读取器：包装 File，实现 Read + Seek。
 /// 读取位置接近下载进度时阻塞等待，直到数据就绪。
@@ -47,7 +48,11 @@ impl Read for StreamingTempFileReader {
             if self.download_complete.load(Ordering::Relaxed) {
                 return Ok(0);
             }
-            std::thread::sleep(Duration::from_millis(50));
+            // 注意：此 read() 在音频回调线程调用（经 rodio Decoder → Source::next()）。
+            // 阻塞会导致音频 underrun → 卡音破音。用 3ms 短 sleep 让 cpal 输出缓冲
+            // （通常 ≥50ms）能吸收单次等待。配合 timeBeginPeriod(1)（output/shared.rs
+            // 初始化时调用）使 Windows sleep 真正达到毫秒精度，否则默认 ~15ms。
+            std::thread::sleep(Duration::from_millis(3));
         }
     }
 }
@@ -80,7 +85,8 @@ impl Seek for StreamingTempFileReader {
                 self.pos = target;
                 return self.file.seek(SeekFrom::Start(target)).map(|_| target);
             }
-            std::thread::sleep(Duration::from_millis(50));
+            // seek 通常在暂停态调用，阻塞影响小；仍用 3ms 短 sleep 保持一致。
+            std::thread::sleep(Duration::from_millis(3));
         }
     }
 }
