@@ -8,6 +8,7 @@ import type {
   DesktopLyricsSettings,
   DownloadSettings,
   EqualizerPreset,
+  FooterLayoutSettings,
   ImportedLyricsFont,
   LyricsSettings,
   PluginSettings,
@@ -29,7 +30,9 @@ import {
   type ShortcutSettingsPatch,
 } from './shortcuts';
 import { DEFAULT_SIDEBAR_ORDER, normalizeSidebarOrder } from './sidebarItems';
+import { DEFAULT_FOOTER_LAYOUT, normalizeFooterLayout } from './footerItems';
 import { playerStorage } from '../../services/storage/playerStorage';
+import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
 
 const createUserPresetId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -41,6 +44,7 @@ export type ThemeSettingsPatch = Partial<Omit<ThemeSettings, 'customBackground'>
 };
 
 export type SidebarSettingsPatch = Partial<SidebarSettings>;
+export type FooterLayoutSettingsPatch = Partial<FooterLayoutSettings>;
 
 export type LyricsSettingsPatch = Partial<LyricsSettings>;
 export type DesktopLyricsSettingsPatch = Partial<DesktopLyricsSettings>;
@@ -57,9 +61,10 @@ export type PluginSettingsPatch = Partial<PluginSettings>;
 export type AutoSyncConfigPatch = Partial<AutoSyncConfig>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
+  footerLayout?: FooterLayoutSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
   lyrics?: LyricsSettingsPatch;
   desktopLyrics?: DesktopLyricsSettingsPatch;
@@ -116,6 +121,13 @@ export const defaultSidebarSettings: SidebarSettings = {
   showPlugins: true,
   showAccount: true,
   order: [...DEFAULT_SIDEBAR_ORDER],
+};
+
+export const defaultFooterLayoutSettings: FooterLayoutSettings = {
+  left: [...DEFAULT_FOOTER_LAYOUT.left],
+  middleLeft: DEFAULT_FOOTER_LAYOUT.middleLeft,
+  middleRight: DEFAULT_FOOTER_LAYOUT.middleRight,
+  right: [...DEFAULT_FOOTER_LAYOUT.right],
 };
 
 export const defaultAudioSettings: AudioSettings = {
@@ -195,6 +207,7 @@ export const defaultAppSettings: AppSettings = {
   desktopLyrics: createDefaultDesktopLyricsSettings(),
   theme: defaultThemeSettings,
   sidebar: defaultSidebarSettings,
+  footerLayout: defaultFooterLayoutSettings,
   shortcuts: createDefaultShortcutSettings(),
   showTaskbarPlayer: false,
   taskbarPlayerCanDrag: false,
@@ -217,6 +230,13 @@ export const createDefaultSidebarSettings = (): SidebarSettings => ({
   ...defaultSidebarSettings,
   // order 必须深拷贝，避免多处共享同一数组引用被就地修改
   order: [...defaultSidebarSettings.order],
+});
+
+export const createDefaultFooterLayoutSettings = (): FooterLayoutSettings => ({
+  left: [...defaultFooterLayoutSettings.left],
+  middleLeft: defaultFooterLayoutSettings.middleLeft,
+  middleRight: defaultFooterLayoutSettings.middleRight,
+  right: [...defaultFooterLayoutSettings.right],
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({
@@ -315,6 +335,7 @@ export const createDefaultAppSettings = (): AppSettings => ({
   audio: createDefaultAudioSettings(),
   theme: createDefaultThemeSettings(),
   sidebar: createDefaultSidebarSettings(),
+  footerLayout: createDefaultFooterLayoutSettings(),
   shortcuts: createDefaultShortcutSettings(),
   download: createDefaultDownloadSettings(),
   upload: createDefaultUploadSettings(),
@@ -348,6 +369,20 @@ export const mergeSidebarSettings = (
   ...patch,
   // 归一化顺序：剔除非法项、去重、补齐缺失项，兼容旧配置（无 order 字段）
   order: normalizeSidebarOrder(patch.order ?? base.order),
+});
+
+/**
+ * 合并底部栏布局：把 patch 与 base 合并后整体归一化。
+ * 直接用 normalizeFooterLayout 处理合并结果，确保任何路径写入的布局都合法。
+ */
+export const mergeFooterLayoutSettings = (
+  base: FooterLayoutSettings,
+  patch: FooterLayoutSettingsPatch,
+): FooterLayoutSettings => normalizeFooterLayout({
+  left: patch.left ?? base.left,
+  middleLeft: patch.middleLeft !== undefined ? patch.middleLeft : base.middleLeft,
+  middleRight: patch.middleRight !== undefined ? patch.middleRight : base.middleRight,
+  right: patch.right ?? base.right,
 });
 
 export const mergeAudioSettings = (
@@ -442,20 +477,25 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
+    lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
+      patch.lyricsSyncOffset ?? base.lyricsSyncOffset,
+    ),
     libraryMinDurationSeconds: normalizeLibraryMinDurationSeconds(
       libraryMinDurationSeconds ?? base.libraryMinDurationSeconds,
     ),
-    lyrics: mergeLyricsSettings(base.lyrics, patch.lyrics ?? {}),
-    desktopLyrics: mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics ?? {}),
-    audio: mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio ?? {}),
-    customLyricsFonts: normalizeImportedLyricsFonts(patch.customLyricsFonts ?? base.customLyricsFonts),
-    theme: mergeThemeSettings(base.theme, patch.theme ?? {}),
-    sidebar: mergeSidebarSettings(base.sidebar, patch.sidebar ?? {}),
-    shortcuts: mergeShortcutSettings(base.shortcuts, patch.shortcuts ?? {}),
-    download: mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download ?? {}),
-    upload: mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload ?? {}),
-    plugins: mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins ?? {}),
-    autoSync: mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync ?? {}),
+    // 仅在 patch 含对应子对象时才 merge，避免无谓重建引用触发下游 computed 重算
+    lyrics: patch.lyrics ? mergeLyricsSettings(base.lyrics, patch.lyrics) : base.lyrics,
+    desktopLyrics: patch.desktopLyrics ? mergeDesktopLyricsSettings(base.desktopLyrics, patch.desktopLyrics) : base.desktopLyrics,
+    audio: patch.audio ? mergeAudioSettings(base.audio ?? createDefaultAudioSettings(), patch.audio) : (base.audio ?? createDefaultAudioSettings()),
+    customLyricsFonts: patch.customLyricsFonts ? normalizeImportedLyricsFonts(patch.customLyricsFonts) : base.customLyricsFonts,
+    theme: patch.theme ? mergeThemeSettings(base.theme, patch.theme) : base.theme,
+    sidebar: patch.sidebar ? mergeSidebarSettings(base.sidebar, patch.sidebar) : base.sidebar,
+    footerLayout: patch.footerLayout ? mergeFooterLayoutSettings(base.footerLayout ?? createDefaultFooterLayoutSettings(), patch.footerLayout) : (base.footerLayout ?? createDefaultFooterLayoutSettings()),
+    shortcuts: patch.shortcuts ? mergeShortcutSettings(base.shortcuts, patch.shortcuts) : base.shortcuts,
+    download: patch.download ? mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download) : (base.download ?? createDefaultDownloadSettings()),
+    upload: patch.upload ? mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload) : (base.upload ?? createDefaultUploadSettings()),
+    plugins: patch.plugins ? mergePluginSettings(base.plugins ?? defaultPluginSettings, patch.plugins) : (base.plugins ?? defaultPluginSettings),
+    autoSync: patch.autoSync ? mergeAutoSyncConfig(base.autoSync ?? createDefaultAutoSyncConfig(), patch.autoSync) : (base.autoSync ?? createDefaultAutoSyncConfig()),
   };
 };
 
@@ -496,6 +536,15 @@ export const useSettingsStore = defineStore('settings', () => {
       };
     },
   });
+  const footerLayout = computed<FooterLayoutSettings>({
+    get: () => settings.value.footerLayout,
+    set: nextFooterLayout => {
+      settings.value = {
+        ...settings.value,
+        footerLayout: mergeFooterLayoutSettings(createDefaultFooterLayoutSettings(), nextFooterLayout),
+      };
+    },
+  });
 
   const replaceSettings = (nextSettings: AppSettings) => {
     settings.value = mergeAppSettings(createDefaultAppSettings(), nextSettings);
@@ -528,6 +577,13 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value = {
       ...settings.value,
       sidebar: mergeSidebarSettings(settings.value.sidebar, partialSidebar),
+    };
+  };
+
+  const patchFooterLayout = (partialFooterLayout: FooterLayoutSettingsPatch) => {
+    settings.value = {
+      ...settings.value,
+      footerLayout: mergeFooterLayoutSettings(settings.value.footerLayout, partialFooterLayout),
     };
   };
 
@@ -619,6 +675,7 @@ export const useSettingsStore = defineStore('settings', () => {
     audioDelay,
     theme,
     sidebar,
+    footerLayout,
     equalizerPresets,
     userPresets,
     replaceSettings,
@@ -628,6 +685,7 @@ export const useSettingsStore = defineStore('settings', () => {
     patchTheme,
     replaceSidebar,
     patchSidebar,
+    patchFooterLayout,
     saveEqualizerPreset,
     updateEqualizerPreset,
     deleteEqualizerPreset,
