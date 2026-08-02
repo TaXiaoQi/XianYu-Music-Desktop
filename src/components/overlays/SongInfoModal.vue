@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { SquarePen, Tag } from 'lucide-vue-next';
 import type { Song, SongDetail } from '../../types';
+import type { SongInfoDialogAction } from '../../composables/useSongInfoDialog';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { usePlayer } from '../../composables/player';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
@@ -16,6 +17,7 @@ import { tauriInvoke } from '../../services/tauri/invoke';
 const props = defineProps<{
   visible: boolean;
   song: Song | null;
+  initialAction?: SongInfoDialogAction;
 }>();
 
 const emit = defineEmits(['close']);
@@ -64,6 +66,7 @@ const lyricsSourcePath = ref<string | null>(null);
 const isLyricsLoading = ref(false);
 const isLyricsSaving = ref(false);
 const lyricsError = ref('');
+const lyricsTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const isSongInfoExpanded = ref(false);
 const isLyricsEditorExpanded = ref(false);
 const pendingSongInfoExpanded = ref<boolean | null>(null);
@@ -171,6 +174,8 @@ watch(
     lyricsSourcePath.value = lyricsResult.sourcePath;
     lyricsError.value = lyricsResult.error;
     isLyricsLoading.value = false;
+    await nextTick();
+    await applyInitialAction(path);
   },
   { immediate: true },
 );
@@ -414,6 +419,26 @@ const handleChooseCover = async () => {
 
   songInfoEditForm.value.coverPath = selected;
   songInfoEditForm.value.coverPreviewUrl = convertFileSrc(selected);
+};
+
+const applyInitialAction = async (path: string) => {
+  if (!props.visible || props.song?.path !== path) return;
+
+  if (props.initialAction === 'cover') {
+    beginSongInfoEdit();
+    isSongInfoExpanded.value = true;
+    isLyricsEditorExpanded.value = false;
+    await nextTick();
+    await handleChooseCover();
+    return;
+  }
+
+  if (props.initialAction === 'lyrics') {
+    isSongInfoExpanded.value = false;
+    isLyricsEditorExpanded.value = true;
+    await nextTick();
+    lyricsTextareaRef.value?.focus();
+  }
 };
 
 const handleSaveSongInfo = async () => {
@@ -803,6 +828,7 @@ const formatTime = (timestampSeconds?: number) => {
 
           <aside class="lyrics-editor-panel" :class="isLyricsEditorVisuallyExpanded ? 'lyrics-editor-panel--expanded' : ''">
             <textarea
+              ref="lyricsTextareaRef"
               v-model="lyricsText"
               class="lyrics-editor-textarea custom-scrollbar"
               :placeholder="isLyricsLoading ? '正在读取歌词...' : '[00:00.00] 在这里编辑 LRC 歌词'"

@@ -34,6 +34,16 @@ describe('SongInfoModal lyrics editor theme', () => {
   });
 });
 
+describe('SongInfoModal targeted editing', () => {
+  it('opens directly into cover or lyrics editing when requested', () => {
+    expect(source).toContain("props.initialAction === 'cover'");
+    expect(source).toContain('await handleChooseCover()');
+    expect(source).toContain("props.initialAction === 'lyrics'");
+    expect(source).toContain('lyricsTextareaRef.value?.focus()');
+    expect(source).toContain('ref="lyricsTextareaRef"');
+  });
+});
+
 describe('SongInfoModal responsive layout', () => {
   it('lets the song info body keep its content height when the modal stacks on narrow windows', () => {
     const narrowWindowStyles = source.slice(source.indexOf('@media (max-width: 1100px)'));
