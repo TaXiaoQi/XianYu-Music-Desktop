@@ -105,6 +105,7 @@ fn restore_preferred_output(
     progress: &Arc<SharedProgress>,
     volume_balance_gain: f32,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
     current_remote_stream: Option<&RemoteStreamSource>,
     current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
@@ -161,6 +162,7 @@ fn restore_preferred_output(
         is_playing_flag,
         progress,
         equalizer_handle,
+        sound_effect_handle,
         user_volume,
         current_remote_stream,
         current_streaming_state,
@@ -177,6 +179,7 @@ fn restore_shared_output(
     is_playing_flag: bool,
     progress: &Arc<SharedProgress>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
     current_remote_stream: Option<&RemoteStreamSource>,
     current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
@@ -192,6 +195,7 @@ fn restore_shared_output(
         is_playing_flag,
         progress,
         equalizer_handle,
+        sound_effect_handle,
         user_volume,
         current_remote_stream,
         current_streaming_state,
@@ -686,6 +690,7 @@ fn append_decoded_source<R>(
     volume_balance_gain: f32,
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
 ) where
     R: Read + Seek + Send + Sync + 'static,
@@ -729,9 +734,15 @@ fn append_decoded_source<R>(
             let eq_source =
                 crate::player::equalizer::Equalizer::new(normalized_source, equalizer_handle);
 
+            // 2.5 SoundEffectSource 音效处理源
+            let se_source = crate::player::sound_effect::SoundEffectSource::new(
+                eq_source,
+                sound_effect_handle,
+            );
+
             // 3. UserVolumeSource 自定义主音量节点
             let vol_source =
-                crate::player::equalizer::UserVolumeSource::new(eq_source, user_volume);
+                crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
 
             // 4. ClipGuardSource 最终安全限幅源
             let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
@@ -763,6 +774,7 @@ fn handle_play(
     volume_balance_gain: f32,
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
 ) {
     *current_path = source.display_path();
@@ -787,6 +799,7 @@ fn handle_play(
                     volume_balance_gain,
                     current_normalizer_handle,
                     equalizer_handle,
+                    sound_effect_handle,
                     user_volume,
                 );
             }
@@ -803,6 +816,7 @@ fn handle_play(
                     volume_balance_gain,
                     current_normalizer_handle,
                     equalizer_handle,
+                    sound_effect_handle,
                     user_volume,
                 ),
                 Err(e) => {
@@ -823,6 +837,7 @@ fn handle_play(
                     volume_balance_gain,
                     current_normalizer_handle,
                     equalizer_handle,
+                    sound_effect_handle,
                     user_volume,
                 ),
                 Err(e) => {
@@ -851,6 +866,7 @@ fn handle_seek(
     volume_balance_gain: f32,
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
@@ -900,6 +916,7 @@ fn handle_seek(
                             volume_balance_gain,
                             current_normalizer_handle,
                             equalizer_handle,
+                            sound_effect_handle,
                             user_volume,
                         ),
                         Err(e) => {
@@ -917,6 +934,7 @@ fn handle_seek(
                             volume_balance_gain,
                             current_normalizer_handle,
                             equalizer_handle,
+                            sound_effect_handle,
                             user_volume,
                         ),
                         Err(e) => {
@@ -934,6 +952,7 @@ fn handle_seek(
                             volume_balance_gain,
                             current_normalizer_handle,
                             equalizer_handle,
+                            sound_effect_handle,
                             user_volume,
                         ),
                         Err(e) => {
@@ -978,6 +997,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
     // 在起播时创建非阻塞的 Equalizer 和 UserVolume 快照句柄
     let thread_eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
         crate::player::equalizer::EqualizerSettings::default(),
+    ));
+    // 音效参数句柄（阶段 1：直通占位，后续阶段接入 DSP）
+    let thread_se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
+        crate::player::sound_effect::SoundEffectSettings::default(),
     ));
     let thread_user_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
 
@@ -1151,6 +1174,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_volume_balance_gain,
                             &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
+                            thread_se_handle.clone(),
                             thread_user_volume.clone(),
                         );
                         // 新歌曲 sink 创建后重新应用播放倍速
@@ -1230,6 +1254,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_volume_balance_gain,
                             &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
+                            thread_se_handle.clone(),
                             thread_user_volume.clone(),
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
@@ -1272,6 +1297,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &thread_progress,
                             current_volume_balance_gain,
                             thread_eq_handle.clone(),
+                            thread_se_handle.clone(),
                             thread_user_volume.clone(),
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
@@ -1323,6 +1349,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &thread_progress,
                             current_volume_balance_gain,
                             thread_eq_handle.clone(),
+                            thread_se_handle.clone(),
                             thread_user_volume.clone(),
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
@@ -1370,6 +1397,11 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             playback.set_equalizer_settings(settings);
                         }
                     }
+                    AudioCommand::SetSoundEffectSettings { settings } => {
+                        // 阶段 1：仅更新共享句柄（SoundEffectSource 直通占位）。
+                        // WASAPI 独占模式有独立音频链，暂未接入音效（后续阶段视需要扩展）。
+                        thread_se_handle.set_settings(settings);
+                    }
                 },
                 Err(RecvTimeoutError::Timeout) => {
                     #[cfg(target_os = "windows")]
@@ -1392,6 +1424,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 is_playing_flag,
                                 &thread_progress,
                                 thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
@@ -1444,6 +1477,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 &thread_progress,
                                 current_volume_balance_gain,
                                 thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
@@ -1780,6 +1814,9 @@ mod tests {
         let eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
             crate::player::equalizer::EqualizerSettings::default(),
         ));
+        let se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
+            crate::player::sound_effect::SoundEffectSettings::default(),
+        ));
         let user_volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0_f32.to_bits()));
 
         handle_play(
@@ -1793,6 +1830,7 @@ mod tests {
             1.0,
             &mut current_normalizer_handle,
             eq_handle,
+            se_handle,
             user_volume,
         );
 

@@ -4,6 +4,7 @@ import type {
   AudioOutputStatus,
   PlayAudioOptions,
   SeekAudioOptions,
+  SoundEffectSettings,
   UpdateLoudnessSettingsOptions,
   UpdatePlaybackMetadataOptions,
   LoudnessRecord,
@@ -61,6 +62,10 @@ export const playbackApi = {
     tauriInvoke('get_track_loudness_info', { songId }),
   updateLoudnessSettings: (options: UpdateLoudnessSettingsOptions): Promise<void> =>
     tauriInvoke('update_loudness_settings', options),
+
+  // 音效参数同步（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）
+  setSoundEffectSettings: (settings: SoundEffectSettings): Promise<void> =>
+    tauriInvoke('set_sound_effect_settings', { settings }),
 
   // 在线音频流式缓存管理
   setStreamCacheMaxSize: (bytes: number): Promise<void> =>

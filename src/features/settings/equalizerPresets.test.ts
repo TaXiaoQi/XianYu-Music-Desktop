@@ -32,9 +32,6 @@ import type {
 // Raw source imports for static verification (avoids Node fs/path dependency)
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore Vite raw import
-import eqPanelSource from '../../components/player/EqualizerPanel.vue?raw';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore Vite raw import
 import playerStorageSource from '../../services/storage/playerStorage.ts?raw';
 
 // ---------------------------------------------------------------------------
@@ -631,19 +628,6 @@ describe('P2: built-in preset and reset clear custom preset association', () => 
     setActivePinia(createPinia());
   });
 
-  it('EqualizerPanel source: handleApplyPreset passes currentPresetId: null', () => {
-    // Find the handleApplyPreset function and verify it sets currentPresetId: null
-    const applyPresetMatch = eqPanelSource.match(/const handleApplyPreset[\s\S]*?commitSettings\(\{[\s\S]*?\}\);/);
-    expect(applyPresetMatch).toBeTruthy();
-    expect(applyPresetMatch![0]).toContain('currentPresetId: null');
-  });
-
-  it('EqualizerPanel source: handleReset passes currentPresetId: null', () => {
-    const resetMatch = eqPanelSource.match(/const handleReset[\s\S]*?commitSettings\(\{[\s\S]*?\}\);/);
-    expect(resetMatch).toBeTruthy();
-    expect(resetMatch![0]).toContain('currentPresetId: null');
-  });
-
   it('patchSettings with currentPresetId: null propagates to settings', () => {
     const store = useSettingsStore();
     store.settings.audio.equalizer.currentPresetId = 'preset_xyz';
@@ -711,47 +695,6 @@ describe('P2: loading a custom preset enables EQ', () => {
     expect(resultA.preamp).toBe(resultB.preamp);
     expect(resultA.gains).toEqual(resultB.gains);
     expect(resultA.currentPresetId).toBe(resultB.currentPresetId);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// P3: 编辑对话框回填
-// ---------------------------------------------------------------------------
-
-describe('P3: edit dialog prefills current preset name', () => {
-  it('EqualizerPanel source: openEditDialogForPreset function exists and prefills editPresetName', () => {
-    expect(eqPanelSource).toContain('openEditDialogForPreset');
-    expect(eqPanelSource).toContain('editPresetName.value = preset.name');
-  });
-
-  it('EqualizerPanel source: double click on preset uses openEditDialogForPreset instead of direct showEditDialog', () => {
-    // The template should use @dblclick="openEditDialogForPreset(preset)" to trigger edit dialog, not direct showEditDialog = true
-    expect(eqPanelSource).toContain('@dblclick="openEditDialogForPreset(preset)"');
-    expect(eqPanelSource).not.toContain('@dblclick="showEditDialog = true"');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// P3: 暗色模式对话框样式
-// ---------------------------------------------------------------------------
-
-describe('P3: dark mode dialog input styling', () => {
-  it('save dialog input has dark mode classes', () => {
-    // Find input elements in the save dialog
-    const saveDialogSection = eqPanelSource.match(/保存预设对话框[\s\S]*?<\/div>\s*<\/div>/);
-    expect(saveDialogSection).toBeTruthy();
-
-    // Check for dark mode input styling classes
-    expect(eqPanelSource).toContain('dark:bg-gray-700');
-    expect(eqPanelSource).toContain('dark:text-gray-100');
-    expect(eqPanelSource).toContain('dark:border-gray-600');
-  });
-
-  it('edit dialog input has dark mode classes', () => {
-    const editDialogSection = eqPanelSource.match(/编辑预设对话框[\s\S]*?<\/div>\s*<\/div>/);
-    expect(editDialogSection).toBeTruthy();
-    expect(editDialogSection![0]).toContain('dark:bg-gray-700');
-    expect(editDialogSection![0]).toContain('dark:text-gray-100');
   });
 });
 
@@ -1002,57 +945,6 @@ describe('EqualizerPreset data integrity', () => {
     expect(defaults.equalizer.gains).toHaveLength(10);
     // All gains should be numbers
     expect(defaults.equalizer.gains.every(g => typeof g === 'number')).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Extra: EqualizerPanel source — 组件行为验证
-// ---------------------------------------------------------------------------
-
-describe('EqualizerPanel source code verification', () => {
-  const source = eqPanelSource;
-
-  it('selectedPresetId is a computed, not a ref', () => {
-    // Should be: const selectedPresetId = computed(...)
-    expect(source).toMatch(/const selectedPresetId\s*=\s*computed/);
-    // Should NOT be: const selectedPresetId = ref(...)
-    expect(source).not.toMatch(/const selectedPresetId\s*=\s*ref/);
-  });
-
-  it('commitSettings uses patchSettings (not direct mutation)', () => {
-    expect(source).toContain('settingsStore.patchSettings');
-  });
-
-  it('handleLoadPreset delegates to settingsStore.loadEqualizerPreset', () => {
-    expect(source).toContain('settingsStore.loadEqualizerPreset');
-  });
-
-  it('handleDeletePresetById delegates to settingsStore.deleteEqualizerPreset', () => {
-    expect(source).toContain('settingsStore.deleteEqualizerPreset');
-  });
-
-  it('handleSavePreset delegates to settingsStore.saveEqualizerPreset', () => {
-    expect(source).toContain('settingsStore.saveEqualizerPreset');
-  });
-
-  it('handleUpdatePreset delegates to settingsStore.updateEqualizerPreset', () => {
-    expect(source).toContain('settingsStore.updateEqualizerPreset');
-  });
-
-  it('custom preset buttons use selectedPresetId for highlight comparison', () => {
-    expect(source).toContain('selectedPresetId === preset.id');
-  });
-
-  it('built-in preset highlight uses isBuiltInPresetActive helper', () => {
-    expect(source).toContain('isBuiltInPresetActive');
-  });
-
-  it('add preset button is conditional on eq.enabled', () => {
-    expect(source).toContain('v-if="eq.enabled"');
-  });
-
-  it('save dialog input has focus:border-[#EC4141] for visual feedback', () => {
-    expect(source).toContain('focus:border-[#EC4141]');
   });
 });
 

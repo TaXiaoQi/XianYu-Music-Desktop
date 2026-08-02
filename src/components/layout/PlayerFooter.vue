@@ -7,7 +7,7 @@ import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import AudioVisualizer from '../player/AudioVisualizer.vue';
 import FooterContextMenu from "../overlays/FooterContextMenu.vue";
-import EqualizerPanel from '../player/EqualizerPanel.vue';
+import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
 import ModernModal from '../common/ModernModal.vue';
@@ -537,8 +537,6 @@ const speedLabel = computed(() => `${playbackSpeed.value.toFixed(2)}x`);
 
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
-const eqButtonRef = ref<HTMLElement | null>(null);
-const eqPanelRef = ref<HTMLElement | null>(null);
 
 // --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
 const showFooterTools = ref(false);
@@ -563,11 +561,6 @@ const toggleEqPanel = (e: MouseEvent) => {
 
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
-  if (showEqPanel.value && eqPanelRef.value && eqButtonRef.value) {
-    if (!eqPanelRef.value.contains(target) && !eqButtonRef.value.contains(target)) {
-      showEqPanel.value = false;
-    }
-  }
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
       showQualityMenu.value = false;
@@ -1063,7 +1056,6 @@ onUnmounted(() => {
       <!-- 均衡器按钮与弹出面板：从工具收纳中放出 -->
       <div v-if="settings.audio.showEqualizerInFooter !== false" class="relative flex items-center justify-center h-full z-[70]">
         <button
-          ref="eqButtonRef"
           @click="toggleEqPanel"
           :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
           title="均衡器 (EQ)"
@@ -1071,15 +1063,7 @@ onUnmounted(() => {
           <SlidersHorizontal class="h-4 w-4" :stroke-width="2.2" />
         </button>
 
-        <transition name="fade-scale">
-          <div
-            v-if="showEqPanel"
-            ref="eqPanelRef"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80] filter drop-shadow-[0_8px_20px_rgba(0,0,0,0.15)]"
-          >
-            <EqualizerPanel />
-          </div>
-        </transition>
+        <EqualizerPanel :visible="showEqPanel" @update:visible="showEqPanel = $event" />
       </div>
 
       <!-- 播放队列：从中间区域移至原下载按钮位置 -->

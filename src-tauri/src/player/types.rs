@@ -1,4 +1,5 @@
 use crate::player::equalizer::EqualizerSettings;
+use crate::player::sound_effect::SoundEffectSettings;
 use rodio::source::SeekError;
 use rodio::Source;
 use serde::{Deserialize, Serialize};
@@ -169,6 +170,9 @@ pub enum AudioCommand {
     },
     SetEqualizerSettings {
         settings: EqualizerSettings,
+    },
+    SetSoundEffectSettings {
+        settings: SoundEffectSettings,
     },
     SetDevice(Option<String>),
     SetOutputMode(AudioOutputMode),

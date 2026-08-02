@@ -13,6 +13,7 @@ export default tseslint.config(
       "src-tauri/**",
       "tag_test/**",
       ".webpack/**",
+      "YinDongMusic/**",
     ],
   },
   js.configs.recommended,
@@ -29,6 +30,7 @@ export default tseslint.config(
       },
       parserOptions: {
         parser: tseslint.parser,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {

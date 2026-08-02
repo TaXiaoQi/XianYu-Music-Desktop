@@ -35,6 +35,7 @@ export const playerStorageKeys = {
   localCustomOrder: 'player_local_custom_order',
   legacyAppSettings: 'app_settings',
   equalizerPresets: 'player_equalizer_presets',
+  soundEffectState: 'player_sound_effect_state',
 } as const;
 
 const isSong = (value: unknown): value is Song =>
