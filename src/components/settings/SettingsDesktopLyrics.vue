@@ -10,6 +10,9 @@ import {
   DEFAULT_DESKTOP_CUSTOM_TRANSLATION_COLOR,
   DEFAULT_DESKTOP_CUSTOM_UNPLAYED_COLOR,
   DEFAULT_DESKTOP_TEXT_SHADOW_COLOR,
+  DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
+  MIN_DESKTOP_TEXT_OUTLINE_WIDTH,
+  MAX_DESKTOP_TEXT_OUTLINE_WIDTH,
   buildImportedLyricsFontOptions,
   LYRICS_FONT_OPTIONS,
   MAX_DESKTOP_TEXT_SHADOW_STRENGTH,
@@ -66,6 +69,12 @@ const SHADOW_COLOR_PRESETS = [
   { label: '红', value: DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR },
 ];
 
+const OUTLINE_COLOR_PRESETS = [
+  { label: '黑', value: '#000000' },
+  { label: '白', value: '#FFFFFF' },
+  { label: '红', value: DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR },
+];
+
 const { settings } = useSettings();
 const { lyricsSettings, desktopLyricsSettings } = useLyrics();
 
@@ -80,6 +89,8 @@ const localSettings = ref({
   firstLineTextShadowStrength: desktopLyricsSettings.firstLineTextShadowStrength,
   secondLineTextShadowStrength: desktopLyricsSettings.secondLineTextShadowStrength,
   textShadowColor: desktopLyricsSettings.textShadowColor,
+  textOutlineWidth: desktopLyricsSettings.textOutlineWidth,
+  textOutlineColor: desktopLyricsSettings.textOutlineColor,
   playerAlignment: desktopLyricsSettings.playerAlignment,
   playerFontPreset: desktopLyricsSettings.playerFontPreset,
   colorScheme: desktopLyricsSettings.colorScheme,
@@ -91,29 +102,7 @@ const localSettings = ref({
   customTranslationColor: desktopLyricsSettings.customTranslationColor,
 });
 
-const isModified = computed(() => {
-  const isNumChanged = (a: number, b: number) => Math.abs(a - b) >= 0.001;
-
-  return (
-    isNumChanged(localSettings.value.playerFontScale, desktopLyricsSettings.playerFontScale) ||
-    isNumChanged(localSettings.value.playerLineGap, desktopLyricsSettings.playerLineGap) ||
-    isNumChanged(localSettings.value.playerOffsetX, desktopLyricsSettings.playerOffsetX) ||
-    isNumChanged(localSettings.value.playerOffsetY, desktopLyricsSettings.playerOffsetY) ||
-    isNumChanged(localSettings.value.textOpacity, desktopLyricsSettings.textOpacity) ||
-    isNumChanged(localSettings.value.firstLineTextShadowStrength, desktopLyricsSettings.firstLineTextShadowStrength) ||
-    isNumChanged(localSettings.value.secondLineTextShadowStrength, desktopLyricsSettings.secondLineTextShadowStrength) ||
-    localSettings.value.textShadowColor !== desktopLyricsSettings.textShadowColor ||
-    localSettings.value.playerAlignment !== desktopLyricsSettings.playerAlignment ||
-    localSettings.value.playerFontPreset !== desktopLyricsSettings.playerFontPreset ||
-    localSettings.value.colorScheme !== desktopLyricsSettings.colorScheme ||
-    localSettings.value.customPlayedColor !== desktopLyricsSettings.customPlayedColor ||
-    localSettings.value.customUnplayedColor !== desktopLyricsSettings.customUnplayedColor ||
-    localSettings.value.customRomajiPlayedColor !== desktopLyricsSettings.customRomajiPlayedColor ||
-    localSettings.value.customRomajiUnplayedColor !== desktopLyricsSettings.customRomajiUnplayedColor ||
-    localSettings.value.customRomajiColor !== desktopLyricsSettings.customRomajiColor ||
-    localSettings.value.customTranslationColor !== desktopLyricsSettings.customTranslationColor
-  );
-});
+let isSyncingFromStore = false;
 
 watch(
   () => [
@@ -125,6 +114,8 @@ watch(
     desktopLyricsSettings.firstLineTextShadowStrength,
     desktopLyricsSettings.secondLineTextShadowStrength,
     desktopLyricsSettings.textShadowColor,
+    desktopLyricsSettings.textOutlineWidth,
+    desktopLyricsSettings.textOutlineColor,
     desktopLyricsSettings.playerAlignment,
     desktopLyricsSettings.playerFontPreset,
     desktopLyricsSettings.colorScheme,
@@ -136,27 +127,29 @@ watch(
     desktopLyricsSettings.customTranslationColor,
   ],
   (newVal) => {
-    if (!isModified.value) {
-      localSettings.value = {
-        playerFontScale: newVal[0] as number,
-        playerLineGap: newVal[1] as number,
-        playerOffsetX: newVal[2] as number,
-        playerOffsetY: newVal[3] as number,
-        textOpacity: newVal[4] as number,
-        firstLineTextShadowStrength: newVal[5] as number,
-        secondLineTextShadowStrength: newVal[6] as number,
-        textShadowColor: newVal[7] as string,
-        playerAlignment: newVal[8] as any,
-        playerFontPreset: newVal[9] as any,
-        colorScheme: newVal[10] as any,
-        customPlayedColor: newVal[11] as string,
-        customUnplayedColor: newVal[12] as string,
-        customRomajiPlayedColor: newVal[13] as string,
-        customRomajiUnplayedColor: newVal[14] as string,
-        customRomajiColor: newVal[15] as string,
-        customTranslationColor: newVal[16] as string,
-      };
-    }
+    isSyncingFromStore = true;
+    localSettings.value = {
+      playerFontScale: newVal[0] as number,
+      playerLineGap: newVal[1] as number,
+      playerOffsetX: newVal[2] as number,
+      playerOffsetY: newVal[3] as number,
+      textOpacity: newVal[4] as number,
+      firstLineTextShadowStrength: newVal[5] as number,
+      secondLineTextShadowStrength: newVal[6] as number,
+      textShadowColor: newVal[7] as string,
+      textOutlineWidth: newVal[8] as number,
+      textOutlineColor: newVal[9] as string,
+      playerAlignment: newVal[10] as any,
+      playerFontPreset: newVal[11] as any,
+      colorScheme: newVal[12] as any,
+      customPlayedColor: newVal[13] as string,
+      customUnplayedColor: newVal[14] as string,
+      customRomajiPlayedColor: newVal[15] as string,
+      customRomajiUnplayedColor: newVal[16] as string,
+      customRomajiColor: newVal[17] as string,
+      customTranslationColor: newVal[18] as string,
+    };
+    nextTick(() => { isSyncingFromStore = false; });
   },
   { deep: true }
 );
@@ -165,27 +158,11 @@ function applyChanges() {
   useLyricsSettingsStore().patchDesktopLyricsSettings(toRaw(localSettings.value));
 }
 
-function cancelChanges() {
-  localSettings.value = {
-    playerFontScale: desktopLyricsSettings.playerFontScale,
-    playerLineGap: desktopLyricsSettings.playerLineGap,
-    playerOffsetX: desktopLyricsSettings.playerOffsetX,
-    playerOffsetY: desktopLyricsSettings.playerOffsetY,
-    textOpacity: desktopLyricsSettings.textOpacity,
-    firstLineTextShadowStrength: desktopLyricsSettings.firstLineTextShadowStrength,
-    secondLineTextShadowStrength: desktopLyricsSettings.secondLineTextShadowStrength,
-    textShadowColor: desktopLyricsSettings.textShadowColor,
-    playerAlignment: desktopLyricsSettings.playerAlignment,
-    playerFontPreset: desktopLyricsSettings.playerFontPreset,
-    colorScheme: desktopLyricsSettings.colorScheme,
-    customPlayedColor: desktopLyricsSettings.customPlayedColor,
-    customUnplayedColor: desktopLyricsSettings.customUnplayedColor,
-    customRomajiPlayedColor: desktopLyricsSettings.customRomajiPlayedColor,
-    customRomajiUnplayedColor: desktopLyricsSettings.customRomajiUnplayedColor,
-    customRomajiColor: desktopLyricsSettings.customRomajiColor,
-    customTranslationColor: desktopLyricsSettings.customTranslationColor,
-  };
-}
+// 实时应用：localSettings 变化时立即同步到 store，桌面歌词即时更新
+watch(localSettings, () => {
+  if (isSyncingFromStore) return;
+  applyChanges();
+}, { deep: true });
 
 function resetToDefault() {
   const defaults = createDefaultDesktopLyricsSettings();
@@ -198,6 +175,8 @@ function resetToDefault() {
     firstLineTextShadowStrength: defaults.firstLineTextShadowStrength,
     secondLineTextShadowStrength: defaults.secondLineTextShadowStrength,
     textShadowColor: defaults.textShadowColor,
+    textOutlineWidth: defaults.textOutlineWidth,
+    textOutlineColor: defaults.textOutlineColor,
     playerAlignment: defaults.playerAlignment,
     playerFontPreset: defaults.playerFontPreset,
     colorScheme: defaults.colorScheme,
@@ -284,7 +263,8 @@ const previewWidgetStyle = computed(() => {
       : 'color-mix(in srgb, var(--desktop-accent-c) 28%, rgba(255, 255, 255, 0.76))',
     '--desktop-text-opacity': localSettings.value.textOpacity.toString(),
     '--desktop-text-shadow-color': hexToRgbTriplet(localSettings.value.textShadowColor),
-    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? '1.5px' : '0px',
+    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? `${desktopLyricsSettings.textOutlineWidth}px` : '0px',
+    '--desktop-text-outline-color': desktopLyricsSettings.textOutlineColor,
     '--desktop-first-line-text-shadow-alpha': (localSettings.value.firstLineTextShadowStrength / 100).toString(),
     '--desktop-first-line-text-shadow-blur': `${Math.round(localSettings.value.firstLineTextShadowStrength * 0.24)}px`,
     '--desktop-second-line-text-shadow-alpha': (localSettings.value.secondLineTextShadowStrength / 100).toString(),
@@ -343,7 +323,7 @@ const fontPresetMenuStyle = ref<Record<string, string>>({});
 const showLyricsSyncOffsetPanel = ref(false);
 const isResettingWindowBounds = ref(false);
 const isCustomColorModalOpen = ref(false);
-type DesktopCustomColorKind = 'played' | 'unplayed' | 'romajiPlayed' | 'romajiUnplayed' | 'translation';
+type DesktopCustomColorKind = 'played' | 'unplayed' | 'romajiPlayed' | 'romajiUnplayed' | 'translation' | 'outline';
 const activeCustomColorKind = ref<DesktopCustomColorKind | null>(null);
 const customPickerHue = ref(0);
 const customPickerSaturation = ref(100);
@@ -374,6 +354,9 @@ const selectedFontFamily = computed(() => {
 
 const isCustomShadowColor = computed(() => {
   return !SHADOW_COLOR_PRESETS.some((preset) => preset.value === localSettings.value.textShadowColor);
+});
+const isCustomOutlineColor = computed(() => {
+  return !OUTLINE_COLOR_PRESETS.some((preset) => preset.value === desktopLyricsSettings.textOutlineColor);
 });
 const customPreviewPlayedStyle = computed(() => ({
   color: localSettings.value.customPlayedColor,
@@ -438,6 +421,7 @@ const activeCustomColorLabel = computed(() => {
     romajiPlayed: '罗马音 已播放',
     romajiUnplayed: '罗马音 未播放',
     translation: '翻译',
+    outline: '描边颜色',
   };
   return activeCustomColorKind.value ? labels[activeCustomColorKind.value] : '';
 });
@@ -555,6 +539,18 @@ function setDesktopTextShadowColor(value: string) {
   localSettings.value.textShadowColor = normalizeHexColor(value, DEFAULT_DESKTOP_TEXT_SHADOW_COLOR);
 }
 
+function setDesktopTextOutlineWidthLive(value: number) {
+  const clamped = Math.min(MAX_DESKTOP_TEXT_OUTLINE_WIDTH, Math.max(MIN_DESKTOP_TEXT_OUTLINE_WIDTH, Math.round(value * 2) / 2));
+  desktopLyricsSettings.textOutlineWidth = clamped;
+  localSettings.value.textOutlineWidth = clamped;
+}
+
+function setDesktopTextOutlineColorLive(value: string) {
+  const normalized = normalizeHexColor(value, DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR);
+  desktopLyricsSettings.textOutlineColor = normalized;
+  localSettings.value.textOutlineColor = normalized;
+}
+
 function setDesktopAlignment(value: DesktopLyricsPlayerAlignment) {
   localSettings.value.playerAlignment = normalizeDesktopPlayerAlignment(value);
 }
@@ -583,6 +579,7 @@ function setDesktopCustomColor(kind: DesktopCustomColorKind, value: string) {
     romajiPlayed: DEFAULT_DESKTOP_CUSTOM_ROMAJI_PLAYED_COLOR,
     romajiUnplayed: DEFAULT_DESKTOP_CUSTOM_ROMAJI_UNPLAYED_COLOR,
     translation: DEFAULT_DESKTOP_CUSTOM_TRANSLATION_COLOR,
+    outline: DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
   };
   const fallback = fallbackMap[kind];
   const normalized = normalizeHexColor(value, fallback);
@@ -596,11 +593,16 @@ function setDesktopCustomColor(kind: DesktopCustomColorKind, value: string) {
   } else if (kind === 'romajiUnplayed') {
     localSettings.value.customRomajiUnplayedColor = normalized;
     localSettings.value.customRomajiColor = normalized;
+  } else if (kind === 'outline') {
+    localSettings.value.textOutlineColor = normalized;
+    desktopLyricsSettings.textOutlineColor = normalized;
   } else {
     localSettings.value.customTranslationColor = normalized;
   }
 
-  localSettings.value.colorScheme = 'custom';
+  if (kind !== 'outline') {
+    localSettings.value.colorScheme = 'custom';
+  }
 }
 
 function getDesktopCustomColor(kind: DesktopCustomColorKind) {
@@ -608,6 +610,7 @@ function getDesktopCustomColor(kind: DesktopCustomColorKind) {
   if (kind === 'unplayed') return localSettings.value.customUnplayedColor;
   if (kind === 'romajiPlayed') return localSettings.value.customRomajiPlayedColor;
   if (kind === 'romajiUnplayed') return localSettings.value.customRomajiUnplayedColor;
+  if (kind === 'outline') return localSettings.value.textOutlineColor;
   return localSettings.value.customTranslationColor;
 }
 
@@ -646,7 +649,9 @@ function openCustomColorPicker(kind: DesktopCustomColorKind, event: MouseEvent) 
   const anchor = event.currentTarget as HTMLElement | null;
   activeCustomColorKind.value = kind;
   syncCustomPickerFromColor(getDesktopCustomColor(kind));
-  localSettings.value.colorScheme = 'custom';
+  if (kind !== 'outline') {
+    localSettings.value.colorScheme = 'custom';
+  }
   if (anchor) {
     updateCustomColorPanelPosition(anchor);
   }
@@ -916,6 +921,56 @@ onUnmounted(() => {
           </span>
         </button>
 
+        <!-- 描边子设置：粗细 & 颜色 -->
+        <Transition name="desktop-expand-panel">
+          <div v-if="desktopLyricsSettings.enableTextOutline" class="desktop-setting-expand">
+            <div class="desktop-setting-expand-inner">
+              <div class="desktop-compact-row">
+                <!-- 描边粗细 -->
+                <div class="desktop-compact-slider-cell">
+                  <div class="desktop-compact-label shrink-0 text-left">粗细</div>
+                  <input
+                    type="range"
+                    :min="MIN_DESKTOP_TEXT_OUTLINE_WIDTH"
+                    :max="MAX_DESKTOP_TEXT_OUTLINE_WIDTH"
+                    step="0.5"
+                    :value="desktopLyricsSettings.textOutlineWidth"
+                    @input="setDesktopTextOutlineWidthLive(Number(($event.target as HTMLInputElement).value))"
+                    aria-label="描边粗细"
+                    class="desktop-compact-range-slider"
+                  />
+                  <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
+                    {{ desktopLyricsSettings.textOutlineWidth }}px
+                  </span>
+                </div>
+                <!-- 描边颜色 -->
+                <div class="desktop-compact-cell flex items-center justify-between">
+                  <div class="desktop-compact-label">颜色</div>
+                  <div class="desktop-compact-selector-shadow flex items-center gap-1.5">
+                    <button
+                      v-for="preset in OUTLINE_COLOR_PRESETS"
+                      :key="preset.value"
+                      type="button"
+                      class="desktop-compact-color-preset"
+                      :class="{ 'desktop-compact-color-preset--active': desktopLyricsSettings.textOutlineColor === preset.value }"
+                      :style="{ backgroundColor: preset.value }"
+                      :title="'切换描边颜色: ' + preset.label"
+                      @click="setDesktopTextOutlineColorLive(preset.value)"
+                    />
+                    <button
+                      type="button"
+                      class="desktop-compact-color-preset desktop-compact-color-preset--custom"
+                      :class="{ 'desktop-compact-color-preset--active': isCustomOutlineColor }"
+                      title="自定义描边颜色"
+                      @click="openCustomColorPicker('outline', $event)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
         <button
           type="button"
           class="desktop-setting-row"
@@ -1074,7 +1129,7 @@ onUnmounted(() => {
             <!-- 深浅色预览背景切换按钮 -->
             <button
               type="button"
-              class="desktop-preview-btn desktop-preview-btn--theme flex items-center gap-1.5"
+              class="desktop-preview-btn desktop-preview-btn--theme flex items-center gap-1.5 whitespace-nowrap"
               :title="previewBgMode === 'dark' ? '切换至浅色预览背景' : '切换至深色预览背景'"
               @click="previewBgMode = previewBgMode === 'dark' ? 'light' : 'dark'"
             >
@@ -1084,25 +1139,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="desktop-preview-btn desktop-preview-btn--cancel"
-              :class="!isModified ? 'opacity-50 cursor-not-allowed' : ''"
-              :disabled="!isModified"
-              @click="cancelChanges"
-            >
-              取消修改
-            </button>
-            <button
-              type="button"
-              class="desktop-preview-btn"
-              :class="isModified ? 'desktop-preview-btn--apply' : 'desktop-preview-btn--cancel opacity-50 cursor-not-allowed'"
-              :disabled="!isModified"
-              @click="applyChanges"
-            >
-              应用到桌面歌词
-            </button>
-            <button
-              type="button"
-              class="desktop-preview-btn desktop-preview-btn--default"
+              class="desktop-preview-btn desktop-preview-btn--default whitespace-nowrap"
               @click="resetToDefault"
             >
               恢复默认
@@ -1514,73 +1551,6 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div
-              v-if="activeCustomColorKind"
-              ref="customColorPanelRef"
-              class="desktop-custom-color-panel"
-              :style="customColorPanelStyle"
-            >
-              <div class="desktop-custom-color-panel-title">{{ activeCustomColorLabel }}</div>
-              <div
-                class="desktop-custom-color-area"
-                :style="{ backgroundColor: customPickerHueColor }"
-                @pointerdown="updateCustomPickerArea"
-                @pointermove="dragCustomPickerArea"
-              >
-                <span
-                  class="desktop-custom-color-thumb"
-                  :style="{
-                    left: `${customPickerSaturation}%`,
-                    top: `${100 - customPickerValue}%`,
-                  }"
-                ></span>
-              </div>
-              <div class="desktop-custom-hue-row">
-                <span class="desktop-custom-current-color" :style="{ backgroundColor: customPickerColor }"></span>
-                <input
-                  class="desktop-custom-hue-slider"
-                  type="range"
-                  min="0"
-                  max="359"
-                  :value="customPickerHue"
-                  aria-label="色相"
-                  @input="setCustomPickerHue(($event.target as HTMLInputElement).value)"
-                >
-              </div>
-              <div class="desktop-custom-rgb-row">
-                <label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="255"
-                    :value="customPickerRgb.r"
-                    @change="setCustomPickerRgb('r', ($event.target as HTMLInputElement).value, $event)"
-                  >
-                  <span>R</span>
-                </label>
-                <label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="255"
-                    :value="customPickerRgb.g"
-                    @change="setCustomPickerRgb('g', ($event.target as HTMLInputElement).value, $event)"
-                  >
-                  <span>G</span>
-                </label>
-                <label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="255"
-                    :value="customPickerRgb.b"
-                    @change="setCustomPickerRgb('b', ($event.target as HTMLInputElement).value, $event)"
-                  >
-                  <span>B</span>
-                </label>
-              </div>
-            </div>
-
             <div ref="customPreviewRef" class="desktop-custom-preview">
               <div class="desktop-custom-preview-line">
                 <span :style="customPreviewPlayedStyle">初めての</span>
@@ -1603,6 +1573,75 @@ onUnmounted(() => {
           </div>
         </div>
       </transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="activeCustomColorKind"
+        ref="customColorPanelRef"
+        class="desktop-custom-color-panel"
+        :style="customColorPanelStyle"
+      >
+        <div class="desktop-custom-color-panel-title">{{ activeCustomColorLabel }}</div>
+        <div
+          class="desktop-custom-color-area"
+          :style="{ backgroundColor: customPickerHueColor }"
+          @pointerdown="updateCustomPickerArea"
+          @pointermove="dragCustomPickerArea"
+        >
+          <span
+            class="desktop-custom-color-thumb"
+            :style="{
+              left: `${customPickerSaturation}%`,
+              top: `${100 - customPickerValue}%`,
+            }"
+          ></span>
+        </div>
+        <div class="desktop-custom-hue-row">
+          <span class="desktop-custom-current-color" :style="{ backgroundColor: customPickerColor }"></span>
+          <input
+            class="desktop-custom-hue-slider"
+            type="range"
+            min="0"
+            max="359"
+            :value="customPickerHue"
+            aria-label="色相"
+            @input="setCustomPickerHue(($event.target as HTMLInputElement).value)"
+          >
+        </div>
+        <div class="desktop-custom-rgb-row">
+          <label>
+            <input
+              type="number"
+              min="0"
+              max="255"
+              :value="customPickerRgb.r"
+              @change="setCustomPickerRgb('r', ($event.target as HTMLInputElement).value, $event)"
+            >
+            <span>R</span>
+          </label>
+          <label>
+            <input
+              type="number"
+              min="0"
+              max="255"
+              :value="customPickerRgb.g"
+              @change="setCustomPickerRgb('g', ($event.target as HTMLInputElement).value, $event)"
+            >
+            <span>G</span>
+          </label>
+          <label>
+            <input
+              type="number"
+              min="0"
+              max="255"
+              :value="customPickerRgb.b"
+              @change="setCustomPickerRgb('b', ($event.target as HTMLInputElement).value, $event)"
+            >
+            <span>B</span>
+          </label>
+        </div>
+      </div>
     </Teleport>
 
   </div>
@@ -2617,7 +2656,7 @@ onUnmounted(() => {
   text-align: var(--lyrics-text-align, center);
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   opacity: var(--desktop-text-opacity, 1);
-  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) rgb(var(--desktop-text-shadow-color, 0 0 0));
+  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: stroke fill;
   transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
 }

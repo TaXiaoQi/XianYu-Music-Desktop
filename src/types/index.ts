@@ -350,6 +350,8 @@ export interface DesktopLyricsSettings {
   showDoubleLine: boolean;
   enableWordEffect: boolean;
   enableTextOutline: boolean;
+  textOutlineWidth: number;
+  textOutlineColor: string;
   isLocked: boolean;
   persistLock: boolean;
   centerHorizontally: boolean;

@@ -41,6 +41,10 @@ export const DEFAULT_DESKTOP_TEXT_SHADOW_COLOR = '#000000';
 export const DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH = 0;
 export const MIN_DESKTOP_TEXT_SHADOW_STRENGTH = 0;
 export const MAX_DESKTOP_TEXT_SHADOW_STRENGTH = 100;
+export const DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH = 1.5;
+export const MIN_DESKTOP_TEXT_OUTLINE_WIDTH = 0.5;
+export const MAX_DESKTOP_TEXT_OUTLINE_WIDTH = 5;
+export const DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR = '#000000';
 
 export interface LyricsFontOption {
   value: LyricsFontPreset;
@@ -119,6 +123,8 @@ export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
   showDoubleLine: false,
   enableWordEffect: true,
   enableTextOutline: false,
+  textOutlineWidth: DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
+  textOutlineColor: DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
   isLocked: false,
   persistLock: false,
   centerHorizontally: false,
@@ -179,6 +185,14 @@ export function clampDesktopTextShadowStrength(value: number) {
   return Math.min(
     MAX_DESKTOP_TEXT_SHADOW_STRENGTH,
     Math.max(MIN_DESKTOP_TEXT_SHADOW_STRENGTH, Math.round(value)),
+  );
+}
+
+export function clampDesktopTextOutlineWidth(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH;
+  return Math.min(
+    MAX_DESKTOP_TEXT_OUTLINE_WIDTH,
+    Math.max(MIN_DESKTOP_TEXT_OUTLINE_WIDTH, Math.round(value * 2) / 2),
   );
 }
 
@@ -334,6 +348,13 @@ export function normalizeDesktopLyricsSettingsPatch(
     enableTextOutline: typeof patch.enableTextOutline === 'boolean'
       ? patch.enableTextOutline
       : defaultDesktopLyricsSettings.enableTextOutline,
+    textOutlineWidth: clampDesktopTextOutlineWidth(
+      patch.textOutlineWidth ?? DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
+    ),
+    textOutlineColor: normalizeHexColor(
+      patch.textOutlineColor,
+      defaultDesktopLyricsSettings.textOutlineColor,
+    ),
     isLocked: typeof patch.isLocked === 'boolean'
       ? patch.isLocked
       : defaultDesktopLyricsSettings.isLocked,
