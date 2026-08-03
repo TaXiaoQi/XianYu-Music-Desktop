@@ -25,6 +25,11 @@ const matches = ref<RecognizeMatch[]>([]);
 const errorMsg = ref('');
 const recordingSeconds = ref(0);
 
+// ==================== 动画状态 ====================
+const isEntering = ref(true);
+const isClosing = ref(false);
+const ANIM_DURATION = 200;
+
 let recordingTimer: ReturnType<typeof setInterval> | null = null;
 
 const isActive = computed(() => status.value === 'recording' || status.value === 'recognizing');
@@ -42,6 +47,23 @@ const statusText = computed(() => {
       return '点击麦克风开始识别';
   }
 });
+
+// ==================== 关闭逻辑（带退出动画） ====================
+function handleClose() {
+  if (isClosing.value) return;
+  // 录音/识别中不允许关闭
+  if (status.value === 'recording' || status.value === 'recognizing') return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('close');
+  }, ANIM_DURATION);
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    handleClose();
+  }
+}
 
 // ==================== 系统音频识别（WASAPI Loopback） ====================
 
@@ -162,182 +184,194 @@ function handleAddToPlaylist(match: RecognizeMatch) {
   emit('close');
 }
 
-// ==================== 面板外部点击关闭 ====================
-function handlePointerDown(e: PointerEvent) {
-  // 录音/识别中锁定面板，点击外部不关闭
-  if (status.value === 'recording' || status.value === 'recognizing') return;
-  const target = e.target as HTMLElement | null;
-  if (!target) return;
-  if (target.closest('.song-recognition-panel')) return;
-  if (target.closest('.song-recognition-trigger')) return;
-  emit('close');
-}
-
 onMounted(() => {
-  document.addEventListener('pointerdown', handlePointerDown, true);
+  document.addEventListener('keydown', handleKeydown);
+  // 进入动画：首帧设为 scale-95 + opacity-0，下一帧恢复到正常状态触发 CSS transition
+  requestAnimationFrame(() => {
+    isEntering.value = false;
+  });
 });
+
 onUnmounted(() => {
   stopRecording();
-  document.removeEventListener('pointerdown', handlePointerDown, true);
+  document.removeEventListener('keydown', handleKeydown);
 });
 </script>
 
 <template>
-  <div
-    class="song-recognition-panel absolute right-0 top-full mt-2 w-[34rem] origin-top-right rounded-2xl border border-black/5 bg-white/90 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-  >
-    <!-- 头部 -->
-    <div class="flex items-center justify-between border-b border-black/5 px-4 py-3 dark:border-white/5">
-      <div class="flex items-center gap-2">
-        <Mic class="h-4 w-4 text-[#EC4141]" :stroke-width="2.2" />
-        <span class="text-sm font-bold text-gray-900 dark:text-gray-100">听歌识曲</span>
-      </div>
-      <button
-        class="cursor-pointer text-gray-400 transition-colors hover:text-[#EC4141]"
-        @click="emit('close')"
-        aria-label="关闭"
-      >
-        <X class="h-4 w-4" />
-      </button>
-    </div>
-
-    <!-- 主体：录音/识别/失败状态 -->
+  <Teleport to="body">
     <div
-      v-if="status !== 'success'"
-      class="flex flex-col items-center px-6 py-7"
+      class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+      :class="{ 'pointer-events-none': isClosing }"
     >
-      <!-- 麦克风按钮 -->
-      <button
-        class="relative flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300 cursor-pointer"
-        :class="status === 'recording'
-          ? 'bg-[#EC4141] text-white shadow-[0_0_24px_rgba(236,65,65,0.5)]'
-          : status === 'recognizing'
-            ? 'bg-[#EC4141]/10 text-[#EC4141] cursor-wait'
-            : 'bg-[#EC4141]/10 text-[#EC4141] hover:bg-[#EC4141]/20'"
-        @click="toggleListening"
-        :disabled="status === 'recognizing'"
-        :aria-label="status === 'recording' ? '停止识别' : '开始识别'"
+      <!-- 背景遮罩 -->
+      <div
+        class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ease-out"
+        :class="isEntering || isClosing ? 'opacity-0' : 'opacity-100'"
+        @click="handleClose"
+      ></div>
+
+      <!-- 面板 -->
+      <div
+        class="song-recognition-panel relative w-[34rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-black/5 bg-white/90 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-neutral-900/90 overflow-hidden transform transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+        :class="isEntering || isClosing
+          ? 'scale-95 opacity-0 translate-y-4'
+          : 'scale-100 opacity-100 translate-y-0'"
       >
-        <!-- 脉冲环 -->
-        <span
-          v-if="status === 'recording'"
-          class="absolute inset-0 rounded-full bg-[#EC4141] opacity-30 animate-ping"
-        ></span>
-        <Loader2 v-if="status === 'recognizing'" class="relative h-8 w-8 animate-spin" :stroke-width="2.2" />
-        <Mic v-else class="relative h-8 w-8" :stroke-width="2.2" />
-      </button>
+        <!-- 头部 -->
+        <div class="flex items-center justify-between border-b border-black/5 px-4 py-3 dark:border-white/5">
+          <div class="flex items-center gap-2">
+            <Mic class="h-4 w-4 text-[#EC4141]" :stroke-width="2.2" />
+            <span class="text-sm font-bold text-gray-900 dark:text-gray-100">听歌识曲</span>
+          </div>
+          <button
+            class="cursor-pointer text-gray-400 transition-colors hover:text-[#EC4141]"
+            @click="handleClose"
+            aria-label="关闭"
+          >
+            <X class="h-4 w-4" />
+          </button>
+        </div>
 
-      <!-- 状态文字 -->
-      <p class="mt-5 text-sm font-medium text-gray-700 dark:text-gray-200">
-        {{ statusText }}
-      </p>
-
-      <!-- 波形动画（录音中） -->
-      <div class="mt-4 flex h-8 items-center gap-1">
-        <span
-          v-for="i in 7"
-          :key="i"
-          class="w-1 rounded-full bg-[#EC4141]"
-          :style="{
-            height: status === 'recording' ? '100%' : '20%',
-            animation: status === 'recording' ? `recog-wave 0.9s ease-in-out ${(i - 1) * 0.09}s infinite` : 'none',
-            opacity: status === 'recording' ? 1 : 0.3,
-            transition: 'opacity 0.3s, height 0.3s'
-          }"
-        ></span>
-      </div>
-
-      <!-- 提示 -->
-      <p class="mt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-gray-500">
-        自动捕获系统播放的音频进行识别<br />请先播放音乐，再点击识别按钮
-      </p>
-    </div>
-
-    <!-- 主体：识别成功结果列表 -->
-    <div v-else class="max-h-[32rem] overflow-y-auto">
-      <div class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 border-b border-black/5 dark:border-white/5 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
-        {{ statusText }}
-      </div>
-      <ul class="py-1">
-        <li
-          v-for="(match, index) in matches"
-          :key="`${match.song.songmid}-${index}`"
-          class="flex items-center gap-4 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-default group"
+        <!-- 主体：录音/识别/失败状态 -->
+        <div
+          v-if="status !== 'success'"
+          class="flex flex-col items-center px-6 py-7"
         >
-          <!-- 匹配度 -->
-          <div class="flex w-16 shrink-0 flex-col items-center">
-            <span class="text-base font-bold text-[#EC4141]">{{ distPercent(match.confidence) }}</span>
-            <span class="text-[10px] text-gray-400 dark:text-gray-500">匹配度</span>
+          <!-- 麦克风按钮 -->
+          <button
+            class="relative flex h-20 w-20 items-center justify-center rounded-full transition-all duration-300 cursor-pointer"
+            :class="status === 'recording'
+              ? 'bg-[#EC4141] text-white shadow-[0_0_24px_rgba(236,65,65,0.5)]'
+              : status === 'recognizing'
+                ? 'bg-[#EC4141]/10 text-[#EC4141] cursor-wait'
+                : 'bg-[#EC4141]/10 text-[#EC4141] hover:bg-[#EC4141]/20'"
+            @click="toggleListening"
+            :disabled="status === 'recognizing'"
+            :aria-label="status === 'recording' ? '停止识别' : '开始识别'"
+          >
+            <!-- 脉冲环 -->
+            <span
+              v-if="status === 'recording'"
+              class="absolute inset-0 rounded-full bg-[#EC4141] opacity-30 animate-ping"
+            ></span>
+            <Loader2 v-if="status === 'recognizing'" class="relative h-8 w-8 animate-spin" :stroke-width="2.2" />
+            <Mic v-else class="relative h-8 w-8" :stroke-width="2.2" />
+          </button>
+
+          <!-- 状态文字 -->
+          <p class="mt-5 text-sm font-medium text-gray-700 dark:text-gray-200">
+            {{ statusText }}
+          </p>
+
+          <!-- 波形动画（录音中） -->
+          <div class="mt-4 flex h-8 items-center gap-1">
+            <span
+              v-for="i in 7"
+              :key="i"
+              class="w-1 rounded-full bg-[#EC4141]"
+              :style="{
+                height: status === 'recording' ? '100%' : '20%',
+                animation: status === 'recording' ? `recog-wave 0.9s ease-in-out ${(i - 1) * 0.09}s infinite` : 'none',
+                opacity: status === 'recording' ? 1 : 0.3,
+                transition: 'opacity 0.3s, height 0.3s'
+              }"
+            ></span>
           </div>
 
-          <!-- 封面 -->
-          <div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-neutral-800">
-            <img
-              v-if="match.song.img"
-              :src="match.song.img"
-              :alt="match.song.name"
-              class="h-full w-full object-cover"
-              referrerpolicy="no-referrer"
-            />
-            <div v-else class="flex h-full w-full items-center justify-center text-gray-300 dark:text-gray-600">
-              <Music2 class="h-7 w-7" />
-            </div>
-          </div>
+          <!-- 提示 -->
+          <p class="mt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+            自动捕获系统播放的音频进行识别<br />请先播放音乐，再点击识别按钮
+          </p>
+        </div>
 
-          <!-- 歌曲信息 -->
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-              {{ match.song.name }}
-            </div>
-            <div class="truncate text-xs text-gray-500 dark:text-gray-400">
-              {{ match.song.singer }}
-              <template v-if="match.song.albumName"> · {{ match.song.albumName }}</template>
-            </div>
+        <!-- 主体：识别成功结果列表 -->
+        <div v-else class="max-h-[calc(100vh-16rem)] overflow-y-auto">
+          <div class="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 border-b border-black/5 dark:border-white/5 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
+            {{ statusText }}
           </div>
-
-          <!-- 操作按钮 -->
-          <div class="flex shrink-0 items-center gap-1">
-            <button
-              class="grid h-8 w-8 place-items-center rounded-full text-[#EC4141] hover:bg-[#EC4141]/10 transition-colors cursor-pointer"
-              title="播放"
-              @click="handlePlay(match)"
+          <ul class="py-1">
+            <li
+              v-for="(match, index) in matches"
+              :key="`${match.song.songmid}-${index}`"
+              class="flex items-center gap-4 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-default group"
             >
-              <Play class="h-4 w-4" :stroke-width="2.4" />
-            </button>
+              <!-- 匹配度 -->
+              <div class="flex w-16 shrink-0 flex-col items-center">
+                <span class="text-base font-bold text-[#EC4141]">{{ distPercent(match.confidence) }}</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500">匹配度</span>
+              </div>
+
+              <!-- 封面 -->
+              <div class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 dark:bg-neutral-800">
+                <img
+                  v-if="match.song.img"
+                  :src="match.song.img"
+                  :alt="match.song.name"
+                  class="h-full w-full object-cover"
+                  referrerpolicy="no-referrer"
+                />
+                <div v-else class="flex h-full w-full items-center justify-center text-gray-300 dark:text-gray-600">
+                  <Music2 class="h-7 w-7" />
+                </div>
+              </div>
+
+              <!-- 歌曲信息 -->
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {{ match.song.name }}
+                </div>
+                <div class="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {{ match.song.singer }}
+                  <template v-if="match.song.albumName"> · {{ match.song.albumName }}</template>
+                </div>
+              </div>
+
+              <!-- 操作按钮 -->
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  class="grid h-8 w-8 place-items-center rounded-full text-[#EC4141] hover:bg-[#EC4141]/10 transition-colors cursor-pointer"
+                  title="播放"
+                  @click="handlePlay(match)"
+                >
+                  <Play class="h-4 w-4" :stroke-width="2.4" />
+                </button>
+                <button
+                  class="grid h-8 w-8 place-items-center rounded-full transition-colors cursor-pointer"
+                  :class="isFavorite(match)
+                    ? 'text-[#EC4141] hover:bg-[#EC4141]/10'
+                    : 'text-gray-400 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:text-gray-500'"
+                  :title="isFavorite(match) ? '已收藏' : '收藏'"
+                  @click="handleFavorite(match)"
+                >
+                  <Heart v-if="isFavorite(match)" class="h-4 w-4 fill-current" :stroke-width="2" />
+                  <Heart v-else class="h-4 w-4" :stroke-width="2" />
+                </button>
+                <button
+                  class="grid h-8 w-8 place-items-center rounded-full text-gray-400 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:text-gray-500 transition-colors cursor-pointer"
+                  title="添加到歌单"
+                  @click="handleAddToPlaylist(match)"
+                >
+                  <ListPlus class="h-4 w-4" :stroke-width="2" />
+                </button>
+              </div>
+            </li>
+          </ul>
+
+          <!-- 重新识别 -->
+          <div class="border-t border-black/5 dark:border-white/5 px-4 py-3">
             <button
-              class="grid h-8 w-8 place-items-center rounded-full transition-colors cursor-pointer"
-              :class="isFavorite(match)
-                ? 'text-[#EC4141] hover:bg-[#EC4141]/10'
-                : 'text-gray-400 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:text-gray-500'"
-              :title="isFavorite(match) ? '已收藏' : '收藏'"
-              @click="handleFavorite(match)"
+              class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#EC4141]/10 py-2 text-sm font-medium text-[#EC4141] transition-colors hover:bg-[#EC4141]/20 cursor-pointer"
+              @click="resetAndRestart"
             >
-              <Heart v-if="isFavorite(match)" class="h-4 w-4 fill-current" :stroke-width="2" />
-              <Heart v-else class="h-4 w-4" :stroke-width="2" />
-            </button>
-            <button
-              class="grid h-8 w-8 place-items-center rounded-full text-gray-400 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:text-gray-500 transition-colors cursor-pointer"
-              title="添加到歌单"
-              @click="handleAddToPlaylist(match)"
-            >
-              <ListPlus class="h-4 w-4" :stroke-width="2" />
+              <RotateCcw class="h-4 w-4" :stroke-width="2.2" />
+              重新识别
             </button>
           </div>
-        </li>
-      </ul>
-
-      <!-- 重新识别 -->
-      <div class="border-t border-black/5 dark:border-white/5 px-4 py-3">
-        <button
-          class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#EC4141]/10 py-2 text-sm font-medium text-[#EC4141] transition-colors hover:bg-[#EC4141]/20 cursor-pointer"
-          @click="resetAndRestart"
-        >
-          <RotateCcw class="h-4 w-4" :stroke-width="2.2" />
-          重新识别
-        </button>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>

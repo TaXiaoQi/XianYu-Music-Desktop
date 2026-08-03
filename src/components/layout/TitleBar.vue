@@ -153,6 +153,21 @@ onMounted(() => {
         </svg>
       </button>
 
+      <!-- 听歌识曲（搜索框内最右侧） -->
+      <div class="h-4 w-px bg-black/10 dark:bg-white/10 mx-1 shrink-0"></div>
+      <button
+        type="button"
+        class="song-recognition-trigger shrink-0 rounded-md transition-colors cursor-pointer"
+        :class="showRecognition
+          ? 'text-[#EC4141] dark:text-[#ff8b8b]'
+          : 'text-gray-500 dark:text-gray-400 hover:text-[#EC4141] dark:hover:text-[#ff8b8b]'"
+        title="听歌识曲"
+        aria-label="听歌识曲"
+        @click.stop="toggleRecognition"
+      >
+        <Mic class="h-4 w-4" :stroke-width="2" />
+      </button>
+
       <!-- 搜索历史下拉 -->
       <Transition name="search-history-fade">
         <div v-if="showHistory && navigationStore.searchHistory.length" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-60 overflow-y-auto overflow-x-hidden">
@@ -187,22 +202,6 @@ onMounted(() => {
     </div>
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
-      <!-- 听歌识曲 -->
-      <div class="relative">
-        <button
-          type="button"
-          class="song-recognition-trigger p-2 rounded-md transition-colors cursor-pointer"
-          :class="showRecognition
-            ? 'text-[#EC4141] dark:text-[#ff8b8b] bg-[#EC4141]/10'
-            : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
-          title="听歌识曲"
-          aria-label="听歌识曲"
-          @click.stop="toggleRecognition"
-        >
-          <Mic class="h-5 w-5" :stroke-width="2" />
-        </button>
-        <SongRecognitionPanel v-if="showRecognition" @close="showRecognition = false" />
-      </div>
       <button
         type="button"
         class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
@@ -290,6 +289,8 @@ onMounted(() => {
       </div>
     </div>
   </div>
+
+  <SongRecognitionPanel v-if="showRecognition" @close="showRecognition = false" />
 </template>
 
 <style scoped>
