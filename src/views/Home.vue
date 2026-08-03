@@ -61,9 +61,13 @@
       :is-playlist-view="localViewMode === 'playlist'"
       :is-folder-view="localViewMode === 'folder'"
       :isManagementMode="isManagementMode"
+      :is-online-search="contextMenuIsOnlineSearch"
+      :resolved-file-path="contextMenuResolvedPath"
       @close="showContextMenu = false"
       @add-to-playlist="handleAddToPlaylistRequest"
       @delete-disk="handleSongPhysicalDelete"
+      @view-online-artist="handleOnlineViewArtist"
+      @view-online-album="handleOnlineViewAlbum"
     />
 
     <ModernModal
@@ -167,6 +171,10 @@ const {
   contextMenuX,
   contextMenuY,
   contextMenuTargetSong,
+  contextMenuResolvedPath,
+  contextMenuIsOnlineSearch,
+  handleOnlineViewArtist,
+  handleOnlineViewAlbum,
   showConfirm,
   confirmTitle,
   confirmMessage,

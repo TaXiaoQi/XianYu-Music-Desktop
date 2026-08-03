@@ -644,6 +644,8 @@ export interface DownloadSettings {
   format: DownloadFormat;
   quality: DownloadQuality;
   downloadLyrics: boolean;
+  /** 同时下载封面（默认 true） */
+  downloadCover: boolean;
   lyricsFormat: 'lrc' | 'txt';
   overwriteExisting: boolean;
   keepSourceFilename: boolean;

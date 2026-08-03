@@ -57,6 +57,8 @@ const props = defineProps<{
   isOnlineSearch?: boolean;
   /** 在线详情页容器类型：用于在歌手/专辑容器中隐藏"查看歌手/查看专辑" */
   onlineDetailType?: 'artist' | 'album' | 'playlist';
+  /** 已下载在线歌曲的本地文件路径（供"打开文件所在目录""查看歌曲信息"使用） */
+  resolvedFilePath?: string;
 }>();
 
 const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album']);
@@ -538,10 +540,10 @@ const handleAction = (action: SongMenuAction) => {
       void openHomeAlbum(getSongAlbumKey(props.song));
       break;
     case 'openFolder':
-      void openInFinder(props.song.path);
+      void openInFinder(props.resolvedFilePath ?? props.song.path);
       break;
     case 'viewSongInfo':
-      openSongInfo(props.song);
+      openSongInfo(props.resolvedFilePath ? { ...props.song, path: props.resolvedFilePath } : props.song);
       break;
     case 'removeFromList':
       handleRemoveFromList();

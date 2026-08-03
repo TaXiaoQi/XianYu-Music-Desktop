@@ -3,6 +3,7 @@ import { useSettings } from '../features/settings/useSettings';
 import { useDownloadStore } from '../features/download/store';
 import { downloadSong, isDownloadableOnlineSong } from '../services/downloadService';
 import { checkDownloadExists, recordDownload, fileNameFromPath } from '../services/downloadHistory';
+import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeActions';
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality } from '../types';
 
@@ -60,6 +61,7 @@ export async function downloadToLocal(
       fileNameStyle: settings.value.download.fileNameStyle,
       overwriteExisting: settings.value.download.overwriteExisting,
       downloadLyrics: settings.value.download.downloadLyrics,
+      downloadCover: settings.value.download.downloadCover,
       lyricsFormat: settings.value.download.lyricsFormat,
       onProgress: (percent: number) => downloadStore.setProgress(percent),
     });
@@ -80,11 +82,23 @@ export async function downloadToLocal(
     const degraded = selectedMeta && hitMeta
       ? hitMeta.rank < selectedMeta.rank
       : result.hitQuality !== quality;
-    const lyricNote = result.lyricsSaved ? '（含歌词）' : '';
+    const extras: string[] = [];
+    if (result.lyricsSaved) extras.push('含歌词');
+    if (result.coverSaved) extras.push('含封面');
+    const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : '';
     const note = degraded
       ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）`
       : '';
-    showToast(`下载完成${note}${lyricNote}`, degraded ? 'info' : 'success');
+    showToast(`下载完成${note}${extraNote}`, degraded ? 'info' : 'success');
+
+    // 下载完成后静默刷新本地音乐库，确保新下载的歌曲出现在本地歌曲页
+    try {
+      const { scanLibrary } = useLibraryRuntimeActions();
+      void scanLibrary({ trigger: 'manual-rescan', visibility: 'silent' });
+    } catch (e: any) {
+      console.warn('[Download] 下载后刷新本地库失败:', e?.message);
+    }
+
     return true;
   } catch (e: any) {
     const msg = typeof e === 'string' ? e : (e?.message || JSON.stringify(e));
