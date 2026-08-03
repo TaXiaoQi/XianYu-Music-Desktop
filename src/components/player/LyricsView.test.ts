@@ -39,7 +39,7 @@ describe('LyricsView', () => {
 
   it('uses a readable blurred glass background for lyrics settings panels', () => {
     expect(source.match(/lyrics-settings-glass/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(source).toContain('background: rgba(10, 10, 14, 0.68);');
+    expect(source).toContain('background: rgba(8, 8, 12, 0.74);');
     expect(source).toContain('backdrop-filter: blur(32px) saturate(135%);');
     expect(source).not.toContain('border-white/10 bg-black/30');
   });

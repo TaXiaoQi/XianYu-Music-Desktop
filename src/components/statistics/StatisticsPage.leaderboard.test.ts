@@ -31,4 +31,12 @@ describe('StatisticsPage leaderboard sticky row', () => {
     expect(source).toContain('v-else-if="!leaderboardLoading && !authStore.isLoggedIn"');
     expect(source).toContain('登录后查看个人排名');
   });
+
+  it('opens the login page when the logged-out personal ranking row is clicked', () => {
+    expect(source).toContain("const router = useRouter();");
+    expect(source).toContain("void router.push('/auth');");
+    expect(source).toContain('@click="openLoginPage"');
+    expect(source).toContain('aria-label="前往登录页面查看个人排名"');
+    expect(source).toContain('去登录');
+  });
 });

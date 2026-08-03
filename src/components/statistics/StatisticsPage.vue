@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
@@ -11,6 +11,7 @@ import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 
 const authStore = useAuthStore();
+const router = useRouter();
 const { theme } = useSettings();
 
 const hasCustomBackground = computed(() => (
@@ -102,6 +103,10 @@ let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const isLeaderboardReady = ref(false);
 
 const route = useRoute();
+const openLoginPage = () => {
+  void router.push('/auth');
+};
+
 // 监听路由变化：从其他页面切回首页时重新加载排行榜（显示骨架屏动画）
 watch(() => route.path, (newPath, oldPath) => {
   if (newPath === '/' && oldPath && oldPath !== '/') {
@@ -383,9 +388,13 @@ const losslessRatio = computed(() => {
             <div class="leaderboard-divider text-black/30 dark:text-white/30">
               <span>···</span>
             </div>
-            <div
-              class="leaderboard-row is-me is-sticky"
+            <button
+              type="button"
+              class="leaderboard-row leaderboard-row--login is-me is-sticky w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC4141]/50"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
+              aria-label="前往登录页面查看个人排名"
+              title="登录后查看个人排名"
+              @click="openLoginPage"
             >
               <div class="leaderboard-rank rank-normal">—</div>
               <div class="leaderboard-avatar">
@@ -395,8 +404,8 @@ const losslessRatio = computed(() => {
                 <div class="leaderboard-name text-gray-800 dark:text-white/90">未登录</div>
                 <div class="leaderboard-username text-black/45 dark:text-white/45">登录后查看个人排名</div>
               </div>
-              <div class="leaderboard-duration text-gray-800 dark:text-white/90">—</div>
-            </div>
+              <div class="leaderboard-duration text-[#EC4141]">去登录</div>
+            </button>
           </template>
         </section>
       </div>
@@ -437,6 +446,10 @@ const losslessRatio = computed(() => {
 .leaderboard-row:hover {
   background: rgba(0, 0, 0, 0.05);
   transform: translateX(2px);
+}
+
+.leaderboard-row--login {
+  font: inherit;
 }
 
 .leaderboard-row.is-top-3 {

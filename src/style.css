@@ -23,34 +23,18 @@ body {
   background: transparent;
 }
 
-/* 🟢 全局自定义滚动条样式 */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* 全局隐藏滚动条，但保留滚轮、触控板、触摸和程序滚动能力。 */
+html *,
+body {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-radius: 10px;
-  transition: background-color 0.3s;
-}
-
-.custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.15);
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.25);
-}
-
-/* Firefox 支持 */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
+html *::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* 🟢 全局清除按钮聚焦时的默认实线外边框，防止偶发轮廓线破坏视觉体验 */
@@ -79,4 +63,3 @@ button:focus {
   opacity: 0;
   transform: scale(0.92) translateY(12px);
 }
-
