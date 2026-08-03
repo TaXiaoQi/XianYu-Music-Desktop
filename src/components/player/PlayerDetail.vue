@@ -42,9 +42,10 @@ const minimize = () => appWindow.minimize();
 // 全屏：调用项目自实现的 Win32 原生命令（绕过 tao，专门处理无边框窗口）
 // 该命令用整个显示器矩形铺满窗口并调用 MarkFullscreenWindow 让 shell 隐藏任务栏
 const isFullscreen = ref(false);
-// 'entering' | 'exiting' | null，控制进/退全屏的过渡动画
+// 'entering' | 'exiting' | null，控制全屏切换期间的样式（背景色、padding）
 const fullscreenAnimState = ref<'entering' | 'exiting' | null>(null);
-const FS_ANIM_DURATION = 320;
+// 记录进入全屏前窗口是否已最大化，退出全屏后据此决定是否需要 unmaximize
+const wasMaximizedBeforeFullscreen = ref(false);
 
 // 沉浸模式下鼠标 2 秒无操作隐藏指针，移动/点击恢复
 const CURSOR_IDLE_HIDE_DELAY = 2000;
@@ -95,39 +96,74 @@ const toggleFullscreen = async () => {
   if (fullscreenAnimState.value) return;
 
   if (!isFullscreen.value) {
-    // 进入全屏：先调用原生命令铺满整个显示器（含任务栏），窗口尺寸稳定后再播放放大动画
+    // === 进入全屏 ===
+    // 策略：先执行原生最大化（享受系统自带的最大化动画），再无缝切换为沉浸式全屏。
+    // 最大化→全屏的差异仅是任务栏高度 + 边框，同步切换不可察觉。
+
+    // 记录原始最大化状态，退出全屏后据此决定是否还原为普通窗口
+    wasMaximizedBeforeFullscreen.value = await appWindow.isMaximized();
     fullscreenAnimState.value = 'entering';
     enableCursorAutoHide();
+
+    // 1. 保存窗口放置信息（在最大化之前，保存原始窗口状态）
+    try {
+      await tauriInvoke('save_window_placement');
+    } catch (error) {
+      showToast(`保存窗口状态失败: ${String(error)}`, 'error');
+      fullscreenAnimState.value = null;
+      return;
+    }
+
+    // 2. 如果窗口未最大化，先最大化（享受系统原生最大化动画）
+    if (!wasMaximizedBeforeFullscreen.value) {
+      await appWindow.maximize();
+      // 等待最大化动画完成（Windows 原生动画约 200ms）
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
+
+    // 3. 从最大化状态无缝切换为沉浸式全屏（去除边框、覆盖任务栏）
     try {
       await applyImmersiveFullscreen(true);
     } catch (error) {
+      // 出错时还原到原始状态
+      if (!wasMaximizedBeforeFullscreen.value) {
+        await appWindow.unmaximize();
+      }
       showToast(`进入全屏失败: ${String(error)}`, 'error');
       fullscreenAnimState.value = null;
       return;
     }
-    // 原生铺满完成后，触发前端放大过渡动画盖住瞬间的尺寸跳变
-    setTimeout(() => {
-      fullscreenAnimState.value = null;
-    }, FS_ANIM_DURATION);
+
+    fullscreenAnimState.value = null;
   } else {
-    // 退出全屏：先播放前端收缩动画，动画结束后再调用原生退出恢复窗口
+    // === 退出全屏 ===
+    // 策略：先从全屏恢复到最大化（平滑过渡），若原始状态非最大化再 unmaximize（原生还原动画）。
     fullscreenAnimState.value = 'exiting';
     disableCursorAutoHide();
-    setTimeout(async () => {
-      try {
-        await applyImmersiveFullscreen(false);
-      } catch (error) {
-        showToast(`退出全屏失败: ${String(error)}`, 'error');
-      }
-      isFullscreen.value = false;
-      fullscreenAnimState.value = null;
-    }, FS_ANIM_DURATION);
+
+    // 1. 退出沉浸式全屏 → 恢复到最大化状态（全屏→最大化仅相差任务栏高度，几乎无感）
+    try {
+      await applyImmersiveFullscreen(false);
+    } catch (error) {
+      showToast(`退出全屏失败: ${String(error)}`, 'error');
+    }
+    isFullscreen.value = false;
+
+    // 2. 如果原始状态不是最大化，调用 unmaximize 还原为普通窗口（享受原生还原动画）
+    if (!wasMaximizedBeforeFullscreen.value) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await appWindow.unmaximize();
+      // 等待还原动画完成
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
+
+    fullscreenAnimState.value = null;
   }
 };
 
 const toggleMaximize = async () => {
-  // 全屏态或退出动画进行中：不响应最大化
-  if (isFullscreen.value || fullscreenAnimState.value === 'exiting') {
+  // 全屏态或全屏动画进行中：不响应最大化
+  if (isFullscreen.value || fullscreenAnimState.value) {
     return;
   }
 
@@ -339,8 +375,6 @@ const closeContextMenu = () => {
       class="relative flex h-[100vh] w-full flex-col"
       :class="[
         isFullscreen || fullscreenAnimState ? 'pt-0' : 'pt-[calc(100vh-100%)]',
-        fullscreenAnimState === 'entering' ? 'fs-entering' : '',
-        fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
       ]"
     >
       <div
@@ -496,39 +530,6 @@ const closeContextMenu = () => {
 .cursor-hidden,
 .cursor-hidden :deep(*) {
   cursor: none !important;
-}
-
-/* 全屏切换动画：进入时从 94% 放大到 100%，退出时从 100% 收缩到 94% */
-.fs-entering {
-  animation: fs-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
-  transform-origin: center center;
-}
-
-.fs-exiting {
-  animation: fs-exit 320ms cubic-bezier(0.22, 1, 0.36, 1);
-  transform-origin: center center;
-}
-
-@keyframes fs-enter {
-  0% {
-    transform: scale(0.94);
-    opacity: 0.82;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes fs-exit {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(0.94);
-    opacity: 0.82;
-  }
 }
 
 .fade-scale-enter-active,
