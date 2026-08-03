@@ -558,7 +558,8 @@ const handleWindowClick = (e: MouseEvent) => {
 
 // --- Idle State for Auto-Hide ---
 // 主底栏与播放详情页底栏使用各自独立的 pinned 和 idle 状态，互不影响
-const isPinnedFooter = ref(localStorage.getItem('footer_pinned') === 'true');
+// 主底栏默认固定（首次使用未设置 localStorage 时 pinned=true）
+const isPinnedFooter = ref(localStorage.getItem('footer_pinned') !== 'false');
 const isPinnedDetail = ref(localStorage.getItem('footer_pinned_detail') === 'true');
 const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : isPinnedFooter.value);
 
@@ -775,7 +776,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="flex items-center w-1/3 min-w-[150px]" @contextmenu="handleContextMenu" @click="handleOpenDetail">
+    <div
+      class="flex items-center w-1/3 min-w-[150px]"
+      @contextmenu="handleContextMenu"
+      @click="handleOpenDetail"
+    >
       <div
         data-footer-cover
         @click.stop="handleOpenDetail"
@@ -826,7 +831,12 @@ onUnmounted(() => {
         </div>
 
         <!-- 左侧容器可配置控件（按 leftItems 顺序渲染，最多 2 个） -->
-        <FooterControlItem v-for="key in leftItems" :key="key" :item-key="key" />
+        <div
+          class="flex items-center gap-1 transition-opacity duration-700"
+          :class="{ 'opacity-0 pointer-events-none': isIdle }"
+        >
+          <FooterControlItem v-for="key in leftItems" :key="key" :item-key="key" />
+        </div>
       </div>
     </div>
 
