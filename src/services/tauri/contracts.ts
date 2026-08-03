@@ -420,6 +420,10 @@ export interface TauriCommandMap {
     payload: { paths: string[]; minimumDurationSeconds?: number };
     response: Song[];
   };
+  parse_music_folder: {
+    payload: { folderPath: string; minimumDurationSeconds?: number };
+    response: Song[];
+  };
   set_volume: { payload: { volume: number }; response: void };
   set_playback_speed: { payload: { speed: number }; response: void };
   get_playback_progress: { payload: undefined; response: number };

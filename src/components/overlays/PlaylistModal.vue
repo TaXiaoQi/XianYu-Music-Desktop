@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
-import { Loader2 } from 'lucide-vue-next';
-import type { Playlist } from '../../types';
+import { open } from '@tauri-apps/plugin-dialog';
+import { FolderOpen, Loader2 } from 'lucide-vue-next';
+import type { Playlist, Song } from '../../types';
 import { PLAYLIST_SOURCES, importPlaylist } from '../../services/playlistImport';
 import type { PlaylistImportResult } from '../../services/playlistImport';
+import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 
-type TabType = 'create' | 'import';
+type TabType = 'create' | 'networkImport' | 'localFolderImport';
 
 const props = defineProps<{
   visible: boolean;
@@ -20,6 +22,7 @@ const emit = defineEmits<{
     event: 'import',
     payload: { result: PlaylistImportResult; rename?: string },
   ): void;
+  (event: 'import-local', payload: { name: string; songs: Song[] }): void;
 }>();
 
 const { showToast } = useToast();
@@ -41,9 +44,16 @@ const importRenameRef = ref<HTMLInputElement | null>(null);
 const importing = ref(false);
 const importError = ref('');
 
+// 从本地文件夹导入歌单
+const localPlaylistName = ref('');
+const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
+const localFolderPath = ref('');
+const localImportError = ref('');
+
 const tabs: { type: TabType; label: string }[] = [
   { type: 'create', label: '新建歌单' },
-  { type: 'import', label: '导入歌单' },
+  { type: 'networkImport', label: '从网络导入' },
+  { type: 'localFolderImport', label: '从本地导入' },
 ];
 
 // 弹窗打开时重置状态
@@ -55,6 +65,9 @@ watch(
       importInput.value = '';
       importRename.value = '';
       importError.value = '';
+      localPlaylistName.value = '';
+      localFolderPath.value = '';
+      localImportError.value = '';
       importing.value = false;
       selectedSource.value = 'auto';
       sourceDropdownOpen.value = false;
@@ -75,8 +88,10 @@ watch(activeTab, async () => {
 const focusCurrentTab = () => {
   if (activeTab.value === 'create' && createInputRef.value) {
     createInputRef.value.focus();
-  } else if (activeTab.value === 'import' && importInputRef.value) {
+  } else if (activeTab.value === 'networkImport' && importInputRef.value) {
     importInputRef.value.focus();
+  } else if (activeTab.value === 'localFolderImport' && localPlaylistNameRef.value) {
+    localPlaylistNameRef.value.focus();
   }
 };
 
@@ -95,6 +110,24 @@ const handleClose = () => {
   }, 200);
 };
 
+const handleChooseLocalFolder = async () => {
+  if (importing.value) return;
+
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择包含音乐的文件夹',
+    });
+    if (typeof selected === 'string') {
+      localFolderPath.value = selected;
+      localImportError.value = '';
+    }
+  } catch (e: any) {
+    localImportError.value = `选择文件夹失败: ${e?.message || e}`;
+  }
+};
+
 const handleConfirm = async () => {
   if (activeTab.value === 'create') {
     if (!createName.value.trim()) return;
@@ -104,7 +137,7 @@ const handleConfirm = async () => {
       emit('update:visible', false);
       isClosing.value = false;
     }, 200);
-  } else if (activeTab.value === 'import') {
+  } else if (activeTab.value === 'networkImport') {
     if (!importInput.value.trim() || importing.value) return;
     importError.value = '';
     importing.value = true;
@@ -133,17 +166,54 @@ const handleConfirm = async () => {
     } finally {
       importing.value = false;
     }
+  } else if (activeTab.value === 'localFolderImport') {
+    const name = localPlaylistName.value.trim();
+    if (!name || !localFolderPath.value || importing.value) return;
+
+    localImportError.value = '';
+    importing.value = true;
+    try {
+      const songs = await fileApi.parseMusicFolder(localFolderPath.value);
+      if (songs.length === 0) {
+        localImportError.value = '所选文件夹中未读取到支持的音乐文件';
+        showToast('所选文件夹中未读取到支持的音乐文件', 'error');
+        return;
+      }
+
+      showToast(`成功读取 ${songs.length} 首歌曲`, 'success');
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-local', { name, songs });
+        emit('update:visible', false);
+        isClosing.value = false;
+      }, 200);
+    } catch (e: any) {
+      localImportError.value = `读取文件夹失败: ${e?.message || e}`;
+      showToast(`读取文件夹失败: ${e?.message || e}`, 'error');
+    } finally {
+      importing.value = false;
+    }
   }
 };
 
 const canConfirm = computed(() => {
   if (activeTab.value === 'create') return createName.value.trim().length > 0;
-  if (activeTab.value === 'import') return importInput.value.trim().length > 0 && !importing.value;
+  if (activeTab.value === 'networkImport') {
+    return importInput.value.trim().length > 0 && !importing.value;
+  }
+  if (activeTab.value === 'localFolderImport') {
+    return localPlaylistName.value.trim().length > 0
+      && localFolderPath.value.length > 0
+      && !importing.value;
+  }
   return false;
 });
 
 const confirmText = computed(() => {
   if (activeTab.value === 'create') return '创建';
+  if (activeTab.value === 'localFolderImport') {
+    return importing.value ? '读取中…' : '读取并创建';
+  }
   if (importing.value) return '导入中…';
   return '导入';
 });
@@ -186,12 +256,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
       >
         <!-- Tab 头部 -->
         <div class="relative px-6 pt-5 pb-0 border-b border-gray-200 dark:border-gray-700">
-          <div class="flex items-center gap-6">
+          <div class="flex items-center gap-4">
             <button
               v-for="tab in tabs"
               :key="tab.type"
               type="button"
-              class="relative pb-3 text-sm font-medium transition-colors"
+              class="relative whitespace-nowrap pb-3 text-sm font-medium transition-colors"
               :class="activeTab === tab.type
                 ? 'text-[#EC4141]'
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
@@ -221,8 +291,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               />
             </div>
 
-            <!-- 导入歌单 -->
-            <div v-else-if="activeTab === 'import'" key="import" class="space-y-3">
+            <!-- 从网络导入歌单 -->
+            <div v-else-if="activeTab === 'networkImport'" key="network-import" class="space-y-3">
               <!-- 音源选择 -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label>
@@ -281,6 +351,62 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 class="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs"
               >
                 <span>{{ importError }}</span>
+              </div>
+            </div>
+
+            <!-- 从本地文件夹导入歌单 -->
+            <div
+              v-else-if="activeTab === 'localFolderImport'"
+              key="local-folder-import"
+              class="space-y-4"
+            >
+              <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  歌单名称 <span class="text-[#EC4141]">*</span>
+                </label>
+                <input
+                  ref="localPlaylistNameRef"
+                  v-model="localPlaylistName"
+                  type="text"
+                  :disabled="importing"
+                  placeholder="请输入新歌单名称"
+                  class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  音乐文件夹 <span class="text-[#EC4141]">*</span>
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    :value="localFolderPath"
+                    type="text"
+                    readonly
+                    placeholder="请选择包含音乐文件的文件夹"
+                    class="min-w-0 flex-1 px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+                  />
+                  <button
+                    type="button"
+                    :disabled="importing"
+                    class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    @click="handleChooseLocalFolder"
+                  >
+                    <FolderOpen class="h-4 w-4" />
+                    选择文件夹
+                  </button>
+                </div>
+              </div>
+
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+                将递归读取所选文件夹及其子文件夹中的音乐文件，并创建为一个独立歌单。
+              </p>
+
+              <div
+                v-if="localImportError"
+                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400"
+              >
+                <span>{{ localImportError }}</span>
               </div>
             </div>
           </Transition>
