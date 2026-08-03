@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Eye, EyeOff } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Eye, EyeOff, Music } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -25,6 +25,7 @@ import {
 
 const {
   currentSong,
+  currentCover,
   currentAvailableQualities,
   currentPlayingQuality,
   sessionQualityOverride,
@@ -840,8 +841,20 @@ onUnmounted(() => {
         ref="footerCoverRef"
         data-footer-cover
         @click="handleOpenDetail"
-        class="group relative w-12 h-12 rounded-lg flex-shrink-0 cursor-pointer active:scale-95 z-10"
+        class="group relative w-12 h-12 rounded-lg flex-shrink-0 cursor-pointer active:scale-95 z-10 overflow-hidden bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/5 dark:border-white/5"
       >
+        <img 
+          v-if="currentCover" 
+          :src="currentCover" 
+          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+          alt="封面" 
+        />
+        <div v-else class="text-gray-400 dark:text-white/40">
+          <Music class="w-6 h-6" />
+        </div>
+        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity duration-200">
+          <ChevronUp class="w-5 h-5 transition-transform duration-300" :class="{ 'rotate-180': showPlayerDetail }" />
+        </div>
       </div>
 
       <div
