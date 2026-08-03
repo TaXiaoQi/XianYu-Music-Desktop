@@ -619,6 +619,60 @@ pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<
     Ok(dest.to_string_lossy().to_string())
 }
 
+/// 通过 Rust 后端下载图片二进制数据（绕过 WebView 的 CORS 限制）。
+///
+/// 前端 `fetch()` 下载远程封面时会因 CORS 策略静默失败，
+/// 此命令使用 `reqwest` 在 Rust 侧发起请求，返回图片字节和 Content-Type。
+#[derive(Debug, Serialize)]
+pub struct FetchedImage {
+    pub data: Vec<u8>,
+    pub mime: String,
+}
+
+#[tauri::command]
+pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
+    use std::time::Duration;
+
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("无效的图片链接".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("创建请求客户端失败: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("请求图片失败: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("图片服务器返回错误状态: {}", response.status()));
+    }
+
+    let mime = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| format!("读取图片数据失败: {e}"))?
+        .to_vec();
+
+    if data.is_empty() {
+        return Err("图片数据为空".to_string());
+    }
+
+    Ok(FetchedImage { data, mime })
+}
+
 /// 将前端已下载的字节数据写入目标文件（用于前端 fetch 下载音频后落盘）。
 ///
 /// 前端在 WebView 中用 fetch 拉取音频数据（IDM 等下载器默认不接管 AJAX 请求，

@@ -1358,9 +1358,8 @@ const getLocalCoverUrl = (song: Song): string => {
 };
 
 const handlePlayLocalSong = (song: Song) => {
-  const flightPromise = launchFlyingCover(song.path, getLocalCoverUrl(song) || song.cover_thumb_path || '');
-  // 本地歌曲：等飞抵底栏再切换播放
-  void flightPromise.then(() => playSong(song, { insertAfterCurrent: true }));
+  launchFlyingCover(song.path, getLocalCoverUrl(song) || song.cover_thumb_path || '');
+  void playSong(song, { insertAfterCurrent: true });
 };
 
 const handleLocalContextMenu = (e: MouseEvent, song: Song) => {

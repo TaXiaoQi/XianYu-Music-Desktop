@@ -40,7 +40,7 @@ export const createPlayerRestore = ({
   const collectionsStore = useCollectionsStore();
   const libraryStore = useLibraryStore();
   const playbackStore = usePlaybackStore();
-  const { loadCover, retainFullCoverPaths } = useCoverCache();
+  const { loadCover, retainFullCoverPaths, primeCoverPath } = useCoverCache();
 
   const RECENT_HISTORY_LIMIT = 200;
 
@@ -158,13 +158,32 @@ export const createPlayerRestore = ({
     }
 
     if (playbackStore.currentSong?.path) {
-      loadCover(playbackStore.currentSong.path)
+      const song = playbackStore.currentSong;
+      const songPath = song.path;
+      const isOnline = songPath.startsWith('lx://')
+        || songPath.startsWith('plugin://')
+        || songPath.startsWith('remote://');
+
+      // 在线歌曲封面优先用 cover_thumb_path（网络 URL 或本地缓存路径），
+      // 立即填充底栏封面，避免启动时底栏丢封面
+      const primedCover = isOnline && song.cover_thumb_path
+        ? primeCoverPath(songPath, song.cover_thumb_path)
+        : '';
+
+      loadCover(songPath)
         .then(cover => {
-          playbackStore.currentCover = cover || '';
-          playbackStore.currentCoverFull = playbackStore.currentCover;
+          // 本地歌曲：用后端读取的封面；在线歌曲：回退到 primeCoverPath 的结果
+          const finalCover = cover || primedCover || '';
+          playbackStore.currentCover = finalCover;
+          playbackStore.currentCoverFull = finalCover;
           retainFullCoverPaths([]);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (primedCover) {
+            playbackStore.currentCover = primedCover;
+            playbackStore.currentCoverFull = primedCover;
+          }
+        });
       playbackStore.isSongLoaded = false;
     }
   };
