@@ -136,8 +136,9 @@ export const sortItemsByAlphabetIndex = <T>(
   if (!items || items.length === 0) return [];
   
   // 1. 预计算每个 item 的 key，每首歌仅在排序触发时处理一次
+  //    getTitle 返回空字符串时（如 song 查找失败）该项会被排到末尾，不会崩溃
   const keyedItems = items.map((item, index) => {
-    const title = getTitle(item);
+    const title = getTitle(item) || '';
     return {
       item,
       index,

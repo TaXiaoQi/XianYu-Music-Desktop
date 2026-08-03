@@ -48,11 +48,11 @@ export function useLibraryFolderSelectors({
     const paths = sourceSongPaths.value.filter(path => isDirectParent(currentFolderFilter.value, path));
 
     if (folderSortMode.value === 'title') {
-      return sortItemsByAlphabetIndex(paths, (path) => getSongTitleLabel(songLookup.value.get(path)!));
+      return sortItemsByAlphabetIndex(paths.filter(path => songLookup.value.has(path)), (path) => getSongTitleLabel(songLookup.value.get(path)!));
     }
 
     if (folderSortMode.value === 'name') {
-      return sortItemsByAlphabetIndex(paths, (path) => getSongFileNameLabel(songLookup.value.get(path)!));
+      return sortItemsByAlphabetIndex(paths.filter(path => songLookup.value.has(path)), (path) => getSongFileNameLabel(songLookup.value.get(path)!));
     }
 
     if (folderSortMode.value === 'artist') {
