@@ -6,25 +6,20 @@ export const APP_TRAY_MENU_OPEN_EVENT = 'app:tray-menu-open';
 export const TRAY_MENU_WINDOW_LABEL = 'tray-menu';
 export const TRAY_MENU_STATE_EVENT = 'tray-menu:state';
 export const TRAY_MENU_READY_EVENT = 'tray-menu:ready';
-export const TRAY_MENU_PANEL_WIDTH = 190;
-export const TRAY_MENU_SUBMENU_WIDTH = 132;
-export const TRAY_MENU_SUBMENU_GAP = 8;
-export const TRAY_MENU_WINDOW_WIDTH = TRAY_MENU_PANEL_WIDTH + TRAY_MENU_SUBMENU_WIDTH + TRAY_MENU_SUBMENU_GAP;
-export const TRAY_MENU_WINDOW_HEIGHT = 276;
-
-export type TrayMenuSubmenuPlacement = 'left' | 'right';
+export const TRAY_MENU_PANEL_WIDTH = 210;
+export const TRAY_MENU_WINDOW_WIDTH = TRAY_MENU_PANEL_WIDTH;
+export const TRAY_MENU_WINDOW_HEIGHT = 252;
 
 export type TrayMenuAction =
   | 'prev-song'
   | 'toggle-play'
   | 'next-song'
-  | 'play-mode-list-loop'
-  | 'play-mode-single-loop'
-  | 'play-mode-shuffle'
+  | 'cycle-play-mode'
   | 'show-mini-player'
   | 'open-desktop-lyrics'
   | 'open-settings'
-  | 'quit';
+  | 'quit'
+  | 'toggle-favorite';
 
 export interface TrayMenuOpenPayload {
   x: number;
@@ -37,7 +32,9 @@ export interface TrayMenuStatePayload {
   isDarkTheme: boolean;
   playMode: number;
   showDesktopLyrics: boolean;
-  submenuPlacement: TrayMenuSubmenuPlacement;
+  isFavorite: boolean;
+  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
+  windowBlurTint: number;
 }
 
 export interface TrayMenuActionDeps {
@@ -45,11 +42,13 @@ export interface TrayMenuActionDeps {
   togglePlay: () => void | Promise<unknown>;
   nextSong: () => void;
   playMode: Ref<number>;
+  cyclePlayMode: () => void;
   isMiniMode: Ref<boolean>;
   showDesktopLyrics: Ref<boolean>;
   revealMainWindow: () => Promise<unknown>;
   openSettings: () => Promise<unknown>;
   quitApp: () => Promise<unknown>;
+  toggleFavorite: () => void | Promise<unknown>;
 }
 
 export async function handleTrayMenuAction(action: TrayMenuAction, deps: TrayMenuActionDeps) {
@@ -63,17 +62,14 @@ export async function handleTrayMenuAction(action: TrayMenuAction, deps: TrayMen
     case 'next-song':
       deps.nextSong();
       break;
-    case 'play-mode-list-loop':
-      deps.playMode.value = 0;
-      break;
-    case 'play-mode-single-loop':
-      deps.playMode.value = 1;
-      break;
-    case 'play-mode-shuffle':
-      deps.playMode.value = 2;
+    case 'cycle-play-mode':
+      deps.cyclePlayMode();
       break;
     case 'show-mini-player':
       deps.isMiniMode.value = true;
+      break;
+    case 'toggle-favorite':
+      await deps.toggleFavorite();
       break;
     case 'open-desktop-lyrics':
       deps.showDesktopLyrics.value = true;

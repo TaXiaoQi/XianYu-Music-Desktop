@@ -9,6 +9,7 @@ import type { Router } from 'vue-router';
 
 import { useLyrics } from './lyrics';
 import { useThemeSettings } from './useThemeSettings';
+import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlaybackStore } from '../features/playback/store';
 import { useUiStore } from '../shared/stores/ui';
@@ -16,25 +17,20 @@ import {
   APP_TRAY_MENU_EVENT,
   APP_TRAY_MENU_OPEN_EVENT,
   handleTrayMenuAction,
-  TRAY_MENU_PANEL_WIDTH,
   TRAY_MENU_READY_EVENT,
   TRAY_MENU_STATE_EVENT,
-  TRAY_MENU_SUBMENU_GAP,
-  TRAY_MENU_SUBMENU_WIDTH,
   TRAY_MENU_WINDOW_HEIGHT,
   TRAY_MENU_WINDOW_LABEL,
   TRAY_MENU_WINDOW_WIDTH,
   type TrayMenuAction,
   type TrayMenuOpenPayload,
   type TrayMenuStatePayload,
-  type TrayMenuSubmenuPlacement,
 } from '../features/tray/actions';
 
 let trayMenuWindowPromise: Promise<WebviewWindow> | null = null;
 let isTrayMenuReady = false;
 let trayMenuReadyPromise: Promise<void> | null = null;
 let resolveTrayMenuReady: (() => void) | null = null;
-let trayMenuSubmenuPlacement: TrayMenuSubmenuPlacement = 'left';
 let isTrayMenuSizeApplied = false;
 let trayMenuSizePromise: Promise<void> | null = null;
 
@@ -141,10 +137,7 @@ async function ensureTrayMenuSize(targetWindow: WebviewWindow) {
   return trayMenuSizePromise;
 }
 
-async function resolveTrayMenuPosition(payload: TrayMenuOpenPayload): Promise<{
-  position: LogicalPosition;
-  submenuPlacement: TrayMenuSubmenuPlacement;
-}> {
+async function resolveTrayMenuPosition(payload: TrayMenuOpenPayload): Promise<LogicalPosition> {
   const monitors = await availableMonitors();
   const selectedMonitor = monitors.find((monitor) => {
     const { position, size } = monitor.workArea;
@@ -155,13 +148,10 @@ async function resolveTrayMenuPosition(payload: TrayMenuOpenPayload): Promise<{
   }) ?? monitors[0];
 
   if (!selectedMonitor) {
-    return {
-      position: new LogicalPosition(
-        payload.x - TRAY_MENU_WINDOW_WIDTH + 12,
-        payload.y - TRAY_MENU_WINDOW_HEIGHT - 10,
-      ),
-      submenuPlacement: 'left',
-    };
+    return new LogicalPosition(
+      payload.x - TRAY_MENU_WINDOW_WIDTH + 12,
+      payload.y - TRAY_MENU_WINDOW_HEIGHT - 10,
+    );
   }
 
   const scaleFactor = selectedMonitor.scaleFactor || 1;
@@ -177,23 +167,12 @@ async function resolveTrayMenuPosition(payload: TrayMenuOpenPayload): Promise<{
   const minY = workAreaPosition.y + margin;
   const preferAboveY = clickY - TRAY_MENU_WINDOW_HEIGHT - margin;
   const fallbackBelowY = clickY + margin;
-  const workAreaRight = workAreaPosition.x + workAreaSize.width - margin;
-  const submenuSpan = TRAY_MENU_SUBMENU_WIDTH + TRAY_MENU_SUBMENU_GAP;
-  const mainPanelRightX = clickX + 12;
-  const leftSubmenuWindowX = mainPanelRightX - TRAY_MENU_PANEL_WIDTH - submenuSpan;
-  const rightSubmenuWindowX = mainPanelRightX - TRAY_MENU_PANEL_WIDTH;
-  const hasLeftSubmenuSpace = leftSubmenuWindowX >= minX;
-  const hasRightSubmenuSpace = rightSubmenuWindowX + TRAY_MENU_WINDOW_WIDTH <= workAreaRight;
-  const submenuPlacement: TrayMenuSubmenuPlacement = hasRightSubmenuSpace || !hasLeftSubmenuSpace ? 'right' : 'left';
-  const preferredX = submenuPlacement === 'left' ? leftSubmenuWindowX : rightSubmenuWindowX;
+  const preferredX = clickX + 12 - TRAY_MENU_WINDOW_WIDTH;
 
-  return {
-    position: new LogicalPosition(
-      Math.round(Math.max(minX, Math.min(maxX, preferredX))),
-      Math.round(Math.max(minY, Math.min(maxY, preferAboveY >= minY ? preferAboveY : fallbackBelowY))),
-    ),
-    submenuPlacement,
-  };
+  return new LogicalPosition(
+    Math.round(Math.max(minX, Math.min(maxX, preferredX))),
+    Math.round(Math.max(minY, Math.min(maxY, preferAboveY >= minY ? preferAboveY : fallbackBelowY))),
+  );
 }
 
 const waitForRoutePaint = () => new Promise<void>((resolve) => {
@@ -204,9 +183,10 @@ const waitForRoutePaint = () => new Promise<void>((resolve) => {
 
 export function useTrayMenuEvents(router: Router) {
   const mainWindow = getCurrentWindow();
-  const { currentSong, isPlaying, prevSong, togglePlay, nextSong } = usePlaybackController();
+  const { currentSong, isPlaying, prevSong, togglePlay, nextSong, toggleMode } = usePlaybackController();
   const { showDesktopLyrics } = useLyrics();
-  const { isDarkTheme } = useThemeSettings();
+  const { isDarkTheme, theme } = useThemeSettings();
+  const libraryCollections = useLibraryCollections();
   const playbackStore = usePlaybackStore();
   const uiStore = useUiStore();
   const { playMode } = storeToRefs(playbackStore);
@@ -223,7 +203,9 @@ export function useTrayMenuEvents(router: Router) {
     isDarkTheme: isDarkTheme.value,
     playMode: playMode.value,
     showDesktopLyrics: showDesktopLyrics.value,
-    submenuPlacement: trayMenuSubmenuPlacement,
+    isFavorite: currentSong.value ? libraryCollections.isFavorite(currentSong.value) : false,
+    windowMaterial: theme.value.windowMaterial,
+    windowBlurTint: theme.value.windowBlurTint,
   });
 
   const emitTrayMenuState = async () => {
@@ -270,8 +252,7 @@ export function useTrayMenuEvents(router: Router) {
     const targetWindow = await ensureTrayMenuWindow();
     await waitForTrayMenuReady();
     await ensureTrayMenuSize(targetWindow);
-    const { position, submenuPlacement } = await resolveTrayMenuPosition(payload);
-    trayMenuSubmenuPlacement = submenuPlacement;
+    const position = await resolveTrayMenuPosition(payload);
     await targetWindow.setAlwaysOnTop(true);
     await targetWindow.setPosition(position);
     await emitTo<TrayMenuStatePayload>(
@@ -293,11 +274,17 @@ export function useTrayMenuEvents(router: Router) {
           togglePlay,
           nextSong,
           playMode,
+          cyclePlayMode: toggleMode,
           isMiniMode,
           showDesktopLyrics,
           revealMainWindow,
           openSettings,
           quitApp,
+          toggleFavorite: () => {
+            if (currentSong.value) {
+              libraryCollections.toggleFavorite(currentSong.value);
+            }
+          },
         });
         await emitTrayMenuState();
       })();
