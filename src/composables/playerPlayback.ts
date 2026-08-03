@@ -39,6 +39,8 @@ let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
 // [渐入渐出] 淡入淡出动画帧 ID，用于取消正在进行的音量渐变
 let fadeFrameId: number | null = null;
+// [渐入渐出] 当前渐变 Promise 的 resolve 函数；取消时调用以确保 await 不会永久挂起
+let fadeResolveFn: (() => void) | null = null;
 let playRequestId = 0;
 // [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
 // togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
@@ -209,13 +211,19 @@ export const createPlayerPlayback = ({
       cancelAnimationFrame(fadeFrameId);
       fadeFrameId = null;
     }
+    if (fadeResolveFn) {
+      const fn = fadeResolveFn;
+      fadeResolveFn = null;
+      fn();
+    }
   };
 
   // [渐入渐出] 将实际输出音量从当前值渐变到目标值（不影响 playbackStore.volume 显示值）
-  const fadeVolumeTo = (targetVolume: number, durationMs: number): Promise<void> => {
+  // startVolumeOverride 用于指定起始音量（如切歌淡入时从 0 开始），不传则用 playbackStore.volume
+  const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number): Promise<void> => {
     return new Promise((resolve) => {
       cancelFade();
-      const startVolume = playbackStore.volume / 100;
+      const startVolume = startVolumeOverride ?? playbackStore.volume / 100;
       const targetVol = Math.max(0, Math.min(1, targetVolume));
       if (Math.abs(startVolume - targetVol) < 0.005 || durationMs <= 0) {
         void playbackApi.setVolume(targetVol).catch(() => {});
@@ -234,11 +242,13 @@ export const createPlayerPlayback = ({
           fadeFrameId = requestAnimationFrame(step);
         } else {
           fadeFrameId = null;
+          fadeResolveFn = null;
           // 确保最终设置精确的目标音量
           void playbackApi.setVolume(targetVol).catch(() => {});
           resolve();
         }
       };
+      fadeResolveFn = resolve;
       fadeFrameId = requestAnimationFrame(step);
     });
   };
@@ -371,8 +381,22 @@ export const createPlayerPlayback = ({
 
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
-    // [渐入渐出] 切歌时取消正在进行的淡入淡出动画
-    cancelFade();
+
+    // [渐入渐出] 切歌时先淡出当前正在播放的歌曲，避免新歌起播前旧歌仍在出声。
+    // 本地、在线均适用：在线歌 URL 解析期间旧歌会持续淡出，解析完成新歌起播后再淡入。
+    const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
+    const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
+    const shouldFadeOnSwitch = fadeEnabled
+      && isPlaying.value
+      && previousSong
+      && previousSong.path !== song.path
+      && !options.continueStatisticsSession;
+
+    if (shouldFadeOnSwitch) {
+      await fadeVolumeTo(0, fadeDuration);
+    } else {
+      cancelFade();
+    }
 
     flushPlaySession();
     if (!options.continueStatisticsSession) {
@@ -924,6 +948,10 @@ export const createPlayerPlayback = ({
         // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态，不要继续出声
         if (cancelledPlayRequestId === requestId) {
           try { await playbackApi.stopAudio(); } catch {}
+          // [渐入渐出] 暂停时恢复后端音量到用户设定值
+          if (shouldFadeOnSwitch) {
+            void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+          }
           isPlaying.value = false;
           isSongLoaded.value = false;
           stopPlaybackRuntime();
@@ -931,13 +959,24 @@ export const createPlayerPlayback = ({
         }
 
         if (rustOk) {
-          // 确保后端已接管，音量同步到后端
-          try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
-          finishRustPlaybackStart();
+          if (shouldFadeOnSwitch) {
+            // [渐入渐出] 淡入：新歌从 0 音量起播，然后渐变到目标音量
+            try { await playbackApi.setVolume(0); } catch {}
+            finishRustPlaybackStart();
+            void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
+          } else {
+            // 确保后端已接管，音量同步到后端
+            try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
+            finishRustPlaybackStart();
+          }
         } else {
           // [在线播放起播失败行为] 仅在线引擎完全无法生效时执行
           // Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时），而非异常路径
           try { await playbackApi.stopAudio(); } catch {}
+          // [渐入渐出] 起播失败时恢复后端音量到用户设定值
+          if (shouldFadeOnSwitch) {
+            void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+          }
           isPlaying.value = false;
           isSongLoaded.value = false;
           stopPlaybackRuntime();
@@ -985,6 +1024,12 @@ export const createPlayerPlayback = ({
         loadLyrics();
         startPlaybackRuntime();
 
+        // [渐入渐出] 淡入：本地歌曲从 0 音量渐变到目标音量
+        if (shouldFadeOnSwitch) {
+          try { await playbackApi.setVolume(0); } catch {}
+          void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
+        }
+
         void currentThumbnailLoad
           .then(async ([cover, coverPath]) => {
             if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
@@ -1014,6 +1059,10 @@ export const createPlayerPlayback = ({
       // 起播失败行为已移至 rustOk===false 路径，仅在线引擎完全无法生效时执行
       if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
+      // [渐入渐出] 异常时恢复后端音量到用户设定值
+      if (shouldFadeOnSwitch) {
+        void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+      }
       isPlaying.value = false;
       isSongLoaded.value = false;
       sessionStartTime = null;
