@@ -2,7 +2,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
-import type { DownloadFileNameStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
+import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import { ref } from 'vue';
 
@@ -12,6 +12,7 @@ const showDownloadQualityModal = ref(false);
 const showQualityFallbackModal = ref(false);
 const showFileNameStyleModal = ref(false);
 const showLyricsFormatModal = ref(false);
+const showLyricsStyleModal = ref(false);
 
 const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
   { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前，歌名在后' },
@@ -28,6 +29,11 @@ const LYRICS_FORMAT_OPTIONS = [
   { value: 'lrc', label: 'LRC', description: '带时间标签的歌词文件，支持同步显示' },
   { value: 'txt', label: 'TXT', description: '纯文本歌词，不带时间标签' },
 ] as const;
+
+const LYRICS_STYLE_OPTIONS: { value: DownloadLyricsStyle; label: string; description: string }[] = [
+  { value: 'word-by-word', label: '内置逐字', description: '优先下载逐字歌词（无逐字时回退到逐行）' },
+  { value: 'line-by-line', label: '逐行', description: '仅下载标准逐行歌词' },
+];
 
 const patchDownloadQuality = (value: DownloadQuality) => {
   patchSettings({ download: { ...settings.value.download, quality: value } });
@@ -55,6 +61,12 @@ const handleFileNameStyleSelect = (value: DownloadFileNameStyle) => {
 const handleLyricsFormatSelect = (value: 'lrc' | 'txt') => {
   showLyricsFormatModal.value = false;
   patchSettings({ download: { ...settings.value.download, lyricsFormat: value } });
+};
+
+/** 弹窗中选择歌词样式 */
+const handleLyricsStyleSelect = (value: DownloadLyricsStyle) => {
+  showLyricsStyleModal.value = false;
+  patchSettings({ download: { ...settings.value.download, lyricsStyle: value } });
 };
 
 const chooseDir = async () => {
@@ -302,6 +314,47 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
       </Transition>
     </Teleport>
 
+    <!-- 歌词样式选择弹窗：复用添加歌单弹窗容器模式 + 切换动效 -->
+    <Teleport to="body">
+      <Transition name="modal-pop">
+        <div
+          v-if="showLyricsStyleModal"
+          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          @click.self="showLyricsStyleModal = false"
+        >
+          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择歌词样式</h3>
+              <button
+                @click="showLyricsStyleModal = false"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >✕</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
+              <button
+                v-for="option in LYRICS_STYLE_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                :class="settings.download.lyricsStyle === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
+                @click="handleLyricsStyleSelect(option.value)"
+              >
+                <div class="flex-1 min-w-0 text-left">
+                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
+                </div>
+                <Check
+                  v-if="settings.download.lyricsStyle === option.value"
+                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- 下载文件 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -372,6 +425,22 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             @click="showLyricsFormatModal = true"
           >
             <span>{{ LYRICS_FORMAT_OPTIONS.find(o => o.value === settings.download.lyricsFormat)?.label }}</span>
+            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- 歌词样式 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词样式</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">选择下载的歌词类型</div>
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            @click="showLyricsStyleModal = true"
+          >
+            <span>{{ LYRICS_STYLE_OPTIONS.find(o => o.value === settings.download.lyricsStyle)?.label }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
         </div>

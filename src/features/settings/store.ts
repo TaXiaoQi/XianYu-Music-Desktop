@@ -6,6 +6,7 @@ import type {
   AudioSettings,
   AutoSyncConfig,
   DesktopLyricsSettings,
+  DownloadLyricsStyle,
   DownloadSettings,
   EqualizerPreset,
   FooterLayoutSettings,
@@ -152,7 +153,7 @@ export const defaultAudioSettings: AudioSettings = {
   onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512,
   fadeInOutEnabled: false,
-  fadeInOutDurationMs: 300,
+  fadeInOutDurationMs: 1500,
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -161,6 +162,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   quality: '320k',
   downloadLyrics: true,
   lyricsFormat: 'lrc',
+  lyricsStyle: 'word-by-word',
   overwriteExisting: false,
   keepSourceFilename: false,
   fileNameStyle: 'artist-title',
@@ -296,6 +298,7 @@ export const mergeUploadSettings = (
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
 const VALID_DOWNLOAD_QUALITIES = ALL_QUALITY_KEYS;
 const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
+const VALID_LYRICS_STYLES: DownloadLyricsStyle[] = ['word-by-word', 'line-by-line'];
 const VALID_FILE_NAME_STYLES: DownloadSettings['fileNameStyle'][] = [
   'artist-title',
   'title-artist',
@@ -315,6 +318,9 @@ export const mergeDownloadSettings = (
   const lyricsFormat = patch.lyricsFormat && VALID_LYRICS_FORMATS.includes(patch.lyricsFormat)
     ? patch.lyricsFormat
     : base.lyricsFormat;
+  const lyricsStyle = patch.lyricsStyle && VALID_LYRICS_STYLES.includes(patch.lyricsStyle)
+    ? patch.lyricsStyle
+    : base.lyricsStyle;
   const fileNameStyle = patch.fileNameStyle && VALID_FILE_NAME_STYLES.includes(patch.fileNameStyle)
     ? patch.fileNameStyle
     : base.fileNameStyle;
@@ -328,6 +334,7 @@ export const mergeDownloadSettings = (
     quality,
     downloadLyrics: typeof patch.downloadLyrics === 'boolean' ? patch.downloadLyrics : base.downloadLyrics,
     lyricsFormat,
+    lyricsStyle,
     overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
     fileNameStyle,
@@ -484,7 +491,7 @@ export const mergeAudioSettings = (
       : base.fadeInOutEnabled ?? false,
     fadeInOutDurationMs: Number.isFinite(patch.fadeInOutDurationMs) && patch.fadeInOutDurationMs! > 0
       ? Math.max(500, Math.min(3000, Math.round(patch.fadeInOutDurationMs!)))
-      : base.fadeInOutDurationMs ?? 300,
+      : base.fadeInOutDurationMs ?? 1500,
   };
 };
 

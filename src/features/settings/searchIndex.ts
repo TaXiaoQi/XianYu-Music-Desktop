@@ -156,6 +156,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '保留源文件名', keywords: '原始 名称' },
     { label: '同时下载歌词', keywords: '歌词文件 lrc' },
     { label: '歌词格式', keywords: 'LRC YRC 逐字' },
+    { label: '歌词样式', keywords: '逐字 逐行 内置' },
   ]),
   ...makeItems('download', '文件覆盖', [
     { label: '覆盖已存在的文件', keywords: '重复 替换' },

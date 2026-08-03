@@ -62,6 +62,7 @@ export async function downloadToLocal(
       overwriteExisting: settings.value.download.overwriteExisting,
       downloadLyrics: settings.value.download.downloadLyrics,
       lyricsFormat: settings.value.download.lyricsFormat,
+      lyricsStyle: settings.value.download.lyricsStyle,
       embedMetadata: settings.value.download.embedMetadata,
       embedLyrics: settings.value.download.embedLyrics,
       embedCover: settings.value.download.embedCover,
