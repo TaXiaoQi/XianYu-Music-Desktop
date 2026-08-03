@@ -2,7 +2,7 @@
   <div class="flex flex-col h-full">
     <!-- 搜索结果头部 -->
     <div class="px-6 shrink-0 select-none">
-      <!-- 第一层：内容类型切换（音乐/作者/专辑/歌单） -->
+    <!-- 第一层：内容类型切换（音乐/艺术家/专辑/歌单） -->
       <div class="flex items-center gap-1 border-b border-black/5 dark:border-white/5">
         <button
           v-for="tab in searchTabs"
@@ -92,7 +92,7 @@
           @scroll="handleScroll"
         >
           <table class="w-full text-left">
-            <thead class="sticky top-0 z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md">
+            <thead v-if="isLocalSource" class="sticky top-0 z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md">
               <tr class="border-b border-black/5 dark:border-white/5 text-xs text-black/40 dark:text-white/40">
                 <th class="w-10 py-2 px-4 text-center font-normal">#</th>
                 <th class="w-14 py-2 px-2 font-normal"></th>
@@ -466,7 +466,7 @@ type SearchTypeKey = 'track' | 'artist' | 'album' | 'playlist';
 const activeSearchType = ref<SearchTypeKey>('track');
 const searchTabs: { type: SearchTypeKey; label: string }[] = [
   { type: 'track', label: '音乐' },
-  { type: 'artist', label: '作者' },
+  { type: 'artist', label: '艺术家' },
   { type: 'album', label: '专辑' },
   { type: 'playlist', label: '歌单' },
 ];

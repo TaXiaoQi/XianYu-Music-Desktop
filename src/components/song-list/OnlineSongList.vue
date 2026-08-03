@@ -90,16 +90,6 @@ onBeforeUnmount(() => {
 
 <template>
   <table class="w-full text-left">
-    <thead class="sticky top-0 z-10">
-      <tr class="border-b border-black/5 dark:border-white/5 text-xs text-black/40 dark:text-white/40">
-        <th class="w-10 py-2 px-4 text-center font-normal">#</th>
-        <th class="w-14 py-2 px-2 font-normal"></th>
-        <th class="py-2 px-2 font-normal">歌曲</th>
-        <th class="py-2 px-2 font-normal">歌手</th>
-        <th class="py-2 px-2 font-normal">专辑</th>
-        <th class="w-16 py-2 px-4 text-right font-normal">时长</th>
-      </tr>
-    </thead>
     <tbody>
       <tr
         v-for="(item, index) in visibleSongs"

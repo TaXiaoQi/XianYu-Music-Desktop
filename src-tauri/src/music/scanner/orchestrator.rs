@@ -1,5 +1,7 @@
 use super::super::types::{FolderNode, GeneratedFolder, Song};
-use super::super::utils::{descendant_like_patterns, normalize_path};
+use super::super::utils::{
+    descendant_like_patterns, is_supported_library_extension, normalize_path,
+};
 use super::diff::{collect_scan_diff, load_db_snapshot_for_folder};
 use super::parser::parse_audio_files_internal;
 use super::progress::ScanProgressReporter;
@@ -12,6 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
+use walkdir::WalkDir;
 
 pub fn scan_single_directory_internal(
     folder_path: String,
@@ -137,6 +140,38 @@ pub async fn parse_audio_files(
             .map_err(|error| error.to_string())?;
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn parse_music_folder(
+    folder_path: String,
+    minimum_duration_seconds: Option<u32>,
+) -> Result<Vec<Song>, String> {
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = Path::new(&folder_path);
+        if !root.is_dir() || fs::read_dir(root).is_err() {
+            return Err("所选路径不是可读取的文件夹".to_string());
+        }
+
+        let mut paths: Vec<String> = WalkDir::new(root)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+            .filter_map(|entry| {
+                let extension = entry.path().extension()?.to_string_lossy().to_lowercase();
+                is_supported_library_extension(&extension)
+                    .then(|| normalize_path(&entry.path().to_string_lossy()))
+            })
+            .collect();
+        paths.sort();
+        paths.dedup();
+
+        Ok(parse_audio_files_internal(paths, options))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

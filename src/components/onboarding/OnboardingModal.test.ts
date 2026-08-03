@@ -8,6 +8,18 @@ describe('OnboardingModal splash', () => {
     expect(source).toContain('点击任意位置以继续');
   });
 
+  it('keeps a native window drag region available while onboarding covers the title bar', () => {
+    expect(source).toContain('data-tauri-drag-region');
+    expect(source).toContain('class="absolute left-1/4 right-1/4 top-0 z-[70] h-10"');
+    expect(source).toContain('@click.stop');
+  });
+
+  it('keeps tall shortcut settings visible from the top at minimum window height', () => {
+    expect(source).toContain('max-w-6xl mx-auto min-h-full');
+    expect(source).not.toContain('max-w-6xl mx-auto h-full');
+    expect(source).toContain('修改<br />快捷键');
+  });
+
   it('automatically continues after five seconds', () => {
     expect(source).toContain('SPLASH_AUTO_ADVANCE_DELAY = 5000');
     expect(source).toContain('setTimeout(continueFromSplash, SPLASH_AUTO_ADVANCE_DELAY)');
@@ -48,5 +60,12 @@ describe('OnboardingModal splash', () => {
     expect(source).toContain('<SettingsPlugins overlay-z-class="z-[10000]" />');
     expect(source).toContain('@click="closePluginManager"');
     expect(source).toContain('完成管理');
+  });
+
+  it('keeps the full plugin manager transparent without exposing the onboarding page below it', () => {
+    expect(source).toContain('data-onboarding-plugin-manager-surface');
+    expect(source).toContain('overflow-hidden bg-transparent');
+    expect(source).toContain(":class=\"{ 'invisible pointer-events-none': showPluginManager }\"");
+    expect(source.match(/:class="onboardingSurfaceClass"/g)).toHaveLength(1);
   });
 });

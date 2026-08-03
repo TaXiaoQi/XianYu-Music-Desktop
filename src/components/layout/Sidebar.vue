@@ -232,6 +232,23 @@ const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?:
   }
 };
 
+const confirmLocalFolderImport = (payload: { name: string; songs: Song[] }) => {
+  const playlistName = payload.name.trim();
+  if (!playlistName || payload.songs.length === 0) return;
+
+  const songPaths = payload.songs.map((song) => song.path);
+  for (const song of payload.songs) {
+    libraryStore.setExtraSong(song);
+  }
+
+  const playlistId = createPlaylist(playlistName, songPaths, payload.songs);
+  if (playlistId) {
+    showToast(`已创建歌单「${playlistName}」，共 ${songPaths.length} 首歌曲`, 'success');
+  } else {
+    showToast('创建歌单失败', 'error');
+  }
+};
+
 const handleOpenAllView = () => {
   void openHomeAll();
 };
@@ -423,6 +440,7 @@ onBeforeUnmount(() => {
       :playlists="playlists"
       @create="confirmCreatePlaylist"
       @import="confirmImportPlaylist"
+      @import-local="confirmLocalFolderImport"
     />
 
     <!-- 一级侧边栏宽度可拖拽手柄 -->
