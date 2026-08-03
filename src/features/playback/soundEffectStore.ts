@@ -478,11 +478,11 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     }, 50)
   }
 
-  // eqBands 是 reactive 对象，用 () => ({ ...eqBands }) 展开才能追踪各属性变更
+  // eqBands 是 reactive 对象，用 () => ({ ...eqBands }) 展开创建新对象引用即可触发 watch；
+  // 无需 deep: true——getter 每次返回新对象，引用变化已足够被检测到
   watch(
     [() => ({ ...eqBands }), bypassAll],
     () => scheduleEqSync(),
-    { deep: true },
   )
 
   // ===== 自定义 EQ 预设保存/导入/导出 =====

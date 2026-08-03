@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { Search, X } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
-import SettingsAbout from "../components/settings/SettingsAbout.vue";
-import SettingsAccount from "../components/settings/SettingsAccount.vue";
-import SettingsDesktopLyrics from "../components/settings/SettingsDesktopLyrics.vue";
-import SettingsGeneral from "../components/settings/SettingsGeneral.vue";
-import SettingsLibrary from "../components/settings/SettingsLibrary.vue";
-import SettingsPlugins from "../components/settings/SettingsPlugins.vue";
-import SettingsShortcuts from "../components/settings/SettingsShortcuts.vue";
-import SettingsTheme from "../components/settings/SettingsTheme.vue";
-import SettingsToolbox from "../components/settings/SettingsToolbox.vue";
-import SettingsAudioOutput from "../components/settings/SettingsAudioOutput.vue";
-import SettingsDownload from "../components/settings/SettingsDownload.vue";
-import SettingsDebug from "../components/settings/SettingsDebug.vue";
-import SettingsAdvanced from "../components/settings/SettingsAdvanced.vue";
+
+// 懒加载设置子组件：用户通常只访问 1-2 个设置页，按需加载可显著减少首屏 JS 体积和解析时间
+const SettingsAbout = defineAsyncComponent(() => import("../components/settings/SettingsAbout.vue"));
+const SettingsAccount = defineAsyncComponent(() => import("../components/settings/SettingsAccount.vue"));
+const SettingsDesktopLyrics = defineAsyncComponent(() => import("../components/settings/SettingsDesktopLyrics.vue"));
+const SettingsGeneral = defineAsyncComponent(() => import("../components/settings/SettingsGeneral.vue"));
+const SettingsLibrary = defineAsyncComponent(() => import("../components/settings/SettingsLibrary.vue"));
+const SettingsPlugins = defineAsyncComponent(() => import("../components/settings/SettingsPlugins.vue"));
+const SettingsShortcuts = defineAsyncComponent(() => import("../components/settings/SettingsShortcuts.vue"));
+const SettingsTheme = defineAsyncComponent(() => import("../components/settings/SettingsTheme.vue"));
+const SettingsToolbox = defineAsyncComponent(() => import("../components/settings/SettingsToolbox.vue"));
+const SettingsAudioOutput = defineAsyncComponent(() => import("../components/settings/SettingsAudioOutput.vue"));
+const SettingsDownload = defineAsyncComponent(() => import("../components/settings/SettingsDownload.vue"));
+const SettingsDebug = defineAsyncComponent(() => import("../components/settings/SettingsDebug.vue"));
+const SettingsAdvanced = defineAsyncComponent(() => import("../components/settings/SettingsAdvanced.vue"));
 import { useDeveloperMode } from '../features/settings/developerMode';
 import {
   searchSettings,

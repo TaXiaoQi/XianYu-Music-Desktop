@@ -132,7 +132,7 @@ const handleConfirmCreate = (name: string) => {
             </div>
             <div v-for="pl in playlists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
               <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-                <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover">
+                <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover" loading="lazy" decoding="async">
                 <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
               </div>
               <div class="flex-1 min-w-0">

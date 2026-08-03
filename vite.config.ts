@@ -10,10 +10,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [vue(), wasm(), topLevelAwait()],
   build: {
+    target: 'esnext',
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: {
+          // 框架核心
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          // PIXI 渲染引擎（流光背景）
           'vendor-pixi': [
             '@pixi/app',
             '@pixi/core',
@@ -23,10 +27,31 @@ export default defineConfig(async () => ({
             '@pixi/filter-bulge-pinch',
             '@pixi/filter-color-matrix',
           ],
+          // Apple Music 风格歌词
           'vendor-amll': [
             '@applemusic-like-lyrics/core',
             '@applemusic-like-lyrics/lyric',
             '@applemusic-like-lyrics/vue',
+          ],
+          // 工具库
+          'vendor-utils': [
+            'axios',
+            'cheerio',
+            'crypto-js',
+            'blueimp-md5',
+            'big-integer',
+            'dayjs',
+            'he',
+            'qs',
+            'pinyin-pro',
+          ],
+          // Tauri API
+          'vendor-tauri': [
+            '@tauri-apps/api',
+            '@tauri-apps/plugin-dialog',
+            '@tauri-apps/plugin-global-shortcut',
+            '@tauri-apps/plugin-http',
+            '@tauri-apps/plugin-opener',
           ],
         },
       },

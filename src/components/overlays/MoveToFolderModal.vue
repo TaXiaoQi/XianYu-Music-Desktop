@@ -132,7 +132,7 @@ onUnmounted(() => {
             class="flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"
           >
             <div class="w-10 h-10 bg-blue-50 dark:bg-blue-500/10 rounded flex items-center justify-center mr-3 overflow-hidden border border-blue-100 dark:border-blue-400/10">
-              <img v-if="folderCoverCache.get(folder.path)" :src="folderCoverCache.get(folder.path)" class="w-full h-full object-cover" />
+              <img v-if="folderCoverCache.get(folder.path)" :src="folderCoverCache.get(folder.path)" class="w-full h-full object-cover" loading="lazy" decoding="async" />
               <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-300" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /></svg>
             </div>
 

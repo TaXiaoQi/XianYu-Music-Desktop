@@ -35,7 +35,7 @@
       <div v-else class="mr-1 h-6 w-6 shrink-0"></div>
 
       <div class="w-9 h-9 rounded shrink-0 mr-2 overflow-hidden bg-gray-200 dark:bg-gray-700 flex items-center justify-center border border-black/5 dark:border-white/5 relative">
-        <img v-if="coverUrl" :src="coverUrl" class="w-full h-full object-cover transition-opacity duration-300" />
+        <img v-if="coverUrl" :src="coverUrl" class="w-full h-full object-cover transition-opacity duration-300" loading="lazy" decoding="async" />
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /></svg>
       </div>
 

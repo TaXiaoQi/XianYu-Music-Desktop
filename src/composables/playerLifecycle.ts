@@ -347,11 +347,14 @@ export const createPlayerLifecycle = ({
     watch(playQueuePaths, scheduleStatePersistence);
     watch(watchedFolders, scheduleStatePersistence);
     watch(favoritePaths, scheduleStatePersistence, { deep: true });
-    watch(playlists, scheduleStatePersistence, { deep: true });
 
-    // 歌单变化时，将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
-    // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中）
+    // 合并两个对 playlists 的 deep watch：持久化保存 + 在线歌曲注入 extraSongPool。
+    // 原先有两个独立的 deep watch 同时遍历 playlists，合并后只需遍历一次。
     watch(playlists, (newPlaylists) => {
+      // 1. 持久化保存
+      scheduleStatePersistence();
+      // 2. 将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
+      //    确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中）
       for (const pl of newPlaylists) {
         if (pl.songs && pl.songs.length > 0) {
           libraryStore.setExtraSongs(pl.songs);
@@ -455,11 +458,15 @@ export const createPlayerLifecycle = ({
     }, { immediate: true });
 
     let lastPrecachedRemotePath = '';
-    watch([currentSong, currentTime, playQueue], ([song, time, queue]) => {
+    // 仅 watch currentSong + currentTime，playQueue 在回调内直接读取。
+    // 原先 watch 三源会在每次 currentTime 更新时创建 [song, time, queue] 数组，
+    // 其中 queue 可能是包含数千首歌的大数组——移出 watch 源可避免每次 tick 的无谓读取和数组分配。
+    watch([currentSong, currentTime], ([song, time]) => {
       if (!isPlaying.value || !song || song.duration <= 0 || time / song.duration < 0.6) {
         return;
       }
 
+      const queue = playQueue.value;
       const index = queue.findIndex(item => item.path === song.path);
       const nextSong = index >= 0 ? queue[index + 1] : null;
       if (!nextSong || !isRemoteSong(nextSong) || nextSong.path === lastPrecachedRemotePath) {
