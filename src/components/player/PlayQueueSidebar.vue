@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import type { ComponentPublicInstance } from 'vue';
+import { useVirtualizer } from '@tanstack/vue-virtual';
 import { usePlayer } from '../../composables/player';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useSettings } from '../../features/settings/useSettings';
@@ -24,7 +24,6 @@ const {
 const { theme } = useThemeSettings();
 
 const showClearModal = ref(false);
-const itemRefs = ref<HTMLElement[]>([]);
 
 // 合并显示：下一首播放（tempQueue）在前，播放队列（playQueue）在后
 const displayQueue = computed(() => [...tempQueue.value, ...playQueue.value]);
@@ -43,12 +42,31 @@ const handleRemove = (song: any, e: Event) => {
   removeSongFromQueue(song);
 };
 
-const setItemRef = (el: Element | ComponentPublicInstance | null, index: number) => {
-  if (el instanceof HTMLElement) {
-    itemRefs.value[index] = el;
-  }
-};
+// --- 虚拟滚动 ---
+// 播放队列可能包含大量歌曲，全量渲染会导致 DOM 节点过多、内存占用高。
+// 使用虚拟滚动只渲染可视区域内的条目（+ overscan 缓冲），大幅降低 DOM 节点数量。
+const scrollContainerRef = ref<HTMLElement | null>(null);
+const ROW_HEIGHT = 64; // p-2.5(20px) + 两行文本(~36px) + 行间距(4px) + 余量(4px) ≈ 64px
 
+const virtualizer = useVirtualizer({
+  get count() { return displayQueue.value.length; },
+  getScrollElement: () => scrollContainerRef.value,
+  estimateSize: () => ROW_HEIGHT,
+  overscan: 6,
+});
+
+const virtualItems = computed(() => virtualizer.value.getVirtualItems());
+const totalSize = computed(() => virtualizer.value.getTotalSize());
+
+// 将 virtualItem 与对应的 song 对象绑定，简化模板访问
+const virtualSongs = computed(() =>
+  virtualItems.value.map(vItem => ({
+    ...vItem,
+    song: displayQueue.value[vItem.index],
+  }))
+);
+
+// 自动滚动到当前播放歌曲
 const scrollToCurrentSong = async (behavior: ScrollBehavior = 'auto') => {
   if (!currentSong.value) return;
 
@@ -57,9 +75,9 @@ const scrollToCurrentSong = async (behavior: ScrollBehavior = 'auto') => {
   const currentIndex = displayQueue.value.findIndex(song => song.path === currentSong.value?.path);
   if (currentIndex === -1) return;
 
-  itemRefs.value[currentIndex]?.scrollIntoView({
-    behavior,
-    block: 'center',
+  virtualizer.value.scrollToIndex(currentIndex, {
+    align: 'center',
+    behavior: behavior === 'smooth' ? 'smooth' : 'auto',
   });
 };
 
@@ -115,7 +133,7 @@ watch(
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1 bg-[#eef3f8]/45 dark:bg-[#0b1220]/35">
+        <div ref="scrollContainerRef" class="flex-1 overflow-y-auto custom-scrollbar p-3 bg-[#eef3f8]/45 dark:bg-[#0b1220]/35">
           <div v-if="displayQueue.length === 0" class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20">
             <div class="w-20 h-20 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-inner">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-[#42526a] dark:text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
@@ -123,56 +141,68 @@ watch(
             <span class="text-sm font-medium">播放队列为空</span>
           </div>
 
-          <div
-            v-for="(song, index) in displayQueue"
-            :key="song.path + index"
-            :ref="el => setItemRef(el, index)"
-            @click="songClickAction === 'single' && playSong(song)"
-            @dblclick="songClickAction !== 'single' && playSong(song)"
-            class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border"
-            :class="[
-              currentSong?.path === song.path
-                ? 'bg-[#fff1f1]/95 dark:bg-[#EC4141]/18 text-[#EC4141] border-[#EC4141]/18 shadow-[0_10px_26px_rgba(15,23,42,0.14)]'
-                : 'bg-white/25 dark:bg-white/[0.03] text-[#172033] dark:text-white hover:bg-white/70 dark:hover:bg-white/10 border-transparent hover:border-white/80 dark:hover:border-white/12'
-            ]"
-          >
-            <div class="w-8 flex justify-center items-center shrink-0">
-              <div v-if="currentSong?.path === song.path" class="flex items-end gap-[2px] h-3">
-                <div class="w-[3px] bg-[#EC4141] animate-music-bar-1"></div>
-                <div class="w-[3px] bg-[#EC4141] animate-music-bar-2"></div>
-                <div class="w-[3px] bg-[#EC4141] animate-music-bar-3"></div>
-              </div>
-              <template v-else>
-                <span class="text-xs text-[#52647d] dark:text-white/75 group-hover:hidden font-mono">{{ index + 1 }}</span>
-                <svg xmlns="http://www.w3.org/2000/svg" class="hidden group-hover:block h-3 w-3 text-[#34445c] dark:text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
-              </template>
-            </div>
-
-            <div class="flex-1 min-w-0 pr-4 flex flex-col">
-              <div class="flex min-w-0 items-center gap-1.5">
-                <span class="min-w-0 truncate text-sm font-medium leading-tight">{{ song.title || song.name.replace(/\.[^/.]+$/, "") }}</span>
-                <span
-                  v-if="isRemoteSong(song)"
-                  class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-                >{{ getSongSourceLabel(song) }}</span>
-              </div>
-              <span
-                class="text-[11px] truncate mt-1 font-medium"
-                :class="currentSong?.path === song.path ? 'text-[#EC4141]' : 'text-[#42526a] dark:text-white/80'"
-              >{{ song.artist || 'Unknown Artist' }}</span>
-            </div>
-
-            <div class="flex items-center gap-3">
-              <div class="text-xs font-mono shrink-0 group-hover:hidden" :class="currentSong?.path === song.path ? 'text-[#EC4141]' : 'text-[#34445c] dark:text-white/85'">
-                {{ formatDuration(song.duration) }}
-              </div>
-              <button
-                @click="handleRemove(song, $event)"
-                class="hidden group-hover:flex w-6 h-6 items-center justify-center text-[#42526a] dark:text-white/80 hover:text-red-500 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
-                title="移出队列"
+          <div v-else :style="{ height: `${totalSize}px`, position: 'relative', width: '100%' }">
+            <div
+              v-for="vItem in virtualSongs"
+              :key="vItem.song.path + vItem.index"
+              :style="{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${vItem.size}px`,
+                transform: `translateY(${vItem.start}px)`,
+              }"
+            >
+              <div
+                class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border"
+                :class="[
+                  currentSong?.path === vItem.song.path
+                    ? 'bg-[#fff1f1]/95 dark:bg-[#EC4141]/18 text-[#EC4141] border-[#EC4141]/18 shadow-[0_10px_26px_rgba(15,23,42,0.14)]'
+                    : 'bg-white/25 dark:bg-white/[0.03] text-[#172033] dark:text-white hover:bg-white/70 dark:hover:bg-white/10 border-transparent hover:border-white/80 dark:hover:border-white/12'
+                ]"
+                @click="songClickAction === 'single' && playSong(vItem.song)"
+                @dblclick="songClickAction !== 'single' && playSong(vItem.song)"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+                <div class="w-8 flex justify-center items-center shrink-0">
+                  <div v-if="currentSong?.path === vItem.song.path" class="flex items-end gap-[2px] h-3">
+                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-1"></div>
+                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-2"></div>
+                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-3"></div>
+                  </div>
+                  <template v-else>
+                    <span class="text-xs text-[#52647d] dark:text-white/75 group-hover:hidden font-mono">{{ vItem.index + 1 }}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="hidden group-hover:block h-3 w-3 text-[#34445c] dark:text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+                  </template>
+                </div>
+
+                <div class="flex-1 min-w-0 pr-4 flex flex-col">
+                  <div class="flex min-w-0 items-center gap-1.5">
+                    <span class="min-w-0 truncate text-sm font-medium leading-tight">{{ vItem.song.title || vItem.song.name.replace(/\.[^/.]+$/, "") }}</span>
+                    <span
+                      v-if="isRemoteSong(vItem.song)"
+                      class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
+                    >{{ getSongSourceLabel(vItem.song) }}</span>
+                  </div>
+                  <span
+                    class="text-[11px] truncate mt-1 font-medium"
+                    :class="currentSong?.path === vItem.song.path ? 'text-[#EC4141]' : 'text-[#42526a] dark:text-white/80'"
+                  >{{ vItem.song.artist || 'Unknown Artist' }}</span>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <div class="text-xs font-mono shrink-0 group-hover:hidden" :class="currentSong?.path === vItem.song.path ? 'text-[#EC4141]' : 'text-[#34445c] dark:text-white/85'">
+                    {{ formatDuration(vItem.song.duration) }}
+                  </div>
+                  <button
+                    @click="handleRemove(vItem.song, $event)"
+                    class="hidden group-hover:flex w-6 h-6 items-center justify-center text-[#42526a] dark:text-white/80 hover:text-red-500 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                    title="移出队列"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

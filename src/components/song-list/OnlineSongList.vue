@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
@@ -32,6 +32,60 @@ const handlePlayClick = (song: Song) => {
   launchFlyingCover(song.path, song.cover_thumb_path || '');
   emit('play', song);
 };
+
+// --- 渐进式渲染 ---
+// 在线搜索/专辑歌曲列表可能包含上百首歌曲，全量渲染会产生大量 DOM 节点。
+// 使用初始渲染上限 + IntersectionObserver 哨兵检测，滚动到底部时自动加载更多，
+// 将初始 DOM 节点从 N 降至 min(N, 50)，滚动时按 50 条递增。
+const INITIAL_RENDER_LIMIT = 50;
+const RENDER_BATCH_SIZE = 50;
+const renderLimit = ref(INITIAL_RENDER_LIMIT);
+
+const visibleSongs = computed(() => props.songs.slice(0, renderLimit.value));
+const hasMore = computed(() => renderLimit.value < props.songs.length);
+
+// 哨兵元素 ref
+const sentinelRef = ref<HTMLElement | null>(null);
+let observer: IntersectionObserver | null = null;
+
+const onSentinelIntersect: IntersectionObserverCallback = (entries) => {
+  if (entries[0]?.isIntersecting && hasMore.value) {
+    renderLimit.value = Math.min(
+      renderLimit.value + RENDER_BATCH_SIZE,
+      props.songs.length
+    );
+  }
+};
+
+// 监听哨兵元素，使用 IntersectionObserver 检测滚动到底部
+watch(sentinelRef, (el, _oldEl, onCleanup) => {
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+  if (!el) return;
+
+  observer = new IntersectionObserver(onSentinelIntersect, {
+    root: null, // 使用最近的可滚动祖先
+    rootMargin: '200px', // 提前 200px 触发加载
+    threshold: 0,
+  });
+  observer.observe(el);
+
+  onCleanup(() => {
+    observer?.disconnect();
+    observer = null;
+  });
+});
+
+// songs 变化时重置渲染上限（切换专辑/歌手时）
+watch(() => props.songs, () => {
+  renderLimit.value = INITIAL_RENDER_LIMIT;
+});
+
+onBeforeUnmount(() => {
+  observer?.disconnect();
+});
 </script>
 
 <template>
@@ -48,7 +102,7 @@ const handlePlayClick = (song: Song) => {
     </thead>
     <tbody>
       <tr
-        v-for="(item, index) in props.songs"
+        v-for="(item, index) in visibleSongs"
         :key="`${item.path}-${index}`"
         class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
         @click="songClickAction === 'single' && handlePlayClick(item)"
@@ -88,4 +142,6 @@ const handlePlayClick = (song: Song) => {
       </tr>
     </tbody>
   </table>
+  <!-- 渐进式渲染哨兵：滚动到此处时自动加载下一批 -->
+  <div ref="sentinelRef" class="h-1 w-full" aria-hidden="true"></div>
 </template>
