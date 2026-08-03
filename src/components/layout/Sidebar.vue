@@ -290,10 +290,80 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
   setSearch('');
   handlePlaylistClick(event, id);
 };
+
+// --- 一级侧边栏拖拽调整宽度逻辑 ---
+import { onBeforeUnmount } from 'vue';
+
+const STORAGE_KEY_MAIN_SIDEBAR_WIDTH = 'main_sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 192;
+const MIN_SIDEBAR_WIDTH = 140;
+const MAX_SIDEBAR_WIDTH = 360;
+
+const loadInitialSidebarWidth = (): number => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH);
+    if (saved) {
+      const parsed = Number.parseInt(saved, 10);
+      if (!Number.isNaN(parsed)) {
+        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
+      }
+    }
+  } catch {}
+  return DEFAULT_SIDEBAR_WIDTH;
+};
+
+const sidebarWidth = ref(loadInitialSidebarWidth());
+const isResizingSidebar = ref(false);
+let dragStartX = 0;
+let dragStartWidth = 0;
+
+const startSidebarResize = (e: PointerEvent) => {
+  e.preventDefault();
+  isResizingSidebar.value = true;
+  dragStartX = e.clientX;
+  dragStartWidth = sidebarWidth.value;
+
+  window.addEventListener('pointermove', handleSidebarResizeMove);
+  window.addEventListener('pointerup', stopSidebarResize);
+  window.addEventListener('pointercancel', stopSidebarResize);
+};
+
+const handleSidebarResizeMove = (e: PointerEvent) => {
+  if (!isResizingSidebar.value) return;
+  const deltaX = e.clientX - dragStartX;
+  const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, dragStartWidth + deltaX));
+  sidebarWidth.value = nextWidth;
+};
+
+const stopSidebarResize = () => {
+  if (!isResizingSidebar.value) return;
+  isResizingSidebar.value = false;
+  window.removeEventListener('pointermove', handleSidebarResizeMove);
+  window.removeEventListener('pointerup', stopSidebarResize);
+  window.removeEventListener('pointercancel', stopSidebarResize);
+  try {
+    localStorage.setItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH, sidebarWidth.value.toString());
+  } catch {}
+};
+
+const resetSidebarWidth = () => {
+  sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH;
+  try {
+    localStorage.setItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH.toString());
+  } catch {}
+};
+
+onBeforeUnmount(() => {
+  stopSidebarResize();
+});
 </script>
 
 <template>
-  <aside class="w-48 bg-transparent flex flex-col border-r border-black/10 dark:border-white/10 h-full select-none overflow-hidden relative transition-colors duration-600">
+  <aside
+    class="bg-transparent flex flex-col border-r border-black/10 dark:border-white/10 h-full select-none overflow-hidden relative transition-colors duration-600 shrink-0"
+    :class="{ 'select-none': isResizingSidebar }"
+    :style="{ width: `${sidebarWidth}px` }"
+  >
     <SidebarBrand />
 
     <nav class="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4" @click="handleBackgroundClick">
@@ -354,6 +424,19 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
       @create="confirmCreatePlaylist"
       @import="confirmImportPlaylist"
     />
+
+    <!-- 一级侧边栏宽度可拖拽手柄 -->
+    <div
+      class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
+      title="按住拖拽调整侧边栏宽度，双击恢复默认"
+      @pointerdown="startSidebarResize"
+      @dblclick="resetSidebarWidth"
+    >
+      <div
+        class="h-full w-0.5 transition-colors duration-200"
+        :class="isResizingSidebar ? 'bg-[#EC4141]' : 'group-hover:bg-[#EC4141]/60 bg-transparent'"
+      ></div>
+    </div>
   </aside>
 </template>
 
