@@ -15,7 +15,7 @@ describe('footer layout visual editor helpers', () => {
       left: ['favorite', 'download'],
       middleLeft: 'playMode',
       middleRight: 'desktopLyrics',
-      right: ['quality', 'speed', 'volume', 'equalizer', 'playlist'],
+      right: ['quality', 'volume', 'equalizer', 'playlist'],
     });
 
     expect(layout.hidden).toEqual([]);
@@ -40,9 +40,9 @@ describe('footer layout visual editor helpers', () => {
 
     expect(slots['right-0']).toBeNull();
     expect(slots['right-1']).toBe('quality');
-    expect(slots['right-2']).toBe('speed');
-    expect(slots['right-3']).toBe('volume');
-    expect(slots['right-4']).toBe('playlist');
+    expect(slots['right-2']).toBe('volume');
+    expect(slots['right-3']).toBe('playlist');
+    expect(slots['right-4']).toBeNull();
   });
 
   it('does not move buttons across the fixed footer regions when hiding one', () => {

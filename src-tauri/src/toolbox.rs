@@ -1,4 +1,7 @@
-use crate::music::tags::{extract_text_metadata, read_tagged_file_from_path};
+use crate::music::tags::{
+    extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file,
+    EmbedMetadataRequest,
+};
 use crate::music::utils::is_supported_library_extension;
 use lofty::prelude::*;
 use regex::Regex;
@@ -635,6 +638,18 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
         .await
         .map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 将歌曲元数据（标题、艺术家、专辑、歌词、封面等）写入音频文件 tag。
+///
+/// 在 `spawn_blocking` 中执行，避免阻塞异步运行时。
+/// 写入失败仅返回错误字符串，不中断下载主流程（由前端控制是否继续）。
+#[tauri::command]
+pub async fn embed_audio_metadata(request: EmbedMetadataRequest) -> Result<(), String> {
+    let request = request.clone();
+    tokio::task::spawn_blocking(move || write_metadata_to_file(&request))
+        .await
+        .map_err(|e| format!("元数据嵌入任务失败: {e}"))?
 }
 
 /// 下载记录文件路径：`%APPDATA%\com.xymusic.desktop\download_history.json`。

@@ -160,13 +160,15 @@ export const defaultDownloadSettings: DownloadSettings = {
   format: 'mp3',
   quality: '320k',
   downloadLyrics: true,
-  downloadCover: true,
   lyricsFormat: 'lrc',
   overwriteExisting: false,
   keepSourceFilename: false,
   fileNameStyle: 'artist-title',
   rememberDownloadPath: false,
   qualityFallbackBehavior: 'lower',
+  embedMetadata: true,
+  embedLyrics: true,
+  embedCover: true,
 };
 
 export const defaultUploadSettings: UploadSettings = {
@@ -325,13 +327,15 @@ export const mergeDownloadSettings = (
     format,
     quality,
     downloadLyrics: typeof patch.downloadLyrics === 'boolean' ? patch.downloadLyrics : base.downloadLyrics,
-    downloadCover: typeof patch.downloadCover === 'boolean' ? patch.downloadCover : base.downloadCover,
     lyricsFormat,
     overwriteExisting: typeof patch.overwriteExisting === 'boolean' ? patch.overwriteExisting : base.overwriteExisting,
     keepSourceFilename: typeof patch.keepSourceFilename === 'boolean' ? patch.keepSourceFilename : base.keepSourceFilename,
     fileNameStyle,
     rememberDownloadPath: typeof patch.rememberDownloadPath === 'boolean' ? patch.rememberDownloadPath : base.rememberDownloadPath,
     qualityFallbackBehavior,
+    embedMetadata: typeof patch.embedMetadata === 'boolean' ? patch.embedMetadata : base.embedMetadata,
+    embedLyrics: typeof patch.embedLyrics === 'boolean' ? patch.embedLyrics : base.embedLyrics,
+    embedCover: typeof patch.embedCover === 'boolean' ? patch.embedCover : base.embedCover,
   };
 };
 

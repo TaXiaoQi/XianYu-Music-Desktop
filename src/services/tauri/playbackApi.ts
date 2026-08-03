@@ -28,7 +28,6 @@ let lastThrottleTime = 0;
 
 export const playbackApi = {
   setVolume: (volume: number): Promise<void> => tauriInvoke('set_volume', { volume }),
-  setPlaybackSpeed: (speed: number): Promise<void> => tauriInvoke('set_playback_speed', { speed }),
   getPlaybackProgress: (): Promise<number> => tauriInvoke('get_playback_progress'),
   getPlaybackReady: (): Promise<boolean> => tauriInvoke('get_playback_ready'),
   getPlaybackStartFailed: (): Promise<boolean> => tauriInvoke('get_playback_start_failed'),

@@ -661,8 +661,12 @@ export interface DownloadSongOptions {
   overwriteExisting: boolean;
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
-  /** 是否同时下载封面图片 */
-  downloadCover: boolean;
+  /** 是否将元数据写入音频文件 tag */
+  embedMetadata: boolean;
+  /** 是否将歌词写入音频文件 tag */
+  embedLyrics: boolean;
+  /** 是否将封面嵌入音频文件 tag */
+  embedCover: boolean;
   /** 下载进度回调（0-100）。Worker 下载时逐块回报；Rust 回退时通过事件回报。 */
   onProgress?: (percent: number) => void;
 }
@@ -671,7 +675,7 @@ export interface DownloadSongResult {
   filePath: string;
   hitQuality: LxQuality;
   lyricsSaved: boolean;
-  coverSaved: boolean;
+  metadataEmbedded: boolean;
 }
 
 /**
@@ -735,40 +739,7 @@ async function resolveCoverUrl(song: Song): Promise<string | null> {
 }
 
 /**
- * 下载封面图片到指定路径（与音频文件同目录、同名、.jpg 扩展名）。
- * 使用 fetch + save_download_bytes 落盘，不占用音频下载进度。
- */
-async function downloadCoverImage(
-  coverUrl: string,
-  audioFilePath: string,
-  overwriteExisting: boolean,
-): Promise<boolean> {
-  const dot = audioFilePath.lastIndexOf('.');
-  const coverBase = dot === -1 ? audioFilePath : audioFilePath.slice(0, dot);
-  let coverPath = `${coverBase}.jpg`;
-  if (!overwriteExisting) {
-    coverPath = await resolveNonConflictingPath(coverPath);
-  }
-
-  try {
-    const resp = await fetch(coverUrl);
-    if (!resp.ok) return false;
-    const blob = await resp.blob();
-    const buffer = new Uint8Array(await blob.arrayBuffer());
-    if (buffer.length === 0) return false;
-    await invoke<string>('save_download_bytes', {
-      data: Array.from(buffer),
-      destPath: coverPath,
-    });
-    return true;
-  } catch (e: any) {
-    console.warn('[Download] 保存封面失败:', e?.message);
-    return false;
-  }
-}
-
-/**
- * 下载在线歌曲主编排：逐音质档位解析直链 → 计算目标路径 → 流式下载 → 可选下载歌词/封面。
+ * 下载在线歌曲主编排：逐音质档位解析直链 → 计算目标路径 → 流式下载 → 可选下载独立歌词/嵌入元数据。
  * 同时支持 lx://（落雪）和 plugin://（MusicFree）协议，根据 path 前缀自动路由。
  * 下载进度通过 Rust 事件 `song-download-progress` 回报，由调用方监听。
  */
@@ -899,36 +870,71 @@ export async function downloadSong(
     );
   }
 
+  // 歌词：独立文件保存 + 嵌入 tag 复用同一份文本
   let lyricsSaved = false;
-  if (options.downloadLyrics) {
+  let savedLyricText: string | null = null;
+  if (options.downloadLyrics || options.embedLyrics) {
     const lyricText = await fetchLyricText(song, options.lyricsFormat);
     if (lyricText) {
-      const dot = filePath.lastIndexOf('.');
-      const lyricBase = dot === -1 ? filePath : filePath.slice(0, dot);
-      const lyricPath = `${lyricBase}.${options.lyricsFormat}`;
-      try {
-        await invoke<string>('save_download_lyrics', {
-          content: lyricText,
-          destPath: lyricPath,
-        });
-        lyricsSaved = true;
-      } catch (e: any) {
-        console.warn('[Download] 保存歌词失败:', e?.message);
+      savedLyricText = lyricText;
+      if (options.downloadLyrics) {
+        const dot = filePath.lastIndexOf('.');
+        const lyricBase = dot === -1 ? filePath : filePath.slice(0, dot);
+        const lyricPath = `${lyricBase}.${options.lyricsFormat}`;
+        try {
+          await invoke<string>('save_download_lyrics', {
+            content: lyricText,
+            destPath: lyricPath,
+          });
+          lyricsSaved = true;
+        } catch (e: any) {
+          console.warn('[Download] 保存歌词失败:', e?.message);
+        }
       }
     }
   }
 
-  let coverSaved = false;
-  if (options.downloadCover) {
+  // 封面：仅用于嵌入 tag，不保存独立文件
+  let savedCoverData: Uint8Array | null = null;
+  if (options.embedCover) {
     try {
       const coverUrl = await resolveCoverUrl(song);
       if (coverUrl) {
-        coverSaved = await downloadCoverImage(coverUrl, filePath, options.overwriteExisting);
+        const resp = await fetch(coverUrl);
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          savedCoverData = new Uint8Array(buf);
+        }
       }
     } catch (e: any) {
-      console.warn('[Download] 下载封面失败:', e?.message);
+      console.warn('[Download] 获取封面失败:', e?.message);
     }
   }
 
-  return { filePath, hitQuality, lyricsSaved, coverSaved };
+  // 元数据嵌入：将标题/艺术家/专辑/歌词/封面写入音频文件 tag
+  let metadataEmbedded = false;
+  if (options.embedMetadata || options.embedLyrics || options.embedCover) {
+    try {
+      await invoke('embed_audio_metadata', {
+        request: {
+          filePath,
+          title: options.embedMetadata ? (song.title || song.name || undefined) : undefined,
+          artist: options.embedMetadata ? (song.artist || undefined) : undefined,
+          album: options.embedMetadata ? (song.album || undefined) : undefined,
+          albumArtist: options.embedMetadata ? (song.album_artist || undefined) : undefined,
+          year: options.embedMetadata ? (song.year?.toString() || undefined) : undefined,
+          trackNumber: options.embedMetadata ? (song.track_number?.toString() || undefined) : undefined,
+          discNumber: options.embedMetadata ? (song.disc_number?.toString() || undefined) : undefined,
+          lyrics: options.embedLyrics ? (savedLyricText || undefined) : undefined,
+          coverData: options.embedCover && savedCoverData ? Array.from(savedCoverData) : undefined,
+          coverMime: 'image/jpeg',
+        },
+      });
+      metadataEmbedded = true;
+    } catch (e: any) {
+      console.warn('[Download] 元数据嵌入失败:', e?.message);
+    }
+  }
+
+  return { filePath, hitQuality, lyricsSaved, metadataEmbedded };
 }

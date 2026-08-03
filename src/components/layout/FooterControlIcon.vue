@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Download, Gauge, Loader2, SlidersHorizontal } from 'lucide-vue-next';
+import { CircleCheck, Download, Loader2, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 
 defineOptions({ inheritAttrs: false });
@@ -36,7 +36,6 @@ withDefaults(defineProps<{
   </template>
   <span v-else-if="itemKey === 'desktopLyrics'" v-bind="$attrs" class="text-[14px] font-bold leading-none">词</span>
   <span v-else-if="itemKey === 'quality'" v-bind="$attrs" class="whitespace-nowrap text-[11px] font-semibold leading-none">{{ qualityLabel }}</span>
-  <Gauge v-else-if="itemKey === 'speed'" v-bind="$attrs" />
   <template v-else-if="itemKey === 'volume'">
     <svg v-if="volume === 0" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
     <svg v-else-if="volume < 30" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /></svg>

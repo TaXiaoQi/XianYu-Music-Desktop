@@ -292,7 +292,6 @@ export type FooterItemKey =
   | 'playMode'        // 播放模式
   | 'desktopLyrics'  // 桌面歌词
   | 'quality'         // 音质选择
-  | 'speed'           // 倍速
   | 'volume'          // 音量
   | 'equalizer'       // 均衡器
   | 'playlist';       // 播放队列
@@ -648,9 +647,8 @@ export interface DownloadSettings {
   downloadPath: string;
   format: DownloadFormat;
   quality: DownloadQuality;
+  /** 下载独立歌词文件（.lrc/.txt），默认 true */
   downloadLyrics: boolean;
-  /** 同时下载封面（默认 true） */
-  downloadCover: boolean;
   lyricsFormat: 'lrc' | 'txt';
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
@@ -659,6 +657,12 @@ export interface DownloadSettings {
   rememberDownloadPath: boolean;
   /** 下载音质缺失时的回退行为，默认 'lower'（下载更低音质） */
   qualityFallbackBehavior: DownloadQualityFallbackBehavior;
+  /** 将歌曲元数据（标题、艺术家、专辑等）写入音频文件 tag（默认 true） */
+  embedMetadata: boolean;
+  /** 将歌词写入音频文件 tag（默认 true） */
+  embedLyrics: boolean;
+  /** 将封面嵌入音频文件 tag（默认 true） */
+  embedCover: boolean;
 }
 
 /** 下载音质缺失行为 */

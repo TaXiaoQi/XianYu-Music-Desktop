@@ -5,7 +5,7 @@ import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useToast } from '../../composables/toast';
 import { useDeveloperMode } from '../../features/settings/developerMode';
 
-const REPO_OWNER = 'ShenYichenCN';
+const REPO_OWNER = 'TaXiaoQi';
 const REPO_NAME = 'XianYu-Music-Desktop';
 const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 const OFFICIAL_SITE_URL = 'https://xy.zh2026.cn/ciyuanxi/';

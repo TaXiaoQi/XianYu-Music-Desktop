@@ -116,7 +116,7 @@
                   {{ index + 1 }}
                 </td>
                 <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="`lx://${item.source}/${item.songmid}`">
                     <img
                       v-if="item.img"
                       :src="item.img"
@@ -156,7 +156,7 @@
                   {{ lxSearchResults.length + index + 1 }}
                 </td>
                 <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="`plugin://${item.platform}/${item.id}`">
                     <img
                       v-if="item.coverUrl"
                       :src="getMfCoverUrl(item)"
@@ -196,7 +196,7 @@
                   {{ lxSearchResults.length + pluginSearchResults.length + index + 1 }}
                 </td>
                 <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
                     <img
                       v-if="item.cover_thumb_path"
                       :src="getLocalCoverUrl(item)"
@@ -410,6 +410,7 @@ import { usePlaybackStore } from '../features/playback/store';
 import { useCollectionsStore } from '../features/collections/store';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useToast } from '../composables/toast';
+import { launchFlyingCover } from '../composables/useFlyingCover';
 import {
   lxSearch,
   lxCatalogSearch,
@@ -970,6 +971,8 @@ watch(pluginsVersion, () => {
 
 // 播放搜索到的歌曲
 const handlePlaySong = (item: LxSearchResultItem) => {
+  // 飞入封面动画（掩盖起播延迟）
+  launchFlyingCover(`lx://${item.source}/${item.songmid}`, item.img || '');
   // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
   cacheLxSong(item);
   // 同时缓存到 lxLyricFetcher（供歌词获取使用）
@@ -1055,6 +1058,8 @@ const handleMfImgError = (e: Event) => {
 };
 
 const handlePlayMfSong = async (item: PluginSearchResult) => {
+  // 飞入封面动画（掩盖 getMusicInfo 网络请求延迟）
+  launchFlyingCover(`plugin://${item.platform}/${item.id}`, item.coverUrl || '');
   const mfSource = pluginSourceList.value.find(s => s.id === item.pluginId && s.type === 'musicfree');
   if (!mfSource || !mfSource.source) {
     console.warn('[MusicFree] 插件未找到:', item.pluginId);
@@ -1353,7 +1358,9 @@ const getLocalCoverUrl = (song: Song): string => {
 };
 
 const handlePlayLocalSong = (song: Song) => {
-  void playSong(song, { insertAfterCurrent: true });
+  const flightPromise = launchFlyingCover(song.path, getLocalCoverUrl(song) || song.cover_thumb_path || '');
+  // 本地歌曲：等飞抵底栏再切换播放
+  void flightPromise.then(() => playSong(song, { insertAfterCurrent: true }));
 };
 
 const handleLocalContextMenu = (e: MouseEvent, song: Song) => {
