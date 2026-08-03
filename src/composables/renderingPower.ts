@@ -25,6 +25,7 @@ const mainWindowRenderingSnapshot = ref<MainWindowRenderingSnapshot>(defaultSnap
 export function resolveMainWindowLowPower(snapshot: MainWindowRenderingSnapshot) {
   return !snapshot.windowVisible
     || snapshot.windowMinimized
+    || snapshot.documentHidden
     || snapshot.miniMode;
 }
 

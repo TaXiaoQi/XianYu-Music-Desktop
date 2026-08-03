@@ -165,6 +165,28 @@ const syncFetchTimer = () => {
 
 watch(() => [props.active, props.isPlaying, isMainWindowLowPower.value] as const, syncFetchTimer);
 
+// 最小化/隐藏时清空 canvas 并释放 GPU 后备缓冲区，恢复时重新绘制
+watch(isMainWindowLowPower, (lowPower) => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+
+  if (lowPower) {
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    // 将尺寸归零释放 GPU 合成层内存
+    canvas.width = 0;
+    canvas.height = 0;
+    renderedLevels.value = Array(DISPLAY_BAR_COUNT).fill(0);
+  } else {
+    nextTick(() => {
+      resizeCanvas();
+      scheduleDraw();
+    });
+  }
+});
+
 watch(() => props.songPath, () => {
   levels.value = Array(BAR_COUNT).fill(0);
   renderedLevels.value = Array(DISPLAY_BAR_COUNT).fill(0);

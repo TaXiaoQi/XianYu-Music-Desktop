@@ -6,6 +6,7 @@ import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
+import { useRenderingPower } from '../../composables/renderingPower';
 import type { SongDetail } from '../../types';
 import { tauriInvoke } from '../../services/tauri/invoke';
 import LyricsView from './LyricsView.vue';
@@ -22,6 +23,13 @@ const {
 } = usePlaybackController();
 
 const { settings } = useSettings();
+
+const { isMainWindowLowPower } = useRenderingPower();
+
+// 窗口最小化/隐藏时卸载重型子组件（AmlLyricPlayer 的数百个歌词 DOM 元素、
+// PlayerDetailLeft 的封面图、PlayerDetailBackground 的模糊背景），
+// 释放 DOM 节点和 GPU 合成层内存。窗口恢复后自动重新挂载。
+const shouldRenderHeavyContent = computed(() => showPlayerDetail.value && !isMainWindowLowPower.value);
 
 
 const { staggerPhase } = useSharedTransition();
@@ -384,7 +392,7 @@ const closeContextMenu = () => {
           transform: showPlayerDetail ? 'translateY(0)' : 'translateY(100%)',
         }"
       >
-        <PlayerDetailBackground :bgOpacity="1" :active="showPlayerDetail" />
+        <PlayerDetailBackground v-if="shouldRenderHeavyContent" :bgOpacity="1" :active="showPlayerDetail" />
         <div class="absolute inset-0 z-[-1] bg-[#0a0a0a]"></div>
       </div>
 
@@ -492,7 +500,7 @@ const closeContextMenu = () => {
 
       <PlayerDetailLeft :isExpanded="showPlayerDetail" :coverHidden="coverHidden" @toggle-cover="handleToggleCover" />
 
-      <div class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
+      <div v-if="shouldRenderHeavyContent" class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
         <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
 
         <div

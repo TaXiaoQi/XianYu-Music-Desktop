@@ -4,6 +4,7 @@ import type { LyricLine as AmlLyricLine, LyricLineMouseEvent } from '@applemusic
 import { PatchedLyricPlayer } from '../../lib/amll/PatchedLyricPlayer';
 import { syncAmlLyricSeekLayout } from './amllSeekLayout';
 import { usePerformanceMode } from '../../composables/usePerformanceMode';
+import { useRenderingPower } from '../../composables/renderingPower';
 
 const props = withDefaults(defineProps<{
   disabled?: boolean;
@@ -42,6 +43,7 @@ const emit = defineEmits<{
 const wrapperRef = ref<HTMLDivElement | null>(null);
 
 const { isLowPerformance } = usePerformanceMode();
+const { isMainWindowLowPower } = useRenderingPower();
 
 let player: PatchedLyricPlayer | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -58,13 +60,14 @@ function stopAnimationLoop() {
 function startAnimationLoop() {
   stopAnimationLoop();
 
-  if (props.disabled || !props.playing) {
+  // 窗口最小化/隐藏/迷你模式时暂停 rAF 循环，避免不可见状态下持续写入 DOM transform
+  if (props.disabled || !props.playing || isMainWindowLowPower.value) {
     return;
   }
 
   let lastTime = -1;
   const onFrame = (time: number) => {
-    if (!player || props.disabled || !props.playing) {
+    if (!player || props.disabled || !props.playing || isMainWindowLowPower.value) {
       frameId = 0;
       return;
     }
@@ -212,6 +215,15 @@ watch(() => props.playing, (playing) => {
   } else {
     player.pause();
     stopAnimationLoop();
+  }
+});
+
+// 窗口最小化时暂停 rAF，恢复时重新启动
+watch(isMainWindowLowPower, (lowPower) => {
+  if (lowPower) {
+    stopAnimationLoop();
+  } else if (!props.disabled && props.playing) {
+    startAnimationLoop();
   }
 });
 
