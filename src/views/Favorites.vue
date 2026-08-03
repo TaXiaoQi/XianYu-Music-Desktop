@@ -65,6 +65,7 @@ import { useLibraryCollections } from '../features/collections/useLibraryCollect
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { useSongContextActions } from '../composables/useSongContextActions';
+import { launchFlyingCover } from '../composables/useFlyingCover';
 
 // 组件导入
 import FavoritesHeader from '../components/headers/FavoritesHeader.vue';
@@ -117,7 +118,10 @@ watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
 
 const handlePlayAll = () => {
   if (localSongList.value.length > 0) {
-    void playSong(localSongList.value[0]);
+    const firstSong = localSongList.value[0];
+    void launchFlyingCover(firstSong.path, '').then(() => {
+      void playSong(firstSong);
+    });
   }
 };
 
@@ -134,7 +138,10 @@ const handleAddAllToQueue = () => {
 const handleBatchPlay = () => {
   const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
   if (selected.length > 0) {
-    void playSong(selected[0]);
+    const firstSong = selected[0];
+    void launchFlyingCover(firstSong.path, '').then(() => {
+      void playSong(firstSong);
+    });
   }
 };
 

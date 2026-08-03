@@ -75,6 +75,7 @@ import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { usePlayerViewState } from '../composables/usePlayerViewState';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { useSongContextActions } from '../composables/useSongContextActions';
+import { launchFlyingCover } from '../composables/useFlyingCover';
 
 // 组件导入
 import RecentHeader from '../components/headers/RecentHeader.vue';
@@ -170,7 +171,10 @@ watch(recentTab, () => {
 // 播放全部
 const handlePlayAll = () => {
   if (localSongList.value.length > 0) {
-    void playSong(localSongList.value[0]);
+    const firstSong = localSongList.value[0];
+    void launchFlyingCover(firstSong.path, '').then(() => {
+      void playSong(firstSong);
+    });
   }
 };
 
@@ -195,7 +199,10 @@ const handleOpenRecentCollection = (id: string) => {
 const handleBatchPlay = () => {
   const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
   if (selected.length > 0) {
-    void playSong(selected[0]);
+    const firstSong = selected[0];
+    void launchFlyingCover(firstSong.path, '').then(() => {
+      void playSong(firstSong);
+    });
   }
 };
 

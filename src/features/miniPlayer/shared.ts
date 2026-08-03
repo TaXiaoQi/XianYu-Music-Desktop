@@ -11,10 +11,27 @@ export const MINI_PLAYER_BOUNDS_EVENT = 'mini-player:bounds';
 export const MINI_PLAYER_BOUNDS_KEY = 'mini_player_window_bounds';
 export const APP_SHOW_MAIN_EVENT = 'app:show-main';
 
-export const MINI_PLAYER_WINDOW_WIDTH = 300;
-export const MINI_PLAYER_WINDOW_BASE_HEIGHT = 75;
-export const MINI_PLAYER_WINDOW_EXPANDED_HEIGHT = 420;
-export const MINI_PLAYER_WINDOW_VOLUME_HEIGHT = 135;
+// mf-style 布局：400 x 156（主体行 88 + 进度条行 20 + 底部控件行 48）
+export const MINI_PLAYER_WINDOW_WIDTH = 400;
+export const MINI_PLAYER_WINDOW_BASE_HEIGHT = 156;
+export const MINI_PLAYER_WINDOW_EXPANDED_HEIGHT = 516;
+
+// 音量独立小窗
+export const VOLUME_POPOVER_WINDOW_LABEL = 'volume-popover';
+export const VOLUME_POPOVER_WINDOW_WIDTH = 180;
+export const VOLUME_POPOVER_WINDOW_HEIGHT = 56;
+export const VOLUME_POPOVER_STATE_EVENT = 'volume-popover:state';
+export const VOLUME_POPOVER_ACTION_EVENT = 'volume-popover:action';
+export const VOLUME_POPOVER_VISIBILITY_EVENT = 'volume-popover:visibility';
+
+export interface VolumePopoverStatePayload {
+  volume: number;
+}
+
+export type VolumePopoverAction =
+  | { type: 'set-volume'; volume: number }
+  | { type: 'toggle-mute' }
+  | { type: 'close' };
 
 export interface MiniPlayerWindowBounds {
   x: number;
@@ -29,6 +46,13 @@ export interface MiniPlayerStatePayload {
   volume: number;
   queue: Song[];
   lyricText: string;
+  windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
+  windowBlurTint: number;
+  currentTime: number;
+  duration: number;
+  isFavorite: boolean;
+  playMode: number; // 0=顺序, 1=单曲循环, 2=随机
+  desktopLyricsEnabled: boolean;
 }
 
 export type MiniPlayerAction =
@@ -39,4 +63,8 @@ export type MiniPlayerAction =
   | { type: 'toggle-mute' }
   | { type: 'play-song'; song: Song }
   | { type: 'close' }
-  | { type: 'restore-main' };
+  | { type: 'restore-main' }
+  | { type: 'seek'; time: number }
+  | { type: 'toggle-favorite' }
+  | { type: 'cycle-play-mode' }
+  | { type: 'toggle-desktop-lyrics' };

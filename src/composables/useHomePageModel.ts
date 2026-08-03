@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import type { Song } from '../types';
 
+import { launchFlyingCover } from './useFlyingCover';
 import { useCoverCache } from './useCoverCache';
 import { useHomeArtistAlbums } from './useHomeArtistAlbums';
 import { useHomeBatchActions } from './useHomeBatchActions';
@@ -230,7 +231,10 @@ export function useHomePageModel() {
 
   const handlePlayAll = () => {
     if (localSongList.value.length > 0) {
-      void playSong(localSongList.value[0]);
+      const firstSong = localSongList.value[0];
+      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '').then(() => {
+        void playSong(firstSong);
+      });
     }
   };
 
@@ -245,7 +249,10 @@ export function useHomePageModel() {
   const handleBatchPlay = () => {
     const selectedSongs = localSongList.value.filter(song => selectedPaths.value.has(song.path));
     if (selectedSongs.length > 0) {
-      void playSong(selectedSongs[0]);
+      const firstSong = selectedSongs[0];
+      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '').then(() => {
+        void playSong(firstSong);
+      });
     }
   };
 

@@ -9,6 +9,7 @@ import { usePlaybackController } from '../features/playback/usePlaybackControlle
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
 import { useToast } from '../composables/toast';
+import { launchFlyingCover } from '../composables/useFlyingCover';
 import {
   pluginGetArtistWorks,
   pluginGetArtistAlbums,
@@ -197,12 +198,16 @@ async function handlePlayAll() {
   }
 
   try {
+    const firstSong = songList.value[0];
+    // 在线歌曲不 await，保持边飞边加载的并行行为（与 OnlineSongList 一致）
+    launchFlyingCover(firstSong.path, firstSong.cover_thumb_path || '');
+
     // 清空当前播放队列，加入全部歌曲（保留 rawData，播放时由 playSong 解析 plugin:// URL）
     await clearQueue();
     addSongsToQueue(songList.value);
 
     // 播放第一首：playSong 内部会解析 plugin:// 协议并拉取直链、歌词、封面
-    await playSong(songList.value[0], { preserveQueue: true });
+    await playSong(firstSong, { preserveQueue: true });
   } catch (e: any) {
     showToast(`播放失败: ${e?.message || e}`, 'error');
   }

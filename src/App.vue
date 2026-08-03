@@ -8,10 +8,11 @@ import MiniPlayerWindow from './components/layout/MiniPlayerWindow.vue';
 import TrayMenuWindow from './components/layout/TrayMenuWindow.vue';
 import DesktopLyricsWindow from './components/player/DesktopLyricsWindow.vue';
 import TaskbarControlWindow from './components/layout/TaskbarControlWindow.vue';
+import VolumePopoverWindow from './components/layout/VolumePopoverWindow.vue';
 import { registerImportedLyricsFonts } from './composables/lyrics';
 import { useToast } from './composables/toast';
 import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared';
-import { MINI_PLAYER_WINDOW_LABEL } from './features/miniPlayer/shared';
+import { MINI_PLAYER_WINDOW_LABEL, VOLUME_POPOVER_WINDOW_LABEL } from './features/miniPlayer/shared';
 import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
 import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
@@ -30,6 +31,7 @@ const isDesktopLyricsWindow = currentWindowLabel === DESKTOP_LYRICS_WINDOW_LABEL
 const isMiniPlayerWindow = currentWindowLabel === MINI_PLAYER_WINDOW_LABEL;
 const isTrayMenuWindow = currentWindowLabel === TRAY_MENU_WINDOW_LABEL;
 const isTaskbarPlayerWindow = currentWindowLabel === TASKBAR_PLAYER_WINDOW_LABEL;
+const isVolumePopoverWindow = currentWindowLabel === VOLUME_POPOVER_WINDOW_LABEL;
 
 const { settings } = useSettings();
 watch(
@@ -95,6 +97,7 @@ if (currentWindowLabel === 'main') {
   <MiniPlayerWindow v-else-if="isMiniPlayerWindow" />
   <TrayMenuWindow v-else-if="isTrayMenuWindow" />
   <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" />
+  <VolumePopoverWindow v-else-if="isVolumePopoverWindow" />
   <MainShell v-else />
 </template>
 

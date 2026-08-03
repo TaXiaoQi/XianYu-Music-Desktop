@@ -1,4 +1,4 @@
-import { LogicalPosition } from '@tauri-apps/api/dpi';
+import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
@@ -6,6 +6,7 @@ import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 
 import { useCoverCache } from './useCoverCache';
 import { useLyrics } from './lyrics';
+import { showDesktopLyrics } from './lyrics/state';
 import { usePlayer } from './player';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
@@ -130,6 +131,10 @@ async function ensureMiniPlayerWindow() {
     if (bounds) {
       await existing.setPosition(new LogicalPosition(bounds.x, bounds.y));
     }
+    const baseSize = new LogicalSize(MINI_PLAYER_WINDOW_WIDTH, MINI_PLAYER_WINDOW_BASE_HEIGHT);
+    await existing.setMinSize(baseSize);
+    await existing.setMaxSize(baseSize);
+    await existing.setSize(baseSize);
     return existing;
   }
 
@@ -235,12 +240,12 @@ export async function restoreMainWindowFromMiniMode(options: {
   };
 }) {
   options.isMiniMode.value = false;
-  if (!options.keepMiniPlayerVisible) {
-    await options.hideMiniPlayerWindow();
-  }
   await options.mainWindow.unminimize();
   await options.mainWindow.show();
   await options.mainWindow.setFocus();
+  if (!options.keepMiniPlayerVisible) {
+    await options.hideMiniPlayerWindow();
+  }
 
   if (typeof window !== 'undefined') {
     setTimeout(() => {
@@ -269,10 +274,16 @@ export function useMiniPlayerWindowBridge() {
     toggleMute,
     playSong,
     isMiniMode,
+    currentTime,
+    playMode,
+    seekTo,
+    toggleMode,
+    isFavorite,
+    toggleFavorite,
   } = usePlayer();
   const { currentLyricLine } = useLyrics();
   const { loadCover } = useCoverCache();
-  const { isDarkTheme } = useThemeSettings();
+  const { isDarkTheme, theme } = useThemeSettings();
 
   let isMainWindowClosing = false;
   let keepMiniPlayerVisibleOnMiniModeExit = false;
@@ -293,6 +304,13 @@ export function useMiniPlayerWindowBridge() {
         ? [...tempQueue.value, ...playQueue.value]
         : songList.value,
       lyricText: currentLyricLine.value?.text ?? '',
+      windowMaterial: theme.value.windowMaterial,
+      windowBlurTint: theme.value.windowBlurTint,
+      currentTime: currentTime.value,
+      duration: song?.duration ?? 0,
+      isFavorite: song ? isFavorite(song) : false,
+      playMode: playMode.value,
+      desktopLyricsEnabled: showDesktopLyrics.value,
     };
   };
 
@@ -323,10 +341,10 @@ export function useMiniPlayerWindowBridge() {
     await waitForMiniPlayerReady();
     await targetWindow.setAlwaysOnTop(true);
     await emitStateToMiniPlayer();
-    await emitMiniPlayerVisibility(true);
-    await targetWindow.show();
     isMiniPlayerWindowVisible.value = true;
+    await emitMiniPlayerVisibility(true);
     await mainWindow.hide();
+    await targetWindow.show();
   };
 
   const prewarmMiniPlayerWindow = async () => {
@@ -354,6 +372,7 @@ export function useMiniPlayerWindowBridge() {
     }
 
     await emitMiniPlayerVisibility(false);
+    await new Promise(resolve => setTimeout(resolve, 200));
     await targetWindow.hide();
     isMiniPlayerWindowVisible.value = false;
   };
@@ -417,6 +436,18 @@ export function useMiniPlayerWindowBridge() {
       case 'close':
         isMiniMode.value = false;
         await hideMiniPlayerWindow();
+        break;
+      case 'seek':
+        await seekTo(action.time);
+        break;
+      case 'toggle-favorite':
+        if (currentSong.value) toggleFavorite(currentSong.value);
+        break;
+      case 'cycle-play-mode':
+        toggleMode();
+        break;
+      case 'toggle-desktop-lyrics':
+        showDesktopLyrics.value = !showDesktopLyrics.value;
         break;
       default:
         break;
@@ -496,6 +527,9 @@ export function useMiniPlayerWindowBridge() {
       songList,
       isDarkTheme,
       () => currentLyricLine.value?.text,
+      currentTime,
+      playMode,
+      showDesktopLyrics,
     ],
     () => {
       if (!isMiniPlayerWindowVisible.value) return;
