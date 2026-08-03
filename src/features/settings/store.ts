@@ -229,6 +229,7 @@ export const defaultAppSettings: AppSettings = {
   plugins: defaultPluginSettings,
   autoSync: defaultAutoSyncConfig,
   logging: defaultLogSettings,
+  songClickAction: 'double',
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({
