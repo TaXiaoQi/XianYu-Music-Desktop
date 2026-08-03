@@ -153,7 +153,7 @@ export const defaultAudioSettings: AudioSettings = {
   onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512,
   fadeInOutEnabled: false,
-  fadeInOutDurationMs: 1500,
+  fadeInOutDurationMs: 1000,
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -490,8 +490,8 @@ export const mergeAudioSettings = (
       ? patch.fadeInOutEnabled
       : base.fadeInOutEnabled ?? false,
     fadeInOutDurationMs: Number.isFinite(patch.fadeInOutDurationMs) && patch.fadeInOutDurationMs! > 0
-      ? Math.max(500, Math.min(3000, Math.round(patch.fadeInOutDurationMs!)))
-      : base.fadeInOutDurationMs ?? 1500,
+      ? Math.max(100, Math.min(2000, Math.round(patch.fadeInOutDurationMs!)))
+      : base.fadeInOutDurationMs ?? 1000,
   };
 };
 
