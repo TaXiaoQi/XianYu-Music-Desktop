@@ -1,4 +1,6 @@
 import { ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../version';
 import {
@@ -13,6 +15,16 @@ import { useToast } from './toast';
 const updateVisible = ref(false);
 const latestUpdate = ref<ServerUpdateInfo | null>(null);
 const isCheckingUpdate = ref(false);
+
+// 下载安装状态
+export interface DownloadProgressData {
+  progress: number;
+  downloaded: number;
+  total: number;
+  speed: number;
+}
+const isDownloading = ref(false);
+const downloadProgress = ref<DownloadProgressData>({ progress: 0, downloaded: 0, total: 0, speed: 0 });
 
 export function useUpdateCheck() {
   const { showToast } = useToast();
@@ -70,10 +82,57 @@ export function useUpdateCheck() {
     updateVisible.value = false;
   };
 
-  /** 打开下载链接 */
+  /** 打开下载链接（备用：浏览器打开） */
   const openDownload = async () => {
     if (latestUpdate.value?.downloadUrl) {
       await openUrl(latestUpdate.value.downloadUrl);
+    }
+  };
+
+  /**
+   * 应用内下载更新并自动安装
+   * 1. 监听下载进度事件
+   * 2. 调用 download_update_file 下载安装包
+   * 3. 调用 run_installer 启动 NSIS 安装程序
+   * 4. 调用 exit_app 退出应用，安装程序接管
+   * 用户数据存储在 app_data_dir（%APPDATA%），NSIS 覆盖安装目录不影响数据
+   */
+  const downloadAndInstall = async () => {
+    if (!latestUpdate.value?.downloadUrl) {
+      showToast('下载地址不可用', 'error');
+      return;
+    }
+    if (isDownloading.value) return;
+
+    isDownloading.value = true;
+    downloadProgress.value = { progress: 0, downloaded: 0, total: 0, speed: 0 };
+
+    let unlisten: UnlistenFn | null = null;
+    try {
+      // 监听下载进度
+      unlisten = await listen<DownloadProgressData>('update-download-progress', (event) => {
+        downloadProgress.value = event.payload;
+      });
+
+      // 下载安装包到 Downloads 目录
+      const path = await invoke<string>('download_update_file', {
+        url: latestUpdate.value!.downloadUrl,
+      });
+
+      // 启动 NSIS 安装程序（非阻塞）
+      await invoke('run_installer', { path });
+
+      // 等待安装程序初始化后退出应用
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await invoke('exit_app');
+    } catch (error) {
+      showToast('更新失败：' + (error instanceof Error ? error.message : String(error)), 'error');
+      isDownloading.value = false;
+    } finally {
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
     }
   };
 
@@ -81,9 +140,12 @@ export function useUpdateCheck() {
     updateVisible,
     latestUpdate,
     isCheckingUpdate,
+    isDownloading,
+    downloadProgress,
     checkUpdateOnStartup,
     checkUpdateManual,
     closeUpdate,
     openDownload,
+    downloadAndInstall,
   };
 }
