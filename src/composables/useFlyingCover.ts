@@ -32,35 +32,30 @@ const findTargetEl = (): HTMLElement | null =>
 
 /**
  * 触发飞入封面动画。在歌曲列表「点击播放」时调用。
+ * 整个动画（飞行 + 悬停 + 淡出）全程在后台并行进行，用来遮盖起播延迟，
+ * 因此本函数立即返回，不阻塞调用方的播放切换。
+ *
  * @param songPath  歌曲路径（需与列表行 [data-cover-path] 的值一致）
  * @param coverUrl  列表行当前展示的封面 URL；为空则尝试从源元素 <img> 中提取
- * @returns 飞抵底栏位置时 resolve 的 Promise（用于本地歌曲延迟切换播放）；
- *          无法启动动画时立即 resolve
  */
-export function launchFlyingCover(songPath: string, coverUrl: string): Promise<void> {
-  if (!songPath) return Promise.resolve();
+export function launchFlyingCover(songPath: string, coverUrl: string): void {
+  if (!songPath) return;
   const flyId = ++currentFlyId;
 
   const sourceEl = findSourceEl(songPath);
   const targetEl = findTargetEl();
-  if (!sourceEl || !targetEl) return Promise.resolve();
+  if (!sourceEl || !targetEl) return;
 
   // 若调用方未提供封面 URL（本地歌曲封面可能尚未异步加载完成），
   // 回退到源元素内 <img> 的 src，确保动画仍能触发
   const resolvedCoverUrl = coverUrl
     || (sourceEl.querySelector('img') as HTMLImageElement | null)?.src
     || '';
-  if (!resolvedCoverUrl) return Promise.resolve();
+  if (!resolvedCoverUrl) return;
 
   const fromRect = sourceEl.getBoundingClientRect();
   const toRect = targetEl.getBoundingClientRect();
-  if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) {
-    return Promise.resolve();
-  }
-
-  // 飞抵底栏时 resolve（供调用方延迟切换播放使用）
-  let resolveFlight!: () => void;
-  const flightPromise = new Promise<void>((resolve) => { resolveFlight = resolve; });
+  if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) return;
 
   const img = document.createElement('img');
   img.src = resolvedCoverUrl;
@@ -81,7 +76,6 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
   const startFlight = () => {
     if (flyId !== currentFlyId) {
       img.remove();
-      resolveFlight();
       return;
     }
 
@@ -116,14 +110,8 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
       { duration: FLY_DURATION, easing: FLY_EASING, fill: 'forwards' },
     );
 
-    flight.onfinish = () => {
-      resolveFlight();
-      parkAtTarget();
-    };
-    flight.oncancel = () => {
-      resolveFlight();
-      remove();
-    };
+    flight.onfinish = () => parkAtTarget();
+    flight.oncancel = remove;
   };
 
   /** 飞抵底栏后悬停，等底栏 currentCover 更新为新封面后再淡出 */
@@ -175,14 +163,12 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
     startFlight();
   } else {
     img.onload = startFlight;
-    img.onerror = () => { resolveFlight(); remove(); };
+    img.onerror = remove;
     // 加载稍慢也强制起跳，避免空图久等
     setTimeout(() => {
       if (flyId === currentFlyId && img.isConnected) startFlight();
     }, 60);
   }
-
-  return flightPromise;
 }
 
 /** 取消当前正在进行的飞入动画 */

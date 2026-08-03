@@ -1101,6 +1101,8 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
                 None,
                 cover_data.clone(),
             );
+            // 先移除已有的前置封面，避免重复堆积
+            tag.remove_picture_type(PictureType::CoverFront);
             tag.push_picture(picture);
         }
     }

@@ -64,7 +64,7 @@ use taskbar::{
 };
 use toolbox::{
     apply_rename, check_update_by_rust, download_online_song, download_update_file,
-    embed_audio_metadata, fetch_announcement, file_exists, open_external_program, preview_rename,
+    embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists, open_external_program, preview_rename,
     read_download_history, refresh_folder_songs, probe_url_size, run_installer,
     save_download_bytes, save_download_lyrics, set_gpu_acceleration, write_download_history,
     write_state_json, read_state_json,
@@ -246,6 +246,7 @@ download_audio_to_temp,
             save_download_bytes,
             save_download_lyrics,
             embed_audio_metadata,
+            fetch_image_bytes,
             run_installer,
             fetch_announcement,
             write_state_json,

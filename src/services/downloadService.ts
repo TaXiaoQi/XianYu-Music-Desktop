@@ -895,15 +895,17 @@ export async function downloadSong(
   }
 
   // 封面：仅用于嵌入 tag，不保存独立文件
+  // 使用 Rust 后端下载（绕过 WebView 的 CORS 限制），前端 fetch 会因跨域策略静默失败
   let savedCoverData: Uint8Array | null = null;
+  let savedCoverMime = 'image/jpeg';
   if (options.embedCover) {
     try {
       const coverUrl = await resolveCoverUrl(song);
       if (coverUrl) {
-        const resp = await fetch(coverUrl);
-        if (resp.ok) {
-          const buf = await resp.arrayBuffer();
-          savedCoverData = new Uint8Array(buf);
+        const result = await invoke<{ data: number[]; mime: string }>('fetch_image_bytes', { url: coverUrl });
+        if (result?.data?.length) {
+          savedCoverData = new Uint8Array(result.data);
+          savedCoverMime = result.mime || 'image/jpeg';
         }
       }
     } catch (e: any) {
@@ -927,7 +929,7 @@ export async function downloadSong(
           discNumber: options.embedMetadata ? (song.disc_number?.toString() || undefined) : undefined,
           lyrics: options.embedLyrics ? (savedLyricText || undefined) : undefined,
           coverData: options.embedCover && savedCoverData ? Array.from(savedCoverData) : undefined,
-          coverMime: 'image/jpeg',
+          coverMime: savedCoverMime,
         },
       });
       metadataEmbedded = true;

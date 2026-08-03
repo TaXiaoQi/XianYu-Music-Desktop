@@ -469,17 +469,11 @@ watch(
   { immediate: true },
 );
 
-// 点击/双击播放：先触发飞入封面动画，再 emit 播放
-// 本地歌曲：等飞抵底栏再切换播放（掩盖切换瞬间，无音频解析延迟）
-// 在线歌曲：立即切换播放（需异步解析 URL/缓存，动画并行进行，匹配播放结果即可）
+// 点击/双击播放：触发飞入封面动画并立即切换播放
+// 整个动画（飞行 + 悬停 + 淡出）在后台并行进行，用来遮盖起播延迟，不阻塞播放切换
 const handlePlayClick = (song: Song) => {
-  const flightPromise = launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
-  const isLocal = !song.path.startsWith('lx://') && !song.path.startsWith('plugin://') && !song.path.startsWith('remote://');
-  if (isLocal) {
-    void flightPromise.then(() => emit('play', song));
-  } else {
-    emit('play', song);
-  }
+  launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
+  emit('play', song);
 };
 
 const handlePointerDown = (event: PointerEvent, song: Song, index: number) => {
