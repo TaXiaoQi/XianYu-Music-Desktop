@@ -661,6 +661,8 @@ export interface DownloadSongOptions {
   overwriteExisting: boolean;
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
+  /** 是否同时下载封面图片 */
+  downloadCover: boolean;
   /** 下载进度回调（0-100）。Worker 下载时逐块回报；Rust 回退时通过事件回报。 */
   onProgress?: (percent: number) => void;
 }
@@ -669,6 +671,7 @@ export interface DownloadSongResult {
   filePath: string;
   hitQuality: LxQuality;
   lyricsSaved: boolean;
+  coverSaved: boolean;
 }
 
 /**
@@ -703,7 +706,69 @@ async function downloadFromUrl(
 }
 
 /**
- * 下载在线歌曲主编排：逐音质档位解析直链 → 计算目标路径 → 流式下载 → 可选下载歌词。
+ * 解析在线歌曲的封面图片 URL。
+ * - lx:// 协议：cover_thumb_path 即远程封面 URL
+ * - plugin:// 协议：优先取 cover_thumb_path，否则调用 pluginGetCover 获取
+ */
+async function resolveCoverUrl(song: Song): Promise<string | null> {
+  // cover_thumb_path 已是远程 URL 时直接使用
+  const thumb = song.cover_thumb_path;
+  if (thumb && /^https?:\/\//.test(thumb)) return thumb;
+
+  const path = song.cue_source_path || song.path;
+  if (!path.startsWith('plugin://')) return null;
+
+  // plugin:// 歌曲：通过插件引擎获取封面
+  const rawData = song.rawData;
+  if (!rawData?.pluginId) return null;
+  try {
+    const { getStoredPlugins } = await import('./pluginEngine');
+    const { pluginGetCover } = await import('./pluginEngine');
+    const plugins = getStoredPlugins();
+    const pluginSource = plugins.find(p => p.id === rawData.pluginId && p.enabled);
+    if (!pluginSource) return null;
+    const cover = await pluginGetCover(pluginSource, rawData);
+    return cover && /^https?:\/\//.test(cover) ? cover : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 下载封面图片到指定路径（与音频文件同目录、同名、.jpg 扩展名）。
+ * 使用 fetch + save_download_bytes 落盘，不占用音频下载进度。
+ */
+async function downloadCoverImage(
+  coverUrl: string,
+  audioFilePath: string,
+  overwriteExisting: boolean,
+): Promise<boolean> {
+  const dot = audioFilePath.lastIndexOf('.');
+  const coverBase = dot === -1 ? audioFilePath : audioFilePath.slice(0, dot);
+  let coverPath = `${coverBase}.jpg`;
+  if (!overwriteExisting) {
+    coverPath = await resolveNonConflictingPath(coverPath);
+  }
+
+  try {
+    const resp = await fetch(coverUrl);
+    if (!resp.ok) return false;
+    const blob = await resp.blob();
+    const buffer = new Uint8Array(await blob.arrayBuffer());
+    if (buffer.length === 0) return false;
+    await invoke<string>('save_download_bytes', {
+      data: Array.from(buffer),
+      destPath: coverPath,
+    });
+    return true;
+  } catch (e: any) {
+    console.warn('[Download] 保存封面失败:', e?.message);
+    return false;
+  }
+}
+
+/**
+ * 下载在线歌曲主编排：逐音质档位解析直链 → 计算目标路径 → 流式下载 → 可选下载歌词/封面。
  * 同时支持 lx://（落雪）和 plugin://（MusicFree）协议，根据 path 前缀自动路由。
  * 下载进度通过 Rust 事件 `song-download-progress` 回报，由调用方监听。
  */
@@ -853,5 +918,17 @@ export async function downloadSong(
     }
   }
 
-  return { filePath, hitQuality, lyricsSaved };
+  let coverSaved = false;
+  if (options.downloadCover) {
+    try {
+      const coverUrl = await resolveCoverUrl(song);
+      if (coverUrl) {
+        coverSaved = await downloadCoverImage(coverUrl, filePath, options.overwriteExisting);
+      }
+    } catch (e: any) {
+      console.warn('[Download] 下载封面失败:', e?.message);
+    }
+  }
+
+  return { filePath, hitQuality, lyricsSaved, coverSaved };
 }

@@ -360,6 +360,24 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
           </button>
         </div>
 
+        <!-- 同时下载封面 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">同时下载封面</div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.download.downloadCover ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="patchSettings({ download: { ...settings.download, downloadCover: !settings.download.downloadCover } })"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+              :class="settings.download.downloadCover ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+
         <!-- 歌词格式 -->
         <div class="desktop-setting-row rounded-b-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">

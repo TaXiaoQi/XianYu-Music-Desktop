@@ -37,8 +37,12 @@
       :y="contextMenuY" 
       :song="contextMenuTargetSong" 
       :is-playlist-view="false" 
+      :is-online-search="contextMenuIsOnlineSearch"
+      :resolved-file-path="contextMenuResolvedPath"
       @close="showContextMenu = false" 
       @add-to-playlist="openAddToPlaylistSelection"
+      @view-online-artist="handleOnlineViewArtist"
+      @view-online-album="handleOnlineViewAlbum"
     />
     
     <ModernModal 
@@ -60,6 +64,7 @@ import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDia
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
+import { useSongContextActions } from '../composables/useSongContextActions';
 
 // 组件导入
 import FavoritesHeader from '../components/headers/FavoritesHeader.vue';
@@ -91,10 +96,17 @@ const { handleTableDragStart } = useSongDrag(localSongList, isBatchMode, selecte
 const showConfirm = ref(false);
 const confirmMessage = ref('');
 const confirmAction = ref<() => void>(() => {});
-const showContextMenu = ref(false);
-const contextMenuX = ref(0);
-const contextMenuY = ref(0);
-const contextMenuTargetSong = ref<Song | null>(null);
+const {
+  showContextMenu,
+  contextMenuX,
+  contextMenuY,
+  contextMenuTargetSong,
+  contextMenuResolvedPath,
+  contextMenuIsOnlineSearch,
+  handleContextMenu,
+  handleOnlineViewArtist,
+  handleOnlineViewAlbum,
+} = useSongContextActions({ isBatchMode });
 
 // 监听批量模式变化，清空选择
 watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
@@ -160,15 +172,7 @@ const openAddToPlaylistSelection = () => {
   openAddToPlaylistDialog(songPaths);
 };
 
-// 右键菜单
-const handleContextMenu = (e: MouseEvent, song: Song) => {
-  if (isBatchMode.value) return; 
-  contextMenuTargetSong.value = song;
-  contextMenuX.value = e.clientX;
-  contextMenuY.value = e.clientY;
-  showContextMenu.value = true;
-};
-
+// 右键菜单由 useSongContextActions 提供（支持在线歌曲已下载/未下载的菜单区分）
 
 
 // ========== 路由监听 ==========
