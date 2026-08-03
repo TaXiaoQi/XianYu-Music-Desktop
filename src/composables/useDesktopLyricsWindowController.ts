@@ -65,6 +65,32 @@ export function useDesktopLyricsWindowController(options: {
   let centerPositionFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   let centerPositionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // --- 窗口隐藏时暂停资源 ---
+  // 桌面歌词窗口是独立 WebView，关闭时调用 appWindow.hide() 而非销毁。
+  // 隐藏后 rAF 和所有定时器仍会持续运行，浪费 CPU 和 IPC 调用。
+  // 通过 document.visibilitychange 检测窗口隐藏/显示，暂停/恢复所有循环。
+  let isWindowHidden = false;
+
+  function handleVisibilityChange() {
+    const hidden = document.hidden;
+    if (hidden === isWindowHidden) return;
+    isWindowHidden = hidden;
+
+    if (hidden) {
+      // 窗口隐藏：暂停所有循环
+      stopPlaybackClock();
+      stopAutoHideLoop();
+      stopLockPolling();
+    } else {
+      // 窗口恢复：重新启动循环
+      startPlaybackClock();
+      startAutoHideLoop();
+      if (settings.value.isLocked && !isAutoHidden.value) {
+        startLockPolling();
+      }
+    }
+  }
+
   async function forceCenterHorizontally() {
     if (isApplyingCenterPosition) return;
     try {
@@ -409,6 +435,9 @@ export function useDesktopLyricsWindowController(options: {
     startAutoHideLoop();
     void loadSystemLyricsFonts();
 
+    // 监听窗口可见性变化，隐藏时暂停资源
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     try {
       await appWindow.setBackgroundColor([0, 0, 0, 0]);
     } catch (error) {
@@ -524,6 +553,7 @@ export function useDesktopLyricsWindowController(options: {
   });
 
   onUnmounted(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     stopLockPolling();
     stopPlaybackClock();
     stopAutoHideLoop();

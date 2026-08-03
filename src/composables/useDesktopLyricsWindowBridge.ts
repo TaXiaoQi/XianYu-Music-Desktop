@@ -10,6 +10,7 @@ import { usePlayer } from './player';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
+import { useRenderingPower } from './renderingPower';
 import {
   applyDesktopLyricsVisibilityPreference,
   persistDesktopLyricsVisibilityPreference,
@@ -303,6 +304,7 @@ export function useDesktopLyricsWindowBridge() {
   const { audioDelay } = storeToRefs(settingsStore);
   const { dominantColors } = storeToRefs(uiStore);
   const playbackClockTracker = createDesktopLyricsPlaybackClockTracker();
+  const { isMainWindowLowPower } = useRenderingPower();
 
   let isMainWindowClosing = false;
   let syncIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -609,6 +611,15 @@ export function useDesktopLyricsWindowBridge() {
 
     stopSyncLoop();
     await destroyDesktopLyricsWindow();
+  });
+
+  // 窗口最小化/隐藏时暂停 400ms 同步循环，恢复后自动重启
+  watch(isMainWindowLowPower, (lowPower) => {
+    if (lowPower) {
+      stopSyncLoop();
+    } else if (showDesktopLyrics.value) {
+      startSyncLoop();
+    }
   });
 
   watch(

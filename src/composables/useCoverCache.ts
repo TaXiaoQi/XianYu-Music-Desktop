@@ -267,6 +267,11 @@ const registerVisibilityCleanup = () => {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      // 窗口最小化/隐藏时修剪封面缓存：
+      // - 缩略图保留 12 条（LRU，当前播放及最近浏览的歌曲），
+      //   恢复窗口后无需重新磁盘加载，避免闪烁
+      // - 全尺寸封面全部清空（单张体积大，按需重新加载即可）
+      // - 取消所有预加载队列，避免最小化期间无意义的磁盘 I/O
       trimTransientCoverState();
     }
   });

@@ -196,3 +196,12 @@ export function clearPreblurredBackgroundCache() {
 
   cache.clear();
 }
+
+// 窗口最小化/隐藏时清理 blob URL，释放关联的图像数据内存
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      clearPreblurredBackgroundCache();
+    }
+  });
+}
