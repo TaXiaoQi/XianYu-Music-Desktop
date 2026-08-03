@@ -12,36 +12,35 @@ export function getLyricsStylePanelPosition(
   const naturalWidth = Math.min(320, viewportWidth * 0.34 - 24);
   const panelWidth = Math.max(260, naturalWidth);
   const defaultMarginRight = viewportWidth >= 1536 ? viewportWidth * 0.22 : viewportWidth * 0.14;
-  const availableSpaceLeft = containerRect.left - safeMargin;
-  const availableSpaceRight = viewportWidth - containerRect.right - safeMargin;
-  const maxMarginRight = availableSpaceLeft - panelWidth;
+  const renderedPanelWidth = Math.min(
+    panelWidth,
+    Math.max(1, containerRect.width),
+    Math.max(1, viewportWidth - safeMargin * 2),
+  );
 
-  if (maxMarginRight >= 0) {
-    return defaultMarginRight > maxMarginRight
-      ? { marginRight: `${Math.round(maxMarginRight)}px` }
-      : {};
-  }
+  // Use the cover-visible layout as the canonical viewport anchor. The lyrics
+  // container expands and moves left when the cover is hidden, so positioning
+  // relative to that container would otherwise move the panel as well.
+  const coverColumnWidth = Math.max(300, viewportWidth * 0.4);
+  const coverModeLyricsLeft = 32 + coverColumnWidth + 8;
+  const preferredViewportLeft = coverModeLyricsLeft - defaultMarginRight - renderedPanelWidth;
+  const maximumViewportLeft = Math.max(safeMargin, viewportWidth - safeMargin - renderedPanelWidth);
+  const viewportLeft = Math.min(
+    maximumViewportLeft,
+    Math.max(safeMargin, preferredViewportLeft),
+  );
 
-  if (availableSpaceRight >= panelWidth) {
-    return {
-      right: 'auto',
-      left: '100%',
-      marginLeft: `${safeMargin}px`,
-      marginRight: '0',
-    };
-  }
-
-  // Pure-lyrics mode expands the lyrics container across the viewport, leaving
-  // no room on either outside edge. Keep the editor inside that container.
-  const overlayWidth = Math.min(panelWidth, Math.max(1, containerRect.width));
-  const overlayMinWidth = Math.min(260, overlayWidth);
-
-  return {
+  const position: Record<string, string> = {
     right: 'auto',
-    left: '0',
+    left: `${Math.round(viewportLeft - containerRect.left)}px`,
     marginLeft: '0',
     marginRight: '0',
-    width: `${Math.round(overlayWidth)}px`,
-    minWidth: `${Math.round(overlayMinWidth)}px`,
   };
+
+  if (renderedPanelWidth < panelWidth) {
+    position.width = `${Math.round(renderedPanelWidth)}px`;
+    position.minWidth = `${Math.round(Math.min(260, renderedPanelWidth))}px`;
+  }
+
+  return position;
 }

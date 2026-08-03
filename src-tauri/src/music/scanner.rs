@@ -18,8 +18,8 @@ mod progress;
 mod repository;
 
 pub use orchestrator::{
-    get_folder_first_song, parse_audio_files, scan_folder_as_playlists, scan_folder_recursive,
-    scan_music_folder, scan_single_directory_internal,
+    get_folder_first_song, parse_audio_files, parse_music_folder, scan_folder_as_playlists,
+    scan_folder_recursive, scan_music_folder, scan_single_directory_internal,
 };
 pub(crate) use parser::parse_song_from_file;
 pub(crate) use repository::apply_scan_changes;

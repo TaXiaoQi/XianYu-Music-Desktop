@@ -517,7 +517,7 @@ const closeContextMenu = () => {
               class="h-full rounded-2xl border border-white/5 bg-black/10 p-4 shadow-xl backdrop-blur-sm"
             />
 
-            <LyricsView v-else :meta-info="metaInfo" class="h-full" />
+            <LyricsView v-else :meta-info="metaInfo" :cover-hidden="coverHidden" class="h-full" />
           </transition>
         </div>
       </div>

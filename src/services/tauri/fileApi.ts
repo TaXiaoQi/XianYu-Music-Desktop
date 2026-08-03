@@ -18,4 +18,6 @@ export const fileApi = {
   isDirectory: (path: string): Promise<boolean> => tauriInvoke('is_directory', { path }),
   parseAudioFiles: (paths: string[], minimumDurationSeconds = 0): Promise<Song[]> =>
     tauriInvoke('parse_audio_files', { paths, minimumDurationSeconds }),
+  parseMusicFolder: (folderPath: string, minimumDurationSeconds = 0): Promise<Song[]> =>
+    tauriInvoke('parse_music_folder', { folderPath, minimumDurationSeconds }),
 };

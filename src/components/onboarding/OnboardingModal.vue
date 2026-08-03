@@ -403,6 +403,14 @@ onUnmounted(() => {
         class="fixed inset-0 z-[9998] flex flex-col overflow-hidden transition-colors duration-300"
         :class="onboardingSurfaceClass"
       >
+        <!-- 初始化流程会覆盖主标题栏，因此在顶部中央保留独立的原生窗口拖动区域。 -->
+        <div
+          data-tauri-drag-region
+          class="absolute left-1/4 right-1/4 top-0 z-[70] h-10"
+          aria-hidden="true"
+          @click.stop
+        ></div>
+
         <!-- 启动画面 -->
         <transition name="splash-fade">
           <div
@@ -456,6 +464,7 @@ onUnmounted(() => {
             v-if="step !== 'splash'"
             :key="step"
             class="relative w-full h-full flex flex-col"
+            :class="{ 'invisible pointer-events-none': showPluginManager }"
           >
             <!-- 顶部栏：左上角品牌 + 右上角进度 -->
             <header
@@ -499,7 +508,7 @@ onUnmounted(() => {
 
             <!-- 主内容区：垂直居中 -->
             <main class="flex-1 overflow-y-auto custom-scrollbar">
-              <div class="max-w-6xl mx-auto h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center">
+              <div class="max-w-6xl mx-auto min-h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center">
 
                 <!-- 步骤 1: 主题 -->
                 <transition name="step-content" mode="out-in">
@@ -1265,8 +1274,8 @@ onUnmounted(() => {
         <transition name="step-fade">
           <div
             v-if="showPluginManager"
-            class="absolute inset-0 z-[60] flex flex-col overflow-hidden"
-            :class="onboardingSurfaceClass"
+            data-onboarding-plugin-manager-surface
+            class="absolute inset-0 z-[60] flex flex-col overflow-hidden bg-transparent"
           >
             <header class="flex items-center justify-between border-b border-black/10 dark:border-white/10 px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)]">
               <div>

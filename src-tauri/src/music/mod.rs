@@ -29,7 +29,8 @@ pub use library::{
     scan_library,
 };
 pub use scanner::{
-    get_folder_first_song, parse_audio_files, scan_folder_as_playlists, scan_music_folder,
+    get_folder_first_song, parse_audio_files, parse_music_folder, scan_folder_as_playlists,
+    scan_music_folder,
 };
 // Deprecated compatibility exports. Keep registered for legacy data/tools only.
 pub use sidebar::{

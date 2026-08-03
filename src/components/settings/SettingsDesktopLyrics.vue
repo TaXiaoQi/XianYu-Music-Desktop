@@ -1245,7 +1245,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行三：描边阴影 -->
+        <!-- 行三：描边阴影 & 阴影颜色 -->
         <div class="desktop-compact-row">
           <!-- 描边阴影 -->
           <div class="desktop-compact-slider-cell">
@@ -1264,10 +1264,7 @@ onUnmounted(() => {
               {{ localSettings.firstLineTextShadowStrength }}
             </span>
           </div>
-        </div>
 
-        <!-- 行四：阴影颜色 & 对齐方式 -->
-        <div class="desktop-compact-row">
           <!-- 阴影颜色 -->
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label">阴影颜色</div>
@@ -1297,6 +1294,10 @@ onUnmounted(() => {
               </label>
             </div>
           </div>
+        </div>
+
+        <!-- 行四：对齐方式 & 双行显示 -->
+        <div class="desktop-compact-row">
           <!-- 对齐方式 (Segmented Control) -->
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">对齐</div>
@@ -1310,6 +1311,28 @@ onUnmounted(() => {
                 @click="setDesktopAlignment(option.value)"
               >
                 {{ option.label.replace('靠', '').replace('居', '') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="desktop-compact-cell flex items-center justify-between">
+            <div class="desktop-compact-label shrink-0">双行显示</div>
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+              <button
+                v-if="desktopLyricsSettings.showDoubleLine"
+                type="button"
+                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.showDoubleLine = false"
+              >
+                开
+              </button>
+              <button
+                v-else
+                type="button"
+                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.showDoubleLine = true"
+              >
+                关
               </button>
             </div>
           </div>
@@ -1361,30 +1384,8 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行六：双行显示 & 字体方案 -->
+        <!-- 行六：字体方案 & 配色方案 -->
         <div class="desktop-compact-row">
-          <div class="desktop-compact-cell flex items-center justify-between">
-            <div class="desktop-compact-label shrink-0">双行显示</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
-              <button
-                v-if="desktopLyricsSettings.showDoubleLine"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.showDoubleLine = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.showDoubleLine = true"
-              >
-                关
-              </button>
-            </div>
-          </div>
-
           <div class="desktop-compact-cell flex items-center justify-between gap-4">
             <div class="desktop-compact-label shrink-0">字体方案</div>
             <div ref="fontPresetFieldRef" class="desktop-font-picker flex-1 min-w-0">
@@ -1441,59 +1442,10 @@ onUnmounted(() => {
               </Teleport>
             </div>
           </div>
-        </div>
 
-        <!-- 行七：逐字效果 & 歌词描边 -->
-        <div class="desktop-compact-row">
-          <div class="desktop-compact-cell flex items-center justify-between">
-            <div class="desktop-compact-label shrink-0">逐字效果</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
-              <button
-                v-if="desktopLyricsSettings.enableWordEffect"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableWordEffect = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableWordEffect = true"
-              >
-                关
-              </button>
-            </div>
-          </div>
-          <div class="desktop-compact-cell flex items-center justify-between">
-            <div class="desktop-compact-label shrink-0">歌词描边</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
-              <button
-                v-if="desktopLyricsSettings.enableTextOutline"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableTextOutline = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableTextOutline = true"
-              >
-                关
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 行八：配色方案 -->
-        <div class="desktop-compact-row-full">
-          <div class="desktop-compact-cell w-full flex items-center justify-between gap-4">
+          <div class="desktop-compact-cell flex items-center justify-between gap-4">
             <div class="desktop-compact-label shrink-0">配色方案</div>
-            <div ref="colorSchemeFieldRef" class="desktop-font-picker w-full max-w-[300px] min-w-0">
+            <div ref="colorSchemeFieldRef" class="desktop-font-picker flex-1 min-w-0">
               <button
                 ref="colorSchemeTriggerRef"
                 type="button"
@@ -1569,6 +1521,53 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+
+        <!-- 行七：逐字效果 & 歌词描边 -->
+        <div class="desktop-compact-row">
+          <div class="desktop-compact-cell flex items-center justify-between">
+            <div class="desktop-compact-label shrink-0">逐字效果</div>
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+              <button
+                v-if="desktopLyricsSettings.enableWordEffect"
+                type="button"
+                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableWordEffect = false"
+              >
+                开
+              </button>
+              <button
+                v-else
+                type="button"
+                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableWordEffect = true"
+              >
+                关
+              </button>
+            </div>
+          </div>
+          <div class="desktop-compact-cell flex items-center justify-between">
+            <div class="desktop-compact-label shrink-0">歌词描边</div>
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+              <button
+                v-if="desktopLyricsSettings.enableTextOutline"
+                type="button"
+                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableTextOutline = false"
+              >
+                开
+              </button>
+              <button
+                v-else
+                type="button"
+                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableTextOutline = true"
+              >
+                关
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -2918,12 +2917,6 @@ onUnmounted(() => {
   grid-template-columns: repeat(2, 1fr);
   align-items: center;
   gap: 12px;
-  width: 100%;
-}
-
-.desktop-compact-row-full {
-  display: flex;
-  align-items: center;
   width: 100%;
 }
 

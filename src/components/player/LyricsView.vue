@@ -49,6 +49,10 @@ const AmlLyricPlayer = defineAsyncComponent({
 import { getPlaybackSeekSecondsForAmlLine } from './amllSeekLayout';
 import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
+const props = defineProps<{
+  coverHidden?: boolean;
+}>();
+
 const {
   parsedLyrics,
   lyricsSettings,
@@ -366,6 +370,14 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
   } else {
     fontPanelDynamicStyle.value = {};
   }
+});
+
+// Hiding the cover changes the lyrics container's position and width. Recompute
+// the relative offset so the settings panel stays at its viewport anchor.
+watch(() => props.coverHidden, async () => {
+  if (!showLyricsPlayerSettingsPanel.value) return;
+  await nextTick();
+  updateFontPanelPosition();
 });
 </script>
 
@@ -774,7 +786,7 @@ watch(showLyricsPlayerSettingsPanel, async (visible) => {
 
 <style scoped>
 .lyrics-settings-glass {
-  background: rgba(10, 10, 14, 0.68);
+  background: rgba(8, 8, 12, 0.74);
   -webkit-backdrop-filter: blur(32px) saturate(135%);
   backdrop-filter: blur(32px) saturate(135%);
 }

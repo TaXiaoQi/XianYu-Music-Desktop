@@ -289,7 +289,7 @@ const tabs = computed(() => {
           autocomplete="off"
           placeholder="搜索设置"
           aria-label="搜索设置"
-          class="h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+          class="settings-search-input h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           @keydown="handleSearchKeydown"
         />
         <button
@@ -388,6 +388,19 @@ const tabs = computed(() => {
 </template>
 
 <style>
+.settings-search-input::-webkit-search-cancel-button {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-search-input::-ms-clear,
+.settings-search-input::-ms-reveal {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 @keyframes settings-search-pulse {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(236, 65, 65, 0);
