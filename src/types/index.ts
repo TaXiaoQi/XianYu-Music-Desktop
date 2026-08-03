@@ -352,6 +352,8 @@ export interface DesktopLyricsSettings {
   showDoubleLine: boolean;
   enableWordEffect: boolean;
   enableTextOutline: boolean;
+  textOutlineWidth: number;
+  textOutlineColor: string;
   isLocked: boolean;
   persistLock: boolean;
   centerHorizontally: boolean;
@@ -587,6 +589,8 @@ export interface PluginSettings {
   skipVersionCheck: boolean;
 }
 
+export type SongClickAction = 'double' | 'single';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogSettings {
@@ -625,6 +629,7 @@ export interface AppSettings {
   plugins: PluginSettings;
   autoSync: AutoSyncConfig;
   logging: LogSettings;
+  songClickAction: SongClickAction;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';

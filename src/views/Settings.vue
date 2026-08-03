@@ -47,6 +47,66 @@ const activeSearchResultIndex = ref(0);
 const searchResults = computed(() => searchSettings(settingsQuery.value));
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
+// --- 侧边栏拖拽调整宽度逻辑 ---
+const STORAGE_KEY_SIDEBAR_WIDTH = 'settings_sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 160;
+const MIN_SIDEBAR_WIDTH = 120;
+const MAX_SIDEBAR_WIDTH = 320;
+
+const loadInitialSidebarWidth = (): number => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_SIDEBAR_WIDTH);
+    if (saved) {
+      const parsed = Number.parseInt(saved, 10);
+      if (!Number.isNaN(parsed)) {
+        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
+      }
+    }
+  } catch {}
+  return DEFAULT_SIDEBAR_WIDTH;
+};
+
+const sidebarWidth = ref(loadInitialSidebarWidth());
+const isResizingSidebar = ref(false);
+let dragStartX = 0;
+let dragStartWidth = 0;
+
+const startSidebarResize = (e: PointerEvent) => {
+  e.preventDefault();
+  isResizingSidebar.value = true;
+  dragStartX = e.clientX;
+  dragStartWidth = sidebarWidth.value;
+
+  window.addEventListener('pointermove', handleSidebarResizeMove);
+  window.addEventListener('pointerup', stopSidebarResize);
+  window.addEventListener('pointercancel', stopSidebarResize);
+};
+
+const handleSidebarResizeMove = (e: PointerEvent) => {
+  if (!isResizingSidebar.value) return;
+  const deltaX = e.clientX - dragStartX;
+  const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, dragStartWidth + deltaX));
+  sidebarWidth.value = nextWidth;
+};
+
+const stopSidebarResize = () => {
+  if (!isResizingSidebar.value) return;
+  isResizingSidebar.value = false;
+  window.removeEventListener('pointermove', handleSidebarResizeMove);
+  window.removeEventListener('pointerup', stopSidebarResize);
+  window.removeEventListener('pointercancel', stopSidebarResize);
+  try {
+    localStorage.setItem(STORAGE_KEY_SIDEBAR_WIDTH, sidebarWidth.value.toString());
+  } catch {}
+};
+
+const resetSidebarWidth = () => {
+  sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH;
+  try {
+    localStorage.setItem(STORAGE_KEY_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH.toString());
+  } catch {}
+};
+
 // 支持外部通过 ?tab=xxx 跳转到指定标签
 watch(() => route.query.tab, (q) => {
   const next = (q as string | undefined) ?? '';
@@ -181,6 +241,7 @@ const handleSearchKeydown = (event: KeyboardEvent) => {
 
 onBeforeUnmount(() => {
   if (highlightTimer) clearTimeout(highlightTimer);
+  stopSidebarResize();
 });
 
 const baseTabs: Array<{ id: SettingsViewTabId; name: string }> = [
@@ -210,27 +271,33 @@ const tabs = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-1 overflow-hidden transition-colors duration-500">
-    <aside class="z-10 flex w-[220px] shrink-0 flex-col border-r border-black/10 p-4 dark:border-white/10 md:w-[240px]">
-      <div class="relative mb-4 shrink-0">
-        <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-white/40" />
+  <div
+    class="flex h-full flex-1 overflow-hidden transition-colors duration-500"
+    :class="{ 'select-none': isResizingSidebar }"
+  >
+    <aside
+      class="relative z-10 flex shrink-0 flex-col border-r border-black/10 p-2.5 dark:border-white/10"
+      :style="{ width: `${sidebarWidth}px` }"
+    >
+      <div class="relative mb-3 shrink-0">
+        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-white/40" />
         <input
           v-model="settingsQuery"
           type="search"
           autocomplete="off"
           placeholder="搜索设置"
           aria-label="搜索设置"
-          class="h-10 w-full rounded-xl border border-black/10 bg-white/45 pl-9 pr-9 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+          class="h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           @keydown="handleSearchKeydown"
         />
         <button
           v-if="settingsQuery"
           type="button"
-          class="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
+          class="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
           aria-label="清除设置搜索"
           @click="clearSettingsSearch"
         >
-          <X class="h-3.5 w-3.5" />
+          <X class="h-3 w-3" />
         </button>
       </div>
 
@@ -247,40 +314,53 @@ const tabs = computed(() => {
             v-for="(result, index) in searchResults"
             :key="result.id"
             type="button"
-            class="w-full rounded-xl px-3 py-2.5 text-left transition"
+            class="w-full rounded-lg px-2.5 py-2 text-left transition"
             :class="index === activeSearchResultIndex
               ? 'bg-[#EC4141]/10 text-[#EC4141] ring-1 ring-inset ring-[#EC4141]/15'
               : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/5'"
             @mouseenter="activeSearchResultIndex = index"
             @click="revealSearchResult(result)"
           >
-            <div class="truncate text-sm font-medium">{{ result.label }}</div>
-            <div class="mt-0.5 truncate text-[11px] opacity-60">{{ result.tabName }} · {{ result.section }}</div>
+            <div class="truncate text-xs font-medium">{{ result.label }}</div>
+            <div class="mt-0.5 truncate text-[10px] opacity-60">{{ result.tabName }} · {{ result.section }}</div>
           </button>
         </div>
-        <div v-else class="px-3 py-8 text-center text-xs leading-6 text-gray-400 dark:text-white/35">
+        <div v-else class="px-2 py-6 text-center text-xs leading-5 text-gray-400 dark:text-white/35">
           试试搜索“音质”“歌词”或“缓存”
         </div>
       </div>
 
-      <nav v-else class="custom-scrollbar flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
+      <nav v-else class="custom-scrollbar flex-1 space-y-1 overflow-y-auto overflow-x-hidden">
         <button
           v-for="tab in tabs"
           :key="tab.id"
-          class="relative flex w-full cursor-pointer items-center rounded-md px-4 py-2.5 text-left text-sm transition-all duration-300 active:scale-[0.97]"
-          :class="activeTab === tab.id ? 'translate-x-1 bg-black/10 font-semibold text-black shadow-sm dark:bg-white/10 dark:text-white' : 'font-medium text-gray-800 hover:translate-x-1 hover:bg-black/5 hover:text-black dark:text-gray-200 dark:hover:bg-white/5 dark:hover:text-white'"
+          class="relative flex w-full cursor-pointer items-center rounded-md px-3 py-2 text-left text-xs sm:text-sm transition-all duration-300 active:scale-[0.97]"
+          :class="activeTab === tab.id ? 'translate-x-0.5 bg-black/10 font-semibold text-black shadow-sm dark:bg-white/10 dark:text-white' : 'font-medium text-gray-800 hover:translate-x-0.5 hover:bg-black/5 hover:text-black dark:text-gray-200 dark:hover:bg-white/5 dark:hover:text-white'"
           @click="activeTab = tab.id"
         >
           <div
             v-if="activeTab === tab.id"
-            class="absolute left-0 top-1/2 h-[18px] w-1 -translate-y-1/2 rounded-r-md bg-[#EC4141]"
+            class="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r-md bg-[#EC4141]"
           ></div>
           {{ tab.name }}
         </button>
       </nav>
+
+      <!-- 侧边栏宽度可拖拽手柄 -->
+      <div
+        class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
+        title="按住拖拽调整侧边栏宽度，双击恢复默认"
+        @pointerdown="startSidebarResize"
+        @dblclick="resetSidebarWidth"
+      >
+        <div
+          class="h-full w-0.5 transition-colors duration-200"
+          :class="isResizingSidebar ? 'bg-[#EC4141]' : 'group-hover:bg-[#EC4141]/60 bg-transparent'"
+        ></div>
+      </div>
     </aside>
 
-    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-10 py-10 xl:px-16">
+    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 md:px-8 xl:px-12">
       <div ref="contentRef" :key="activeTab" class="w-full pb-16">
         <SettingsGeneral v-if="activeTab === 'general'" />
         <SettingsPlugins v-else-if="activeTab === 'plugins'" />
