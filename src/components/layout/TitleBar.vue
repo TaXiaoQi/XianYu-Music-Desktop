@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Moon, Sun, Bell, X, Clock, Trash2 } from 'lucide-vue-next';
+import { Moon, Sun, Bell, X, Clock, Trash2, Mic } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -9,9 +9,16 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
+import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
 
 const router = useRouter();
 const route = useRoute();
+
+// 听歌识曲面板（UI 已就绪，识别逻辑后面实现）
+const showRecognition = ref(false);
+const toggleRecognition = () => {
+  showRecognition.value = !showRecognition.value;
+};
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
 const { settings } = useSettings();
@@ -180,6 +187,22 @@ onMounted(() => {
     </div>
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
+      <!-- 听歌识曲 -->
+      <div class="relative">
+        <button
+          type="button"
+          class="song-recognition-trigger p-2 rounded-md transition-colors cursor-pointer"
+          :class="showRecognition
+            ? 'text-[#EC4141] dark:text-[#ff8b8b] bg-[#EC4141]/10'
+            : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
+          title="听歌识曲"
+          aria-label="听歌识曲"
+          @click.stop="toggleRecognition"
+        >
+          <Mic class="h-5 w-5" :stroke-width="2" />
+        </button>
+        <SongRecognitionPanel v-if="showRecognition" @close="showRecognition = false" />
+      </div>
       <button
         type="button"
         class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"

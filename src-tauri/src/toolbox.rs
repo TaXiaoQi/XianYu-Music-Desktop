@@ -963,3 +963,76 @@ pub async fn read_state_json(app_handle: tauri::AppHandle, key: String) -> Resul
         .map_err(|e| format!("读取 state 文件失败: {e}"))?;
     Ok(Some(content))
 }
+
+/// 下载壁纸图片到 app_data_dir/wallpapers/{filename}，返回本地文件路径。
+/// 壁纸体积小，无需进度事件；下载到应用数据目录，更新应用不会丢失。
+#[tauri::command]
+pub async fn download_wallpaper(
+    app_handle: tauri::AppHandle,
+    url: String,
+    filename: String,
+) -> Result<String, String> {
+    use tokio::fs::File;
+    use tokio::io::AsyncWriteExt;
+
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("无效的壁纸下载链接".to_string());
+    }
+
+    // 防止路径穿越：仅保留文件名部分，去除任何路径分隔符
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("wallpaper.jpg")
+        .to_string();
+    // 确保有图片扩展名，默认补 .jpg
+    let safe_name = if std::path::Path::new(&safe_name)
+        .extension()
+        .is_none()
+    {
+        format!("{safe_name}.jpg")
+    } else {
+        safe_name
+    };
+
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
+    let wallpaper_dir = app_dir.join("wallpapers");
+    tokio::fs::create_dir_all(&wallpaper_dir)
+        .await
+        .map_err(|e| format!("创建壁纸目录失败: {e}"))?;
+    let dest_path = wallpaper_dir.join(&safe_name);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .user_agent("XY-Music-WallpaperDownloader")
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;
+
+    let mut response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载壁纸失败: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("下载服务器返回错误状态: {}", response.status()));
+    }
+
+    let mut file = File::create(&dest_path)
+        .await
+        .map_err(|e| format!("创建文件失败: {e}"))?;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("读取响应数据失败: {e}"))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("写入文件失败: {e}"))?;
+    }
+
+    Ok(dest_path.to_string_lossy().to_string())
+}
+
