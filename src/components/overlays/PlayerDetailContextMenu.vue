@@ -13,8 +13,6 @@ import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../s
 import type { Song } from '../../types';
 
 type DetailMenuAction =
-  | 'changeCover'
-  | 'changeLyrics'
   | 'viewArtist'
   | 'viewAlbum'
   | 'viewSongInfo'
@@ -56,26 +54,6 @@ const isOnlineSong = computed(() => {
 
 /** 图标定义 */
 const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
-  changeCover: {
-    viewBox: '0 0 24 24',
-    fill: false,
-    paths: [
-      { d: 'M4 5.5h16v13H4z' },
-      { d: 'M7 15l3.25-3.25 2.5 2.5 1.75-1.75L18 16' },
-      { d: 'M15.5 9h.01' },
-    ],
-  },
-  changeLyrics: {
-    viewBox: '0 0 24 24',
-    fill: false,
-    paths: [
-      { d: 'M5 6.5h14' },
-      { d: 'M5 11h10' },
-      { d: 'M5 15.5h7' },
-      { d: 'M16.5 14.5v5' },
-      { d: 'M14 17h5' },
-    ],
-  },
   viewArtist: {
     viewBox: '0 0 24 24',
     fill: false,
@@ -115,21 +93,6 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
 const menuEntries = computed<MenuEntry[]>(() => {
   const entries: MenuEntry[] = [];
 
-  if (!isOnlineSong.value) {
-    entries.push(
-      {
-        key: 'changeCover',
-        label: '为此歌曲修改封面',
-        icon: menuIcons.changeCover,
-      },
-      {
-        key: 'changeLyrics',
-        label: '为此歌曲修改字幕',
-        icon: menuIcons.changeLyrics,
-      },
-    );
-  }
-
   entries.push(
     {
       key: 'viewArtist',
@@ -163,7 +126,7 @@ const menuEntries = computed<MenuEntry[]>(() => {
 });
 
 /** 分隔线位置：在 viewSongInfo 后（与添加到歌单组分隔） */
-const dividerAfterKeys = computed(() => new Set<DetailMenuAction>(['changeLyrics', 'viewSongInfo']));
+const dividerAfterKeys = computed(() => new Set<DetailMenuAction>(['viewSongInfo']));
 
 watch(
   () => props.visible,
@@ -334,12 +297,6 @@ const handleAction = (action: DetailMenuAction) => {
   if (!props.song) return;
 
   switch (action) {
-    case 'changeCover':
-      openSongInfo(props.song, 'cover');
-      break;
-    case 'changeLyrics':
-      openSongInfo(props.song, 'lyrics');
-      break;
     case 'viewArtist':
       if (isOnlineSong.value) {
         void handleOnlineViewArtist(props.song);

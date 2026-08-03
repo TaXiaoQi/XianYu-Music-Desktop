@@ -147,7 +147,8 @@ onMounted(() => {
       </button>
 
       <!-- 搜索历史下拉 -->
-      <div v-if="showHistory && navigationStore.searchHistory.length" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-60 overflow-y-auto overflow-x-hidden">
+      <Transition name="search-history-fade">
+        <div v-if="showHistory && navigationStore.searchHistory.length" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-60 overflow-y-auto overflow-x-hidden">
         <div class="px-3 py-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
           <div class="flex items-center text-xs text-black/50 dark:text-white/50 font-medium tracking-wide">
             <Clock class="h-3.5 w-3.5 mr-1.5" />
@@ -175,6 +176,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
+      </Transition>
     </div>
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
@@ -266,3 +268,19 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.search-history-fade-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.search-history-fade-leave-active {
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+.search-history-fade-enter-from,
+.search-history-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>

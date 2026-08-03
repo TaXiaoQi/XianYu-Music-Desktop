@@ -267,6 +267,36 @@ onScopeDispose(() => {
           </button>
         </div>
 
+        <!-- 渐入渐出时长设置子区域 -->
+        <div
+          v-if="settings.audio.fadeInOutEnabled"
+          class="flex flex-col border-b border-gray-200/20 dark:border-gray-800/20 bg-gray-50/10 dark:bg-gray-900/10 transition-all duration-300 animate-in fade-in"
+        >
+          <div class="desktop-setting-row pl-8">
+            <div class="flex-1 space-y-1">
+              <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                渐入渐出时长
+                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                  {{ (settings.audio.fadeInOutDurationMs / 1000).toFixed(1) }} 秒
+                </span>
+              </div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+                设置音量从零渐变到目标值的过渡时间，范围 0.5 ~ 3 秒。
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                type="range"
+                min="500"
+                max="3000"
+                step="100"
+                v-model.number="settings.audio.fadeInOutDurationMs"
+                class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 音量平衡主开关行 -->
         <div
           class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20"

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
+import { launchFlyingCover } from '../../composables/useFlyingCover';
 
 const { settings } = useSettings();
 const songClickAction = computed(() => settings.value.songClickAction || 'double');
@@ -25,6 +26,12 @@ const formatDuration = (seconds: number): string => {
 const handleImgError = (e: Event) => {
   (e.target as HTMLImageElement).style.display = 'none';
 };
+
+/** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
+const handlePlayClick = (song: Song) => {
+  launchFlyingCover(song.path, song.cover_thumb_path || '');
+  emit('play', song);
+};
 </script>
 
 <template>
@@ -44,15 +51,15 @@ const handleImgError = (e: Event) => {
         v-for="(item, index) in props.songs"
         :key="`${item.path}-${index}`"
         class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-        @click="songClickAction === 'single' && emit('play', item)"
-        @dblclick="songClickAction !== 'single' && emit('play', item)"
+        @click="songClickAction === 'single' && handlePlayClick(item)"
+        @dblclick="songClickAction !== 'single' && handlePlayClick(item)"
         @contextmenu="emit('contextmenu', $event, item)"
       >
         <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
           {{ index + 1 }}
         </td>
         <td class="py-2 px-2">
-          <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0">
+          <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
             <img
               v-if="item.cover_thumb_path"
               :src="item.cover_thumb_path"
