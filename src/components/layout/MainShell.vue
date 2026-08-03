@@ -65,7 +65,9 @@ const {
   updateVisible,
   latestUpdate,
   closeUpdate,
-  openDownload,
+  isDownloading,
+  downloadProgress,
+  downloadAndInstall,
   checkUpdateOnStartup,
 } = useUpdateCheck();
 
@@ -252,8 +254,10 @@ onMounted(() => {
       v-if="!isMiniMode"
       :visible="updateVisible"
       :update="latestUpdate"
+      :is-downloading="isDownloading"
+      :progress="downloadProgress"
       @close="closeUpdate"
-      @download="openDownload"
+      @download="downloadAndInstall"
     />
     </template>
 
