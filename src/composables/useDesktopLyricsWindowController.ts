@@ -586,9 +586,8 @@ export function useDesktopLyricsWindowController(options: {
 
   watch(
     () => settings.value.isAlwaysOnTop,
-    () => {
-      // 桌面歌词窗口始终置顶，忽略设置值
-      void applyAlwaysOnTopState(true);
+    (enabled) => {
+      void applyAlwaysOnTopState(enabled);
     },
     { immediate: true },
   );

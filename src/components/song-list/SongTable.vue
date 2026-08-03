@@ -469,10 +469,10 @@ watch(
   { immediate: true },
 );
 
-// 点击/双击播放：触发飞入封面动画并立即切换播放
-// 整个动画（飞行 + 悬停 + 淡出）在后台并行进行，用来遮盖起播延迟，不阻塞播放切换
-const handlePlayClick = (song: Song) => {
-  launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
+// 点击/双击播放：本地歌曲先触发飞入封面动画，等封面飞抵底栏后再开始加载播放
+// 这样用户先看到封面飞入效果，再听到歌曲起播，体验更连贯
+const handlePlayClick = async (song: Song) => {
+  await launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
   emit('play', song);
 };
 

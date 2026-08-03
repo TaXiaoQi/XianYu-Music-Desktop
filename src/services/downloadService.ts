@@ -8,7 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import type { DownloadFileNameStyle, DownloadQuality, Song, QualityKey } from '../types';
+import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
 import { usePlaybackStore } from '../features/playback/store';
 
@@ -537,13 +537,17 @@ export async function resolveDownloadUrl(
 }
 
 /** 获取歌词文本（lrc 或纯文本）用于一并下载 */
-async function fetchLyricText(song: Song, format: 'lrc' | 'txt'): Promise<string | null> {
+async function fetchLyricText(
+  song: Song,
+  format: 'lrc' | 'txt',
+  lyricsStyle: DownloadLyricsStyle,
+): Promise<string | null> {
   const path = song.cue_source_path || song.path;
   if (!path) return null;
 
   // plugin:// 协议：通过 MusicFree 插件引擎获取歌词
   if (path.startsWith('plugin://')) {
-    return fetchPluginLyricText(song, format);
+    return fetchPluginLyricText(song, format, lyricsStyle);
   }
 
   // lx:// 协议：通过落雪插件引擎获取歌词
@@ -580,12 +584,20 @@ async function fetchLyricText(song: Song, format: 'lrc' | 'txt'): Promise<string
       types: cachedInfo?.types,
     } as any);
 
-    const lyric = result?.lyric;
+    // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
+    // line-by-line：仅使用逐行歌词（lyric）
+    const preferWordByWord = lyricsStyle === 'word-by-word';
+    const wordLyric = result?.lxlyric;
+    const lineLyric = result?.lyric;
+    const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
     if (!lyric) return null;
 
     if (format === 'txt') {
-      // 去掉时间轴标签
-      return lyric.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '').trim();
+      // 去掉时间轴标签（含逐字歌词的 <offset,duration> 标签）
+      return lyric
+        .replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '')
+        .replace(/<\d+,\d+>/g, '')
+        .trim();
     }
     return lyric;
   } catch (e: any) {
@@ -595,7 +607,11 @@ async function fetchLyricText(song: Song, format: 'lrc' | 'txt'): Promise<string
 }
 
 /** plugin:// 协议获取歌词：调用 MusicFree 插件的 getLyric 方法 */
-async function fetchPluginLyricText(song: Song, format: 'lrc' | 'txt'): Promise<string | null> {
+async function fetchPluginLyricText(
+  song: Song,
+  format: 'lrc' | 'txt',
+  lyricsStyle: DownloadLyricsStyle,
+): Promise<string | null> {
   const pluginSearchResult = song.rawData;
   if (!pluginSearchResult?.pluginId) return null;
 
@@ -606,14 +622,24 @@ async function fetchPluginLyricText(song: Song, format: 'lrc' | 'txt'): Promise<
     if (!pluginSource) return null;
 
     const result = await pluginGetLyric(pluginSource, pluginSearchResult);
-    const lyric = result?.lyric;
+
+    // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
+    // line-by-line：仅使用逐行歌词（lyric）
+    const preferWordByWord = lyricsStyle === 'word-by-word';
+    const wordLyric = result?.lxlyric;
+    const lineLyric = result?.lyric;
+    const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
     if (!lyric) return null;
 
     // 若有翻译歌词，拼接在后面
-    const combined = result.tlyric ? `${lyric}\n[offset:0]\n${result.tlyric}` : lyric;
+    const tlyric = result?.tlyric;
+    const combined = tlyric ? `${lyric}\n[offset:0]\n${tlyric}` : lyric;
 
     if (format === 'txt') {
-      return combined.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '').trim();
+      return combined
+        .replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '')
+        .replace(/<\d+,\d+>/g, '')
+        .trim();
     }
     return combined;
   } catch (e: any) {
@@ -661,6 +687,8 @@ export interface DownloadSongOptions {
   overwriteExisting: boolean;
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
+  /** 歌词样式：word-by-word 优先逐字歌词（回退逐行），line-by-line 仅逐行歌词 */
+  lyricsStyle: DownloadLyricsStyle;
   /** 是否将元数据写入音频文件 tag */
   embedMetadata: boolean;
   /** 是否将歌词写入音频文件 tag */
@@ -874,7 +902,7 @@ export async function downloadSong(
   let lyricsSaved = false;
   let savedLyricText: string | null = null;
   if (options.downloadLyrics || options.embedLyrics) {
-    const lyricText = await fetchLyricText(song, options.lyricsFormat);
+    const lyricText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
     if (lyricText) {
       savedLyricText = lyricText;
       if (options.downloadLyrics) {

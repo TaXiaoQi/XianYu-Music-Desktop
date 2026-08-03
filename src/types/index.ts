@@ -643,6 +643,9 @@ export type DownloadQuality = QualityKey;
  */
 export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-artist-album';
 
+/** 歌词下载样式：word-by-word 优先逐字歌词（回退逐行），line-by-line 仅逐行歌词 */
+export type DownloadLyricsStyle = 'word-by-word' | 'line-by-line';
+
 export interface DownloadSettings {
   downloadPath: string;
   format: DownloadFormat;
@@ -650,6 +653,8 @@ export interface DownloadSettings {
   /** 下载独立歌词文件（.lrc/.txt），默认 true */
   downloadLyrics: boolean;
   lyricsFormat: 'lrc' | 'txt';
+  /** 歌词样式：word-by-word 优先下载逐字歌词（回退到逐行），line-by-line 仅下载逐行歌词 */
+  lyricsStyle: DownloadLyricsStyle;
   overwriteExisting: boolean;
   keepSourceFilename: boolean;
   /** 文件名样式（keepSourceFilename 为真时不生效） */
