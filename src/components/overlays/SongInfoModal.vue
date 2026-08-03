@@ -606,7 +606,7 @@ const formatTime = (timestampSeconds?: number) => {
                   :disabled="!isSongInfoEditing"
                   @click="handleChooseCover"
                 >
-                  <img v-if="songInfoEditForm.coverPreviewUrl || coverUrl" :src="songInfoEditForm.coverPreviewUrl || coverUrl" class="w-full h-full object-cover" draggable="false" />
+                  <img v-if="songInfoEditForm.coverPreviewUrl || coverUrl" :src="songInfoEditForm.coverPreviewUrl || coverUrl" class="w-full h-full object-cover" draggable="false" decoding="async" />
                   <svg v-else class="w-12 h-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
@@ -796,7 +796,7 @@ const formatTime = (timestampSeconds?: number) => {
                 :class="isLyricsEditorVisuallyExpanded ? '' : 'lyrics-editor-inline-song--hidden'"
               >
                 <div class="lyrics-editor-cover">
-                  <img v-if="coverUrl" :src="coverUrl" alt="" draggable="false" />
+                  <img v-if="coverUrl" :src="coverUrl" alt="" draggable="false" decoding="async" />
                   <svg v-else class="h-5 w-5 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>

@@ -274,11 +274,12 @@ onUnmounted(() => {
         @mousedown.stop.prevent
         @click.stop="restoreMainWindow"
       >
-        <img 
-          v-if="localCoverUrl" 
-          :src="localCoverUrl" 
-          class="w-full h-full object-cover transition-all duration-200 group-hover/cover:scale-[0.96] group-hover/cover:brightness-[0.75]" 
+        <img
+          v-if="localCoverUrl"
+          :src="localCoverUrl"
+          class="w-full h-full object-cover transition-all duration-200 group-hover/cover:scale-[0.96] group-hover/cover:brightness-[0.75]"
           draggable="false"
+          decoding="async"
         />
         <svg 
           v-else 

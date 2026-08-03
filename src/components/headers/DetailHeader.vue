@@ -208,7 +208,7 @@ const handlePlayAll = () => {
     <div v-else class="flex gap-6 h-auto mt-1">
       <!-- 封面图 -->
       <div class="w-40 h-40 rounded-2xl shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5">
-        <img v-if="headerCover" :src="headerCover" class="w-full h-full object-cover animate-in fade-in duration-300" alt="Cover" />
+        <img v-if="headerCover" :src="headerCover" class="w-full h-full object-cover animate-in fade-in duration-300" alt="Cover" decoding="async" />
         <div v-else class="flex flex-col items-center justify-center h-full w-full">
            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-16 h-16 text-indigo-500/50 mb-2 drop-shadow-md"><path fill-rule="evenodd" d="M19.952 1.651a.75.75 0 01.298.599V16.303a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V6.994l-9 2.572v9.737a3 3 0 01-2.176 2.884l-1.32.377a2.553 2.553 0 11-1.403-4.909l2.311-.66a1.5 1.5 0 001.088-1.442V9.017c0-.528.246-1.032.67-1.371l10.038-5.996z" clip-rule="evenodd" /></svg>
         </div>

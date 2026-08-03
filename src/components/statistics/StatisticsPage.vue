@@ -332,7 +332,7 @@ const losslessRatio = computed(() => {
                 {{ item.rank }}
               </div>
               <div class="leaderboard-avatar">
-                <img v-if="item.avatar" :src="item.avatar" alt="" class="h-full w-full object-cover" />
+                <img v-if="item.avatar" :src="item.avatar" alt="" class="h-full w-full object-cover" loading="lazy" decoding="async" />
                 <span v-else>{{ item.nickname.slice(0, 1).toUpperCase() }}</span>
               </div>
               <div class="leaderboard-info">
@@ -364,7 +364,7 @@ const losslessRatio = computed(() => {
                 {{ leaderboardDisplay.me.rank }}
               </div>
               <div class="leaderboard-avatar">
-                <img v-if="leaderboardDisplay.me.avatar" :src="leaderboardDisplay.me.avatar" alt="" class="h-full w-full object-cover" />
+                <img v-if="leaderboardDisplay.me.avatar" :src="leaderboardDisplay.me.avatar" alt="" class="h-full w-full object-cover" loading="lazy" decoding="async" />
                 <span v-else>{{ leaderboardDisplay.me.nickname.slice(0, 1).toUpperCase() }}</span>
               </div>
               <div class="leaderboard-info">
