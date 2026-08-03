@@ -64,10 +64,10 @@ use taskbar::{
 };
 use toolbox::{
     apply_rename, check_update_by_rust, download_online_song, download_update_file,
-    fetch_announcement, file_exists, open_external_program, preview_rename, read_download_history,
-    refresh_folder_songs, probe_url_size, run_installer, save_download_bytes,
-    save_download_lyrics, set_gpu_acceleration, write_download_history, write_state_json,
-    read_state_json,
+    embed_audio_metadata, fetch_announcement, file_exists, open_external_program, preview_rename,
+    read_download_history, refresh_folder_songs, probe_url_size, run_installer,
+    save_download_bytes, save_download_lyrics, set_gpu_acceleration, write_download_history,
+    write_state_json, read_state_json,
 };
 
 #[cfg(target_os = "windows")]
@@ -245,6 +245,7 @@ download_audio_to_temp,
             write_download_history,
             save_download_bytes,
             save_download_lyrics,
+            embed_audio_metadata,
             run_installer,
             fetch_announcement,
             write_state_json,

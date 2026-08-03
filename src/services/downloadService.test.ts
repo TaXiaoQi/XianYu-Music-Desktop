@@ -56,7 +56,6 @@ const baseOptions = {
   keepSourceFilename: false,
   overwriteExisting: true,
   downloadLyrics: false,
-  downloadCover: false,
   lyricsFormat: 'lrc' as const,
 };
 

@@ -302,11 +302,11 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
       </Transition>
     </Teleport>
 
-    <!-- 文件名与歌词 -->
+    <!-- 下载文件 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        文件名与歌词
+        下载文件
       </h2>
       <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 文件名样式 -->
@@ -342,10 +342,11 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
           </button>
         </div>
 
-        <!-- 同时下载歌词 -->
+        <!-- 下载独立歌词 -->
         <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">同时下载歌词</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">下载独立歌词</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">在音频文件旁保存独立的 .lrc/.txt 歌词文件</div>
           </div>
           <button
             type="button"
@@ -360,26 +361,8 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
           </button>
         </div>
 
-        <!-- 同时下载封面 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
-          <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">同时下载封面</div>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.downloadCover ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="patchSettings({ download: { ...settings.download, downloadCover: !settings.download.downloadCover } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.downloadCover ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
-        </div>
-
         <!-- 歌词格式 -->
-        <div class="desktop-setting-row rounded-b-xl">
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词格式</div>
           </div>
@@ -390,6 +373,63 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
           >
             <span>{{ LYRICS_FORMAT_OPTIONS.find(o => o.value === settings.download.lyricsFormat)?.label }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- 写入歌曲元数据 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">写入歌曲元数据</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">将标题、歌手、专辑等信息写入音频文件标签</div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.download.embedMetadata ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="patchSettings({ download: { ...settings.download, embedMetadata: !settings.download.embedMetadata } })"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+              :class="settings.download.embedMetadata ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+
+        <!-- 嵌入歌词 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入歌词</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">将歌词写入音频文件标签，可在支持标签的播放器中显示</div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.download.embedLyrics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="patchSettings({ download: { ...settings.download, embedLyrics: !settings.download.embedLyrics } })"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+              :class="settings.download.embedLyrics ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+
+        <!-- 嵌入封面 -->
+        <div class="desktop-setting-row rounded-b-xl">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入封面</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">将封面图片写入音频文件标签</div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.download.embedCover ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="patchSettings({ download: { ...settings.download, embedCover: !settings.download.embedCover } })"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+              :class="settings.download.embedCover ? 'translate-x-6' : 'translate-x-1'"
+            />
           </button>
         </div>
       </div>

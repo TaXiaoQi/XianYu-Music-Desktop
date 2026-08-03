@@ -61,8 +61,10 @@ export async function downloadToLocal(
       fileNameStyle: settings.value.download.fileNameStyle,
       overwriteExisting: settings.value.download.overwriteExisting,
       downloadLyrics: settings.value.download.downloadLyrics,
-      downloadCover: settings.value.download.downloadCover,
       lyricsFormat: settings.value.download.lyricsFormat,
+      embedMetadata: settings.value.download.embedMetadata,
+      embedLyrics: settings.value.download.embedLyrics,
+      embedCover: settings.value.download.embedCover,
       onProgress: (percent: number) => downloadStore.setProgress(percent),
     });
 
@@ -84,7 +86,6 @@ export async function downloadToLocal(
       : result.hitQuality !== quality;
     const extras: string[] = [];
     if (result.lyricsSaved) extras.push('含歌词');
-    if (result.coverSaved) extras.push('含封面');
     const extraNote = extras.length > 0 ? `（${extras.join('、')}）` : '';
     const note = degraded
       ? `（实际下载音质：${hitMeta?.label ?? result.hitQuality}）`

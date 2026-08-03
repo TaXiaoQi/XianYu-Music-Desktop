@@ -16,8 +16,6 @@ interface CreatePlayerUiShellDeps {
 
 const clampVolumePercent = (volume: number) => Math.max(0, Math.min(100, Math.round(volume)));
 
-const clampSpeed = (speed: number) => Math.max(0.5, Math.min(2.0, Math.round(speed * 100) / 100));
-
 export const getNextWheelVolume = (currentVolume: number, deltaY: number) => {
   if (deltaY === 0) {
     return clampVolumePercent(currentVolume);
@@ -64,25 +62,6 @@ export const createPlayerUiShell = ({
 
     playbackStore.volume = 100;
     await playbackApi.setVolume(1);
-  };
-
-  const handlePlaybackSpeed = async (speed: number) => {
-    const clamped = clampSpeed(speed);
-    playbackStore.playbackSpeed = clamped;
-    await playbackApi.setPlaybackSpeed(clamped);
-  };
-
-  const handlePlaybackSpeedWheel = async (event: WheelEvent) => {
-    const delta = event.deltaY < 0 ? 0.25 : -0.25;
-    const next = clampSpeed(playbackStore.playbackSpeed + delta);
-    if (next === playbackStore.playbackSpeed) return;
-    playbackStore.playbackSpeed = next;
-    await playbackApi.setPlaybackSpeed(next);
-  };
-
-  const resetPlaybackSpeed = async () => {
-    playbackStore.playbackSpeed = 1.0;
-    await playbackApi.setPlaybackSpeed(1.0);
   };
 
   const togglePlaylist = () => {
@@ -138,9 +117,6 @@ export const createPlayerUiShell = ({
     handleVolume,
     handleVolumeWheel,
     toggleMute,
-    handlePlaybackSpeed,
-    handlePlaybackSpeedWheel,
-    resetPlaybackSpeed,
     togglePlaylist,
     toggleMiniPlaylist,
     closeMiniPlaylist,

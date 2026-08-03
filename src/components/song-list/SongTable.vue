@@ -10,6 +10,7 @@ import { useRoute, useRouter } from 'vue-router';
 import QualityBadge from '../common/QualityBadge.vue';
 import { INDEX_KEYS } from '../../utils/alphabetIndex';
 import { useCoverCache } from '../../composables/useCoverCache';
+import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useLibraryRuntimeActions } from '../../features/library/useLibraryRuntimeActions';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
@@ -468,6 +469,19 @@ watch(
   { immediate: true },
 );
 
+// 点击/双击播放：先触发飞入封面动画，再 emit 播放
+// 本地歌曲：等飞抵底栏再切换播放（掩盖切换瞬间，无音频解析延迟）
+// 在线歌曲：立即切换播放（需异步解析 URL/缓存，动画并行进行，匹配播放结果即可）
+const handlePlayClick = (song: Song) => {
+  const flightPromise = launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
+  const isLocal = !song.path.startsWith('lx://') && !song.path.startsWith('plugin://') && !song.path.startsWith('remote://');
+  if (isLocal) {
+    void flightPromise.then(() => emit('play', song));
+  } else {
+    emit('play', song);
+  }
+};
+
 const handlePointerDown = (event: PointerEvent, song: Song, index: number) => {
   if (event.pointerType === 'mouse' && event.button !== 0) {
     return;
@@ -678,8 +692,8 @@ const getRowStyle = (songIndex: number, songPath: string) => {
           :key="song.path"
           :data-index="song.virtualIndex"
           @pointerdown="handlePointerDown($event, song, song.virtualIndex)"
-          @click="!isBatchMode && songClickAction === 'single' && emit('play', song)"
-          @dblclick="!isBatchMode && songClickAction !== 'single' && emit('play', song)"
+          @click="!isBatchMode && songClickAction === 'single' && handlePlayClick(song)"
+          @dblclick="!isBatchMode && songClickAction !== 'single' && handlePlayClick(song)"
           @contextmenu.prevent="emit('contextmenu', $event, song)"
           @dragstart.prevent
           class="group w-full min-w-0 border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 select-none cursor-default relative flex items-center px-2 gap-3 [touch-action:none]"

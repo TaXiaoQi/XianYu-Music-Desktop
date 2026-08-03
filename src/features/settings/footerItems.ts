@@ -20,7 +20,7 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   left: ['favorite', 'download'],
   middleLeft: 'playMode',
   middleRight: 'desktopLyrics',
-  right: ['quality', 'speed', 'volume', 'equalizer', 'playlist'],
+  right: ['quality', 'volume', 'equalizer', 'playlist'],
   hidden: [],
 };
 
@@ -53,7 +53,6 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'playMode',       label: '播放模式',   description: '列表循环/单曲循环/随机播放', icon: 'repeat' },
   { key: 'desktopLyrics',  label: '桌面歌词',   description: '开关桌面歌词悬浮窗', icon: 'lyrics' },
   { key: 'quality',        label: '音质',       description: '在线歌曲音质切换、本地歌曲音质标签', icon: 'gauge' },
-  { key: 'speed',          label: '倍速',       description: '0.5x ~ 2.0x 播放倍速', icon: 'gauge' },
   { key: 'volume',         label: '音量',       description: '音量调节与静音', icon: 'volume' },
   { key: 'equalizer',      label: '均衡器',     description: 'EQ 频段调节', icon: 'equalizer' },
   { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', icon: 'playlist' },

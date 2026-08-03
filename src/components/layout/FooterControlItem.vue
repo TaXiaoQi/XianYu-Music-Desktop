@@ -7,11 +7,11 @@ import type { DownloadRecord } from '../../services/downloadHistory';
 
 /**
  * 底部栏可配置控件渲染组件。
- * 根据传入的 itemKey 渲染对应的控件（收藏/下载/播放模式/桌面歌词/音质/倍速/音量/均衡器/播放队列）。
+ * 根据传入的 itemKey 渲染对应的控件（收藏/下载/播放模式/桌面歌词/音质/音量/均衡器/播放队列）。
  * 每个控件均可在任意容器（左/中左/中右/右/折叠收纳）中渲染，行为一致。
  *
  * 上下文通过 provide/inject 从 PlayerFooter 共享：
- * - 响应式状态（currentSong、volume、playbackSpeed 等）
+ * - 响应式状态（currentSong、volume 等）
  * - 事件处理函数（toggleFavorite、handleDownloadClick 等）
  * - 模板引用（qualityButtonRef、volumeBarRef 等，用于点击外部检测与拖拽）
  */
@@ -55,18 +55,6 @@ const ctx = inject<{
   selectQuality: (qualityKey: QualityKey) => Promise<void>;
   qualityButtonRef: Ref<HTMLElement | null>;
   qualityMenuRef: Ref<HTMLElement | null>;
-  // 倍速
-  playbackSpeed: Ref<number>;
-  showSpeedSlider: Ref<boolean>;
-  isDraggingSpeed: Ref<boolean>;
-  handleSpeedEnter: () => void;
-  handleSpeedLeave: () => void;
-  handlePlaybackSpeedWheel: (e: WheelEvent) => void;
-  speedLabel: Ref<string>;
-  speedBarRef: Ref<HTMLElement | null>;
-  startSpeedDrag: (e: PointerEvent) => void;
-  speedPercent: Ref<number>;
-  resetPlaybackSpeed: () => void;
   // 音量
   volume: Ref<number>;
   showVolumeSlider: Ref<boolean>;
@@ -111,16 +99,6 @@ const {
   QUALITY_OPTIONS,
   activeQualityKey,
   selectQuality,
-  playbackSpeed,
-  showSpeedSlider,
-  isDraggingSpeed,
-  handleSpeedEnter,
-  handleSpeedLeave,
-  handlePlaybackSpeedWheel,
-  speedLabel,
-  startSpeedDrag,
-  speedPercent,
-  resetPlaybackSpeed,
   volume,
   showVolumeSlider,
   isDraggingVolume,
@@ -282,46 +260,6 @@ const {
         </div>
       </div>
     </transition>
-  </div>
-
-  <!-- 倍速控制 -->
-  <div
-    v-else-if="itemKey === 'speed'"
-    class="relative flex items-center justify-center h-full z-[70]"
-    @mouseenter="handleSpeedEnter"
-    @mouseleave="handleSpeedLeave"
-    @wheel.prevent.stop="handlePlaybackSpeedWheel"
-  >
-    <div
-      v-if="showSpeedSlider || isDraggingSpeed"
-      class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
-    >
-      <div class="absolute top-full left-0 w-full h-4"></div>
-      <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
-        :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
-      >
-        <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
-          :class="playbackSpeed !== 1.0
-            ? 'text-[#EC4141]'
-            : (showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60')"
-        >{{ speedLabel }}</div>
-        <div :ref="el => { if (el) ctx.speedBarRef.value = el as HTMLElement; }" class="relative flex-1 w-1.5 rounded-full cursor-pointer my-1 transition-colors [touch-action:none]"
-             :class="showPlayerDetail ? 'bg-white/15' : 'bg-gray-200 dark:bg-white/15'"
-             @pointerdown="startSpeedDrag">
-           <div class="absolute bottom-0 w-full bg-[#EC4141] rounded-full" :style="{ height: speedPercent + '%' }"></div>
-           <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-sm cursor-grab active:cursor-grabbing" :style="{ bottom: `calc(${speedPercent}% - 7px)` }"></div>
-        </div>
-      </div>
-    </div>
-    <button @click="resetPlaybackSpeed"
-      class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
-      :class="playbackSpeed !== 1.0
-        ? 'text-[#EC4141]'
-        : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-      title="倍速（点击恢复1.0x）"
-    >
-      <FooterControlIcon item-key="speed" class="h-5 w-5" />
-    </button>
   </div>
 
   <!-- 音量控制 -->

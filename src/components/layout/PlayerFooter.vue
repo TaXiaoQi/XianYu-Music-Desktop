@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Eye, EyeOff, Music } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Eye, EyeOff } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -25,14 +25,12 @@ import {
 
 const {
   currentSong,
-  currentCover,
   currentAvailableQualities,
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
-  isPlaying, volume, playbackSpeed, currentTime, playMode, showPlaylist, showPlayerDetail,
+  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
-  handlePlaybackSpeed, handlePlaybackSpeedWheel, resetPlaybackSpeed,
   toggleMode, togglePlaylist,
   togglePlayerDetail, seekTo, formatDuration, playSong,
 } = usePlaybackController();
@@ -487,39 +485,13 @@ const startDrag = (e: PointerEvent) => {
   updateVolume(e.clientY);
 };
 
-// --- 倍速拖拽逻辑（与音量一致） ---
-const isDraggingSpeed = ref(false);
-const speedBarRef = ref<HTMLElement | null>(null);
-// 倍速范围 0.5x ~ 2.0x，映射到滑块 0~100%
-const speedPercent = computed(() => Math.round((playbackSpeed.value - 0.5) / 1.5 * 100));
-
-const updateSpeed = (clientY: number) => {
-  if (!speedBarRef.value) return;
-  const rect = speedBarRef.value.getBoundingClientRect();
-  const height = rect.height;
-  const distance = rect.bottom - clientY;
-  const percent = Math.max(0, Math.min(1, distance / height));
-  const newSpeed = Math.round((0.5 + percent * 1.5) * 100) / 100;
-  handlePlaybackSpeed(newSpeed);
-};
-
-const startSpeedDrag = (e: PointerEvent) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  e.preventDefault();
-  (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
-  isDraggingSpeed.value = true;
-  updateSpeed(e.clientY);
-};
-
 const onGlobalPointerMove = (e: PointerEvent) => {
   if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
-  if (isDraggingSpeed.value) { e.preventDefault(); updateSpeed(e.clientY); }
   if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); }
 };
 
 const onGlobalPointerEnd = (commitProgress = true) => {
   isDraggingVolume.value = false;
-  isDraggingSpeed.value = false;
   stopProgressDrag(commitProgress);
 };
 
@@ -545,27 +517,6 @@ const handleVolumeLeave = () => {
     }
   }, 300);
 };
-
-// --- 倍速滑块显示逻辑（与音量一致） ---
-const showSpeedSlider = ref(false);
-let speedTimer: any = null;
-
-const handleSpeedEnter = () => {
-  if (speedTimer) clearTimeout(speedTimer);
-  showSpeedSlider.value = true;
-  handleFooterMouseEnter();
-};
-
-const handleSpeedLeave = () => {
-  speedTimer = setTimeout(() => {
-    if (!isDraggingSpeed.value) {
-      showSpeedSlider.value = false;
-      startIdleTimer();
-    }
-  }, 300);
-};
-
-const speedLabel = computed(() => `${playbackSpeed.value.toFixed(2)}x`);
 
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
@@ -649,7 +600,7 @@ const togglePin = () => {
 const startIdleTimer = () => {
   if (idleTimer) clearTimeout(idleTimer);
   // Do not hide if context menu, dragging, or volume slider is active
-  if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || isDraggingSpeed.value || showVolumeSlider.value || showSpeedSlider.value || isPinned.value) return;
+  if (showContextMenu.value || isDraggingProgress.value || isDraggingVolume.value || showVolumeSlider.value || isPinned.value) return;
 
   idleTimer = setTimeout(() => {
     if (showPlayerDetail.value) {
@@ -719,18 +670,6 @@ provide('footerContext', {
   selectQuality,
   qualityButtonRef,
   qualityMenuRef,
-  // 倍速
-  playbackSpeed,
-  showSpeedSlider,
-  isDraggingSpeed,
-  handleSpeedEnter,
-  handleSpeedLeave,
-  handlePlaybackSpeedWheel,
-  speedLabel,
-  speedBarRef,
-  startSpeedDrag,
-  speedPercent,
-  resetPlaybackSpeed,
   // 音量
   volume,
   showVolumeSlider,
@@ -836,30 +775,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="flex items-center w-1/3 min-w-[150px]" @contextmenu="handleContextMenu">
-      <div 
-        ref="footerCoverRef"
+    <div class="flex items-center w-1/3 min-w-[150px]" @contextmenu="handleContextMenu" @click="handleOpenDetail">
+      <div
         data-footer-cover
-        @click="handleOpenDetail"
-        class="group relative w-12 h-12 rounded-lg flex-shrink-0 cursor-pointer active:scale-95 z-10 overflow-hidden bg-black/5 dark:bg-white/5 flex items-center justify-center border border-black/5 dark:border-white/5"
-      >
-        <img 
-          v-if="currentCover" 
-          :src="currentCover" 
-          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-          alt="封面" 
-        />
-        <div v-else class="text-gray-400 dark:text-white/40">
-          <Music class="w-6 h-6" />
-        </div>
-        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity duration-200">
-          <ChevronUp class="w-5 h-5 transition-transform duration-300" :class="{ 'rotate-180': showPlayerDetail }" />
-        </div>
-      </div>
+        @click.stop="handleOpenDetail"
+        class="group relative w-12 h-12 rounded-lg flex-shrink-0 cursor-pointer active:scale-95 z-10"
+      ></div>
 
       <div
-        class="ml-3 flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1"
-        :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-[0px]'"
+        class="flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 cursor-pointer ml-3 min-w-0"
+        :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-0'"
       >
         <div class="overflow-hidden w-28 relative h-full shrink-0">
         <!-- State A: Default View (Title & Artist) -->
@@ -867,7 +792,7 @@ onUnmounted(() => {
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
           :class="showPlayerDetail ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0 text-gray-800 dark:text-white'"
         >
-          <div class="overflow-hidden min-w-0" ref="songTitleWrapperRef">
+          <div class="overflow-hidden w-28" ref="songTitleWrapperRef">
             <div
               class="inline-block whitespace-nowrap"
               :class="{ 'animate-marquee': shouldMarquee }"
