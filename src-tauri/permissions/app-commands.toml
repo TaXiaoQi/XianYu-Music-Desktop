@@ -123,6 +123,7 @@ commands.allow = [
   "check_update_by_rust",
   "download_update_file",
   "download_online_song",
+  "download_wallpaper",
   "probe_url_size",
   "read_download_history",
   "write_download_history",
@@ -138,6 +139,8 @@ commands.allow = [
   "read_plugin_file",
   "proxy_image",
   "download_audio_to_temp",
+  "recognize_audio",
+  "recognize_system_audio",
   "write_state_json",
   "read_state_json",
 ]

@@ -6,7 +6,9 @@ mod foreground_window;
 mod music;
 mod player;
 mod plugins;
+mod recognize;
 mod remote;
+mod system_audio;
 mod statistics;
 mod system_fonts;
 mod taskbar;
@@ -23,6 +25,7 @@ use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
 use plugins::{plugin_http_request, plugin_http_request_binary, read_plugin_file, proxy_image, download_audio_to_temp};
+use recognize::{recognize_audio, recognize_system_audio};
 use music::{
     add_library_folder, add_sidebar_folder, batch_move_music_files, clear_cover_cache,
     create_folder, delete_folder, delete_music_file, get_folder_children, get_folder_first_song,
@@ -64,7 +67,7 @@ use taskbar::{
 };
 use toolbox::{
     apply_rename, check_update_by_rust, download_online_song, download_update_file,
-    embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists, open_external_program, preview_rename,
+    download_wallpaper, embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists, open_external_program, preview_rename,
     read_download_history, refresh_folder_songs, probe_url_size, run_installer,
     save_download_bytes, save_download_lyrics, set_gpu_acceleration, write_download_history,
     write_state_json, read_state_json,
@@ -226,6 +229,8 @@ parse_lyrics_text,
 read_plugin_file,
 proxy_image,
 download_audio_to_temp,
+recognize_audio,
+recognize_system_audio,
             consume_pending_open_paths,
             get_system_fonts,
             import_lyrics_font,
@@ -240,6 +245,7 @@ download_audio_to_temp,
             check_update_by_rust,
             download_update_file,
             download_online_song,
+            download_wallpaper,
             probe_url_size,
             read_download_history,
             write_download_history,
