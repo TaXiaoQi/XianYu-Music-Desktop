@@ -75,6 +75,7 @@
         "type": "skip"
       },
       "nsis": {
+        "installMode": "perMachine",
         "languages": [
           "SimpChinese",
           "English"

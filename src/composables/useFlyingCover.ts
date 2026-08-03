@@ -22,7 +22,8 @@ const PARK_TIMEOUT = 3000;
 
 let currentFlyId = 0;
 
-const escAttr = (s: string) => s.replace(/"/g, '\\"');
+/** CSS 属性选择器转义：反斜杠在 CSS 选择器中是转义符，必须双写；双引号也需转义 */
+const escAttr = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 const findSourceEl = (songPath: string): HTMLElement | null =>
   document.querySelector<HTMLElement>(`[data-cover-path="${escAttr(songPath)}"]`);
