@@ -368,6 +368,7 @@ export interface DesktopLyricsSettings {
   firstLineTextShadowStrength: number;
   secondLineTextShadowStrength: number;
   playerFontScale: number;
+  subFontScale: number;
   playerLineGap: number;
   playerOffsetX: number;
   playerOffsetY: number;
@@ -549,7 +550,7 @@ export interface AudioSettings {
   streamCacheSizeMB: number;
   /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
   fadeInOutEnabled: boolean;
-  /** 渐入渐出时长（毫秒），默认 300ms */
+  /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
   fadeInOutDurationMs: number;
 }
 

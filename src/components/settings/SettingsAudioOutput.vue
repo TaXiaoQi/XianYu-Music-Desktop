@@ -281,14 +281,14 @@ onScopeDispose(() => {
                 </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-                设置音量从零渐变到目标值的过渡时间，范围 0.5 ~ 3 秒。
+                设置音量从零渐变到目标值的过渡时间，范围 0.1 ~ 2 秒。
               </div>
             </div>
             <div class="flex items-center gap-3">
               <input
                 type="range"
-                min="500"
-                max="3000"
+                min="100"
+                max="2000"
                 step="100"
                 v-model.number="settings.audio.fadeInOutDurationMs"
                 class="w-36 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"

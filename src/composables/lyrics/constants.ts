@@ -15,6 +15,9 @@ export const LEGACY_DESKTOP_LYRICS_SETTINGS_KEY = 'desktop_lyrics_settings';
 export const DEFAULT_PLAYER_FONT_SCALE = 1;
 export const MIN_PLAYER_FONT_SCALE = 0.5;
 export const MAX_PLAYER_FONT_SCALE = 3.0;
+export const DEFAULT_SUB_FONT_SCALE = 1.5;
+export const MIN_SUB_FONT_SCALE = 0.5;
+export const MAX_SUB_FONT_SCALE = 3.0;
 export const DEFAULT_PLAYER_LINE_GAP = 1;
 export const MIN_PLAYER_LINE_GAP = 0.5;
 export const MAX_PLAYER_LINE_GAP = 3.0;
@@ -41,8 +44,8 @@ export const DEFAULT_DESKTOP_TEXT_SHADOW_COLOR = '#000000';
 export const DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH = 0;
 export const MIN_DESKTOP_TEXT_SHADOW_STRENGTH = 0;
 export const MAX_DESKTOP_TEXT_SHADOW_STRENGTH = 100;
-export const DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH = 1.5;
-export const MIN_DESKTOP_TEXT_OUTLINE_WIDTH = 0.5;
+export const DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH = 0.3;
+export const MIN_DESKTOP_TEXT_OUTLINE_WIDTH = 0.1;
 export const MAX_DESKTOP_TEXT_OUTLINE_WIDTH = 5;
 export const DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR = '#000000';
 
@@ -140,6 +143,7 @@ export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
   firstLineTextShadowStrength: DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
   secondLineTextShadowStrength: DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
   playerFontScale: DEFAULT_PLAYER_FONT_SCALE,
+  subFontScale: DEFAULT_SUB_FONT_SCALE,
   playerLineGap: DEFAULT_PLAYER_LINE_GAP,
   playerOffsetX: DEFAULT_PLAYER_OFFSET_X,
   playerOffsetY: DEFAULT_PLAYER_OFFSET_Y,
@@ -158,6 +162,11 @@ export function createDefaultDesktopLyricsSettings(): DesktopLyricsSettings {
 export function clampPlayerFontScale(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_PLAYER_FONT_SCALE;
   return Math.min(MAX_PLAYER_FONT_SCALE, Math.max(MIN_PLAYER_FONT_SCALE, value));
+}
+
+export function clampSubFontScale(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_SUB_FONT_SCALE;
+  return Math.min(MAX_SUB_FONT_SCALE, Math.max(MIN_SUB_FONT_SCALE, value));
 }
 
 export function clampPlayerLineGap(value: number) {
@@ -192,7 +201,7 @@ export function clampDesktopTextOutlineWidth(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH;
   return Math.min(
     MAX_DESKTOP_TEXT_OUTLINE_WIDTH,
-    Math.max(MIN_DESKTOP_TEXT_OUTLINE_WIDTH, Math.round(value * 2) / 2),
+    Math.max(MIN_DESKTOP_TEXT_OUTLINE_WIDTH, Math.round(value * 10) / 10),
   );
 }
 
@@ -401,6 +410,7 @@ export function normalizeDesktopLyricsSettingsPatch(
       patch.secondLineTextShadowStrength ?? legacyTextShadowStrength ?? DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
     ),
     playerFontScale: clampPlayerFontScale(patch.playerFontScale ?? DEFAULT_PLAYER_FONT_SCALE),
+    subFontScale: clampSubFontScale(patch.subFontScale ?? DEFAULT_SUB_FONT_SCALE),
     playerLineGap: clampPlayerLineGap(patch.playerLineGap ?? DEFAULT_PLAYER_LINE_GAP),
     playerOffsetX: clampPlayerOffsetX(patch.playerOffsetX ?? DEFAULT_PLAYER_OFFSET_X),
     playerOffsetY: clampPlayerOffsetY(patch.playerOffsetY ?? DEFAULT_PLAYER_OFFSET_Y),

@@ -11,8 +11,7 @@ import {
   DEFAULT_DESKTOP_CUSTOM_UNPLAYED_COLOR,
   DEFAULT_DESKTOP_TEXT_SHADOW_COLOR,
   DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
-  MIN_DESKTOP_TEXT_OUTLINE_WIDTH,
-  MAX_DESKTOP_TEXT_OUTLINE_WIDTH,
+  DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
   buildImportedLyricsFontOptions,
   LYRICS_FONT_OPTIONS,
   MAX_DESKTOP_TEXT_SHADOW_STRENGTH,
@@ -69,12 +68,6 @@ const SHADOW_COLOR_PRESETS = [
   { label: '红', value: DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR },
 ];
 
-const OUTLINE_COLOR_PRESETS = [
-  { label: '黑', value: '#000000' },
-  { label: '白', value: '#FFFFFF' },
-  { label: '红', value: DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR },
-];
-
 const { settings } = useSettings();
 const { lyricsSettings, desktopLyricsSettings } = useLyrics();
 
@@ -82,6 +75,7 @@ const previewBgMode = ref<'dark' | 'light'>('dark');
 
 const localSettings = ref({
   playerFontScale: desktopLyricsSettings.playerFontScale,
+  subFontScale: desktopLyricsSettings.subFontScale,
   playerLineGap: desktopLyricsSettings.playerLineGap,
   playerOffsetX: desktopLyricsSettings.playerOffsetX,
   playerOffsetY: desktopLyricsSettings.playerOffsetY,
@@ -89,8 +83,6 @@ const localSettings = ref({
   firstLineTextShadowStrength: desktopLyricsSettings.firstLineTextShadowStrength,
   secondLineTextShadowStrength: desktopLyricsSettings.secondLineTextShadowStrength,
   textShadowColor: desktopLyricsSettings.textShadowColor,
-  textOutlineWidth: desktopLyricsSettings.textOutlineWidth,
-  textOutlineColor: desktopLyricsSettings.textOutlineColor,
   playerAlignment: desktopLyricsSettings.playerAlignment,
   playerFontPreset: desktopLyricsSettings.playerFontPreset,
   colorScheme: desktopLyricsSettings.colorScheme,
@@ -107,6 +99,7 @@ let isSyncingFromStore = false;
 watch(
   () => [
     desktopLyricsSettings.playerFontScale,
+    desktopLyricsSettings.subFontScale,
     desktopLyricsSettings.playerLineGap,
     desktopLyricsSettings.playerOffsetX,
     desktopLyricsSettings.playerOffsetY,
@@ -114,8 +107,6 @@ watch(
     desktopLyricsSettings.firstLineTextShadowStrength,
     desktopLyricsSettings.secondLineTextShadowStrength,
     desktopLyricsSettings.textShadowColor,
-    desktopLyricsSettings.textOutlineWidth,
-    desktopLyricsSettings.textOutlineColor,
     desktopLyricsSettings.playerAlignment,
     desktopLyricsSettings.playerFontPreset,
     desktopLyricsSettings.colorScheme,
@@ -130,24 +121,23 @@ watch(
     isSyncingFromStore = true;
     localSettings.value = {
       playerFontScale: newVal[0] as number,
-      playerLineGap: newVal[1] as number,
-      playerOffsetX: newVal[2] as number,
-      playerOffsetY: newVal[3] as number,
-      textOpacity: newVal[4] as number,
-      firstLineTextShadowStrength: newVal[5] as number,
-      secondLineTextShadowStrength: newVal[6] as number,
-      textShadowColor: newVal[7] as string,
-      textOutlineWidth: newVal[8] as number,
-      textOutlineColor: newVal[9] as string,
-      playerAlignment: newVal[10] as any,
-      playerFontPreset: newVal[11] as any,
-      colorScheme: newVal[12] as any,
-      customPlayedColor: newVal[13] as string,
-      customUnplayedColor: newVal[14] as string,
-      customRomajiPlayedColor: newVal[15] as string,
-      customRomajiUnplayedColor: newVal[16] as string,
-      customRomajiColor: newVal[17] as string,
-      customTranslationColor: newVal[18] as string,
+      subFontScale: newVal[1] as number,
+      playerLineGap: newVal[2] as number,
+      playerOffsetX: newVal[3] as number,
+      playerOffsetY: newVal[4] as number,
+      textOpacity: newVal[5] as number,
+      firstLineTextShadowStrength: newVal[6] as number,
+      secondLineTextShadowStrength: newVal[7] as number,
+      textShadowColor: newVal[8] as string,
+      playerAlignment: newVal[9] as any,
+      playerFontPreset: newVal[10] as any,
+      colorScheme: newVal[11] as any,
+      customPlayedColor: newVal[12] as string,
+      customUnplayedColor: newVal[13] as string,
+      customRomajiPlayedColor: newVal[14] as string,
+      customRomajiUnplayedColor: newVal[15] as string,
+      customRomajiColor: newVal[16] as string,
+      customTranslationColor: newVal[17] as string,
     };
     nextTick(() => { isSyncingFromStore = false; });
   },
@@ -168,6 +158,7 @@ function resetToDefault() {
   const defaults = createDefaultDesktopLyricsSettings();
   localSettings.value = {
     playerFontScale: defaults.playerFontScale,
+    subFontScale: defaults.subFontScale,
     playerLineGap: defaults.playerLineGap,
     playerOffsetX: defaults.playerOffsetX,
     playerOffsetY: defaults.playerOffsetY,
@@ -175,8 +166,6 @@ function resetToDefault() {
     firstLineTextShadowStrength: defaults.firstLineTextShadowStrength,
     secondLineTextShadowStrength: defaults.secondLineTextShadowStrength,
     textShadowColor: defaults.textShadowColor,
-    textOutlineWidth: defaults.textOutlineWidth,
-    textOutlineColor: defaults.textOutlineColor,
     playerAlignment: defaults.playerAlignment,
     playerFontPreset: defaults.playerFontPreset,
     colorScheme: defaults.colorScheme,
@@ -203,6 +192,7 @@ function hexToRgbTriplet(value: string) {
 
 const previewLyricsPlayerStyle = computed(() => ({
   '--desktop-font-scale': localSettings.value.playerFontScale.toString(),
+  '--desktop-sub-font-scale': localSettings.value.subFontScale.toString(),
   '--desktop-line-gap': localSettings.value.playerLineGap.toString(),
   '--lyrics-font-family': getLyricsFontFamily(localSettings.value.playerFontPreset),
 }));
@@ -238,33 +228,37 @@ const previewResolvedPalette = computed(() => {
 });
 
 const previewWidgetStyle = computed(() => {
+  const isCustom = localSettings.value.colorScheme === 'custom';
+  const opacityPercent = `calc(var(--desktop-text-opacity, 1) * 100%)`;
+  const wrap = (color: string) => `color-mix(in srgb, ${color} ${opacityPercent}, transparent)`;
+
   return {
-    '--desktop-accent-a': previewResolvedPalette.value[0],
-    '--desktop-accent-b': previewResolvedPalette.value[1],
-    '--desktop-accent-c': previewResolvedPalette.value[2],
-    '--desktop-accent-d': previewResolvedPalette.value[3],
-    '--desktop-lyric-solid-color': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customPlayedColor
+    '--desktop-accent-a': wrap(previewResolvedPalette.value[0]),
+    '--desktop-accent-b': wrap(previewResolvedPalette.value[1]),
+    '--desktop-accent-c': wrap(previewResolvedPalette.value[2]),
+    '--desktop-accent-d': wrap(previewResolvedPalette.value[3]),
+    '--desktop-lyric-solid-color': isCustom
+      ? wrap(localSettings.value.customPlayedColor)
       : 'var(--desktop-accent-a)',
-    '--desktop-text-primary': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customUnplayedColor
-      : 'rgba(255, 255, 255, 0.98)',
-    '--desktop-romaji-color': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customRomajiUnplayedColor
-      : 'color-mix(in srgb, var(--desktop-accent-d) 42%, rgba(255, 255, 255, 0.88))',
-    '--desktop-romaji-played-color': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customRomajiPlayedColor
+    '--desktop-text-primary': isCustom
+      ? wrap(localSettings.value.customUnplayedColor)
+      : wrap('rgba(255, 255, 255, 0.98)'),
+    '--desktop-romaji-color': isCustom
+      ? wrap(localSettings.value.customRomajiUnplayedColor)
+      : `color-mix(in srgb, var(--desktop-accent-d) 42%, ${wrap('rgba(255, 255, 255, 0.88)')})`,
+    '--desktop-romaji-played-color': isCustom
+      ? wrap(localSettings.value.customRomajiPlayedColor)
       : 'color-mix(in srgb, var(--desktop-accent-b) 58%, var(--desktop-romaji-color))',
-    '--desktop-romaji-unplayed-color': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customRomajiUnplayedColor
+    '--desktop-romaji-unplayed-color': isCustom
+      ? wrap(localSettings.value.customRomajiUnplayedColor)
       : 'var(--desktop-romaji-color)',
-    '--desktop-translation-color': localSettings.value.colorScheme === 'custom'
-      ? localSettings.value.customTranslationColor
-      : 'color-mix(in srgb, var(--desktop-accent-c) 28%, rgba(255, 255, 255, 0.76))',
+    '--desktop-translation-color': isCustom
+      ? wrap(localSettings.value.customTranslationColor)
+      : `color-mix(in srgb, var(--desktop-accent-c) 28%, ${wrap('rgba(255, 255, 255, 0.76)')})`,
     '--desktop-text-opacity': localSettings.value.textOpacity.toString(),
     '--desktop-text-shadow-color': hexToRgbTriplet(localSettings.value.textShadowColor),
-    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? `${desktopLyricsSettings.textOutlineWidth}px` : '0px',
-    '--desktop-text-outline-color': desktopLyricsSettings.textOutlineColor,
+    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? `${DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH}px` : '0px',
+    '--desktop-text-outline-color': DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
     '--desktop-first-line-text-shadow-alpha': (localSettings.value.firstLineTextShadowStrength / 100).toString(),
     '--desktop-first-line-text-shadow-blur': `${Math.round(localSettings.value.firstLineTextShadowStrength * 0.24)}px`,
     '--desktop-second-line-text-shadow-alpha': (localSettings.value.secondLineTextShadowStrength / 100).toString(),
@@ -277,9 +271,13 @@ const previewWidgetStyle = computed(() => {
   } as Record<string, string>;
 });
 
+const desktopWordStroke = 'var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000)';
+
 const playedWordStyle = computed(() => ({
   color: 'var(--desktop-lyric-solid-color)',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const activeWordStyle = computed(() => ({
@@ -289,16 +287,22 @@ const activeWordStyle = computed(() => ({
   color: 'transparent',
   WebkitTextFillColor: 'transparent',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const unplayedWordStyle = computed(() => ({
   color: 'var(--desktop-text-primary)',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const playedRomajiWordStyle = computed(() => ({
   color: 'var(--desktop-romaji-played-color)',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const activeRomajiWordStyle = computed(() => ({
@@ -308,11 +312,15 @@ const activeRomajiWordStyle = computed(() => ({
   color: 'transparent',
   WebkitTextFillColor: 'transparent',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const unplayedRomajiWordStyle = computed(() => ({
   color: 'var(--desktop-romaji-unplayed-color)',
   textShadow: 'none',
+  WebkitTextStroke: desktopWordStroke,
+  paintOrder: 'fill stroke',
 }));
 
 const fontPresetFieldRef = ref<HTMLElement | null>(null);
@@ -328,7 +336,7 @@ const colorSchemeMenuStyle = ref<Record<string, string>>({});
 const showLyricsSyncOffsetPanel = ref(false);
 const isResettingWindowBounds = ref(false);
 const isCustomColorModalOpen = ref(false);
-type DesktopCustomColorKind = 'played' | 'unplayed' | 'romajiPlayed' | 'romajiUnplayed' | 'translation' | 'outline';
+type DesktopCustomColorKind = 'played' | 'unplayed' | 'romajiPlayed' | 'romajiUnplayed' | 'translation';
 const activeCustomColorKind = ref<DesktopCustomColorKind | null>(null);
 const customPickerHue = ref(0);
 const customPickerSaturation = ref(100);
@@ -363,9 +371,6 @@ const selectedColorScheme = computed(() => (
 
 const isCustomShadowColor = computed(() => {
   return !SHADOW_COLOR_PRESETS.some((preset) => preset.value === localSettings.value.textShadowColor);
-});
-const isCustomOutlineColor = computed(() => {
-  return !OUTLINE_COLOR_PRESETS.some((preset) => preset.value === desktopLyricsSettings.textOutlineColor);
 });
 const customPreviewPlayedStyle = computed(() => ({
   color: localSettings.value.customPlayedColor,
@@ -430,7 +435,6 @@ const activeCustomColorLabel = computed(() => {
     romajiPlayed: '罗马音 已播放',
     romajiUnplayed: '罗马音 未播放',
     translation: '翻译',
-    outline: '描边颜色',
   };
   return activeCustomColorKind.value ? labels[activeCustomColorKind.value] : '';
 });
@@ -548,18 +552,6 @@ function setDesktopTextShadowColor(value: string) {
   localSettings.value.textShadowColor = normalizeHexColor(value, DEFAULT_DESKTOP_TEXT_SHADOW_COLOR);
 }
 
-function setDesktopTextOutlineWidthLive(value: number) {
-  const clamped = Math.min(MAX_DESKTOP_TEXT_OUTLINE_WIDTH, Math.max(MIN_DESKTOP_TEXT_OUTLINE_WIDTH, Math.round(value * 2) / 2));
-  desktopLyricsSettings.textOutlineWidth = clamped;
-  localSettings.value.textOutlineWidth = clamped;
-}
-
-function setDesktopTextOutlineColorLive(value: string) {
-  const normalized = normalizeHexColor(value, DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR);
-  desktopLyricsSettings.textOutlineColor = normalized;
-  localSettings.value.textOutlineColor = normalized;
-}
-
 function setDesktopAlignment(value: DesktopLyricsPlayerAlignment) {
   localSettings.value.playerAlignment = normalizeDesktopPlayerAlignment(value);
 }
@@ -588,7 +580,6 @@ function setDesktopCustomColor(kind: DesktopCustomColorKind, value: string) {
     romajiPlayed: DEFAULT_DESKTOP_CUSTOM_ROMAJI_PLAYED_COLOR,
     romajiUnplayed: DEFAULT_DESKTOP_CUSTOM_ROMAJI_UNPLAYED_COLOR,
     translation: DEFAULT_DESKTOP_CUSTOM_TRANSLATION_COLOR,
-    outline: DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
   };
   const fallback = fallbackMap[kind];
   const normalized = normalizeHexColor(value, fallback);
@@ -602,16 +593,11 @@ function setDesktopCustomColor(kind: DesktopCustomColorKind, value: string) {
   } else if (kind === 'romajiUnplayed') {
     localSettings.value.customRomajiUnplayedColor = normalized;
     localSettings.value.customRomajiColor = normalized;
-  } else if (kind === 'outline') {
-    localSettings.value.textOutlineColor = normalized;
-    desktopLyricsSettings.textOutlineColor = normalized;
   } else {
     localSettings.value.customTranslationColor = normalized;
   }
 
-  if (kind !== 'outline') {
-    localSettings.value.colorScheme = 'custom';
-  }
+  localSettings.value.colorScheme = 'custom';
 }
 
 function getDesktopCustomColor(kind: DesktopCustomColorKind) {
@@ -619,7 +605,6 @@ function getDesktopCustomColor(kind: DesktopCustomColorKind) {
   if (kind === 'unplayed') return localSettings.value.customUnplayedColor;
   if (kind === 'romajiPlayed') return localSettings.value.customRomajiPlayedColor;
   if (kind === 'romajiUnplayed') return localSettings.value.customRomajiUnplayedColor;
-  if (kind === 'outline') return localSettings.value.textOutlineColor;
   return localSettings.value.customTranslationColor;
 }
 
@@ -658,9 +643,7 @@ function openCustomColorPicker(kind: DesktopCustomColorKind, event: MouseEvent) 
   const anchor = event.currentTarget as HTMLElement | null;
   activeCustomColorKind.value = kind;
   syncCustomPickerFromColor(getDesktopCustomColor(kind));
-  if (kind !== 'outline') {
-    localSettings.value.colorScheme = 'custom';
-  }
+  localSettings.value.colorScheme = 'custom';
   if (anchor) {
     updateCustomColorPanelPosition(anchor);
   }
@@ -970,82 +953,6 @@ onUnmounted(() => {
         <button
           type="button"
           class="desktop-setting-row"
-          @click="desktopLyricsSettings.enableWordEffect = !desktopLyricsSettings.enableWordEffect"
-        >
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">逐字效果</div>
-          </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.enableWordEffect ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.enableWordEffect ? 'translate-x-5' : ''" />
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.enableTextOutline = !desktopLyricsSettings.enableTextOutline"
-        >
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词描边</div>
-          </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.enableTextOutline ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.enableTextOutline ? 'translate-x-5' : ''" />
-          </span>
-        </button>
-
-        <!-- 描边子设置：粗细 & 颜色 -->
-        <Transition name="desktop-expand-panel">
-          <div v-if="desktopLyricsSettings.enableTextOutline" class="desktop-setting-expand">
-            <div class="desktop-setting-expand-inner">
-              <div class="desktop-compact-row">
-                <!-- 描边粗细 -->
-                <div class="desktop-compact-slider-cell">
-                  <div class="desktop-compact-label shrink-0 text-left">粗细</div>
-                  <input
-                    type="range"
-                    :min="MIN_DESKTOP_TEXT_OUTLINE_WIDTH"
-                    :max="MAX_DESKTOP_TEXT_OUTLINE_WIDTH"
-                    step="0.5"
-                    :value="desktopLyricsSettings.textOutlineWidth"
-                    @input="setDesktopTextOutlineWidthLive(Number(($event.target as HTMLInputElement).value))"
-                    aria-label="描边粗细"
-                    class="desktop-compact-range-slider"
-                  />
-                  <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
-                    {{ desktopLyricsSettings.textOutlineWidth }}px
-                  </span>
-                </div>
-                <!-- 描边颜色 -->
-                <div class="desktop-compact-cell flex items-center justify-between">
-                  <div class="desktop-compact-label">颜色</div>
-                  <div class="desktop-compact-selector-shadow flex items-center gap-1.5">
-                    <button
-                      v-for="preset in OUTLINE_COLOR_PRESETS"
-                      :key="preset.value"
-                      type="button"
-                      class="desktop-compact-color-preset"
-                      :class="{ 'desktop-compact-color-preset--active': desktopLyricsSettings.textOutlineColor === preset.value }"
-                      :style="{ backgroundColor: preset.value }"
-                      :title="'切换描边颜色: ' + preset.label"
-                      @click="setDesktopTextOutlineColorLive(preset.value)"
-                    />
-                    <button
-                      type="button"
-                      class="desktop-compact-color-preset desktop-compact-color-preset--custom"
-                      :class="{ 'desktop-compact-color-preset--active': isCustomOutlineColor }"
-                      title="自定义描边颜色"
-                      @click="openCustomColorPicker('outline', $event)"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Transition>
-
-        <button
-          type="button"
-          class="desktop-setting-row"
           @click="desktopLyricsSettings.isLocked = !desktopLyricsSettings.isLocked"
         >
           <div>
@@ -1266,7 +1173,7 @@ onUnmounted(() => {
 
       <!-- 网易云式：极致紧凑控制面板 -->
       <div class="desktop-typography-panel desktop-typography-panel--compact">
-        <!-- 行一：字号 & 行距 -->
+        <!-- 行一：字号 & 副词字号 -->
         <div class="desktop-compact-row">
           <!-- 字号 -->
           <div class="desktop-compact-slider-cell">
@@ -1284,6 +1191,26 @@ onUnmounted(() => {
               {{ Math.round(localSettings.playerFontScale * 100) }}%
             </span>
           </div>
+          <!-- 副词字号 -->
+          <div class="desktop-compact-slider-cell">
+            <div class="desktop-compact-label shrink-0 text-left">副词字号</div>
+            <input
+              v-model.number="localSettings.subFontScale"
+              type="range"
+              min="0.50"
+              max="3.00"
+              step="0.05"
+              aria-label="副词字号"
+              class="desktop-compact-range-slider"
+            />
+            <span class="desktop-compact-value-label text-right font-mono text-[13px] font-bold text-gray-700 dark:text-gray-300">
+              {{ Math.round(localSettings.subFontScale * 100) }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- 行二：行距 & 文字不透明度 -->
+        <div class="desktop-compact-row">
           <!-- 行距 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">行距</div>
@@ -1300,11 +1227,6 @@ onUnmounted(() => {
               {{ Math.round(localSettings.playerLineGap * 100) }}%
             </span>
           </div>
-        </div>
-
-
-        <!-- 行三：文字不透明度 & 描边阴影 -->
-        <div class="desktop-compact-row">
           <!-- 文字不透明度 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">不透明度</div>
@@ -1321,6 +1243,10 @@ onUnmounted(() => {
               {{ Math.round(localSettings.textOpacity * 100) }}%
             </span>
           </div>
+        </div>
+
+        <!-- 行三：描边阴影 -->
+        <div class="desktop-compact-row">
           <!-- 描边阴影 -->
           <div class="desktop-compact-slider-cell">
             <div class="desktop-compact-label shrink-0 text-left">描边阴影</div>
@@ -1517,7 +1443,53 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 行七：配色方案 -->
+        <!-- 行七：逐字效果 & 歌词描边 -->
+        <div class="desktop-compact-row">
+          <div class="desktop-compact-cell flex items-center justify-between">
+            <div class="desktop-compact-label shrink-0">逐字效果</div>
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+              <button
+                v-if="desktopLyricsSettings.enableWordEffect"
+                type="button"
+                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableWordEffect = false"
+              >
+                开
+              </button>
+              <button
+                v-else
+                type="button"
+                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableWordEffect = true"
+              >
+                关
+              </button>
+            </div>
+          </div>
+          <div class="desktop-compact-cell flex items-center justify-between">
+            <div class="desktop-compact-label shrink-0">歌词描边</div>
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+              <button
+                v-if="desktopLyricsSettings.enableTextOutline"
+                type="button"
+                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableTextOutline = false"
+              >
+                开
+              </button>
+              <button
+                v-else
+                type="button"
+                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
+                @click="desktopLyricsSettings.enableTextOutline = true"
+              >
+                关
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 行八：配色方案 -->
         <div class="desktop-compact-row-full">
           <div class="desktop-compact-cell w-full flex items-center justify-between gap-4">
             <div class="desktop-compact-label shrink-0">配色方案</div>
@@ -2785,10 +2757,9 @@ onUnmounted(() => {
   gap: calc(0.22rem * var(--desktop-line-gap, 1));
   text-align: var(--lyrics-text-align, center);
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
-  opacity: var(--desktop-text-opacity, 1);
   -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: stroke fill;
-  transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
+  transition: -webkit-text-stroke-width 180ms ease;
 }
 
 .desktop-lyric-row {
@@ -2867,7 +2838,7 @@ onUnmounted(() => {
 
 .desktop-lyric-sub {
   width: 100%;
-  font-size: calc(18px * var(--desktop-font-scale, 1));
+  font-size: calc(18px * var(--desktop-sub-font-scale, var(--desktop-font-scale, 1)));
   line-height: 1.36;
   letter-spacing: 0.03em;
   overflow-wrap: anywhere;

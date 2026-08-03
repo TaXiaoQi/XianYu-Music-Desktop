@@ -10,10 +10,13 @@ import {
   DEFAULT_DESKTOP_CUSTOM_TRANSLATION_COLOR,
   DEFAULT_DESKTOP_CUSTOM_UNPLAYED_COLOR,
   DEFAULT_DESKTOP_TEXT_OPACITY,
+  DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
+  DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
   DEFAULT_DESKTOP_TEXT_SHADOW_COLOR,
   DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
   DEFAULT_PLAYER_FONT_PRESET,
   DEFAULT_PLAYER_FONT_SCALE,
+  DEFAULT_SUB_FONT_SCALE,
   DEFAULT_PLAYER_LINE_GAP,
   DEFAULT_PLAYER_OFFSET_X,
   DEFAULT_PLAYER_OFFSET_Y,
@@ -21,10 +24,12 @@ import {
   MAX_DESKTOP_TEXT_SHADOW_STRENGTH,
   LYRICS_FONT_OPTIONS,
   MAX_PLAYER_FONT_SCALE,
+  MAX_SUB_FONT_SCALE,
   MAX_PLAYER_LINE_GAP,
   MAX_PLAYER_OFFSET_X,
   MAX_PLAYER_OFFSET_Y,
   MIN_PLAYER_FONT_SCALE,
+  MIN_SUB_FONT_SCALE,
   MIN_PLAYER_LINE_GAP,
   MIN_PLAYER_OFFSET_X,
   MIN_PLAYER_OFFSET_Y,
@@ -108,7 +113,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     showDoubleLine: false,
     enableWordEffect: true,
     enableTextOutline: false,
-    textOutlineWidth: 1.5,
+    textOutlineWidth: 0.1,
     textOutlineColor: '#000000',
     isLocked: false,
     persistLock: false,
@@ -125,6 +130,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     firstLineTextShadowStrength: DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
     secondLineTextShadowStrength: DEFAULT_DESKTOP_TEXT_SHADOW_STRENGTH,
     playerFontScale: DEFAULT_PLAYER_FONT_SCALE,
+    subFontScale: DEFAULT_SUB_FONT_SCALE,
     playerLineGap: DEFAULT_PLAYER_LINE_GAP,
     playerOffsetX: DEFAULT_PLAYER_OFFSET_X,
     playerOffsetY: DEFAULT_PLAYER_OFFSET_Y,
@@ -179,6 +185,12 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     if (typeof normalizedPatch.playerFontScale === 'number') {
       normalizedPatch.playerFontScale = Number(
         Math.min(MAX_PLAYER_FONT_SCALE, Math.max(MIN_PLAYER_FONT_SCALE, normalizedPatch.playerFontScale)).toFixed(2),
+      );
+    }
+
+    if (typeof normalizedPatch.subFontScale === 'number') {
+      normalizedPatch.subFontScale = Number(
+        Math.min(MAX_SUB_FONT_SCALE, Math.max(MIN_SUB_FONT_SCALE, normalizedPatch.subFontScale)).toFixed(2),
       );
     }
 
@@ -470,6 +482,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   });
   const lyricsPlayerStyle = computed(() => ({
     '--desktop-font-scale': settings.value.playerFontScale.toString(),
+    '--desktop-sub-font-scale': settings.value.subFontScale.toString(),
     '--lyrics-font-family': getLyricsFontFamily(settings.value.playerFontPreset),
     '--lyrics-offset-x': `${settings.value.playerOffsetX}%`,
     '--lyrics-offset-y': `${settings.value.playerOffsetY}%`,
@@ -492,36 +505,39 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   });
   const widgetStyle = computed(() => {
     const shouldShowSurface = showDragShadow.value || settings.value.alwaysShowShadowBackground;
+    const isCustom = settings.value.colorScheme === 'custom';
+    const opacityPercent = `calc(var(--desktop-text-opacity, 1) * 100%)`;
+    const wrap = (color: string) => `color-mix(in srgb, ${color} ${opacityPercent}, transparent)`;
 
     return {
-      '--desktop-accent-a': resolvedPalette.value[0],
-      '--desktop-accent-b': resolvedPalette.value[1],
-      '--desktop-accent-c': resolvedPalette.value[2],
-      '--desktop-accent-d': resolvedPalette.value[3],
-      '--desktop-lyric-solid-color': settings.value.colorScheme === 'custom'
-        ? settings.value.customPlayedColor
+      '--desktop-accent-a': wrap(resolvedPalette.value[0]),
+      '--desktop-accent-b': wrap(resolvedPalette.value[1]),
+      '--desktop-accent-c': wrap(resolvedPalette.value[2]),
+      '--desktop-accent-d': wrap(resolvedPalette.value[3]),
+      '--desktop-lyric-solid-color': isCustom
+        ? wrap(settings.value.customPlayedColor)
         : 'var(--desktop-accent-a)',
-      '--desktop-text-primary': settings.value.colorScheme === 'custom'
-        ? settings.value.customUnplayedColor
-        : 'rgba(255, 255, 255, 0.98)',
-      '--desktop-text-secondary': 'rgba(255, 255, 255, 0.88)',
-      '--desktop-text-tertiary': 'rgba(255, 255, 255, 0.76)',
-      '--desktop-romaji-color': settings.value.colorScheme === 'custom'
-        ? settings.value.customRomajiUnplayedColor
+      '--desktop-text-primary': isCustom
+        ? wrap(settings.value.customUnplayedColor)
+        : wrap('rgba(255, 255, 255, 0.98)'),
+      '--desktop-text-secondary': wrap('rgba(255, 255, 255, 0.88)'),
+      '--desktop-text-tertiary': wrap('rgba(255, 255, 255, 0.76)'),
+      '--desktop-romaji-color': isCustom
+        ? wrap(settings.value.customRomajiUnplayedColor)
         : 'color-mix(in srgb, var(--desktop-accent-d) 42%, var(--desktop-text-secondary))',
-      '--desktop-romaji-played-color': settings.value.colorScheme === 'custom'
-        ? settings.value.customRomajiPlayedColor
+      '--desktop-romaji-played-color': isCustom
+        ? wrap(settings.value.customRomajiPlayedColor)
         : 'color-mix(in srgb, var(--desktop-accent-b) 58%, var(--desktop-romaji-color))',
-      '--desktop-romaji-unplayed-color': settings.value.colorScheme === 'custom'
-        ? settings.value.customRomajiUnplayedColor
+      '--desktop-romaji-unplayed-color': isCustom
+        ? wrap(settings.value.customRomajiUnplayedColor)
         : 'var(--desktop-romaji-color)',
-      '--desktop-translation-color': settings.value.colorScheme === 'custom'
-        ? settings.value.customTranslationColor
+      '--desktop-translation-color': isCustom
+        ? wrap(settings.value.customTranslationColor)
         : 'color-mix(in srgb, var(--desktop-accent-c) 28%, var(--desktop-text-tertiary))',
       '--desktop-text-opacity': formatCssNumber(settings.value.textOpacity),
       '--desktop-text-shadow-color': hexToRgbTriplet(settings.value.textShadowColor),
-      '--desktop-text-outline-width': settings.value.enableTextOutline ? `${settings.value.textOutlineWidth}px` : '0px',
-      '--desktop-text-outline-color': settings.value.textOutlineColor,
+      '--desktop-text-outline-width': settings.value.enableTextOutline ? `${DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH}px` : '0px',
+      '--desktop-text-outline-color': DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
       '--desktop-first-line-text-shadow-alpha': formatCssNumber(settings.value.firstLineTextShadowStrength / 100),
       '--desktop-first-line-text-shadow-blur': `${Math.round(settings.value.firstLineTextShadowStrength * 0.24)}px`,
       '--desktop-second-line-text-shadow-alpha': formatCssNumber(settings.value.secondLineTextShadowStrength / 100),
@@ -622,11 +638,14 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   function getWordStyle(start: number, end: number): CSSProperties {
     const duration = Math.max(0.001, end - start);
     const progress = Math.max(0, Math.min(1, (syncedCurrentTime.value - start) / duration));
+    const stroke = 'var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000)';
 
     if (progress <= 0) {
       return {
         color: 'var(--desktop-text-primary)',
         textShadow: 'none',
+        WebkitTextStroke: stroke,
+        paintOrder: 'fill stroke',
       };
     }
 
@@ -639,17 +658,22 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       color: 'transparent',
       WebkitTextFillColor: 'transparent',
       textShadow: 'none',
+      WebkitTextStroke: stroke,
+      paintOrder: 'fill stroke',
     };
   }
 
   function getRomajiWordStyle(start: number, end: number): CSSProperties {
     const duration = Math.max(0.001, end - start);
     const progress = Math.max(0, Math.min(1, (syncedCurrentTime.value - start) / duration));
+    const stroke = 'var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000)';
 
     if (progress <= 0) {
       return {
         color: 'var(--desktop-romaji-unplayed-color)',
         textShadow: 'none',
+        WebkitTextStroke: stroke,
+        paintOrder: 'fill stroke',
       };
     }
 
@@ -662,6 +686,8 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       color: 'transparent',
       WebkitTextFillColor: 'transparent',
       textShadow: 'none',
+      WebkitTextStroke: stroke,
+      paintOrder: 'fill stroke',
     };
   }
 

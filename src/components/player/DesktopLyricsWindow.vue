@@ -298,10 +298,9 @@ const {
   text-align: var(--lyrics-text-align, center);
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
   transform-origin: var(--lyrics-line-transform-origin, 50%) center;
-  opacity: var(--desktop-text-opacity, 1);
   -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
   paint-order: stroke fill;
-  transition: opacity 220ms ease, -webkit-text-stroke-width 180ms ease;
+  transition: -webkit-text-stroke-width 180ms ease;
 }
 
 .desktop-lyric-row {
@@ -399,10 +398,6 @@ const {
 .desktop-lyric-word-main {
   display: inline-block;
   white-space: pre-wrap;
-  /* 显式声明描边与绘制顺序：描边置于 fill 之上，避免与 background-clip:text
-     渐变填充组合时描边被覆盖/随渐变进度抖动，保证播放与未播放状态下描边一致稳定 */
-  -webkit-text-stroke: var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000);
-  paint-order: fill stroke;
 }
 
 .desktop-lyric-word-romaji {
@@ -422,7 +417,7 @@ const {
 
 .desktop-lyric-sub {
   width: 100%;
-  font-size: calc(max(14px, min(2.25vw, 2.75vh)) * var(--desktop-font-scale, 1));
+  font-size: calc(max(14px, min(2.25vw, 2.75vh)) * var(--desktop-sub-font-scale, var(--desktop-font-scale, 1)));
   line-height: 1.36;
   letter-spacing: 0.03em;
   overflow-wrap: anywhere;
