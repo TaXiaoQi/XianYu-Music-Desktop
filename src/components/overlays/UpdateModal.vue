@@ -1,13 +1,28 @@
 <script setup lang="ts">
 import type { ServerUpdateInfo } from '../../utils/update';
+import type { DownloadProgressData } from '../../composables/useUpdateCheck';
 import { APP_VERSION } from '../../../version';
 
 defineProps<{
   visible: boolean;
   update: ServerUpdateInfo | null;
+  isDownloading?: boolean;
+  progress?: DownloadProgressData;
 }>();
 
 const emit = defineEmits(['close', 'download']);
+
+const formatBytes = (bytes: number) => {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 100 ? `${Math.round(mb)} MB` : `${mb.toFixed(1)} MB`;
+};
+
+const formatSpeed = (speed: number) => {
+  if (!speed || speed <= 0) return '0 MB/s';
+  const mb = speed / (1024 * 1024);
+  return mb >= 100 ? `${Math.round(mb)} MB/s` : `${mb.toFixed(1)} MB/s`;
+};
 </script>
 
 <template>
@@ -16,7 +31,7 @@ const emit = defineEmits(['close', 'download']);
       <div
         v-if="visible && update"
         class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
-        @click.self="emit('close')"
+        @click.self="!isDownloading && emit('close')"
       >
         <div
           class="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
@@ -56,7 +71,27 @@ const emit = defineEmits(['close', 'download']);
           </div>
 
           <!-- Actions -->
-          <div class="flex border-t border-gray-100 dark:border-white/10">
+          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs text-gray-500 dark:text-gray-400">正在下载更新…</span>
+              <span class="text-xs font-medium text-gray-700 dark:text-gray-200">
+                {{ progress && progress.total > 0
+                  ? formatBytes(progress.downloaded) + ' / ' + formatBytes(progress.total)
+                  : formatBytes(progress?.downloaded ?? 0) }}
+              </span>
+            </div>
+            <div class="w-full h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-[#EC4141] rounded-full transition-all duration-150 ease-out"
+                :style="{ width: (progress?.progress ?? 0) + '%' }"
+              ></div>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-xs text-gray-400 dark:text-gray-500">{{ formatSpeed(progress?.speed ?? 0) }}</span>
+              <span class="text-xs font-medium text-[#EC4141]">{{ (progress?.progress ?? 0).toFixed(1) }}%</span>
+            </div>
+          </div>
+          <div v-else class="flex border-t border-gray-100 dark:border-white/10">
             <button
               @click="emit('close')"
               class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
@@ -68,7 +103,7 @@ const emit = defineEmits(['close', 'download']);
               @click="emit('download')"
               class="flex-1 py-3 text-sm text-[#EC4141] font-medium hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors focus:outline-none"
             >
-              前往下载
+              立即更新
             </button>
           </div>
         </div>
