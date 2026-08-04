@@ -1,5 +1,4 @@
-import { reactive } from 'vue';
-
+import { reactive, ref } from 'vue';
 import type { Song } from '../types';
 
 export type DragSessionType = 'song' | 'playlist' | 'folder' | 'artist' | 'album';
@@ -31,3 +30,9 @@ export const dragSession = reactive<DragSessionState>({
   insertIndex: -1,
   sortLineTop: -1,
 });
+
+/**
+ * 当弹窗（如添加歌单弹窗）需要拦截全局拖放事件时设为 true，
+ * useExternalPathBridge 会跳过处理，避免冲突。
+ */
+export const modalDragInterceptActive = ref(false);

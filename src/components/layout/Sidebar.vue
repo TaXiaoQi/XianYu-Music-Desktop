@@ -21,6 +21,7 @@ import { useLibraryStore } from '../../features/library/store';
 import { useToast } from '../../composables/toast';
 import type { Song, SidebarItemKey } from '../../types';
 import type { PlaylistImportResult } from '../../services/playlistImport';
+import type { ImportedPlaylist } from '../../services/backupImport';
 import { cacheLxSong } from '../../services/lxSongCache';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
@@ -249,6 +250,35 @@ const confirmLocalFolderImport = (payload: { name: string; songs: Song[] }) => {
   }
 };
 
+const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
+  if (playlists.length === 0) return;
+
+  let createdCount = 0;
+  let totalSongs = 0;
+
+  for (const pl of playlists) {
+    const playlistName = pl.name.trim();
+    if (!playlistName || pl.songs.length === 0) continue;
+
+    const songPaths = pl.songs.map((song) => song.path);
+    for (const song of pl.songs) {
+      libraryStore.setExtraSong(song);
+    }
+
+    const playlistId = createPlaylist(playlistName, songPaths, pl.songs);
+    if (playlistId) {
+      createdCount++;
+      totalSongs += songPaths.length;
+    }
+  }
+
+  if (createdCount > 0) {
+    showToast(`已创建 ${createdCount} 个歌单，共 ${totalSongs} 首歌曲`, 'success');
+  } else {
+    showToast('创建歌单失败', 'error');
+  }
+};
+
 const handleOpenAllView = () => {
   void openHomeAll();
 };
@@ -441,6 +471,7 @@ onBeforeUnmount(() => {
       @create="confirmCreatePlaylist"
       @import="confirmImportPlaylist"
       @import-local="confirmLocalFolderImport"
+      @import-backup="confirmBackupImport"
     />
 
     <!-- 一级侧边栏宽度可拖拽手柄 -->

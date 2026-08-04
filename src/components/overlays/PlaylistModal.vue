@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen, Loader2 } from 'lucide-vue-next';
+import { listen } from '@tauri-apps/api/event';
+import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
 import type { Playlist, Song } from '../../types';
 import { PLAYLIST_SOURCES, importPlaylist } from '../../services/playlistImport';
 import type { PlaylistImportResult } from '../../services/playlistImport';
+import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
+import type { ImportedPlaylist } from '../../services/backupImport';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
+import { modalDragInterceptActive } from '../../composables/dragState';
 
-type TabType = 'create' | 'networkImport' | 'localFolderImport';
+type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
 const props = defineProps<{
   visible: boolean;
@@ -23,6 +27,7 @@ const emit = defineEmits<{
     payload: { result: PlaylistImportResult; rename?: string },
   ): void;
   (event: 'import-local', payload: { name: string; songs: Song[] }): void;
+  (event: 'import-backup', payload: ImportedPlaylist[]): void;
 }>();
 
 const { showToast } = useToast();
@@ -50,11 +55,99 @@ const localPlaylistNameRef = ref<HTMLInputElement | null>(null);
 const localFolderPath = ref('');
 const localImportError = ref('');
 
+// 备份文件导入
+const backupFilePath = ref('');
+const backupFileName = ref('');
+const backupDetectedFormat = ref('');
+const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
+const backupImportError = ref('');
+
+// 拖放状态
+const isDragOver = ref(false);
+let unlistenDragDrop: (() => void) | null = null;
+let unlistenDragOver: (() => void) | null = null;
+let unlistenDragLeave: (() => void) | null = null;
+
 const tabs: { type: TabType; label: string }[] = [
   { type: 'create', label: '新建歌单' },
-  { type: 'networkImport', label: '从网络导入' },
-  { type: 'localFolderImport', label: '从本地导入' },
+  { type: 'backupImport', label: '备份导入' },
+  { type: 'localFolderImport', label: '本地导入' },
+  { type: 'networkImport', label: '云端导入' },
 ];
+
+// ==================== 拖放事件监听 ====================
+
+/** 当前标签页是否接受拖放 */
+const tabAcceptsDrag = computed(
+  () => activeTab.value === 'localFolderImport' || activeTab.value === 'backupImport',
+);
+
+/** 设置拖放拦截并注册 Tauri 事件 */
+async function setupDragListeners() {
+  modalDragInterceptActive.value = true;
+
+  unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+    isDragOver.value = false;
+    const paths = event.payload?.paths ?? [];
+    if (paths.length === 0) return;
+    await handleDropPaths(paths);
+  });
+
+  unlistenDragOver = await listen('tauri://drag-over', () => {
+    if (tabAcceptsDrag.value) isDragOver.value = true;
+  });
+
+  unlistenDragLeave = await listen('tauri://drag-leave', () => {
+    isDragOver.value = false;
+  });
+}
+
+/** 移除拖放拦截和事件监听 */
+function teardownDragListeners() {
+  modalDragInterceptActive.value = false;
+  isDragOver.value = false;
+  unlistenDragDrop?.();
+  unlistenDragOver?.();
+  unlistenDragLeave?.();
+  unlistenDragDrop = null;
+  unlistenDragOver = null;
+  unlistenDragLeave = null;
+}
+
+/** 处理拖放的路径，根据当前标签页分发 */
+async function handleDropPaths(paths: string[]) {
+  if (activeTab.value === 'backupImport') {
+    // 找到第一个支持的文件
+    const supportedFile = paths.find((p) => {
+      const ext = p.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+      return SUPPORTED_IMPORT_EXTENSIONS.includes(ext);
+    });
+    if (supportedFile) {
+      await loadBackupFile(supportedFile);
+    } else {
+      backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
+    }
+  } else if (activeTab.value === 'localFolderImport') {
+    // 找到第一个文件夹
+    for (const p of paths) {
+      try {
+        const isDir = await fileApi.isDirectory(p);
+        if (isDir) {
+          localFolderPath.value = p;
+          localImportError.value = '';
+          break;
+        }
+      } catch {
+        // 忽略判断失败的路径
+      }
+    }
+    if (!localFolderPath.value) {
+      localImportError.value = '请拖入文件夹';
+    }
+  }
+}
+
+// ==================== 弹窗生命周期 ====================
 
 // 弹窗打开时重置状态
 watch(
@@ -68,16 +161,28 @@ watch(
       localPlaylistName.value = '';
       localFolderPath.value = '';
       localImportError.value = '';
+      backupFilePath.value = '';
+      backupFileName.value = '';
+      backupDetectedFormat.value = '';
+      backupPreviewPlaylists.value = [];
+      backupImportError.value = '';
       importing.value = false;
       selectedSource.value = 'auto';
       sourceDropdownOpen.value = false;
+      await setupDragListeners();
       await nextTick();
       focusCurrentTab();
     } else {
       isClosing.value = false;
+      teardownDragListeners();
     }
   },
 );
+
+// 组件卸载时清理
+onUnmounted(() => {
+  teardownDragListeners();
+});
 
 // 切换 tab 时聚焦对应输入框
 watch(activeTab, async () => {
@@ -110,6 +215,8 @@ const handleClose = () => {
   }, 200);
 };
 
+// ==================== 文件/文件夹选择 ====================
+
 const handleChooseLocalFolder = async () => {
   if (importing.value) return;
 
@@ -127,6 +234,53 @@ const handleChooseLocalFolder = async () => {
     localImportError.value = `选择文件夹失败: ${e?.message || e}`;
   }
 };
+
+const handleChooseBackupFile = async () => {
+  if (importing.value) return;
+
+  try {
+    const selected = await open({
+      multiple: false,
+      title: '选择备份/播放列表文件',
+      filters: [
+        { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
+        { name: 'JSON 备份', extensions: ['json'] },
+        { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
+        { name: '椒盐音乐导出', extensions: ['txt'] },
+      ],
+    });
+    if (typeof selected === 'string') {
+      await loadBackupFile(selected);
+    }
+  } catch (e: any) {
+    backupImportError.value = `选择文件失败: ${e?.message || e}`;
+  }
+};
+
+/** 加载并解析备份文件 */
+async function loadBackupFile(filePath: string) {
+  backupFilePath.value = filePath;
+  backupFileName.value = filePath.split(/[\\/]/).pop() || filePath;
+  backupImportError.value = '';
+  backupPreviewPlaylists.value = [];
+  backupDetectedFormat.value = '';
+  importing.value = true;
+
+  try {
+    const playlists = await importBackupFile(filePath);
+    backupPreviewPlaylists.value = playlists;
+    const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
+    backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
+  } catch (e: any) {
+    backupImportError.value = `解析失败: ${e?.message || e}`;
+    backupFilePath.value = '';
+    backupFileName.value = '';
+  } finally {
+    importing.value = false;
+  }
+}
+
+// ==================== 确认操作 ====================
 
 const handleConfirm = async () => {
   if (activeTab.value === 'create') {
@@ -193,6 +347,22 @@ const handleConfirm = async () => {
     } finally {
       importing.value = false;
     }
+  } else if (activeTab.value === 'backupImport') {
+    if (backupPreviewPlaylists.value.length === 0 || importing.value) return;
+
+    const totalSongs = backupPreviewPlaylists.value.reduce(
+      (sum, p) => sum + p.songs.length, 0,
+    );
+    showToast(
+      `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
+      'success',
+    );
+    isClosing.value = true;
+    setTimeout(() => {
+      emit('import-backup', backupPreviewPlaylists.value);
+      emit('update:visible', false);
+      isClosing.value = false;
+    }, 200);
   }
 };
 
@@ -206,6 +376,9 @@ const canConfirm = computed(() => {
       && localFolderPath.value.length > 0
       && !importing.value;
   }
+  if (activeTab.value === 'backupImport') {
+    return backupPreviewPlaylists.value.length > 0 && !importing.value;
+  }
   return false;
 });
 
@@ -213,6 +386,9 @@ const confirmText = computed(() => {
   if (activeTab.value === 'create') return '创建';
   if (activeTab.value === 'localFolderImport') {
     return importing.value ? '读取中…' : '读取并创建';
+  }
+  if (activeTab.value === 'backupImport') {
+    return importing.value ? '解析中…' : '导入歌单';
   }
   if (importing.value) return '导入中…';
   return '导入';
@@ -378,24 +554,28 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   音乐文件夹 <span class="text-[#EC4141]">*</span>
                 </label>
-                <div class="flex gap-2">
-                  <input
-                    :value="localFolderPath"
-                    type="text"
-                    readonly
-                    placeholder="请选择包含音乐文件的文件夹"
-                    class="min-w-0 flex-1 px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-sm"
-                  />
-                  <button
-                    type="button"
-                    :disabled="importing"
-                    class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                    @click="handleChooseLocalFolder"
-                  >
-                    <FolderOpen class="h-4 w-4" />
-                    选择文件夹
-                  </button>
-                </div>
+                <!-- 可拖入、可点击的选区 -->
+                <button
+                  type="button"
+                  :disabled="importing"
+                  class="drop-zone"
+                  :class="{
+                    'drop-zone--active': isDragOver,
+                    'drop-zone--filled': localFolderPath.length > 0,
+                  }"
+                  @click="handleChooseLocalFolder"
+                >
+                  <div class="drop-zone-inner">
+                    <FolderOpen v-if="localFolderPath" class="drop-zone-icon drop-zone-icon--filled" />
+                    <FolderOpen v-else class="drop-zone-icon" />
+                    <p v-if="localFolderPath" class="drop-zone-text filled-text">
+                      {{ localFolderPath.split(/[\\/]/).pop() || localFolderPath }}
+                    </p>
+                    <p v-else class="drop-zone-text">
+                      点击选择文件夹，或拖入文件夹
+                    </p>
+                  </div>
+                </button>
               </div>
 
               <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
@@ -407,6 +587,73 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400"
               >
                 <span>{{ localImportError }}</span>
+              </div>
+            </div>
+
+            <!-- 备份文件导入歌单 -->
+            <div
+              v-else-if="activeTab === 'backupImport'"
+              key="backup-import"
+              class="space-y-4"
+            >
+              <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  备份/播放列表文件 <span class="text-[#EC4141]">*</span>
+                </label>
+                <!-- 可拖入、可点击的选区（复用本地导入样式） -->
+                <button
+                  type="button"
+                  :disabled="importing"
+                  class="drop-zone"
+                  :class="{
+                    'drop-zone--active': isDragOver,
+                    'drop-zone--filled': backupFilePath.length > 0,
+                  }"
+                  @click="handleChooseBackupFile"
+                >
+                  <div class="drop-zone-inner">
+                    <FileJson v-if="backupFilePath" class="drop-zone-icon drop-zone-icon--filled" />
+                    <FileUp v-else class="drop-zone-icon" />
+                    <p v-if="backupFilePath" class="drop-zone-text filled-text">
+                      {{ backupFileName }}
+                    </p>
+                    <p v-else class="drop-zone-text">
+                      点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              <!-- 预览信息 -->
+              <div
+                v-if="backupPreviewPlaylists.length > 0"
+                class="space-y-2"
+              >
+                <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
+                  <FileJson class="h-4 w-4" />
+                  {{ backupDetectedFormat }}
+                </div>
+                <div class="max-h-32 overflow-y-auto space-y-1.5 rounded-xl bg-gray-50 dark:bg-black/20 p-2.5">
+                  <div
+                    v-for="(pl, idx) in backupPreviewPlaylists"
+                    :key="idx"
+                    class="flex items-center justify-between text-xs"
+                  >
+                    <span class="truncate text-gray-700 dark:text-gray-300">{{ pl.name }}</span>
+                    <span class="shrink-0 text-gray-400 dark:text-gray-500">{{ pl.songs.length }} 首</span>
+                  </div>
+                </div>
+              </div>
+
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+                支持 BakaMusic / MusicFree JSON 备份、M3U / M3U8 播放列表、椒盐音乐导出格式，自动识别并导入。M3U 和椒盐格式从文件名或 EXTINF 提取歌曲信息。
+              </p>
+
+              <div
+                v-if="backupImportError"
+                class="flex items-start gap-2 rounded-lg bg-red-50 p-2.5 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400"
+              >
+                <span>{{ backupImportError }}</span>
               </div>
             </div>
           </Transition>
@@ -448,5 +695,113 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 .tab-fade-leave-to {
   opacity: 0;
   transform: translateX(-8px);
+}
+
+/* ==================== 共享拖放区域样式 ==================== */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 4px;
+  border: 2px dashed rgb(209 213 219); /* gray-300 */
+  border-radius: 12px;
+  background: rgb(249 250 251); /* gray-50 */
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.drop-zone:hover:not(:disabled) {
+  border-color: rgb(156 163 175); /* gray-400 */
+  background: rgb(243 244 246); /* gray-100 */
+  transform: translateY(-1px);
+}
+
+.drop-zone--active {
+  border-color: #EC4141;
+  background: rgba(236, 65, 65, 0.05);
+  transform: scale(1.01);
+}
+
+.drop-zone--filled {
+  border-style: solid;
+  border-color: rgb(34 197 94); /* green-500 */
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.drop-zone--filled:hover:not(:disabled) {
+  border-color: rgb(22 163 74); /* green-600 */
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.drop-zone:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
+
+.drop-zone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 0 16px;
+}
+
+.drop-zone-icon {
+  width: 28px;
+  height: 28px;
+  color: rgb(156 163 175); /* gray-400 */
+  opacity: 0.7;
+  margin-bottom: 8px;
+  transition: color 0.2s ease;
+}
+
+.drop-zone--active .drop-zone-icon {
+  color: #EC4141;
+  opacity: 1;
+}
+
+.drop-zone-icon--filled {
+  color: rgb(34 197 94); /* green-500 */
+  opacity: 1;
+}
+
+.drop-zone-text {
+  font-size: 0.8125rem; /* text-sm */
+  color: rgb(156 163 175); /* gray-400 */
+  margin: 0;
+  text-align: center;
+  transition: color 0.2s ease;
+}
+
+.drop-zone--active .drop-zone-text {
+  color: #EC4141;
+}
+
+.drop-zone-text.filled-text {
+  color: rgb(55 65 81); /* gray-700 */
+  font-weight: 500;
+  word-break: break-all;
+}
+
+/* 暗色模式 */
+:global(.dark) .drop-zone {
+  border-color: rgb(55 65 81); /* gray-700 */
+  background: rgba(0, 0, 0, 0.2);
+}
+
+:global(.dark) .drop-zone:hover:not(:disabled) {
+  border-color: rgb(75 85 99); /* gray-600 */
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:global(.dark) .drop-zone-text.filled-text {
+  color: rgb(229 231 235); /* gray-200 */
+}
+
+:global(.dark) .drop-zone-text {
+  color: rgb(156 163 175);
 }
 </style>
