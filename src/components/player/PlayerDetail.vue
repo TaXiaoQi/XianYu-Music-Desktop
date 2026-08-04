@@ -27,9 +27,11 @@ const {
 const { settings } = useSettings();
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 
-// 用户主动打开详情页时窗口必然可见，始终渲染重型内容。
-// 低功耗优化仅在详情页关闭时生效，避免后台不可见时的资源浪费。
-const shouldRenderHeavyContent = computed(() => showPlayerDetail.value);
+// 首次打开后保持重型内容（含 LyricsView/AMLL）常驻，关闭详情页时不再卸载，
+// 避免再次打开时歌词空白需重新加载/等待弹簧落位。
+// 关闭期间通过 LyricsView 的 disabled 停止 AMLL 的 rAF 循环，避免不可见时的渲染开销。
+const hasOpenedDetail = ref(false);
+const shouldRenderHeavyContent = computed(() => hasOpenedDetail.value);
 
 
 const { staggerPhase } = useSharedTransition();
@@ -181,14 +183,15 @@ watch(showPlayerDetail, (visible) => {
   clearTopChromeHideTimer();
 
   if (visible) {
+    hasOpenedDetail.value = true;
     isTopChromeVisible.value = true;
     scheduleTopChromeHide();
     // 沉浸全屏下重新打开歌词页时，恢复鼠标自动隐藏
     if (isFullscreen.value) {
       enableCursorAutoHide();
     }
-    // 重新打开歌词页时，若歌词未就绪（idle/empty/error）则重新加载
-    // 关闭歌词页会卸载 LyricsView 组件，若期间歌词加载失败或未触发，重开时需要主动重试
+    // 重型内容常驻后 LyricsView 不会卸载，歌词状态随模块级 state 保留。
+    // 此处仅作为兜底：若歌词未就绪（idle/empty/error）则重新加载。
     if (currentSong.value?.path && lyricsStatus.value !== 'ready') {
       void loadLyrics();
     }
@@ -482,7 +485,7 @@ const closeContextMenu = () => {
               class="h-full rounded-2xl border border-white/5 bg-black/10 p-4 shadow-xl backdrop-blur-sm"
             />
 
-            <LyricsView v-else :meta-info="metaInfo" :cover-hidden="coverHidden" class="h-full" />
+            <LyricsView v-else :meta-info="metaInfo" :cover-hidden="coverHidden" :disabled="!showPlayerDetail" class="h-full" />
           </transition>
         </div>
       </div>

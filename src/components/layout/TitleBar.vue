@@ -2,6 +2,7 @@
 import { Moon, Sun, Bell, X, Clock, Trash2, Mic } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useAnnouncement } from '../../composables/useAnnouncement';
@@ -9,6 +10,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
+import { useUiStore } from '../../shared/stores/ui';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
 
 const router = useRouter();
@@ -98,7 +100,15 @@ const openAccountPage = () => {
 };
 
 const minimize = () => { void appWindow.minimize(); };
-const toggleMaximize = () => { void appWindow.toggleMaximize(); };
+const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
+// 假全屏（沉浸模式）进行中或已激活时禁用最大化按钮，避免与全屏窗口尺寸冲突
+const isMaximizeDisabled = computed(
+  () => isImmersiveFullscreen.value || fullscreenAnimState.value !== null,
+);
+const toggleMaximize = () => {
+  if (isMaximizeDisabled.value) return;
+  void appWindow.toggleMaximize();
+};
 const closeWindow = async () => {
   if (settings.value.closeToTray) {
     await appWindow.hide();
@@ -284,7 +294,17 @@ onMounted(() => {
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg>
         </button>
         <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button>
-        <button @click.stop="toggleMaximize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /></svg></button>
+        <button
+          @click.stop="toggleMaximize"
+          :disabled="isMaximizeDisabled"
+          :title="isMaximizeDisabled ? '全屏模式下不可用' : '最大化'"
+          :class="[
+            'p-2 rounded-md transition-colors',
+            isMaximizeDisabled
+              ? 'opacity-40 cursor-not-allowed text-gray-400 dark:text-gray-500'
+              : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer',
+          ]"
+        ><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /></svg></button>
         <button @click.stop="closeWindow" class="p-2 text-gray-900 dark:text-gray-100 hover:text-white hover:bg-[#EC4141] rounded-md transition-colors cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
       </div>
     </div>

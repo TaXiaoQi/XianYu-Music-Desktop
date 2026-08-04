@@ -51,6 +51,7 @@ import { getLyricsStylePanelPosition } from './lyricsStylePanelPosition';
 
 const props = defineProps<{
   coverHidden?: boolean;
+  disabled?: boolean;
 }>();
 
 const {
@@ -727,6 +728,7 @@ watch(() => props.coverHidden, async () => {
           :lyric-lines="amllLines"
           :current-time="amllCurrentTime"
           :playing="isPlaying"
+          :disabled="disabled"
           :layout-version="lyricsSettings.playerFontPreset"
           align-anchor="center"
           :align-position="0.42"
