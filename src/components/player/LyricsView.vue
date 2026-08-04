@@ -59,7 +59,7 @@ const {
   lyricsStatus,
   showLyricsPlayerSettingsPanel,
 } = useLyrics();
-const { seekTo, currentTime, isPlaying } = usePlayer();
+const { playAt, currentTime, isPlaying } = usePlayer();
 const { audioDelay } = storeToRefs(useSettingsStore());
 
 const FONT_SCALE_STEP = 0.05;
@@ -344,7 +344,7 @@ async function handleLineClick(event: LyricLineMouseEvent) {
   amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
 
   const targetSeconds = getPlaybackSeekSecondsForAmlLine(lineStartTimeMs, audioDelay.value);
-  await seekTo(targetSeconds);
+  await playAt(targetSeconds);
 }
 
 onMounted(() => {

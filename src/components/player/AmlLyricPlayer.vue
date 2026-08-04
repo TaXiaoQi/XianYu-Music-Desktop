@@ -212,6 +212,11 @@ onMounted(() => {
   attachPlayer(nextPlayer);
   startAnimationLoop();
   queueRecovery('mounted');
+  // 暂停态下 animationLoop 已停止，挂载后的初始布局弹簧无法收敛，
+  // 歌词会停在未落位的位置（屏幕外或不可见）。启动动画爆发让初始布局落位。
+  if (!props.playing) {
+    runSeekBurst();
+  }
 
   resizeObserver = new ResizeObserver(() => {
     queueRecovery('resize');
@@ -334,6 +339,11 @@ watch(() => props.lyricLines, (value) => {
 
   player.setLyricLines(value, Math.trunc(props.currentTime));
   queueRecovery('lyrics');
+  // 暂停态下 animationLoop 已停止，calcLayout 设置的弹簧目标无法收敛。
+  // 启动动画爆发让歌词行位移/缩放/模糊落位到正确位置，否则歌词加载后不可见。
+  if (!props.playing) {
+    runSeekBurst();
+  }
 }, { deep: false });
 
 watch(() => props.currentTime, (value) => {
