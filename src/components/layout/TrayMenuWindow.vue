@@ -277,8 +277,8 @@ onUnmounted(() => {
   --divider: rgba(255, 255, 255, 0.085);
   --hover-bg: rgba(255, 255, 255, 0.085);
 
-  width: 210px;
-  height: 268px;
+  position: fixed;
+  inset: 0;
   padding: 0;
   overflow: hidden;
   background: transparent;
@@ -287,7 +287,6 @@ onUnmounted(() => {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  position: relative;
   user-select: none;
 }
 
