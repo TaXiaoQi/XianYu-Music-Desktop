@@ -93,6 +93,16 @@ const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   }
 };
 
+/** 切换「播放失败自动换源」开关 */
+const toggleAutoSwitchSource = () => {
+  patchSettings({
+    audio: {
+      ...settings.value.audio,
+      autoSwitchSourceOnFailure: !settings.value.audio.autoSwitchSourceOnFailure,
+    },
+  });
+};
+
 // 规范更新：启用/禁用均衡器
 const toggleEqualizer = () => {
   const currentEq = settings.value.audio.equalizer;
@@ -421,6 +431,27 @@ onScopeDispose(() => {
           >
             <span>{{ QUALITY_FALLBACK_OPTIONS.find(o => o.value === settings.audio.onlineQualityFallbackBehavior)?.label }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- 播放失败自动换源 -->
+        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放失败自动换源</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              在线播放失败时，自动尝试其他落雪音源播放同一首歌（仅落雪歌曲生效）。
+            </div>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.audio.autoSwitchSourceOnFailure ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="toggleAutoSwitchSource"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+              :class="settings.audio.autoSwitchSourceOnFailure ? 'translate-x-6' : 'translate-x-1'"
+            />
           </button>
         </div>
 
