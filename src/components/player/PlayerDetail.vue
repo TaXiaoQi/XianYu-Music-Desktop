@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
+import { storeToRefs } from 'pinia';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
-import { useRenderingPower } from '../../composables/renderingPower';
+import { useUiStore } from '../../shared/stores/ui';
 import type { SongDetail } from '../../types';
 import { tauriInvoke } from '../../services/tauri/invoke';
 import LyricsView from './LyricsView.vue';
@@ -23,13 +25,11 @@ const {
 } = usePlaybackController();
 
 const { settings } = useSettings();
+const { isImmersiveFullscreen } = storeToRefs(useUiStore());
 
-const { isMainWindowLowPower } = useRenderingPower();
-
-// 窗口最小化/隐藏时卸载重型子组件（AmlLyricPlayer 的数百个歌词 DOM 元素、
-// PlayerDetailLeft 的封面图、PlayerDetailBackground 的模糊背景），
-// 释放 DOM 节点和 GPU 合成层内存。窗口恢复后自动重新挂载。
-const shouldRenderHeavyContent = computed(() => showPlayerDetail.value && !isMainWindowLowPower.value);
+// 用户主动打开详情页时窗口必然可见，始终渲染重型内容。
+// 低功耗优化仅在详情页关闭时生效，避免后台不可见时的资源浪费。
+const shouldRenderHeavyContent = computed(() => showPlayerDetail.value);
 
 
 const { staggerPhase } = useSharedTransition();
@@ -49,7 +49,8 @@ const minimize = () => appWindow.minimize();
 
 // 全屏：调用项目自实现的 Win32 原生命令（绕过 tao，专门处理无边框窗口）
 // 该命令用整个显示器矩形铺满窗口并调用 MarkFullscreenWindow 让 shell 隐藏任务栏
-const isFullscreen = ref(false);
+// isImmersiveFullscreen 为全局共享状态（ui store），主页与歌词页均可读取
+const isFullscreen = isImmersiveFullscreen;
 // 'entering' | 'exiting' | null，控制全屏切换期间的样式（背景色、padding）
 const fullscreenAnimState = ref<'entering' | 'exiting' | null>(null);
 // 记录进入全屏前窗口是否已最大化，退出全屏后据此决定是否需要 unmaximize
@@ -96,8 +97,20 @@ const disableCursorAutoHide = () => {
 };
 
 const applyImmersiveFullscreen = async (enter: boolean) => {
+  // 进入全屏前将窗口背景设为黑色：窗口尺寸变化时新暴露区域显示 WebView2 默认白色背景，
+  // 设为黑色后与全屏背景融为一体，消除白屏闪烁。退出全屏后恢复透明。
+  if (enter) {
+    try {
+      await appWindow.setBackgroundColor([0, 0, 0, 255]);
+    } catch { /* 忽略 */ }
+  }
   const result = await tauriInvoke('set_immersive_fullscreen', { enter });
   isFullscreen.value = result;
+  if (!enter) {
+    try {
+      await appWindow.setBackgroundColor([0, 0, 0, 0]);
+    } catch { /* 忽略 */ }
+  }
 };
 
 const toggleFullscreen = async () => {
@@ -106,7 +119,8 @@ const toggleFullscreen = async () => {
   if (!isFullscreen.value) {
     // === 进入全屏 ===
     // 策略：先执行原生最大化（享受系统自带的最大化动画），再无缝切换为沉浸式全屏。
-    // 最大化→全屏的差异仅是任务栏高度 + 边框，同步切换不可察觉。
+    // Rust 端用 SetWindowPos（而非 SetWindowPlacement）修正尺寸，避免退出最大化的
+    // DWM 还原动画造成白屏。任务栏在修正阶段被覆盖，差异仅任务栏高度+边框。
 
     // 记录原始最大化状态，退出全屏后据此决定是否还原为普通窗口
     wasMaximizedBeforeFullscreen.value = await appWindow.isMaximized();
@@ -129,7 +143,7 @@ const toggleFullscreen = async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
     }
 
-    // 3. 从最大化状态无缝切换为沉浸式全屏（去除边框、覆盖任务栏）
+    // 3. 从最大化状态无缝切换为沉浸式全屏（覆盖任务栏，Rust 端用 SetWindowPos 避免白屏）
     try {
       await applyImmersiveFullscreen(true);
     } catch (error) {
@@ -220,12 +234,17 @@ watch(showPlayerDetail, (visible) => {
   if (visible) {
     isTopChromeVisible.value = true;
     scheduleTopChromeHide();
+    // 沉浸全屏下重新打开歌词页时，恢复鼠标自动隐藏
+    if (isFullscreen.value) {
+      enableCursorAutoHide();
+    }
     return;
   }
 
   isTopChromeVisible.value = false;
   currentSongDetail.value = null;
   clearSongDetailCache();
+  // 关闭歌词页时禁用鼠标自动隐藏，主页保持默认显示
   disableCursorAutoHide();
 });
 
@@ -374,15 +393,15 @@ const closeContextMenu = () => {
     class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
     :class="[
       showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
-      isFullscreen || fullscreenAnimState ? 'bg-[#0a0a0a]' : '',
-      isCursorHidden ? 'cursor-hidden' : '',
+      // 黑色背景由内层带 opacity 过渡的 div 提供，避免切换时瞬间遮罩主页
+      showPlayerDetail && isCursorHidden ? 'cursor-hidden' : '',
     ]"
     @contextmenu.prevent="handleContextMenu"
   >
     <div
       class="relative flex h-[100vh] w-full flex-col"
       :class="[
-        isFullscreen || fullscreenAnimState ? 'pt-0' : 'pt-[calc(100vh-100%)]',
+        showPlayerDetail && (isFullscreen || fullscreenAnimState) ? 'pt-0' : 'pt-[calc(100vh-100%)]',
       ]"
     >
       <div
@@ -452,12 +471,8 @@ const closeContextMenu = () => {
               class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
               @click="toggleFullscreen"
             >
-              <svg v-if="isFullscreen" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 3v6H3M21 9h-6V3M3 15h6v6M15 21v-6h6" />
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
-              </svg>
+              <Minimize2 v-if="isFullscreen" :size="16" :stroke-width="2" />
+              <Maximize2 v-else :size="16" :stroke-width="2" />
             </button>
             <button
               title="最小化"
@@ -465,19 +480,13 @@ const closeContextMenu = () => {
               class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"
               @click="minimize"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14" />
-              </svg>
+              <Minus :size="16" :stroke-width="2" />
             </button>
             <button class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white" @click="toggleMaximize">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              </svg>
+              <Square :size="16" :stroke-width="2" />
             </button>
             <button class="pointer-events-auto rounded-lg p-2 text-white/50 transition hover:bg-red-500 hover:text-white" @click="closeApp">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+              <X :size="16" :stroke-width="2" />
             </button>
           </div>
         </div>

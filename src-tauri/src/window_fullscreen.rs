@@ -115,6 +115,28 @@ pub fn save_window_placement(window: tauri::Window) -> Result<bool, String> {
     }
 }
 
+/// 重新标记主窗口为沉浸式全屏状态（不改变窗口样式/位置）。
+///
+/// 用途：主窗口被 hide → show 后（如切换 mini 模式），任务栏会重新显示并遮挡窗口底部。
+/// 此时窗口本身仍处于全屏样式（无边框、覆盖任务栏区域），仅需重新告知 shell 让任务栏让位。
+/// 相比完整的 `set_immersive_fullscreen(false)` + `set_immersive_fullscreen(true)` 流程，
+/// 此命令无窗口样式/位置变更和动画开销，切换更迅速。
+#[tauri::command]
+pub fn refresh_immersive_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
+        unsafe { mark_taskbar_fullscreen(hwnd, true); }
+        Ok(true)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        Err("当前平台不支持".to_string())
+    }
+}
+
 /// 进入/退出沉浸式全屏。
 ///
 /// - enter=true：将窗口覆盖到所在显示器全区，隐藏任务栏。
@@ -172,10 +194,9 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     bottom: bottom + BORDER_OVERLAP,
                 };
 
-                // 暂停窗口重绘：清除边框样式 + SetWindowPlacement 退出最大化期间，
-                // WebView2 的视口尺寸会变化（工作区→全屏），新暴露的区域在 CSS 重新布局前
-                // 会显示白色背景。WM_SETREDRAW 暂停窗口及子窗口（含 WebView2）的绘制，
-                // 所有操作完成后统一刷新，消除白屏。
+                // 暂停窗口重绘：清除边框样式 + SetWindowPos 退出最大化定位期间，
+                // 配合前端设置的黑色窗口背景，新暴露区域显示黑色而非 WebView2 默认白色。
+                // WM_SETREDRAW 暂停窗口及子窗口（含 WebView2）的绘制，统一刷新消除闪烁。
                 SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
 
                 // 清除 WS_MAXIMIZE 样式位，否则窗口被约束在工作区内，无法铺满整屏。
@@ -196,11 +217,23 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
                 }
 
-                // 退出最大化状态并直接定位到全屏矩形，无恢复动画。
-                // SW_RESTORE 会触发恢复动画（窗口先缩小到原始尺寸再放大 = 闪烁）。
-                // SetWindowPlacement 根据 MSDN 不会触发动画，通过设置 showCmd = SW_SHOWNORMAL
-                // 退出最大化内部状态，同时将 rcNormalPosition 设为全屏矩形，窗口直接跳到全屏，
-                // 不经过小窗中间态。
+                // 直接用 SetWindowPos 定位到全屏矩形，避免 SetWindowPlacement 退出最大化时
+                // 触发 DWM 还原动画（窗口先缩小到 rcNormalPosition 再放大 = 白屏闪烁）。
+                // SetWindowPos 改变最大化窗口的尺寸会自动取消最大化内部状态，但不触发 DWM 动画，
+                // 配合 WM_SETREDRAW 暂停重绘，窗口无中间态直接到达全屏矩形。
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    fs_rect.left,
+                    fs_rect.top,
+                    fs_rect.right - fs_rect.left,
+                    fs_rect.bottom - fs_rect.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                );
+
+                // 修正窗口放置内部状态：将 showCmd 设为 SW_SHOWNORMAL（非最大化），
+                // rcNormalPosition 设为全屏矩形，使后续 GetWindowPlacement 返回正确值。
+                // 此时窗口已定位到全屏矩形，此调用仅更新内部状态，不触发动画或重绘。
                 let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
                 placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
                 if GetWindowPlacement(hwnd, &mut placement) != 0 {
@@ -208,15 +241,6 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     placement.rcNormalPosition = fs_rect;
                     SetWindowPlacement(hwnd, &placement);
                 }
-
-                // 清除边框样式后强制窗口重新计算非客户区（SetWindowPlacement 可能不发送 WM_NCCALCSIZE）。
-                // 使用 SWP_NOMOVE | SWP_NOSIZE 仅触发帧重算，不改变位置/尺寸。
-                SetWindowPos(
-                    hwnd,
-                    std::ptr::null_mut(),
-                    0, 0, 0, 0,
-                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
-                );
 
                 // 恢复窗口重绘并强制立即刷新所有内容（含 WebView2 子窗口）。
                 // 此时窗口已是全屏尺寸 + 无边框，WebView2 按新视口一次性渲染，无白屏中间态。

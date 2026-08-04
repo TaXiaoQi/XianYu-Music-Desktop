@@ -105,6 +105,7 @@ commands.allow = [
   "refresh_folder_songs",
   "set_mini_boundary_enabled",
   "set_immersive_fullscreen",
+  "refresh_immersive_fullscreen",
   "save_window_placement",
   "get_window_material_capabilities",
   "refresh_window_material_active_state",

@@ -204,6 +204,7 @@ export function useTrayMenuEvents(router: Router) {
     playMode: playMode.value,
     showDesktopLyrics: showDesktopLyrics.value,
     isFavorite: currentSong.value ? libraryCollections.isFavorite(currentSong.value) : false,
+    isMiniMode: isMiniMode.value,
     windowMaterial: theme.value.windowMaterial,
     windowBlurTint: theme.value.windowBlurTint,
   });

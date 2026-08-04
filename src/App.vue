@@ -2,6 +2,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { watch, onMounted } from 'vue';
+import { storeToRefs } from 'pinia';
 
 import MainShell from './components/layout/MainShell.vue';
 import MiniPlayerWindow from './components/layout/MiniPlayerWindow.vue';
@@ -18,6 +19,7 @@ import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
 import { loadPlugins, checkAllPluginUpdates, performPluginUpdate } from './services/pluginEngine';
 import { configureApplicationLogger } from './services/applicationLogger';
+import { useUiStore } from './shared/stores/ui';
 
 const currentWindowLabel = (() => {
   try {
@@ -44,6 +46,13 @@ watch(
   (fonts) => registerImportedLyricsFonts(fonts),
   { deep: true, immediate: true },
 );
+
+// 沉浸全屏时给 body 添加 class，CSS 全局禁用所有 data-tauri-drag-region 的指针事件，
+// 防止全屏窗口被拖动（主页 TitleBar/SidebarBrand、歌词页顶栏等）。
+const { isImmersiveFullscreen } = storeToRefs(useUiStore());
+watch(isImmersiveFullscreen, (fs) => {
+  document.body.classList.toggle('immersive-fullscreen', fs);
+}, { immediate: true });
 
 if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
@@ -114,5 +123,15 @@ textarea,
 [contenteditable="true"] {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* 沉浸全屏时禁用所有拖动区域，防止窗口被拖动。
+   仅禁用 drag-region 元素自身的指针事件以阻止 Tauri 原生拖动，
+   子元素（按钮、输入框等）恢复 pointer-events: auto 保持可交互。 */
+body.immersive-fullscreen [data-tauri-drag-region] {
+  pointer-events: none !important;
+}
+body.immersive-fullscreen [data-tauri-drag-region] * {
+  pointer-events: auto;
 }
 </style>

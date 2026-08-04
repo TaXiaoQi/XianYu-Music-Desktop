@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
 import { Search, X } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -130,25 +130,29 @@ watch(isDeveloperMode, (enabled) => {
   }
 });
 
-watch(activeTab, () => {
-  nextTick(() => {
-    if (mainRef.value) {
-      mainRef.value.scrollTop = 0;
-    }
-    // 容器整体先动：切换 tab 后，容器整体做淡入动画，
-    // 内部组件内容在容器内具体渲染。这样无论内容多复杂，
-    // 容器先动起来，视觉上即有过渡效果，不会出现"内容渲染完才动"的割裂。
-    if (contentRef.value) {
-      contentRef.value.animate(
-        [
-          { opacity: 0, transform: 'translateY(10px)' },
-          { opacity: 1, transform: 'translateY(0)' },
-        ],
-        { duration: 300, easing: 'ease', fill: 'both' }
-      );
-    }
+// <transition mode="out-in"> 完成新内容淡入后的回调：重置滚动 + 通知搜索跳转等待
+let resolveTabEnter: (() => void) | null = null;
+
+const onSettingsAfterEnter = () => {
+  if (mainRef.value) {
+    mainRef.value.scrollTop = 0;
+  }
+  if (resolveTabEnter) {
+    const fn = resolveTabEnter;
+    resolveTabEnter = null;
+    fn();
+  }
+};
+
+const waitForTabEnter = (): Promise<void> => {
+  if (resolveTabEnter) {
+    resolveTabEnter();
+    resolveTabEnter = null;
+  }
+  return new Promise<void>((resolve) => {
+    resolveTabEnter = resolve;
   });
-});
+};
 
 watch(settingsQuery, () => {
   activeSearchResultIndex.value = 0;
@@ -190,10 +194,14 @@ const getHighlightContainer = (target: HTMLElement): HTMLElement => {
 };
 
 const revealSearchResult = async (item: SettingsSearchItem) => {
-  activeTab.value = item.tab;
+  const needSwitch = activeTab.value !== item.tab;
+  if (needSwitch) {
+    // 先创建 promise，再切换 tab，等 transition 淡出+淡入完成后继续
+    const enterPromise = waitForTabEnter();
+    activeTab.value = item.tab;
+    await enterPromise;
+  }
   settingsQuery.value = '';
-  await nextTick();
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
   if (!item.target) {
     mainRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -363,25 +371,26 @@ const tabs = computed(() => {
     </aside>
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 md:px-8 xl:px-12">
-      <div ref="contentRef" :key="activeTab" class="w-full pb-16">
-        <SettingsGeneral v-if="activeTab === 'general'" />
-        <SettingsPlugins v-else-if="activeTab === 'plugins'" />
-        <SettingsAccount v-else-if="activeTab === 'account'" />
-        <SettingsTheme v-else-if="activeTab === 'theme'" />
-        <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" />
-        <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" />
-        <SettingsDownload v-else-if="activeTab === 'download'" />
-        <SettingsToolbox v-else-if="activeTab === 'toolbox'" />
-        <SettingsLibrary v-else-if="activeTab === 'library'" />
-        <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
-        <SettingsAdvanced v-else-if="activeTab === 'advanced'" />
-        <SettingsDebug v-else-if="activeTab === 'debug'" />
-        <SettingsAbout v-else-if="activeTab === 'about'" />
-
-        <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
-          <div class="text-4xl opacity-50">施工中</div>
-          <div>当前设置模块正在整理中。</div>
-        </div>
+      <div ref="contentRef" class="w-full pb-16">
+        <transition name="settings-fade" mode="out-in" @after-enter="onSettingsAfterEnter">
+          <SettingsGeneral v-if="activeTab === 'general'" key="general" />
+          <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
+          <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
+          <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
+          <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
+          <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
+          <SettingsDownload v-else-if="activeTab === 'download'" key="download" />
+          <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
+          <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
+          <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
+          <SettingsAdvanced v-else-if="activeTab === 'advanced'" key="advanced" />
+          <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
+          <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
+          <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
+            <div class="text-4xl opacity-50">施工中</div>
+            <div>当前设置模块正在整理中。</div>
+          </div>
+        </transition>
       </div>
     </main>
   </div>
@@ -399,6 +408,22 @@ const tabs = computed(() => {
   display: none;
   width: 0;
   height: 0;
+}
+
+/* 设置页切换动画：与主页 page-fade 一致，out-in 模式（先淡出旧内容，再淡入新内容） */
+.settings-fade-enter-active,
+.settings-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.settings-fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.settings-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 @keyframes settings-search-pulse {

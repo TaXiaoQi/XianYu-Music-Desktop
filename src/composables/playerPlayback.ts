@@ -41,6 +41,10 @@ let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
 let fadeFrameId: number | null = null;
 // [渐入渐出] 当前渐变 Promise 的 resolve 函数；取消时调用以确保 await 不会永久挂起
 let fadeResolveFn: (() => void) | null = null;
+// [渐入渐出] 追踪后端实际输出音量（0-1），用于 fade 中途打断后从中断点继续
+let currentBackendVolume = 1;
+// [快速操作] togglePlay 调用 token，每次调用递增；过时的 async 流程通过对比 token 提前退出
+let togglePlayToken = 0;
 let playRequestId = 0;
 // [暂停竞态] 在线歌曲起播需要先异步解析直链（可能几秒）。这期间用户按暂停时，
 // togglePlay 只能把 isPlaying 置 false —— 音频还没创建，pause 无处可施；
@@ -219,30 +223,38 @@ export const createPlayerPlayback = ({
   };
 
   // [渐入渐出] 将实际输出音量从当前值渐变到目标值（不影响 playbackStore.volume 显示值）
-  // startVolumeOverride 用于指定起始音量（如切歌淡入时从 0 开始），不传则用 playbackStore.volume
+  // startVolumeOverride 用于指定起始音量（如切歌淡入时从 0 开始），不传则从 currentBackendVolume 继续（支持中途打断）
   const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number): Promise<void> => {
     return new Promise((resolve) => {
       cancelFade();
-      const startVolume = startVolumeOverride ?? playbackStore.volume / 100;
+      const startVolume = startVolumeOverride ?? currentBackendVolume;
       const targetVol = Math.max(0, Math.min(1, targetVolume));
       if (Math.abs(startVolume - targetVol) < 0.005 || durationMs <= 0) {
+        currentBackendVolume = targetVol;
         void playbackApi.setVolume(targetVol).catch(() => {});
         resolve();
         return;
       }
       const startTime = performance.now();
+      // 淡入用 easeInQuad（前慢后快，声音慢慢浮现），淡出用 easeOutQuad（前快后慢，声音慢慢消失）。
+      // 两者在 50% 处都经过 25%，保证淡入/淡出时长相等且对称。
+      // 之前两者都用 easeOutQuad，导致淡入前半段音量就到 75%，听感上淡入时长只有淡出的一半。
+      const isFadeIn = targetVol > startVolume;
       const step = (now: number) => {
         const elapsed = now - startTime;
         const progress = Math.min(1, elapsed / durationMs);
-        // 使用 easeOutQuad 缓动函数，让渐变更自然
-        const eased = 1 - (1 - progress) * (1 - progress);
+        const eased = isFadeIn
+          ? progress * progress
+          : 1 - (1 - progress) * (1 - progress);
         const currentVol = startVolume + (targetVol - startVolume) * eased;
+        currentBackendVolume = currentVol;
         void playbackApi.setVolume(currentVol).catch(() => {});
         if (progress < 1) {
           fadeFrameId = requestAnimationFrame(step);
         } else {
           fadeFrameId = null;
           fadeResolveFn = null;
+          currentBackendVolume = targetVol;
           // 确保最终设置精确的目标音量
           void playbackApi.setVolume(targetVol).catch(() => {});
           resolve();
@@ -950,7 +962,8 @@ export const createPlayerPlayback = ({
           try { await playbackApi.stopAudio(); } catch {}
           // [渐入渐出] 暂停时恢复后端音量到用户设定值
           if (shouldFadeOnSwitch) {
-            void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+            currentBackendVolume = playbackStore.volume / 100;
+            void playbackApi.setVolume(currentBackendVolume).catch(() => {});
           }
           isPlaying.value = false;
           isSongLoaded.value = false;
@@ -961,12 +974,14 @@ export const createPlayerPlayback = ({
         if (rustOk) {
           if (shouldFadeOnSwitch) {
             // [渐入渐出] 淡入：新歌从 0 音量起播，然后渐变到目标音量
+            currentBackendVolume = 0;
             try { await playbackApi.setVolume(0); } catch {}
             finishRustPlaybackStart();
             void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
           } else {
             // 确保后端已接管，音量同步到后端
-            try { await playbackApi.setVolume(playbackStore.volume / 100); } catch {}
+            currentBackendVolume = playbackStore.volume / 100;
+            try { await playbackApi.setVolume(currentBackendVolume); } catch {}
             finishRustPlaybackStart();
           }
         } else {
@@ -975,7 +990,8 @@ export const createPlayerPlayback = ({
           try { await playbackApi.stopAudio(); } catch {}
           // [渐入渐出] 起播失败时恢复后端音量到用户设定值
           if (shouldFadeOnSwitch) {
-            void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+            currentBackendVolume = playbackStore.volume / 100;
+            void playbackApi.setVolume(currentBackendVolume).catch(() => {});
           }
           isPlaying.value = false;
           isSongLoaded.value = false;
@@ -1026,6 +1042,7 @@ export const createPlayerPlayback = ({
 
         // [渐入渐出] 淡入：本地歌曲从 0 音量渐变到目标音量
         if (shouldFadeOnSwitch) {
+          currentBackendVolume = 0;
           try { await playbackApi.setVolume(0); } catch {}
           void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
         }
@@ -1061,7 +1078,8 @@ export const createPlayerPlayback = ({
 
       // [渐入渐出] 异常时恢复后端音量到用户设定值
       if (shouldFadeOnSwitch) {
-        void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+        currentBackendVolume = playbackStore.volume / 100;
+        void playbackApi.setVolume(currentBackendVolume).catch(() => {});
       }
       isPlaying.value = false;
       isSongLoaded.value = false;
@@ -1096,9 +1114,15 @@ export const createPlayerPlayback = ({
     await playbackApi.pauseAudio();
     stopPlaybackRuntime();
 
-    // [渐入渐出] 淡出完成后恢复音量设置（不影响 UI 显示值，仅恢复后端音量）
+    // [渐入渐出] 淡出完成后延迟恢复后端音量：
+    // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
+    // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
     if (fadeEnabled) {
-      void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+      const restoreVol = playbackStore.volume / 100;
+      setTimeout(() => {
+        currentBackendVolume = restoreVol;
+        void playbackApi.setVolume(restoreVol).catch(() => {});
+      }, 200);
     }
   };
 
@@ -1108,7 +1132,14 @@ export const createPlayerPlayback = ({
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    if (isPlaying.value) {
+    // [快速操作] 立即翻转 isPlaying，让并发的 togglePlay 调用看到正确状态。
+    // 例如：第一次点击（暂停）进入 await fade，第二次点击（播放）会看到 isPlaying=false 从而进入播放分支。
+    const wasPlaying = isPlaying.value;
+    isPlaying.value = !wasPlaying;
+    const myToken = ++togglePlayToken;
+
+    if (wasPlaying) {
+      // === 暂停分支 ===
       if (sessionStartTime) {
         accumulatedTime += (Date.now() - sessionStartTime) / 1000;
         sessionStartTime = null;
@@ -1123,24 +1154,34 @@ export const createPlayerPlayback = ({
         cancelledPlayRequestId = playRequestId;
       }
 
-      // [渐入渐出] 淡出：渐变音量到0后再暂停
+      // [渐入渐出] 淡出：从当前音量渐变到0后再暂停
       if (fadeEnabled && isSongLoaded.value) {
         await fadeVolumeTo(0, fadeDuration);
+        // 被新的 togglePlay 取消（用户快速点了播放）：不再执行 pauseAudio，让播放分支接管
+        if (myToken !== togglePlayToken) return;
       }
 
       await playbackApi.pauseAudio();
-      isPlaying.value = false;
+      if (myToken !== togglePlayToken) return;
       stopPlaybackRuntime();
 
-      // [渐入渐出] 淡出完成后恢复后端音量设置（不影响 UI 显示值）
+      // [渐入渐出] 淡出完成后延迟恢复后端音量：
+      // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
+      // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
       if (fadeEnabled) {
-        void playbackApi.setVolume(playbackStore.volume / 100).catch(() => {});
+        const restoreVol = playbackStore.volume / 100;
+        setTimeout(() => {
+          if (myToken !== togglePlayToken) return;
+          currentBackendVolume = restoreVol;
+          void playbackApi.setVolume(restoreVol).catch(() => {});
+        }, 200);
       }
       return;
     }
 
-    // 用户重新点了播放，撤销之前的取消标记
-    cancelFade(); // 取消可能正在进行的淡出
+    // === 播放分支 ===
+    // 用户重新点了播放，撤销之前的取消标记，并取消可能正在进行的淡出
+    cancelFade();
     cancelledPlayRequestId = -1;
 
     if (!isSongLoaded.value) {
@@ -1152,15 +1193,27 @@ export const createPlayerPlayback = ({
       return;
     }
 
-    await playbackApi.resumeAudio();
-    sessionStartTime = Date.now();
-
-    isPlaying.value = true;
-    startPlaybackRuntime();
-
-    // [渐入渐出] 淡入：从0渐变到目标音量
+    // [渐入渐出] 淡入：从当前后端音量渐变到目标音量。
+    // - 中途打断（淡出途中点播放）：currentBackendVolume 是中间值，从此处继续淡入，听感更自然
+    // - 正常暂停后恢复：currentBackendVolume ≈ 目标值（暂停时已恢复），需从 0 开始淡入
     if (fadeEnabled) {
-      void fadeVolumeTo(playbackStore.volume / 100, fadeDuration);
+      const targetVol = playbackStore.volume / 100;
+      const startVol = currentBackendVolume < targetVol - 0.01
+        ? currentBackendVolume
+        : 0;
+      if (startVol === 0) {
+        currentBackendVolume = 0;
+        try { await playbackApi.setVolume(0); } catch {}
+      }
+      if (myToken !== togglePlayToken) return;
+      await playbackApi.resumeAudio();
+      sessionStartTime = Date.now();
+      startPlaybackRuntime();
+      void fadeVolumeTo(targetVol, fadeDuration, startVol);
+    } else {
+      await playbackApi.resumeAudio();
+      sessionStartTime = Date.now();
+      startPlaybackRuntime();
     }
   };
 
