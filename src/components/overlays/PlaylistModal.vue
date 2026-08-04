@@ -18,6 +18,8 @@ type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport'
 const props = defineProps<{
   visible: boolean;
   playlists: Playlist[];
+  /** 模式：'create' 仅新建歌单 / 'import' 仅导入歌单 / 'all' 全部（默认） */
+  mode?: 'create' | 'import' | 'all';
 }>();
 
 const emit = defineEmits<{
@@ -70,12 +72,20 @@ let unlistenDragDrop: (() => void) | null = null;
 let unlistenDragOver: (() => void) | null = null;
 let unlistenDragLeave: (() => void) | null = null;
 
-const tabs: { type: TabType; label: string }[] = [
+const allTabs: { type: TabType; label: string }[] = [
   { type: 'create', label: '新建歌单' },
   { type: 'backupImport', label: '备份导入' },
   { type: 'localFolderImport', label: '本地导入' },
   { type: 'networkImport', label: '云端导入' },
 ];
+
+/** 根据模式过滤显示的标签页 */
+const tabs = computed(() => {
+  const mode = props.mode ?? 'all';
+  if (mode === 'create') return allTabs.filter(t => t.type === 'create');
+  if (mode === 'import') return allTabs.filter(t => t.type !== 'create');
+  return allTabs;
+});
 
 // ==================== 拖放事件监听 ====================
 
@@ -156,6 +166,13 @@ watch(
   () => props.visible,
   async (val) => {
     if (val) {
+      // 根据模式设置默认标签页
+      const mode = props.mode ?? 'all';
+      if (mode === 'import') {
+        activeTab.value = 'backupImport';
+      } else {
+        activeTab.value = 'create';
+      }
       createName.value = '';
       importInput.value = '';
       importRename.value = '';
@@ -478,8 +495,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           'border border-white/20 ring-1 ring-black/5'
         ]"
       >
-        <!-- Tab 头部 -->
-        <div class="relative px-6 pt-5 pb-0 border-b border-gray-200 dark:border-gray-700">
+        <!-- Tab 头部（仅多标签时显示） -->
+        <div v-if="tabs.length > 1" class="relative px-6 pt-5 pb-0 border-b border-gray-200 dark:border-gray-700">
           <div class="flex items-center gap-4">
             <button
               v-for="tab in tabs"
@@ -500,11 +517,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           </div>
         </div>
 
-        <!-- 内容区域（带过渡动画） -->
-        <div class="relative px-6 py-5 min-h-[140px]">
+        <!-- 内容区域（带过渡动画）— 导入标签页固定高度避免跳动，新建歌单自适应内容 -->
+        <div
+          class="relative px-6 py-5 flex flex-col transition-[height] duration-300 ease-out"
+          :class="activeTab === 'create' ? 'h-auto' : 'h-[340px]'"
+        >
+          <div class="flex-1 flex flex-col overflow-y-auto px-1 -mx-1">
           <Transition name="tab-fade" mode="out-in">
             <!-- 新建歌单 -->
-            <div v-if="activeTab === 'create'" key="create" class="space-y-2">
+            <div v-if="activeTab === 'create'" key="create" class="flex-1 flex flex-col justify-center space-y-2">
               <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单名称</label>
               <input
                 ref="createInputRef"
@@ -513,10 +534,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 placeholder="请输入歌单名称"
                 class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm"
               />
+              <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
+                创建一个空白歌单，之后可以手动添加歌曲或从其他来源导入。
+              </p>
             </div>
 
             <!-- 云端导入歌单 -->
-            <div v-else-if="activeTab === 'networkImport'" key="network-import" class="space-y-3">
+            <div v-else-if="activeTab === 'networkImport'" key="network-import" class="flex-1 flex flex-col space-y-3">
               <!-- 音源选择（下拉） -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label>
@@ -624,7 +648,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
             <div
               v-else-if="activeTab === 'localFolderImport'"
               key="local-folder-import"
-              class="space-y-4"
+              class="flex-1 flex flex-col space-y-4"
             >
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -640,7 +664,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 />
               </div>
 
-              <div class="space-y-1.5">
+              <div class="space-y-1.5 flex-1 flex flex-col">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   音乐文件夹 <span class="text-[#EC4141]">*</span>
                 </label>
@@ -648,7 +672,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 <button
                   type="button"
                   :disabled="importing"
-                  class="drop-zone"
+                  class="drop-zone flex-1"
                   :class="{
                     'drop-zone--active': isDragOver,
                     'drop-zone--filled': localFolderPath.length > 0,
@@ -684,9 +708,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
             <div
               v-else-if="activeTab === 'backupImport'"
               key="backup-import"
-              class="space-y-4"
+              class="flex-1 flex flex-col space-y-4"
             >
-              <div class="space-y-1.5">
+              <div class="space-y-1.5 flex-1 flex flex-col">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   备份/播放列表文件 <span class="text-[#EC4141]">*</span>
                 </label>
@@ -694,7 +718,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 <button
                   type="button"
                   :disabled="importing"
-                  class="drop-zone"
+                  class="drop-zone flex-1"
                   :class="{
                     'drop-zone--active': isDragOver,
                     'drop-zone--filled': backupFilePath.length > 0,
@@ -747,6 +771,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
             </div>
           </Transition>
+          </div>
         </div>
 
         <!-- Footer -->
@@ -850,6 +875,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  flex: 1;
   padding: 20px 0 16px;
 }
 

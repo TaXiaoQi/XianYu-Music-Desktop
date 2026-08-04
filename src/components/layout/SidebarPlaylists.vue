@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { Download } from 'lucide-vue-next';
 
 import type { Playlist } from '../../types';
 
@@ -26,6 +27,7 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (event: 'update:isOpen', value: boolean): void;
   (event: 'createPlaylist', nativeEvent: MouseEvent): void;
+  (event: 'importPlaylist', nativeEvent: MouseEvent): void;
   (event: 'pointerDown', nativeEvent: PointerEvent, index: number, playlist: Playlist): void;
   (event: 'itemPointerMove', nativeEvent: PointerEvent, playlistId: string): void;
   (event: 'playlistClick', nativeEvent: MouseEvent, id: string): void;
@@ -52,7 +54,10 @@ const getPlaylistCover = (playlistId: string) => {
         <span class="text-xs font-bold tracking-wide">我的歌单</span>
         <span class="text-xs text-gray-500 dark:text-gray-400 font-normal ml-0.5">{{ playlists.length }}</span>
       </div>
-      <button @click.stop="$emit('createPlaylist', $event)" class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded p-0.5 transition-colors" title="新建歌单"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>
+      <div class="flex items-center gap-2">
+        <button @click.stop="$emit('createPlaylist', $event)" class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded p-0.5 transition-colors" title="新建歌单"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>
+        <button @click.stop="$emit('importPlaylist', $event)" class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded p-0.5 transition-colors" title="导入歌单"><Download class="h-4 w-4" :stroke-width="2" /></button>
+      </div>
     </div>
 
     <Transition name="playlist-list">

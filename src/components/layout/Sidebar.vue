@@ -65,6 +65,7 @@ const { preloadCovers, loadCover, primeCoverPath } = useCoverCache();
 
 const isPlaylistOpen = ref(true);
 const showPlaylistModal = ref(false);
+const playlistModalMode = ref<'create' | 'import' | 'all'>('all');
 
 const handleHoverArtists = () => {
   if (artistList.value.length > 0) {
@@ -138,6 +139,12 @@ const { playlistCoverCacheVersion, getPlaylistCover } = useSidebarPlaylistCovers
 });
 
 const handleCreatePlaylist = () => {
+  playlistModalMode.value = 'create';
+  showPlaylistModal.value = true;
+};
+
+const handleImportPlaylist = () => {
+  playlistModalMode.value = 'import';
   showPlaylistModal.value = true;
 };
 
@@ -435,6 +442,7 @@ onBeforeUnmount(() => {
         :dragOverId="dragOverId"
         :dragPosition="dragPosition"
         @createPlaylist="handleCreatePlaylist"
+        @importPlaylist="handleImportPlaylist"
         @pointerDown="handlePointerDown"
         @itemPointerMove="handleItemPointerMove"
         @playlistClick="handleSidebarPlaylistClick"
@@ -468,6 +476,7 @@ onBeforeUnmount(() => {
     <PlaylistModal
       v-model:visible="showPlaylistModal"
       :playlists="playlists"
+      :mode="playlistModalMode"
       @create="confirmCreatePlaylist"
       @import="confirmImportPlaylist"
       @import-local="confirmLocalFolderImport"
