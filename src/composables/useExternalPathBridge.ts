@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
 import { appApi } from '../services/tauri/appApi';
 import { usePlaybackStore } from '../features/playback/store';
+import { modalDragInterceptActive } from './dragState';
 
 type ExternalPathSource = 'drop' | 'open';
 
@@ -76,10 +77,14 @@ export function useExternalPathBridge({
   onMounted(async () => {
     unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
       isExternalDragActive.value = false;
+      // 弹窗拦截拖放时，跳过全局处理
+      if (modalDragInterceptActive.value) return;
       await enqueueExternalPaths(event.payload?.paths ?? [], 'drop');
     });
 
     unlistenDragOver = await listen('tauri://drag-over', () => {
+      // 弹窗拦截时也跳过全局 drag-over 状态
+      if (modalDragInterceptActive.value) return;
       isExternalDragActive.value = true;
     });
 

@@ -337,9 +337,9 @@ export async function signedPostJson<T>(
       payload = JSON.parse(text) as ApiEnvelope<T>;
     } catch (parseError) {
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: 服务器返回非 JSON 响应`);
+        throw new Error(`HTTP ${response.status}: 服务器返回非 JSON 响应`, { cause: parseError });
       }
-      throw new Error(`响应解析失败（HTTP ${response.status}）: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      throw new Error(`响应解析失败（HTTP ${response.status}）: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { cause: parseError });
     }
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
