@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
+import { loadLyrics, lyricsStatus } from '../../composables/lyrics/state';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
@@ -185,6 +186,11 @@ watch(showPlayerDetail, (visible) => {
     // 沉浸全屏下重新打开歌词页时，恢复鼠标自动隐藏
     if (isFullscreen.value) {
       enableCursorAutoHide();
+    }
+    // 重新打开歌词页时，若歌词未就绪（idle/empty/error）则重新加载
+    // 关闭歌词页会卸载 LyricsView 组件，若期间歌词加载失败或未触发，重开时需要主动重试
+    if (currentSong.value?.path && lyricsStatus.value !== 'ready') {
+      void loadLyrics();
     }
     return;
   }
