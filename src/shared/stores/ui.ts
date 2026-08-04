@@ -14,6 +14,12 @@ export const useUiStore = defineStore('ui', () => {
   const startupCompositionMaskVisible = ref(false);
   const dominantColors = ref<string[]>([...defaultDominantColors]);
 
+  // 沉浸式全屏状态（全局共享）：
+  // 由 PlayerDetail 的开关触发，窗口覆盖整个显示器并隐藏任务栏。
+  // 歌词页与主页共享此状态——主页在全屏窗口中按默认样式显示，
+  // 歌词页在全屏时额外应用黑色背景、鼠标自动隐藏等沉浸效果。
+  const isImmersiveFullscreen = ref(false);
+
   return {
     showPlaylist,
     showMiniPlaylist,
@@ -24,5 +30,6 @@ export const useUiStore = defineStore('ui', () => {
     skipNextPageTransition,
     startupCompositionMaskVisible,
     dominantColors,
+    isImmersiveFullscreen,
   };
 });

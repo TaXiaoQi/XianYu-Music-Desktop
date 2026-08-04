@@ -115,6 +115,28 @@ pub fn save_window_placement(window: tauri::Window) -> Result<bool, String> {
     }
 }
 
+/// 重新标记主窗口为沉浸式全屏状态（不改变窗口样式/位置）。
+///
+/// 用途：主窗口被 hide → show 后（如切换 mini 模式），任务栏会重新显示并遮挡窗口底部。
+/// 此时窗口本身仍处于全屏样式（无边框、覆盖任务栏区域），仅需重新告知 shell 让任务栏让位。
+/// 相比完整的 `set_immersive_fullscreen(false)` + `set_immersive_fullscreen(true)` 流程，
+/// 此命令无窗口样式/位置变更和动画开销，切换更迅速。
+#[tauri::command]
+pub fn refresh_immersive_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
+        unsafe { mark_taskbar_fullscreen(hwnd, true); }
+        Ok(true)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        Err("当前平台不支持".to_string())
+    }
+}
+
 /// 进入/退出沉浸式全屏。
 ///
 /// - enter=true：将窗口覆盖到所在显示器全区，隐藏任务栏。
