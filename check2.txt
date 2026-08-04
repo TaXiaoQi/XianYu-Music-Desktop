@@ -1,0 +1,8 @@
+﻿cargo :     Checking lycia_music v1.1.1-beta6 (C:\Users\11832\Desktop\1\XY-Music-Desktop\src-tauri)
+所在位置 行:1 字符: 230
++ ... e .cargo-lock -ErrorAction SilentlyContinue; cargo check 2>&1 | Out-F ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking ly...ktop\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `dev` profile [optimized + debuginfo] target(s) in 22.03s
