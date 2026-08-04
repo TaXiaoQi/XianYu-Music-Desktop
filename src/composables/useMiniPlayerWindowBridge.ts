@@ -10,6 +10,8 @@ import { showDesktopLyrics } from './lyrics';
 import { usePlayer } from './player';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
+import { useUiStore } from '../shared/stores/ui';
+import { tauriInvoke } from '../services/tauri/invoke';
 import {
   MINI_PLAYER_ACTION_EVENT,
   MINI_PLAYER_BOUNDS_EVENT,
@@ -238,6 +240,7 @@ export async function restoreMainWindowFromMiniMode(options: {
     show: () => Promise<void>;
     setFocus: () => Promise<void>;
   };
+  isImmersiveFullscreen?: boolean;
 }) {
   options.isMiniMode.value = false;
   if (!options.keepMiniPlayerVisible) {
@@ -246,6 +249,14 @@ export async function restoreMainWindowFromMiniMode(options: {
   await options.mainWindow.unminimize();
   await options.mainWindow.show();
   await options.mainWindow.setFocus();
+
+  // 主窗口 hide → show 后 shell 会忘记之前的全屏标记，导致任务栏重新显示遮挡窗口底部。
+  // 若仍处于沉浸全屏状态，重新告知 shell 让任务栏让位（不改变窗口样式/位置，无动画开销）。
+  if (options.isImmersiveFullscreen) {
+    try {
+      await tauriInvoke('refresh_immersive_fullscreen');
+    } catch { /* 忽略 */ }
+  }
 
   if (typeof window !== 'undefined') {
     setTimeout(() => {
@@ -260,6 +271,7 @@ export async function restoreMainWindowFromMiniMode(options: {
 export function useMiniPlayerWindowBridge() {
   const mainWindow = getCurrentWindow();
   const { settings } = useSettings();
+  const uiStore = useUiStore();
   const {
     currentSong,
     isPlaying,
@@ -394,14 +406,15 @@ export function useMiniPlayerWindowBridge() {
   };
 
   const revealMainWindowFromTray = async () => {
-    const keepMiniPlayerVisible = isMiniPlayerWindowVisible.value;
-    keepMiniPlayerVisibleOnMiniModeExit = keepMiniPlayerVisible && isMiniMode.value;
+    // 从托盘恢复主窗口时，始终关闭小窗口（不保持可见）
+    keepMiniPlayerVisibleOnMiniModeExit = false;
 
     await restoreMainWindowFromMiniMode({
       isMiniMode,
       hideMiniPlayerWindow,
-      keepMiniPlayerVisible,
+      keepMiniPlayerVisible: false,
       mainWindow,
+      isImmersiveFullscreen: uiStore.isImmersiveFullscreen,
     });
   };
 
@@ -430,6 +443,7 @@ export function useMiniPlayerWindowBridge() {
           isMiniMode,
           hideMiniPlayerWindow,
           mainWindow,
+          isImmersiveFullscreen: uiStore.isImmersiveFullscreen,
         });
         break;
       case 'close':
