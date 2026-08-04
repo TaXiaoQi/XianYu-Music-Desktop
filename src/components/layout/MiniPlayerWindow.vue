@@ -6,7 +6,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { getNextWheelVolume } from '../../composables/playerUiShell';
-import { applyWindowMaterial, useWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
+import { applyWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
 import {
   MINI_PLAYER_ACTION_EVENT,
   MINI_PLAYER_BOUNDS_EVENT,
@@ -61,10 +61,6 @@ let unlistenState: (() => void) | null = null;
 let unlistenVisibility: (() => void) | null = null;
 let unlistenVolumeAction: (() => void) | null = null;
 let unlistenVolumeVisibility: (() => void) | null = null;
-
-useWindowMaterial();
-
-const displayQueue = computed(() => queue.value);
 
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0;
@@ -450,18 +446,18 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 播放三大键 -->
-          <div class="shrink-0 flex items-center gap-2 pointer-events-auto -mt-1 mr-1">
-            <button @click.stop="sendAction({ type: 'prev-song' })" class="text-white/70 hover:text-white transition-colors" title="上一首">
+          <!-- 播放三大键：复用底部栏 UI（详情页模式样式），按 mini 窗口等比缩小 -->
+          <div class="shrink-0 flex items-center gap-3 pointer-events-auto -mt-1 mr-1">
+            <button @click.stop="sendAction({ type: 'prev-song' })" class="text-white/80 hover:text-white transition-colors hover:scale-110 transform duration-200" title="上一首">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
             </button>
 
-            <button @click.stop="sendAction({ type: 'toggle-play' })" class="w-10 h-10 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white hover:bg-white/25 transition-colors" title="播放/暂停">
+            <button @click.stop="sendAction({ type: 'toggle-play' })" class="flex items-center justify-center transition-all active:scale-95 shrink-0 w-10 h-10 rounded-full border text-white bg-white/10 hover:bg-white/20 border-white/5" title="播放/暂停">
               <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8.3 5v14l11-7z" /></svg>
             </button>
 
-            <button @click.stop="sendAction({ type: 'next-song' })" class="text-white/70 hover:text-white transition-colors" title="下一首">
+            <button @click.stop="sendAction({ type: 'next-song' })" class="text-white/80 hover:text-white transition-colors hover:scale-110 transform duration-200" title="下一首">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
             </button>
           </div>
@@ -483,24 +479,39 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 第三行：底部控件均匀排列（64px） -->
-    <div class="h-[64px] w-full flex items-start justify-around px-5 pt-3 pointer-events-auto">
+    <!-- 第三行：底部控件均匀排列，样式与主页底部栏统一 -->
+    <div class="h-[44px] w-full flex items-center justify-center gap-5 px-6 pointer-events-auto">
       <!-- 收藏 -->
-      <button @click.stop="sendAction({ type: 'toggle-favorite' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors" :class="isFavorite ? 'text-[#EC4141]' : 'text-white/70 hover:text-white'" title="收藏">
+      <button
+        @click.stop="sendAction({ type: 'toggle-favorite' })"
+        class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full transition-colors active:scale-95"
+        :class="isFavorite ? 'text-[#EC4141]' : 'text-white/80 hover:text-white hover:bg-white/10'"
+        :title="isFavorite ? '取消收藏' : '添加到收藏'"
+      >
         <svg v-if="isFavorite" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
       </button>
 
       <!-- 播放循环 -->
-      <button @click.stop="sendAction({ type: 'cycle-play-mode' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors" :class="playMode !== 0 ? 'text-[#EC4141]' : 'text-white/70 hover:text-white'" :title="playModeTitle">
-        <svg v-if="playModeIcon === 'repeat'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-        <svg v-else-if="playModeIcon === 'repeat-one'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /><text x="12" y="14" text-anchor="middle" font-size="8" fill="currentColor" stroke="none">1</text></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
+      <button
+        @click.stop="sendAction({ type: 'cycle-play-mode' })"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+        :class="playMode !== 0 ? 'text-[#EC4141]' : 'text-white/80 hover:text-white'"
+        :title="playModeTitle"
+      >
+        <svg v-if="playModeIcon === 'repeat'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+        <svg v-else-if="playModeIcon === 'repeat-one'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /><text x="12" y="16" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="currentColor" stroke="none">1</text></svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>
       </button>
 
-      <!-- 桌面歌词 -->
-      <button @click.stop="sendAction({ type: 'toggle-desktop-lyrics' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors" :class="desktopLyricsEnabled ? 'text-[#EC4141]' : 'text-white/70 hover:text-white'" title="桌面歌词">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>
+      <!-- 桌面歌词：用"词"文字按钮，与主页底部栏一致 -->
+      <button
+        @click.stop="sendAction({ type: 'toggle-desktop-lyrics' })"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-[14px] font-bold"
+        :class="desktopLyricsEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/80 hover:text-white hover:bg-white/10'"
+        title="桌面歌词"
+      >
+        词
       </button>
 
       <!-- 音量 -->
@@ -508,26 +519,41 @@ onUnmounted(() => {
         ref="volumeButtonRef"
         @click.stop="toggleVolumePopover"
         @wheel.prevent.stop="handleVolumeWheel"
-        class="flex items-center justify-center w-7 h-7 rounded transition-colors text-white/70 hover:text-white"
+        class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-white/80 hover:text-white hover:bg-white/10"
         title="音量"
       >
-        <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+        <svg v-if="volume === 0" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+        <svg v-else-if="volume < 30" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /></svg>
+        <svg v-else-if="volume < 70" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
       </button>
 
       <!-- 播放列表 -->
-      <button @click.stop="toggleMiniPlaylist" class="flex items-center justify-center w-7 h-7 rounded transition-colors" :class="showMiniPlaylist ? 'text-[#EC4141]' : 'text-white/70 hover:text-white'" title="播放列表">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6" /></svg>
+      <button
+        @click.stop="toggleMiniPlaylist"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
+        :class="showMiniPlaylist ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/80 hover:text-white hover:bg-white/10'"
+        title="播放列表"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
       </button>
 
       <!-- 展开主窗口 -->
-      <button @click.stop="sendAction({ type: 'restore-main' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors text-white/70 hover:text-white" title="展开主窗口">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+      <button
+        @click.stop="sendAction({ type: 'restore-main' })"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-white/80 hover:text-white hover:bg-white/10"
+        title="展开主窗口"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
       </button>
 
       <!-- 关闭 -->
-      <button @click.stop="sendAction({ type: 'close' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors text-white/70 hover:text-white hover:bg-[#EC4141]" title="关闭">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      <button
+        @click.stop="sendAction({ type: 'close' })"
+        class="transition-colors hover:scale-110 transform duration-200 flex items-center justify-center shrink-0 w-8 h-8 rounded-full text-white/80 hover:text-white hover:bg-[#EC4141]"
+        title="关闭"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
     </div>
 
@@ -535,16 +561,16 @@ onUnmounted(() => {
     <transition name="mini-queue">
       <div
         v-if="showMiniPlaylist"
-        class="absolute left-0 right-0 top-[156px] bottom-0 z-30"
+        class="absolute left-0 right-0 top-[144px] bottom-0 z-30"
         style="background-color: rgba(20, 20, 22, 0.96); backdrop-filter: blur(12px);"
       >
         <div class="h-full overflow-y-auto custom-scrollbar px-1.5 pt-0 pb-1.5">
-          <div v-if="displayQueue.length === 0" class="h-full flex items-center justify-center text-xs text-gray-400 dark:text-white/30">
+          <div v-if="queue.length === 0" class="h-full flex items-center justify-center text-xs text-gray-400 dark:text-white/30">
             暂无歌曲
           </div>
 
           <button
-            v-for="(song, index) in displayQueue"
+            v-for="(song, index) in queue"
             :key="song.path + index"
             @click="sendAction({ type: 'play-song', song })"
             class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors"

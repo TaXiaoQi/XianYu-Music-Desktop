@@ -8,7 +8,7 @@ export const TRAY_MENU_STATE_EVENT = 'tray-menu:state';
 export const TRAY_MENU_READY_EVENT = 'tray-menu:ready';
 export const TRAY_MENU_PANEL_WIDTH = 210;
 export const TRAY_MENU_WINDOW_WIDTH = TRAY_MENU_PANEL_WIDTH;
-export const TRAY_MENU_WINDOW_HEIGHT = 252;
+export const TRAY_MENU_WINDOW_HEIGHT = 268;
 
 export type TrayMenuAction =
   | 'prev-song'
@@ -33,6 +33,7 @@ export interface TrayMenuStatePayload {
   playMode: number;
   showDesktopLyrics: boolean;
   isFavorite: boolean;
+  isMiniMode: boolean;
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   windowBlurTint: number;
 }
@@ -66,7 +67,13 @@ export async function handleTrayMenuAction(action: TrayMenuAction, deps: TrayMen
       deps.cyclePlayMode();
       break;
     case 'show-mini-player':
-      deps.isMiniMode.value = true;
+      // 切换 mini 模式：已开启则恢复主窗口，未开启则进入 mini 模式
+      if (deps.isMiniMode.value) {
+        deps.isMiniMode.value = false;
+        await deps.revealMainWindow();
+      } else {
+        deps.isMiniMode.value = true;
+      }
       break;
     case 'toggle-favorite':
       await deps.toggleFavorite();

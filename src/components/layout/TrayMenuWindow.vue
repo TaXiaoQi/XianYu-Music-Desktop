@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Heart,
+  Maximize2,
   Minimize2,
   Music2,
   Pause,
@@ -35,6 +36,7 @@ const isPlaying = ref(false);
 const isDarkTheme = ref(true);
 const playMode = ref(0);
 const isFavorite = ref(false);
+const isMiniMode = ref(false);
 const windowMaterial = ref<WindowMaterialMode>('none');
 const windowBlurTint = ref(50);
 let unlistenState: UnlistenFn | null = null;
@@ -149,6 +151,7 @@ onMounted(async () => {
     isDarkTheme.value = event.payload.isDarkTheme;
     playMode.value = event.payload.playMode;
     isFavorite.value = event.payload.isFavorite;
+    isMiniMode.value = event.payload.isMiniMode;
     windowMaterial.value = event.payload.windowMaterial;
     windowBlurTint.value = event.payload.windowBlurTint;
   });
@@ -199,28 +202,28 @@ onUnmounted(() => {
 
       <section class="transport" aria-label="播放控制">
         <button
-          class="transport-button"
-          :class="{ 'transport-button--favorite-active': isFavorite }"
+          class="transport-circle"
+          :class="{ 'transport-circle--active': isFavorite }"
           title="收藏"
           @click="sendAction('toggle-favorite', { hide: false })"
         >
           <Heart :size="16" :stroke-width="2.2" :fill="isFavorite ? 'currentColor' : 'none'" />
         </button>
         <div class="transport-main">
-          <button class="transport-button" title="上一首" @click="sendAction('prev-song', { hide: false })">
+          <button class="transport-circle" title="上一首" @click="sendAction('prev-song', { hide: false })">
             <SkipBack :size="18" :stroke-width="2.35" />
           </button>
-          <button class="transport-button transport-button--play" title="播放/暂停" @click="sendAction('toggle-play', { hide: false })">
+          <button class="transport-circle transport-circle--play" title="播放/暂停" @click="sendAction('toggle-play', { hide: false })">
             <Pause v-if="isPlaying" :size="20" :stroke-width="2.5" />
             <Play v-else :size="20" :stroke-width="2.5" />
           </button>
-          <button class="transport-button" title="下一首" @click="sendAction('next-song', { hide: false })">
+          <button class="transport-circle" title="下一首" @click="sendAction('next-song', { hide: false })">
             <SkipForward :size="18" :stroke-width="2.35" />
           </button>
         </div>
         <button
-          class="transport-button"
-          :class="{ 'transport-button--active': playMode !== 0 }"
+          class="transport-circle"
+          :class="{ 'transport-circle--active': playMode !== 0 }"
           :title="playModeConfig.label"
           @click="sendAction('cycle-play-mode', { hide: false })"
         >
@@ -239,9 +242,9 @@ onUnmounted(() => {
 
       <button class="menu-row" @click="sendAction('show-mini-player')">
         <span class="row-icon">
-          <Minimize2 :size="18" :stroke-width="2.15" />
+          <component :is="isMiniMode ? Maximize2 : Minimize2" :size="18" :stroke-width="2.15" />
         </span>
-        <span class="row-label">mini窗口</span>
+        <span class="row-label">{{ isMiniMode ? '恢复主窗口' : 'mini窗口' }}</span>
       </button>
 
       <button class="menu-row" @click="sendAction('open-settings')">
@@ -267,18 +270,21 @@ onUnmounted(() => {
 .tray-menu-shell {
   --panel-bg: rgba(39, 40, 52, 0.98);
   --panel-border: rgba(255, 255, 255, 0.12);
-  --text-main: rgba(241, 243, 249, 0.9);
-  --text-muted: rgba(241, 243, 249, 0.68);
-  --divider: rgba(255, 255, 255, 0.075);
-  --hover-bg: rgba(255, 255, 255, 0.075);
+  --text-main: rgba(245, 247, 252, 0.98);
+  --text-muted: rgba(230, 233, 242, 0.85);
+  --divider: rgba(255, 255, 255, 0.085);
+  --hover-bg: rgba(255, 255, 255, 0.085);
 
   width: 210px;
-  height: 252px;
+  height: 268px;
   padding: 0;
   overflow: hidden;
   background: transparent;
   color: var(--text-main);
   font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   position: relative;
   user-select: none;
 }
@@ -286,10 +292,10 @@ onUnmounted(() => {
 .tray-menu-shell--light {
   --panel-bg: rgba(248, 249, 252, 0.98);
   --panel-border: rgba(20, 24, 36, 0.12);
-  --text-main: rgba(28, 31, 42, 0.9);
-  --text-muted: rgba(28, 31, 42, 0.58);
-  --divider: rgba(20, 24, 36, 0.095);
-  --hover-bg: rgba(20, 24, 36, 0.065);
+  --text-main: rgba(22, 26, 36, 0.96);
+  --text-muted: rgba(40, 46, 60, 0.78);
+  --divider: rgba(20, 24, 36, 0.1);
+  --hover-bg: rgba(20, 24, 36, 0.07);
 }
 
 .tray-menu-shell--material .tray-menu-panel {
@@ -317,9 +323,9 @@ onUnmounted(() => {
 .track-row {
   display: flex;
   align-items: center;
-  height: 60px;
+  height: 64px;
   gap: 11px;
-  padding: 0 14px;
+  padding: 6px 14px 0;
 }
 
 .track-info {
@@ -357,9 +363,9 @@ onUnmounted(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--text-main);
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -370,7 +376,7 @@ onUnmounted(() => {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 400;
-  line-height: 1.2;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -384,51 +390,61 @@ onUnmounted(() => {
 .transport {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 34px;
-  padding: 0 14px;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
 }
 
 .transport-main {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 
-.transport-button,
-.menu-row {
+.transport-circle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
   cursor: default;
+  transition: color 200ms ease, background-color 200ms ease, transform 200ms ease;
 }
 
-.transport-button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 26px;
-  border-radius: 6px;
+.menu-row {
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  cursor: default;
 }
 
-.transport-button--play {
+.transport-circle--play {
   color: var(--text-main);
 }
 
-.transport-button--favorite-active,
-.transport-button--active {
+.transport-circle--active {
   color: #EC4141;
+  background: rgba(236, 65, 65, 0.1);
 }
 
-.transport-button:hover,
+.transport-circle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  transform: scale(1.1);
+}
+
+.transport-circle--active:hover {
+  color: #EC4141;
+  background: rgba(236, 65, 65, 0.16);
+}
+
 .menu-row:hover {
   background: var(--hover-bg);
   color: var(--text-main);
-}
-
-.transport-button--favorite-active:hover,
-.transport-button--active:hover {
-  color: #EC4141;
 }
 
 .menu-row {
@@ -453,8 +469,8 @@ onUnmounted(() => {
 }
 
 .row-icon--text {
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -463,9 +479,9 @@ onUnmounted(() => {
   overflow: hidden;
   flex: 1;
   color: currentColor;
-  font-size: 13.5px;
-  font-weight: 480;
-  line-height: 1.2;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
