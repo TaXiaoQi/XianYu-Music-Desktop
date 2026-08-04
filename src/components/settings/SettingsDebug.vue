@@ -46,6 +46,7 @@ const { entries, clearLogs } = useApplicationLogs();
 
 const analysis = ref<ApplicationLogAnalysis>(analyzeApplicationLogs(entries.value));
 const loggingSettings = computed(() => settings.value.logging);
+const latestLogId = computed(() => entries.value[entries.value.length - 1]?.id ?? '');
 const counts = computed(() => analyzeApplicationLogs(entries.value).counts);
 const filteredEntries = computed(() => entries.value
   .filter(entry => selectedFilter.value === 'all' || entry.level === selectedFilter.value)
@@ -77,11 +78,11 @@ const openLogViewer = (filter: LogFilter = 'all') => {
 };
 
 watch(
-  entries,
+  latestLogId,
   () => {
     if (loggingSettings.value.autoAnalyze) refreshAnalysis();
   },
-  { deep: true },
+  { flush: 'post' },
 );
 
 watch(
@@ -89,6 +90,7 @@ watch(
   enabled => {
     if (enabled) refreshAnalysis();
   },
+  { flush: 'post' },
 );
 
 const formatLogTime = (timestamp: number) => new Intl.DateTimeFormat('zh-CN', {

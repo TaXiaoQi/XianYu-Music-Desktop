@@ -48,8 +48,8 @@ const appWindow = getCurrentWindow();
 
 const minimize = () => appWindow.minimize();
 
-// 全屏：调用项目自实现的 Win32 原生命令（绕过 tao，专门处理无边框窗口）
-// 该命令用整个显示器矩形铺满窗口并调用 MarkFullscreenWindow 让 shell 隐藏任务栏
+// 真全屏：交给 Tauri/tao 切换系统原生全屏，而不是仅把无边框窗口拉伸到显示器大小。
+// Windows 下再补一层 shell 全屏标记，确保自动隐藏或置顶任务栏也不会覆盖播放器。
 // isImmersiveFullscreen 为全局共享状态（ui store），主页与歌词页均可读取
 const isFullscreen = isImmersiveFullscreen;
 // fullscreenAnimState 同样为全局共享状态，主页据此同步播放 scale 动画
@@ -96,21 +96,31 @@ const disableCursorAutoHide = () => {
 };
 
 const applyImmersiveFullscreen = async (enter: boolean) => {
-  const result = await tauriInvoke('set_immersive_fullscreen', { enter });
-  isFullscreen.value = result;
+  await appWindow.setFullscreen(enter);
+
+  try {
+    await tauriInvoke('set_taskbar_fullscreen_flag', { enter });
+  } catch (error) {
+    // Tauri 原生全屏已经生效；该命令只是 Windows shell 的兼容兜底，失败不应回滚全屏。
+    console.warn('同步任务栏全屏标记失败:', error);
+  }
+
+  isFullscreen.value = enter;
 };
 
 const toggleFullscreen = async () => {
   if (fullscreenAnimState.value) return;
 
   if (!isFullscreen.value) {
-    // 进入全屏：先调用原生命令铺满整个显示器（含任务栏），窗口尺寸稳定后再播放放大动画
+    // 进入全屏：系统原生全屏会覆盖整个显示器（包括任务栏区域）。
     fullscreenAnimState.value = 'entering';
     enableCursorAutoHide();
     try {
       await applyImmersiveFullscreen(true);
     } catch (error) {
       console.error('进入全屏失败:', error);
+      disableCursorAutoHide();
+      isFullscreen.value = false;
       fullscreenAnimState.value = null;
       return;
     }
@@ -119,7 +129,7 @@ const toggleFullscreen = async () => {
       fullscreenAnimState.value = null;
     }, FS_ANIM_DURATION);
   } else {
-    // 退出全屏：先播放前端收缩动画，动画结束后再调用原生退出恢复窗口
+    // 退出全屏：先播放前端收缩动画，动画结束后让系统恢复原窗口状态。
     fullscreenAnimState.value = 'exiting';
     disableCursorAutoHide();
     setTimeout(async () => {
@@ -127,8 +137,11 @@ const toggleFullscreen = async () => {
         await applyImmersiveFullscreen(false);
       } catch (error) {
         console.error('退出全屏失败:', error);
+        isFullscreen.value = true;
+        enableCursorAutoHide();
+        fullscreenAnimState.value = null;
+        return;
       }
-      isFullscreen.value = false;
       fullscreenAnimState.value = null;
     }, FS_ANIM_DURATION);
   }

@@ -408,6 +408,32 @@ describe('player playback domain', () => {
     playerPlayback.dispose();
   });
 
+  it('clears the previous cover after confirming the next song has no cover', async () => {
+    const playbackStore = usePlaybackStore();
+    const oldCover = 'asset://C:\\covers\\old-thumb.jpg';
+    const song = makeSong({ path: '/music/no-cover.flac', title: 'No Cover' });
+    let resolveCover!: (cover: string) => void;
+    playbackStore.currentCover = oldCover;
+    loadCoverMock.mockReturnValueOnce(new Promise<string>((resolve) => {
+      resolveCover = resolve;
+    }));
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    const playPromise = playerPlayback.playSong(song);
+    expect(playbackStore.currentCover).toBe(oldCover);
+
+    resolveCover('');
+    await playPromise;
+    await vi.waitFor(() => expect(playbackStore.currentCover).toBe(''));
+    playerPlayback.dispose();
+  });
+
   it('does not carry the previous full cover into the next song detail view', async () => {
     const playbackStore = usePlaybackStore();
     const uiStore = useUiStore();

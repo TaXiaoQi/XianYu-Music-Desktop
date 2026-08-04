@@ -41,6 +41,8 @@ const defaultConfig: LogSettings = {
 let activeConfig: LogSettings = { ...defaultConfig };
 let installed = false;
 let sequence = 0;
+let pendingEntries: ApplicationLogEntry[] = [];
+let isLogFlushScheduled = false;
 
 const isLogLevel = (value: unknown): value is LogLevel => (
   typeof value === 'string' && LOG_LEVELS.includes(value as LogLevel)
@@ -142,25 +144,42 @@ const resolveCategory = (args: unknown[]) => {
   return 'application';
 };
 
+const flushPendingEntries = () => {
+  isLogFlushScheduled = false;
+  if (pendingEntries.length === 0) return;
+
+  const entriesToAppend = pendingEntries;
+  pendingEntries = [];
+  const now = Date.now();
+  logEntries.value = filterLogEntriesForRetention(
+    [...logEntries.value, ...entriesToAppend],
+    activeConfig.retentionDays,
+    now,
+  );
+  persistEntries();
+};
+
 const recordLog = (level: LogLevel, scope: string, args: unknown[]) => {
   if (LEVEL_RANK[level] < LEVEL_RANK[activeConfig.minimumLevel]) return;
 
   const now = Date.now();
-  const entry: ApplicationLogEntry = {
+  pendingEntries.push({
     id: `${now}-${sequence++}`,
     timestamp: now,
     level,
     category: resolveCategory(args),
     scope,
     message: args.map(serializeLogValue).join(' '),
-  };
+  });
 
-  logEntries.value = filterLogEntriesForRetention(
-    [...logEntries.value, entry],
-    activeConfig.retentionDays,
-    now,
-  );
-  persistEntries();
+  // console may be called while Vue is rendering the log viewer itself. Mutating
+  // its reactive log source synchronously would queue the same component again
+  // in the current render cycle and can end in "Maximum recursive updates".
+  // Batch console records into the next microtask to break that feedback loop.
+  if (!isLogFlushScheduled) {
+    isLogFlushScheduled = true;
+    queueMicrotask(flushPendingEntries);
+  }
 };
 
 export function installApplicationLogger(scope = 'main') {
@@ -210,6 +229,7 @@ export function configureApplicationLogger(config: LogSettings) {
 }
 
 export function clearApplicationLogs() {
+  pendingEntries = [];
   logEntries.value = [];
   persistEntries();
 }

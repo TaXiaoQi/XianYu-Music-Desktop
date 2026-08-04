@@ -101,7 +101,7 @@ const openAccountPage = () => {
 
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
-// 假全屏（沉浸模式）进行中或已激活时禁用最大化按钮，避免与全屏窗口尺寸冲突
+// 系统全屏（沉浸模式）进行中或已激活时禁用最大化按钮，避免与全屏窗口状态冲突
 const isMaximizeDisabled = computed(
   () => isImmersiveFullscreen.value || fullscreenAnimState.value !== null,
 );

@@ -258,7 +258,9 @@ const staticItems: SettingsSearchItem[] = [
     { label: '完成前刷新音乐库', keywords: '重新扫描 更新' },
   ]),
 
-  ...makeItems('advanced', '导出日志', [
+  ...makeItems('advanced', '高级设置', [
+    { label: '备份与恢复', keywords: 'BakaMusic MusicFree 导入 歌单 JSON 插件' },
+    { label: '从 BakaMusic 或 MusicFree 软件导入歌单', keywords: '备份 恢复 插件关联 缺失插件' },
     { label: '日志保留时长', keywords: '日志 保存 自动清理 天数' },
     { label: '导出全部日志', keywords: '日志 调试 反馈 全部' },
     { label: '导出错误日志', keywords: '日志 错误 故障 排查' },
