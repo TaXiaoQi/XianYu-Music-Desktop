@@ -6,7 +6,7 @@ import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 
 import { useCoverCache } from './useCoverCache';
 import { useLyrics } from './lyrics';
-import { showDesktopLyrics } from './lyrics/state';
+import { showDesktopLyrics } from './lyrics';
 import { usePlayer } from './player';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
@@ -240,12 +240,12 @@ export async function restoreMainWindowFromMiniMode(options: {
   };
 }) {
   options.isMiniMode.value = false;
-  await options.mainWindow.unminimize();
-  await options.mainWindow.show();
-  await options.mainWindow.setFocus();
   if (!options.keepMiniPlayerVisible) {
     await options.hideMiniPlayerWindow();
   }
+  await options.mainWindow.unminimize();
+  await options.mainWindow.show();
+  await options.mainWindow.setFocus();
 
   if (typeof window !== 'undefined') {
     setTimeout(() => {
@@ -372,7 +372,6 @@ export function useMiniPlayerWindowBridge() {
     }
 
     await emitMiniPlayerVisibility(false);
-    await new Promise(resolve => setTimeout(resolve, 200));
     await targetWindow.hide();
     isMiniPlayerWindowVisible.value = false;
   };

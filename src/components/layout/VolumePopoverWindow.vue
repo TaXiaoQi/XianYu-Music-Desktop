@@ -16,9 +16,12 @@ const appWindow = getCurrentWindow();
 const volume = ref(100);
 const volumeBarRef = ref<HTMLElement | null>(null);
 const isDraggingVolume = ref(false);
+const isVisible = ref(false);
+let hideTimer: number | null = null;
 let unlistenState: UnlistenFn | null = null;
 let unlistenFocus: UnlistenFn | null = null;
 let unlistenCloseRequested: UnlistenFn | null = null;
+let unlistenVisibility: UnlistenFn | null = null;
 
 const sendAction = (action: VolumePopoverAction) => {
   void emitTo('mini-player', VOLUME_POPOVER_ACTION_EVENT, action);
@@ -62,15 +65,31 @@ const onGlobalPointerEnd = () => {
   }
 };
 
-const hideWindow = () => {
-  sendAction({ type: 'close' });
-  void appWindow.hide();
-  void emitTo('mini-player', VOLUME_POPOVER_VISIBILITY_EVENT, { visible: false });
+const performHide = () => {
+  if (!isVisible.value) return;
+  isVisible.value = false;
+  if (hideTimer !== null) {
+    window.clearTimeout(hideTimer);
+  }
+  hideTimer = window.setTimeout(() => {
+    void appWindow.hide();
+    sendAction({ type: 'close' });
+    void emitTo('mini-player', VOLUME_POPOVER_VISIBILITY_EVENT, { visible: false });
+    hideTimer = null;
+  }, 200);
+};
+
+const performShow = () => {
+  if (hideTimer !== null) {
+    window.clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+  isVisible.value = true;
 };
 
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
-    hideWindow();
+    performHide();
   }
 };
 
@@ -95,14 +114,24 @@ onMounted(async () => {
   });
 
   unlistenFocus = await appWindow.onFocusChanged((event) => {
-    if (!event.payload && !isDraggingVolume.value) {
-      hideWindow();
+    if (event.payload) {
+      performShow();
+    } else if (!isDraggingVolume.value) {
+      performHide();
+    }
+  });
+
+  unlistenVisibility = await listen<{ visible: boolean }>(VOLUME_POPOVER_VISIBILITY_EVENT, (event) => {
+    if (event.payload.visible) {
+      performShow();
+    } else {
+      performHide();
     }
   });
 
   unlistenCloseRequested = await appWindow.onCloseRequested((event) => {
     event.preventDefault();
-    hideWindow();
+    performHide();
   });
 });
 
@@ -113,14 +142,15 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
   unlistenState?.();
   unlistenFocus?.();
+  unlistenVisibility?.();
   unlistenCloseRequested?.();
 });
 </script>
 
 <template>
   <div
-    class="w-full h-full flex items-center gap-2 px-3 rounded-[10px]"
-    style="background: rgba(26, 26, 26, 0.92); backdrop-filter: blur(18px); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1);"
+    class="w-full h-full flex items-center gap-2 px-3 rounded-[10px] transition-opacity duration-200"
+    :style="{ background: 'rgba(26, 26, 26, 0.92)', backdropFilter: 'blur(18px)', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.1)', opacity: isVisible ? 1 : 0 }"
     @wheel.prevent.stop="handleVolumeWheel"
   >
     <button

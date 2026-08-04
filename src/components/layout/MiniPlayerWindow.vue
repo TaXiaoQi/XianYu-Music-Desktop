@@ -62,7 +62,7 @@ let unlistenVisibility: (() => void) | null = null;
 let unlistenVolumeAction: (() => void) | null = null;
 let unlistenVolumeVisibility: (() => void) | null = null;
 
-const { activeWindowMaterial } = useWindowMaterial();
+useWindowMaterial();
 
 const displayQueue = computed(() => queue.value);
 
@@ -82,26 +82,6 @@ const playModeTitle = computed(() => {
   if (playMode.value === 1) return '单曲循环';
   if (playMode.value === 2) return '随机播放';
   return '顺序播放';
-});
-
-const shellClass = computed(() => {
-  if (activeWindowMaterial.value === 'mica') {
-    return isDarkTheme.value ? 'bg-black/8' : 'bg-white/40';
-  }
-  if (activeWindowMaterial.value !== 'none') {
-    return isDarkTheme.value ? 'bg-black/25' : 'bg-white/60';
-  }
-  return isDarkTheme.value ? 'bg-gray-900' : 'bg-white';
-});
-
-const queueClass = computed(() => {
-  if (activeWindowMaterial.value === 'mica') {
-    return isDarkTheme.value ? 'bg-black/12' : 'bg-white/55';
-  }
-  if (activeWindowMaterial.value !== 'none') {
-    return isDarkTheme.value ? 'bg-black/35' : 'bg-white/75';
-  }
-  return isDarkTheme.value ? 'bg-gray-900/95' : 'bg-white/95';
 });
 
 const sendAction = (action: MiniPlayerAction) => {
@@ -212,10 +192,10 @@ const showVolumePopover = async () => {
   if (buttonRect) {
     const btnCenterX = winX + buttonRect.left + buttonRect.width / 2;
     popoverX = Math.round(btnCenterX - VOLUME_POPOVER_WINDOW_WIDTH / 2);
-    popoverY = Math.round(winY + buttonRect.top - VOLUME_POPOVER_WINDOW_HEIGHT - 6);
+    popoverY = Math.round(winY + buttonRect.bottom + 6);
   } else {
     popoverX = Math.round(winX + MINI_PLAYER_WINDOW_WIDTH - VOLUME_POPOVER_WINDOW_WIDTH - 12);
-    popoverY = Math.round(winY + MINI_PLAYER_WINDOW_BASE_HEIGHT - VOLUME_POPOVER_WINDOW_HEIGHT - 6);
+    popoverY = Math.round(winY + MINI_PLAYER_WINDOW_BASE_HEIGHT + 6);
   }
 
   await target.setAlwaysOnTop(true);
@@ -228,11 +208,8 @@ const showVolumePopover = async () => {
 };
 
 const hideVolumePopover = async () => {
-  const target = await getVolumePopoverWindow();
-  if (target) {
-    await target.hide();
-  }
   isVolumePopoverVisible.value = false;
+  await emitTo(VOLUME_POPOVER_WINDOW_LABEL, VOLUME_POPOVER_VISIBILITY_EVENT, { visible: false });
 };
 
 const toggleVolumePopover = () => {
@@ -441,7 +418,7 @@ onUnmounted(() => {
     ></div>
 
     <!-- 主区域：封面 + 歌名/三大键/进度条（92px） -->
-    <div class="h-[92px] w-full flex items-end gap-3 px-5 pb-1" data-tauri-drag-region>
+    <div class="h-[92px] w-full flex items-end gap-3 px-5" data-tauri-drag-region>
       <!-- 封面（底部对齐） -->
       <div
         class="w-[64px] h-[64px] shrink-0 relative overflow-hidden rounded-[8px]"
@@ -474,18 +451,18 @@ onUnmounted(() => {
           </div>
 
           <!-- 播放三大键 -->
-          <div class="shrink-0 flex items-center gap-1 pointer-events-auto">
+          <div class="shrink-0 flex items-center gap-2 pointer-events-auto -mt-1 mr-1">
             <button @click.stop="sendAction({ type: 'prev-song' })" class="text-white/70 hover:text-white transition-colors" title="上一首">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
             </button>
 
-            <button @click.stop="sendAction({ type: 'toggle-play' })" class="w-8 h-8 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white hover:bg-white/25 transition-colors" title="播放/暂停">
-              <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+            <button @click.stop="sendAction({ type: 'toggle-play' })" class="w-10 h-10 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white hover:bg-white/25 transition-colors" title="播放/暂停">
+              <svg v-if="isPlaying" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
             </button>
 
             <button @click.stop="sendAction({ type: 'next-song' })" class="text-white/70 hover:text-white transition-colors" title="下一首">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
             </button>
           </div>
         </div>
@@ -507,7 +484,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 第三行：底部控件均匀排列（64px） -->
-    <div class="h-[64px] w-full flex items-end justify-around px-5 pb-3 pointer-events-auto">
+    <div class="h-[64px] w-full flex items-start justify-around px-5 pt-3 pointer-events-auto">
       <!-- 收藏 -->
       <button @click.stop="sendAction({ type: 'toggle-favorite' })" class="flex items-center justify-center w-7 h-7 rounded transition-colors" :class="isFavorite ? 'text-[#EC4141]' : 'text-white/70 hover:text-white'" title="收藏">
         <svg v-if="isFavorite" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
@@ -554,19 +531,12 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- 播放列表展开区域 -->
-    <div
-      v-if="showMiniPlaylist"
-      class="absolute left-0 right-0 top-[156px] bottom-0 transition-colors duration-500 pointer-events-none"
-      :class="shellClass"
-      aria-hidden="true"
-    ></div>
-
+    <!-- 播放列表展开区域（独立背景，不共享 mini 窗口材质） -->
     <transition name="mini-queue">
       <div
         v-if="showMiniPlaylist"
-        class="absolute left-0 right-0 top-[156px] bottom-0 z-30 transition-colors duration-500"
-        :class="queueClass"
+        class="absolute left-0 right-0 top-[156px] bottom-0 z-30"
+        style="background-color: rgba(20, 20, 22, 0.96); backdrop-filter: blur(12px);"
       >
         <div class="h-full overflow-y-auto custom-scrollbar px-1.5 pt-0 pb-1.5">
           <div v-if="displayQueue.length === 0" class="h-full flex items-center justify-center text-xs text-gray-400 dark:text-white/30">
