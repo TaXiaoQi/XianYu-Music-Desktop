@@ -1045,6 +1045,11 @@ export const createPlayerPlayback = ({
           currentBackendVolume = 0;
           try { await playbackApi.setVolume(0); } catch {}
           void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
+        } else {
+          // [渐入渐出] 非切歌场景（首次播放/恢复播放）：同步后端音量追踪值，
+          // 避免 currentBackendVolume 停留在模块初始值 1，导致首次淡出时音量跳变
+          currentBackendVolume = playbackStore.volume / 100;
+          void playbackApi.setVolume(currentBackendVolume).catch(() => {});
         }
 
         void currentThumbnailLoad

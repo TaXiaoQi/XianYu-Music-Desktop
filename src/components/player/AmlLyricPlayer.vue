@@ -47,14 +47,48 @@ const { isMainWindowLowPower } = useRenderingPower();
 
 let player: PatchedLyricPlayer | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let wheelHandler: ((event: WheelEvent) => void) | null = null;
 let frameId = 0;
 let recoveryFrameId = 0;
+let seekBurstFrameId = 0;
 
 function stopAnimationLoop() {
   if (frameId !== 0) {
     cancelAnimationFrame(frameId);
     frameId = 0;
   }
+}
+
+function stopSeekBurst() {
+  if (seekBurstFrameId !== 0) {
+    cancelAnimationFrame(seekBurstFrameId);
+    seekBurstFrameId = 0;
+  }
+}
+
+// 暂停态下点击歌词跳转时，AML 弹簧动画需要连续帧才能收敛到新目标。
+// 正常播放时由 animationLoop 驱动；暂停时 animationLoop 已停止，
+// 因此在 syncSeekLayout 后启动一个短暂的动画爆发（约 20 帧 ≈ 320ms）让弹簧落位。
+function runSeekBurst() {
+  stopSeekBurst();
+  let remaining = 20;
+  let lastTime = -1;
+  const onFrame = (time: number) => {
+    if (!player) {
+      seekBurstFrameId = 0;
+      return;
+    }
+    if (lastTime === -1) lastTime = time;
+    player.update(time - lastTime);
+    lastTime = time;
+    remaining -= 1;
+    if (remaining > 0) {
+      seekBurstFrameId = requestAnimationFrame(onFrame);
+    } else {
+      seekBurstFrameId = 0;
+    }
+  };
+  seekBurstFrameId = requestAnimationFrame(onFrame);
 }
 
 function startAnimationLoop() {
@@ -157,6 +191,11 @@ function syncSeekLayout(timeMs: number, lineIndex?: number) {
   if (!player) return;
 
   syncAmlLyricSeekLayout(player, timeMs, lineIndex);
+  // 暂停态下 animationLoop 已停止，弹簧动画无法自动收敛到新目标。
+  // 启动短暂的动画爆发让歌词行位移/缩放/模糊落位到点击的行。
+  if (!props.playing) {
+    runSeekBurst();
+  }
 }
 
 defineExpose({
@@ -178,10 +217,23 @@ onMounted(() => {
     queueRecovery('resize');
   });
   resizeObserver.observe(wrapper);
+
+  // 暂停态下滚轮滚动歌词：AMLL core 的 wheel handler 只调用 calcLayout 设置弹簧目标，
+  // 不调用 update()。播放时 animationLoop 驱动弹簧收敛；暂停时 loop 已停止，
+  // 弹簧无法落位。此处监听 wheel 事件（冒泡阶段，在 AMLL core handler 之后触发），
+  // 暂停时启动动画爆发让弹簧收敛到新滚动位置。
+  wheelHandler = () => {
+    if (props.disabled || isMainWindowLowPower.value) return;
+    if (!props.playing) {
+      runSeekBurst();
+    }
+  };
+  wrapper.addEventListener('wheel', wheelHandler, { passive: true });
 });
 
 onBeforeUnmount(() => {
   stopAnimationLoop();
+  stopSeekBurst();
 
   if (recoveryFrameId !== 0) {
     cancelAnimationFrame(recoveryFrameId);
@@ -190,6 +242,11 @@ onBeforeUnmount(() => {
 
   resizeObserver?.disconnect();
   resizeObserver = null;
+
+  if (wheelHandler) {
+    wrapperRef.value?.removeEventListener('wheel', wheelHandler);
+    wheelHandler = null;
+  }
 
   if (player) {
     detachPlayer();
@@ -211,6 +268,7 @@ watch(() => props.playing, (playing) => {
 
   if (playing) {
     player.resume();
+    stopSeekBurst();
     startAnimationLoop();
   } else {
     player.pause();
