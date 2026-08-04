@@ -10,6 +10,7 @@ import { useUiStore } from '../shared/stores/ui';
 import { useCoverCache } from './useCoverCache';
 import { useRenderingPower } from './renderingPower';
 import { fetchLxSongLyricsRaw } from '../services/lxLyricFetcher';
+import { useToast } from './toast';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -18,6 +19,11 @@ interface PlaySongOptions {
   insertAfterCurrent?: boolean;
   startTime?: number;
   continueStatisticsSession?: boolean;
+  /** [内部] 自动换源上下文，递归 playSong 时传递已失败源集合防死循环 */
+  _sourceSwitchCtx?: {
+    originKey: string;
+    failedSources: Set<string>;
+  };
 }
 
 interface SeekCompletedPayload {
@@ -76,6 +82,7 @@ export const createPlayerPlayback = ({
   const settingsStore = useSettingsStore();
   const libraryStore = useLibraryStore();
   const uiStore = useUiStore();
+  const { showToast } = useToast();
   const { isMainWindowLowPower } = useRenderingPower();
   const {
     loadCover,
@@ -385,6 +392,85 @@ export const createPlayerPlayback = ({
 
     accumulatedTime = shouldPersist ? 0 : totalDuration;
     sessionStartTime = null;
+  };
+
+  /**
+   * 统一处理在线播放失败：状态清理 + 自动换源（lx://）+ onlineFailureBehavior
+   *
+   * 触发场景：
+   * 1. lx:// URL 解析失败（插件获取直链失败，token 过期/无权限/接口异常等），
+   *    audioFilePath 仍是 lx:// 开头，无法走在线或本地播放
+   * 2. 在线直链走 Rust 后端起播探测失败（403/不支持Range/解码失败/超时）
+   *
+   * @returns 调用方应在调用后立即 return（已处理完所有失败后续）
+   */
+  const handleOnlinePlaybackFailure = async (
+    song: Song,
+    options: PlaySongOptions,
+    requestId: number,
+    shouldFade: boolean | null,
+  ): Promise<void> => {
+    try { await playbackApi.stopAudio(); } catch {}
+    // [渐入渐出] 起播失败时恢复后端音量到用户设定值
+    if (shouldFade) {
+      currentBackendVolume = playbackStore.volume / 100;
+      void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+    }
+    isPlaying.value = false;
+    isSongLoaded.value = false;
+    stopPlaybackRuntime();
+    console.error('[Audio] 在线音频播放失败');
+
+    // [自动换源] lx:// 歌曲起播失败时，尝试其他落雪音源播放同一首歌
+    const autoSwitchEnabled = settingsStore.settings.audio.autoSwitchSourceOnFailure ?? true;
+    if (autoSwitchEnabled && song.path.startsWith('lx://')) {
+      const currentSource = song.path.slice('lx://'.length).split('/')[0];
+      // 复用或初始化换源上下文：failedSources 单调增长，防止递归死循环
+      const switchCtx = options._sourceSwitchCtx ?? {
+        originKey: `${song.name}|${song.artist}`,
+        failedSources: new Set<string>(),
+      };
+      switchCtx.failedSources.add(currentSource);
+
+      let alternativeSong: Song | null = null;
+      try {
+        const { findAlternativeLxSource } = await import('../services/lxSourceFallback');
+        alternativeSong = await findAlternativeLxSource(song, switchCtx.failedSources);
+      } catch (e: any) {
+        console.warn(`[Audio] 自动换源查找异常: ${e?.message || e}`);
+      }
+
+      // [竞态检查] 搜索期间用户可能已切歌
+      if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+        return;
+      }
+
+      if (alternativeSong) {
+        const { getLxSourceDisplayName } = await import('../services/lxSourceFallback');
+        const newSource = alternativeSong.path.slice('lx://'.length).split('/')[0];
+        // [封面回退] 若新源搜索结果未返回封面 URL（部分平台不返回 img），
+        // 复用原歌曲封面（同一首歌，封面图通常相同）
+        if (!alternativeSong.cover_thumb_path && song.cover_thumb_path) {
+          alternativeSong.cover_thumb_path = song.cover_thumb_path;
+        }
+        showToast(`已自动切换到 ${getLxSourceDisplayName(newSource)} 音源`, 'info');
+        // preserveQueue: 保持队列不变，仅切 currentSong；递归传递上下文以便新源失败时继续换源
+        await playSong(alternativeSong, {
+          preserveQueue: true,
+          _sourceSwitchCtx: switchCtx,
+        });
+        return;
+      }
+      // alternativeSong 为 null：所有源穷尽或均未匹配，继续走下方 onlineFailureBehavior
+    }
+
+    const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+    if (failureBehavior === 'skip') {
+      setTimeout(() => {
+        if (currentSong.value?.path === song.path) handleAutoNext();
+      }, 400);
+    }
+    // 'stop'：保持停止，不做额外处理
   };
 
   const playSong = async (song: Song, options: PlaySongOptions = {}) => {
@@ -832,6 +918,13 @@ export const createPlayerPlayback = ({
     try {
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
+      // [lx:// URL 解析失败] 落雪插件获取直链失败（token 过期/无权限/接口异常等），
+      // audioFilePath 仍是 lx:// 开头，既非在线直链也非本地文件，直接触发失败处理（含自动换源）
+      if (!isNetworkAudio && audioFilePath.startsWith('lx://')) {
+        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+        return;
+      }
+
       // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
       // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
       let actualAudioPath = audioFilePath;
@@ -985,26 +1078,8 @@ export const createPlayerPlayback = ({
             finishRustPlaybackStart();
           }
         } else {
-          // [在线播放起播失败行为] 仅在线引擎完全无法生效时执行
-          // Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时），而非异常路径
-          try { await playbackApi.stopAudio(); } catch {}
-          // [渐入渐出] 起播失败时恢复后端音量到用户设定值
-          if (shouldFadeOnSwitch) {
-            currentBackendVolume = playbackStore.volume / 100;
-            void playbackApi.setVolume(currentBackendVolume).catch(() => {});
-          }
-          isPlaying.value = false;
-          isSongLoaded.value = false;
-          stopPlaybackRuntime();
-          console.error('[Audio] 在线音频播放失败（Rust 后端起播失败）');
-
-          const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
-          if (failureBehavior === 'skip') {
-            setTimeout(() => {
-              if (currentSong.value?.path === song.path) handleAutoNext();
-            }, 400);
-          }
-          // 'stop'：保持停止，不做额外处理
+          // [在线播放起播失败] Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时）
+          await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
           return;
         }
       } else {

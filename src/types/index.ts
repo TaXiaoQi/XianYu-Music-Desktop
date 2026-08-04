@@ -552,6 +552,8 @@ export interface AudioSettings {
   fadeInOutEnabled: boolean;
   /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
   fadeInOutDurationMs: number;
+  /** 在线播放失败时自动切换到其他落雪音源（仅 lx:// 歌曲），默认 true */
+  autoSwitchSourceOnFailure: boolean;
 }
 
 export type ShortcutActionId =
