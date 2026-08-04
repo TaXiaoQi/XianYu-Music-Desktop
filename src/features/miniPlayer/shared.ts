@@ -11,9 +11,9 @@ export const MINI_PLAYER_BOUNDS_EVENT = 'mini-player:bounds';
 export const MINI_PLAYER_BOUNDS_KEY = 'mini_player_window_bounds';
 export const APP_SHOW_MAIN_EVENT = 'app:show-main';
 
-// mf-style 布局：400 x 156（主体行 88 + 进度条行 20 + 底部控件行 48）
+// mf-style 布局：400 x 144（主体行 88 + 进度条行 20 + 底部控件行 36）
 export const MINI_PLAYER_WINDOW_WIDTH = 400;
-export const MINI_PLAYER_WINDOW_BASE_HEIGHT = 156;
+export const MINI_PLAYER_WINDOW_BASE_HEIGHT = 144;
 export const MINI_PLAYER_WINDOW_EXPANDED_HEIGHT = 516;
 
 // 音量独立小窗

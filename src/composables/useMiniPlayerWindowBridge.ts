@@ -394,13 +394,13 @@ export function useMiniPlayerWindowBridge() {
   };
 
   const revealMainWindowFromTray = async () => {
-    const keepMiniPlayerVisible = isMiniPlayerWindowVisible.value;
-    keepMiniPlayerVisibleOnMiniModeExit = keepMiniPlayerVisible && isMiniMode.value;
+    // 从托盘恢复主窗口时，始终关闭小窗口（不保持可见）
+    keepMiniPlayerVisibleOnMiniModeExit = false;
 
     await restoreMainWindowFromMiniMode({
       isMiniMode,
       hideMiniPlayerWindow,
-      keepMiniPlayerVisible,
+      keepMiniPlayerVisible: false,
       mainWindow,
     });
   };
