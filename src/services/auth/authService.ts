@@ -297,6 +297,59 @@ export async function signedRequest<T>(
   ]);
 }
 
+/**
+ * 向「任意 URL」发起带签名的 JSON POST 请求。
+ *
+ * 与 signedRequest 的区别：signedRequest 只能调用账号 API（baseUrl/?action=xxx），
+ * 本函数可指定完整 URL，用于壁纸上传等非账号 API 端点（如壁纸中心接口）。
+ *
+ * 签名算法与账号 API 完全一致：sign = md5(timestamp + nonce + body + api_secret)，
+ * 服务端用同一个 api_secret 校验。
+ *
+ * 成功（code===200）返回 data，否则抛出包含 msg 的错误。
+ */
+export async function signedPostJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+  options?: SignedRequestOptions,
+): Promise<T> {
+  const raw = JSON.stringify(body);
+  const headers = buildSignedHeaders(raw);
+  const fetchTimeoutMs = options?.fetchTimeoutMs ?? 60_000; // 默认 60s（图片上传较慢）
+  const TIMEOUT_MS = options?.timeoutMs ?? 65_000;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`请求超时（${TIMEOUT_MS / 1000}s）`)), TIMEOUT_MS);
+  });
+
+  const doRequest = async (): Promise<T> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
+    let response: Response;
+    try {
+      response = await crossOriginFetch(url, { method: 'POST', headers, body: raw, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    const text = await readResponseBody(response, 'signedPostJson');
+    let payload: ApiEnvelope<T> | null = null;
+    try {
+      payload = JSON.parse(text) as ApiEnvelope<T>;
+    } catch (parseError) {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: 服务器返回非 JSON 响应`);
+      }
+      throw new Error(`响应解析失败（HTTP ${response.status}）: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+    }
+    if (Number(payload.code) !== 200) {
+      throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
+    }
+    return payload.data ?? ({} as T);
+  };
+
+  return Promise.race([doRequest(), timeoutPromise]);
+}
+
 /** 将登录接口返回的 data 映射为前端统一的 AuthUser */
 function mapUser(data: Record<string, unknown>): AuthUser {
   const raw = data as Partial<{
