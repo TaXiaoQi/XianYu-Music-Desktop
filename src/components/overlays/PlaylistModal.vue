@@ -4,13 +4,14 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
 import type { Playlist, Song } from '../../types';
-import { PLAYLIST_SOURCES, importPlaylist } from '../../services/playlistImport';
-import type { PlaylistImportResult } from '../../services/playlistImport';
+import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin } from '../../services/playlistImport';
+import type { PlaylistImportResult, PlaylistSource } from '../../services/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
+import { pluginsVersion } from '../../services/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
@@ -39,9 +40,10 @@ const isClosing = ref(false);
 const createName = ref('');
 const createInputRef = ref<HTMLInputElement | null>(null);
 
-// 导入歌单
+// 云端导入
 const importInput = ref('');
 const importInputRef = ref<HTMLInputElement | null>(null);
+const importSources = ref<PlaylistSource[]>(getImportSourcesFromPlugins());
 const selectedSource = ref<string>('auto');
 const sourceDropdownOpen = ref(false);
 const importRename = ref('');
@@ -184,6 +186,16 @@ onUnmounted(() => {
   teardownDragListeners();
 });
 
+// 插件变更时刷新音源列表，保留仍存在的选中项
+watch(pluginsVersion, () => {
+  const prevSelected = selectedSource.value;
+  importSources.value = getImportSourcesFromPlugins();
+  const stillExists = importSources.value.some(s => s.key === prevSelected);
+  if (!stillExists && importSources.value.length > 0) {
+    selectedSource.value = importSources.value[0].key;
+  }
+});
+
 // 切换 tab 时聚焦对应输入框
 watch(activeTab, async () => {
   await nextTick();
@@ -204,6 +216,28 @@ const handleSelectSource = (key: string) => {
   selectedSource.value = key;
   sourceDropdownOpen.value = false;
   importError.value = '';
+};
+
+/** 当前选中音源的类型（LX 直连 / MusicFree 插件） */
+const currentSourceType = computed(() => {
+  const src = importSources.value.find(s => s.key === selectedSource.value);
+  return src?.type ?? 'lx';
+});
+
+/** 当前选中音源的显示名称 */
+const selectedSourceName = computed(() => {
+  const src = importSources.value.find(s => s.key === selectedSource.value);
+  return src?.name ?? '自动识别';
+});
+
+/** 切换下拉列表开关 */
+const toggleSourceDropdown = () => {
+  sourceDropdownOpen.value = !sourceDropdownOpen.value;
+};
+
+/** 点击外部关闭下拉 */
+const closeSourceDropdown = () => {
+  sourceDropdownOpen.value = false;
 };
 
 const handleClose = () => {
@@ -297,7 +331,21 @@ const handleConfirm = async () => {
     importing.value = true;
 
     try {
-      const result = await importPlaylist(selectedSource.value, importInput.value.trim());
+      // 根据来源类型选择导入方式
+      const currentSource = importSources.value.find(s => s.key === selectedSource.value);
+      let result: PlaylistImportResult;
+
+      if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
+        // MusicFree 插件导入：通过插件搜索歌单并获取详情
+        result = await importPlaylistFromMusicFreePlugin(
+          currentSource.pluginSource,
+          importInput.value.trim(),
+        );
+      } else {
+        // LX 音源导入：直接 HTTP 请求
+        result = await importPlaylist(selectedSource.value, importInput.value.trim());
+      }
+
       if (result.songs.length === 0) {
         importError.value = '导入失败或歌单为空，请检查链接是否正确';
         showToast('导入失败或歌单为空', 'error');
@@ -467,36 +515,78 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               />
             </div>
 
-            <!-- 从网络导入歌单 -->
+            <!-- 云端导入歌单 -->
             <div v-else-if="activeTab === 'networkImport'" key="network-import" class="space-y-3">
-              <!-- 音源选择 -->
+              <!-- 音源选择（下拉） -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">选择音源</label>
-                <div class="flex flex-wrap gap-2">
+                <div class="relative">
                   <button
-                    v-for="src in PLAYLIST_SOURCES"
-                    :key="src.key"
                     type="button"
-                    class="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
-                    :class="selectedSource === src.key
-                      ? 'bg-[#EC4141] text-white'
-                      : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
-                    @click="handleSelectSource(src.key)"
+                    :disabled="importing"
+                    class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 text-sm transition-all hover:border-gray-300 dark:hover:border-gray-600 disabled:opacity-50"
+                    @click="toggleSourceDropdown"
                   >
-                    {{ src.name }}
+                    <span class="text-gray-900 dark:text-white">{{ selectedSourceName }}</span>
+                    <svg
+                      class="w-4 h-4 text-gray-400 transition-transform duration-200"
+                      :class="{ 'rotate-180': sourceDropdownOpen }"
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
+
+                  <!-- 下拉列表 -->
+                  <Transition name="dropdown-fade">
+                    <div
+                      v-if="sourceDropdownOpen"
+                      class="absolute z-20 left-0 right-0 mt-1 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden max-h-60 overflow-y-auto"
+                    >
+                      <button
+                        v-for="src in importSources"
+                        :key="src.key"
+                        type="button"
+                        class="w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors"
+                        :class="selectedSource === src.key
+                          ? 'bg-red-50 dark:bg-red-500/10 text-[#EC4141] font-medium'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'"
+                        @click="handleSelectSource(src.key)"
+                      >
+                        <span>{{ src.name }}</span>
+                        <svg
+                          v-if="selectedSource === src.key"
+                          class="w-4 h-4"
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </Transition>
+
+                  <!-- 点击外部关闭 -->
+                  <div
+                    v-if="sourceDropdownOpen"
+                    class="fixed inset-0 z-10"
+                    @click="closeSourceDropdown"
+                  ></div>
                 </div>
               </div>
 
               <!-- 歌单链接 -->
               <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">歌单链接或 ID</label>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                  {{ currentSourceType === 'musicfree' ? '歌单名称或关键词' : '歌单链接或 ID' }}
+                </label>
                 <input
                   ref="importInputRef"
                   v-model="importInput"
                   type="text"
                   :disabled="importing"
-                  placeholder="粘贴歌单分享链接或输入歌单 ID"
+                  :placeholder="currentSourceType === 'musicfree'
+                    ? '输入歌单名称搜索并导入'
+                    : '粘贴歌单分享链接或输入歌单 ID'"
                   class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
                 />
               </div>
@@ -695,6 +785,20 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 .tab-fade-leave-to {
   opacity: 0;
   transform: translateX(-8px);
+}
+
+/* 下拉列表动画 */
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.dropdown-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* ==================== 共享拖放区域样式 ==================== */
