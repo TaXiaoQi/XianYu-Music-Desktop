@@ -47,7 +47,7 @@ const {
   songInfoInitialAction,
   closeSongInfo,
 } = useSongInfoDialog();
-const { skipNextPageTransition, startupCompositionMaskVisible } = storeToRefs(useUiStore());
+const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
 
 useDesktopLyricsWindowBridge();
 
@@ -189,7 +189,11 @@ onMounted(() => {
     <div
       v-if="!isMiniMode"
       class="flex-1 flex overflow-hidden relative z-10 transition-colors duration-500"
-      :class="mainContainerClass"
+      :class="[
+        mainContainerClass,
+        fullscreenAnimState === 'entering' ? 'fs-entering' : '',
+        fullscreenAnimState === 'exiting' ? 'fs-exiting' : '',
+      ]"
       :style="{ backdropFilter: mainBlurStyle }"
     >
       <Sidebar />
