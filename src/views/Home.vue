@@ -119,6 +119,10 @@
 </template>
 
 <script setup lang="ts">
+// 必须显式声明组件名：MainShell 使用 <KeepAlive include="Home"> 白名单缓存，
+// <script setup> 不会自动向 KeepAlive 暴露组件名，缺失会导致该路由内容被过滤而白屏。
+defineOptions({ name: 'Home' });
+
 import DragGhost from '../components/common/DragGhost.vue';
 import HomeViewPane from '../components/home/HomeViewPane.vue';
 import ModernInputModal from '../components/common/ModernInputModal.vue';
