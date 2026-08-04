@@ -70,6 +70,8 @@ pub struct DynamicsRack {
     exp_gain: f32,
     comp_gain: f32,
     agc_gain: f32,
+    // 压缩器 makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
+    comp_makeup_gain: f32,
     // 去齿音：带通检测 + 高shelf 动态衰减
     deess_detect: [Biquad; 2],
     deess_shelf: [Biquad; 2],
@@ -103,6 +105,7 @@ impl DynamicsRack {
             exp_gain: 1.0,
             comp_gain: 1.0,
             agc_gain: 1.0,
+            comp_makeup_gain: 1.0,
             deess_detect: [Biquad::new(2), Biquad::new(2)],
             deess_shelf: [Biquad::new(2), Biquad::new(2)],
             deess_env: EnvelopeFollower::new(2.0, 80.0, 44100.0),
@@ -136,6 +139,7 @@ impl DynamicsRack {
         }
         self.gate_env.set_times(5.0, 50.0, sample_rate);
         self.exp_env.set_times(5.0, 100.0, sample_rate);
+        // 压缩器包络默认 3ms/250ms，update_params 会按用户参数覆盖
         self.comp_env.set_times(3.0, 250.0, sample_rate);
         self.agc_env.set_times(10.0, 500.0, sample_rate);
         self.deess_env.set_times(2.0, 80.0, sample_rate);
@@ -165,6 +169,15 @@ impl DynamicsRack {
         self.wet_agc.set_target(if s.agc.enabled { 1.0 } else { 0.0 });
 
         let sr = self.sample_rate;
+        // 压缩器：按用户参数更新 attack/release（对齐 YinDongMusic DynamicsCompressorNode）
+        // YinDongMusic V4A: attack=0.003s=3ms, release=0.1s=100ms
+        self.comp_env.set_times(
+            s.compressor.attack.clamp(0.1, 100.0),
+            s.compressor.release.clamp(1.0, 1000.0),
+            sr,
+        );
+        // makeup gain（对齐 YinDongMusic: makeupGain.gain.value = 1.2）
+        self.comp_makeup_gain = if s.compressor.enabled { 1.2 } else { 1.0 };
         for i in 0..2 {
             // 去齿音：带通检测 ~ 频率，高 shelf 衰减
             self.deess_detect[i].set_highpass(s.de_esser.frequency.clamp(3000.0, 10000.0), sr, 0.707);
@@ -223,22 +236,39 @@ impl DynamicsRack {
 
         let det = frame[0].abs().max(frame[1].abs());
 
-        // 压缩器
+        // 压缩器（对齐 YinDongMusic DynamicsCompressorNode）
+        // YinDongMusic: comp(threshold, knee=30, ratio, attack, release) + makeupGain(1.2)
+        // WebAudio DynamicsCompressorNode 使用软 knee（平滑过渡）+ 峰值检测
         let w = self.wet_comp.tick();
         if w > 0.001 {
             let env = self.comp_env.process(det);
             let thr_db = s.compressor.threshold.clamp(-60.0, 0.0);
             let ratio = s.compressor.ratio.clamp(1.0, 20.0);
+            let knee = 30.0; // dB，对齐 YinDongMusic DynamicsCompressorNode knee.value = 30
             let env_db = gain_to_db(env.max(1e-6));
-            let target = if env_db > thr_db {
-                db_to_gain(env_db - (env_db - thr_db) * (1.0 - 1.0 / ratio))
-            } else {
+            let slope = 1.0 - 1.0 / ratio;
+            let x = env_db - thr_db;
+            let half_knee = knee * 0.5;
+
+            // 软 knee 压缩曲线（对齐 WebAudio spec）：
+            // x < -knee/2: 无压缩
+            // x > knee/2: 全压缩 gain_db = -(x - knee/2) * slope
+            // 中间: 二次平滑过渡 gain_db = -(x + knee/2)^2 / (2*knee) * slope
+            let target = if x < -half_knee {
                 1.0
+            } else if x > half_knee {
+                db_to_gain(-(x - half_knee) * slope)
+            } else {
+                let gain_db = -(x + half_knee).powi(2) / (2.0 * knee) * slope;
+                db_to_gain(gain_db)
             };
+            // gain 平滑跟随（attack/release 已由 comp_env 处理）
             self.comp_gain += (target - self.comp_gain) * 0.002;
             let g = lerp(1.0, self.comp_gain, w);
-            frame[0] *= g;
-            frame[1] *= g;
+            // makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
+            let makeup = 1.0 + (self.comp_makeup_gain - 1.0) * w;
+            frame[0] *= g * makeup;
+            frame[1] *= g * makeup;
         }
 
         // 多段压缩

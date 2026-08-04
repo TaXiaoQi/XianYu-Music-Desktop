@@ -1,0 +1,90 @@
+﻿cargo :     Blocking waiting for file lock on build directory
+所在位置 行:1 字符: 262
++ ... ktop\src-tauri; cargo test --lib -- sound_effect::reverb 2>&1 | Out-F ...
++                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling lycia_music v1.1.1-beta6 (C:\Users\11832\Desktop\1\XY-Music-Desktop\src-tauri)
+warning: variant `Plate` is never constructed
+  --> src\player\sound_effect\reverb.rs:54:5
+   |
+48 | enum ReverbAlgorithm {
+   |      --------------- variant in this enum
+...
+54 |     Plate,
+   |     ^^^^^
+   |
+   = note: `ReverbAlgorithm` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored 
+during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `metal_noise` and `spring_noise` are never read
+   --> src\player\sound_effect\reverb.rs:439:5
+    |
+412 | pub struct ReverbRack {
+    |            ---------- fields in this struct
+...
+439 |     metal_noise: SimpleNoise,
+    |     ^^^^^^^^^^^
+...
+445 |     spring_noise: SimpleNoise,
+    |     ^^^^^^^^^^^^
+
+warning: methods `process_tunnel_char`, `process_valley_char`, `process_metal_char`, and `process_spring_char` are neve
+r used
+   --> src\player\sound_effect\reverb.rs:701:8
+    |
+462 | impl ReverbRack {
+    | --------------- methods in this implementation
+...
+701 |     fn process_tunnel_char(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+710 |     fn process_valley_char(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+719 |     fn process_metal_char(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
+    |        ^^^^^^^^^^^^^^^^^^
+...
+741 |     fn process_spring_char(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: `lycia_music` (lib test) generated 3 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 9m 43s
+     Running unittests src\lib.rs (target\debug\deps\my_cloud_music_lib-111988d01e8893ce.exe)
+
+running 17 tests
+test player::sound_effect::reverb::tests::test_bypass_passthrough ... ok
+test player::sound_effect::reverb::tests::test_plate_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_freeverb_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_metal_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_algorithm_switch_no_panic ... ok
+test player::sound_effect::reverb::tests::test_echo_reverb_discrete_echo ... ok
+test player::sound_effect::reverb::tests::test_early_reflections_nonzero ... ok
+test player::sound_effect::reverb::tests::test_feedback_extension_long_tail ... FAILED
+test player::sound_effect::reverb::tests::test_resonator_decay ... ok
+test player::sound_effect::reverb::tests::test_preset_switch_no_rebuild ... ok
+test player::sound_effect::reverb::tests::test_spring_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_preset_mapping_all_22 ... ok
+test player::sound_effect::reverb::tests::test_sample_rate_scaling ... ok
+test player::sound_effect::reverb::tests::test_simple_noise_range ... ok
+test player::sound_effect::reverb::tests::test_tunnel_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_valley_process_no_nan ... ok
+test player::sound_effect::reverb::tests::test_wet_boost_louder_than_before ... ok
+
+failures:
+
+---- player::sound_effect::reverb::tests::test_feedback_extension_long_tail stdout ----
+
+thread 'player::sound_effect::reverb::tests::test_feedback_extension_long_tail' (10536) panicked at src\player\sound_effect\reverb.rs:939:9:
+room=2.0 feedback(0.92)应 > room=1.5(0.92)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    player::sound_effect::reverb::tests::test_feedback_extension_long_tail
+
+test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 140 filtered out; finished in 0.78s
+
+error: test failed, to rerun pass `--lib`
