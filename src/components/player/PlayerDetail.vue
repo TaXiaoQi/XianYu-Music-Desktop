@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
+import { storeToRefs } from 'pinia';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
+import { useUiStore } from '../../shared/stores/ui';
 import type { SongDetail } from '../../types';
 import { tauriInvoke } from '../../services/tauri/invoke';
 import LyricsView from './LyricsView.vue';
@@ -23,6 +25,7 @@ const {
 } = usePlaybackController();
 
 const { settings } = useSettings();
+const { isImmersiveFullscreen } = storeToRefs(useUiStore());
 
 // 用户主动打开详情页时窗口必然可见，始终渲染重型内容。
 // 低功耗优化仅在详情页关闭时生效，避免后台不可见时的资源浪费。
@@ -46,7 +49,8 @@ const minimize = () => appWindow.minimize();
 
 // 全屏：调用项目自实现的 Win32 原生命令（绕过 tao，专门处理无边框窗口）
 // 该命令用整个显示器矩形铺满窗口并调用 MarkFullscreenWindow 让 shell 隐藏任务栏
-const isFullscreen = ref(false);
+// isImmersiveFullscreen 为全局共享状态（ui store），主页与歌词页均可读取
+const isFullscreen = isImmersiveFullscreen;
 // 'entering' | 'exiting' | null，控制全屏切换期间的样式（背景色、padding）
 const fullscreenAnimState = ref<'entering' | 'exiting' | null>(null);
 // 记录进入全屏前窗口是否已最大化，退出全屏后据此决定是否需要 unmaximize
@@ -217,12 +221,17 @@ watch(showPlayerDetail, (visible) => {
   if (visible) {
     isTopChromeVisible.value = true;
     scheduleTopChromeHide();
+    // 沉浸全屏下重新打开歌词页时，恢复鼠标自动隐藏
+    if (isFullscreen.value) {
+      enableCursorAutoHide();
+    }
     return;
   }
 
   isTopChromeVisible.value = false;
   currentSongDetail.value = null;
   clearSongDetailCache();
+  // 关闭歌词页时禁用鼠标自动隐藏，主页保持默认显示
   disableCursorAutoHide();
 });
 
@@ -371,15 +380,15 @@ const closeContextMenu = () => {
     class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
     :class="[
       showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
-      isFullscreen || fullscreenAnimState ? 'bg-[#0a0a0a]' : '',
-      isCursorHidden ? 'cursor-hidden' : '',
+      // 黑色背景由内层带 opacity 过渡的 div 提供，避免切换时瞬间遮罩主页
+      showPlayerDetail && isCursorHidden ? 'cursor-hidden' : '',
     ]"
     @contextmenu.prevent="handleContextMenu"
   >
     <div
       class="relative flex h-[100vh] w-full flex-col"
       :class="[
-        isFullscreen || fullscreenAnimState ? 'pt-0' : 'pt-[calc(100vh-100%)]',
+        showPlayerDetail && (isFullscreen || fullscreenAnimState) ? 'pt-0' : 'pt-[calc(100vh-100%)]',
       ]"
     >
       <div
