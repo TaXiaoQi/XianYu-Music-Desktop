@@ -571,13 +571,22 @@ export const createPlayerPlayback = ({
           currentCover.value = normalizedCover;
           currentCoverPath.value = song.path;
         } else if (!immediateCover) {
+          // 保留上一首封面只用于遮盖异步加载阶段；确认当前歌曲确实没有封面后清空，
+          // 让底栏显示默认音乐占位图，避免旧封面残留或封面区域完全空白。
+          currentCover.value = '';
           currentCoverPath.value = '';
         }
         if (!currentCoverFull.value) {
           currentCoverFull.value = normalizedCover || '';
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path || immediateCover) {
+          return;
+        }
+        currentCover.value = '';
+        currentCoverPath.value = '';
+      });
     if (showPlayerDetail.value && !cachedFullCover) {
       void loadFullCover(song.path)
         .then((fullCoverUrl) => {
@@ -618,7 +627,8 @@ export const createPlayerPlayback = ({
           const songmid = parts.slice(1).join('/');
           if (lxSource && songmid) {
             const { getCachedLxSong } = await import('../services/lxSongCache');
-            const cachedInfo = getCachedLxSong(lxSource, songmid);
+            const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+            const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
             if (cachedInfo?._types) {
               const lxQualities = Object.keys(cachedInfo._types)
                 .filter(k => k in QUALITY_META) as QualityKey[];
@@ -674,7 +684,8 @@ export const createPlayerPlayback = ({
           if (matchedPlugin) {
             await ensureLxPluginInstance(matchedPlugin);
             // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
-            const cachedInfo = getCachedLxSong(lxSource, songmid);
+            const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+            const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
             // 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
             const requestedQuality = playbackStore.sessionQualityOverride
               || settingsStore.settings.audio.onlineDefaultQuality || '320k';

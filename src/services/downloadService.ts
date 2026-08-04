@@ -170,7 +170,8 @@ async function prepareResolveContext(
   if (!matchedPlugin) matchedPlugin = lxPlugins[0];
 
   await ensureLxPluginInstance(matchedPlugin);
-  const cachedInfo = getCachedLxSong(lxSource, songmid);
+  const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+  const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
 
   const baseSongInfo = {
     songId: songmid,
@@ -569,7 +570,8 @@ async function fetchLyricText(
     if (!matchedPlugin) return null;
 
     await ensureLxPluginInstance(matchedPlugin);
-    const cachedInfo = getCachedLxSong(lxSource, songmid);
+    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
     const result = await lxPluginGetLyric(matchedPlugin, lxSource, {
       songId: songmid,
       name: song.name,

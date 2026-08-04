@@ -33,6 +33,9 @@ describe('developer mode settings entry', () => {
     expect(debugSource).toContain('@click="triggerOnboarding"');
     expect(debugSource).toContain('showClearConfirmation');
     expect(debugSource).toContain('确认清空全部日志');
+    expect(debugSource).toContain('const latestLogId = computed');
+    expect(debugSource).toContain("{ flush: 'post' }");
+    expect(debugSource).not.toContain('{ deep: true }');
   });
 
   it('shows advanced settings to regular users and keeps log export there', () => {
@@ -46,5 +49,9 @@ describe('developer mode settings entry', () => {
     expect(advancedSource).toContain('日志保留时长');
     expect(advancedSource).toContain('settings.logging.retentionDays');
     expect(advancedSource).toContain('showDeleteConfirmation');
+    expect(advancedSource).toContain('备份与恢复');
+    expect(advancedSource).toContain('从 BakaMusic 或 MusicFree 软件导入歌单');
+    expect(advancedSource).toContain('preparePluginBackupFile');
+    expect(advancedSource).toContain('<BackupImportResultModal');
   });
 });
