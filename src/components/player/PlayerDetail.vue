@@ -97,8 +97,20 @@ const disableCursorAutoHide = () => {
 };
 
 const applyImmersiveFullscreen = async (enter: boolean) => {
+  // 进入全屏前将窗口背景设为黑色：窗口尺寸变化时新暴露区域显示 WebView2 默认白色背景，
+  // 设为黑色后与全屏背景融为一体，消除白屏闪烁。退出全屏后恢复透明。
+  if (enter) {
+    try {
+      await appWindow.setBackgroundColor([0, 0, 0, 255]);
+    } catch { /* 忽略 */ }
+  }
   const result = await tauriInvoke('set_immersive_fullscreen', { enter });
   isFullscreen.value = result;
+  if (!enter) {
+    try {
+      await appWindow.setBackgroundColor([0, 0, 0, 0]);
+    } catch { /* 忽略 */ }
+  }
 };
 
 const toggleFullscreen = async () => {
@@ -107,7 +119,8 @@ const toggleFullscreen = async () => {
   if (!isFullscreen.value) {
     // === 进入全屏 ===
     // 策略：先执行原生最大化（享受系统自带的最大化动画），再无缝切换为沉浸式全屏。
-    // 最大化→全屏的差异仅是任务栏高度 + 边框，同步切换不可察觉。
+    // Rust 端用 SetWindowPos（而非 SetWindowPlacement）修正尺寸，避免退出最大化的
+    // DWM 还原动画造成白屏。任务栏在修正阶段被覆盖，差异仅任务栏高度+边框。
 
     // 记录原始最大化状态，退出全屏后据此决定是否还原为普通窗口
     wasMaximizedBeforeFullscreen.value = await appWindow.isMaximized();
@@ -130,7 +143,7 @@ const toggleFullscreen = async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 200));
     }
 
-    // 3. 从最大化状态无缝切换为沉浸式全屏（去除边框、覆盖任务栏）
+    // 3. 从最大化状态无缝切换为沉浸式全屏（覆盖任务栏，Rust 端用 SetWindowPos 避免白屏）
     try {
       await applyImmersiveFullscreen(true);
     } catch (error) {

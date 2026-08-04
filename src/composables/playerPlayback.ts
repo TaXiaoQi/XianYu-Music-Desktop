@@ -1114,10 +1114,15 @@ export const createPlayerPlayback = ({
     await playbackApi.pauseAudio();
     stopPlaybackRuntime();
 
-    // [渐入渐出] 淡出完成后恢复音量设置（不影响 UI 显示值，仅恢复后端音量）
+    // [渐入渐出] 淡出完成后延迟恢复后端音量：
+    // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
+    // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
     if (fadeEnabled) {
-      currentBackendVolume = playbackStore.volume / 100;
-      void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+      const restoreVol = playbackStore.volume / 100;
+      setTimeout(() => {
+        currentBackendVolume = restoreVol;
+        void playbackApi.setVolume(restoreVol).catch(() => {});
+      }, 200);
     }
   };
 
@@ -1160,10 +1165,16 @@ export const createPlayerPlayback = ({
       if (myToken !== togglePlayToken) return;
       stopPlaybackRuntime();
 
-      // [渐入渐出] 淡出完成后恢复后端音量设置（不影响 UI 显示值）
+      // [渐入渐出] 淡出完成后延迟恢复后端音量：
+      // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
+      // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
       if (fadeEnabled) {
-        currentBackendVolume = playbackStore.volume / 100;
-        void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+        const restoreVol = playbackStore.volume / 100;
+        setTimeout(() => {
+          if (myToken !== togglePlayToken) return;
+          currentBackendVolume = restoreVol;
+          void playbackApi.setVolume(restoreVol).catch(() => {});
+        }, 200);
       }
       return;
     }
