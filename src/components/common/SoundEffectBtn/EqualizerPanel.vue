@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useSoundEffectStore, eqPresetNames, advancedEqPresetNames } from '../../../features/playback/soundEffectStore';
-import { convolutions, algorithmicReverbs } from '../../../utils/audio/soundEffectEngine';
+import { convolutions } from '../../../utils/audio/soundEffectEngine';
 import { computed, ref } from 'vue';
 
 defineProps<{
@@ -28,19 +28,8 @@ const reverbItems = convolutions.map(c => ({
   active: computed(() => store.activeConvolution === c.label),
 }));
 
-const algoReverbItems = algorithmicReverbs.map(r => ({
-  label: r.label,
-  name: r.name,
-  description: r.description,
-  active: computed(() => store.activeAlgoReverb === r.label),
-}));
-
 const handleReverbToggle = (label: string) => {
   store.toggleConvolution(label);
-};
-
-const handleAlgoReverbToggle = (label: string) => {
-  store.toggleAlgoReverb(label);
 };
 
 // ===== 均衡器 =====
@@ -116,7 +105,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
   <Teleport to="body">
     <Transition name="modal-pop">
       <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="handleClose">
-        <div class="modal-content flex max-h-[88vh] w-[920px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#1e1e1e]/95 dark:ring-white/10">
+        <div class="modal-content flex h-[70vh] w-[920px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#1e1e1e]/95 dark:ring-white/10">
 
           <!-- 标题栏 -->
           <div class="flex h-12 shrink-0 items-center justify-between border-b border-gray-200/70 px-5 dark:border-white/10">
@@ -168,12 +157,6 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                             : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
                           @click.prevent="handleReverbToggle(item.label)"
                         >
-                          <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-all"
-                            :class="item.active.value ? 'border-[#EC4141] bg-[#EC4141]' : 'border-gray-400 dark:border-gray-500'">
-                            <svg v-if="item.active.value" width="9" height="7" viewBox="0 0 9 7" fill="none">
-                              <path d="M1 3.5L3.5 6L8 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                          </span>
                           {{ item.name }}
                         </label>
                       </div>
@@ -195,148 +178,118 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                   </div>
 
                   <div class="space-y-4">
-                    <!-- 算法混响 -->
+                    <!-- 空间音效 -->
                     <section class="space-y-3">
                       <h3 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
                         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-                        算法混响预设
+                        空间环绕音效
                       </h3>
-                      <div class="grid grid-cols-2 gap-2">
-                        <div
-                          v-for="item in algoReverbItems"
-                          :key="item.label"
-                          class="cursor-pointer rounded-xl border px-3 py-2 transition-all"
-                          :class="item.active.value
-                            ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                            : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/60 dark:border-white/10 dark:hover:bg-white/10'"
-                          @click="handleAlgoReverbToggle(item.label)"
-                        >
-                          <div class="mb-0.5 flex items-center gap-1.5">
-                            <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-all"
-                              :class="item.active.value ? 'border-[#EC4141] bg-[#EC4141]' : 'border-gray-400 dark:border-gray-500'">
-                              <svg v-if="item.active.value" width="9" height="7" viewBox="0 0 9 7" fill="none">
-                                <path d="M1 3.5L3.5 6L8 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                              </svg>
-                            </span>
-                            <span class="text-[12px] font-semibold text-gray-800 dark:text-gray-100">{{ item.name }}</span>
+                      <div class="grid grid-cols-1 gap-3">
+                        <!-- 3D立体环绕 -->
+                        <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                              3D立体环绕
+                              <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
+                            </div>
+                            <button class="fx-toggle" :class="{ on: store.enable3DSurround }" @click="store.enable3DSurround = !store.enable3DSurround">
+                              <span class="fx-toggle-knob"></span>
+                            </button>
                           </div>
-                          <div class="text-[10.5px] leading-snug text-gray-500 dark:text-gray-400">{{ item.description }}</div>
+                          <div v-show="store.enable3DSurround" class="mt-2 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环绕强度</span>
+                              <input type="range" class="fx-slider" min="0" max="20" v-model.number="store.surroundIntensity">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.surroundIntensity }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声音距离</span>
+                              <input type="range" class="fx-slider" min="0" max="20" v-model.number="store.soundDistance">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.soundDistance }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 8D环绕音效 -->
+                        <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                              8D环绕音效
+                              <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
+                            </div>
+                            <button class="fx-toggle" :class="{ on: store.enable8D }" @click="store.enable8D = !store.enable8D">
+                              <span class="fx-toggle-knob"></span>
+                            </button>
+                          </div>
+                          <div v-show="store.enable8D" class="mt-2 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
+                              <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed8D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed8D }}s</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
+                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance8D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance8D }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 36D环绕音效 -->
+                        <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                              36D环绕音效
+                              <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
+                            </div>
+                            <button class="fx-toggle" :class="{ on: store.enable36D }" @click="store.enable36D = !store.enable36D">
+                              <span class="fx-toggle-knob"></span>
+                            </button>
+                          </div>
+                          <div v-show="store.enable36D" class="mt-2 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
+                              <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed36D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed36D }}s</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
+                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance36D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance36D }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 虚拟多声道 -->
+                        <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                              虚拟多声道
+                              <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
+                            </div>
+                            <button class="fx-toggle" :class="{ on: store.enableVirtualSurround }" @click="store.enableVirtualSurround = !store.enableVirtualSurround">
+                              <span class="fx-toggle-knob"></span>
+                            </button>
+                          </div>
+                          <div v-show="store.enableVirtualSurround" class="mt-2 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声道模式</span>
+                              <div class="flex flex-1 gap-1.5">
+                                <button class="fx-mode-btn" :class="{ active: store.virtualSurroundMode === '7.1' }" @click="store.virtualSurroundMode = '7.1'">7.1</button>
+                                <button class="fx-mode-btn" :class="{ active: store.virtualSurroundMode === '5.1' }" @click="store.virtualSurroundMode = '5.1'">5.1</button>
+                              </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声场宽度</span>
+                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualSurroundSpread">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualSurroundSpread }}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </section>
                   </div>
                 </div>
-
-                <!-- 空间音效 -->
-                <section class="space-y-3">
-                  <h3 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-                    <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-                    空间环绕音效
-                  </h3>
-                  <div class="grid grid-cols-2 gap-3">
-                    <!-- 3D立体环绕 -->
-                    <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
-                          3D立体环绕
-                          <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
-                        </div>
-                        <button class="fx-toggle" :class="{ on: store.enable3DSurround }" @click="store.enable3DSurround = !store.enable3DSurround">
-                          <span class="fx-toggle-knob"></span>
-                        </button>
-                      </div>
-                      <div v-show="store.enable3DSurround" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环绕强度</span>
-                          <input type="range" class="fx-slider" min="0" max="20" v-model.number="store.surroundIntensity">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.surroundIntensity }}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声音距离</span>
-                          <input type="range" class="fx-slider" min="0" max="20" v-model.number="store.soundDistance">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.soundDistance }}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 8D环绕音效 -->
-                    <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
-                          8D环绕音效
-                          <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
-                        </div>
-                        <button class="fx-toggle" :class="{ on: store.enable8D }" @click="store.enable8D = !store.enable8D">
-                          <span class="fx-toggle-knob"></span>
-                        </button>
-                      </div>
-                      <div v-show="store.enable8D" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
-                          <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed8D">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed8D }}s</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
-                          <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance8D">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance8D }}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 36D环绕音效 -->
-                    <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
-                          36D环绕音效
-                          <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
-                        </div>
-                        <button class="fx-toggle" :class="{ on: store.enable36D }" @click="store.enable36D = !store.enable36D">
-                          <span class="fx-toggle-knob"></span>
-                        </button>
-                      </div>
-                      <div v-show="store.enable36D" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
-                          <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed36D">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed36D }}s</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
-                          <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance36D">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance36D }}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 虚拟多声道 -->
-                    <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
-                          虚拟多声道
-                          <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机</span>
-                        </div>
-                        <button class="fx-toggle" :class="{ on: store.enableVirtualSurround }" @click="store.enableVirtualSurround = !store.enableVirtualSurround">
-                          <span class="fx-toggle-knob"></span>
-                        </button>
-                      </div>
-                      <div v-show="store.enableVirtualSurround" class="mt-2 space-y-1.5">
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声道模式</span>
-                          <div class="flex flex-1 gap-1.5">
-                            <button class="fx-mode-btn" :class="{ active: store.virtualSurroundMode === '7.1' }" @click="store.virtualSurroundMode = '7.1'">7.1</button>
-                            <button class="fx-mode-btn" :class="{ active: store.virtualSurroundMode === '5.1' }" @click="store.virtualSurroundMode = '5.1'">5.1</button>
-                          </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声场宽度</span>
-                          <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualSurroundSpread">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualSurroundSpread }}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
               </div>
 
               <!-- ==================== 音调变速标签页 ==================== -->
@@ -367,12 +320,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div class="flex items-center gap-2.5">
                         <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ (store.playbackRate / 100).toFixed(2) }}x</span>
                         <input type="range" class="fx-slider flex-1" min="50" max="200" v-model.number="store.playbackRate" :style="{ '--pitch-progress': playbackRateProgress + '%' }">
-                        <label class="flex cursor-pointer items-center gap-1 whitespace-nowrap text-[11.5px] text-gray-600 dark:text-gray-300">
-                          <input type="checkbox" class="fx-check-mini" v-model="store.preservesPitch"> 音调补偿
-                        </label>
                         <button class="fx-reset-btn" @click="handleResetPlaybackRate">重置</button>
                       </div>
-                      <div class="text-[11px] leading-snug text-gray-500 dark:text-gray-400">勾选"音调补偿"可在变速时保持音高不变（独立调速）</div>
                     </section>
 
                     <!-- 卡拉OK消人声 -->
@@ -548,12 +497,6 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">增益量</span>
                         <input type="range" class="fx-slider" min="0" max="15" v-model.number="store.bassBoostGain">
                         <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.bassBoostGain }}dB</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">动态回弹</span>
-                        <label class="flex cursor-pointer items-center gap-1 whitespace-nowrap text-[11.5px] text-gray-600 dark:text-gray-300">
-                          <input type="checkbox" class="fx-check-mini" v-model="store.bassBoostDynamic"> 跟随鼓点
-                        </label>
                       </div>
                     </div>
                   </section>
