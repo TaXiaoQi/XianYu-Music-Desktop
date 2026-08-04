@@ -414,7 +414,7 @@ onUnmounted(() => {
     ></div>
 
     <!-- 主区域：封面 + 歌名/三大键/进度条（92px） -->
-    <div class="h-[92px] w-full flex items-end gap-3 px-5" data-tauri-drag-region>
+    <div class="h-[92px] w-full flex items-end gap-3 px-5 -mt-1" data-tauri-drag-region>
       <!-- 封面（底部对齐） -->
       <div
         class="w-[64px] h-[64px] shrink-0 relative overflow-hidden rounded-[8px]"
