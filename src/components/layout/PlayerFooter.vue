@@ -779,7 +779,6 @@ onUnmounted(() => {
     <div
       class="flex items-center w-1/3 min-w-[150px]"
       @contextmenu="handleContextMenu"
-      @click="handleOpenDetail"
     >
       <div
         data-footer-cover
@@ -790,6 +789,7 @@ onUnmounted(() => {
       <div
         class="flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 cursor-pointer ml-3 min-w-0"
         :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-0'"
+        @click.stop="handleOpenDetail"
       >
         <div class="overflow-hidden w-28 relative h-full shrink-0">
         <!-- State A: Default View (Title & Artist) -->
