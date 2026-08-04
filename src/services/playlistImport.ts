@@ -13,24 +13,105 @@
 import CryptoJs from 'crypto-js';
 import { pluginApi } from './tauri/pluginApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import type { PluginSearchResult } from '../types';
+import { getStoredPlugins } from './pluginEngine';
+import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
+import type { PluginSearchResult, PluginSource } from '../types';
 
 // ==================== 音源定义 ====================
 
 export interface PlaylistSource {
-  key: string;       // "wy" | "tx" | "kw" | "kg" | "auto"
+  key: string;       // "wy" | "tx" | "kw" | "kg" | "auto" | "mf_<pluginId>"
   name: string;      // 显示名称
   platform: string;  // 平台中文名
+  /** 来源类型：LX 直连导入 / MusicFree 插件导入 */
+  type: 'lx' | 'musicfree';
+  /** MusicFree 插件源（仅 type='musicfree' 时有值），用于调用插件 API */
+  pluginSource?: PluginSource;
 }
 
-/** 4 个音源 + 自动识别，key 与 yyy 项目中的 LX 源 id 一致 */
-export const PLAYLIST_SOURCES: PlaylistSource[] = [
-  { key: 'auto', name: '自动识别', platform: '' },
-  { key: 'wy', name: '小芸音乐', platform: '网易云' },
-  { key: 'tx', name: '小秋音乐', platform: 'QQ音乐' },
-  { key: 'kw', name: '小枸音乐', platform: '酷我' },
-  { key: 'kg', name: '小蜗音乐', platform: '酷狗' },
-];
+/** importPlaylist 支持的 LX 源 key 集合 */
+const SUPPORTED_IMPORT_SOURCES: ReadonlySet<string> = new Set(['wy', 'tx', 'kw', 'kg']);
+
+/** 平台中文名映射 */
+const SOURCE_PLATFORM_NAMES: Record<string, string> = {
+  wy: '网易云',
+  tx: 'QQ音乐',
+  kw: '酷我',
+  kg: '酷狗',
+  mg: '咪咕',
+};
+
+/**
+ * 从已安装的插件中读取支持歌单导入的音源列表
+ * 参考 Search.vue 的 refreshPluginSourceList 逻辑：
+ * - LX 插件多平台时拆分为独立条目，使用平台名显示
+ * - LX 插件单平台时以插件名显示
+ * - MusicFree 插件（如 BakaMusic）直接以插件名显示，key 带 mf_ 前缀
+ * - 始终在首位包含"自动识别"
+ */
+export function getImportSourcesFromPlugins(): PlaylistSource[] {
+  const sources: PlaylistSource[] = [
+    { key: 'auto', name: '自动识别', platform: '', type: 'lx' },
+  ];
+
+  const raw = getStoredPlugins();
+  const plugins = raw
+    .map((p, idx) => ({ p, idx }))
+    .filter(({ p }) => p.enabled)
+    .sort((a, b) => {
+      const sa = a.p.sortOrder ?? 0;
+      const sb = b.p.sortOrder ?? 0;
+      if (sa !== sb) return sa - sb;
+      return a.idx - b.idx;
+    })
+    .map(({ p }) => p);
+
+  const seenKeys = new Set<string>();
+
+  for (const p of plugins) {
+    if (p.format === 'lx' && p.sources.length > 0) {
+      const lxSources = p.sources.filter(s => SUPPORTED_IMPORT_SOURCES.has(s)) as LxSourceId[];
+      if (lxSources.length === 0) continue;
+
+      if (lxSources.length === 1) {
+        const key = lxSources[0];
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        sources.push({
+          key,
+          name: p.name,
+          platform: SOURCE_PLATFORM_NAMES[key] || '',
+          type: 'lx',
+        });
+      } else {
+        for (const sourceId of lxSources) {
+          if (seenKeys.has(sourceId)) continue;
+          seenKeys.add(sourceId);
+          sources.push({
+            key: sourceId,
+            name: LX_SOURCE_NAMES[sourceId],
+            platform: SOURCE_PLATFORM_NAMES[sourceId] || '',
+            type: 'lx',
+          });
+        }
+      }
+    } else if (p.format === 'musicfree') {
+      // MusicFree 插件（如 BakaMusic）：以插件名显示，key 带 mf_ 前缀避免与 LX 源冲突
+      const key = `mf_${p.id}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      sources.push({
+        key,
+        name: p.name,
+        platform: p.name,
+        type: 'musicfree',
+        pluginSource: p,
+      });
+    }
+  }
+
+  return sources;
+}
 
 /** 歌单详情信息 */
 export interface PlaylistInfo {
@@ -1195,10 +1276,74 @@ function parseKgSongDetailV2(item: any): PluginSearchResult | null {
   });
 }
 
+// ==================== MusicFree 插件歌单导入 ====================
+
+/**
+ * 通过 MusicFree 插件导入歌单
+ * 流程：用户输入关键词 → 插件搜索歌单 → 取第一个结果 → 获取歌单详情
+ *
+ * @param pluginSource MusicFree 插件源
+ * @param keyword 歌单名称、ID 或链接（作为搜索关键词）
+ * @returns 导入结果
+ */
+export async function importPlaylistFromMusicFreePlugin(
+  pluginSource: PluginSource,
+  keyword: string,
+): Promise<PlaylistImportResult> {
+  const input = keyword.trim();
+  if (!input) {
+    throw new Error('请输入歌单名称或链接');
+  }
+
+  // 动态导入避免循环依赖
+  const { pluginPlaylistSearch, pluginGetPlaylistDetail } = await import('./pluginEngine');
+
+  log(`[MusicFree] 搜索歌单: "${input}" via ${pluginSource.name}`);
+
+  // 1. 搜索歌单
+  const searchResults = await pluginPlaylistSearch(pluginSource, input, 1);
+  if (searchResults.length === 0) {
+    throw new Error(`未在 ${pluginSource.name} 中找到匹配的歌单`);
+  }
+
+  // 取第一个搜索结果
+  const sheetItem = searchResults[0];
+  log(`[MusicFree] 找到歌单: "${sheetItem.title}" (${sheetItem.id})`);
+
+  // 2. 获取歌单详情（可能分页，循环获取全部歌曲）
+  const allSongs: PluginSearchResult[] = [];
+  let page = 1;
+  const MAX_PAGES = 50; // 安全上限
+
+  while (page <= MAX_PAGES) {
+    const songs = await pluginGetPlaylistDetail(pluginSource, sheetItem.rawData, page);
+    if (songs.length === 0) break;
+    allSongs.push(...songs);
+    // 如果返回数量少于预期，说明已到最后一页
+    if (songs.length < 30) break;
+    page++;
+  }
+
+  log(`[MusicFree] 歌单详情: ${allSongs.length} 首歌曲`);
+
+  return {
+    source: pluginSource.name,
+    songs: allSongs,
+    total: allSongs.length,
+    info: {
+      name: sheetItem.title || '导入的歌单',
+      img: sheetItem.coverUrl || '',
+      desc: '',
+      author: sheetItem.artist || '',
+      playCount: '',
+    },
+  };
+}
+
 // ==================== 主入口 ====================
 
 /**
- * 导入外部歌单
+ * 导入外部歌单（LX 音源）
  *
  * @param source 音源 key: "wy" | "tx" | "kw" | "kg" | "auto"
  * @param idOrUrl 歌单 ID 或分享链接
