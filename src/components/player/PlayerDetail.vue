@@ -413,7 +413,7 @@ const closeContextMenu = () => {
           class="relative flex h-14 items-center justify-between px-6 transition-all duration-500 ease-out"
           :class="[
             isTopChromeVisible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0',
-            showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
+            showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none invisible',
           ]"
         >
           <div class="absolute inset-0" data-tauri-drag-region></div>
