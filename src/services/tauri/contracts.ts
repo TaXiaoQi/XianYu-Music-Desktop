@@ -548,6 +548,7 @@ export interface TauriCommandMap {
   set_immersive_fullscreen: { payload: { enter: boolean }; response: boolean };
   refresh_immersive_fullscreen: { payload: undefined; response: boolean };
   save_window_placement: { payload: undefined; response: boolean };
+  set_taskbar_fullscreen_flag: { payload: { enter: boolean }; response: boolean };
   set_dark_mode_for_window: { payload: { dark: boolean }; response: void };
   get_window_material_capabilities: {
     payload: undefined;

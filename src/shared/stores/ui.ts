@@ -20,6 +20,11 @@ export const useUiStore = defineStore('ui', () => {
   // 歌词页在全屏时额外应用黑色背景、鼠标自动隐藏等沉浸效果。
   const isImmersiveFullscreen = ref(false);
 
+  // 沉浸全屏切换动画状态（全局共享）：
+  // 'entering' | 'exiting' | null。主页与歌词页共享此状态，
+  // 使主页容器与歌词页同步播放 scale 动画，避免退出全屏时主页透出。
+  const fullscreenAnimState = ref<'entering' | 'exiting' | null>(null);
+
   return {
     showPlaylist,
     showMiniPlaylist,
@@ -31,5 +36,6 @@ export const useUiStore = defineStore('ui', () => {
     startupCompositionMaskVisible,
     dominantColors,
     isImmersiveFullscreen,
+    fullscreenAnimState,
   };
 });

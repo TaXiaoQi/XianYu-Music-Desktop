@@ -134,4 +134,38 @@ body.immersive-fullscreen [data-tauri-drag-region] {
 body.immersive-fullscreen [data-tauri-drag-region] * {
   pointer-events: auto;
 }
+
+/* 沉浸全屏切换动画：主页容器与歌词页同步播放 scale 动画，
+   盖住原生 maximize→SetWindowPos 的尺寸跳变。全局样式供 MainShell 与 PlayerDetail 共用。 */
+.fs-entering {
+  animation: fs-enter 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center center;
+}
+
+.fs-exiting {
+  animation: fs-exit 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center center;
+}
+
+@keyframes fs-enter {
+  0% {
+    transform: scale(0.94);
+    opacity: 0.82;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fs-exit {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.94);
+    opacity: 0.82;
+  }
+}
 </style>

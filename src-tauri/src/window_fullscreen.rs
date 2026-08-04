@@ -20,15 +20,12 @@ use std::sync::Mutex;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
     Foundation::{HWND, RECT},
-    Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-        RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_UPDATENOW,
-    },
+    Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
     UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowPlacement, SendMessageW, SetWindowLongW, SetWindowPlacement,
+        GetWindowLongW, GetWindowPlacement, IsZoomed, SetWindowLongW, SetWindowPlacement,
         SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE, SWP_FRAMECHANGED,
-        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWNORMAL, WM_SETREDRAW,
-        WINDOWPLACEMENT, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
+        WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
     },
 };
 
@@ -137,21 +134,33 @@ pub fn refresh_immersive_fullscreen(window: tauri::Window) -> Result<bool, Strin
     }
 }
 
+/// 标记/取消标记主窗口为全屏窗口，仅控制任务栏显隐，不改变窗口样式或位置。
+///
+/// 调用 ITaskbarList2::MarkFullscreenWindow。用途：进入沉浸式全屏前先调用本命令
+/// 隐藏任务栏，使工作区扩大到整屏；随后 maximize 的目标矩形即为整屏，最大化动画
+/// 可一次覆盖任务栏区域，避免「先最大化到工作区再瞬间扩展覆盖任务栏」的跳变。
+#[tauri::command]
+pub fn set_taskbar_fullscreen_flag(window: tauri::Window, enter: bool) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
+        unsafe { mark_taskbar_fullscreen(hwnd, enter); }
+        Ok(enter)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, enter);
+        Err("当前平台不支持".to_string())
+    }
+}
+
 /// 进入/退出沉浸式全屏。
 ///
-/// - enter=true：将窗口覆盖到所在显示器全区，隐藏任务栏。
-/// - enter=false：恢复窗口到最大化状态（前端再根据原始状态决定是否 unmaximize）。
+/// - enter=true：保存当前 placement，将窗口覆盖到所在显示器全区，隐藏任务栏。
+/// - enter=false：用保存的 placement 一步恢复（最大化态直接回最大化，无小窗），恢复任务栏。
 ///
 /// 返回切换后的全屏状态（true=全屏中）。
-///
-/// 正常流程：
-/// 1. 前端调用 `save_window_placement`（保存原始窗口状态）
-/// 2. 前端执行 `appWindow.maximize()`（享受系统原生最大化动画）
-/// 3. 前端调用本命令 `set_immersive_fullscreen(true)`（从最大化无缝切换为全屏）
-///
-/// 退出流程：
-/// 1. 前端调用本命令 `set_immersive_fullscreen(false)`（全屏→最大化，平滑过渡）
-/// 2. 若原始状态非最大化，前端调用 `appWindow.unmaximize()`（最大化→普通窗口，原生动画）
 #[tauri::command]
 pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
@@ -160,21 +169,42 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
 
         unsafe {
             if enter {
-                // 兜底：如果前端未调用 save_window_placement（正常流程已预先保存），在此保存。
-                // 前端流程：先 save_window_placement（保存原始窗口状态）→ maximize（原生动画）→ 本命令。
-                // 若已保存则跳过，避免用最大化后的 placement 覆盖原始窗口状态。
-                if SAVED_PLACEMENT.lock().unwrap().is_none() {
-                    let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
-                    placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-                    if GetWindowPlacement(hwnd, &mut placement) == 0 {
-                        return Err("GetWindowPlacement 失败".to_string());
-                    }
-                    *SAVED_PLACEMENT.lock().unwrap() = Some(SavedPlacement(placement));
-                    *SAVED_STYLE.lock().unwrap() = Some(GetWindowLongW(hwnd, GWL_STYLE));
-                    *SAVED_EXSTYLE.lock().unwrap() = Some(GetWindowLongW(hwnd, GWL_EXSTYLE));
+                // 保存当前 placement（含 showCmd：最大化则为 SW_SHOWMAXIMIZED）
+                let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
+                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                if GetWindowPlacement(hwnd, &mut placement) == 0 {
+                    return Err("GetWindowPlacement 失败".to_string());
+                }
+                *SAVED_PLACEMENT.lock().unwrap() = Some(SavedPlacement(placement));
+
+                // 小窗进全屏：先走 SW_MAXIMIZE 的系统丝滑放大动画（放大观感来源）。
+                if IsZoomed(hwnd) == 0 {
+                    ShowWindow(hwnd, SW_MAXIMIZE);
+                    std::thread::sleep(std::time::Duration::from_millis(220));
                 }
 
-                // 先计算全屏目标矩形（后续 SetWindowPlacement 需要用它直接定位，避免中间态）
+                // 清除 WS_MAXIMIZE 样式位，否则窗口被约束在工作区内，SetWindowPos 无法铺满整屏。
+                // placement 已保存（showCmd 仍为 SW_SHOWMAXIMIZED），退出恢复不受影响。
+                let style = GetWindowLongW(hwnd, GWL_STYLE);
+                *SAVED_STYLE.lock().unwrap() = Some(style);
+                // WS_CAPTION(0xC00000) = WS_BORDER | WS_DLGFRAME，WS_THICKFRAME(0x40000) 用于调整大小
+                // 这两个样式位是非客户区（边框+标题栏）的主要来源，清除后窗口将没有非客户区
+                const STYLE_BORDER_MASK: i32 = (WS_CAPTION as i32) | (WS_THICKFRAME as i32) | (WS_MAXIMIZE as i32);
+                if style & STYLE_BORDER_MASK != 0 {
+                    SetWindowLongW(hwnd, GWL_STYLE, style & !STYLE_BORDER_MASK);
+                }
+
+                // 保存并清除扩展样式中的边框位（WS_EX_WINDOWEDGE 等），
+                // 否则 Windows 会为窗口保留一圈不可见的边框 padding，导致内容与屏幕边缘有间隙。
+                // 0x1C0 = WS_EX_WINDOWEDGE(0x100) | WS_EX_CLIENTEDGE(0x40) | WS_EX_DLGMODALFRAME(0x80) 等
+                const EX_BORDER_MASK: i32 = 0x1C0;
+                let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                *SAVED_EXSTYLE.lock().unwrap() = Some(ex_style);
+                if ex_style & EX_BORDER_MASK != 0 {
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
+                }
+
+                // 用整个显示器矩形（含任务栏区域）铺满窗口
                 let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                 let mut mi: MONITORINFO = std::mem::zeroed();
                 mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
@@ -187,101 +217,46 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 // 这个边框不会被 SetWindowPos 自动裁剪，导致窗口实际可见区域比 rcMonitor 小一圈。
                 // 把矩形向四周扩大 16px，让不可见边框溢出屏幕边缘，内容即可铺满整屏。
                 const BORDER_OVERLAP: i32 = 16;
-                let fs_rect = RECT {
-                    left: left - BORDER_OVERLAP,
-                    top: top - BORDER_OVERLAP,
-                    right: right + BORDER_OVERLAP,
-                    bottom: bottom + BORDER_OVERLAP,
-                };
-
-                // 暂停窗口重绘：清除边框样式 + SetWindowPos 退出最大化定位期间，
-                // 配合前端设置的黑色窗口背景，新暴露区域显示黑色而非 WebView2 默认白色。
-                // WM_SETREDRAW 暂停窗口及子窗口（含 WebView2）的绘制，统一刷新消除闪烁。
-                SendMessageW(hwnd, WM_SETREDRAW, 0, 0);
-
-                // 清除 WS_MAXIMIZE 样式位，否则窗口被约束在工作区内，无法铺满整屏。
-                // WS_CAPTION(0xC00000) = WS_BORDER | WS_DLGFRAME，WS_THICKFRAME(0x40000) 用于调整大小
-                // 这两个样式位是非客户区（边框+标题栏）的主要来源，清除后窗口将没有非客户区
-                let style = GetWindowLongW(hwnd, GWL_STYLE);
-                const STYLE_BORDER_MASK: i32 = (WS_CAPTION as i32) | (WS_THICKFRAME as i32) | (WS_MAXIMIZE as i32);
-                if style & STYLE_BORDER_MASK != 0 {
-                    SetWindowLongW(hwnd, GWL_STYLE, style & !STYLE_BORDER_MASK);
-                }
-
-                // 清除扩展样式中的边框位（WS_EX_WINDOWEDGE 等），
-                // 否则 Windows 会为窗口保留一圈不可见的边框 padding，导致内容与屏幕边缘有间隙。
-                // 0x1C0 = WS_EX_WINDOWEDGE(0x100) | WS_EX_CLIENTEDGE(0x40) | WS_EX_DLGMODALFRAME(0x80) 等
-                const EX_BORDER_MASK: i32 = 0x1C0;
-                let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-                if ex_style & EX_BORDER_MASK != 0 {
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
-                }
-
-                // 直接用 SetWindowPos 定位到全屏矩形，避免 SetWindowPlacement 退出最大化时
-                // 触发 DWM 还原动画（窗口先缩小到 rcNormalPosition 再放大 = 白屏闪烁）。
-                // SetWindowPos 改变最大化窗口的尺寸会自动取消最大化内部状态，但不触发 DWM 动画，
-                // 配合 WM_SETREDRAW 暂停重绘，窗口无中间态直接到达全屏矩形。
-                SetWindowPos(
+                if SetWindowPos(
                     hwnd,
                     std::ptr::null_mut(),
-                    fs_rect.left,
-                    fs_rect.top,
-                    fs_rect.right - fs_rect.left,
-                    fs_rect.bottom - fs_rect.top,
+                    left - BORDER_OVERLAP,
+                    top - BORDER_OVERLAP,
+                    (right - left) + BORDER_OVERLAP * 2,
+                    (bottom - top) + BORDER_OVERLAP * 2,
+                    // SWP_FRAMECHANGED: 清除边框样式后强制窗口重新计算非客户区
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
-
-                // 修正窗口放置内部状态：将 showCmd 设为 SW_SHOWNORMAL（非最大化），
-                // rcNormalPosition 设为全屏矩形，使后续 GetWindowPlacement 返回正确值。
-                // 此时窗口已定位到全屏矩形，此调用仅更新内部状态，不触发动画或重绘。
-                let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
-                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-                if GetWindowPlacement(hwnd, &mut placement) != 0 {
-                    placement.showCmd = SW_SHOWNORMAL as u32;
-                    placement.rcNormalPosition = fs_rect;
-                    SetWindowPlacement(hwnd, &placement);
+                ) == 0
+                {
+                    return Err("SetWindowPos 失败".to_string());
                 }
-
-                // 恢复窗口重绘并强制立即刷新所有内容（含 WebView2 子窗口）。
-                // 此时窗口已是全屏尺寸 + 无边框，WebView2 按新视口一次性渲染，无白屏中间态。
-                SendMessageW(hwnd, WM_SETREDRAW, 1, 0);
-                RedrawWindow(
-                    hwnd,
-                    std::ptr::null(),
-                    std::ptr::null_mut(),
-                    RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN,
-                );
 
                 mark_taskbar_fullscreen(hwnd, true);
                 Ok(true)
             } else {
-                // 恢复扩展样式和窗口样式（边框位）
+                // 先恢复扩展样式和窗口样式（边框位），再恢复窗口 placement
                 if let Some(saved_ex) = SAVED_EXSTYLE.lock().unwrap().take() {
                     SetWindowLongW(hwnd, GWL_EXSTYLE, saved_ex);
                 }
                 if let Some(saved_style) = SAVED_STYLE.lock().unwrap().take() {
                     SetWindowLongW(hwnd, GWL_STYLE, saved_style);
                 }
-
-                // 总是先恢复到最大化状态：全屏→最大化的过渡非常平滑（仅相差任务栏高度 + 边框），
-                // 用户几乎无感。前端再根据原始状态决定是否调用 unmaximize 还原为普通窗口。
-                // 若原始状态就是最大化，则直接停留在此；若原始状态是小窗，前端 unmaximize 触发原生还原动画。
-                ShowWindow(hwnd, SW_MAXIMIZE);
-
-                // SW_MAXIMIZE 会将当前窗口矩形（全屏矩形）保存为 rcNormalPosition，
-                // 导致后续前端 unmaximize 恢复到全屏尺寸而非原始窗口尺寸。
-                // 从保存的 placement 中恢复正确的 rcNormalPosition。
                 let saved = SAVED_PLACEMENT.lock().unwrap().take();
-                if let Some(SavedPlacement(saved_placement)) = saved {
-                    let mut current: WINDOWPLACEMENT = std::mem::zeroed();
-                    current.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-                    if GetWindowPlacement(hwnd, &mut current) != 0 {
-                        // 仅修正 rcNormalPosition，保持 showCmd = SW_SHOWMAXIMIZED 不变
-                        current.rcNormalPosition = saved_placement.rcNormalPosition;
-                        let _ = SetWindowPlacement(hwnd, &current);
+                let was_maximized = saved
+                    .as_ref()
+                    .map(|SavedPlacement(p)| p.showCmd == SW_SHOWMAXIMIZED as u32)
+                    .unwrap_or(false);
+                if let Some(SavedPlacement(placement)) = saved {
+                    if placement.showCmd == SW_SHOWMAXIMIZED as u32 {
+                        // 进全屏前是最大化：直接 SW_MAXIMIZE 一步回最大化，无小窗中间帧。
+                        ShowWindow(hwnd, SW_MAXIMIZE);
+                    } else {
+                        // 进全屏前是小窗：一步还原到原始位置尺寸（硬跳），缩小观感由前端 CSS 承担。
+                        if SetWindowPlacement(hwnd, &placement) == 0 {
+                            return Err("SetWindowPlacement 失败".to_string());
+                        }
                     }
                 }
-
                 // 恢复样式后强制重算非客户区：进入全屏时清除了边框样式并扩大了窗口矩形，
                 // 若不触发重算，窗口仍保持全屏尺寸，底部会跑到任务栏后面。
                 SetWindowPos(
@@ -294,9 +269,12 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
                 );
                 mark_taskbar_fullscreen(hwnd, false);
-                // 同步 tao 内部最大化状态：ShowWindow(SW_MAXIMIZE) 不会自动更新 tao 的 is_maximized，
-                // 导致前端 appWindow.isMaximized() 返回错误值。始终同步（退出全屏后总是最大化状态）。
-                let _ = window.maximize();
+                // 同步 tao 内部最大化状态：上面用 ShowWindow(SW_MAXIMIZE) 恢复最大化时，
+                // tao 的 is_maximized 状态不会自动更新，导致前端 appWindow.isMaximized() 返回错误值。
+                // 仅在 was_maximized 时显式同步；小窗状态由 SetWindowPlacement 已恢复，无需额外调用。
+                if was_maximized {
+                    let _ = window.maximize();
+                }
                 Ok(false)
             }
         }

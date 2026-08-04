@@ -77,7 +77,7 @@ use toolbox::{
 #[cfg(target_os = "windows")]
 use toolbox::{append_webview2_browser_arg, should_disable_gpu_for_startup};
 use window_boundary::set_mini_boundary_enabled;
-use window_fullscreen::{refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen};
+use window_fullscreen::{refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen, set_taskbar_fullscreen_flag};
 use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
 use window_z_order::{refresh_current_window_topmost, start_topmost_guard, stop_topmost_guard};
@@ -220,6 +220,7 @@ get_song_lyrics_payload,            get_song_lyrics_for_edit,
             set_immersive_fullscreen,
             refresh_immersive_fullscreen,
             save_window_placement,
+            set_taskbar_fullscreen_flag,
             get_window_material_capabilities,
             refresh_window_material_active_state,
             get_foreground_fullscreen_state,
