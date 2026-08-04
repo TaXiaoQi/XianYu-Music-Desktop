@@ -231,6 +231,8 @@ onUnmounted(() => {
         </button>
       </section>
 
+      <div class="tray-menu-spacer" />
+
       <div class="menu-divider" />
 
       <button class="menu-row" @click="sendAction('open-desktop-lyrics')">
@@ -318,6 +320,13 @@ onUnmounted(() => {
   background: var(--panel-bg);
   box-shadow: inset 0 0 0 1px var(--panel-border);
   backdrop-filter: blur(18px);
+  display: flex;
+  flex-direction: column;
+}
+
+.tray-menu-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .track-row {
@@ -326,6 +335,7 @@ onUnmounted(() => {
   height: 64px;
   gap: 11px;
   padding: 6px 14px 0;
+  flex-shrink: 0;
 }
 
 .track-info {
@@ -394,6 +404,7 @@ onUnmounted(() => {
   gap: 6px;
   height: 40px;
   padding: 0 10px;
+  flex-shrink: 0;
 }
 
 .transport-main {
@@ -420,6 +431,7 @@ onUnmounted(() => {
   background: transparent;
   color: var(--text-main);
   cursor: default;
+  flex-shrink: 0;
 }
 
 .transport-circle--play {
