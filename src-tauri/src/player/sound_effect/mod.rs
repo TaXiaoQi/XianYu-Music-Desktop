@@ -606,7 +606,11 @@ where
         // YinDongMusic: bassBoost(true,6,true) + dynamicEq(true) + stereoWiden(true,1.4) + compressor(true,-20,4,3,100)
         // 用 max 语义：用户已手动调高某参数时不覆盖，未启用则强制 V4A 参数
         let effective = if s.v4a_enabled {
+            // 对齐 YinDongMusic setV4A：
+            // vocalRemoval(false) + bassBoost(true,6,true) + dynamicEq(true)
+            // + stereoWiden(true,1.4) + compressor(true,-20,4,3ms,100ms)
             let mut e = s.clone();
+            e.vocal_removal = false; // V4A 不消人声
             e.bass_boost.enabled = true;
             e.bass_boost.gain = e.bass_boost.gain.max(6.0);
             e.bass_boost.dynamic = true;
@@ -614,18 +618,10 @@ where
             e.stereo_widen.enabled = true;
             e.stereo_widen.amount = e.stereo_widen.amount.max(1.4);
             e.compressor.enabled = true;
-            if e.compressor.threshold > -20.0 {
-                e.compressor.threshold = -20.0;
-            }
-            if e.compressor.ratio < 4.0 {
-                e.compressor.ratio = 4.0;
-            }
-            if e.compressor.attack > 3.0 {
-                e.compressor.attack = 3.0;
-            }
-            if e.compressor.release < 100.0 {
-                e.compressor.release = 100.0;
-            }
+            e.compressor.threshold = e.compressor.threshold.min(-20.0);
+            e.compressor.ratio = e.compressor.ratio.max(4.0);
+            e.compressor.attack = e.compressor.attack.min(3.0);
+            e.compressor.release = e.compressor.release.max(100.0);
             e
         } else {
             s.clone()
