@@ -507,6 +507,11 @@ export function useLibraryCurrentViewSongs({
       .map(path => songLookup.value.get(path))
       .filter((song): song is Song => !!song);
 
+  const filterRenderableCanonicalPaths = (paths: string[]) => {
+    const canonicalPathSet = new Set(canonicalSongPaths.value);
+    return paths.filter(path => canonicalPathSet.has(path) && songLookup.value.has(path));
+  };
+
   const resolveFavoriteFallbackPaths = () => {
     if (favTab.value === 'songs') {
       return [...favoriteSongPaths.value];
@@ -633,13 +638,14 @@ export function useLibraryCurrentViewSongs({
       const query = searchQuery.value.toLowerCase();
 
       if (currentViewMode.value === 'all' && localSortMode.value !== 'custom') {
+        const renderablePaths = filterRenderableCanonicalPaths(allViewSongPaths.value);
         if (localSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
-            allViewSongPaths.value,
+            renderablePaths,
             (path) => getSongTitleLabel(songLookup.value.get(path)!),
           );
         }
-        return allViewSongPaths.value;
+        return renderablePaths;
       }
 
       const matchesQuery = (path: string) => {
@@ -670,7 +676,7 @@ export function useLibraryCurrentViewSongs({
 
       if (currentViewMode.value === 'all') {
         if (localSortMode.value !== 'custom') {
-          return allViewSongPaths.value;
+          return filterRenderableCanonicalPaths(allViewSongPaths.value);
         }
 
         return sortItemsByAlphabetIndex(
@@ -740,13 +746,15 @@ export function useLibraryCurrentViewSongs({
           }
         }
 
+        const renderablePaths = filterRenderableCanonicalPaths(pathsToRender);
+
         if (localSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
-            pathsToRender,
+            renderablePaths,
             (path) => getSongTitleLabel(songLookup.value.get(path)!),
           );
         }
-        return pathsToRender;
+        return renderablePaths;
       }
 
       let base = [...canonicalSongPaths.value];

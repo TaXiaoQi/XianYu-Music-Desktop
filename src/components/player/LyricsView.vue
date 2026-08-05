@@ -29,7 +29,6 @@ import {
 } from '../../composables/lyrics';
 import { usePlayer } from '../../features/playback';
 import { useSettingsStore } from '../../features/settings/store';
-import { loadAmlLyricPlayer } from './amlLyricPlayerLoader';
 // [修复防御]: AmlLyricPlayer 静态导入会拉入 PatchedLyricPlayer → @applemusic-like-lyrics/core → @pixi/*
 // 整条重型依赖链到主入口 chunk，导致启动时强制加载 PIXI/AMLL（200-400KB+ JS）。
 // 改为 defineAsyncComponent 后，该依赖链仅在 PlayerDetail 打开且渲染歌词时按需加载，
@@ -38,7 +37,7 @@ import { loadAmlLyricPlayer } from './amlLyricPlayerLoader';
 // [修复防御]: 配置 errorComponent + timeout + onError 重试，避免 Vite HMR 热更新或
 // 依赖预构建未完成时 "Failed to fetch dynamically imported module" 导致白屏。
 const AmlLyricPlayer = defineAsyncComponent({
-  loader: loadAmlLyricPlayer,
+  loader: () => import('./AmlLyricPlayer.vue'),
   // 用 h() 渲染函数而非字符串 template：避免依赖 Vue 运行时编译器
   // （runtime-only 构建不含编译器，字符串 template 会触发警告）。
   loadingComponent: () => h('div', { class: 'amll-loading-placeholder' }),
@@ -61,7 +60,7 @@ const {
   lyricsStatus,
   showLyricsPlayerSettingsPanel,
 } = useLyrics();
-const { playAt, currentTime, isPlaying } = usePlayer();
+const { seekTo, currentTime, isPlaying } = usePlayer();
 const { audioDelay } = storeToRefs(useSettingsStore());
 
 const FONT_SCALE_STEP = 0.05;
@@ -346,7 +345,7 @@ async function handleLineClick(event: LyricLineMouseEvent) {
   amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
 
   const targetSeconds = getPlaybackSeekSecondsForAmlLine(lineStartTimeMs, audioDelay.value);
-  await playAt(targetSeconds);
+  await seekTo(targetSeconds);
 }
 
 onMounted(() => {
