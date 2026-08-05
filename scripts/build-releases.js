@@ -10,6 +10,7 @@ const rootDir = path.resolve(__dirname, '..');
 const tauriConfigPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const outputDir = path.join(rootDir, 'releases');
+const WIX_UPGRADE_CODE = '4fab41aa-9212-5640-9c2c-8dc5363dfdaa';
 
 // Helper to read JSON
 function readJson(filePath) {
@@ -86,71 +87,106 @@ async function main() {
       }
     ];
 
+    const installerLocales = [
+      {
+        language: 'zh-CN',
+        suffix: 'zh-CN',
+        productName: '弦予音乐',
+        mainBinaryName: '弦予音乐',
+        windowTitle: '弦予音乐',
+        label: '中文安装包'
+      },
+      {
+        language: 'en-US',
+        suffix: 'en-US',
+        productName: 'XianYu-Music',
+        mainBinaryName: 'XianYu-Music',
+        windowTitle: 'XianYu-Music',
+        label: '英文安装包'
+      }
+    ];
+
     for (const target of buildTargets) {
-      console.log(`\n==================================================`);
-      console.log(`开始构建: ${target.label}`);
-      console.log(`==================================================`);
+      for (const locale of installerLocales) {
+        console.log(`\n==================================================`);
+        console.log(`开始构建: ${target.label} / ${locale.label}`);
+        console.log(`==================================================`);
 
-      // Modify tauri.conf.json
-      const config = JSON.parse(originalConfigContent);
-      if (!config.bundle) {
-        config.bundle = {};
-      }
-      if (!config.bundle.windows) {
-        config.bundle.windows = {};
-      }
-      config.bundle.windows.webviewInstallMode = {
-        type: target.type
-      };
-      config.bundle.targets = ["msi"];
-      config.version = msiVersion;
-      writeJson(tauriConfigPath, config);
+        // Modify tauri.conf.json
+        const config = JSON.parse(originalConfigContent);
+        config.productName = locale.productName;
+        config.mainBinaryName = locale.mainBinaryName;
+        config.version = msiVersion;
+        if (Array.isArray(config.app?.windows)) {
+          for (const windowConfig of config.app.windows) {
+            if (windowConfig.title) {
+              windowConfig.title = locale.windowTitle;
+            }
+          }
+        }
+        if (!config.bundle) {
+          config.bundle = {};
+        }
+        if (!config.bundle.windows) {
+          config.bundle.windows = {};
+        }
+        if (!config.bundle.windows.wix) {
+          config.bundle.windows.wix = {};
+        }
+        config.bundle.windows.webviewInstallMode = {
+          type: target.type
+        };
+        config.bundle.windows.wix.upgradeCode = WIX_UPGRADE_CODE;
+        config.bundle.windows.wix.language = [locale.language];
+        config.bundle.targets = ["msi"];
+        writeJson(tauriConfigPath, config);
 
-      // Clean old bundle output directory to avoid picking up old files
-      const msiDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'msi');
-      if (fs.existsSync(msiDir)) {
-        console.log(`正在清理旧的打包输出: ${msiDir}`);
-        fs.rmSync(msiDir, { recursive: true, force: true });
-      }
-
-      // Run tauri build
-      // 设置 BUILD_RELEASES_MODE 避免 posttauri 钩子 (move-bundles.js) 重复复制
-      process.env.BUILD_RELEASES_MODE = 'true';
-      runCommand('npm run tauri build', rootDir);
-
-      // Locate the built installer in msi directory
-      if (!fs.existsSync(msiDir)) {
-        throw new Error(`找不到构建输出目录: ${msiDir}`);
-      }
-
-      const files = fs.readdirSync(msiDir);
-      const msiFiles = files.filter(f => f.endsWith('.msi'));
-
-      if (msiFiles.length === 0) {
-        throw new Error(`在 ${msiDir} 中未找到生成的 .msi 安装包`);
-      }
-
-      // We expect only one MSI, but process all .msi found just in case
-      for (const msiFile of msiFiles) {
-        const srcPath = path.join(msiDir, msiFile);
-        
-        // Target name formatting: replace spaces with dots, and append -suffix before .msi
-        // e.g. "弦予音乐_1.1.2_x64_zh-CN.msi" -> "弦予音乐_1.1.2_x64_zh-CN-standard.msi"
-        let destName = msiFile.replace(/\s+/g, '.');
-        if (destName.endsWith('.msi')) {
-          destName = destName.replace(/\.msi$/, `-${target.suffix}.msi`);
-        } else {
-          destName = `${destName}-${target.suffix}`;
+        // Clean old bundle output directory to avoid picking up old files
+        const msiDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'msi');
+        if (fs.existsSync(msiDir)) {
+          console.log(`正在清理旧的打包输出: ${msiDir}`);
+          fs.rmSync(msiDir, { recursive: true, force: true });
         }
 
-        const destPath = path.join(outputDir, destName);
-        console.log(`复制并重命名安装包:`);
-        console.log(`  源文件: ${srcPath}`);
-        console.log(`  目标文件: ${destPath}`);
-        fs.copyFileSync(srcPath, destPath);
+        // Run tauri build
+        // 设置 BUILD_RELEASES_MODE 避免 posttauri 钩子 (move-bundles.js) 重复复制
+        process.env.BUILD_RELEASES_MODE = 'true';
+        runCommand('npm run tauri build', rootDir);
+
+        // Locate the built installer in msi directory
+        if (!fs.existsSync(msiDir)) {
+          throw new Error(`找不到构建输出目录: ${msiDir}`);
+        }
+
+        const files = fs.readdirSync(msiDir);
+        const msiFiles = files.filter(f => f.endsWith('.msi'));
+
+        if (msiFiles.length === 0) {
+          throw new Error(`在 ${msiDir} 中未找到生成的 .msi 安装包`);
+        }
+
+        // We expect only one MSI, but process all .msi found just in case
+        for (const msiFile of msiFiles) {
+          const srcPath = path.join(msiDir, msiFile);
+          
+          // Target name formatting: replace spaces with dots, and append -suffix before .msi
+          // e.g. "弦予音乐_1.1.2_x64_zh-CN.msi" -> "弦予音乐_1.1.2_x64_zh-CN-standard.msi"
+          let destName = msiFile.replace(/\s+/g, '.');
+          if (destName.endsWith('.msi')) {
+            destName = destName.replace(/\.msi$/, `-${target.suffix}.msi`);
+          } else {
+            destName = `${destName}-${target.suffix}`;
+          }
+
+          const destPath = path.join(outputDir, destName);
+          console.log(`复制并重命名安装包:`);
+          console.log(`  源文件: ${srcPath}`);
+          console.log(`  目标文件: ${destPath}`);
+          fs.copyFileSync(srcPath, destPath);
+        }
+        
+        console.log(`构建成功: ${target.label} / ${locale.label}`);
       }
-      
-      console.log(`构建成功: ${target.label}`);
     }
 
     console.log(`\n==================================================`);
