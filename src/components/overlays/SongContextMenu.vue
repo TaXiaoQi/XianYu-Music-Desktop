@@ -237,8 +237,14 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
     entries.push(
       { type: 'divider', key: 'divider-secondary' },
       { type: 'action', key: 'favorite', label: favoriteLabel },
-      { type: 'action', key: 'addToPlaylist', label: '添加到歌单' },
     );
+
+    // 在歌单视图内，在线歌曲右键应显示"从歌单中移除"而非"添加到歌单"
+    if (props.isPlaylistView) {
+      entries.push({ type: 'action', key: 'removeFromList', label: '从歌单中移除' });
+    } else {
+      entries.push({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
+    }
   } else {
     entries.push(
       { type: 'divider', key: 'divider-primary' },

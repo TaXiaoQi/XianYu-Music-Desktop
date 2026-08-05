@@ -13,6 +13,7 @@ import { fetchLxSongLyricsRaw } from '../services/lxLyricFetcher';
 import { useToast } from './toast';
 import { reportUserBehavior } from '../services/usageStats';
 import { useAuthStore } from '../features/auth/store';
+import { preloadAmlLyricPlayer } from '../components/player/amlLyricPlayerLoader';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -159,6 +160,29 @@ const authStore = useAuthStore();
     }
 
     return retainedPaths.slice(0, 4);
+  };
+
+  const scheduleLyricsPlayerPreload = (song: Song) => {
+    const songPath = song.cue_source_path || song.path;
+    if (!songPath.startsWith('lx://') && !songPath.startsWith('plugin://')) {
+      return;
+    }
+
+    const preload = () => {
+      if (!isMainWindowLowPower.value) {
+        void preloadAmlLyricPlayer().catch(() => {});
+      }
+    };
+
+    const requestIdle = (window as any).requestIdleCallback as
+      | ((callback: () => void, options?: { timeout?: number }) => number)
+      | undefined;
+
+    if (requestIdle) {
+      requestIdle(preload, { timeout: 1500 });
+    } else {
+      window.setTimeout(preload, 0);
+    }
   };
 
   const prepareDetailFullCovers = (song: Song) => {
@@ -543,6 +567,7 @@ const authStore = useAuthStore();
 
     const preserveQueue = options.preserveQueue ?? false;
     currentSong.value = song;
+    scheduleLyricsPlayerPreload(song);
 
     if (!preserveQueue) {
       if (options.insertAfterCurrent) {

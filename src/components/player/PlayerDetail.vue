@@ -16,6 +16,7 @@ import PlayerDetailBackground from './PlayerDetailBackground.vue';
 import PlayerDetailLeft from './PlayerDetailLeft.vue';
 import QueueList from './QueueList.vue';
 import PlayerDetailContextMenu from '../overlays/PlayerDetailContextMenu.vue';
+import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 
 const {
   showPlayerDetail,
@@ -32,6 +33,22 @@ const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore())
 // 关闭期间通过 LyricsView 的 disabled 停止 AMLL 的 rAF 循环，避免不可见时的渲染开销。
 const hasOpenedDetail = ref(false);
 const shouldRenderHeavyContent = computed(() => hasOpenedDetail.value);
+let heavyContentFrameId: number | null = null;
+
+const isOnlineSongPath = (path: string) => path.startsWith('lx://') || path.startsWith('plugin://');
+
+const scheduleHeavyContentRender = () => {
+  if (hasOpenedDetail.value || heavyContentFrameId !== null) {
+    return;
+  }
+
+  heavyContentFrameId = requestAnimationFrame(() => {
+    heavyContentFrameId = null;
+    if (showPlayerDetail.value) {
+      hasOpenedDetail.value = true;
+    }
+  });
+};
 
 
 const { staggerPhase } = useSharedTransition();
@@ -196,7 +213,10 @@ watch(showPlayerDetail, (visible) => {
   clearTopChromeHideTimer();
 
   if (visible) {
-    hasOpenedDetail.value = true;
+    scheduleHeavyContentRender();
+    if (currentSong.value?.path && isOnlineSongPath(currentSong.value.path)) {
+      void preloadAmlLyricPlayer().catch(() => {});
+    }
     isTopChromeVisible.value = true;
     scheduleTopChromeHide();
     // 沉浸全屏下重新打开歌词页时，恢复鼠标自动隐藏
@@ -222,6 +242,11 @@ watch([showPlayerDetail, () => currentSong.value?.path ?? ''], async ([visible, 
   const requestId = ++detailRequestId;
 
   if (!visible || !path) {
+    currentSongDetail.value = null;
+    return;
+  }
+
+  if (isOnlineSongPath(path)) {
     currentSongDetail.value = null;
     return;
   }
@@ -256,6 +281,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearTopChromeHideTimer();
+  if (heavyContentFrameId !== null) {
+    cancelAnimationFrame(heavyContentFrameId);
+    heavyContentFrameId = null;
+  }
   disableCursorAutoHide();
   window.removeEventListener('keydown', handleKeydown);
 });

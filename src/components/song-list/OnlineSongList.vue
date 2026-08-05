@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
@@ -35,11 +35,17 @@ const handlePlayClick = (song: Song) => {
 
 // --- 渐进式渲染 ---
 // 在线搜索/专辑歌曲列表可能包含上百首歌曲，全量渲染会产生大量 DOM 节点。
-// 使用初始渲染上限 + IntersectionObserver 哨兵检测，滚动到底部时自动加载更多，
-// 将初始 DOM 节点从 N 降至 min(N, 50)，滚动时按 50 条递增。
-const INITIAL_RENDER_LIMIT = 50;
-const RENDER_BATCH_SIZE = 50;
-const renderLimit = ref(INITIAL_RENDER_LIMIT);
+// 使用初始渲染上限 + IntersectionObserver 哨兵检测，滚动到底部时自动加载更多。
+// 首批数量按屏幕高度估算，只挂载一屏左右的 DOM，避免在线歌单过大时切换页面卡顿。
+const ROW_HEIGHT = 61;
+const RENDER_BUFFER_ROWS = 4;
+const MIN_RENDER_BATCH_SIZE = 20;
+const getInitialRenderLimit = () => Math.max(
+  1,
+  Math.ceil(window.innerHeight / ROW_HEIGHT) + RENDER_BUFFER_ROWS,
+);
+const getRenderBatchSize = () => Math.max(MIN_RENDER_BATCH_SIZE, getInitialRenderLimit());
+const renderLimit = ref(getInitialRenderLimit());
 
 const visibleSongs = computed(() => props.songs.slice(0, renderLimit.value));
 const hasMore = computed(() => renderLimit.value < props.songs.length);
@@ -51,7 +57,7 @@ let observer: IntersectionObserver | null = null;
 const onSentinelIntersect: IntersectionObserverCallback = (entries) => {
   if (entries[0]?.isIntersecting && hasMore.value) {
     renderLimit.value = Math.min(
-      renderLimit.value + RENDER_BATCH_SIZE,
+      renderLimit.value + getRenderBatchSize(),
       props.songs.length
     );
   }
@@ -80,7 +86,11 @@ watch(sentinelRef, (el, _oldEl, onCleanup) => {
 
 // songs 变化时重置渲染上限（切换专辑/歌手时）
 watch(() => props.songs, () => {
-  renderLimit.value = INITIAL_RENDER_LIMIT;
+  renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
+});
+
+onMounted(() => {
+  renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
 });
 
 onBeforeUnmount(() => {
