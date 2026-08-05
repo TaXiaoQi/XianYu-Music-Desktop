@@ -145,6 +145,35 @@ export const usePlaybackStore = defineStore('playback', () => {
     }
   };
 
+  /**
+   * [性能优化] 直接用路径数组设置播放队列，绕过 playQueue computed setter 的 normalizeSongs。
+   *
+   * playQueue.value = songs 会调用 normalizeSongs 遍历所有歌曲对象（O(n) × getSongByPath + Set/Map 操作），
+   * 对 600+ 歌曲的容器初次播放时产生可感知的卡顿。
+   *
+   * 本方法直接操作 playQueuePaths（shallowRef<string[]>），仅做路径比较和赋值：
+   * 1. 路径未变 → 短路返回，不触发任何响应式更新（同一容器内切歌的核心优化）
+   * 2. 路径变化 → 注册在线歌曲 fallback → 赋值 playQueuePaths → 清理过期 fallback
+   *
+   * @param paths          歌曲路径数组（已去重）
+   * @param fallbackSongs  在线歌曲对象数组（用于 fallback 注册，本地歌曲可省略）
+   */
+  const setQueueFromPaths = (paths: string[], fallbackSongs?: Song[]) => {
+    if (areSamePaths(playQueuePaths.value, paths)) return;
+
+    // 注册不在 songPool 中的在线歌曲到 fallback map（本地歌曲在 songPool 中，跳过）
+    if (fallbackSongs) {
+      for (const song of fallbackSongs) {
+        if (song?.path && !libraryStore.getSongByPath(song.path)) {
+          queueFallbackSongs.set(song.path, song);
+        }
+      }
+    }
+
+    playQueuePaths.value = paths;
+    pruneFallbackSongs();
+  };
+
   const resetPlaybackState = () => {
     isPlaying.value = false;
     currentTime.value = 0;
@@ -208,6 +237,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     setSessionQualityOverride,
     resetPlaybackState,
     patchQueueSongMeta,
+    setQueueFromPaths,
     hasExternalStartupFile,
     isStartupPathsResolved,
     startupPathsPromise,

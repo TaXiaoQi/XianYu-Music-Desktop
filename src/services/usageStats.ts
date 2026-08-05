@@ -244,20 +244,40 @@ export interface UserBehaviorReport {
 /**
  * 上报用户播放行为（播放/切歌/播完/下一首）。
  * @param report 行为数据
+ *
+ * [性能优化] 使用 requestIdleCallback 延迟到浏览器空闲时再发起 HTTP 请求。
+ * reportUserBehavior 在 playSong → flushPlaySession 中被调用，此时正准备播放。
+ * 如果立即通过 Tauri HTTP 插件发起 IPC 请求（fetchElapsed 可达 1.7s），
+ * 会与紧随其后的 playAudio IPC 调用产生通道竞争，导致播放起播延迟约 1 秒。
+ * 延迟到空闲期可确保 playAudio 先于 HTTP 请求被投递。
  */
 export function reportUserBehavior(report: UserBehaviorReport): void {
   const info = getDeviceInfo();
-  void signedRequest('report_user_behavior', {
-    device_id: info.device_id,
-    app_version: info.app_version,
-    ...report,
-  })
-    .then(() => {
-      /* 上报成功，静默 */
+  const send = () => {
+    void signedRequest('report_user_behavior', {
+      device_id: info.device_id,
+      app_version: info.app_version,
+      ...report,
     })
-    .catch((err) => {
-      console.warn('[usageStats] reportUserBehavior failed:', err instanceof Error ? err.message : err);
-    });
+      .then(() => {
+        /* 上报成功，静默 */
+      })
+      .catch((err) => {
+        console.warn('[usageStats] reportUserBehavior failed:', err instanceof Error ? err.message : err);
+      });
+  };
+
+  const requestIdle = typeof window !== 'undefined'
+    ? (window as any).requestIdleCallback as
+      | ((callback: () => void, options?: { timeout?: number }) => number)
+      | undefined
+    : undefined;
+
+  if (requestIdle) {
+    requestIdle(send, { timeout: 3000 });
+  } else {
+    setTimeout(send, 500);
+  }
 }
 
 // ─── 问题反馈 ───────────────────────────────────────────

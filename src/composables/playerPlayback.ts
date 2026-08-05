@@ -110,11 +110,32 @@ const authStore = useAuthStore();
     isPlaying,
     isSongLoaded,
     playQueue,
+    playQueuePaths,
     playMode,
     tempQueue,
+    tempQueuePaths,
     currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
+
+  // [性能优化] 将 addToHistory 延迟到空闲时执行，避免其触发的响应式级联阻塞播放启动。
+  // addToHistory 会修改 recentSongs（触发 IPC 序列化所有歌单）和 songCatalogVersion
+  // （触发 canonicalSongs/playQueue/currentViewSongs 等 computed 级联重算），
+  // 歌单和歌曲数量越多，级联开销越大，导致飞封面动画和起播卡顿。
+  // addToHistory 仅影响历史记录和最近播放列表，不影响当前播放，可安全延迟。
+  const scheduleAddToHistory = (song: Song) => {
+    const idle = typeof window !== 'undefined'
+      ? (window as any).requestIdleCallback as
+        | ((callback: () => void, options?: { timeout?: number }) => number)
+        | undefined
+      : undefined;
+
+    if (idle) {
+      idle(() => addToHistory(song), { timeout: 2000 });
+    } else {
+      setTimeout(() => addToHistory(song), 500);
+    }
+  };
 
   const buildQueueWithInsertedSong = (song: Song, previousSong: Song | null, queue: Song[]) => {
     if (previousSong?.path === song.path) {
@@ -175,14 +196,16 @@ const authStore = useAuthStore();
       }
     };
 
-    const requestIdle = (window as any).requestIdleCallback as
-      | ((callback: () => void, options?: { timeout?: number }) => number)
-      | undefined;
+    const requestIdle = typeof window !== 'undefined'
+      ? (window as any).requestIdleCallback as
+        | ((callback: () => void, options?: { timeout?: number }) => number)
+        | undefined
+      : undefined;
 
     if (requestIdle) {
       requestIdle(preload, { timeout: 1500 });
     } else {
-      window.setTimeout(preload, 0);
+      setTimeout(preload, 0);
     }
   };
 
@@ -206,20 +229,24 @@ const authStore = useAuthStore();
     };
 
     pushUniquePath(song.path);
-    pushUniquePath(tempQueue.value[0]?.path);
+    pushUniquePath(tempQueuePaths.value[0]);
 
-    const queue = playQueue.value;
-    const currentIndex = queue.findIndex(item => item.path === song.path);
-    if (currentIndex >= 0 && queue.length > 1) {
-      pushUniquePath(queue[(currentIndex - 1 + queue.length) % queue.length]?.path);
-      pushUniquePath(queue[(currentIndex + 1) % queue.length]?.path);
+    // [性能优化] 用 playQueuePaths（string[]）查找索引，避免 playQueue.value 物化所有歌曲对象
+    const queuePaths = playQueuePaths.value;
+    const currentIndex = queuePaths.indexOf(song.path);
+    if (currentIndex >= 0 && queuePaths.length > 1) {
+      pushUniquePath(queuePaths[(currentIndex - 1 + queuePaths.length) % queuePaths.length]);
+      pushUniquePath(queuePaths[(currentIndex + 1) % queuePaths.length]);
     }
 
     if (playMode.value === 2) {
-      const randomCandidates = (queue.length ? queue : getDisplaySongList())
-        .filter(item => item.path !== song.path)
+      const candidatePaths = queuePaths.length
+        ? queuePaths
+        : getDisplaySongList().map(s => s.path);
+      const randomPaths = candidatePaths
+        .filter(p => p !== song.path)
         .slice(0, 5);
-      randomCandidates.forEach(item => pushUniquePath(item.path));
+      randomPaths.forEach(p => pushUniquePath(p));
     }
 
     return paths;
@@ -595,14 +622,18 @@ const authStore = useAuthStore();
       if (options.insertAfterCurrent) {
         playQueue.value = buildQueueWithInsertedSong(song, previousSong, playQueue.value);
       } else {
+        // [性能优化] 用路径数组直接设置队列，避免 playQueue.value 物化所有歌曲对象。
+        // 同一容器内切歌时路径未变 → setQueueFromPaths 内部 areSamePaths 短路返回，
+        // 不触发 normalizeSongs / pruneFallbackSongs / 响应式更新。
         const displaySongList = getDisplaySongList();
         if (displaySongList.some(item => item.path === song.path)) {
-          playQueue.value = displaySongList;
-        } else if (!playQueue.value.some(item => item.path === song.path)) {
-          if (playQueue.value.length === 0) {
-            playQueue.value = [song];
+          const displayPaths = displaySongList.map(s => s.path);
+          playbackStore.setQueueFromPaths(displayPaths, displaySongList);
+        } else if (!playQueuePaths.value.includes(song.path)) {
+          if (playQueuePaths.value.length === 0) {
+            playbackStore.setQueueFromPaths([song.path], [song]);
           } else {
-            playQueue.value = [...playQueue.value, song];
+            playbackStore.setQueueFromPaths([...playQueuePaths.value, song.path], [song]);
           }
         }
       }
@@ -697,7 +728,10 @@ const authStore = useAuthStore();
     lastRawProgress = -1;
     stalledProgressTicks = 0;
 
-    addToHistory(song);
+    // [性能优化] 延迟 addToHistory 调用，避免 recentSongs 变更触发的响应式级联
+    // （IPC 序列化所有歌单 + songCatalogVersion 递增导致 computed 重算）阻塞播放启动和飞封面动画。
+    // addToHistory 仅影响历史记录和最近播放列表，不影响当前播放，可安全延迟到空闲时执行。
+    scheduleAddToHistory(song);
 
     // [预获取优化] 音质列表获取与 URL 解析并行执行，减少起播延迟
     // 音质列表独立于播放流程，可在后台并行获取
@@ -1172,11 +1206,16 @@ const authStore = useAuthStore();
       } else {
         // 本地音频走 Rust 后端播放
 
-        // [飞封面并行优化] 当开启了渐入渐出（shouldFadeOnSwitch）且有飞封面动画时，
-        // 将 playAudio 提前到飞封面等待之前：fade-out 已将音量降为0，
-        // playAudio 加载新歌但不发声，与飞封面动画并行执行。
-        // 封面飞到后再淡入播放，避免浪费 520ms 等待时间。
-        const playBeforeFlyCover = shouldFadeOnSwitch && !!flyPromise;
+        // [飞封面并行优化] 无论是否开启渐入渐出，都将 playAudio 提前到飞封面等待之前。
+        // playAudio 是 IPC 调用（前端 await 即释放主线程），与飞封面动画并行执行。
+        //
+        // 渐入渐出开启时：fade-out 已将音量降为 0，playAudio 加载新歌但不发声。
+        // 渐入渐出关闭时：playAudio 直接以用户音量加载并播放，飞封面动画掩盖起播延迟。
+        //
+        // 此前非 fade 场景先 await flyPromise（520ms）再 playAudio，导致：
+        // 1. 飞封面动画虽已启动但主线程被同步代码占用，动画首帧延迟（"卡半秒才开始飞"）
+        // 2. playAudio 在 520ms 后才开始，起播延迟叠加
+        const playBeforeFlyCover = !!flyPromise;
 
         const localPlayAudioParams = {
           path: actualAudioPath,
@@ -1194,7 +1233,8 @@ const authStore = useAuthStore();
         };
 
         if (playBeforeFlyCover) {
-          // fade-out 已将 currentBackendVolume 置为 0，playAudio 加载但不发声
+          // fade-out 已将 currentBackendVolume 置为 0（渐入渐出场景），playAudio 加载但不发声
+          // 非渐入渐出场景 currentBackendVolume 为用户音量，playAudio 加载并直接播放
           await playbackApi.playAudio(localPlayAudioParams);
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
@@ -1211,7 +1251,7 @@ const authStore = useAuthStore();
 
         // 等待飞封面动画飞抵底部栏
         // playBeforeFlyCover 时歌曲已静音加载，此处仅等动画完成
-        // 非 playBeforeFlyCover 时按原逻辑等待后再 playAudio
+        // 非 playBeforeFlyCover（无飞封面）时跳过
         if (flyPromise) {
           await Promise.race([
             flyPromise,
@@ -1234,7 +1274,7 @@ const authStore = useAuthStore();
         }
 
         if (!playBeforeFlyCover) {
-          // 标准流程：飞封面等待之后才 playAudio
+          // 标准流程：无飞封面时直接 playAudio
           await playbackApi.playAudio(localPlayAudioParams);
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
