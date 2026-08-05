@@ -26,7 +26,6 @@ import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   PluginSource,
-  PluginSubscription,
   PluginSearchResult,
   PluginMusicInfo,
   PluginPlaylistSearchResult,
@@ -37,6 +36,25 @@ import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
+import {
+  createPluginSubscriptionService,
+  type SubscriptionInstallResult,
+} from './pluginSubscriptions';
+import {
+  extractArtist,
+  extractCoverUrl,
+  qualityKeyToPluginString,
+  resetMediaItem,
+  stripHtmlTags,
+  toPluginSearchResult,
+} from './pluginResultMappers';
+import { fetchWithTimeout } from './pluginFetch';
+import {
+  compareVersions,
+  createPluginUpdateService,
+} from './pluginUpdates';
+
+export type { PluginUpdateCheckResult } from './pluginUpdates';
 
 // ==================== 常量 ====================
 
@@ -422,55 +440,6 @@ if (!_globalThis.__pluginInstanceErrors) {
   _globalThis.__pluginInstanceErrors = new Map<string, string>();
 }
 const pluginInstanceErrors: Map<string, string> = _globalThis.__pluginInstanceErrors;
-
-// ==================== resetMediaItem（与 MusicFree mediaUtils.ts 完全一致）====================
-
-/**
- * 去除 HTML 标签 —— 部分插件（如酷我）搜索结果中歌手/专辑名带有 <em> 等高亮标签
- */
-function stripHtmlTags(str: unknown): string {
-  if (!str || typeof str !== 'string') return '';
-  return str.replace(/<[^>]*>/g, '');
-}
-
-/**
- * 提取封面 URL —— 兼容各插件（网易云等）不同的字段命名
- */
-function extractCoverUrl(item: any): string {
-  let url = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
-  // 网易云歌曲：al.picUrl / album.picUrl
-  if (!url && item.al?.picUrl) url = item.al.picUrl;
-  if (!url && item.album?.picUrl) url = item.album.picUrl;
-  if (!url && item.album?.blurPicUrl) url = item.album.blurPicUrl;
-  // 网易云歌单：coverImgUrl / picUrl
-  if (!url && item.coverImgUrl) url = item.coverImgUrl;
-  if (!url && item.picUrl) url = item.picUrl;
-  // HTTP → HTTPS 升级（网易云 p1.music.126.net 等图片不支持 HTTP）
-  if (url && url.startsWith('http://')) {
-    url = url.replace('http://', 'https://');
-  }
-  return url;
-}
-
-/**
- * 重置媒体项 —— 与 MusicFree resetMediaItem() 完全一致
- *
- * 核心作用：确保每个搜索结果/播放项都有正确的 platform 字段
- * MusicFree 中搜索结果每个 item 都会调用 resetMediaItem(_, pluginName)
- * getMediaSource/getLyric 等方法传入的也是 resetMediaItem 后的对象
- *
- * 关键逻辑：
- *   1. 保留插件返回的所有原始字段（id, title, artist, artwork 等）
- *   2. 设置 platform = pluginName（确保能通过 platform 找到对应插件）
- *   3. 保留插件自定义的字段（如 songId, musicId 等）
- */
-function resetMediaItem(mediaItem: any, pluginName: string): any {
-  if (!mediaItem) return mediaItem;
-  return {
-    ...mediaItem,
-    platform: pluginName,
-  };
-}
 
 // ==================== 插件加载（与 MusicFree Plugin.mountPlugin() 完全一致）====================
 
@@ -939,17 +908,6 @@ export async function pluginGetAlbumSongs(
 }
 
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
-
-/**
- * 将 QualityKey 映射为插件可识别的音质字符串。
- *
- * Toskysun 系列（BakaMusic）插件直接使用 12 档新键值（如 '320k'、'flac'、'master'），
- * 但 'mgg' 需映射为 '96k'（Toskysun 体系用 96k 表示低清）。
- * 原版 MusicFree 插件使用 'standard'/'high'/'lossless'，由 qualityKeyToMfQuality 处理。
- */
-function qualityKeyToPluginString(q: QualityKey): string {
-  return q === 'mgg' ? '96k' : q;
-}
 
 /**
  * 获取播放 URL
@@ -1480,67 +1438,6 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
   }
 }
 
-/**
- * 将 resetMediaItem 后的搜索结果转为 PluginSearchResult
- * 与 MusicFree 的展示逻辑一致
- */
-function toPluginSearchResult(item: any, source: PluginSource): PluginSearchResult {
-  const id = item.id || item.songId || item.musicId || '';
-  const title = stripHtmlTags(item.title || item.name || item.songname || '');
-  const artist = extractArtist(item);
-  const album = extractAlbum(item);
-  const coverUrl = extractCoverUrl(item);
-  const duration = parseDuration(item.duration || item.interval || item.dt);
-
-  return {
-    id,
-    title,
-    artist,
-    album,
-    coverUrl,
-    duration,
-    platform: item.platform || source.name,
-    platformId: id,
-    pluginId: source.id,
-    // 关键：保存 resetMediaItem 后的完整对象，getMediaSource 时直接使用
-    rawData: item,
-  };
-}
-
-function extractArtist(item: any): string {
-  if (item.artist && typeof item.artist === 'string') return stripHtmlTags(item.artist);
-  if (item.singer && typeof item.singer === 'string') return stripHtmlTags(item.singer);
-  if (Array.isArray(item.artists)) {
-    return stripHtmlTags(item.artists.map((a: any) => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean).join('/'));
-  }
-  // 网易云: item.ar 数组
-  if (Array.isArray(item.ar)) {
-    return stripHtmlTags(item.ar.map((a: any) => a?.name || '').filter(Boolean).join('/'));
-  }
-  return '';
-}
-
-function extractAlbum(item: any): string {
-  if (typeof item.album === 'string') return stripHtmlTags(item.album);
-  if (item.album?.name) return stripHtmlTags(item.album.name);
-  if (item.albumName) return stripHtmlTags(item.albumName);
-  // 网易云: item.al.name
-  if (item.al?.name) return stripHtmlTags(item.al.name);
-  return '';
-}
-
-function parseDuration(val: any): number {
-  if (!val) return 0;
-  if (typeof val === 'number') return val > 1000 ? val : val * 1000;
-  if (typeof val === 'string') {
-    const parts = val.split(':');
-    if (parts.length >= 2) return (parseInt(parts[0]) * 60 + parseInt(parts[1])) * 1000;
-    const n = parseInt(val);
-    return n > 1000 ? n : n * 1000;
-  }
-  return 0;
-}
-
 // ==================== 插件存储 ====================
 
 // 所有插件（内置 + 用户导入）都持久化到 localStorage，跨重启保留。
@@ -1819,231 +1716,23 @@ export async function loadPlugins(lazyLoad: boolean = false): Promise<void> {
 
 // ==================== 插件更新 ====================
 
-/**
- * 版本号比较：返回 >0 表示 a 更新，<0 表示 b 更新，0 表示相同
- * 支持语义化版本如 "1.0.5", "1.0.5-fix7", "2.0.0-beta.1"
- */
-function compareVersions(a: string, b: string): number {
-  const parseVer = (v: string) => {
-    const parts = v.split(/[-.]/);
-    return parts.map(p => {
-      const n = parseInt(p);
-      return isNaN(n) ? 0 : n;
-    });
-  };
-  const va = parseVer(a);
-  const vb = parseVer(b);
-  const maxLen = Math.max(va.length, vb.length);
-  for (let i = 0; i < maxLen; i++) {
-    const diff = (va[i] || 0) - (vb[i] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
+const pluginUpdateService = createPluginUpdateService({
+  ensurePluginInstance,
+  loadPluginFromScript,
+  getStoredPlugins,
+  addPluginSource,
+  removePluginSource,
+  updatePluginSource,
+  parseLxScriptInfo,
+  initLxPlugin,
+  destroyLxPlugin,
+  pluginApi,
+  log,
+});
 
-/** 从远程 URL 获取插件脚本 */
-async function fetchPluginScript(url: string): Promise<string | null> {
-  try {
-    const resp = await fetchWithTimeout(url, 10000);
-    if (resp.ok) return await resp.text();
-  } catch { /* ignore */ }
-  try {
-    return await pluginApi.fetchPluginUrl(url);
-  } catch { /* ignore */ }
-  return null;
-}
-
-/** 从 MusicFree 脚本中提取版本号（不执行脚本） */
-function extractMusicFreeVersion(script: string): string | null {
-  const match = script.match(/version\s*[=:]\s*['"]([^'"]+)['"]/);
-  return match ? match[1] : null;
-}
-
-/** 从 MusicFree 脚本中提取 srcUrl（不执行脚本） */
-function extractMusicFreeSrcUrl(script: string): string | null {
-  const match = script.match(/srcUrl\s*[=:]\s*['"]([^'"]+)['"]/);
-  return match ? match[1] : null;
-}
-
-export interface PluginUpdateCheckResult {
-  hasUpdate: boolean;
-  currentVersion: string;
-  newVersion: string;
-  newScript: string | null;
-  updateUrl: string;
-}
-
-/**
- * 检查插件是否有可用更新
- * - MusicFree 插件：优先使用实例的 srcUrl，回退到 filePath（如果是 http URL）
- * - LX 插件：使用 parseLxScriptInfo 提取的 @homepage，回退到 filePath
- */
-export async function checkPluginUpdate(source: PluginSource): Promise<PluginUpdateCheckResult | null> {
-  let updateUrl: string | undefined;
-
-  if (source.format === 'musicfree') {
-    // 优先从实例中获取 srcUrl
-    const inst = await ensurePluginInstance(source);
-    const instanceSrcUrl = (inst?.instance as any)?.srcUrl as string | undefined;
-
-    if (instanceSrcUrl) {
-      updateUrl = instanceSrcUrl;
-    } else if (source.filePath.startsWith('http')) {
-      // 回退到 filePath（导入时的 URL）
-      updateUrl = source.filePath;
-    }
-
-    // 如果都没有，尝试从脚本中提取 srcUrl
-    if (!updateUrl) {
-      let script = '';
-      try {
-        if (source.filePath.startsWith('http')) {
-          script = await fetchPluginScript(source.filePath) || '';
-        } else if (source.filePath) {
-          script = await pluginApi.readPluginFile(source.filePath);
-        }
-      } catch { /* ignore */ }
-      if (script) {
-        updateUrl = extractMusicFreeSrcUrl(script) || undefined;
-      }
-    }
-  } else if (source.format === 'lx') {
-    // LX 插件：从脚本注释中提取 @homepage
-    let script = '';
-    try {
-      if (source.filePath.startsWith('http')) {
-        script = await fetchPluginScript(source.filePath) || '';
-      } else if (source.filePath) {
-        script = await pluginApi.readPluginFile(source.filePath);
-      }
-    } catch { /* ignore */ }
-
-    if (script) {
-      const info = parseLxScriptInfo(script);
-      if (info.homepage) {
-        updateUrl = info.homepage;
-      }
-    }
-
-    if (!updateUrl && source.filePath.startsWith('http')) {
-      updateUrl = source.filePath;
-    }
-  }
-
-  if (!updateUrl) {
-    log(`[checkPluginUpdate] ${source.name} 无可用更新源`);
-    return null;
-  }
-
-  log(`[checkPluginUpdate] ${source.name} 检查更新: ${updateUrl}`);
-  const newScript = await fetchPluginScript(updateUrl);
-  if (!newScript) {
-    log(`[checkPluginUpdate] ${source.name} 获取脚本失败`);
-    return null;
-  }
-
-  // 提取新版本号（不执行脚本）
-  let newVersion = '';
-  if (source.format === 'musicfree') {
-    newVersion = extractMusicFreeVersion(newScript) || '';
-  } else if (source.format === 'lx') {
-    const info = parseLxScriptInfo(newScript);
-    newVersion = info.version;
-  }
-
-  if (!newVersion) {
-    log(`[checkPluginUpdate] ${source.name} 无法从新脚本提取版本号`);
-    return null;
-  }
-
-  const hasUpdate = compareVersions(newVersion, source.version) > 0;
-  log(`[checkPluginUpdate] ${source.name}: 当前=${source.version}, 远程=${newVersion}, 有更新=${hasUpdate}`);
-
-  return {
-    hasUpdate,
-    currentVersion: source.version,
-    newVersion,
-    newScript: hasUpdate ? newScript : null,
-    updateUrl,
-  };
-}
-
-/**
- * 执行插件更新：重新加载新脚本并替换旧插件
- */
-export async function performPluginUpdate(
-  source: PluginSource,
-  checkResult: PluginUpdateCheckResult,
-): Promise<{ success: boolean; newSource: PluginSource | null; message: string }> {
-  if (!checkResult.newScript) {
-    return { success: false, newSource: null, message: '无新脚本可更新' };
-  }
-
-  try {
-    // 加载新脚本
-    const newSource = await loadPluginFromScript(checkResult.newScript, checkResult.updateUrl);
-    if (!newSource) {
-      return { success: false, newSource: null, message: '新脚本加载失败' };
-    }
-
-    // 保留原有的 enabled 和 sortOrder 状态
-    newSource.enabled = source.enabled;
-    newSource.sortOrder = source.sortOrder;
-
-    // 如果新插件 ID 不同，删除旧插件
-    if (newSource.id !== source.id) {
-      removePluginSource(source.id);
-    }
-
-    // 添加新插件
-    addPluginSource(newSource);
-
-    // 如果是 LX 插件且启用，重新初始化
-    if (newSource.format === 'lx' && newSource.enabled) {
-      destroyLxPlugin(source.id);
-      await initLxPlugin(newSource);
-    }
-
-    log(`[performPluginUpdate] ${source.name} 更新成功: ${source.version} → ${newSource.version}`);
-    return { success: true, newSource, message: `${source.name} 已更新到 ${newSource.version}` };
-  } catch (e: any) {
-    log(`[performPluginUpdate] ${source.name} 更新失败: ${e?.message || e}`);
-    return { success: false, newSource: null, message: `更新失败: ${e?.message || e}` };
-  }
-}
-
-/**
- * 批量检查所有插件的更新
- */
-export async function checkAllPluginUpdates(): Promise<Map<string, PluginUpdateCheckResult>> {
-  const plugins = getStoredPlugins();
-  const results = new Map<string, PluginUpdateCheckResult>();
-
-  await Promise.allSettled(plugins.map(async (source) => {
-    try {
-      const result = await checkPluginUpdate(source);
-      if (result) {
-        results.set(source.id, result);
-        // 更新 updateAvailable 标记
-        updatePluginSource(source.id, { updateAvailable: result.hasUpdate });
-      }
-    } catch (e: any) {
-      log(`[checkAllPluginUpdates] ${source.name} 检查失败: ${e?.message || e}`);
-    }
-  }));
-
-  return results;
-}
-
-/** 带超时的 fetch，避免请求挂起 */
-function fetchWithTimeout(url: string, ms: number): Promise<Response> {
-  return Promise.race([
-    fetch(url),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`fetch 超时(${ms / 1000}s): ${url}`)), ms),
-    ),
-  ]);
-}
+export const checkPluginUpdate = pluginUpdateService.checkPluginUpdate;
+export const performPluginUpdate = pluginUpdateService.performPluginUpdate;
+export const checkAllPluginUpdates = pluginUpdateService.checkAllPluginUpdates;
 
 // ==================== 云端同步支持 ====================
 
@@ -2147,263 +1836,21 @@ export async function restorePluginFromSync(
 
 // ==================== 订阅管理 ====================
 
-/**
- * 订阅管理 —— 参考 MusicFreeDesktop 订阅管理设计
- *
- * 数据模型 PluginSubscription 见 src/types/index.ts
- * 持久化到 localStorage（key: xianyu_plugin_subscriptions），与插件存储风格一致
- * 安装逻辑复用 loadPluginFromScript + addPluginSource，支持单插件脚本与批量 JSON 两种订阅源格式
- */
+const pluginSubscriptionService = createPluginSubscriptionService({
+  loadPluginFromScript,
+  addPluginSource,
+  getStoredPlugins,
+  compareVersions,
+});
 
-const PLUGIN_SUBSCRIPTIONS_KEY = 'xianyu_plugin_subscriptions';
-
-/** 读取全部订阅 */
-export function getSubscriptions(): PluginSubscription[] {
-  try {
-    const raw = localStorage.getItem(PLUGIN_SUBSCRIPTIONS_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw);
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
-/** 写入全部订阅（内部） */
-function saveSubscriptions(list: PluginSubscription[]): void {
-  try {
-    localStorage.setItem(PLUGIN_SUBSCRIPTIONS_KEY, JSON.stringify(list));
-  } catch { /* ignore */ }
-}
-
-/**
- * URL 校验：必须 http(s) 且以 .js/.json 结尾（与 MusicFreeDesktop 一致）
- * 允许末尾带查询参数（如 plugin.json?v=2）
- */
-export function isValidSubscriptionUrl(url: string): boolean {
-  return /^https?:\/\/.+\.(js|json)(\?.*)?$/i.test(url.trim());
-}
-
-/** 生成订阅 ID（与组件内既有命名风格一致） */
-function genSubscriptionId(): string {
-  return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-/**
- * 新增订阅（含 URL 校验 + 去重）
- * @returns 新增的订阅项；URL 非法或已存在时返回 null
- */
-export function addSubscription(input: { name: string; url: string }): PluginSubscription | null {
-  const url = input.url.trim();
-  if (!isValidSubscriptionUrl(url)) return null;
-
-  const list = getSubscriptions();
-  if (list.some(s => s.url === url)) return null;
-
-  // 从 URL 提取默认名称（取域名 + 末段路径）
-  let name = input.name.trim();
-  if (!name) {
-    try {
-      const u = new URL(url);
-      const lastSeg = u.pathname.split('/').pop() || '';
-      name = u.hostname + (lastSeg ? `/${lastSeg}` : '');
-    } catch {
-      name = url;
-    }
-  }
-
-  const sub: PluginSubscription = {
-    id: genSubscriptionId(),
-    name,
-    url,
-    addedAt: Date.now(),
-  };
-  list.push(sub);
-  saveSubscriptions(list);
-  return sub;
-}
-
-/** 更新订阅（用于编辑名称或 URL） */
-export function updateSubscription(
-  id: string,
-  updates: Partial<Pick<PluginSubscription, 'name' | 'url' | 'lastSyncAt' | 'lastSyncStatus' | 'lastSyncMessage' | 'lastSyncCount'>>,
-): void {
-  const list = getSubscriptions();
-  const idx = list.findIndex(s => s.id === id);
-  if (idx < 0) return;
-  // URL 更新时需校验
-  if (updates.url !== undefined && !isValidSubscriptionUrl(updates.url)) return;
-  list[idx] = { ...list[idx], ...updates };
-  saveSubscriptions(list);
-}
-
-/** 移除订阅 */
-export function removeSubscription(id: string): void {
-  saveSubscriptions(getSubscriptions().filter(s => s.id !== id));
-}
-
-/** 单次订阅同步安装结果 */
-export interface SubscriptionInstallResult {
-  /** 成功安装的插件数 */
-  successCount: number;
-  /** 失败数 */
-  failCount: number;
-  /** 成功安装的插件名列表 */
-  names: string[];
-  /** 错误信息列表 */
-  errors: string[];
-}
-
-/** 拉取远程内容（先浏览器 fetch，失败回退 Tauri 后端代理） */
-async function fetchSubscriptionContent(url: string): Promise<string> {
-  let content = '';
-  try {
-    const resp = await fetchWithTimeout(url, 15000);
-    if (resp.ok) content = await resp.text();
-  } catch { /* ignore, try Tauri backend */ }
-  if (!content) {
-    try {
-      content = await pluginApi.fetchPluginUrl(url);
-    } catch { /* ignore */ }
-  }
-  return content || '';
-}
-
-/**
- * 安装单个插件脚本（含版本校验）
- * 复用 SettingsPlugins.vue installPluginFromScript 的版本比较逻辑
- */
-async function installSinglePluginScript(
-  script: string,
-  filePath: string,
-  skipVersionCheck: boolean,
-): Promise<{ ok: boolean; name?: string; error?: string }> {
-  const source = await loadPluginFromScript(script, filePath);
-  if (!source) {
-    return { ok: false, error: '插件加载失败' };
-  }
-
-  // 版本校验：跳过更旧或相同版本
-  if (!skipVersionCheck) {
-    const existing = getStoredPlugins().find(p => p.name === source.name);
-    if (existing && compareVersions(source.version, existing.version) <= 0) {
-      return { ok: false, error: `已存在 v${existing.version}，新版本未更高，已跳过` };
-    }
-  }
-
-  addPluginSource(source);
-  return { ok: true, name: source.name };
-}
-
-/**
- * 从单个订阅 URL 拉取并安装插件
- *
- * 支持两种订阅源格式：
- *  1. 单插件脚本（.js 文本）→ 直接 loadPluginFromScript + addPluginSource
- *  2. 批量 JSON：{plugins:[{name,url,version}]} 或 [{name,url}] → 逐个 fetch 子 URL 安装
- *
- * @param url 订阅源 URL
- * @param options
- * @param options.skipVersionCheck 跳过版本校验（与设置"安装时不校验版本"联动）
- */
-export async function installFromSubscriptionUrl(
-  url: string,
-  options: { skipVersionCheck?: boolean } = {},
-): Promise<SubscriptionInstallResult> {
-  const result: SubscriptionInstallResult = { successCount: 0, failCount: 0, names: [], errors: [] };
-  const skipVersionCheck = !!options.skipVersionCheck;
-
-  const content = await fetchSubscriptionContent(url);
-  if (!content || !content.trim()) {
-    result.failCount = 1;
-    result.errors.push('获取订阅内容失败，请检查 URL');
-    return result;
-  }
-
-  // ===== 检测批量 JSON 格式（与 SettingsPlugins.vue handleInstallFromUrl 逻辑一致） =====
-  const trimmed = content.trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      const json = JSON.parse(trimmed);
-      const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
-      // 仅当是 {url,...} 数组时按批量处理
-      if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
-        for (const item of pluginList) {
-          if (!item.url) continue;
-          try {
-            const script = await fetchSubscriptionContent(item.url);
-            if (!script || !script.trim()) {
-              result.failCount++;
-              result.errors.push(`${item.name || item.url}: 获取脚本失败`);
-              continue;
-            }
-            const r = await installSinglePluginScript(script, item.url, skipVersionCheck);
-            if (r.ok) {
-              result.successCount++;
-              result.names.push(r.name || item.name || '');
-            } else {
-              result.failCount++;
-              result.errors.push(`${item.name || item.url}: ${r.error}`);
-            }
-          } catch (e: any) {
-            result.failCount++;
-            result.errors.push(`${item.name || item.url}: ${e?.message || e}`);
-          }
-        }
-        return result;
-      }
-    } catch { /* 不是有效 JSON，当作单插件脚本处理 */ }
-  }
-
-  // ===== 单插件脚本 =====
-  const r = await installSinglePluginScript(content, url, skipVersionCheck);
-  if (r.ok) {
-    result.successCount = 1;
-    result.names.push(r.name || '');
-  } else {
-    result.failCount = 1;
-    result.errors.push(r.error || '插件加载失败');
-  }
-  return result;
-}
-
-/**
- * 一键同步所有订阅，逐个拉取安装，并更新每个订阅的 lastSync* 字段
- * @param onProgress 每完成一个订阅回调（index 从 0 开始，total 订阅总数，sub 当前订阅，result 安装结果）
- */
-export async function installAllSubscriptions(
-  onProgress?: (index: number, total: number, sub: PluginSubscription, result: SubscriptionInstallResult) => void,
-): Promise<{ totalSubs: number; totalInstalled: number; failedSubs: number }> {
-  const subs = getSubscriptions();
-  const summary = { totalSubs: subs.length, totalInstalled: 0, failedSubs: 0 };
-
-  for (let i = 0; i < subs.length; i++) {
-    const sub = subs[i];
-    let result: SubscriptionInstallResult;
-    try {
-      result = await installFromSubscriptionUrl(sub.url);
-    } catch (e: any) {
-      result = { successCount: 0, failCount: 1, names: [], errors: [e?.message || String(e)] };
-    }
-
-    // 更新该订阅的同步状态
-    const status: PluginSubscription['lastSyncStatus'] =
-      result.failCount === 0 ? 'success' : (result.successCount > 0 ? 'partial' : 'failed');
-    updateSubscription(sub.id, {
-      lastSyncAt: Date.now(),
-      lastSyncStatus: status,
-      lastSyncMessage: result.errors[0] || `成功安装 ${result.successCount} 个插件`,
-      lastSyncCount: result.successCount,
-    });
-
-    summary.totalInstalled += result.successCount;
-    if (result.successCount === 0) summary.failedSubs++;
-
-    onProgress?.(i, subs.length, sub, result);
-  }
-
-  return summary;
-}
+export const getSubscriptions = pluginSubscriptionService.getSubscriptions;
+export const isValidSubscriptionUrl = pluginSubscriptionService.isValidSubscriptionUrl;
+export const addSubscription = pluginSubscriptionService.addSubscription;
+export const updateSubscription = pluginSubscriptionService.updateSubscription;
+export const removeSubscription = pluginSubscriptionService.removeSubscription;
+export const installFromSubscriptionUrl = pluginSubscriptionService.installFromSubscriptionUrl;
+export const installAllSubscriptions = pluginSubscriptionService.installAllSubscriptions;
+export type { SubscriptionInstallResult };
 
 // ==================== 导出 ====================
 

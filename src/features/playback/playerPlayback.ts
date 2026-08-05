@@ -1,7 +1,6 @@
 import { storeToRefs } from 'pinia';
 import { watch } from 'vue';
-import type { Song, QualityKey } from '../../types';
-import { QUALITY_META, resolveOnlinePlayQuality } from '../../types';
+import type { QualityKey, Song } from '../../types';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import { usePlaybackStore } from './store';
 import { useSettingsStore } from '../settings/store';
@@ -15,15 +14,8 @@ import { reportUserBehavior } from '../../services/usageStats';
 import { useAuthStore } from '../auth/store';
 import { preloadAmlLyricPlayer } from '../../components/player/amlLyricPlayerLoader';
 import { consumeFlyCoverPromise } from '../../composables/useFlyingCover';
-import { getCachedLxSong } from '../../services/lxSongCache';
-import {
-  getStoredPlugins,
-  pluginGetCover,
-  pluginGetLyric,
-  pluginGetMusicInfo,
-  pluginGetSupportedQualities,
-} from '../../services/pluginEngine';
-import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../../services/lxPluginEngine';
+import { getStoredPlugins, pluginGetLyric } from '../../services/pluginEngine';
+import { getOnlineAvailableQualities, resolveOnlineAudio } from './onlinePlaybackResolver';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -748,38 +740,7 @@ const authStore = useAuthStore();
     const qSongPath = song.cue_source_path || song.path;
     const qualityListPromise = (async () => {
       try {
-        if (qSongPath.startsWith('lx://')) {
-          // LX 歌曲：从缓存的 _types 提取
-          const parts = qSongPath.replace('lx://', '').split('/');
-          const lxSource = parts[0];
-          const songmid = parts.slice(1).join('/');
-          if (lxSource && songmid) {
-            const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-            const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-            if (cachedInfo?._types) {
-              const lxQualities = Object.keys(cachedInfo._types)
-                .filter(k => k in QUALITY_META) as QualityKey[];
-              if (lxQualities.length > 0) {
-                currentAvailableQualities.value = lxQualities
-                  .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
-              }
-            }
-          }
-        } else if (qSongPath.startsWith('plugin://')) {
-          // plugin:// 歌曲：从插件实例的 supportedQualities 提取
-          const pluginSearchResult = song.rawData;
-          if (pluginSearchResult?.pluginId) {
-            const plugins = getStoredPlugins();
-            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-            if (pluginSource) {
-              const supportedQ = await pluginGetSupportedQualities(pluginSource);
-              if (supportedQ && supportedQ.length > 0) {
-                currentAvailableQualities.value = supportedQ
-                  .sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
-              }
-            }
-          }
-        }
+        currentAvailableQualities.value = await getOnlineAvailableQualities(qSongPath, song);
       } catch { /* ignore: 音质列表获取失败不影响播放 */ }
     })();
 
@@ -794,155 +755,30 @@ const authStore = useAuthStore();
     // [可打断] 音质列表获取期间用户可能切歌，需检查是否仍是当前请求
     if (requestId !== playRequestId) return;
 
-    // [落雪] lx:// 协议需要通过落雪插件引擎解析真实播放 URL
-    // 完全对齐 YinDongMusic 的实现：getStoredPlugins → ensureLxPluginInstance → lxPluginGetMusicUrl
-    if (audioFilePath.startsWith('lx://')) {
-      const parts = audioFilePath.replace('lx://', '').split('/');
-      const lxSource = parts[0];
-      const songmid = parts.slice(1).join('/');
-      if (lxSource && songmid) {
-        try {
-          // 从 localStorage 获取已启用的 LX 插件
-          const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
-          // 优先找到支持该音源的插件，否则用第一个
-          let matchedPlugin = lxPlugins.find(p => p.sources.includes(lxSource));
-          if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
-          if (matchedPlugin) {
-            await ensureLxPluginInstance(matchedPlugin);
-            // 从缓存获取完整的歌曲元信息（hash/strMediaMid/copyrightId 等）
-            const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-            const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-            // 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
-            const requestedQuality = playbackStore.sessionQualityOverride
-              || settingsStore.settings.audio.onlineDefaultQuality || '320k';
-            const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-
-            // [统一音质解析] 使用 resolveOnlinePlayQuality 构建有序尝试列表：
-            // 首选音质 → 回退行为（lower/higher/pause）→ 最高可用兜底
-            const lxTryQualities = resolveOnlinePlayQuality(
-              requestedQuality,
-              playbackStore.currentAvailableQualities,
-              fallbackBehavior,
-            );
-
-            // 依次尝试音质列表，第一个返回有效 URL 的即采用
-            // [歌曲级错误优化] 当插件返回"歌曲不存在"等歌曲级错误时，LxSongLevelError 会被抛出，
-            // 立即跳出音质循环，避免对同一首不可用的歌曲发起 12 次无意义的 HTTP 请求
-            for (const q of lxTryQualities) {
-              try {
-                const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
-                  songId: songmid,
-                  name: song.name,
-                  singer: song.artist,
-                  albumName: song.album,
-                  source: lxSource,
-                  songmid,
-                  hash: cachedInfo?.hash,
-                  copyrightId: cachedInfo?.copyrightId,
-                  strMediaMid: cachedInfo?.strMediaMid,
-                  albumId: cachedInfo?.albumId,
-                  albumMid: cachedInfo?.albumMid,
-                  interval: cachedInfo?.interval,
-                  _types: cachedInfo?._types,
-                  types: cachedInfo?.types,
-                } as any, q);
-                const musicUrl = urlResult?.url;
-                if (musicUrl && /^https?:/.test(musicUrl)) {
-                  audioFilePath = musicUrl;
-                  playbackStore.currentPlayingQuality = q;
-                  playbackStore.currentPlayingAudioUrl = musicUrl;
-                  break;
-                }
-              } catch (urlErr: any) {
-                // LxSongLevelError: 歌曲级错误（不存在/版权/VIP），换音质无意义，立即停止
-                if (urlErr?.name === 'LxSongLevelError') {
-                  console.warn(`[Audio] Song-level error, skipping remaining qualities: ${urlErr.message}`);
-                  break;
-                }
-                // 其他异常继续尝试下一个音质
-              }
-            }
-            if (audioFilePath.startsWith('lx://')) {
-              console.warn(`[Audio] lxPluginGetMusicUrl returned empty/invalid URL for lx://${lxSource}/${songmid}, tried=${JSON.stringify(lxTryQualities)}`);
-            }
-          } else {
-            console.warn(`[Audio] No LX plugin available for lx://${lxSource}/${songmid}`);
-          }
-        } catch (e: any) {
-          console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${e?.message}`);
-        }
-      }
+    const requestedQuality = (playbackStore.sessionQualityOverride
+      || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
+    const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+    const resolvedOnlineAudio = await resolveOnlineAudio({
+      audioFilePath,
+      song,
+      requestedQuality,
+      fallbackBehavior,
+      availableQualities: playbackStore.currentAvailableQualities,
+      preFetchedUrl: song.remote_source_id,
+    });
+    audioFilePath = resolvedOnlineAudio.audioFilePath;
+    pluginHeaders = resolvedOnlineAudio.pluginHeaders;
+    if (resolvedOnlineAudio.currentPlayingQuality) {
+      playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
     }
-
-    // [MusicFree 插件] plugin:// 协议需要通过插件引擎解析真实播放 URL
-    // 用于"全部播放"场景：歌曲仅携带 rawData（PluginSearchResult），播放时才拉取直链
-    if (audioFilePath.startsWith('plugin://')) {
-      // 优先使用预获取的直链（remote_source_id），避免重复调用插件 API
-      // 播放入口（如 handlePlayMfSong）会在播放前预获取 URL 并存到 remote_source_id
-      const preUrl = song.remote_source_id;
-      if (preUrl && /^https?:/.test(preUrl)) {
-        // 直接使用预获取的直链（由播放入口如 handlePlayMfSong 在播放前获取）
-        // 避免重复调用 pluginGetMusicInfo 导致额外的网络请求延迟（之前会先检查 is_stream_cached，
-        // 未缓存时再调一次 pluginGetMusicInfo，与播放入口的预获取重复，浪费 1-2 秒）
-        // 流式缓存模块会自动处理下载和缓冲，URL 过期导致 403 时由播放失败处理逻辑兜底
-        audioFilePath = preUrl;
-        playbackStore.currentPlayingAudioUrl = preUrl;
-        if (song.remote_headers) {
-          pluginHeaders = song.remote_headers;
-        }
-      } else {
-        // 回退到插件解析：通过 rawData 调用 pluginGetMusicInfo 获取直链
-        const pluginSearchResult = song.rawData;
-        if (pluginSearchResult?.pluginId) {
-          try {
-            const plugins = getStoredPlugins();
-            const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-            if (pluginSource) {
-              // 读取音质：优先使用底部栏会话级临时覆盖，回退到设置页的在线播放音质
-              // pluginGetMusicInfo 内部会先尝试新键值（Toskysun 插件），再回退到旧三档（原版 MusicFree）
-              const requestedQuality = playbackStore.sessionQualityOverride
-                || settingsStore.settings.audio.onlineDefaultQuality || '320k';
-              const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-              const musicInfo = await pluginGetMusicInfo(pluginSource, pluginSearchResult, requestedQuality, fallbackBehavior, playbackStore.currentAvailableQualities);
-              if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
-                audioFilePath = musicInfo.url;
-                if (musicInfo.actualQuality) {
-                  playbackStore.currentPlayingQuality = musicInfo.actualQuality;
-                }
-                playbackStore.currentPlayingAudioUrl = musicInfo.url;
-                // 保存插件返回的防盗链 headers
-                if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
-                  pluginHeaders = musicInfo.headers;
-                }
-
-                // 更新歌词：仅使用 getMediaSource 返回的歌词（已由 buildLyricsRaw 构建为 lyricsRaw）
-                // 不在此处同步调用 pluginGetLyric（避免阻塞播放），未获取到时由上方异步逻辑补获
-                if (!song.lyrics_raw?.trim() && musicInfo.lyricsRaw) {
-                  song.lyrics_raw = musicInfo.lyricsRaw;
-                }
-
-                // 更新封面（如果尚未有）
-                if (!song.cover_thumb_path) {
-                  if (musicInfo.coverUrl) {
-                    song.cover_thumb_path = musicInfo.coverUrl;
-                  } else {
-                    try {
-                      const cover = await pluginGetCover(pluginSource, pluginSearchResult);
-                      if (cover) song.cover_thumb_path = cover;
-                    } catch { /* ignore cover error */ }
-                  }
-                }
-              } else {
-                console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
-              }
-            } else {
-              console.warn(`[Audio] No enabled plugin found for pluginId=${pluginSearchResult.pluginId}`);
-            }
-          } catch (e: any) {
-            console.warn(`[Audio] Failed to resolve plugin:// URL: ${e?.message}`);
-          }
-        }
-      }
+    if (resolvedOnlineAudio.currentPlayingAudioUrl) {
+      playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
+    }
+    if (!song.lyrics_raw?.trim() && resolvedOnlineAudio.lyricsRaw) {
+      song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
+    }
+    if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
+      song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
     }
 
     // [可打断] lx:///plugin:// URL 解析期间用户可能切歌，需检查是否仍是当前请求

@@ -8,7 +8,14 @@ import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useToast } from '../../composables/toast';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { getSongAlbumKey, getSongArtistNames } from '../../features/library/playerLibraryViewShared';
+import {
+  getSongAlbumKey,
+  hasSongAlbumMetadata,
+  hasSongArtistMetadata,
+  isMeaningfulMetadataValue,
+  resolveArtistSubmenuOptions,
+  resolvePrimaryArtistName,
+} from '../../features/library/playerLibraryViewShared';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
@@ -218,7 +225,7 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
   }
 
   // 在线搜索模式不显示"整张专辑添加到队尾"
-  if (!online && props.song && hasAlbumMetadata(props.song)) {
+  if (!online && props.song && hasSongAlbumMetadata(props.song)) {
     entries.push({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
   }
 
@@ -348,36 +355,6 @@ const handleGlobalClick = (event: MouseEvent) => {
 onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
 
-const isMeaningfulMetadataValue = (value: string | undefined) => {
-  const normalized = value?.trim() || '';
-  return normalized !== '' && normalized.toLowerCase() !== 'unknown';
-};
-
-const normalizeArtistOptions = (artists: string[] = []) =>
-  artists
-    .map(name => name.trim())
-    .filter(isMeaningfulMetadataValue)
-    .filter((name, index, list) => list.indexOf(name) === index);
-
-const resolveArtistSubmenuOptions = (song: Song) => {
-  const effectiveArtists = normalizeArtistOptions(song.effective_artist_names);
-  if (effectiveArtists.length > 1) {
-    return effectiveArtists;
-  }
-
-  const artistNames = normalizeArtistOptions(song.artist_names);
-  if (artistNames.length > 1) {
-    return artistNames;
-  }
-
-  return [];
-};
-
-const resolvePrimaryArtistName = (song: Song) =>
-  getSongArtistNames(song)
-    .map(name => name.trim())
-    .find(isMeaningfulMetadataValue) || '';
-
 const artistSubmenuOptions = computed(() =>
   props.song ? resolveArtistSubmenuOptions(props.song) : [],
 );
@@ -389,20 +366,6 @@ watch(artistSubmenuOptions, (options) => {
     showArtistSubmenu.value = false;
   }
 });
-
-const hasArtistMetadata = (song: Song) =>
-  Boolean(
-    resolvePrimaryArtistName(song)
-    || song.artist_names.some(isMeaningfulMetadataValue)
-    || song.effective_artist_names.some(isMeaningfulMetadataValue),
-  );
-
-const hasAlbumMetadata = (song: Song) =>
-  isMeaningfulMetadataValue(song.album)
-  || (
-    Boolean(song.album_key?.trim())
-    && !song.album_key.trim().toLowerCase().startsWith('unknown::')
-  );
 
 const artistSubmenuStyle = computed<CSSProperties>(() => {
   if (!showArtistSubmenu.value || !viewArtistTriggerRef.value) {
@@ -534,7 +497,7 @@ const handleAction = (action: SongMenuAction) => {
         emit('close');
         return;
       }
-      if (!hasArtistMetadata(props.song)) {
+      if (!hasSongArtistMetadata(props.song)) {
         showToast('当前歌曲缺少歌手信息', 'info');
         break;
       }
@@ -550,7 +513,7 @@ const handleAction = (action: SongMenuAction) => {
         emit('close');
         return;
       }
-      if (!hasAlbumMetadata(props.song)) {
+      if (!hasSongAlbumMetadata(props.song)) {
         showToast('当前歌曲缺少专辑信息', 'info');
         break;
       }

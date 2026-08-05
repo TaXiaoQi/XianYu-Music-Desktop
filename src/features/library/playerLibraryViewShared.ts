@@ -25,6 +25,50 @@ export const getSongArtistNames = (song: Song) => {
   return [song.artist || 'Unknown'];
 };
 
+export const isMeaningfulMetadataValue = (value: string | undefined) => {
+  const normalized = value?.trim() || '';
+  return normalized !== '' && normalized.toLowerCase() !== 'unknown';
+};
+
+export const normalizeArtistOptions = (artists: string[] = []) =>
+  artists
+    .map(name => name.trim())
+    .filter(isMeaningfulMetadataValue)
+    .filter((name, index, list) => list.indexOf(name) === index);
+
+export const resolveArtistSubmenuOptions = (song: Song) => {
+  const effectiveArtists = normalizeArtistOptions(song.effective_artist_names);
+  if (effectiveArtists.length > 1) {
+    return effectiveArtists;
+  }
+
+  const artistNames = normalizeArtistOptions(song.artist_names);
+  if (artistNames.length > 1) {
+    return artistNames;
+  }
+
+  return [];
+};
+
+export const resolvePrimaryArtistName = (song: Song) =>
+  getSongArtistNames(song)
+    .map(name => name.trim())
+    .find(isMeaningfulMetadataValue) || '';
+
+export const hasSongArtistMetadata = (song: Song) =>
+  Boolean(
+    resolvePrimaryArtistName(song)
+    || song.artist_names.some(isMeaningfulMetadataValue)
+    || song.effective_artist_names.some(isMeaningfulMetadataValue),
+  );
+
+export const hasSongAlbumMetadata = (song: Song) =>
+  isMeaningfulMetadataValue(song.album)
+  || (
+    Boolean(song.album_key?.trim())
+    && !song.album_key.trim().toLowerCase().startsWith('unknown::')
+  );
+
 export const songHasArtist = (song: Song, artistName: string) =>
   getSongArtistNames(song).some(name => name === artistName);
 
@@ -95,4 +139,3 @@ export const compareSongPathsByTrackNumber = (
 
   return result;
 };
-

@@ -9,7 +9,7 @@ import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useToast } from '../../composables/toast';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
-import { getSongAlbumKey, getSongArtistNames } from '../../features/library/playerLibraryViewShared';
+import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
 import type { Song } from '../../types';
 
 type FooterMenuAction =
@@ -118,23 +118,6 @@ const handleGlobalClick = (e: MouseEvent) => {
 onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
 
-const isMeaningfulMetadataValue = (value: string | undefined) => {
-  const normalized = value?.trim() || '';
-  return normalized !== '' && normalized.toLowerCase() !== 'unknown';
-};
-
-const resolvePrimaryArtistName = (song: Song) =>
-  getSongArtistNames(song)
-    .map(name => name.trim())
-    .find(isMeaningfulMetadataValue) || '';
-
-const hasAlbumMetadata = (song: Song) =>
-  isMeaningfulMetadataValue(song.album)
-  || (
-    Boolean(song.album_key?.trim())
-    && !song.album_key.trim().toLowerCase().startsWith('unknown::')
-  );
-
 const handleAction = (action: FooterMenuAction) => {
   if (!props.song) {
     return;
@@ -158,7 +141,7 @@ const handleAction = (action: FooterMenuAction) => {
       break;
     }
     case 'viewAlbum':
-      if (!hasAlbumMetadata(props.song)) {
+      if (!hasSongAlbumMetadata(props.song)) {
         showToast('当前歌曲缺少专辑信息', 'info');
         break;
       }

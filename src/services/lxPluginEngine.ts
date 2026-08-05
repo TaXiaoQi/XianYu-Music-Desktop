@@ -22,6 +22,7 @@ import { Buffer } from 'buffer';
 import type { PluginSource } from '../types';
 import { invoke } from '@tauri-apps/api/core';
 import { pluginApi } from './tauri/pluginApi';
+import { fetchWithTimeout } from './pluginFetch';
 
 // ==================== 常量 ====================
 
@@ -1002,15 +1003,4 @@ export function getLxPluginStatusLabel(sourceId: string): string {
     case 'error': return '初始化失败';
     default: return '未知';
   }
-}
-
-// ==================== 辅助函数 ====================
-
-function fetchWithTimeout(url: string, ms: number): Promise<Response> {
-  return Promise.race([
-    fetch(url),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`fetch 超时(${ms / 1000}s): ${url}`)), ms),
-    ),
-  ]);
 }

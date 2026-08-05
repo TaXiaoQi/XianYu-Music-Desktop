@@ -6,7 +6,7 @@ import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useToast } from '../../composables/toast';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
-import { getSongAlbumKey, getSongArtistNames } from '../../features/library/playerLibraryViewShared';
+import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
 import { useOnlineDetailStore } from '../../features/onlineDetail/store';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
@@ -216,24 +216,6 @@ const handleGlobalClick = (event: MouseEvent) => {
 onMounted(() => window.addEventListener('mousedown', handleGlobalClick));
 onUnmounted(() => window.removeEventListener('mousedown', handleGlobalClick));
 
-// --- 歌手/专辑元数据校验 ---
-const isMeaningfulMetadataValue = (value: string | undefined) => {
-  const normalized = value?.trim() || '';
-  return normalized !== '' && normalized.toLowerCase() !== 'unknown';
-};
-
-const resolvePrimaryArtistName = (song: Song) =>
-  getSongArtistNames(song)
-    .map(name => name.trim())
-    .find(isMeaningfulMetadataValue) || '';
-
-const hasAlbumMetadata = (song: Song) =>
-  isMeaningfulMetadataValue(song.album)
-  || (
-    Boolean(song.album_key?.trim())
-    && !song.album_key.trim().toLowerCase().startsWith('unknown::')
-  );
-
 /** 在线歌曲：通过 plugin_id 查找 PluginSource */
 const resolvePluginSource = (song: Song) => {
   const pluginId = song.plugin_id || song.rawData?.pluginId;
@@ -349,7 +331,7 @@ const handleAction = (action: DetailMenuAction) => {
       if (isOnlineSong.value) {
         void handleOnlineViewAlbum(props.song);
       } else {
-        if (!hasAlbumMetadata(props.song)) {
+        if (!hasSongAlbumMetadata(props.song)) {
           showToast('当前歌曲缺少专辑信息', 'info');
           break;
         }

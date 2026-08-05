@@ -13,6 +13,7 @@ import { useToast } from '../../composables/toast';
 import { useLibraryStore } from '../../features/library/store';
 import type { LyricsStorageSource } from '../../services/tauri/contracts';
 import { tauriInvoke } from '../../services/tauri/invoke';
+import { formatFileSize } from '../../utils/format';
 
 const props = defineProps<{
   visible: boolean;
@@ -493,18 +494,7 @@ const handleSaveSongInfo = async () => {
 // 格式化工具
 const formatSize = (bytes?: number) => {
   if (bytes === undefined || bytes <= 0) return '无';
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  const precision = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+  return formatFileSize(bytes);
 };
 
 const formatDuration = (seconds?: number) => {
