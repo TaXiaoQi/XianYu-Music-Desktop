@@ -1,7 +1,7 @@
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { usePlayer } from './player';
+import { usePlayer } from '../features/playback';
 import { useAppThemeSync } from './useAppThemeSync';
 import { useExternalPathBridge } from './useExternalPathBridge';
 import { useAppShellTheme } from './useAppShellTheme';

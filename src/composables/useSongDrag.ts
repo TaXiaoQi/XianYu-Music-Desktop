@@ -2,7 +2,7 @@ import { ref, onMounted, onUnmounted, Ref } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { dragSession } from './dragState';
-import { usePlayer } from './player';
+import { usePlayer } from '../features/playback';
 import type { Song } from '../types';
 import { useToast } from './toast';
 import { useCollectionsStore } from '../features/collections/store';

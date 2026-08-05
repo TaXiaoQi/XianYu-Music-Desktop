@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, computed, watch, nextTick, type Component 
 import { useRouter } from 'vue-router';
 import { Disc3, Folder, Heart, Info, Plus, UserRound } from 'lucide-vue-next';
 
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useToast } from '../../composables/toast';

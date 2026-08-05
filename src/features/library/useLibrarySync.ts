@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 
-import { getLibraryAddScanOptions } from '../../composables/playerLibraryScan';
-import type { ScanLibraryOptions } from '../../composables/playerLibraryScan';
+import { getLibraryAddScanOptions } from './libraryScan';
+import type { ScanLibraryOptions } from './libraryScan';
 import { useToast } from '../../composables/toast';
 import type { Song } from '../../types';
 

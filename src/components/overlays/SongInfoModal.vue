@@ -6,7 +6,7 @@ import { SquarePen, Tag } from 'lucide-vue-next';
 import type { Song, SongDetail } from '../../types';
 import type { SongInfoDialogAction } from '../../composables/useSongInfoDialog';
 import { useCoverCache } from '../../composables/useCoverCache';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useToast } from '../../composables/toast';

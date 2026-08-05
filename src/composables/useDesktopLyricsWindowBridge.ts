@@ -6,7 +6,7 @@ import { onMounted, onUnmounted, watch, toRaw } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useLyrics } from './lyrics';
-import { usePlayer } from './player';
+import { usePlayer } from '../features/playback';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';

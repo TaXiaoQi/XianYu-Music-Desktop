@@ -96,14 +96,6 @@ describe('player action hooks', () => {
         getSongsFromPlaylist: vi.fn(() => []),
         openAddToPlaylistDialog: vi.fn(),
       },
-      playerHistoryFavorites: {
-        isFavorite: vi.fn(() => false),
-        toggleFavorite: vi.fn(),
-        addToHistory: vi.fn(),
-        removeFromHistory: vi.fn(),
-        clearHistory: vi.fn(),
-        clearFavorites: vi.fn(),
-      },
     });
     const librarySync = useLibrarySync({
       fetchLibraryFolders: vi.fn(),

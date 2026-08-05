@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties, type ComponentPublicInstance } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';

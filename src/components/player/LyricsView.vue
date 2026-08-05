@@ -27,7 +27,7 @@ import {
   type LyricsPlayerAlignment,
   useLyrics,
 } from '../../composables/lyrics';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useSettingsStore } from '../../features/settings/store';
 import { loadAmlLyricPlayer } from './amlLyricPlayerLoader';
 // [修复防御]: AmlLyricPlayer 静态导入会拉入 PatchedLyricPlayer → @applemusic-like-lyrics/core → @pixi/*

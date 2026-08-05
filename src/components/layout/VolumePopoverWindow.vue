@@ -3,7 +3,7 @@ import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
 
-import { getNextWheelVolume } from '../../composables/playerUiShell';
+import { getNextWheelVolume } from '../../features/playback';
 import {
   VOLUME_POPOVER_ACTION_EVENT,
   VOLUME_POPOVER_STATE_EVENT,

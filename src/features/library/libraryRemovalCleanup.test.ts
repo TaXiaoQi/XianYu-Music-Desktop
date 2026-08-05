@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-import type { Song } from '../types';
-import { useCollectionsStore } from '../features/collections/store';
-import { useLibraryStore } from '../features/library/store';
-import { usePlaybackStore } from '../features/playback/store';
+import type { Song } from '../../types';
+import { useCollectionsStore } from '../collections/store';
+import { useLibraryStore } from './store';
+import { usePlaybackStore } from '../playback/store';
 import {
   cleanupRemovedLibrarySongPaths,
   collectSongPathsInFolderScope,
   isPathInFolderScope,
+  syncRemovedLibrarySongPreferences,
 } from './libraryRemovalCleanup';
 
 const makeSong = (path: string, title = 'Demo'): Song => ({
@@ -48,6 +49,38 @@ describe('library removal cleanup', () => {
       'C:\\Music\\Rock\\a.flac',
       'C:\\Music\\Rock\\Live\\b.flac',
     ]);
+  });
+
+  it('syncs favorite, playlist, and library ordering preferences for removed paths', () => {
+    const libraryStore = useLibraryStore();
+    const collectionsStore = useCollectionsStore();
+    const removedSong = makeSong('C:\\Music\\Rock\\a.flac', 'Removed');
+    const keptSong = makeSong('C:\\Music\\Jazz\\c.flac', 'Kept');
+
+    libraryStore.localCustomOrder = [removedSong.path, keptSong.path];
+    libraryStore.folderCustomOrder = {
+      'C:\\Music\\Rock': [removedSong.path],
+      'C:\\Music\\Jazz': [keptSong.path, removedSong.path],
+    };
+    collectionsStore.favoritePaths = [removedSong.path, keptSong.path];
+    collectionsStore.playlists = [
+      {
+        id: 'playlist-1',
+        name: 'Playlist',
+        songPaths: [keptSong.path, removedSong.path],
+        createdAt: '2026-05-13',
+      },
+    ];
+
+    syncRemovedLibrarySongPreferences([removedSong.path]);
+
+    expect(collectionsStore.favoritePaths).toEqual([keptSong.path]);
+    expect(collectionsStore.playlists[0].songPaths).toEqual([keptSong.path]);
+    expect(libraryStore.localCustomOrder).toEqual([keptSong.path]);
+    expect(libraryStore.folderCustomOrder).toEqual({
+      'C:\\Music\\Rock': [],
+      'C:\\Music\\Jazz': [keptSong.path],
+    });
   });
 
   it('stops active removed songs and clears app references to removed paths', async () => {

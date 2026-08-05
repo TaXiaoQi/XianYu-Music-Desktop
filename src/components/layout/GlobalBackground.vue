@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { storeToRefs } from 'pinia';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { usePlaybackStore } from '../../features/playback/store';

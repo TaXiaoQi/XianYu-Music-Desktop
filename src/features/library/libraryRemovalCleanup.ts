@@ -1,7 +1,7 @@
-import { useCollectionsStore } from '../features/collections/store';
-import { useLibraryStore } from '../features/library/store';
-import { usePlaybackStore } from '../features/playback/store';
-import type { Song } from '../types';
+import { useCollectionsStore } from '../collections/store';
+import { useLibraryStore } from './store';
+import { usePlaybackStore } from '../playback/store';
+import type { Song } from '../../types';
 
 interface CleanupRemovedLibrarySongPathsOptions {
   removedPaths: string[];
@@ -65,6 +65,32 @@ const dedupePaths = (paths: string[]) => {
   return deduped;
 };
 
+export const syncRemovedLibrarySongPreferences = (removedPaths: string[]) => {
+  const uniqueRemovedPaths = dedupePaths(removedPaths);
+  if (uniqueRemovedPaths.length === 0) {
+    return;
+  }
+
+  const libraryStore = useLibraryStore();
+  const collectionsStore = useCollectionsStore();
+  const removedPathSet = new Set(uniqueRemovedPaths.map(normalizePathForScope));
+  const isRemovedPath = (path: string | null | undefined) =>
+    !!path && removedPathSet.has(normalizePathForScope(path));
+
+  collectionsStore.favoritePaths = collectionsStore.favoritePaths.filter(path => !isRemovedPath(path));
+  collectionsStore.playlists.forEach((playlist) => {
+    playlist.songPaths = playlist.songPaths.filter(path => !isRemovedPath(path));
+  });
+
+  libraryStore.localCustomOrder = libraryStore.localCustomOrder.filter(path => !isRemovedPath(path));
+  libraryStore.folderCustomOrder = Object.fromEntries(
+    Object.entries(libraryStore.folderCustomOrder).map(([folderPath, paths]) => [
+      folderPath,
+      paths.filter(path => !isRemovedPath(path)),
+    ]),
+  );
+};
+
 export const cleanupRemovedLibrarySongPaths = async ({
   removedPaths,
   removedFolderPath = '',
@@ -78,8 +104,6 @@ export const cleanupRemovedLibrarySongPaths = async ({
     return;
   }
 
-  const libraryStore = useLibraryStore();
-  const collectionsStore = useCollectionsStore();
   const playbackStore = usePlaybackStore();
   const removedPathSet = new Set(uniqueRemovedPaths.map(normalizePathForScope));
   const isRemovedPath = (path: string | null | undefined) =>
@@ -102,19 +126,10 @@ export const cleanupRemovedLibrarySongPaths = async ({
     playbackStore.currentCoverFull = '';
   }
 
-  collectionsStore.favoritePaths = collectionsStore.favoritePaths.filter(path => !isRemovedPath(path));
-  collectionsStore.playlists.forEach((playlist) => {
-    playlist.songPaths = playlist.songPaths.filter(path => !isRemovedPath(path));
-  });
-  collectionsStore.recentSongs = collectionsStore.recentSongs.filter(item => !isRemovedPath(item.path));
+  syncRemovedLibrarySongPreferences(uniqueRemovedPaths);
 
-  libraryStore.localCustomOrder = libraryStore.localCustomOrder.filter(path => !isRemovedPath(path));
-  libraryStore.folderCustomOrder = Object.fromEntries(
-    Object.entries(libraryStore.folderCustomOrder).map(([folderPath, paths]) => [
-      folderPath,
-      paths.filter(path => !isRemovedPath(path)),
-    ]),
-  );
+  const collectionsStore = useCollectionsStore();
+  collectionsStore.recentSongs = collectionsStore.recentSongs.filter(item => !isRemovedPath(item.path));
 
   await removeFromHistory?.(uniqueRemovedPaths);
   await removeSongStatistics?.(uniqueRemovedPaths);

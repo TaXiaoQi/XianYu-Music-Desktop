@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '../../features/settings/useSettings';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { appApi } from '../../services/tauri/appApi';
 import { playbackApi } from '../../services/tauri/playbackApi';

@@ -5,7 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { getNextWheelVolume } from '../../composables/playerUiShell';
+import { getNextWheelVolume } from '../../features/playback';
 import { applyWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
 import {
   MINI_PLAYER_ACTION_EVENT,
