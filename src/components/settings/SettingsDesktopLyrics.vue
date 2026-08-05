@@ -33,6 +33,11 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
 import SettingHint from './SettingHint.vue';
 import {
+  buildDesktopLyricsPreviewWidgetStyle,
+  buildGradientWordStyle,
+  buildSolidWordStyle,
+} from './desktopLyricsPreview';
+import {
   LYRICS_SYNC_OFFSET_MAX_MS,
   LYRICS_SYNC_OFFSET_MIN_MS,
   LYRICS_SYNC_OFFSET_STEP_MS,
@@ -178,18 +183,6 @@ function resetToDefault() {
   };
 }
 
-function hexToRgbTriplet(value: string) {
-  const normalized = normalizeHexColor(value, '#000000');
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(normalized);
-  if (!match) return '0 0 0';
-
-  return [
-    Number.parseInt(match[1], 16),
-    Number.parseInt(match[2], 16),
-    Number.parseInt(match[3], 16),
-  ].join(' ');
-}
-
 const previewLyricsPlayerStyle = computed(() => ({
   '--desktop-font-scale': localSettings.value.playerFontScale.toString(),
   '--desktop-sub-font-scale': localSettings.value.subFontScale.toString(),
@@ -204,124 +197,27 @@ const previewLyricsAlignmentClass = computed(() => {
   return `lyrics-align-${localSettings.value.playerAlignment}`;
 });
 
-const PREVIEW_FIXED_PALETTES = {
-  auto: ['#8ec5ff', '#ff8cab', '#88f3c2', '#ffe07d'],
-  default: ['#EC4141', '#ff8364', '#f7b267', '#ffd166'],
-  pink: ['#f472b6', '#fb7185', '#f9a8d4', '#fbcfe8'],
-  blue: ['#60a5fa', '#38bdf8', '#93c5fd', '#bfdbfe'],
-  green: ['#34d399', '#22c55e', '#6ee7b7', '#bbf7d0'],
-  white: ['#ffffff', '#f3f4f6', '#d1d5db', '#9ca3af'],
-};
-
-
-const previewResolvedPalette = computed(() => {
-  if (localSettings.value.colorScheme === 'custom') {
-    return [
-      localSettings.value.customPlayedColor,
-      localSettings.value.customPlayedColor,
-      localSettings.value.customPlayedColor,
-      localSettings.value.customUnplayedColor,
-    ];
-  }
-  const scheme = localSettings.value.colorScheme;
-  return PREVIEW_FIXED_PALETTES[scheme] || PREVIEW_FIXED_PALETTES.default;
-});
-
 const previewWidgetStyle = computed(() => {
-  const isCustom = localSettings.value.colorScheme === 'custom';
-  const opacityPercent = `calc(var(--desktop-text-opacity, 1) * 100%)`;
-  const wrap = (color: string) => `color-mix(in srgb, ${color} ${opacityPercent}, transparent)`;
-
-  return {
-    '--desktop-accent-a': wrap(previewResolvedPalette.value[0]),
-    '--desktop-accent-b': wrap(previewResolvedPalette.value[1]),
-    '--desktop-accent-c': wrap(previewResolvedPalette.value[2]),
-    '--desktop-accent-d': wrap(previewResolvedPalette.value[3]),
-    '--desktop-lyric-solid-color': isCustom
-      ? wrap(localSettings.value.customPlayedColor)
-      : 'var(--desktop-accent-a)',
-    '--desktop-text-primary': isCustom
-      ? wrap(localSettings.value.customUnplayedColor)
-      : wrap('rgba(255, 255, 255, 0.98)'),
-    '--desktop-romaji-color': isCustom
-      ? wrap(localSettings.value.customRomajiUnplayedColor)
-      : `color-mix(in srgb, var(--desktop-accent-d) 42%, ${wrap('rgba(255, 255, 255, 0.88)')})`,
-    '--desktop-romaji-played-color': isCustom
-      ? wrap(localSettings.value.customRomajiPlayedColor)
-      : 'color-mix(in srgb, var(--desktop-accent-b) 58%, var(--desktop-romaji-color))',
-    '--desktop-romaji-unplayed-color': isCustom
-      ? wrap(localSettings.value.customRomajiUnplayedColor)
-      : 'var(--desktop-romaji-color)',
-    '--desktop-translation-color': isCustom
-      ? wrap(localSettings.value.customTranslationColor)
-      : `color-mix(in srgb, var(--desktop-accent-c) 28%, ${wrap('rgba(255, 255, 255, 0.76)')})`,
-    '--desktop-text-opacity': localSettings.value.textOpacity.toString(),
-    '--desktop-text-shadow-color': hexToRgbTriplet(localSettings.value.textShadowColor),
-    '--desktop-text-outline-width': desktopLyricsSettings.enableTextOutline ? `${DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH}px` : '0px',
-    '--desktop-text-outline-color': DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
-    '--desktop-first-line-text-shadow-alpha': (localSettings.value.firstLineTextShadowStrength / 100).toString(),
-    '--desktop-first-line-text-shadow-blur': `${Math.round(localSettings.value.firstLineTextShadowStrength * 0.24)}px`,
-    '--desktop-second-line-text-shadow-alpha': (localSettings.value.secondLineTextShadowStrength / 100).toString(),
-    '--desktop-second-line-text-shadow-blur': `${Math.round(localSettings.value.secondLineTextShadowStrength * 0.24)}px`,
-    textAlign: localSettings.value.playerAlignment === 'right'
-      ? 'right'
-      : localSettings.value.playerAlignment === 'left'
-        ? 'left'
-        : 'center',
-  } as Record<string, string>;
+  return buildDesktopLyricsPreviewWidgetStyle(localSettings.value, {
+    enableTextOutline: desktopLyricsSettings.enableTextOutline,
+    textOutlineWidth: DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
+    textOutlineColor: DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
+  });
 });
 
 const desktopWordStroke = 'var(--desktop-text-outline-width, 0px) var(--desktop-text-outline-color, #000000)';
 
-const playedWordStyle = computed(() => ({
-  color: 'var(--desktop-lyric-solid-color)',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const playedWordStyle = computed(() => buildSolidWordStyle('var(--desktop-lyric-solid-color)', desktopWordStroke));
 
-const activeWordStyle = computed(() => ({
-  backgroundImage: 'linear-gradient(90deg, var(--desktop-lyric-solid-color) 0%, var(--desktop-lyric-solid-color) 50%, var(--desktop-text-primary) 50%, var(--desktop-text-primary) 100%)',
-  WebkitBackgroundClip: 'text',
-  backgroundClip: 'text',
-  color: 'transparent',
-  WebkitTextFillColor: 'transparent',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const activeWordStyle = computed(() => buildGradientWordStyle('var(--desktop-lyric-solid-color)', 'var(--desktop-text-primary)', desktopWordStroke));
 
-const unplayedWordStyle = computed(() => ({
-  color: 'var(--desktop-text-primary)',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const unplayedWordStyle = computed(() => buildSolidWordStyle('var(--desktop-text-primary)', desktopWordStroke));
 
-const playedRomajiWordStyle = computed(() => ({
-  color: 'var(--desktop-romaji-played-color)',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const playedRomajiWordStyle = computed(() => buildSolidWordStyle('var(--desktop-romaji-played-color)', desktopWordStroke));
 
-const activeRomajiWordStyle = computed(() => ({
-  backgroundImage: 'linear-gradient(90deg, var(--desktop-romaji-played-color) 0%, var(--desktop-romaji-played-color) 50%, var(--desktop-romaji-unplayed-color) 50%, var(--desktop-romaji-unplayed-color) 100%)',
-  WebkitBackgroundClip: 'text',
-  backgroundClip: 'text',
-  color: 'transparent',
-  WebkitTextFillColor: 'transparent',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const activeRomajiWordStyle = computed(() => buildGradientWordStyle('var(--desktop-romaji-played-color)', 'var(--desktop-romaji-unplayed-color)', desktopWordStroke));
 
-const unplayedRomajiWordStyle = computed(() => ({
-  color: 'var(--desktop-romaji-unplayed-color)',
-  textShadow: 'none',
-  WebkitTextStroke: desktopWordStroke,
-  paintOrder: 'fill stroke',
-}));
+const unplayedRomajiWordStyle = computed(() => buildSolidWordStyle('var(--desktop-romaji-unplayed-color)', desktopWordStroke));
 
 const fontPresetFieldRef = ref<HTMLElement | null>(null);
 const fontPresetTriggerRef = ref<HTMLElement | null>(null);
