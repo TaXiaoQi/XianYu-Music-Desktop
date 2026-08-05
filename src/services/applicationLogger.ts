@@ -44,8 +44,12 @@ let sequence = 0;
 let pendingEntries: ApplicationLogEntry[] = [];
 let isLogFlushScheduled = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
-const FLUSH_DELAY = 300; // ms — macrotask delay to break render→log→flush→re-render feedback loop
-const PERSIST_DELAY = 2000; // ms — debounce localStorage writes
+// setTimeout 将 flush 推到宏任务，打破 queueMicrotask 导致的渲染→日志→flush→重渲染微任务级循环。
+// 200ms 同时充当节流：无论 console 调用多频繁，每秒最多 5 次响应式更新。
+// 模板已改为不直接依赖 entries（使用本地 ref + 防抖 watcher），因此 flush 时机
+// 不会干扰 transition 状态机。
+const FLUSH_DELAY = 200;
+const PERSIST_DELAY = 2000;
 
 const isLogLevel = (value: unknown): value is LogLevel => (
   typeof value === 'string' && LOG_LEVELS.includes(value as LogLevel)
