@@ -24,6 +24,25 @@ let animationFrameId: number | null = null;
 let fetchTimerId: ReturnType<typeof setInterval> | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
+const resetLevels = () => {
+  levels.value = Array(BAR_COUNT).fill(0);
+  renderedLevels.value = Array(DISPLAY_BAR_COUNT).fill(0);
+};
+
+const releaseCanvasBuffer = () => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+
+  const context = canvas.getContext('2d');
+  if (context) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // 将尺寸归零，主动释放 canvas 的 GPU/位图后备缓冲区。
+  canvas.width = 0;
+  canvas.height = 0;
+};
+
 const stopFetchTimer = () => {
   if (fetchTimerId !== null) {
     clearInterval(fetchTimerId);
@@ -68,6 +87,11 @@ const shouldFetchSamples = () => props.active && props.isPlaying && !isMainWindo
 const draw = () => {
   const canvas = canvasRef.value;
   if (!canvas) return;
+
+  if (!props.active || isMainWindowLowPower.value) {
+    releaseCanvasBuffer();
+    return;
+  }
 
   resizeCanvas();
   const context = canvas.getContext('2d');
@@ -153,6 +177,10 @@ const fetchSamples = async () => {
 const syncFetchTimer = () => {
   stopFetchTimer();
   if (!shouldFetchSamples()) {
+    if (!props.active || isMainWindowLowPower.value) {
+      resetLevels();
+      releaseCanvasBuffer();
+    }
     scheduleDraw();
     return;
   }
@@ -165,20 +193,11 @@ const syncFetchTimer = () => {
 
 watch(() => [props.active, props.isPlaying, isMainWindowLowPower.value] as const, syncFetchTimer);
 
-// 最小化/隐藏时清空 canvas 并释放 GPU 后备缓冲区，恢复时重新绘制
-watch(isMainWindowLowPower, (lowPower) => {
-  const canvas = canvasRef.value;
-  if (!canvas) return;
-
-  if (lowPower) {
-    const context = canvas.getContext('2d');
-    if (context) {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    // 将尺寸归零释放 GPU 合成层内存
-    canvas.width = 0;
-    canvas.height = 0;
-    renderedLevels.value = Array(DISPLAY_BAR_COUNT).fill(0);
+// 最小化/隐藏或退出详情页时清空 canvas 并释放 GPU 后备缓冲区，恢复时重新绘制
+watch(() => [props.active, isMainWindowLowPower.value] as const, ([active, lowPower]) => {
+  if (!active || lowPower) {
+    resetLevels();
+    releaseCanvasBuffer();
   } else {
     nextTick(() => {
       resizeCanvas();
@@ -188,8 +207,7 @@ watch(isMainWindowLowPower, (lowPower) => {
 });
 
 watch(() => props.songPath, () => {
-  levels.value = Array(BAR_COUNT).fill(0);
-  renderedLevels.value = Array(DISPLAY_BAR_COUNT).fill(0);
+  resetLevels();
   scheduleDraw();
   syncFetchTimer();
 });
@@ -211,8 +229,12 @@ onBeforeUnmount(() => {
   stopFetchTimer();
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
   }
   resizeObserver?.disconnect();
+  resizeObserver = null;
+  resetLevels();
+  releaseCanvasBuffer();
 });
 </script>
 

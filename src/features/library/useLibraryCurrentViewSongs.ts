@@ -885,11 +885,28 @@ export function useLibraryCurrentViewSongs({
     return songsFromLookup;
   });
 
-  const currentViewSongCount = computed(() => currentViewSongs.value.length);
+  const resolveSongByPath = (path: string) => {
+    const song = songLookup.value.get(path);
+    if (song) {
+      return song;
+    }
+
+    // 歌单页惰性渲染：在线歌曲可能只存在于 playlist.songs 缓存中。
+    // 这里按需解析单个 path，避免进入歌单详情时为了补全在线歌曲一次性构建完整 Song[]。
+    if (currentViewMode.value !== 'playlist') {
+      return null;
+    }
+
+    const playlist = playlists.value.find(item => item.id === filterCondition.value);
+    return playlist?.songs?.find(item => item.path === path) ?? null;
+  };
+
+  const currentViewSongCount = computed(() => currentViewSongPaths.value.length);
 
   return {
     currentViewSongPaths,
     currentViewSongCount,
     currentViewSongs,
+    resolveSongByPath,
   };
 }

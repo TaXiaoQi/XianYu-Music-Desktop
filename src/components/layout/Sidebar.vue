@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { defineAsyncComponent, onBeforeUnmount, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import ModernModal from '../common/ModernModal.vue';
-import PlaylistContextMenu from '../overlays/PlaylistContextMenu.vue';
-import PlaylistModal from '../overlays/PlaylistModal.vue';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -27,6 +24,10 @@ import { cacheLxSong } from '../../services/lxSongCache';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';
+
+const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
+const PlaylistContextMenu = defineAsyncComponent(() => import('../overlays/PlaylistContextMenu.vue'));
+const PlaylistModal = defineAsyncComponent(() => import('../overlays/PlaylistModal.vue'));
 
 const { artistList, albumList } = usePlayerLibraryView();
 const { playSong, addSongsToQueue, clearQueue } = usePlaybackController();
@@ -402,8 +403,6 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
 };
 
 // --- 一级侧边栏拖拽调整宽度逻辑 ---
-import { onBeforeUnmount } from 'vue';
-
 const STORAGE_KEY_MAIN_SIDEBAR_WIDTH = 'main_sidebar_width';
 const DEFAULT_SIDEBAR_WIDTH = 192;
 const MIN_SIDEBAR_WIDTH = 140;
@@ -508,6 +507,7 @@ onBeforeUnmount(() => {
     </nav>
 
     <PlaylistContextMenu
+      v-if="showContextMenu"
       :visible="showContextMenu"
       :x="contextMenuX"
       :y="contextMenuY"
@@ -521,6 +521,7 @@ onBeforeUnmount(() => {
     />
 
     <ModernModal
+      v-if="showDeleteModal"
       v-model:visible="showDeleteModal"
       title="删除播放列表"
       :content="deleteModalContent"
@@ -530,6 +531,7 @@ onBeforeUnmount(() => {
     />
 
     <PlaylistModal
+      v-if="showPlaylistModal"
       v-model:visible="showPlaylistModal"
       :playlists="playlists"
       :mode="playlistModalMode"

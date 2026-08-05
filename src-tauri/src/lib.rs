@@ -21,7 +21,7 @@ mod window_z_order;
 mod webview_settings;
 
 use tauri::Manager;
-use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app};
+use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app, update_native_tray_menu};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
@@ -250,6 +250,7 @@ recognize_system_audio,
             refresh_taskbar_window_topmost,
             uninstall_taskbar_zorder_guard,
             exit_app,
+            update_native_tray_menu,
             set_gpu_acceleration,
             check_update_by_rust,
             download_update_file,

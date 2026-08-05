@@ -25,7 +25,7 @@ const InitializationView = defineComponent({
 
 const routes: Array<RouteRecordRaw> = [
   { path: '/initialization', name: INITIALIZATION_ROUTE_NAME, component: InitializationView },
-  { path: '/', name: 'Home', component: Home, meta: { keepAlive: true } },
+  { path: '/', name: 'Home', component: Home },
   { path: '/favorites', name: 'Favorites', component: Favorites },
   { path: '/recent', name: 'Recent', component: Recent },
   { path: '/artists', name: 'Artists', component: Artists },

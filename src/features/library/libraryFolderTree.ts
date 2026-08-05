@@ -152,6 +152,10 @@ export const createLibraryFolderTree = ({
       currentNode = nextNode;
     }
 
+    if (currentNode.child_count > 0) {
+      await ensureFolderChildrenLoaded(currentNode);
+    }
+
     currentNode.is_expanded = true;
     return true;
   };

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getStoredAuth, signedPostJson } from '../../services/auth/authService';
 
@@ -53,6 +53,13 @@ const uploadPreview = ref('');
 const uploading = ref(false);
 const uploadError = ref('');
 
+const clearUploadPreview = () => {
+  if (uploadPreview.value) {
+    URL.revokeObjectURL(uploadPreview.value);
+    uploadPreview.value = '';
+  }
+};
+
 const fetchWallpapers = async () => {
   isLoading.value = true;
   loadError.value = '';
@@ -103,9 +110,9 @@ const openUploadModal = () => {
     uploadError.value = '请先登录账号后再上传壁纸';
     return;
   }
+  clearUploadPreview();
   uploadForm.value = { title: '', description: '', category: '' };
   uploadFile.value = null;
-  uploadPreview.value = '';
   uploadError.value = '';
   showUploadModal.value = true;
 };
@@ -113,6 +120,8 @@ const openUploadModal = () => {
 const closeUploadModal = () => {
   if (uploading.value) return;
   showUploadModal.value = false;
+  uploadFile.value = null;
+  clearUploadPreview();
 };
 
 const onFileChange = (e: Event) => {
@@ -120,7 +129,7 @@ const onFileChange = (e: Event) => {
   uploadError.value = '';
   if (!input.files || !input.files[0]) {
     uploadFile.value = null;
-    uploadPreview.value = '';
+    clearUploadPreview();
     return;
   }
   const file = input.files[0];
@@ -128,14 +137,19 @@ const onFileChange = (e: Event) => {
   if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
     uploadError.value = '只支持 JPG / PNG / WEBP / GIF 格式';
     input.value = '';
+    uploadFile.value = null;
+    clearUploadPreview();
     return;
   }
   // 校验大小（30MB）
   if (file.size > 30 * 1024 * 1024) {
     uploadError.value = '图片过大，请选择 30MB 以内的图片'
     input.value = ''
+    uploadFile.value = null;
+    clearUploadPreview();
     return
   }
+  clearUploadPreview();
   uploadFile.value = file;
   uploadPreview.value = URL.createObjectURL(file);
 };
@@ -162,7 +176,13 @@ const compressImageToDataUrl = (file: File, maxWidth = 1920, quality = 0.85): Pr
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        canvas.width = 0;
+        canvas.height = 0;
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        resolve(dataUrl);
       };
       img.onerror = () => reject(new Error('图片加载失败'));
       img.src = reader.result as string;
@@ -204,6 +224,8 @@ const doUpload = async () => {
       { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
     );
     showUploadModal.value = false;
+    uploadFile.value = null;
+    clearUploadPreview();
     // 切到「我的上传」并刷新
     activeTab.value = 'mine';
     await fetchMyWallpapers();
@@ -245,6 +267,10 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
 
 onMounted(() => {
   fetchWallpapers();
+});
+
+onBeforeUnmount(() => {
+  clearUploadPreview();
 });
 </script>
 

@@ -91,139 +91,64 @@
           class="flex-1 overflow-y-auto custom-scrollbar"
           @scroll="handleScroll"
         >
-          <table class="w-full text-left">
-            <thead v-if="isLocalSource" class="sticky top-0 z-10 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md">
-              <tr class="border-b border-black/5 dark:border-white/5 text-xs text-black/40 dark:text-white/40">
-                <th class="w-10 py-2 px-4 text-center font-normal">#</th>
-                <th class="w-14 py-2 px-2 font-normal"></th>
-                <th class="py-2 px-2 font-normal">歌曲</th>
-                <th class="py-2 px-2 font-normal">歌手</th>
-                <th class="py-2 px-2 font-normal">专辑</th>
-                <th class="w-16 py-2 px-4 text-right font-normal">时长</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- 落雪 LX 搜索结果 -->
-              <tr
-                v-for="(item, index) in lxSearchResults"
-                :key="`lx-${item.source}-${item.songmid}-${index}`"
-                class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @click="songClickAction === 'single' && handlePlaySong(item)"
-                @dblclick="songClickAction !== 'single' && handlePlaySong(item)"
-                @contextmenu="handleContextMenu($event, item)"
-              >
-                <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
-                  {{ index + 1 }}
-                </td>
-                <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="`lx://${item.source}/${item.songmid}`">
-                    <img
-                      v-if="item.img"
-                      :src="item.img"
-                      class="w-full h-full object-cover"
-                      alt=""
-                      loading="lazy"
-                      @error="handleImgError(item)"
-                    />
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
-                  </div>
-                </td>
-                <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
-                  {{ item.name }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
-                  {{ item.singer }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
-                  {{ item.albumName }}
-                </td>
-                <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-                  {{ item.interval }}
-                </td>
-              </tr>
-              <!-- MusicFree 插件搜索结果 -->
-              <tr
-                v-for="(item, index) in pluginSearchResults"
-                :key="`mf-${item.platform}-${item.id}-${index}`"
-                class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @click="songClickAction === 'single' && handlePlayMfSong(item)"
-                @dblclick="songClickAction !== 'single' && handlePlayMfSong(item)"
-                @contextmenu="handleMfContextMenu($event, item)"
-              >
-                <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
-                  {{ lxSearchResults.length + index + 1 }}
-                </td>
-                <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="`plugin://${item.platform}/${item.id}`">
-                    <img
-                      v-if="item.coverUrl"
-                      :src="getMfCoverUrl(item)"
-                      class="w-full h-full object-cover"
-                      alt=""
-                      loading="lazy"
-                      @error="handleMfImgError($event)"
-                    />
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
-                  </div>
-                </td>
-                <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
-                  {{ item.title }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
-                  {{ item.artist }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
-                  {{ item.album }}
-                </td>
-                <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-                  {{ item.duration ? formatMfDuration(Math.floor(item.duration / 1000)) : '--:--' }}
-                </td>
-              </tr>
-              <!-- 本地搜索结果 -->
-              <tr
-                v-for="(item, index) in localSearchResults"
-                :key="`local-${item.path}-${index}`"
-                class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                @click="songClickAction === 'single' && handlePlayLocalSong(item)"
-                @dblclick="songClickAction !== 'single' && handlePlayLocalSong(item)"
-                @contextmenu="handleLocalContextMenu($event, item)"
-              >
-                <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
-                  {{ lxSearchResults.length + pluginSearchResults.length + index + 1 }}
-                </td>
-                <td class="py-2 px-2">
-                  <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
-                    <img
-                      v-if="item.cover_thumb_path"
-                      :src="getLocalCoverUrl(item)"
-                      class="w-full h-full object-cover"
-                      alt=""
-                      loading="lazy"
-                    />
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
-                  </div>
-                </td>
-                <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
-                  {{ item.title || item.name }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
-                  {{ item.artist }}
-                </td>
-                <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
-                  {{ item.album }}
-                </td>
-                <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-                  {{ formatLocalDuration(item.duration) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div
+            v-if="isLocalSource"
+            class="sticky top-0 z-10 grid grid-cols-[56px_60px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_80px] border-b border-black/5 bg-white/80 text-xs text-black/40 backdrop-blur-md dark:border-white/5 dark:bg-neutral-900/80 dark:text-white/40"
+          >
+            <div class="px-4 py-2 text-center">#</div>
+            <div class="px-2 py-2"></div>
+            <div class="px-2 py-2">歌曲</div>
+            <div class="px-2 py-2">歌手</div>
+            <div class="px-2 py-2">专辑</div>
+            <div class="px-4 py-2 text-right">时长</div>
+          </div>
+
+          <div class="relative w-full" :style="{ height: `${trackVirtualTotalHeight}px` }">
+            <div
+              v-for="entry in virtualTrackItems"
+              :key="entry.key"
+              class="absolute left-0 grid w-full grid-cols-[56px_60px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_80px] items-center border-b border-black/5 cursor-default select-none transition-colors hover:bg-black/5 dark:border-white/5 dark:hover:bg-white/5"
+              :style="{ height: `${TRACK_ROW_HEIGHT}px`, transform: `translateY(${entry.start}px)` }"
+              @click="handleVirtualTrackClick(entry)"
+              @dblclick="handleVirtualTrackDoubleClick(entry)"
+              @contextmenu="handleVirtualTrackContextMenu($event, entry)"
+            >
+              <div class="px-4 text-center text-xs text-black/40 dark:text-white/40">
+                {{ entry.globalIndex + 1 }}
+              </div>
+              <div class="px-2">
+                <div
+                  class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0"
+                  :data-cover-path="getVirtualTrackCoverPath(entry)"
+                >
+                  <img
+                    v-if="getVirtualTrackCoverUrl(entry)"
+                    :src="getVirtualTrackCoverUrl(entry)"
+                    class="w-full h-full object-cover"
+                    alt=""
+                    loading="lazy"
+                    @error="handleVirtualTrackImageError($event, entry)"
+                  />
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                </div>
+              </div>
+              <div class="truncate px-2 text-sm font-medium text-black dark:text-white">
+                {{ getVirtualTrackTitle(entry) }}
+              </div>
+              <div class="truncate px-2 text-sm text-black/60 dark:text-white/60">
+                {{ getVirtualTrackArtist(entry) }}
+              </div>
+              <div class="truncate px-2 text-sm text-black/40 dark:text-white/40">
+                {{ getVirtualTrackAlbum(entry) }}
+              </div>
+              <div class="whitespace-nowrap px-4 text-right text-xs text-black/40 dark:text-white/40">
+                {{ getVirtualTrackDuration(entry) }}
+              </div>
+            </div>
+          </div>
+
           <!-- 加载更多指示器 -->
           <div v-if="loadingMore" class="flex items-center justify-center py-4 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -237,141 +162,63 @@
           </div>
         </div>
 
-        <!-- 歌手搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'artist'" key="artist" class="flex-1 overflow-y-auto custom-scrollbar p-4">
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            <!-- 本地歌手 -->
-            <button
-              v-for="artist in localArtistResults"
-              :key="artist.id"
-              type="button"
-              class="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handleArtistClick(artist)"
+        <!-- 歌手/专辑/歌单搜索结果：按行虚拟滚动，避免大量卡片常驻 DOM -->
+        <div
+          v-else-if="activeSearchType === 'artist' || activeSearchType === 'album' || activeSearchType === 'playlist'"
+          :key="activeSearchType"
+          ref="resultsScrollRef"
+          class="flex-1 overflow-y-auto custom-scrollbar p-4"
+          @scroll="handleCatalogGridScroll"
+        >
+          <div class="relative w-full" :style="{ height: `${catalogGridVirtualTotalHeight}px` }">
+            <div
+              v-for="row in virtualCatalogGridRows"
+              :key="row.key"
+              class="absolute left-0 grid w-full gap-3"
+              :class="catalogGridClass"
+              :style="{ transform: `translateY(${row.start}px)` }"
             >
-              <div class="w-20 h-20 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img
-                  v-if="getLocalArtistCover(artist)"
-                  :src="getLocalArtistCover(artist)"
-                  class="w-full h-full object-cover"
-                  alt=""
-                  loading="lazy"
-                />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50">{{ artist.count }} 首</p>
-            </button>
-            <!-- 插件歌手 -->
-            <button
-              v-for="artist in pluginArtistResults"
-              :key="`p-artist-${artist.id}`"
-              type="button"
-              class="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handlePluginArtistClick(artist)"
-            >
-              <div class="w-20 h-20 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img v-if="artist.avatarUrl" :src="artist.avatarUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full text-center">{{ artist.name }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50">{{ artist.songCount ? `${artist.songCount} 首` : '查看' }}</p>
-            </button>
-          </div>
-        </div>
-
-        <!-- 专辑搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'album'" key="album" class="flex-1 overflow-y-auto custom-scrollbar p-4">
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            <!-- 本地专辑 -->
-            <button
-              v-for="album in localAlbumResults"
-              :key="album.key"
-              type="button"
-              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handleAlbumClick(album)"
-            >
-              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img
-                  v-if="getLocalAlbumCover(album)"
-                  :src="getLocalAlbumCover(album)"
-                  class="w-full h-full object-cover"
-                  alt=""
-                  loading="lazy"
-                />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
-            </button>
-            <!-- 插件专辑 -->
-            <button
-              v-for="album in pluginAlbumResults"
-              :key="`p-album-${album.id}`"
-              type="button"
-              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handlePluginAlbumClick(album)"
-            >
-              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img v-if="album.coverUrl" :src="album.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ album.name }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50 truncate">{{ album.artist }}</p>
-            </button>
-          </div>
-        </div>
-
-        <!-- 歌单搜索结果（本地 + 插件） -->
-        <div v-else-if="activeSearchType === 'playlist'" key="playlist" class="flex-1 overflow-y-auto custom-scrollbar p-4">
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            <!-- 本地歌单 -->
-            <button
-              v-for="playlist in localPlaylistResults"
-              :key="playlist.id"
-              type="button"
-              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handlePlaylistClick(playlist)"
-            >
-              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img
-                  v-if="getPlaylistCover(playlist)"
-                  :src="getPlaylistCover(playlist)"
-                  class="w-full h-full object-cover"
-                  alt=""
-                  loading="lazy"
-                />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.name }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.songPaths.length }} 首</p>
-            </button>
-            <!-- 插件歌单 -->
-            <button
-              v-for="playlist in pluginPlaylistResults"
-              :key="`p-playlist-${playlist.id}`"
-              type="button"
-              class="flex flex-col gap-2 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-              @click="handlePluginPlaylistClick(playlist)"
-            >
-              <div class="aspect-square rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition">
-                <img v-if="playlist.coverUrl" :src="playlist.coverUrl" class="w-full h-full object-cover" alt="" loading="lazy" @error="handlePluginImgError($event)" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <p class="text-sm font-medium text-black dark:text-white truncate w-full">{{ playlist.title }}</p>
-              <p class="text-xs text-black/50 dark:text-white/50">{{ playlist.trackCount ? `${playlist.trackCount} 首` : '查看' }}</p>
-            </button>
+              <button
+                v-for="entry in row.items"
+                :key="entry.key"
+                type="button"
+                class="rounded-xl p-3 transition-colors cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5"
+                :class="entry.type === 'artist' ? 'flex flex-col items-center gap-2' : 'flex flex-col gap-2'"
+                @click="handleCatalogEntryClick(entry)"
+              >
+                <div
+                  class="bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition"
+                  :class="entry.type === 'artist' ? 'w-20 h-20 rounded-full' : 'aspect-square rounded-lg'"
+                >
+                  <img
+                    v-if="getCatalogEntryCover(entry)"
+                    :src="getCatalogEntryCover(entry)"
+                    class="w-full h-full object-cover"
+                    alt=""
+                    loading="lazy"
+                    @error="handlePluginImgError($event)"
+                  />
+                  <svg v-else-if="entry.type === 'artist'" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
+                  </svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                </div>
+                <p
+                  class="text-sm font-medium text-black dark:text-white truncate w-full"
+                  :class="entry.type === 'artist' ? 'text-center' : ''"
+                >
+                  {{ getCatalogEntryTitle(entry) }}
+                </p>
+                <p
+                  class="text-xs text-black/50 dark:text-white/50 truncate"
+                  :class="entry.type === 'artist' ? 'text-center' : ''"
+                >
+                  {{ getCatalogEntrySubtitle(entry) }}
+                </p>
+              </button>
+            </div>
           </div>
         </div>
         </transition>
@@ -381,6 +228,7 @@
     <DragGhost />
 
     <SongContextMenu
+      v-if="showContextMenu"
       :visible="showContextMenu"
       :x="contextMenuX"
       :y="contextMenuY"
@@ -396,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -445,7 +293,7 @@ import { useSettingsStore } from '../features/settings/store';
 import { reportSearch, reportInputStats } from '../services/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
-import SongContextMenu from '../components/overlays/SongContextMenu.vue';
+const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 
 const formatSearchDuration = (seconds: number): string => {
   if (!seconds || Number.isNaN(seconds)) return '--:--';
@@ -579,9 +427,279 @@ const pluginArtistResults = shallowRef<PluginArtistResult[]>([]);
 const pluginAlbumResults = shallowRef<PluginAlbumResult[]>([]);
 const pluginPlaylistResults = shallowRef<PluginPlaylistSearchResult[]>([]);
 const resultsScrollRef = ref<HTMLElement | null>(null);
+const trackScrollTop = ref(0);
+const trackViewportHeight = ref(720);
+const TRACK_ROW_HEIGHT = 60;
+const TRACK_HEADER_HEIGHT = 33;
+const TRACK_OVERSCAN = 8;
+
+type SearchTrackEntry =
+  | {
+      kind: 'lx';
+      key: string;
+      globalIndex: number;
+      item: LxSearchResultItem;
+    }
+  | {
+      kind: 'plugin';
+      key: string;
+      globalIndex: number;
+      item: PluginSearchResult;
+    }
+  | {
+      kind: 'local';
+      key: string;
+      globalIndex: number;
+      item: Song;
+    };
+
+type VirtualSearchTrackEntry = SearchTrackEntry & {
+  start: number;
+};
+
+const trackSearchItems = computed<SearchTrackEntry[]>(() => {
+  const entries: SearchTrackEntry[] = [];
+
+  lxSearchResults.value.forEach((item, index) => {
+    entries.push({
+      kind: 'lx',
+      key: `lx-${item.source}-${item.songmid}-${index}`,
+      globalIndex: entries.length,
+      item,
+    });
+  });
+
+  pluginSearchResults.value.forEach((item, index) => {
+    entries.push({
+      kind: 'plugin',
+      key: `mf-${item.platform}-${item.id}-${index}`,
+      globalIndex: entries.length,
+      item,
+    });
+  });
+
+  localSearchResults.value.forEach((item, index) => {
+    entries.push({
+      kind: 'local',
+      key: `local-${item.path}-${index}`,
+      globalIndex: entries.length,
+      item,
+    });
+  });
+
+  return entries;
+});
+
+const trackVirtualTotalHeight = computed(() => trackSearchItems.value.length * TRACK_ROW_HEIGHT);
+
+const virtualTrackItems = computed<VirtualSearchTrackEntry[]>(() => {
+  const listTop = Math.max(0, trackScrollTop.value - (isLocalSource.value ? TRACK_HEADER_HEIGHT : 0));
+  const startIndex = Math.max(0, Math.floor(listTop / TRACK_ROW_HEIGHT) - TRACK_OVERSCAN);
+  const visibleCount = Math.ceil(trackViewportHeight.value / TRACK_ROW_HEIGHT) + TRACK_OVERSCAN * 2;
+  const endIndex = Math.min(trackSearchItems.value.length, startIndex + visibleCount);
+
+  return trackSearchItems.value.slice(startIndex, endIndex).map((entry, offset) => ({
+    ...entry,
+    start: (startIndex + offset) * TRACK_ROW_HEIGHT,
+  }));
+});
+
+const syncTrackVirtualScrollState = () => {
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  trackScrollTop.value = el.scrollTop;
+  trackViewportHeight.value = el.clientHeight || trackViewportHeight.value;
+};
+
+const resetTrackVirtualScroll = () => {
+  trackScrollTop.value = 0;
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  el.scrollTop = 0;
+  trackViewportHeight.value = el.clientHeight || trackViewportHeight.value;
+};
+
+const catalogGridScrollTop = ref(0);
+const catalogGridViewportHeight = ref(720);
+const catalogGridWidth = ref(960);
+const CATALOG_GRID_GAP = 12;
+const CATALOG_GRID_OVERSCAN_ROWS = 2;
+
+type CatalogGridEntry =
+  | {
+      type: 'artist';
+      source: 'local';
+      key: string;
+      item: ArtistCatalogItem;
+    }
+  | {
+      type: 'artist';
+      source: 'plugin';
+      key: string;
+      item: PluginArtistResult;
+    }
+  | {
+      type: 'album';
+      source: 'local';
+      key: string;
+      item: AlbumCatalogItem;
+    }
+  | {
+      type: 'album';
+      source: 'plugin';
+      key: string;
+      item: PluginAlbumResult;
+    }
+  | {
+      type: 'playlist';
+      source: 'local';
+      key: string;
+      item: Playlist;
+    }
+  | {
+      type: 'playlist';
+      source: 'plugin';
+      key: string;
+      item: PluginPlaylistSearchResult;
+    };
+
+type VirtualCatalogGridRow = {
+  key: string;
+  start: number;
+  items: CatalogGridEntry[];
+};
+
+const catalogGridItems = computed<CatalogGridEntry[]>(() => {
+  if (activeSearchType.value === 'artist') {
+    return [
+      ...localArtistResults.value.map((item): CatalogGridEntry => ({
+        type: 'artist',
+        source: 'local',
+        key: `artist-local-${item.id}`,
+        item,
+      })),
+      ...pluginArtistResults.value.map((item): CatalogGridEntry => ({
+        type: 'artist',
+        source: 'plugin',
+        key: `artist-plugin-${item.id}`,
+        item,
+      })),
+    ];
+  }
+
+  if (activeSearchType.value === 'album') {
+    return [
+      ...localAlbumResults.value.map((item): CatalogGridEntry => ({
+        type: 'album',
+        source: 'local',
+        key: `album-local-${item.key}`,
+        item,
+      })),
+      ...pluginAlbumResults.value.map((item): CatalogGridEntry => ({
+        type: 'album',
+        source: 'plugin',
+        key: `album-plugin-${item.id}`,
+        item,
+      })),
+    ];
+  }
+
+  if (activeSearchType.value === 'playlist') {
+    return [
+      ...localPlaylistResults.value.map((item): CatalogGridEntry => ({
+        type: 'playlist',
+        source: 'local',
+        key: `playlist-local-${item.id}`,
+        item,
+      })),
+      ...pluginPlaylistResults.value.map((item): CatalogGridEntry => ({
+        type: 'playlist',
+        source: 'plugin',
+        key: `playlist-plugin-${item.id}`,
+        item,
+      })),
+    ];
+  }
+
+  return [];
+});
+
+const catalogGridColumns = computed(() => {
+  const width = catalogGridWidth.value;
+  if (width >= 1280) return 6;
+  if (width >= 1024) return 5;
+  if (width >= 768) return 4;
+  if (width >= 640) return 3;
+  return 2;
+});
+
+const catalogGridClass = computed(() => ({
+  'grid-cols-2': catalogGridColumns.value === 2,
+  'grid-cols-3': catalogGridColumns.value === 3,
+  'grid-cols-4': catalogGridColumns.value === 4,
+  'grid-cols-5': catalogGridColumns.value === 5,
+  'grid-cols-6': catalogGridColumns.value === 6,
+}));
+
+const catalogGridRowHeight = computed(() => {
+  if (activeSearchType.value === 'artist') {
+    return 156 + CATALOG_GRID_GAP;
+  }
+
+  const columns = Math.max(1, catalogGridColumns.value);
+  const itemWidth = Math.max(120, (catalogGridWidth.value - CATALOG_GRID_GAP * (columns - 1)) / columns);
+  return itemWidth + 78 + CATALOG_GRID_GAP;
+});
+
+const catalogGridRowCount = computed(() => Math.ceil(catalogGridItems.value.length / catalogGridColumns.value));
+const catalogGridVirtualTotalHeight = computed(() => catalogGridRowCount.value * catalogGridRowHeight.value);
+
+const virtualCatalogGridRows = computed<VirtualCatalogGridRow[]>(() => {
+  const rowHeight = Math.max(1, catalogGridRowHeight.value);
+  const startRow = Math.max(0, Math.floor(catalogGridScrollTop.value / rowHeight) - CATALOG_GRID_OVERSCAN_ROWS);
+  const visibleRows = Math.ceil(catalogGridViewportHeight.value / rowHeight) + CATALOG_GRID_OVERSCAN_ROWS * 2;
+  const endRow = Math.min(catalogGridRowCount.value, startRow + visibleRows);
+  const rows: VirtualCatalogGridRow[] = [];
+
+  for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
+    const startIndex = rowIndex * catalogGridColumns.value;
+    rows.push({
+      key: `catalog-row-${activeSearchType.value}-${rowIndex}`,
+      start: rowIndex * rowHeight,
+      items: catalogGridItems.value.slice(startIndex, startIndex + catalogGridColumns.value),
+    });
+  }
+
+  return rows;
+});
+
+const syncCatalogGridVirtualScrollState = () => {
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  catalogGridScrollTop.value = el.scrollTop;
+  catalogGridViewportHeight.value = el.clientHeight || catalogGridViewportHeight.value;
+  catalogGridWidth.value = Math.max(320, el.clientWidth - 32);
+};
+
+const resetCatalogGridVirtualScroll = () => {
+  catalogGridScrollTop.value = 0;
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  el.scrollTop = 0;
+  catalogGridViewportHeight.value = el.clientHeight || catalogGridViewportHeight.value;
+  catalogGridWidth.value = Math.max(320, el.clientWidth - 32);
+};
 
 // 封面加载任务版本号，用于在新搜索时取消旧任务
 let coverLoadVersion = 0;
+let coverLoadUiTimer: ReturnType<typeof setInterval> | null = null;
+
+const clearCoverLoadUiTimer = () => {
+  if (coverLoadUiTimer) {
+    clearInterval(coverLoadUiTimer);
+    coverLoadUiTimer = null;
+  }
+};
 
 // 右键菜单
 const showContextMenu = ref(false);
@@ -629,6 +747,23 @@ const hasNoResults = computed(() => {
 // ==================== 搜索逻辑 ====================
 let searchAbortController: AbortController | null = null;
 
+const withTimeoutFallback = async <T,>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>(resolve => {
+        timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
 const performSearch = async () => {
   const query = searchQuery.value.trim();
   if (!query) {
@@ -656,6 +791,8 @@ const performSearch = async () => {
   currentPage.value = 1;
   hasMore.value = false;
   searching.value = true;
+  resetTrackVirtualScroll();
+  resetCatalogGridVirtualScroll();
   try {
     const source = selectedSourceItem.value;
     if (!source) return;
@@ -875,6 +1012,7 @@ const loadMore = async () => {
 
 /** 滚动事件：接近底部时自动加载更多 */
 const handleScroll = () => {
+  syncTrackVirtualScrollState();
   const el = resultsScrollRef.value;
   if (!el || loadingMore.value || !hasMore.value) return;
   const { scrollTop, scrollHeight, clientHeight } = el;
@@ -884,9 +1022,14 @@ const handleScroll = () => {
   }
 };
 
+const handleCatalogGridScroll = () => {
+  syncCatalogGridVirtualScrollState();
+};
+
 /** 触发封面加载（滑动窗口并发版） */
 function triggerCoverLoading() {
   const version = ++coverLoadVersion;
+  clearCoverLoadUiTimer();
   // 只处理还没有封面（img 为 null）的项目，已失败的（''）不再重试
   const items = lxSearchResults.value.filter(item => item.img === null);
   if (items.length === 0) return;
@@ -902,10 +1045,7 @@ function triggerCoverLoading() {
       const item = items[nextIdx++];
       try {
         // 每个请求最多等 8 秒，超时直接跳过
-        const picUrl = await Promise.race([
-          lxGetPic(item),
-          new Promise<null>(resolve => setTimeout(() => resolve(null), 8000)),
-        ]);
+        const picUrl = await withTimeoutFallback(lxGetPic(item), 8000, null);
         if (version !== coverLoadVersion) return;
         if (picUrl) {
           item.img = picUrl;
@@ -926,6 +1066,9 @@ function triggerCoverLoading() {
   const uiTimer = setInterval(() => {
     if (version !== coverLoadVersion) {
       clearInterval(uiTimer);
+      if (coverLoadUiTimer === uiTimer) {
+        coverLoadUiTimer = null;
+      }
       return;
     }
     if (hasUpdate) {
@@ -933,10 +1076,14 @@ function triggerCoverLoading() {
       lxSearchResults.value = [...lxSearchResults.value];
     }
   }, 500);
+  coverLoadUiTimer = uiTimer;
 
   // 全部完成后做最后一次刷新并清理定时器
   Promise.all(workers).then(() => {
     clearInterval(uiTimer);
+    if (coverLoadUiTimer === uiTimer) {
+      coverLoadUiTimer = null;
+    }
     if (version === coverLoadVersion && hasUpdate) {
       lxSearchResults.value = [...lxSearchResults.value];
     }
@@ -1127,10 +1274,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     } else {
       // 等待并行获取的歌词（不阻塞太久，最多等 1.5 秒）
       try {
-        const lyricData = await Promise.race([
-          lyricPromise,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
-        ]);
+        const lyricData = await withTimeoutFallback(lyricPromise, 1500, null);
         if (lyricData?.lyricsRaw) {
           (song as any).lyrics_raw = lyricData.lyricsRaw;
         }
@@ -1382,6 +1526,136 @@ const handleLocalContextMenu = (e: MouseEvent, song: Song) => {
   showContextMenu.value = true;
 };
 
+const getVirtualTrackCoverPath = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return `lx://${entry.item.source}/${entry.item.songmid}`;
+  if (entry.kind === 'plugin') return `plugin://${entry.item.platform}/${entry.item.id}`;
+  return entry.item.path;
+};
+
+const getVirtualTrackCoverUrl = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return entry.item.img || '';
+  if (entry.kind === 'plugin') return entry.item.coverUrl ? getMfCoverUrl(entry.item) : '';
+  return entry.item.cover_thumb_path ? getLocalCoverUrl(entry.item) : '';
+};
+
+const getVirtualTrackTitle = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return entry.item.name;
+  if (entry.kind === 'plugin') return entry.item.title;
+  return entry.item.title || entry.item.name;
+};
+
+const getVirtualTrackArtist = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return entry.item.singer;
+  if (entry.kind === 'plugin') return entry.item.artist;
+  return entry.item.artist;
+};
+
+const getVirtualTrackAlbum = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return entry.item.albumName;
+  if (entry.kind === 'plugin') return entry.item.album;
+  return entry.item.album;
+};
+
+const getVirtualTrackDuration = (entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') return entry.item.interval;
+  if (entry.kind === 'plugin') {
+    return entry.item.duration ? formatMfDuration(Math.floor(entry.item.duration / 1000)) : '--:--';
+  }
+  return formatLocalDuration(entry.item.duration);
+};
+
+const handleVirtualTrackClick = (entry: SearchTrackEntry) => {
+  if (songClickAction.value !== 'single') return;
+  if (entry.kind === 'lx') handlePlaySong(entry.item);
+  else if (entry.kind === 'plugin') void handlePlayMfSong(entry.item);
+  else handlePlayLocalSong(entry.item);
+};
+
+const handleVirtualTrackDoubleClick = (entry: SearchTrackEntry) => {
+  if (songClickAction.value === 'single') return;
+  if (entry.kind === 'lx') handlePlaySong(entry.item);
+  else if (entry.kind === 'plugin') void handlePlayMfSong(entry.item);
+  else handlePlayLocalSong(entry.item);
+};
+
+const handleVirtualTrackContextMenu = (event: MouseEvent, entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') handleContextMenu(event, entry.item);
+  else if (entry.kind === 'plugin') handleMfContextMenu(event, entry.item);
+  else handleLocalContextMenu(event, entry.item);
+};
+
+const handleVirtualTrackImageError = (event: Event, entry: SearchTrackEntry) => {
+  if (entry.kind === 'lx') {
+    handleImgError(entry.item);
+    return;
+  }
+  if (entry.kind === 'plugin') {
+    handleMfImgError(event);
+    return;
+  }
+  (event.target as HTMLImageElement).style.display = 'none';
+};
+
+const getCatalogEntryCover = (entry: CatalogGridEntry) => {
+  if (entry.type === 'artist') {
+    return entry.source === 'local'
+      ? getLocalArtistCover(entry.item)
+      : entry.item.avatarUrl || '';
+  }
+
+  if (entry.type === 'album') {
+    return entry.source === 'local'
+      ? getLocalAlbumCover(entry.item)
+      : entry.item.coverUrl || '';
+  }
+
+  return entry.source === 'local'
+    ? getPlaylistCover(entry.item)
+    : entry.item.coverUrl || '';
+};
+
+const getCatalogEntryTitle = (entry: CatalogGridEntry) => {
+  if (entry.type === 'playlist' && entry.source === 'plugin') {
+    return entry.item.title;
+  }
+
+  return entry.item.name;
+};
+
+const getCatalogEntrySubtitle = (entry: CatalogGridEntry) => {
+  if (entry.type === 'artist') {
+    if (entry.source === 'local') return `${entry.item.count} 首`;
+    return entry.item.songCount ? `${entry.item.songCount} 首` : '查看';
+  }
+
+  if (entry.type === 'album') {
+    return entry.item.artist;
+  }
+
+  if (entry.source === 'local') {
+    return `${entry.item.songPaths.length} 首`;
+  }
+
+  return entry.item.trackCount ? `${entry.item.trackCount} 首` : '查看';
+};
+
+const handleCatalogEntryClick = (entry: CatalogGridEntry) => {
+  if (entry.type === 'artist') {
+    if (entry.source === 'local') handleArtistClick(entry.item);
+    else handlePluginArtistClick(entry.item);
+    return;
+  }
+
+  if (entry.type === 'album') {
+    if (entry.source === 'local') handleAlbumClick(entry.item);
+    else handlePluginAlbumClick(entry.item);
+    return;
+  }
+
+  if (entry.source === 'local') handlePlaylistClick(entry.item);
+  else handlePluginPlaylistClick(entry.item);
+};
+
 // ==================== 本地歌手/专辑/歌单导航 ====================
 
 const handleArtistClick = (artist: ArtistCatalogItem) => {
@@ -1560,6 +1834,7 @@ onBeforeUnmount(() => {
   searchAbortController?.abort();
   searchAbortController = null;
   coverLoadVersion += 1;
+  clearCoverLoadUiTimer();
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;

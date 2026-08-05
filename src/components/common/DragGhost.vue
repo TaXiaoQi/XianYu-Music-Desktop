@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { dragSession } from '../../composables/dragState';
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useCoverCache } from '../../composables/useCoverCache';
 
-const ghostX = ref(0);
-const ghostY = ref(0);
 const ghostCover = ref('');
 const { loadCover } = useCoverCache();
 let ghostRequestId = 0;
@@ -40,24 +38,9 @@ watch([() => dragSession.active, () => dragSession.type], async ([active, type])
   }
 });
 
-const onPointerMove = (e: PointerEvent) => {
-  if (dragSession.active) {
-    ghostX.value = e.clientX;
-    ghostY.value = e.clientY;
-  }
-};
-
-onMounted(() => {
-  window.addEventListener('pointermove', onPointerMove, { passive: true });
-});
-
-onUnmounted(() => {
-  window.removeEventListener('pointermove', onPointerMove);
-});
-
 const ghostStyle = computed(() => ({
-  top: `${ghostY.value + 10}px`,
-  left: `${ghostX.value + 10}px`,
+  top: `${dragSession.mouseY + 10}px`,
+  left: `${dragSession.mouseX + 10}px`,
 }));
 
 // 🟢 计算显示内容

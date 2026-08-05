@@ -233,6 +233,7 @@ export interface ThemeSettings {
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
+  useCustomTrayMenu: boolean;
   flowColorBoost: number;
   flowDepth: number;
   flowSpeed: number;

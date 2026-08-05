@@ -58,6 +58,7 @@ const splashVisible = ref(true);
 const splashHintVisible = ref(false);
 let splashHintTimer: ReturnType<typeof setTimeout> | null = null;
 let splashAutoAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+let authCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- 快捷键录入 ---
 type ShortcutScope = 'local' | 'global';
@@ -332,7 +333,11 @@ const handleAuthSubmit = async () => {
     showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     // 登录成功后稍作停留再完成
-    setTimeout(() => {
+    if (authCompleteTimer) {
+      clearTimeout(authCompleteTimer);
+    }
+    authCompleteTimer = setTimeout(() => {
+      authCompleteTimer = null;
       handleComplete();
     }, 600);
   } catch (error) {
@@ -352,6 +357,13 @@ const clearSplashTimers = () => {
   if (splashAutoAdvanceTimer) {
     clearTimeout(splashAutoAdvanceTimer);
     splashAutoAdvanceTimer = null;
+  }
+};
+
+const clearAuthCompleteTimer = () => {
+  if (authCompleteTimer) {
+    clearTimeout(authCompleteTimer);
+    authCompleteTimer = null;
   }
 };
 
@@ -392,6 +404,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearSplashTimers();
+  clearAuthCompleteTimer();
 });
 </script>
 

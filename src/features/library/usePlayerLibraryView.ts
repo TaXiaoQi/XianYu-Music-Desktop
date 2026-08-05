@@ -84,7 +84,12 @@ export function usePlayerLibraryView() {
     songLookup,
   });
 
-  const { currentViewSongs } = useLibraryCurrentViewSongs({
+  const {
+    currentViewSongPaths,
+    currentViewSongCount,
+    currentViewSongs,
+    resolveSongByPath,
+  } = useLibraryCurrentViewSongs({
     canonicalSongPaths,
     playlists,
     recentSongs,
@@ -112,6 +117,8 @@ export function usePlayerLibraryView() {
     albumList: catalogSelectors.albumList,
     artistList: catalogSelectors.artistList,
     canonicalSongs,
+    currentViewSongCount,
+    currentViewSongPaths,
     currentFolderSongs: folderSelectors.currentFolderSongs,
     currentViewSongs,
     favAlbumList: collectionSelectors.favAlbumList,
@@ -126,6 +133,7 @@ export function usePlayerLibraryView() {
     libraryHierarchy,
     recentAlbumList: collectionSelectors.recentAlbumList,
     recentPlaylistList: collectionSelectors.recentPlaylistList,
+    resolveSongByPath,
     searchQuery,
     sourceSongs,
     // Compatibility aliases for existing callers.

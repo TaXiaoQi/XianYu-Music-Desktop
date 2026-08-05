@@ -65,10 +65,44 @@ export function clearImageCaches() {
   songTableViewportCoverSnapshotCache.clear();
 }
 
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      pruneImageCaches();
-    }
-  });
+export function clearHeavyImageCaches() {
+  artistHeaderCache.clear();
+  albumHeaderCache.clear();
+  sidebarPlaylistCoverCache.prune();
+  artistViewportCoverSnapshotCache.clear();
+  albumViewportCoverSnapshotCache.clear();
+  songTableViewportCoverSnapshotCache.clear();
+  listScrollCache.prune();
+}
+
+let imageCacheVisibilityCleanupRegistered = false;
+
+function handleImageCacheVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    pruneImageCaches();
+  }
+}
+
+function registerImageCacheVisibilityCleanup() {
+  if (imageCacheVisibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.addEventListener('visibilitychange', handleImageCacheVisibilityChange);
+  imageCacheVisibilityCleanupRegistered = true;
+}
+
+function cleanupImageCacheVisibilityCleanup() {
+  if (!imageCacheVisibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.removeEventListener('visibilitychange', handleImageCacheVisibilityChange);
+  imageCacheVisibilityCleanupRegistered = false;
+}
+
+registerImageCacheVisibilityCleanup();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(cleanupImageCacheVisibilityCleanup);
 }

@@ -35,7 +35,7 @@ export function useSidebarPlaylistCovers({
       return '';
     }
 
-    const firstSong = playlist.songs.find(s => s.path === firstSongPath) ?? playlist.songs[0];
+    const firstSong = playlist.songs.find(s => s.path === firstSongPath);
     if (!firstSong?.cover_thumb_path) {
       return '';
     }

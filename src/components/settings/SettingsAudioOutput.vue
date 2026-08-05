@@ -178,14 +178,29 @@ const selectedOutputDeviceLabel = computed(() => (
   )
 ));
 
+const applyAudioOutputStatus = (status: AudioOutputStatus) => {
+  audioOutputStatus.value = status;
+  selectedOutputDeviceId.value = status.selected_device_id ?? '';
+
+  // 后端在 WASAPI 独占设备断开/失败时会把 requested_output_mode 强制切回 shared。
+  // 前端必须同步设置 store，否则开关仍显示“独占模式已开启”，下一首也会继续请求独占模式。
+  if (settings.value.audio.outputMode !== status.requested_output_mode) {
+    patchSettings({
+      audio: {
+        ...settings.value.audio,
+        outputMode: status.requested_output_mode,
+      },
+    });
+  }
+};
+
 const loadAudioOutputDevices = async () => {
   const [devices, status] = await Promise.all([
     playbackApi.getOutputDevices(),
     playbackApi.getCurrentOutputDevice(),
   ]);
   audioOutputDevices.value = devices;
-  audioOutputStatus.value = status;
-  selectedOutputDeviceId.value = status.selected_device_id ?? '';
+  applyAudioOutputStatus(status);
 };
 
 const handleOutputDeviceSelect = async (deviceId: string) => {
@@ -204,7 +219,7 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
       playerStorage.setString(playerStorageKeys.outputDeviceMode, 'default');
     }
     selectedOutputDeviceId.value = deviceId;
-    audioOutputStatus.value = await playbackApi.getCurrentOutputDevice();
+    applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output device:', error);
     showToast('切换播放设备失败', 'error');
@@ -219,7 +234,7 @@ const toggleWasapiExclusive = async () => {
   settings.value.audio.outputMode = outputMode;
   try {
     await playbackApi.setAudioOutputMode(outputMode);
-    audioOutputStatus.value = await playbackApi.getCurrentOutputDevice();
+    applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
     showToast('切换音频输出模式失败', 'error');
@@ -239,8 +254,7 @@ onMounted(async () => {
     console.warn('Failed to load audio output devices:', error);
   });
   unlistenAudioOutput = await listen<AudioOutputStatus>('audio-output-device-changed', event => {
-    audioOutputStatus.value = event.payload;
-    selectedOutputDeviceId.value = event.payload.selected_device_id ?? '';
+    applyAudioOutputStatus(event.payload);
   });
 });
 

@@ -44,6 +44,9 @@ const cacheEpochs: Record<CoverKind, number> = {
 };
 const invalidatedRequestKeys = new Set<string>();
 
+const isDocumentHidden = () =>
+  typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
 const getCacheForKind = (kind: CoverKind) =>
   kind === 'full' ? fullCoverCache : thumbnailCache;
 const getPathCacheForKind = (kind: CoverKind) =>
@@ -258,6 +261,33 @@ const trimTransientCoverState = () => {
   queuedBackgroundFullPaths.clear();
   cancelBackgroundPreload();
   recentFailureCache.prune();
+
+  for (const requestKey of Array.from(inFlightRequests.keys())) {
+    if (!isThumbnailRequestKey(requestKey)) {
+      invalidatedRequestKeys.add(requestKey);
+      loadingSet.delete(requestKey);
+    }
+  }
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') {
+    // 窗口最小化/隐藏时修剪封面缓存：
+    // - 缩略图保留 12 条（LRU，当前播放及最近浏览的歌曲），
+    //   恢复窗口后无需重新磁盘加载，避免闪烁
+    // - 全尺寸封面全部清空（单张体积大，按需重新加载即可）
+    // - 取消所有预加载队列，避免最小化期间无意义的磁盘 I/O
+    trimTransientCoverState();
+  }
+};
+
+const cleanupVisibilityCleanup = () => {
+  if (!hasRegisteredVisibilityCleanup || typeof document === 'undefined') {
+    return;
+  }
+
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  hasRegisteredVisibilityCleanup = false;
 };
 
 const registerVisibilityCleanup = () => {
@@ -265,18 +295,13 @@ const registerVisibilityCleanup = () => {
     return;
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      // 窗口最小化/隐藏时修剪封面缓存：
-      // - 缩略图保留 12 条（LRU，当前播放及最近浏览的歌曲），
-      //   恢复窗口后无需重新磁盘加载，避免闪烁
-      // - 全尺寸封面全部清空（单张体积大，按需重新加载即可）
-      // - 取消所有预加载队列，避免最小化期间无意义的磁盘 I/O
-      trimTransientCoverState();
-    }
-  });
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   hasRegisteredVisibilityCleanup = true;
 };
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(cleanupVisibilityCleanup);
+}
 
 const loadCoverInternal = (path: string, kind: CoverKind): Promise<string> => {
   const requestKey = buildCacheKey(path, kind);
@@ -456,6 +481,12 @@ const enqueuePreload = (path: string, priority: PreloadPriority) => {
 };
 
 const scheduleBackgroundFullPreload = () => {
+  if (isDocumentHidden()) {
+    backgroundFullPreloadQueue.length = 0;
+    queuedBackgroundFullPaths.clear();
+    return;
+  }
+
   while (
     activeBackgroundFullPreloadCount < BACKGROUND_FULL_PRELOAD_CONCURRENCY
     && backgroundFullPreloadQueue.length > 0
@@ -486,6 +517,7 @@ const scheduleBackgroundFullPreload = () => {
 const enqueueBackgroundFullPreload = (path: string) => {
   if (
     !path
+    || isDocumentHidden()
     || fullCoverCache.has(path)
     || loadingSet.has(buildCacheKey(path, 'full'))
     || queuedBackgroundFullPaths.has(path)

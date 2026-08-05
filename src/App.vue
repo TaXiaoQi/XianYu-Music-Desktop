@@ -2,15 +2,9 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
-import { watch, onMounted } from 'vue';
+import { defineAsyncComponent, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import MainShell from './components/layout/MainShell.vue';
-import MiniPlayerWindow from './components/layout/MiniPlayerWindow.vue';
-import TrayMenuWindow from './components/layout/TrayMenuWindow.vue';
-import DesktopLyricsWindow from './components/player/DesktopLyricsWindow.vue';
-import TaskbarControlWindow from './components/layout/TaskbarControlWindow.vue';
-import VolumePopoverWindow from './components/layout/VolumePopoverWindow.vue';
 import { registerImportedLyricsFonts } from './composables/lyrics';
 import { useToast } from './composables/toast';
 import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared';
@@ -22,6 +16,11 @@ import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugi
 import { configureApplicationLogger } from './services/applicationLogger';
 import { reportAppOpen } from './services/usageStats';
 import { useUiStore } from './shared/stores/ui';
+import { clearHeavyImageCaches } from './caches/imageCaches';
+import { releaseColorExtractionWorker } from './composables/colorExtraction';
+import { clearPreblurredBackgroundCache } from './composables/preblurredBackgroundCache';
+import { useCoverCache } from './composables/useCoverCache';
+import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
 
 const currentWindowLabel = (() => {
   try {
@@ -36,6 +35,13 @@ const isMiniPlayerWindow = currentWindowLabel === MINI_PLAYER_WINDOW_LABEL;
 const isTrayMenuWindow = currentWindowLabel === TRAY_MENU_WINDOW_LABEL;
 const isTaskbarPlayerWindow = currentWindowLabel === TASKBAR_PLAYER_WINDOW_LABEL;
 const isVolumePopoverWindow = currentWindowLabel === VOLUME_POPOVER_WINDOW_LABEL;
+const isMainShellSleeping = ref(false);
+const MainShell = defineAsyncComponent(() => import('./components/layout/MainShell.vue'));
+const MiniPlayerWindow = defineAsyncComponent(() => import('./components/layout/MiniPlayerWindow.vue'));
+const DesktopLyricsWindow = defineAsyncComponent(() => import('./components/player/DesktopLyricsWindow.vue'));
+const TrayMenuWindow = defineAsyncComponent(() => import('./components/layout/TrayMenuWindow.vue'));
+const TaskbarControlWindow = defineAsyncComponent(() => import('./components/layout/TaskbarControlWindow.vue'));
+const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layout/VolumePopoverWindow.vue'));
 
 const { settings } = useSettings();
 watch(
@@ -51,13 +57,74 @@ watch(
 
 // 沉浸全屏时给 body 添加 class，CSS 全局禁用所有 data-tauri-drag-region 的指针事件，
 // 防止全屏窗口被拖动（主页 TitleBar/SidebarBrand、歌词页顶栏等）。
-const { isImmersiveFullscreen } = storeToRefs(useUiStore());
+const uiStore = useUiStore();
+const { isImmersiveFullscreen, mainWindowUiSleepRequested } = storeToRefs(uiStore);
 watch(isImmersiveFullscreen, (fs) => {
   document.body.classList.toggle('immersive-fullscreen', fs);
 }, { immediate: true });
 
 if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
+  const { clearCoverCaches } = useCoverCache();
+  let handleDevtoolsKeyDown: ((event: KeyboardEvent) => void) | null = null;
+  let unlistenCloseRequested: (() => void) | null = null;
+  let unlistenFocusChanged: (() => void) | null = null;
+  let isUnmounted = false;
+
+  const releaseHiddenMainWindowResources = () => {
+    clearPreblurredBackgroundCache();
+    clearCoverCaches();
+    clearHeavyImageCaches();
+    releaseColorExtractionWorker();
+  };
+
+  const enterTraySleep = async () => {
+    mainWindowUiSleepRequested.value = true;
+    await enterMainWindowSleep();
+  };
+
+  const enterMainWindowSleep = async () => {
+    if (isMainShellSleeping.value) return;
+
+    isMainShellSleeping.value = true;
+    setMainWindowRenderingSnapshot({
+      documentHidden: true,
+      windowFocused: false,
+      windowVisible: false,
+      windowMinimized: false,
+    });
+    await nextTick();
+    releaseHiddenMainWindowResources();
+  };
+
+  const leaveTraySleep = () => {
+    mainWindowUiSleepRequested.value = false;
+  };
+
+  const leaveMainWindowSleep = () => {
+    if (!isMainShellSleeping.value) return;
+    isMainShellSleeping.value = false;
+    setMainWindowRenderingSnapshot({
+      documentHidden: document.hidden,
+      windowFocused: true,
+      windowVisible: true,
+      windowMinimized: false,
+    });
+  };
+
+  const handleDocumentVisibilityChange = () => {
+    if (!document.hidden) {
+      leaveTraySleep();
+    }
+  };
+
+  watch(mainWindowUiSleepRequested, (sleepRequested) => {
+    if (sleepRequested) {
+      void enterMainWindowSleep();
+    } else {
+      leaveMainWindowSleep();
+    }
+  });
 
   onMounted(async () => {
     // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
@@ -70,12 +137,29 @@ if (currentWindowLabel === 'main') {
       console.error('Failed to get version for welcome toast:', error);
     }
 
-    await getCurrentWindow().onCloseRequested(async (event) => {
+    const closeRequestedUnlisten = await getCurrentWindow().onCloseRequested(async (event) => {
       if (settings.value.closeToTray) {
         event.preventDefault();
+        await enterTraySleep();
         await getCurrentWindow().hide();
       }
     });
+    if (isUnmounted) {
+      closeRequestedUnlisten();
+    } else {
+      unlistenCloseRequested = closeRequestedUnlisten;
+    }
+
+    const focusChangedUnlisten = await getCurrentWindow().onFocusChanged(({ payload }) => {
+      if (payload) {
+        leaveTraySleep();
+      }
+    });
+    if (isUnmounted) {
+      focusChangedUnlisten();
+    } else {
+      unlistenFocusChanged = focusChangedUnlisten;
+    }
 
     // 启动时加载插件（尊重懒加载设置）
     const pluginConfig = settings.value.plugins;
@@ -103,13 +187,31 @@ if (currentWindowLabel === 'main') {
     });
 
     // F12 打开 DevTools（WebView2 已禁用浏览器快捷键，需通过自定义命令恢复）
-    const handleKeyDown = (event: KeyboardEvent) => {
+    handleDevtoolsKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F12') {
         event.preventDefault();
         void invoke('open_devtools');
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleDevtoolsKeyDown);
+    window.addEventListener('focus', leaveTraySleep);
+    document.addEventListener('visibilitychange', handleDocumentVisibilityChange);
+  });
+
+  onBeforeUnmount(() => {
+    isUnmounted = true;
+
+    if (handleDevtoolsKeyDown) {
+      window.removeEventListener('keydown', handleDevtoolsKeyDown);
+      handleDevtoolsKeyDown = null;
+    }
+
+    unlistenCloseRequested?.();
+    unlistenCloseRequested = null;
+    unlistenFocusChanged?.();
+    unlistenFocusChanged = null;
+    window.removeEventListener('focus', leaveTraySleep);
+    document.removeEventListener('visibilitychange', handleDocumentVisibilityChange);
   });
 }
 </script>
@@ -120,7 +222,7 @@ if (currentWindowLabel === 'main') {
   <TrayMenuWindow v-else-if="isTrayMenuWindow" />
   <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" />
   <VolumePopoverWindow v-else-if="isVolumePopoverWindow" />
-  <MainShell v-else />
+  <MainShell v-else :sleep="isMainShellSleeping" />
 </template>
 
 <style>

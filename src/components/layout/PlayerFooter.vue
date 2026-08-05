@@ -5,15 +5,12 @@ import { useLibraryCollections } from '../../features/collections/useLibraryColl
 import { useLyrics } from '../../composables/lyrics';
 import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import AudioVisualizer from '../player/AudioVisualizer.vue';
-import FooterContextMenu from "../overlays/FooterContextMenu.vue";
 import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
-import ModernModal from '../common/ModernModal.vue';
 import { useSettings } from '../../features/settings/useSettings';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { computed, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
+import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
 import { QUALITY_META } from '../../types';
@@ -22,6 +19,10 @@ import {
   getProgressVisualState,
   readStoredProgressHidden
 } from './playerFooterProgress';
+
+const AudioVisualizer = defineAsyncComponent(() => import('../player/AudioVisualizer.vue'));
+const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterContextMenu.vue"));
+const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 
 const {
   currentSong,
@@ -955,7 +956,8 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-        <FooterContextMenu 
+        <FooterContextMenu
+          v-if="showContextMenu"
 
           :visible="showContextMenu" 
 
@@ -971,6 +973,7 @@ onUnmounted(() => {
 
         <!-- 已下载确认：询问是否重新下载 -->
         <ModernModal
+          v-if="showRedownloadConfirm"
           v-model:visible="showRedownloadConfirm"
           title="歌曲已下载"
           :content="redownloadContent"

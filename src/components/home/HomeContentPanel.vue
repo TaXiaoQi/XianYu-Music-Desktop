@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
 
 import type { Song } from '../../types';
-import AlbumDetailHeader from '../headers/AlbumDetailHeader.vue';
-import ArtistDetailHeader from '../headers/ArtistDetailHeader.vue';
-import MasterPanel from '../song-list/MasterPanel.vue';
-import SongTable from '../song-list/SongTable.vue';
-import StatisticsPage from '../statistics/StatisticsPage.vue';
-import ArtistAlbumGrid from './ArtistAlbumGrid.vue';
-import HomeEmptyState from './HomeEmptyState.vue';
+
+const AlbumDetailHeader = defineAsyncComponent(() => import('../headers/AlbumDetailHeader.vue'));
+const ArtistDetailHeader = defineAsyncComponent(() => import('../headers/ArtistDetailHeader.vue'));
+const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
+const SongTable = defineAsyncComponent(() => import('../song-list/SongTable.vue'));
+const StatisticsPage = defineAsyncComponent(() => import('../statistics/StatisticsPage.vue'));
+const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
+const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
 
 interface ArtistAlbumItem {
   key: string;
@@ -26,6 +27,8 @@ interface Props {
   localFilterCondition: string;
   songTableMemoryScopeKey: string;
   localSongList: Song[];
+  localSongPaths?: string[];
+  resolveSongByPath?: (path: string) => Song | null;
   selectedCount: number;
   selectedAlbumSong: Song | null;
   artistAlbumList: ArtistAlbumItem[];
@@ -138,6 +141,8 @@ const handleTableDragStart = (...args: any[]) => {
           v-else
           ref="localSongTableRef"
           :songs="localSongList"
+          :song-paths="localViewMode === 'playlist' ? localSongPaths : undefined"
+          :resolve-song-by-path="localViewMode === 'playlist' ? resolveSongByPath : undefined"
           :isBatchMode="isBatchMode"
           :selectedPaths="selectedPaths"
           :memoryScopeKey="songTableMemoryScopeKey"

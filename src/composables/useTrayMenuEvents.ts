@@ -4,7 +4,7 @@ import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { storeToRefs } from 'pinia';
-import { nextTick, onMounted, onUnmounted } from 'vue';
+import { nextTick, onMounted, onUnmounted, watch } from 'vue';
 import type { Router } from 'vue-router';
 
 import { useLyrics } from './lyrics';
@@ -23,9 +23,13 @@ import {
   TRAY_MENU_WINDOW_LABEL,
   TRAY_MENU_WINDOW_WIDTH,
   type TrayMenuAction,
-  type TrayMenuOpenPayload,
   type TrayMenuStatePayload,
 } from '../features/tray/actions';
+
+interface TrayMenuOpenPayload {
+  x: number;
+  y: number;
+}
 
 let trayMenuWindowPromise: Promise<WebviewWindow> | null = null;
 let isTrayMenuReady = false;
@@ -34,7 +38,7 @@ let resolveTrayMenuReady: (() => void) | null = null;
 let isTrayMenuSizeApplied = false;
 let trayMenuSizePromise: Promise<void> | null = null;
 
-const TRAY_MENU_PREWARM_DELAY_MS = 1_600;
+const TRAY_MENU_PREWARM_DELAY_MS = 600;
 
 async function getTrayMenuWindow() {
   return WebviewWindow.getByLabel(TRAY_MENU_WINDOW_LABEL);
@@ -98,6 +102,15 @@ function markTrayMenuReady() {
   resolveTrayMenuReady?.();
   resolveTrayMenuReady = null;
   trayMenuReadyPromise = null;
+}
+
+function resetTrayMenuWindowState() {
+  trayMenuWindowPromise = null;
+  isTrayMenuReady = false;
+  trayMenuReadyPromise = null;
+  resolveTrayMenuReady = null;
+  isTrayMenuSizeApplied = false;
+  trayMenuSizePromise = null;
 }
 
 function waitForTrayMenuReady(timeoutMs = 600) {
@@ -195,6 +208,7 @@ export function useTrayMenuEvents(router: Router) {
   let unlistenTrayMenu: UnlistenFn | null = null;
   let unlistenTrayMenuOpen: UnlistenFn | null = null;
   let unlistenTrayMenuReady: UnlistenFn | null = null;
+  let stopTrayMenuStateWatch: (() => void) | null = null;
   let trayMenuPrewarmTimer: number | null = null;
 
   const createTrayMenuState = (): TrayMenuStatePayload => ({
@@ -205,11 +219,21 @@ export function useTrayMenuEvents(router: Router) {
     showDesktopLyrics: showDesktopLyrics.value,
     isFavorite: currentSong.value ? libraryCollections.isFavorite(currentSong.value) : false,
     isMiniMode: isMiniMode.value,
+    useCustomTrayMenu: theme.value.useCustomTrayMenu,
     windowMaterial: theme.value.windowMaterial,
     windowBlurTint: theme.value.windowBlurTint,
   });
 
+  const updateNativeTrayMenu = async () => {
+    try {
+      await invoke('update_native_tray_menu', { state: createTrayMenuState() });
+    } catch (error) {
+      console.warn('Failed to update native tray menu:', error);
+    }
+  };
+
   const emitTrayMenuState = async () => {
+    if (!theme.value.useCustomTrayMenu) return;
     const targetWindow = await getTrayMenuWindow();
     if (!targetWindow) return;
     await emitTo<TrayMenuStatePayload>(
@@ -217,6 +241,22 @@ export function useTrayMenuEvents(router: Router) {
       TRAY_MENU_STATE_EVENT,
       createTrayMenuState(),
     );
+  };
+
+  const destroyTrayMenuWindow = async () => {
+    const targetWindow = await getTrayMenuWindow();
+    if (!targetWindow) {
+      resetTrayMenuWindowState();
+      return;
+    }
+
+    try {
+      await targetWindow.destroy();
+    } catch (error) {
+      console.warn('Failed to destroy custom tray menu window:', error);
+    } finally {
+      resetTrayMenuWindowState();
+    }
   };
 
   const revealMainWindow = async () => {
@@ -239,17 +279,36 @@ export function useTrayMenuEvents(router: Router) {
   };
 
   const prewarmTrayMenu = async () => {
+    if (!theme.value.useCustomTrayMenu) return;
+
     try {
       const targetWindow = await ensureTrayMenuWindow();
       await waitForTrayMenuReady();
       await ensureTrayMenuSize(targetWindow);
+      await emitTrayMenuState();
       await targetWindow.setAlwaysOnTop(true);
     } catch (error) {
       console.warn('Failed to prewarm tray menu window:', error);
     }
   };
 
+  const scheduleTrayMenuPrewarm = () => {
+    if (trayMenuPrewarmTimer !== null) {
+      window.clearTimeout(trayMenuPrewarmTimer);
+      trayMenuPrewarmTimer = null;
+    }
+
+    if (!theme.value.useCustomTrayMenu) return;
+
+    trayMenuPrewarmTimer = window.setTimeout(() => {
+      trayMenuPrewarmTimer = null;
+      void prewarmTrayMenu();
+    }, TRAY_MENU_PREWARM_DELAY_MS);
+  };
+
   const openTrayMenu = async (payload: TrayMenuOpenPayload) => {
+    if (!theme.value.useCustomTrayMenu) return;
+
     const targetWindow = await ensureTrayMenuWindow();
     await waitForTrayMenuReady();
     await ensureTrayMenuSize(targetWindow);
@@ -268,6 +327,28 @@ export function useTrayMenuEvents(router: Router) {
   const quitApp = () => invoke('exit_app');
 
   onMounted(async () => {
+    await updateNativeTrayMenu();
+    scheduleTrayMenuPrewarm();
+
+    stopTrayMenuStateWatch = watch(
+      createTrayMenuState,
+      () => {
+        void updateNativeTrayMenu();
+        void emitTrayMenuState();
+
+        if (theme.value.useCustomTrayMenu) {
+          scheduleTrayMenuPrewarm();
+        } else {
+          if (trayMenuPrewarmTimer !== null) {
+            window.clearTimeout(trayMenuPrewarmTimer);
+            trayMenuPrewarmTimer = null;
+          }
+          void destroyTrayMenuWindow();
+        }
+      },
+      { deep: true, flush: 'post' },
+    );
+
     unlistenTrayMenu = await listen<TrayMenuAction>(APP_TRAY_MENU_EVENT, (event) => {
       void (async () => {
         await handleTrayMenuAction(event.payload, {
@@ -287,6 +368,7 @@ export function useTrayMenuEvents(router: Router) {
             }
           },
         });
+        await updateNativeTrayMenu();
         await emitTrayMenuState();
       })();
     });
@@ -298,11 +380,6 @@ export function useTrayMenuEvents(router: Router) {
     unlistenTrayMenuReady = await listen(TRAY_MENU_READY_EVENT, () => {
       markTrayMenuReady();
     });
-
-    trayMenuPrewarmTimer = window.setTimeout(() => {
-      trayMenuPrewarmTimer = null;
-      void prewarmTrayMenu();
-    }, TRAY_MENU_PREWARM_DELAY_MS);
   });
 
   onUnmounted(() => {
@@ -311,9 +388,11 @@ export function useTrayMenuEvents(router: Router) {
       trayMenuPrewarmTimer = null;
     }
 
+    stopTrayMenuStateWatch?.();
     unlistenTrayMenu?.();
     unlistenTrayMenuOpen?.();
     unlistenTrayMenuReady?.();
+    stopTrayMenuStateWatch = null;
     unlistenTrayMenu = null;
     unlistenTrayMenuOpen = null;
     unlistenTrayMenuReady = null;

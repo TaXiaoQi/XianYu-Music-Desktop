@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
@@ -11,13 +11,16 @@ import { useSharedTransition } from '../../composables/useSharedTransition';
 import { useUiStore } from '../../shared/stores/ui';
 import type { SongDetail } from '../../types';
 import { tauriInvoke } from '../../services/tauri/invoke';
-import LyricsView from './LyricsView.vue';
-import PlayerDetailBackground from './PlayerDetailBackground.vue';
-import PlayerDetailLeft from './PlayerDetailLeft.vue';
-import QueueList from './QueueList.vue';
-import PlayerDetailContextMenu from '../overlays/PlayerDetailContextMenu.vue';
-import LyricsReplacementModal from '../overlays/LyricsReplacementModal.vue';
 import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
+
+// 详情页内部包含歌词、背景采样、队列与弹窗等较重子树。保持 PlayerDetail 壳组件常驻，
+// 但让这些子树按需加载，避免主界面启动时把歌词页依赖一起拉入首屏。
+const LyricsView = defineAsyncComponent(() => import('./LyricsView.vue'));
+const PlayerDetailBackground = defineAsyncComponent(() => import('./PlayerDetailBackground.vue'));
+const PlayerDetailLeft = defineAsyncComponent(() => import('./PlayerDetailLeft.vue'));
+const QueueList = defineAsyncComponent(() => import('./QueueList.vue'));
+const PlayerDetailContextMenu = defineAsyncComponent(() => import('../overlays/PlayerDetailContextMenu.vue'));
+const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/LyricsReplacementModal.vue'));
 
 const {
   showPlayerDetail,
@@ -29,24 +32,22 @@ const {
 const { settings } = useSettings();
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 
-// 首次打开后保持重型内容（含 LyricsView/AMLL）常驻，关闭详情页时不再卸载，
-// 避免再次打开时歌词空白需重新加载/等待弹簧落位。
-// 关闭期间通过 LyricsView 的 disabled 停止 AMLL 的 rAF 循环，避免不可见时的渲染开销。
-const hasOpenedDetail = ref(false);
-const shouldRenderHeavyContent = computed(() => hasOpenedDetail.value);
+// 歌词页首次打开时再渲染重型外壳；打开后保持常驻，避免收起再展开时丢封面或歌词状态。
+// 真正可释放的 AMLL 动效实例由 LyricsView 在 disabled 时单独卸载。
+const shouldRenderHeavyContent = ref(false);
 let heavyContentFrameId: number | null = null;
 
 const isOnlineSongPath = (path: string) => path.startsWith('lx://') || path.startsWith('plugin://');
 
 const scheduleHeavyContentRender = () => {
-  if (hasOpenedDetail.value || heavyContentFrameId !== null) {
+  if (shouldRenderHeavyContent.value || heavyContentFrameId !== null) {
     return;
   }
 
   heavyContentFrameId = requestAnimationFrame(() => {
     heavyContentFrameId = null;
     if (showPlayerDetail.value) {
-      hasOpenedDetail.value = true;
+      shouldRenderHeavyContent.value = true;
     }
   });
 };
@@ -515,7 +516,12 @@ const openLyricsReplacement = () => {
         </span>
       </div>
 
-      <PlayerDetailLeft :isExpanded="showPlayerDetail" :coverHidden="coverHidden" @toggle-cover="handleToggleCover" />
+      <PlayerDetailLeft
+        v-if="shouldRenderHeavyContent"
+        :isExpanded="showPlayerDetail"
+        :coverHidden="coverHidden"
+        @toggle-cover="handleToggleCover"
+      />
 
       <div v-if="shouldRenderHeavyContent" class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
         <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
@@ -541,6 +547,7 @@ const openLyricsReplacement = () => {
     </div>
 
     <PlayerDetailContextMenu
+      v-if="contextMenuVisible"
       :visible="contextMenuVisible"
       :x="contextMenuX"
       :y="contextMenuY"
@@ -549,6 +556,7 @@ const openLyricsReplacement = () => {
       @change-lyrics="openLyricsReplacement"
     />
     <LyricsReplacementModal
+      v-if="lyricsReplacementVisible"
       :visible="lyricsReplacementVisible"
       :song="currentSong"
       @close="lyricsReplacementVisible = false"

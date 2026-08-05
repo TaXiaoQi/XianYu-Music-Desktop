@@ -8,11 +8,11 @@ describe('auxiliary transparent windows', () => {
     expect(miniPlayerSource).toContain('setBackgroundColor([0, 0, 0, 0])');
   });
 
-  it('forces the tray menu webview background to transparent', () => {
+  it('forces the custom tray menu webview background to transparent', () => {
     expect(trayMenuSource).toContain('setBackgroundColor([0, 0, 0, 0])');
   });
 
-  it('hides the tray menu when clicking the transparent shell outside menu panels', () => {
+  it('hides the custom tray menu when clicking the transparent shell outside menu panels', () => {
     expect(trayMenuSource).toContain('@pointerdown.self="hideWindow"');
   });
 });

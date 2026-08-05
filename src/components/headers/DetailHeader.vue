@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Song } from '../../types';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -76,6 +76,23 @@ const resolveCoverPath = (coverPath: string): string => {
   return isDirectUrl(coverPath) ? coverPath : convertFileSrc(coverPath);
 };
 
+const activePlaylist = computed(() =>
+  currentViewMode.value === 'playlist'
+    ? playlists.value.find(p => p.id === filterCondition.value)
+    : null,
+);
+
+const activePlaylistCoverKey = computed(() => {
+  const playlist = activePlaylist.value;
+  if (!playlist) return '';
+  return [
+    playlist.id,
+    playlist.coverPath ?? '',
+    playlist.songPaths[0] ?? '',
+    playlist.songPaths.length,
+  ].join('::');
+});
+
 const updateHeaderCover = async () => {
   const requestId = ++coverRequestId;
 
@@ -86,7 +103,7 @@ const updateHeaderCover = async () => {
   }
 
   if (currentViewMode.value === 'playlist') {
-      const pl = playlists.value.find(p => p.id === filterCondition.value);
+      const pl = activePlaylist.value;
       // 优先使用歌单自定义封面
       if (pl && pl.coverPath) {
         if (requestId !== coverRequestId) return;
@@ -97,7 +114,7 @@ const updateHeaderCover = async () => {
         const firstSongPath = pl.songPaths[0];
 
         // 优先从 playlist.songs 缓存中获取在线歌曲封面（网络 URL）
-        const cachedSong = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
+        const cachedSong = pl.songs?.find(s => s.path === firstSongPath);
         if (cachedSong?.cover_thumb_path) {
           const primedUrl = primeCoverPath(cachedSong.path, cachedSong.cover_thumb_path);
           if (primedUrl) {
@@ -120,8 +137,8 @@ const updateHeaderCover = async () => {
           if (thumbnailCover) {
             headerCover.value = thumbnailCover;
           } else {
-            // 后端无法获取封面（如 plugin 网络歌曲），回退到歌曲的 cover_thumb_path
-            const firstSong = props.songs[0];
+            // 后端无法获取封面（如 plugin 网络歌曲），回退到当前首歌的 cover_thumb_path
+            const firstSong = props.songs.find(song => song.path === firstSongPath);
             const thumbPath = firstSong?.cover_thumb_path;
             headerCover.value = thumbPath || '';
           }
@@ -168,14 +185,18 @@ const updateHeaderCover = async () => {
   }
 };
 
-watch(() => [props.songs, props.coverUrlOverride], updateHeaderCover, { immediate: true });
-
-// 歌单自定义封面变化时重新加载
 watch(
-  () => playlists.value.find(p => p.id === filterCondition.value)?.coverPath,
+  () => [
+    currentViewMode.value,
+    filterCondition.value,
+    activePlaylistCoverKey.value,
+    props.songs,
+    props.coverUrlOverride,
+  ],
   () => {
-    if (currentViewMode.value === 'playlist') void updateHeaderCover();
+    void updateHeaderCover();
   },
+  { immediate: true },
 );
 
 const handlePlayAll = () => {

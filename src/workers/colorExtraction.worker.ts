@@ -335,20 +335,26 @@ async function extractFromImage(
 
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
+  let canvas: OffscreenCanvas | null = null;
 
-  // 使用 OffscreenCanvas 替代 document.createElement('canvas')
-  const canvas = new OffscreenCanvas(CANVAS_SIZE, CANVAS_SIZE);
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) {
+  try {
+    // 使用 OffscreenCanvas 替代 document.createElement('canvas')
+    canvas = new OffscreenCanvas(CANVAS_SIZE, CANVAS_SIZE);
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) {
+      throw new Error('OffscreenCanvas 2D context unavailable');
+    }
+
+    context.drawImage(bitmap, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const imageData = context.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE).data;
+    return processPixelData(imageData, count, colorBoost, depth);
+  } finally {
     bitmap.close();
-    throw new Error('OffscreenCanvas 2D context unavailable');
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
   }
-
-  context.drawImage(bitmap, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
-  bitmap.close();
-
-  const imageData = context.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE).data;
-  return processPixelData(imageData, count, colorBoost, depth);
 }
 
 // --- Worker 消息处理 ---

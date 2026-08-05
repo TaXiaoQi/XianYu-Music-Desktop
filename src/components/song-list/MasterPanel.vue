@@ -33,7 +33,6 @@ const {
   toggleFolderNode,
   expandFolderPath,
   refreshFolder,
-  refreshAllFolders,
   removeLibraryFolder,
   deleteFolder,
   moveFilesToFolder,
@@ -211,8 +210,9 @@ const handleRefreshFolder = async () => {
     return;
   }
 
+  const folderPath = targetFolder.value.path;
   try {
-    const summary = await refreshAllFolders();
+    const summary = await refreshFolder(folderPath);
     if (summary && typeof summary === 'object' && 'removedCount' in summary) {
       const removedCount = Number(summary.removedCount) || 0;
       toast.showToast(

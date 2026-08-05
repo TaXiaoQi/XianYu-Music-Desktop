@@ -67,6 +67,8 @@ const { currentSong, isPlaying, formatDuration } = usePlaybackController();
 
 const props = defineProps<{
   songs: Song[];
+  songPaths?: string[];
+  resolveSongByPath?: (path: string) => Song | null;
   isBatchMode: boolean;
   selectedPaths: Set<string>;
   memoryScopeKey: string;
@@ -150,8 +152,10 @@ const getSegmentBatchSize = () => Math.max(
   getViewportPageSize(),
 );
 
+const sourceSongCount = computed(() => props.songPaths?.length ?? props.songs.length);
+
 const resetLoadedSongCount = () => {
-  loadedSongCount.value = Math.min(props.songs.length, getSegmentBatchSize());
+  loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
   scrollTop.value = 0;
   if (containerRef.value) {
     containerRef.value.scrollTop = 0;
@@ -159,28 +163,37 @@ const resetLoadedSongCount = () => {
 };
 
 const loadNextSongSegment = () => {
-  if (loadedSongCount.value >= props.songs.length) return;
+  if (loadedSongCount.value >= sourceSongCount.value) return;
   loadedSongCount.value = Math.min(
-    props.songs.length,
+    sourceSongCount.value,
     loadedSongCount.value + getSegmentBatchSize(),
   );
 };
 
 const ensureViewportSegmentFilled = () => {
-  if (loadedSongCount.value === 0 && props.songs.length > 0) {
+  if (loadedSongCount.value === 0 && sourceSongCount.value > 0) {
     resetLoadedSongCount();
     return;
   }
 
   if (loadedSongCount.value < getSegmentBatchSize()) {
-    loadedSongCount.value = Math.min(props.songs.length, getSegmentBatchSize());
+    loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
   }
 };
 
 const segmentedSongs = computed(() => {
-  if (props.songs.length === 0) return [];
+  if (sourceSongCount.value === 0) return [];
   const limit = loadedSongCount.value || getViewportPageSize();
-  return props.songs.slice(0, Math.min(props.songs.length, limit));
+  const sliceEnd = Math.min(sourceSongCount.value, limit);
+
+  if (props.songPaths && props.resolveSongByPath) {
+    return props.songPaths
+      .slice(0, sliceEnd)
+      .map(path => props.resolveSongByPath?.(path) ?? null)
+      .filter((song): song is Song => !!song);
+  }
+
+  return props.songs.slice(0, sliceEnd);
 });
 
 // 歌曲列表变化时重置首屏段，避免切换大歌单时一次性挂载全部行。
@@ -190,10 +203,12 @@ const segmentedSongs = computed(() => {
 let prevSongsLen = -1;
 let prevFirstPath = '';
 let prevLastPath = '';
-watch(() => props.songs, (songs) => {
-  const len = songs.length;
-  const firstPath = len > 0 ? songs[0].path : '';
-  const lastPath = len > 0 ? songs[len - 1].path : '';
+watch(() => props.songPaths ?? props.songs, (items) => {
+  const len = items.length;
+  const firstItem = len > 0 ? items[0] : '';
+  const lastItem = len > 0 ? items[len - 1] : '';
+  const firstPath = typeof firstItem === 'string' ? firstItem : firstItem?.path ?? '';
+  const lastPath = typeof lastItem === 'string' ? lastItem : lastItem?.path ?? '';
 
   if (len === prevSongsLen && firstPath === prevFirstPath && lastPath === prevLastPath) {
     return;
@@ -498,7 +513,7 @@ const {
   scrollToCurrentSong,
   scrollToTop,
 } = useSongTableAlphabetIndex({
-  songs: computed(() => props.songs),
+  songs: segmentedSongs,
   scrollTop,
   containerHeight,
   containerRef,
@@ -700,6 +715,9 @@ const dragSourcePath = computed(() => {
 });
 const dragIndex = computed(() => {
   if (!dragSourcePath.value) return -1;
+  if (props.songPaths) {
+    return props.songPaths.findIndex(path => path === dragSourcePath.value);
+  }
   return props.songs.findIndex(song => song.path === dragSourcePath.value);
 });
 
@@ -891,12 +909,13 @@ const getRowStyle = (songIndex: number, songPath: string) => {
         <div :style="{ height: virtualPaddingBottom }"></div>
       </div>
 
-      <div v-if="songs.length === 0" class="py-20 flex flex-col justify-center items-center select-none text-gray-500 dark:text-white/60">
+      <div v-if="sourceSongCount === 0" class="py-20 flex flex-col justify-center items-center select-none text-gray-500 dark:text-white/60">
         <template v-if="showLibraryOnboarding || showFolderEmpty || hasSearchQuery">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 18V5l12-2v13"></path>
-            <circle cx="6" cy="18" r="3"></circle>
-            <circle cx="18" cy="16" r="3"></circle>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M4 7.25a2 2 0 012-2h3.35c.52 0 1.02.2 1.4.56l1.1 1.04c.38.36.88.56 1.4.56H18a2 2 0 012 2v7.35a2 2 0 01-2 2H6a2 2 0 01-2-2V7.25z" />
+            <path d="M14.5 13.2V9.8l3.4-.7v3.4" />
+            <circle cx="12.8" cy="13.6" r="1.45" />
+            <circle cx="16.2" cy="12.9" r="1.45" />
           </svg>
           <p class="mb-6 text-[15px]">{{ onboardingMessage }}</p>
           <button v-if="showLibraryOnboarding" @click="addLibraryFolder" class="flex items-center gap-2 px-6 py-2.5 bg-[#EC4141] text-white hover:bg-[#b92f2f] rounded-full text-[14px] font-medium transition-colors shadow-sm">
@@ -912,12 +931,11 @@ const getRowStyle = (songIndex: number, songPath: string) => {
           <p class="mt-2 text-[13px] opacity-70">{{ libraryCheckingDescription }}</p>
         </template>
         <template v-else-if="showLibraryEmptyResult">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 17V7a2 2 0 012-2h12a2 2 0 012 2v10"></path>
-            <path d="M8 17h8"></path>
-            <path d="M9 13V8l8-1v6"></path>
-            <circle cx="7" cy="17" r="2"></circle>
-            <circle cx="17" cy="15" r="2"></circle>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 mb-4 text-gray-300 dark:text-white/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M4 7.25a2 2 0 012-2h3.35c.52 0 1.02.2 1.4.56l1.1 1.04c.38.36.88.56 1.4.56H18a2 2 0 012 2v7.35a2 2 0 01-2 2H6a2 2 0 01-2-2V7.25z" />
+            <path d="M14.5 13.2V9.8l3.4-.7v3.4" />
+            <circle cx="12.8" cy="13.6" r="1.45" />
+            <circle cx="16.2" cy="12.9" r="1.45" />
           </svg>
           <p class="mb-2 text-[15px]">{{ emptyLibraryResultTitle }}</p>
           <p class="text-[13px] opacity-70">

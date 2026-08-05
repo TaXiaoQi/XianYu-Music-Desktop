@@ -69,6 +69,7 @@ pub struct DynamicsRack {
     gate_gain: f32,
     exp_gain: f32,
     comp_gain: f32,
+    limiter_gain: f32,
     agc_gain: f32,
     // 压缩器 makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
     comp_makeup_gain: f32,
@@ -104,6 +105,7 @@ impl DynamicsRack {
             gate_gain: 1.0,
             exp_gain: 1.0,
             comp_gain: 1.0,
+            limiter_gain: 1.0,
             agc_gain: 1.0,
             comp_makeup_gain: 1.0,
             deess_detect: [Biquad::new(2), Biquad::new(2)],
@@ -157,6 +159,21 @@ impl DynamicsRack {
         self.mb_mid_hp.reset();
         self.mb_mid_lp.reset();
         self.mb_high_hp.reset();
+        self.gate_env.reset();
+        self.exp_env.reset();
+        self.comp_env.reset();
+        self.agc_env.reset();
+        self.deess_env.reset();
+        for e in &mut self.mb_env {
+            e.reset();
+        }
+        self.gate_gain = 1.0;
+        self.exp_gain = 1.0;
+        self.comp_gain = 1.0;
+        self.limiter_gain = 1.0;
+        self.agc_gain = 1.0;
+        self.deess_reduction = 0.0;
+        self.mb_gain = [1.0; 3];
     }
 
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
@@ -172,10 +189,20 @@ impl DynamicsRack {
         // 压缩器：按用户参数更新 attack/release（对齐 YinDongMusic DynamicsCompressorNode）
         // YinDongMusic V4A: attack=0.003s=3ms, release=0.1s=100ms
         self.comp_env.set_times(
-            s.compressor.attack.clamp(0.1, 100.0),
-            s.compressor.release.clamp(1.0, 1000.0),
+            sane_ms(s.compressor.attack, 3.0, 0.1, 100.0),
+            sane_ms(s.compressor.release, 250.0, 1.0, 1000.0),
             sr,
         );
+        self.gate_env.set_times(
+            sane_ms(s.noise_gate.attack, 5.0, 0.5, 200.0),
+            sane_ms(s.noise_gate.release, 80.0, 5.0, 1000.0),
+            sr,
+        );
+        self.exp_env.set_times(8.0, 160.0, sr);
+        self.agc_env.set_times(20.0, 600.0, sr);
+        for e in &mut self.mb_env {
+            e.set_times(8.0, 180.0, sr);
+        }
         // makeup gain（对齐 YinDongMusic: makeupGain.gain.value = 1.2）
         self.comp_makeup_gain = if s.compressor.enabled { 1.2 } else { 1.0 };
         for i in 0..2 {
@@ -205,7 +232,14 @@ impl DynamicsRack {
             let env = self.gate_env.process(det);
             let thr = db_to_gain(s.noise_gate.threshold);
             let target = if env < thr { 0.0 } else { 1.0 };
-            self.gate_gain += (target - self.gate_gain) * gate_coef(s.noise_gate.attack, s.noise_gate.release, env, self.gate_gain, sr);
+            // 噪声门开/关都用时间常数平滑，避免硬切造成断续感。
+            self.gate_gain = smooth_gate_gain(
+                self.gate_gain,
+                target,
+                sane_ms(s.noise_gate.attack, 5.0, 0.5, 200.0),
+                sane_ms(s.noise_gate.release, 80.0, 5.0, 1000.0),
+                sr,
+            );
             let g = lerp(1.0, self.gate_gain, w);
             frame[0] = l * g;
             frame[1] = r * g;
@@ -223,12 +257,14 @@ impl DynamicsRack {
                 // 低于阈值：按 ratio 衰减（expander 斜率）
                 let env_db = gain_to_db(env.max(1e-6));
                 let thr_db = gain_to_db(thr);
-                let below = thr_db - env_db;
-                db_to_gain(thr_db - below * ratio)
+                // 扩展器的 target 是“增益变化量”，不是目标输出电平。
+                // output_db = thr_db + (env_db - thr_db) * ratio
+                // gain_db = output_db - env_db = (ratio - 1) * (env_db - thr_db)
+                db_to_gain(((ratio - 1.0) * (env_db - thr_db)).max(-48.0))
             } else {
                 1.0
             };
-            self.exp_gain += (target - self.exp_gain) * 0.002;
+            self.exp_gain = smooth_gain(self.exp_gain, target, 8.0, 160.0, sr);
             let g = lerp(1.0, self.exp_gain, w);
             frame[0] *= g;
             frame[1] *= g;
@@ -262,8 +298,14 @@ impl DynamicsRack {
                 let gain_db = -(x + half_knee).powi(2) / (2.0 * knee) * slope;
                 db_to_gain(gain_db)
             };
-            // gain 平滑跟随（attack/release 已由 comp_env 处理）
-            self.comp_gain += (target - self.comp_gain) * 0.002;
+            // gain 平滑按 attack/release 跟随，避免固定步进在不同采样率/参数下产生泵吸。
+            self.comp_gain = smooth_gain(
+                self.comp_gain,
+                target,
+                sane_ms(s.compressor.attack, 3.0, 0.1, 100.0),
+                sane_ms(s.compressor.release, 250.0, 1.0, 1000.0),
+                sr,
+            );
             let g = lerp(1.0, self.comp_gain, w);
             // makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
             let makeup = 1.0 + (self.comp_makeup_gain - 1.0) * w;
@@ -293,11 +335,12 @@ impl DynamicsRack {
                 let env = self.mb_env[idx].process(bl.abs().max(br.abs()));
                 let env_db = gain_to_db(env.max(1e-6));
                 let target = if env_db > thr_db {
-                    db_to_gain(env_db - (env_db - thr_db) * (1.0 - 1.0 / ratio))
+                    // 多段压缩同样需要输出“衰减增益”，而不是目标输出电平。
+                    db_to_gain(-((env_db - thr_db) * (1.0 - 1.0 / ratio)))
                 } else {
                     1.0
                 };
-                self.mb_gain[idx] += (target - self.mb_gain[idx]) * 0.003;
+                self.mb_gain[idx] = smooth_gain(self.mb_gain[idx], target, 8.0, 180.0, sr);
                 out_l += bl * self.mb_gain[idx];
                 out_r += br * self.mb_gain[idx];
             }
@@ -317,7 +360,7 @@ impl DynamicsRack {
             } else {
                 0.0
             };
-            self.deess_reduction += (target_red - self.deess_reduction) * 0.01;
+            self.deess_reduction = smooth_db_reduction(self.deess_reduction, target_red, 2.0, 80.0, sr);
             for i in 0..2 {
                 self.deess_shelf[i].set_highshelf(s.de_esser.frequency, sr, self.deess_reduction, 0.707);
             }
@@ -332,12 +375,11 @@ impl DynamicsRack {
         if w > 0.001 {
             let thr = db_to_gain(s.limiter.threshold.clamp(-10.0, 0.0));
             let peak = frame[0].abs().max(frame[1].abs());
-            if peak > thr {
-                let g = thr / peak;
-                let g = lerp(1.0, g, w);
-                frame[0] = soft_clip(frame[0] * g);
-                frame[1] = soft_clip(frame[1] * g);
-            }
+            let target = if peak > thr && peak > 1e-6 { (thr / peak).clamp(0.05, 1.0) } else { 1.0 };
+            self.limiter_gain = smooth_gain(self.limiter_gain, target, 0.5, 60.0, sr);
+            let g = lerp(1.0, self.limiter_gain, w);
+            frame[0] = soft_clip(frame[0] * g);
+            frame[1] = soft_clip(frame[1] * g);
         }
 
         // AGC 自动增益
@@ -347,7 +389,7 @@ impl DynamicsRack {
             let target_level = db_to_gain((s.agc.target_level / 100.0).clamp(0.0, 1.0) * -6.0 + 6.0); // 映射到 -6..6dB
             let target_gain = if env > 1e-5 { target_level / env } else { 1.0 };
             let clamped = target_gain.clamp(0.1, 10.0);
-            self.agc_gain += (clamped - self.agc_gain) * 0.0005;
+            self.agc_gain = smooth_gain(self.agc_gain, clamped, 60.0, 600.0, sr);
             let g = lerp(1.0, self.agc_gain, w);
             frame[0] = soft_clip(frame[0] * g);
             frame[1] = soft_clip(frame[1] * g);
@@ -360,11 +402,56 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-/// 噪声门攻击/释放系数选择
+/// 将用户参数 0/缺省值替换为安全默认值，并限制范围。
 #[inline]
-fn gate_coef(attack_ms: f32, release_ms: f32, env: f32, current: f32, sr: f32) -> f32 {
-    let _ = (attack_ms, release_ms, env, current);
-    // 简化：固定平滑系数（~5ms 跟随）
-    let _ = sr;
-    0.05
+fn sane_ms(value: f32, fallback: f32, min: f32, max: f32) -> f32 {
+    if value.is_finite() && value > 0.0 {
+        value.clamp(min, max)
+    } else {
+        fallback.clamp(min, max)
+    }
+}
+
+#[inline]
+fn smoothing_amount(ms: f32, sr: f32) -> f32 {
+    let ms = ms.max(0.1);
+    let sr = sr.max(1.0);
+    1.0 - (-1.0 / (ms * 0.001 * sr)).exp()
+}
+
+/// 压缩/扩展/限制/AGC 的增益平滑：
+/// target 变小表示进入衰减，用 attack；target 变大表示恢复，用 release。
+#[inline]
+fn smooth_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
+    let t = if target.is_finite() { target.clamp(0.0, 32.0) } else { 1.0 };
+    let c = if t < current {
+        smoothing_amount(attack_ms, sr)
+    } else {
+        smoothing_amount(release_ms, sr)
+    };
+    current + (t - current) * c
+}
+
+/// 噪声门：target 变大为开门 attack，target 变小为关门 release。
+#[inline]
+fn smooth_gate_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
+    let t = if target.is_finite() { target.clamp(0.0, 1.0) } else { 1.0 };
+    let c = if t > current {
+        smoothing_amount(attack_ms, sr)
+    } else {
+        smoothing_amount(release_ms, sr)
+    };
+    current + (t - current) * c
+}
+
+/// dB 衰减平滑：更负表示增加衰减，用 attack；回到 0 用 release。
+#[inline]
+fn smooth_db_reduction(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
+    let t = if target.is_finite() { target.clamp(-48.0, 0.0) } else { 0.0 };
+    let c = if t < current {
+        smoothing_amount(attack_ms, sr)
+    } else {
+        smoothing_amount(release_ms, sr)
+    };
+    current + (t - current) * c
 }

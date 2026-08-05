@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import CustomSkinModal from './CustomSkinModal.vue';
-import SettingsSidebar from './SettingsSidebar.vue';
-import SettingsFooterLayout from './SettingsFooterLayout.vue';
+import { defineAsyncComponent } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import SettingHint from './SettingHint.vue';
+
+const CustomSkinModal = defineAsyncComponent(() => import('./CustomSkinModal.vue'));
+const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
+const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
 
 const TEXT = {
   paletteTitle: '\u914d\u8272\u65b9\u6848',
@@ -28,6 +30,11 @@ const TEXT = {
   windowMaterialWin11Only: '\u4ec5 Windows 11 \u652f\u6301',
   keepWindowMaterialOnBlur: '\u5931\u7126\u4fdd\u6301\u6750\u8d28',
   keepWindowMaterialOnBlurHint: '\u5f00\u542f\u540e\u7a97\u53e3\u5931\u7126\u65f6\u4ecd\u4f1a\u5c1d\u8bd5\u4fdd\u6301\u5f53\u524d\u6750\u8d28\u6548\u679c\u3002',
+  trayMenuTitle: '\u6258\u76d8\u83dc\u5355',
+  customTrayMenu: '\u542f\u52a8\u81ea\u5b9a\u4e49\u6258\u76d8',
+  customTrayMenuHint: '\u5f00\u542f\u540e\u9ed8\u8ba4\u4f7f\u7528 XY-Music \u7ed8\u5236\u7684\u6258\u76d8\u83dc\u5355\uff1b\u5173\u95ed\u540e\u4f7f\u7528\u7cfb\u7edf\u539f\u751f\u83dc\u5355\u3002',
+  customTrayMenuOn: '\u81ea\u5b9a\u4e49',
+  customTrayMenuOff: '\u7cfb\u7edf',
 };
 
 const FLOW_TEXT = {
@@ -61,6 +68,7 @@ const {
   colorScheme,
   materialMode,
   keepWindowMaterialOnBlur,
+  useCustomTrayMenu,
   isWindowMaterialDisabled,
   isWindowMaterialButtonDisabled,
   getWindowMaterialModeDisabledReason,
@@ -80,6 +88,7 @@ const {
   setFlowTexture,
   setWindowBlurTint,
   setKeepWindowMaterialOnBlur,
+  setUseCustomTrayMenu,
 } = useSettingsThemeControls();
 </script>
 
@@ -466,6 +475,40 @@ const {
           </div>
         </transition>
       </div>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.trayMenuTitle }}
+        </span>
+        <SettingHint :text="TEXT.customTrayMenuHint" />
+      </h2>
+
+      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/70 bg-white/45 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/60 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10">
+        <span class="min-w-0">
+          <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
+          <span class="mt-1 block text-xs text-gray-500 dark:text-white/50">
+            {{ useCustomTrayMenu ? TEXT.customTrayMenuOn : TEXT.customTrayMenuOff }}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="sr-only"
+          :checked="useCustomTrayMenu"
+          @change="setUseCustomTrayMenu(($event.target as HTMLInputElement).checked)"
+        />
+        <span
+          class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+          :class="useCustomTrayMenu ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
+        >
+          <span
+            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+            :class="useCustomTrayMenu ? 'translate-x-5' : ''"
+          ></span>
+        </span>
+      </label>
     </section>
 
     <!-- 侧边栏管理（并入外观） -->
