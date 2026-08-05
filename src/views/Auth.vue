@@ -30,7 +30,7 @@ const { showToast } = useToast();
 const uiStore = useUiStore();
 
 const mode = ref<AuthMode>('login');
-const form = ref({ username: '', email: '', password: '', code: '' });
+const form = ref({ username: '', email: '', password: '', confirmPassword: '', code: '' });
 const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
 const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
@@ -178,6 +178,11 @@ async function onSubmit() {
   loading.value = true;
   message.value = '';
   try {
+    if (mode.value === 'register' && form.value.password !== form.value.confirmPassword) {
+      showMessage('两次输入的密码不一致');
+      loading.value = false;
+      return;
+    }
     const result =
       mode.value === 'login'
         ? await login(form.value.username, form.value.password)
@@ -189,7 +194,7 @@ async function onSubmit() {
           );
 
     authStore.setAuth(result);
-    form.value = { username: '', email: '', password: '', code: '' };
+    form.value = { username: '', email: '', password: '', confirmPassword: '', code: '' };
     nicknameDraft.value = result.user.nickname || result.user.username;
     avatarDraft.value = result.user.avatar || '';
     showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success');
@@ -440,6 +445,7 @@ function navigateShortcut(to: string) {
 function switchMode(next: AuthMode) {
   mode.value = next;
   message.value = '';
+  form.value.confirmPassword = '';
   if (next !== 'forgot') {
     forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
   }
@@ -682,6 +688,18 @@ onMounted(async () => {
                 type="password"
                 placeholder="请输入密码"
                 :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+                required
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+              />
+            </label>
+
+            <label v-if="mode === 'register'" class="grid gap-3">
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">确认密码</span>
+              <input
+                v-model="form.confirmPassword"
+                type="password"
+                placeholder="再次输入密码"
+                autocomplete="new-password"
                 required
                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
