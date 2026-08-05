@@ -27,6 +27,34 @@ function runCommand(command, cwd) {
   execSync(command, { cwd, stdio: 'inherit' });
 }
 
+function toMsiCompatibleVersion(version) {
+  const match = version.match(/^(\d+\.\d+\.\d+)(?:-(.+))?$/);
+  if (!match) {
+    throw new Error(`Invalid version: ${version}`);
+  }
+
+  const [, baseVersion, prerelease] = match;
+  if (!prerelease) {
+    return baseVersion;
+  }
+
+  const numericIdentifier = prerelease.match(/\d+/)?.[0];
+  if (!numericIdentifier) {
+    throw new Error(
+      `MSI requires numeric-only pre-release identifier, but got: ${version}`
+    );
+  }
+
+  const numericValue = Number(numericIdentifier);
+  if (!Number.isInteger(numericValue) || numericValue > 65535) {
+    throw new Error(
+      `MSI pre-release identifier must be an integer no greater than 65535, but got: ${numericIdentifier}`
+    );
+  }
+
+  return `${baseVersion}-${numericValue}`;
+}
+
 async function main() {
   // 1. Backup original tauri.conf.json
   const originalConfigContent = fs.readFileSync(tauriConfigPath, 'utf8');
@@ -41,7 +69,9 @@ async function main() {
     // Read version
     const packageJson = readJson(packageJsonPath);
     const version = packageJson.version;
+    const msiVersion = toMsiCompatibleVersion(version);
     console.log(`Building Lycia Player v${version}...`);
+    console.log(`MSI compatible version: ${msiVersion}`);
 
     const buildTargets = [
       {
@@ -73,6 +103,7 @@ async function main() {
         type: target.type
       };
       config.bundle.targets = ["msi"];
+      config.version = msiVersion;
       writeJson(tauriConfigPath, config);
 
       // Clean old bundle output directory to avoid picking up old files
