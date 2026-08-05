@@ -789,9 +789,8 @@ onUnmounted(() => {
       ></div>
 
       <div
-        class="flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 cursor-pointer ml-3 min-w-0"
+        class="flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 ml-3 min-w-0"
         :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-0'"
-        @click.stop="handleOpenDetail"
       >
         <div class="overflow-hidden w-28 relative h-full shrink-0">
         <!-- State A: Default View (Title & Artist) -->
@@ -799,7 +798,11 @@ onUnmounted(() => {
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
           :class="showPlayerDetail ? 'opacity-0 translate-y-4 pointer-events-none' : 'opacity-100 translate-y-0 text-gray-800 dark:text-white'"
         >
-          <div class="overflow-hidden w-28" ref="songTitleWrapperRef">
+          <div
+            class="overflow-hidden w-28 cursor-pointer"
+            ref="songTitleWrapperRef"
+            @click.stop="handleOpenDetail"
+          >
             <div
               class="inline-block whitespace-nowrap"
               :class="{ 'animate-marquee': shouldMarquee }"
