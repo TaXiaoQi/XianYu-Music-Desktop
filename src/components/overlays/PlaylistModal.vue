@@ -8,10 +8,14 @@ import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFre
 import type { PlaylistImportResult, PlaylistSource } from '../../services/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
+import {
+  preparePluginBackupFile,
+  type PreparedPluginBackupImport,
+} from '../../services/pluginBackupImport';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
-import { pluginsVersion } from '../../services/pluginEngine';
+import { pluginsVersion, getStoredPlugins } from '../../services/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
@@ -31,6 +35,7 @@ const emit = defineEmits<{
   ): void;
   (event: 'import-local', payload: { name: string; songs: Song[] }): void;
   (event: 'import-backup', payload: ImportedPlaylist[]): void;
+  (event: 'import-backup-online', payload: PreparedPluginBackupImport): void;
 }>();
 
 const { showToast } = useToast();
@@ -65,6 +70,8 @@ const backupFileName = ref('');
 const backupDetectedFormat = ref('');
 const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
 const backupImportError = ref('');
+const backupMode = ref<'local' | 'online'>('local');
+const backupPluginResult = ref<PreparedPluginBackupImport | null>(null);
 
 // 拖放状态
 const isDragOver = ref(false);
@@ -129,15 +136,20 @@ function teardownDragListeners() {
 /** 处理拖放的路径，根据当前标签页分发 */
 async function handleDropPaths(paths: string[]) {
   if (activeTab.value === 'backupImport') {
-    // 找到第一个支持的文件
+    // 在线模式仅接受 .json 文件
+    const validExtensions = backupMode.value === 'online'
+      ? ['json']
+      : SUPPORTED_IMPORT_EXTENSIONS;
     const supportedFile = paths.find((p) => {
       const ext = p.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
-      return SUPPORTED_IMPORT_EXTENSIONS.includes(ext);
+      return validExtensions.includes(ext);
     });
     if (supportedFile) {
       await loadBackupFile(supportedFile);
     } else {
-      backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
+      backupImportError.value = backupMode.value === 'online'
+        ? '在线恢复仅支持 .json 备份文件'
+        : `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
     }
   } else if (activeTab.value === 'localFolderImport') {
     // 找到第一个文件夹
@@ -185,6 +197,8 @@ watch(
       backupDetectedFormat.value = '';
       backupPreviewPlaylists.value = [];
       backupImportError.value = '';
+      backupMode.value = 'local';
+      backupPluginResult.value = null;
       importing.value = false;
       selectedSource.value = 'auto';
       sourceDropdownOpen.value = false;
@@ -257,6 +271,18 @@ const closeSourceDropdown = () => {
   sourceDropdownOpen.value = false;
 };
 
+/** 切换备份导入模式时清理状态 */
+const switchBackupMode = (mode: 'local' | 'online') => {
+  if (backupMode.value === mode || importing.value) return;
+  backupMode.value = mode;
+  backupFilePath.value = '';
+  backupFileName.value = '';
+  backupDetectedFormat.value = '';
+  backupPreviewPlaylists.value = [];
+  backupImportError.value = '';
+  backupPluginResult.value = null;
+};
+
 const handleClose = () => {
   if (importing.value) return; // 导入中不允许关闭
   isClosing.value = true;
@@ -290,15 +316,18 @@ const handleChooseBackupFile = async () => {
   if (importing.value) return;
 
   try {
+    const filters = backupMode.value === 'online'
+      ? [{ name: 'JSON 备份', extensions: ['json'] }]
+      : [
+          { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
+          { name: 'JSON 备份', extensions: ['json'] },
+          { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
+          { name: '椒盐音乐导出', extensions: ['txt'] },
+        ];
     const selected = await open({
       multiple: false,
-      title: '选择备份/播放列表文件',
-      filters: [
-        { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
-        { name: 'JSON 备份', extensions: ['json'] },
-        { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
-        { name: '椒盐音乐导出', extensions: ['txt'] },
-      ],
+      title: backupMode.value === 'online' ? '选择 BakaMusic 或 MusicFree 备份文件' : '选择备份/播放列表文件',
+      filters,
     });
     if (typeof selected === 'string') {
       await loadBackupFile(selected);
@@ -315,17 +344,31 @@ async function loadBackupFile(filePath: string) {
   backupImportError.value = '';
   backupPreviewPlaylists.value = [];
   backupDetectedFormat.value = '';
+  backupPluginResult.value = null;
   importing.value = true;
 
   try {
-    const playlists = await importBackupFile(filePath);
-    backupPreviewPlaylists.value = playlists;
-    const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
-    backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
+    if (backupMode.value === 'online') {
+      // 在线恢复：匹配已安装插件，生成可在线播放的歌曲
+      const prepared = await preparePluginBackupFile(filePath, getStoredPlugins());
+      backupPluginResult.value = prepared;
+      const formatName = prepared.format === 'bakamusic' ? 'BakaMusic' : 'MusicFree';
+      const missingInfo = prepared.missingPlugins.length > 0
+        ? ` · 缺失 ${prepared.missingPlugins.length} 个插件`
+        : '';
+      backupDetectedFormat.value = `${formatName} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
+    } else {
+      // 本地恢复：解析本地文件路径
+      const playlists = await importBackupFile(filePath);
+      backupPreviewPlaylists.value = playlists;
+      const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
+      backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
+    }
   } catch (e: any) {
     backupImportError.value = `解析失败: ${e?.message || e}`;
     backupFilePath.value = '';
     backupFileName.value = '';
+    backupPluginResult.value = null;
   } finally {
     importing.value = false;
   }
@@ -413,21 +456,39 @@ const handleConfirm = async () => {
       importing.value = false;
     }
   } else if (activeTab.value === 'backupImport') {
-    if (backupPreviewPlaylists.value.length === 0 || importing.value) return;
+    if (importing.value) return;
 
-    const totalSongs = backupPreviewPlaylists.value.reduce(
-      (sum, p) => sum + p.songs.length, 0,
-    );
-    showToast(
-      `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
-      'success',
-    );
-    isClosing.value = true;
-    setTimeout(() => {
-      emit('import-backup', backupPreviewPlaylists.value);
-      emit('update:visible', false);
-      isClosing.value = false;
-    }, 200);
+    if (backupMode.value === 'online') {
+      // 在线恢复：直接将 PreparedPluginBackupImport 传给父组件处理
+      if (!backupPluginResult.value || backupPluginResult.value.importedSongCount === 0) {
+        showToast('没有歌曲可以导入，请查看缺失插件说明', 'info');
+        return;
+      }
+      const result = backupPluginResult.value;
+      showToast(`已导入 ${result.importedSongCount} 首歌曲，${result.failures.length} 首未导入`, 'success');
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-backup-online', result);
+        emit('update:visible', false);
+        isClosing.value = false;
+      }, 200);
+    } else {
+      // 本地恢复
+      if (backupPreviewPlaylists.value.length === 0) return;
+      const totalSongs = backupPreviewPlaylists.value.reduce(
+        (sum, p) => sum + p.songs.length, 0,
+      );
+      showToast(
+        `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
+        'success',
+      );
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-backup', backupPreviewPlaylists.value);
+        emit('update:visible', false);
+        isClosing.value = false;
+      }, 200);
+    }
   }
 };
 
@@ -442,7 +503,11 @@ const canConfirm = computed(() => {
       && !importing.value;
   }
   if (activeTab.value === 'backupImport') {
-    return backupPreviewPlaylists.value.length > 0 && !importing.value;
+    if (importing.value) return false;
+    if (backupMode.value === 'online') {
+      return !!backupPluginResult.value && backupPluginResult.value.importedSongCount > 0;
+    }
+    return backupPreviewPlaylists.value.length > 0;
   }
   return false;
 });
@@ -708,11 +773,37 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
             <div
               v-else-if="activeTab === 'backupImport'"
               key="backup-import"
-              class="flex-1 flex flex-col space-y-4"
+              class="flex-1 flex flex-col space-y-3"
             >
+              <!-- 模式切换 -->
+              <div class="flex gap-1 rounded-xl bg-gray-100 dark:bg-black/20 p-1">
+                <button
+                  type="button"
+                  :disabled="importing"
+                  class="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
+                  :class="backupMode === 'local'
+                    ? 'bg-white dark:bg-gray-700 text-[#EC4141] shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                  @click="switchBackupMode('local')"
+                >
+                  本地恢复
+                </button>
+                <button
+                  type="button"
+                  :disabled="importing"
+                  class="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
+                  :class="backupMode === 'online'
+                    ? 'bg-white dark:bg-gray-700 text-[#EC4141] shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+                  @click="switchBackupMode('online')"
+                >
+                  在线恢复
+                </button>
+              </div>
+
               <div class="space-y-1.5 flex-1 flex flex-col">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                  备份/播放列表文件 <span class="text-[#EC4141]">*</span>
+                  {{ backupMode === 'online' ? 'BakaMusic / MusicFree JSON 备份' : '备份/播放列表文件' }} <span class="text-[#EC4141]">*</span>
                 </label>
                 <!-- 可拖入、可点击的选区（复用本地导入样式） -->
                 <button
@@ -732,15 +823,18 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                       {{ backupFileName }}
                     </p>
                     <p v-else class="drop-zone-text">
-                      点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件
+                      {{ backupMode === 'online'
+                        ? '点击选择 .json 文件，或拖入 JSON 备份文件'
+                        : '点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件'
+                      }}
                     </p>
                   </div>
                 </button>
               </div>
 
-              <!-- 预览信息 -->
+              <!-- 本地恢复预览信息 -->
               <div
-                v-if="backupPreviewPlaylists.length > 0"
+                v-if="backupMode === 'local' && backupPreviewPlaylists.length > 0"
                 class="space-y-2"
               >
                 <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
@@ -759,8 +853,52 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
+              <!-- 在线恢复预览信息 -->
+              <div
+                v-if="backupMode === 'online' && backupPluginResult"
+                class="space-y-2"
+              >
+                <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
+                  <FileJson class="h-4 w-4" />
+                  {{ backupDetectedFormat }}
+                </div>
+                <!-- 已关联插件 -->
+                <div v-if="backupPluginResult.associations.length" class="space-y-1">
+                  <div
+                    v-for="assoc in backupPluginResult.associations"
+                    :key="assoc.pluginId + assoc.platform"
+                    class="flex items-center justify-between rounded-lg bg-gray-50 dark:bg-black/20 px-2.5 py-1.5 text-xs"
+                  >
+                    <div class="min-w-0">
+                      <span class="truncate font-medium text-gray-700 dark:text-gray-300">{{ assoc.pluginName }}</span>
+                      <span class="ml-1 text-gray-400 dark:text-gray-500">{{ assoc.platform }}</span>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-1.5">
+                      <span class="text-gray-500 dark:text-gray-400">{{ assoc.songCount }} 首</span>
+                      <span v-if="!assoc.enabled" class="text-amber-500 text-[10px]">未启用</span>
+                    </div>
+                  </div>
+                </div>
+                <!-- 缺失插件 -->
+                <div v-if="backupPluginResult.missingPlugins.length" class="space-y-1">
+                  <div
+                    v-for="missing in backupPluginResult.missingPlugins"
+                    :key="missing.platform"
+                    class="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1.5 text-xs"
+                  >
+                    <span class="text-amber-700 dark:text-amber-300">需要 {{ missing.platform }} 插件</span>
+                    <span class="shrink-0 text-amber-600 dark:text-amber-400">{{ missing.songCount }} 首未导入</span>
+                  </div>
+                </div>
+              </div>
+
               <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
-                支持 BakaMusic / MusicFree JSON 备份、M3U / M3U8 播放列表、椒盐音乐导出格式，自动识别并导入。M3U 和椒盐格式从文件名或 EXTINF 提取歌曲信息。
+                <template v-if="backupMode === 'online'">
+                  选择 BakaMusic 或 MusicFree 导出的 JSON 备份，自动匹配已安装的在线音源插件，将歌曲关联到插件以在线播放。
+                </template>
+                <template v-else>
+                  支持 BakaMusic / MusicFree JSON 备份、M3U / M3U8 播放列表、椒盐音乐导出格式，自动识别并导入本地文件。M3U 和椒盐格式从文件名或 EXTINF 提取歌曲信息。
+                </template>
               </p>
 
               <div
