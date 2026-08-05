@@ -112,9 +112,7 @@ impl Biquad {
         let b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cosw);
         let b2 = a * ((a + 1.0) - (a - 1.0) * cosw - sq);
         let a0 = (a + 1.0) + (a - 1.0) * cosw + sq;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * (a - 1.0) + (a + 1.0) * cosw / a0 * a0, 0.0);
-        // 修正 a1/a2：
-        let a1 = -2.0 * (a - 1.0) + (a + 1.0) * cosw;
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cosw);
         let a2 = (a + 1.0) + (a - 1.0) * cosw - sq;
         self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0);
     }
