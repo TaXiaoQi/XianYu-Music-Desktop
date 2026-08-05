@@ -2810,51 +2810,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lycia_music"
-version = "1.1.2-beta2"
-dependencies = [
- "amll-lyric",
- "base64 0.22.1",
- "cpal",
- "encoding_rs",
- "hex",
- "id3",
- "image",
- "keyring",
- "lofty",
- "quick-xml 0.39.4",
- "raw-window-handle",
- "rayon",
- "regex",
- "reqwest 0.12.28",
- "rodio",
- "rusqlite",
- "rustfft",
- "serde",
- "serde_json",
- "sha2",
- "souvlaki",
- "symphonia",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-http",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tauri-plugin-window-state",
- "thiserror 2.0.19",
- "time",
- "tokio",
- "urlencoding",
- "uuid",
- "walkdir",
- "wasapi",
- "windows 0.62.2",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "mach2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7142,6 +7097,53 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+
+[[package]]
+name = "xianyu_music"
+version = "1.1.2-beta4"
+dependencies = [
+ "amll-lyric",
+ "base64 0.22.1",
+ "cpal",
+ "encoding_rs",
+ "hex",
+ "id3",
+ "image",
+ "keyring",
+ "lofty",
+ "quick-xml 0.39.4",
+ "raw-window-handle",
+ "rayon",
+ "regex",
+ "reqwest 0.12.28",
+ "rodio",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "sha2",
+ "souvlaki",
+ "symphonia",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-http",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-window-state",
+ "thiserror 2.0.19",
+ "time",
+ "tokio",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "wasapi",
+ "webview2-com",
+ "windows 0.62.2",
+ "windows-core 0.61.2",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "xkeysym"

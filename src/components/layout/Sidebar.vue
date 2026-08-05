@@ -22,6 +22,7 @@ import { useToast } from '../../composables/toast';
 import type { Song, SidebarItemKey } from '../../types';
 import type { PlaylistImportResult } from '../../services/playlistImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
+import type { PreparedPluginBackupImport } from '../../services/pluginBackupImport';
 import { cacheLxSong } from '../../services/lxSongCache';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
@@ -286,6 +287,34 @@ const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
   }
 };
 
+const confirmOnlineBackupImport = (prepared: PreparedPluginBackupImport) => {
+  if (prepared.playlists.length === 0) {
+    showToast('没有可导入的歌单', 'info');
+    return;
+  }
+
+  let createdCount = 0;
+
+  for (const playlist of prepared.playlists) {
+    if (playlist.songs.length === 0) continue;
+    const songPaths = playlist.songs.map(song => song.path);
+    for (const song of playlist.songs) {
+      libraryStore.setExtraSong(song);
+    }
+    const playlistId = createPlaylist(playlist.name, songPaths, playlist.songs);
+    if (playlistId) createdCount++;
+  }
+
+  if (createdCount > 0) {
+    const msg = prepared.failures.length > 0
+      ? `已创建 ${createdCount} 个歌单，导入 ${prepared.importedSongCount} 首，${prepared.failures.length} 首未导入`
+      : `已创建 ${createdCount} 个歌单，共 ${prepared.importedSongCount} 首歌曲`;
+    showToast(msg, 'success');
+  } else {
+    showToast('创建歌单失败', 'error');
+  }
+};
+
 const handleOpenAllView = () => {
   void openHomeAll();
 };
@@ -481,6 +510,7 @@ onBeforeUnmount(() => {
       @import="confirmImportPlaylist"
       @import-local="confirmLocalFolderImport"
       @import-backup="confirmBackupImport"
+      @import-backup-online="confirmOnlineBackupImport"
     />
 
     <!-- 一级侧边栏宽度可拖拽手柄 -->

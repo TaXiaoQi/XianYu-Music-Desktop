@@ -8,10 +8,14 @@ import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFre
 import type { PlaylistImportResult, PlaylistSource } from '../../services/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
+import {
+  preparePluginBackupFile,
+  type PreparedPluginBackupImport,
+} from '../../services/pluginBackupImport';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
-import { pluginsVersion } from '../../services/pluginEngine';
+import { pluginsVersion, getStoredPlugins } from '../../services/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 
@@ -31,6 +35,7 @@ const emit = defineEmits<{
   ): void;
   (event: 'import-local', payload: { name: string; songs: Song[] }): void;
   (event: 'import-backup', payload: ImportedPlaylist[]): void;
+  (event: 'import-backup-online', payload: PreparedPluginBackupImport): void;
 }>();
 
 const { showToast } = useToast();
@@ -65,6 +70,14 @@ const backupFileName = ref('');
 const backupDetectedFormat = ref('');
 const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
 const backupImportError = ref('');
+const backupPluginResult = ref<PreparedPluginBackupImport | null>(null);
+
+/** 当前备份是否为 JSON（在线+本地混合模式） */
+const backupIsJson = computed(() => {
+  if (!backupFilePath.value) return false;
+  const ext = backupFilePath.value.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+  return ext === 'json';
+});
 
 // 拖放状态
 const isDragOver = ref(false);
@@ -185,6 +198,7 @@ watch(
       backupDetectedFormat.value = '';
       backupPreviewPlaylists.value = [];
       backupImportError.value = '';
+      backupPluginResult.value = null;
       importing.value = false;
       selectedSource.value = 'auto';
       sourceDropdownOpen.value = false;
@@ -315,17 +329,33 @@ async function loadBackupFile(filePath: string) {
   backupImportError.value = '';
   backupPreviewPlaylists.value = [];
   backupDetectedFormat.value = '';
+  backupPluginResult.value = null;
   importing.value = true;
 
   try {
-    const playlists = await importBackupFile(filePath);
-    backupPreviewPlaylists.value = playlists;
-    const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
-    backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
+    const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+
+    if (ext === 'json') {
+      // JSON 备份：自动识别本地文件和在线插件匹配
+      const prepared = await preparePluginBackupFile(filePath, getStoredPlugins());
+      backupPluginResult.value = prepared;
+      const formatName = prepared.format === 'bakamusic' ? 'BakaMusic' : 'MusicFree';
+      const missingInfo = prepared.missingPlugins.length > 0
+        ? ` · 缺失 ${prepared.missingPlugins.length} 个插件`
+        : '';
+      backupDetectedFormat.value = `${formatName} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
+    } else {
+      // M3U / TXT：纯本地文件解析
+      const playlists = await importBackupFile(filePath);
+      backupPreviewPlaylists.value = playlists;
+      const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
+      backupDetectedFormat.value = `${playlists.length} 个歌单 · ${totalSongs} 首歌曲`;
+    }
   } catch (e: any) {
     backupImportError.value = `解析失败: ${e?.message || e}`;
     backupFilePath.value = '';
     backupFileName.value = '';
+    backupPluginResult.value = null;
   } finally {
     importing.value = false;
   }
@@ -413,21 +443,39 @@ const handleConfirm = async () => {
       importing.value = false;
     }
   } else if (activeTab.value === 'backupImport') {
-    if (backupPreviewPlaylists.value.length === 0 || importing.value) return;
+    if (importing.value) return;
 
-    const totalSongs = backupPreviewPlaylists.value.reduce(
-      (sum, p) => sum + p.songs.length, 0,
-    );
-    showToast(
-      `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
-      'success',
-    );
-    isClosing.value = true;
-    setTimeout(() => {
-      emit('import-backup', backupPreviewPlaylists.value);
-      emit('update:visible', false);
-      isClosing.value = false;
-    }, 200);
+    if (backupIsJson.value) {
+      // JSON 备份：使用插件匹配结果（含本地+在线）
+      if (!backupPluginResult.value || backupPluginResult.value.importedSongCount === 0) {
+        showToast('没有歌曲可以导入，请查看缺失插件说明', 'info');
+        return;
+      }
+      const result = backupPluginResult.value;
+      showToast(`已导入 ${result.importedSongCount} 首歌曲，${result.failures.length} 首未导入`, 'success');
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-backup-online', result);
+        emit('update:visible', false);
+        isClosing.value = false;
+      }, 200);
+    } else {
+      // M3U / TXT：本地文件导入
+      if (backupPreviewPlaylists.value.length === 0) return;
+      const totalSongs = backupPreviewPlaylists.value.reduce(
+        (sum, p) => sum + p.songs.length, 0,
+      );
+      showToast(
+        `成功导入 ${backupPreviewPlaylists.value.length} 个歌单，共 ${totalSongs} 首歌曲`,
+        'success',
+      );
+      isClosing.value = true;
+      setTimeout(() => {
+        emit('import-backup', backupPreviewPlaylists.value);
+        emit('update:visible', false);
+        isClosing.value = false;
+      }, 200);
+    }
   }
 };
 
@@ -442,7 +490,11 @@ const canConfirm = computed(() => {
       && !importing.value;
   }
   if (activeTab.value === 'backupImport') {
-    return backupPreviewPlaylists.value.length > 0 && !importing.value;
+    if (importing.value) return false;
+    if (backupIsJson.value) {
+      return !!backupPluginResult.value && backupPluginResult.value.importedSongCount > 0;
+    }
+    return backupPreviewPlaylists.value.length > 0;
   }
   return false;
 });
@@ -738,9 +790,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </button>
               </div>
 
-              <!-- 预览信息 -->
+              <!-- M3U/TXT 本地预览信息 -->
               <div
-                v-if="backupPreviewPlaylists.length > 0"
+                v-if="!backupIsJson && backupPreviewPlaylists.length > 0"
                 class="space-y-2"
               >
                 <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
@@ -759,8 +811,47 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
+              <!-- JSON 备份预览信息（本地+在线混合） -->
+              <div
+                v-if="backupIsJson && backupPluginResult"
+                class="space-y-2"
+              >
+                <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
+                  <FileJson class="h-4 w-4" />
+                  {{ backupDetectedFormat }}
+                </div>
+                <!-- 已关联插件 / 本地文件 -->
+                <div v-if="backupPluginResult.associations.length" class="space-y-1">
+                  <div
+                    v-for="assoc in backupPluginResult.associations"
+                    :key="assoc.pluginId + assoc.platform"
+                    class="flex items-center justify-between rounded-lg bg-gray-50 dark:bg-black/20 px-2.5 py-1.5 text-xs"
+                  >
+                    <div class="min-w-0">
+                      <span class="truncate font-medium text-gray-700 dark:text-gray-300">{{ assoc.pluginName }}</span>
+                      <span class="ml-1 text-gray-400 dark:text-gray-500">{{ assoc.platform }}</span>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-1.5">
+                      <span class="text-gray-500 dark:text-gray-400">{{ assoc.songCount }} 首</span>
+                      <span v-if="!assoc.enabled" class="text-amber-500 text-[10px]">未启用</span>
+                    </div>
+                  </div>
+                </div>
+                <!-- 缺失插件 -->
+                <div v-if="backupPluginResult.missingPlugins.length" class="space-y-1">
+                  <div
+                    v-for="missing in backupPluginResult.missingPlugins"
+                    :key="missing.platform"
+                    class="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1.5 text-xs"
+                  >
+                    <span class="text-amber-700 dark:text-amber-300">需要 {{ missing.platform }} 插件</span>
+                    <span class="shrink-0 text-amber-600 dark:text-amber-400">{{ missing.songCount }} 首未导入</span>
+                  </div>
+                </div>
+              </div>
+
               <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
-                支持 BakaMusic / MusicFree JSON 备份、M3U / M3U8 播放列表、椒盐音乐导出格式，自动识别并导入。M3U 和椒盐格式从文件名或 EXTINF 提取歌曲信息。
+                支持 BakaMusic / MusicFree JSON 备份（自动识别本地文件和在线插件）、M3U / M3U8 播放列表、椒盐音乐导出格式。JSON 备份会自动匹配已安装的在线音源插件，有本地文件路径的歌曲直接作为本地歌曲导入。
               </p>
 
               <div

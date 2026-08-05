@@ -21,11 +21,16 @@ const createEntry = (
 });
 
 describe('application logger', () => {
-  it('removes entries outside the configured retention period', () => {
-    const now = Date.UTC(2026, 7, 2);
+  it('removes entries from before today (only keeps same-day logs)', () => {
+    // 使用当天中午作为 now，确保 cutoff 是当天 00:00
+    const now = Date.UTC(2026, 7, 2, 12, 0, 0);
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const cutoff = startOfToday.getTime();
+
     const entries = [
-      createEntry('info', now - 2 * 24 * 60 * 60 * 1000),
-      createEntry('warn', now - 12 * 60 * 60 * 1000),
+      createEntry('info', cutoff - 2 * 60 * 60 * 1000), // 前一天 22:00
+      createEntry('warn', cutoff + 6 * 60 * 60 * 1000), // 当天 06:00
     ];
 
     expect(filterLogEntriesForRetention(entries, 1, now)).toEqual([entries[1]]);

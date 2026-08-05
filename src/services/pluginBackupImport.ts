@@ -192,6 +192,71 @@ function extractTitle(rawSong: any): string {
   return String(rawSong.title ?? rawSong.name ?? rawSong.songname ?? '').trim();
 }
 
+/**
+ * 从备份歌曲对象中提取本地文件路径
+ * 优先使用 localPath，其次解码 file:// URL，最后检查 qualities 中的本地路径
+ */
+function resolveLocalPath(rawSong: any): string {
+  if (typeof rawSong.localPath === 'string' && rawSong.localPath.trim()) {
+    return rawSong.localPath.trim();
+  }
+  if (typeof rawSong.url === 'string' && rawSong.url.startsWith('file:')) {
+    try {
+      let p = rawSong.url;
+      if (p.startsWith('file:///')) p = p.slice('file:///'.length);
+      else if (p.startsWith('file://')) p = p.slice('file://'.length);
+      return decodeURIComponent(p).replace(/\//g, '\\');
+    } catch { /* ignore */ }
+  }
+  if (rawSong.qualities && typeof rawSong.qualities === 'object') {
+    for (const quality of Object.values(rawSong.qualities) as any[]) {
+      if (typeof quality?.url === 'string' && quality.url.startsWith('file:')) {
+        try {
+          let p = quality.url;
+          if (p.startsWith('file:///')) p = p.slice('file:///'.length);
+          else if (p.startsWith('file://')) p = p.slice('file://'.length);
+          return decodeURIComponent(p).replace(/\//g, '\\');
+        } catch { /* ignore */ }
+      }
+    }
+  }
+  return '';
+}
+
+/** 为带有本地文件路径的歌曲创建 Song 对象 */
+function createLocalSong(rawSong: any, localPath: string): Song {
+  const title = extractTitle(rawSong);
+  const artist = extractArtist(rawSong);
+  const album = extractAlbum(rawSong);
+  const artistNames = artist
+    .split(/[、,/&]/)
+    .map(name => name.trim())
+    .filter(Boolean);
+
+  const song: Song = {
+    name: title,
+    title,
+    path: localPath,
+    artist,
+    artist_names: artistNames.length > 0 ? artistNames : ['未知歌手'],
+    effective_artist_names: artistNames.length > 0 ? artistNames : ['未知歌手'],
+    album,
+    album_artist: artist,
+    album_key: `${album}-${artist}`,
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: parseDurationSeconds(rawSong.duration ?? rawSong.interval ?? rawSong.dt),
+    cover_thumb_path: String(rawSong.artwork ?? rawSong.coverUrl ?? rawSong.img ?? ''),
+    source_type: 'local',
+  };
+
+  if (typeof rawSong.rawLrc === 'string' && rawSong.rawLrc.trim()) {
+    song.lyrics_raw = rawSong.rawLrc;
+  }
+
+  return song;
+}
+
 function buildBaseSong(
   rawSong: any,
   path: string,
@@ -311,14 +376,20 @@ function detectBackup(data: any): {
   format: SupportedPluginBackupFormat;
   sheets: any[];
 } {
-  if (data?.schema === 'bakamusic.music-sheet-backup' && Array.isArray(data?.data?.musicSheets)) {
-    return { format: 'bakamusic', sheets: data.data.musicSheets };
+  // BakaMusic: schema 字段存在时优先判定（不强制要求 musicSheets 位于 data.data 下）
+  if (typeof data?.schema === 'string' && data.schema.startsWith('bakamusic')) {
+    const sheets = Array.isArray(data?.data?.musicSheets) ? data.data.musicSheets
+      : Array.isArray(data?.musicSheets) ? data.musicSheets
+      : [];
+    return { format: 'bakamusic', sheets };
   }
-  if (Array.isArray(data?.musicSheets)) {
-    return { format: 'musicfree', sheets: data.musicSheets };
-  }
+  // BakaMusic: 无 schema 但 musicSheets 嵌套在 data 下
   if (Array.isArray(data?.data?.musicSheets)) {
     return { format: 'bakamusic', sheets: data.data.musicSheets };
+  }
+  // MusicFree: musicSheets 位于顶层
+  if (Array.isArray(data?.musicSheets)) {
+    return { format: 'musicfree', sheets: data.musicSheets };
   }
   throw new Error('无法识别备份格式，请选择 BakaMusic 或 MusicFree 导出的 JSON 文件');
 }
@@ -355,13 +426,47 @@ export function preparePluginBackupImport(
       const id = extractSongId(rawSong);
       const platform = describePlatform(rawSong?.platform ?? rawSong?.source);
 
-      if (!title || !id || !platform.normalized) {
+      if (!title) {
         failures.push({
           playlist: playlistName,
-          title: title || '未命名歌曲',
+          title: '未命名歌曲',
           artist,
           platform: platform.displayName,
-          reason: !platform.normalized ? '歌曲缺少来源平台' : '歌曲缺少标题或平台歌曲 ID',
+          reason: '歌曲缺少标题',
+          reasonCode: 'invalid-song',
+        });
+        continue;
+      }
+
+      // 优先检测本地文件路径：有本地路径的歌曲直接作为本地歌曲导入
+      const localPath = resolveLocalPath(rawSong);
+      if (localPath) {
+        songs.push(createLocalSong(rawSong, localPath));
+        importedSongCount += 1;
+        const localKey = '__local__';
+        const localAssoc = associationMap.get(localKey);
+        if (localAssoc) localAssoc.songCount += 1;
+        else {
+          associationMap.set(localKey, {
+            pluginId: 'local',
+            pluginName: '本地文件',
+            pluginFormat: 'musicfree',
+            enabled: true,
+            platform: '本地文件',
+            songCount: 1,
+          });
+        }
+        continue;
+      }
+
+      // 无本地路径：尝试匹配在线插件
+      if (!id || !platform.normalized) {
+        failures.push({
+          playlist: playlistName,
+          title,
+          artist,
+          platform: platform.displayName,
+          reason: !platform.normalized ? '歌曲缺少来源平台' : '歌曲缺少平台歌曲 ID',
           reasonCode: 'invalid-song',
         });
         continue;

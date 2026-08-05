@@ -147,4 +147,5 @@ commands.allow = [
   "recognize_system_audio",
   "write_state_json",
   "read_state_json",
+  "open_devtools",
 ]

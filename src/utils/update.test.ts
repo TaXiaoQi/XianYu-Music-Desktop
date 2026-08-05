@@ -47,19 +47,19 @@ describe("fetchLatestRelease", () => {
     isTauriMock.mockReturnValue(true);
     invokeMock.mockResolvedValue(JSON.stringify({
       tag_name: "v1.4.0",
-      html_url: "https://github.com/Billy636/LyciaMusic/releases/tag/v1.4.0",
+      html_url: "https://github.com/Billy636/XianYuMusic/releases/tag/v1.4.0",
       published_at: "2026-05-08T00:00:00Z",
       body: "新增 GitHub 更新通道"
     }));
 
-    await expect(fetchLatestRelease("Billy636", "LyciaMusic")).resolves.toEqual({
+    await expect(fetchLatestRelease("Billy636", "XianYuMusic")).resolves.toEqual({
       version: "1.4.0",
-      url: "https://github.com/Billy636/LyciaMusic/releases/tag/v1.4.0",
+      url: "https://github.com/Billy636/XianYuMusic/releases/tag/v1.4.0",
       publishedAt: "2026-05-08T00:00:00Z",
       notes: "新增 GitHub 更新通道",
       source: "github"
     });
-    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { owner: 'Billy636', repo: 'LyciaMusic' });
+    expect(invokeMock).toHaveBeenCalledWith('check_update_by_rust', { owner: 'Billy636', repo: 'XianYuMusic' });
   });
 
   it("does NOT fallback to browser fetch in Tauri when invoke fails for GitHub", async () => {
@@ -67,7 +67,7 @@ describe("fetchLatestRelease", () => {
     invokeMock.mockRejectedValue(new Error("GitHub API error inside Rust"));
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    await expect(fetchLatestRelease("Billy636", "LyciaMusic")).rejects.toThrow("[Rust Backend] GitHub API error inside Rust");
+    await expect(fetchLatestRelease("Billy636", "XianYuMusic")).rejects.toThrow("[Rust Backend] GitHub API error inside Rust");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -76,20 +76,20 @@ describe("fetchLatestRelease", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({
         tag_name: "v1.4.0",
-        html_url: "https://github.com/Billy636/LyciaMusic/releases/tag/v1.4.0",
+        html_url: "https://github.com/Billy636/XianYuMusic/releases/tag/v1.4.0",
         published_at: "2026-05-08T00:00:00Z",
         body: "新增 GitHub 更新通道"
       }))
     );
 
-    await expect(fetchLatestRelease("Billy636", "LyciaMusic")).resolves.toEqual({
+    await expect(fetchLatestRelease("Billy636", "XianYuMusic")).resolves.toEqual({
       version: "1.4.0",
-      url: "https://github.com/Billy636/LyciaMusic/releases/tag/v1.4.0",
+      url: "https://github.com/Billy636/XianYuMusic/releases/tag/v1.4.0",
       publishedAt: "2026-05-08T00:00:00Z",
       notes: "新增 GitHub 更新通道",
       source: "github"
     });
-    expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/repos/Billy636/LyciaMusic/releases/latest", {
+    expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/repos/Billy636/XianYuMusic/releases/latest", {
       headers: {
         Accept: "application/vnd.github+json"
       }

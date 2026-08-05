@@ -282,7 +282,7 @@ const tabs = computed(() => {
 
 <template>
   <div
-    class="flex h-full flex-1 overflow-hidden transition-colors duration-500"
+    class="flex h-full flex-1 overflow-hidden transition-colors duration-300"
     :class="{ 'select-none': isResizingSidebar }"
   >
     <aside
@@ -413,7 +413,7 @@ const tabs = computed(() => {
 /* 设置页切换动画：与主页 page-fade 一致，out-in 模式（先淡出旧内容，再淡入新内容） */
 .settings-fade-enter-active,
 .settings-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .settings-fade-enter-from {

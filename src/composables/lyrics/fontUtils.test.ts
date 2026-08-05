@@ -42,17 +42,17 @@ describe('imported lyrics font registration', () => {
     await registerImportedLyricsFonts([{
       id: 'font-id',
       name: 'Long Custom Font',
-      family: 'Lycia Imported Lyrics Font font-id',
-      filePath: 'C:\\Users\\lover\\AppData\\Roaming\\com.lover.lyciaplayer\\custom-lyrics-fonts\\font-id.ttf',
+      family: 'XianYu Imported Lyrics Font font-id',
+      filePath: 'C:\\Users\\lover\\AppData\\Roaming\\com.lover.xianyuplayer\\custom-lyrics-fonts\\font-id.ttf',
       importedAt: 1,
       format: 'truetype',
     }]);
 
     expect(invokeMock).toHaveBeenCalledWith('read_lyrics_font_data_url', {
-      fontPath: 'C:\\Users\\lover\\AppData\\Roaming\\com.lover.lyciaplayer\\custom-lyrics-fonts\\font-id.ttf',
+      fontPath: 'C:\\Users\\lover\\AppData\\Roaming\\com.lover.xianyuplayer\\custom-lyrics-fonts\\font-id.ttf',
     });
     expect(FontFace).toHaveBeenCalledWith(
-      'Lycia Imported Lyrics Font font-id',
+      'XianYu Imported Lyrics Font font-id',
       'url("data:font/ttf;base64,AAECAw==")',
       { display: 'swap' },
     );
