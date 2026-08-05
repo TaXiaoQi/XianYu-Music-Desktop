@@ -250,6 +250,39 @@ describe('useDesktopLyricsDisplay', () => {
     ]);
   });
 
+  it('updates desktop double-line lyrics as a sliding current-and-next pair', () => {
+    const display = useDesktopLyricsDisplay(ref(false));
+    const payload = createPayload(false);
+
+    display.handlePayload({
+      ...payload,
+      playbackTime: 1.2,
+      parsedLyrics: [
+        { time: 1, endTime: 3, text: '第一行', translation: '', romaji: '', words: [] },
+        { time: 3, endTime: 5, text: '第二行', translation: '', romaji: '', words: [] },
+        { time: 5, endTime: 7, text: '第三行', translation: '', romaji: '', words: [] },
+      ],
+      settings: {
+        ...payload.settings,
+        showDoubleLine: true,
+      },
+    });
+
+    expect(display.visibleLyricLines.value.map(item => item.line.text)).toEqual(['第一行', '第二行']);
+    expect(display.visibleLyricLines.value.map(item => item.active)).toEqual([true, false]);
+
+    display.handlePlaybackPayload({
+      playbackTime: 3.2,
+      syncedAt: Date.now(),
+      isPlaying: false,
+      audioDelay: 0,
+    });
+
+    expect(display.visibleLyricLines.value.map(item => item.line.text)).toEqual(['第二行', '第三行']);
+    expect(display.visibleLyricLines.value.map(item => item.active)).toEqual([true, false]);
+    expect(display.blockTransitionKey.value).toBe('double-line:ready');
+  });
+
   it('falls back to a desktop romaji secondary line when word romaji is incomplete', () => {
     const display = useDesktopLyricsDisplay(ref(false));
     const payload = createPayload(true);
