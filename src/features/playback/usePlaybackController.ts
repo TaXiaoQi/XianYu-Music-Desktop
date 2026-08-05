@@ -1,6 +1,6 @@
 import { storeToRefs } from 'pinia';
 
-import { usePlayerCore } from '../../composables/playerCore';
+import { usePlayerCore } from './playerCore';
 import { usePlaybackStore } from './store';
 import { useUiStore } from '../../shared/stores/ui';
 

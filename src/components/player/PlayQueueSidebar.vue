@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useSettings } from '../../features/settings/useSettings';
 import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';

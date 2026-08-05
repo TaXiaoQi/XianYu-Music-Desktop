@@ -7,7 +7,7 @@ import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import { useCoverCache } from './useCoverCache';
 import { useLyrics } from './lyrics';
 import { showDesktopLyrics } from './lyrics';
-import { usePlayer } from './player';
+import { usePlayer } from '../features/playback';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
 import { useUiStore } from '../shared/stores/ui';

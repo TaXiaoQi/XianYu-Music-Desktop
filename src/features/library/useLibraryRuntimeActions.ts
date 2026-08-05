@@ -1,4 +1,4 @@
-import { usePlayerCore } from '../../composables/playerCore';
+import { usePlayerCore } from '../playback/playerCore';
 
 export function useLibraryRuntimeActions() {
   const { libraryDomain } = usePlayerCore();

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 
 const props = defineProps<{
   bgOpacity?: number;

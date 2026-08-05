@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import type { Song } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
-import { createPlayerLibraryBatch } from './playerLibraryBatch';
+import { createLibraryBatch } from './playerLibraryBatch';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: '/music/demo.flac',
@@ -39,7 +39,7 @@ describe('player library batch', () => {
     playbackStore.tempQueue = [removedSong];
     playbackStore.currentSong = removedSong;
 
-    const playerLibraryBatch = createPlayerLibraryBatch({
+    const libraryBatch = createLibraryBatch({
       createSongLookup: (fallbackSongs: Song[] = []) => {
         const lookup = new Map<string, Song>();
         fallbackSongs.forEach((song) => {
@@ -54,7 +54,7 @@ describe('player library batch', () => {
       },
     });
 
-    playerLibraryBatch.refreshStateSongReferences();
+    libraryBatch.refreshStateSongReferences();
 
     expect(libraryStore.songList.map(song => song.path)).toEqual([keptSong.path]);
     expect(playbackStore.playQueue.map(song => song.path)).toEqual([keptSong.path]);

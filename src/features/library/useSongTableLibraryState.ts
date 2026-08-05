@@ -7,7 +7,7 @@ import {
 } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import type { ScanLibraryOptions } from '../../composables/playerLibraryScan';
+import type { ScanLibraryOptions } from './libraryScan';
 import type { Song } from '../../types';
 import { useLibraryStore } from './store';
 

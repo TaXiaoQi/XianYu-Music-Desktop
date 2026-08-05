@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { dragSession } from '../../composables/dragState';
 import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache';

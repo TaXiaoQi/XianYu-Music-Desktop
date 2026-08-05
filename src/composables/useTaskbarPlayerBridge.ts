@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useCoverCache } from './useCoverCache';
-import { usePlayer } from './player';
+import { usePlayer } from '../features/playback';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
 import {

@@ -48,7 +48,7 @@ const makeSong = (overrides: Partial<Song> = {}): Song => ({
   ...overrides,
 });
 
-describe('playerLibraryRuntime.scanLibrary', () => {
+describe('libraryRuntime.scanLibrary', () => {
   beforeEach(() => {
     vi.resetModules();
     invokeMock.mockReset();
@@ -57,7 +57,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
 
   it('queues a follow-up scan when a manual refresh arrives during an active scan', async () => {
     const { useLibraryStore } = await import('../features/library/store');
-    const { createPlayerLibraryRuntime } = await import('./playerLibraryRuntime');
+    const { createLibraryRuntime } = await import('./playerLibraryRuntime');
 
     const libraryStore = useLibraryStore();
     libraryStore.setLibraryFolders([
@@ -120,7 +120,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
       return [];
     });
 
-    const runtime = createPlayerLibraryRuntime({
+    const runtime = createLibraryRuntime({
       fetchLibraryFolders: vi.fn(async () => {}),
       fetchFolderTree: vi.fn(async () => {}),
       flushBufferedLibraryScanBatch: vi.fn(),
@@ -144,7 +144,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
 
   it('clears in-memory library songs when the last library folder has been removed', async () => {
     const { useLibraryStore } = await import('../features/library/store');
-    const { createPlayerLibraryRuntime } = await import('./playerLibraryRuntime');
+    const { createLibraryRuntime } = await import('./playerLibraryRuntime');
 
     const libraryStore = useLibraryStore();
     const staleSong = makeSong();
@@ -167,7 +167,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
     libraryStore.setAlbumCatalog([{ key: 'album::artist', name: 'Album', artist: 'Artist', count: 1, firstSongPath: staleSong.path }]);
 
     const refreshStateSongReferences = vi.fn();
-    const runtime = createPlayerLibraryRuntime({
+    const runtime = createLibraryRuntime({
       fetchLibraryFolders: vi.fn(async () => {}),
       fetchFolderTree: vi.fn(async () => {}),
       flushBufferedLibraryScanBatch: vi.fn(),
@@ -190,7 +190,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
   it('passes the configured short audio threshold to library scans', async () => {
     const { useLibraryStore } = await import('../features/library/store');
     const { useSettingsStore } = await import('../features/settings/store');
-    const { createPlayerLibraryRuntime } = await import('./playerLibraryRuntime');
+    const { createLibraryRuntime } = await import('./playerLibraryRuntime');
 
     const libraryStore = useLibraryStore();
     const settingsStore = useSettingsStore();
@@ -212,7 +212,7 @@ describe('playerLibraryRuntime.scanLibrary', () => {
       return [];
     });
 
-    const runtime = createPlayerLibraryRuntime({
+    const runtime = createLibraryRuntime({
       fetchLibraryFolders: vi.fn(async () => {}),
       fetchFolderTree: vi.fn(async () => {}),
       flushBufferedLibraryScanBatch: vi.fn(),

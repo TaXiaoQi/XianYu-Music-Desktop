@@ -107,7 +107,7 @@
 import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { open } from '@tauri-apps/plugin-dialog';
-import { usePlayer } from '../../composables/player';
+import { usePlayer } from '../../features/playback';
 import { useLibraryStore } from '../../features/library/store';
 import {
   normalizeLibraryMinDurationSeconds,
