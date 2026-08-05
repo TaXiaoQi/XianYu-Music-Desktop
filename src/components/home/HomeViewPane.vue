@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import type { FolderNode, Song } from '../../types';
-import HomeContentPanel from './HomeContentPanel.vue';
-import HomeHeaderPanel from './HomeHeaderPanel.vue';
+
+const HomeContentPanel = defineAsyncComponent(() => import('./HomeContentPanel.vue'));
+const HomeHeaderPanel = defineAsyncComponent(() => import('./HomeHeaderPanel.vue'));
 
 interface PlaylistDetail {
   name: string;
@@ -27,6 +28,8 @@ interface Props {
   currentFolderFilter: string;
   playlistDetail: PlaylistDetail | null;
   localSongList: Song[];
+  localSongPaths?: string[];
+  resolveSongByPath?: (path: string) => Song | null;
   artistActiveTab: 'songs' | 'albums' | 'details';
   localFilterCondition: string;
   selectedAlbumSong: Song | null;
@@ -97,26 +100,23 @@ const songTableMemoryScopeKey = computed(() =>
   })(),
 );
 
-// [视图切换动画] 监听 localViewMode/filterCondition 变化时触发淡入动画。
-// 使用 CSS animation 而非 <transition> + :key，避免组件被销毁重建。
-const fadeKey = ref(0);
-let fadeTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
-  () => `${props.localViewMode}:${props.localFilterCondition}`,
-  () => {
-    fadeKey.value++;
-    if (fadeTimer) clearTimeout(fadeTimer);
-    fadeTimer = setTimeout(() => { fadeKey.value = 0; }, 350);
-  },
+// 主页内的详情容器（歌单/歌手/专辑/文件夹等）按 key 销毁重建。
+// 歌单切换时旧 SongTable 会完整卸载，新歌单再重新挂载，避免旧页面状态和缓存残留。
+const viewInstanceKey = computed(() =>
+  [
+    props.localViewMode,
+    props.localFilterCondition || '',
+    props.currentFolderFilter || '',
+    props.activeRootPath || '',
+    props.artistActiveTab || '',
+  ].join('::'),
 );
-onBeforeUnmount(() => { if (fadeTimer) clearTimeout(fadeTimer); });
 </script>
 
 <template>
-  <div
-    class="flex flex-1 flex-col min-h-0 min-w-0"
-    :class="fadeKey > 0 ? 'view-fade-in' : ''"
-  >
+  <div class="flex flex-1 flex-col min-h-0 min-w-0">
+    <Transition name="home-view-switch" mode="out-in">
+      <div :key="viewInstanceKey" class="flex flex-1 flex-col min-h-0 min-w-0">
       <HomeHeaderPanel
         :localViewMode="localViewMode"
         :isBatchMode="isBatchMode"
@@ -154,6 +154,8 @@ onBeforeUnmount(() => { if (fadeTimer) clearTimeout(fadeTimer); });
         :localFilterCondition="localFilterCondition"
         :songTableMemoryScopeKey="songTableMemoryScopeKey"
         :localSongList="localSongList"
+        :localSongPaths="localSongPaths"
+        :resolveSongByPath="resolveSongByPath"
         :selectedCount="selectedCount"
         :selectedAlbumSong="selectedAlbumSong"
         :artistAlbumList="artistAlbumList"
@@ -174,22 +176,31 @@ onBeforeUnmount(() => { if (fadeTimer) clearTimeout(fadeTimer); });
         @tableDragStart="handleTableDragStart"
         @artistAlbumClick="$emit('artistAlbumClick', $event)"
       />
+      </div>
+    </Transition>
     </div>
 </template>
 
 <style scoped>
-@keyframes viewFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.home-view-switch-enter-active {
+  transition:
+    opacity 260ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.view-fade-in {
-  animation: viewFadeIn 0.3s ease;
+.home-view-switch-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.home-view-switch-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.home-view-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 </style>

@@ -53,8 +53,12 @@ export const createLibraryCoreActions = ({
   const moveFilesToFolder = (paths: string[], targetFolder: string) =>
     playerFileManager.moveFilesToFolder(paths, targetFolder);
 
-  const refreshFolder = (folderPath: string) =>
-    playerFileManager.refreshFolder(folderPath);
+  const refreshFolder = async (folderPath: string) => {
+    const summary = await playerFileManager.refreshFolder(folderPath);
+    await libraryFolderTree.fetchFolderTree();
+    await libraryFolderTree.expandFolderPath(folderPath);
+    return summary;
+  };
 
   const removeFolder = (folderPath: string) => {
     playerFileManager.removeFolder(folderPath);

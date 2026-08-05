@@ -93,6 +93,7 @@ export const defaultThemeSettings: ThemeSettings = {
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: false,
+  useCustomTrayMenu: true,
   flowColorBoost: 25,
   flowDepth: 30,
   flowSpeed: 52,

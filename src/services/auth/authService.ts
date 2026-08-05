@@ -646,24 +646,40 @@ function compressImageToDataUrl(
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-        if (width > maxWidth) {
-          height = Math.round(height * (maxWidth / width));
-          width = maxWidth;
+        let canvas: HTMLCanvasElement | null = null;
+        try {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth) {
+            height = Math.round(height * (maxWidth / width));
+            width = maxWidth;
+          }
+          canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas 上下文不可用'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } finally {
+          if (canvas) {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+          img.onload = null;
+          img.onerror = null;
+          img.src = '';
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas 上下文不可用'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = () => reject(new Error('图片加载失败'));
+      img.onerror = () => {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        reject(new Error('图片加载失败'));
+      };
       img.src = reader.result as string;
     };
     reader.onerror = () => reject(new Error('文件读取失败'));

@@ -47,7 +47,33 @@ const paletteCache = new MemoryCache<string, string[]>({
 let worker: Worker | null = null;
 let workerInitFailed = false;
 let requestIdCounter = 0;
-const pendingRequests = new Map<number, (palette: string[]) => void>();
+const pendingRequests = new Map<number, {
+  resolve: (palette: string[]) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}>();
+
+function resolvePendingRequest(id: number, palette: string[]) {
+  const pending = pendingRequests.get(id);
+  if (!pending) return;
+
+  pendingRequests.delete(id);
+  clearTimeout(pending.timeoutId);
+  pending.resolve(palette);
+}
+
+function resolveAllPendingRequests(palette: string[]) {
+  for (const id of Array.from(pendingRequests.keys())) {
+    resolvePendingRequest(id, [...palette]);
+  }
+}
+
+export function releaseColorExtractionWorker() {
+  resolveAllPendingRequests(FALLBACK_PALETTE);
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+}
 
 /**
  * 懒创建颜色提取 Worker。
@@ -64,20 +90,12 @@ function getWorker(): Worker | null {
     );
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const { id, palette } = event.data;
-      const resolve = pendingRequests.get(id);
-      if (resolve) {
-        pendingRequests.delete(id);
-        resolve(palette);
-      }
+      resolvePendingRequest(id, palette);
     };
     worker.onerror = () => {
       // Worker 发生不可恢复错误：拒绝所有待处理请求并标记不可用
-      for (const resolve of pendingRequests.values()) {
-        resolve([...FALLBACK_PALETTE]);
-      }
-      pendingRequests.clear();
+      releaseColorExtractionWorker();
       workerInitFailed = true;
-      worker = null;
     };
   } catch {
     workerInitFailed = true;
@@ -143,18 +161,50 @@ export async function extractDominantColors(
   const request: WorkerRequest = { id, imageUrl, count, colorBoost, depth };
 
   const palette = await new Promise<string[]>((resolve) => {
-    pendingRequests.set(id, resolve);
-    activeWorker.postMessage(request);
-
     // 超时保护：10 秒后自动回退
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       if (pendingRequests.has(id)) {
-        pendingRequests.delete(id);
-        resolve(createFallbackPalette(count));
+        resolvePendingRequest(id, createFallbackPalette(count));
       }
     }, 10_000);
+
+    pendingRequests.set(id, { resolve, timeoutId });
+    activeWorker.postMessage(request);
   });
 
   setCachedPalette(cacheKey, palette);
   return palette;
+}
+
+let visibilityCleanupRegistered = false;
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    releaseColorExtractionWorker();
+  }
+}
+
+function registerVisibilityCleanup() {
+  if (visibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  visibilityCleanupRegistered = true;
+}
+
+function cleanupVisibilityCleanup() {
+  if (!visibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  visibilityCleanupRegistered = false;
+  releaseColorExtractionWorker();
+}
+
+registerVisibilityCleanup();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(cleanupVisibilityCleanup);
 }

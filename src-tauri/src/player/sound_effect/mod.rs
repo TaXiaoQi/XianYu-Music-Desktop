@@ -463,6 +463,68 @@ impl Default for SoundEffectSettings {
     }
 }
 
+impl SoundEffectSettings {
+    #[inline]
+    fn pitch_rate_is_neutral(&self) -> bool {
+        let pitch = if self.pitch_shift.is_finite() {
+            self.pitch_shift
+        } else {
+            100.0
+        };
+        let rate = if self.playback_rate.is_finite() {
+            self.playback_rate
+        } else {
+            100.0
+        };
+
+        (pitch - 100.0).abs() < 0.1 && (rate - 100.0).abs() < 0.1
+    }
+
+    /// 是否存在真正会改变音频内容的音效。
+    ///
+    /// 注意：`audio_boost` 不参与这里的判断。旧版本前端曾把不可见的 audioBoost
+    /// 默认设为 60，导致“没开音效”也被额外放大并削波。只有当其它音效/变调/变速
+    /// 已经激活时，process() 末尾的 audioBoost 才会作为附加增益参与处理。
+    #[inline]
+    fn has_audible_processing(&self) -> bool {
+        !self.pitch_rate_is_neutral()
+            || self.reverb_kind != ReverbKind::None
+            || self.spatial_mode != SpatialMode::None
+            || self.vibrato.enabled
+            || self.pitch_drift.enabled
+            || self.tremolo.enabled
+            || self.flanger.enabled
+            || self.phaser.enabled
+            || self.delay.enabled
+            || self.compressor.enabled
+            || self.multiband.enabled
+            || self.limiter.enabled
+            || self.noise_gate.enabled
+            || self.expander.enabled
+            || self.agc.enabled
+            || self.de_esser.enabled
+            || self.distortion.enabled
+            || self.exciter.enabled
+            || self.sub_bass.enabled
+            || self.lo_fi.enabled
+            || self.bitcrush.enabled
+            || self.vocal_removal
+            || self.stereo_widen.enabled
+            || self.mono_merge
+            || self.channel_swap
+            || self.stereo_separation.enabled
+            || self.crossfeed.enabled
+            || self.bass_boost.enabled
+            || self.dynamic_eq.enabled
+            || self.v4a_enabled
+    }
+
+    #[inline]
+    fn should_hard_bypass(&self) -> bool {
+        self.bypass || !self.has_audible_processing()
+    }
+}
+
 // =========================================================================
 // SoundEffectHandle（跨线程共享：UI 线程写，音频线程读）
 // =========================================================================
@@ -711,13 +773,32 @@ where
             self.apply_params(&s);
         }
 
-        // 从 pitch 处理器填充一帧（变调变速后）
-        if !self.pitch.fill(&mut self.inner, &mut self.in_frame) {
+        // 同步参数
+        self.sync_settings();
+
+        let hard_bypass = self.settings.should_hard_bypass();
+        if hard_bypass {
+            // 真正的硬旁路：没有任何音效启用时，不进入 PitchRateProcessor、各 DSP 机架
+            // 或 audioBoost，避免默认/残留参数改变本地播放波形。
+            let ch = self.channels as usize;
+            for i in 0..ch.min(self.out_frame.len()) {
+                self.out_frame[i] = self.inner.next()?;
+            }
+            self.out_idx = 0;
+
+            if self.out_idx < self.out_frame.len() {
+                let s = self.out_frame[self.out_idx];
+                self.out_idx += 1;
+                return Some(s);
+            }
             return None;
         }
 
-        // 同步参数
-        self.sync_settings();
+        // 从 pitch 处理器填充一帧（变调变速后）。只有存在真实音效/变调/变速时才进入，
+        // 中性状态下由上面的硬旁路直接读取 inner，保证零处理直通。
+        if !self.pitch.fill(&mut self.inner, &mut self.in_frame) {
+            return None;
+        }
 
         // 处理效果链
         let ch = self.channels;
@@ -726,16 +807,14 @@ where
         self.out_frame.copy_from_slice(&self.in_frame);
         self.out_idx = 0;
 
-        if !s.bypass {
-            // V4A 子效果已在 apply_params 中合并到 effective settings，由各机架处理
-            // （bass_boost/dynamic_eq/stereo_widen → channel_rack，compressor → dynamics_rack）
-            self.channel_rack.process(&mut self.out_frame, ch, s);
-            self.shaper_rack.process(&mut self.out_frame, ch, s);
-            self.dynamics_rack.process(&mut self.out_frame, ch, s);
-            self.modulation_rack.process(&mut self.out_frame, ch, s);
-            self.reverb_rack.process(&mut self.out_frame, ch, s);
-            self.spatial_rack.process(&mut self.out_frame, ch, s);
-        }
+        // V4A 子效果已在 apply_params 中合并到 effective settings，由各机架处理
+        // （bass_boost/dynamic_eq/stereo_widen → channel_rack，compressor → dynamics_rack）
+        self.channel_rack.process(&mut self.out_frame, ch, s);
+        self.shaper_rack.process(&mut self.out_frame, ch, s);
+        self.dynamics_rack.process(&mut self.out_frame, ch, s);
+        self.modulation_rack.process(&mut self.out_frame, ch, s);
+        self.reverb_rack.process(&mut self.out_frame, ch, s);
+        self.spatial_rack.process(&mut self.out_frame, ch, s);
 
         // audioBoost：0-100 → 0~6dB 增益
         let boost_db = (s.audio_boost / 100.0).clamp(0.0, 1.0) * 6.0;
@@ -767,6 +846,9 @@ where
 
     #[inline]
     fn sample_rate(&self) -> u32 {
+        if self.settings.should_hard_bypass() {
+            return self.sample_rate;
+        }
         // 变速变调（preservesPitch=false）时由 pitch 处理器调整
         self.pitch.effective_sample_rate(self.sample_rate)
     }
@@ -938,5 +1020,48 @@ mod tests {
         }
         assert!(total > 100, "应产出样本，实际 {total}");
         assert!(nonzero > 100, "默认直通不应静音，非零样本 {nonzero}/{total}");
+    }
+
+    #[test]
+    fn test_legacy_audio_boost_without_effects_is_bypassed() {
+        use rodio::Source;
+        use std::time::Duration;
+
+        struct TestSource {
+            samples: Vec<f32>,
+            pos: usize,
+        }
+        impl Iterator for TestSource {
+            type Item = f32;
+            fn next(&mut self) -> Option<f32> {
+                let sample = self.samples[self.pos % self.samples.len()];
+                self.pos += 1;
+                Some(sample)
+            }
+        }
+        impl Source for TestSource {
+            fn channels(&self) -> u16 { 2 }
+            fn sample_rate(&self) -> u32 { 44100 }
+            fn current_frame_len(&self) -> Option<usize> { None }
+            fn total_duration(&self) -> Option<Duration> { None }
+            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> { Ok(()) }
+        }
+
+        let mut settings = SoundEffectSettings::default();
+        settings.audio_boost = 60.0;
+        let inner = TestSource {
+            samples: vec![0.8, -0.8, 0.25, -0.25],
+            pos: 0,
+        };
+        let handle = Arc::new(SoundEffectHandle::new(settings));
+        let mut src = SoundEffectSource::new(inner, handle);
+
+        for expected in [0.8, -0.8, 0.25, -0.25].into_iter().cycle().take(64) {
+            let actual = src.next().expect("应持续产出样本");
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "未启用音效时旧 audioBoost 残留不应改变样本，expected={expected}, actual={actual}"
+            );
+        }
     }
 }

@@ -10,6 +10,8 @@
       :currentFolderFilter="currentFolderFilter"
       :playlistDetail="playlistDetail"
       :localSongList="localSongList"
+      :localSongPaths="localSongPaths"
+      :resolveSongByPath="resolveSongByPath"
       :artistActiveTab="artistActiveTab"
       :localFilterCondition="localFilterCondition"
       :selectedAlbumSong="selectedAlbumSong"
@@ -46,6 +48,7 @@
     <DragGhost />
 
     <MoveToFolderModal
+      v-if="showMoveToFolderModal"
       :visible="showMoveToFolderModal"
       :selectedCount="selectedPaths.size"
       @close="showMoveToFolderModal = false"
@@ -53,6 +56,7 @@
     />
 
     <SongContextMenu
+      v-if="showContextMenu"
       :visible="showContextMenu"
       :x="contextMenuX"
       :y="contextMenuY"
@@ -70,6 +74,7 @@
     />
 
     <ModernModal
+      v-if="showConfirm"
       :visible="showConfirm"
       :title="confirmTitle"
       :content="confirmMessage"
@@ -80,6 +85,7 @@
     />
 
     <ModernModal
+      v-if="showSongPhysicalDeleteConfirm"
       v-model:visible="showSongPhysicalDeleteConfirm"
       title="永久删除文件"
       :content="`确定要从磁盘中永久删除歌曲 '${songToPhysicalDelete?.title}' 吗？此操作不可逆！`"
@@ -89,6 +95,7 @@
     />
 
     <ModernModal
+      v-if="showFolderDeleteConfirm"
       v-model:visible="showFolderDeleteConfirm"
       title="删除文件夹"
       :content="`确定要删除文件夹 '${folderToDeletePath}' 吗？这也将移除其中的本地文件。`"
@@ -98,6 +105,7 @@
     />
 
     <ModernInputModal
+      v-if="showCreateFolderModal"
       :visible="showCreateFolderModal"
       title="新建文件夹"
       placeholder="请输入文件夹名称"
@@ -107,6 +115,7 @@
     />
 
     <PlaylistEditInfoModal
+      v-if="showRenameModal"
       :visible="showRenameModal"
       :playlist-id="editingPlaylistId"
       :initial-name="renameInitialValue"
@@ -118,18 +127,18 @@
 </template>
 
 <script setup lang="ts">
-// 必须显式声明组件名：MainShell 使用 <KeepAlive include="Home"> 白名单缓存，
-// <script setup> 不会自动向 KeepAlive 暴露组件名，缺失会导致该路由内容被过滤而白屏。
 defineOptions({ name: 'Home' });
 
-import DragGhost from '../components/common/DragGhost.vue';
-import HomeViewPane from '../components/home/HomeViewPane.vue';
-import ModernInputModal from '../components/common/ModernInputModal.vue';
-import ModernModal from '../components/common/ModernModal.vue';
-import MoveToFolderModal from '../components/overlays/MoveToFolderModal.vue';
-import PlaylistEditInfoModal from '../components/overlays/PlaylistEditInfoModal.vue';
-import SongContextMenu from '../components/overlays/SongContextMenu.vue';
+import { defineAsyncComponent } from 'vue';
 import { useHomePageModel } from '../composables/useHomePageModel';
+
+const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
+const HomeViewPane = defineAsyncComponent(() => import('../components/home/HomeViewPane.vue'));
+const ModernInputModal = defineAsyncComponent(() => import('../components/common/ModernInputModal.vue'));
+const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
+const MoveToFolderModal = defineAsyncComponent(() => import('../components/overlays/MoveToFolderModal.vue'));
+const PlaylistEditInfoModal = defineAsyncComponent(() => import('../components/overlays/PlaylistEditInfoModal.vue'));
+const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 
 const {
   localViewMode,
@@ -141,6 +150,8 @@ const {
   currentFolderFilter,
   playlistDetail,
   localSongList,
+  localSongPaths,
+  resolveSongByPath,
   artistActiveTab,
   localFilterCondition,
   selectedAlbumSong,

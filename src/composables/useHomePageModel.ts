@@ -46,9 +46,11 @@ export function useHomePageModel() {
     filterCondition,
   } = usePlayerViewState();
   const {
+    currentViewSongPaths,
     displaySongList,
     librarySongs,
     folderTree,
+    resolveSongByPath,
     searchQuery,
   } = usePlayerLibraryView();
   const { playSong } = usePlaybackController();
@@ -91,7 +93,12 @@ export function useHomePageModel() {
     isManagementMode,
   });
 
-  const localSongList = computed(() => displaySongList.value);
+  const isPlaylistView = computed(() => currentViewMode.value === 'playlist');
+  const localSongPaths = computed(() => currentViewSongPaths.value);
+  // 歌单详情页走 SongTable 的 path + resolver 惰性模式，避免进入页面即 materialize 全量 Song[]。
+  // 非歌单视图保持原有数组模式，避免影响本地/专辑/歌手等已有交互。
+  const localSongList = computed(() => isPlaylistView.value ? [] : displaySongList.value);
+  const getActionSongList = () => displaySongList.value;
   const selectedAlbumSong = computed(() => localSongList.value[0] || null);
   const batchSelectionScopeKey = computed(() =>
     [
@@ -107,7 +114,7 @@ export function useHomePageModel() {
   } = useScopedBatchSelection(batchSelectionScopeKey);
 
   const { handleTableDragStart } = useSongDrag(
-    localSongList,
+    computed(() => displaySongList.value),
     isBatchMode,
     selectedPaths,
     songTableRef,
@@ -230,8 +237,9 @@ export function useHomePageModel() {
   });
 
   const handlePlayAll = () => {
-    if (localSongList.value.length > 0) {
-      const firstSong = localSongList.value[0];
+    const songs = getActionSongList();
+    if (songs.length > 0) {
+      const firstSong = songs[0];
       void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '');
       void playSong(firstSong);
     }
@@ -246,7 +254,7 @@ export function useHomePageModel() {
   };
 
   const handleBatchPlay = () => {
-    const selectedSongs = localSongList.value.filter(song => selectedPaths.value.has(song.path));
+    const selectedSongs = getActionSongList().filter(song => selectedPaths.value.has(song.path));
     if (selectedSongs.length > 0) {
       const firstSong = selectedSongs[0];
       void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '');
@@ -314,6 +322,8 @@ export function useHomePageModel() {
     currentFolderFilter,
     playlistDetail,
     localSongList,
+    localSongPaths,
+    resolveSongByPath,
     artistActiveTab,
     localFilterCondition,
     selectedAlbumSong,

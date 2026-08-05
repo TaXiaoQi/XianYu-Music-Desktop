@@ -2,7 +2,7 @@ import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
-import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 
 import { useCoverCache } from './useCoverCache';
 import { useLyrics } from './lyrics';
@@ -37,7 +37,6 @@ let miniPlayerReadyPromise: Promise<void> | null = null;
 let resolveMiniPlayerReady: (() => void) | null = null;
 let resolveMiniPlayerStateApplied: (() => void) | null = null;
 
-const MINI_PLAYER_PREWARM_DELAY_MS = 3_200;
 let miniPlayerPrewarmTimer: number | null = null;
 
 function clearMiniPlayerPrewarmTimer() {
@@ -355,37 +354,15 @@ export function useMiniPlayerWindowBridge() {
     await emitStateToMiniPlayer();
     isMiniPlayerWindowVisible.value = true;
     await emitMiniPlayerVisibility(true);
+    uiStore.mainWindowUiSleepRequested = true;
+    await nextTick();
     await mainWindow.hide();
     await targetWindow.show();
   };
 
-  const prewarmMiniPlayerWindow = async () => {
-    const existing = await getMiniPlayerWindow();
-    if (existing) return;
-    if (miniPlayerWindowPromise) return;
-
-    try {
-      const targetWindow = await ensureMiniPlayerWindow();
-      await waitForMiniPlayerReady();
-      await emitStateToMiniPlayer();
-      await emitMiniPlayerVisibility(false);
-      await targetWindow.hide();
-      isMiniPlayerWindowVisible.value = false;
-    } catch (error) {
-      console.warn('Failed to prewarm mini player window:', error);
-    }
-  };
-
   const hideMiniPlayerWindow = async () => {
-    const targetWindow = await getMiniPlayerWindow();
-    if (!targetWindow) {
-      isMiniPlayerWindowVisible.value = false;
-      return;
-    }
-
     await emitMiniPlayerVisibility(false);
-    await targetWindow.hide();
-    isMiniPlayerWindowVisible.value = false;
+    await destroyMiniPlayerWindow();
   };
 
   const destroyMiniPlayerWindow = async () => {
@@ -401,6 +378,10 @@ export function useMiniPlayerWindowBridge() {
       console.warn('Failed to destroy mini player window:', error);
     } finally {
       miniPlayerWindowPromise = null;
+      isMiniPlayerReady = false;
+      miniPlayerReadyPromise = null;
+      resolveMiniPlayerReady = null;
+      resolveMiniPlayerStateApplied = null;
       isMiniPlayerWindowVisible.value = false;
     }
   };
@@ -408,6 +389,7 @@ export function useMiniPlayerWindowBridge() {
   const revealMainWindowFromTray = async () => {
     // 从托盘恢复主窗口时，始终关闭小窗口（不保持可见）
     keepMiniPlayerVisibleOnMiniModeExit = false;
+    uiStore.mainWindowUiSleepRequested = false;
 
     await restoreMainWindowFromMiniMode({
       isMiniMode,
@@ -439,6 +421,7 @@ export function useMiniPlayerWindowBridge() {
         await playSong(action.song);
         break;
       case 'restore-main':
+        uiStore.mainWindowUiSleepRequested = false;
         await restoreMainWindowFromMiniMode({
           isMiniMode,
           hideMiniPlayerWindow,
@@ -448,6 +431,7 @@ export function useMiniPlayerWindowBridge() {
         break;
       case 'close':
         isMiniMode.value = false;
+        uiStore.mainWindowUiSleepRequested = false;
         await hideMiniPlayerWindow();
         break;
       case 'seek':
@@ -503,12 +487,7 @@ export function useMiniPlayerWindowBridge() {
       writeMiniPlayerBounds(event.payload);
     }));
 
-    if (miniPlayerPrewarmTimer === null) {
-      miniPlayerPrewarmTimer = window.setTimeout(() => {
-        miniPlayerPrewarmTimer = null;
-        void prewarmMiniPlayerWindow();
-      }, MINI_PLAYER_PREWARM_DELAY_MS);
-    }
+    // mini 窗口不再预热常驻：主窗口与 mini 窗口互切时应释放对方前端资源。
   });
 
   onUnmounted(() => {
@@ -521,6 +500,8 @@ export function useMiniPlayerWindowBridge() {
       await openMiniPlayerWindow();
       return;
     }
+
+    uiStore.mainWindowUiSleepRequested = false;
 
     if (keepMiniPlayerVisibleOnMiniModeExit) {
       keepMiniPlayerVisibleOnMiniModeExit = false;

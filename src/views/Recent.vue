@@ -39,6 +39,7 @@
     <DragGhost />
     
     <SongContextMenu 
+      v-if="showContextMenu"
       :visible="showContextMenu" 
       :x="contextMenuX" 
       :y="contextMenuY" 
@@ -53,6 +54,7 @@
     />
     
     <ModernModal 
+      v-if="showConfirm"
       :visible="showConfirm" 
       title="删除记录" 
       :content="confirmMessage" 
@@ -65,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
@@ -77,16 +79,15 @@ import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { useSongContextActions } from '../composables/useSongContextActions';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 
-// 组件导入
-import RecentHeader from '../components/headers/RecentHeader.vue';
-import SongTable from '../components/song-list/SongTable.vue';
-import DragGhost from '../components/common/DragGhost.vue';
-import SongContextMenu from '../components/overlays/SongContextMenu.vue';
-import ModernModal from '../components/common/ModernModal.vue';
-import RecentCollectionGrid, {
-  type RecentCollectionGridItem,
-} from '../components/recent/RecentCollectionGrid.vue';
 import { useSongDrag } from '../composables/useSongDrag';
+import type { RecentCollectionGridItem } from '../components/recent/RecentCollectionGrid.vue';
+
+const RecentHeader = defineAsyncComponent(() => import('../components/headers/RecentHeader.vue'));
+const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
+const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
+const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
+const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
+const RecentCollectionGrid = defineAsyncComponent(() => import('../components/recent/RecentCollectionGrid.vue'));
 
 const {
   displaySongList,

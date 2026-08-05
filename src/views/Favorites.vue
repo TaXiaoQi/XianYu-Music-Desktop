@@ -32,6 +32,7 @@
     <DragGhost />
     
     <SongContextMenu 
+      v-if="showContextMenu"
       :visible="showContextMenu" 
       :x="contextMenuX" 
       :y="contextMenuY" 
@@ -46,6 +47,7 @@
     />
     
     <ModernModal 
+      v-if="showConfirm"
       :visible="showConfirm" 
       title="移除歌曲" 
       :content="confirmMessage" 
@@ -58,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
@@ -67,13 +69,13 @@ import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { useSongContextActions } from '../composables/useSongContextActions';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 
-// 组件导入
-import FavoritesHeader from '../components/headers/FavoritesHeader.vue';
-import SongTable from '../components/song-list/SongTable.vue';
-import DragGhost from '../components/common/DragGhost.vue';
-import SongContextMenu from '../components/overlays/SongContextMenu.vue';
-import ModernModal from '../components/common/ModernModal.vue';
 import { useSongDrag } from '../composables/useSongDrag';
+
+const FavoritesHeader = defineAsyncComponent(() => import('../components/headers/FavoritesHeader.vue'));
+const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
+const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
+const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
+const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
 
 const { displaySongList, searchQuery } = usePlayerLibraryView();
 const { playSong, addSongsToQueue } = usePlaybackController();

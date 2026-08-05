@@ -202,6 +202,81 @@ fn restore_shared_output(
     );
 }
 
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+fn recover_from_exclusive_failure(
+    exclusive_playback: &mut Option<WasapiExclusivePlayback>,
+    selected_device_name: &Option<String>,
+    output: &mut Option<SharedOutputBackend>,
+    host: &cpal::Host,
+    current_sink: &mut Option<Sink>,
+    active_device_name: &mut Option<String>,
+    requested_output_mode: &mut AudioOutputMode,
+    active_output_mode: &mut AudioOutputMode,
+    fallback_reason: &mut Option<String>,
+    current_path: &str,
+    is_playing_flag: bool,
+    progress: &Arc<SharedProgress>,
+    equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
+    user_volume: Arc<std::sync::atomic::AtomicU32>,
+    current_remote_stream: Option<&RemoteStreamSource>,
+    current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
+    app: &AppHandle,
+    output_status: &Arc<Mutex<AudioOutputStatus>>,
+    last_default_device_name: &mut Option<String>,
+) -> bool {
+    let Some(result) = exclusive_playback
+        .as_ref()
+        .and_then(|playback| playback.try_finished())
+    else {
+        return false;
+    };
+
+    stop_exclusive_playback(exclusive_playback);
+
+    if let Err(error) = result {
+        // 独占设备断开/被系统回收后，必须彻底降级为共享模式：
+        // 1. active_output_mode 表示当前真实链路；
+        // 2. requested_output_mode 也切回 Shared，让前端开关自动关闭，避免下一首继续请求独占；
+        // 3. 立即重建共享播放链，避免进度/歌词停在已失效的独占线程状态。
+        *requested_output_mode = AudioOutputMode::Shared;
+        *active_output_mode = AudioOutputMode::Shared;
+        *fallback_reason = Some(format!("WASAPI 独占模式已断开，已自动切回共享模式：{error}"));
+
+        restore_shared_output(
+            selected_device_name,
+            output,
+            host,
+            current_sink,
+            active_device_name,
+            current_path,
+            is_playing_flag,
+            progress,
+            equalizer_handle,
+            sound_effect_handle,
+            user_volume,
+            current_remote_stream,
+            current_streaming_state,
+        );
+        if selected_device_name.is_none() {
+            *last_default_device_name = default_output_device_name(host);
+        }
+
+        emit_output_status(
+            app,
+            output_status,
+            selected_device_name.clone(),
+            active_device_name.clone(),
+            *requested_output_mode,
+            *active_output_mode,
+            fallback_reason.clone(),
+        );
+    }
+
+    true
+}
+
 fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>>> {
     let controls = Arc::new(Mutex::new(None));
 
@@ -1064,6 +1139,32 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         );
 
         loop {
+            #[cfg(target_os = "windows")]
+            {
+                recover_from_exclusive_failure(
+                    &mut exclusive_playback,
+                    &selected_device_name,
+                    &mut output,
+                    &host,
+                    &mut current_sink,
+                    &mut active_device_name,
+                    &mut requested_output_mode,
+                    &mut active_output_mode,
+                    &mut fallback_reason,
+                    &current_path,
+                    is_playing_flag,
+                    &thread_progress,
+                    thread_eq_handle.clone(),
+                    thread_se_handle.clone(),
+                    thread_user_volume.clone(),
+                    current_remote_stream.as_ref(),
+                    current_streaming_state.as_ref(),
+                    &thread_app_handle,
+                    &thread_output_status,
+                    &mut last_default_device_name,
+                );
+            }
+
             match rx.recv_timeout(PLAYER_POLL_INTERVAL) {
                 Ok(cmd) => match cmd {
                     AudioCommand::Play {
@@ -1421,47 +1522,6 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                     }
                 },
                 Err(RecvTimeoutError::Timeout) => {
-                    #[cfg(target_os = "windows")]
-                    if let Some(result) = exclusive_playback
-                        .as_ref()
-                        .and_then(|playback| playback.try_finished())
-                    {
-                        stop_exclusive_playback(&mut exclusive_playback);
-
-                        if let Err(error) = result {
-                            active_output_mode = AudioOutputMode::Shared;
-                            fallback_reason = Some(error);
-                            restore_shared_output(
-                                &selected_device_name,
-                                &mut output,
-                                &host,
-                                &mut current_sink,
-                                &mut active_device_name,
-                                &current_path,
-                                is_playing_flag,
-                                &thread_progress,
-                                thread_eq_handle.clone(),
-                                thread_se_handle.clone(),
-                                thread_user_volume.clone(),
-                                current_remote_stream.as_ref(),
-                                current_streaming_state.as_ref(),
-                            );
-                            if selected_device_name.is_none() {
-                                last_default_device_name = default_output_device_name(&host);
-                            }
-
-                            emit_output_status(
-                                &thread_app_handle,
-                                &thread_output_status,
-                                selected_device_name.clone(),
-                                active_device_name.clone(),
-                                requested_output_mode,
-                                active_output_mode,
-                                fallback_reason.clone(),
-                            );
-                        }
-                    }
-
                     if selected_device_name.is_none() {
                         let next_default_name = default_output_device_name(&host);
                         if should_restore_for_default_device_change(
@@ -1477,13 +1537,41 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_sink = None;
                             #[cfg(target_os = "windows")]
                             stop_exclusive_playback(&mut exclusive_playback);
+
+                            #[cfg(target_os = "windows")]
+                            let force_shared_after_exclusive_device_change =
+                                active_output_mode == AudioOutputMode::WasapiExclusive
+                                    || requested_output_mode == AudioOutputMode::WasapiExclusive;
+
+                            #[cfg(target_os = "windows")]
+                            if force_shared_after_exclusive_device_change {
+                                requested_output_mode = AudioOutputMode::Shared;
+                                active_output_mode = AudioOutputMode::Shared;
+                                fallback_reason = Some(
+                                    "WASAPI 独占设备已变化，已自动切回共享模式".to_string(),
+                                );
+                                restore_shared_output(
+                                    &selected_device_name,
+                                    &mut output,
+                                    &host,
+                                    &mut current_sink,
+                                    &mut active_device_name,
+                                    &current_path,
+                                    is_playing_flag,
+                                    &thread_progress,
+                                    thread_eq_handle.clone(),
+                                    thread_se_handle.clone(),
+                                    thread_user_volume.clone(),
+                                    current_remote_stream.as_ref(),
+                                    current_streaming_state.as_ref(),
+                                );
+                            }
+                            #[cfg(not(target_os = "windows"))]
                             restore_preferred_output(
                                 &selected_device_name,
                                 &mut output,
                                 &host,
                                 &mut current_sink,
-                                #[cfg(target_os = "windows")]
-                                &mut exclusive_playback,
                                 &mut active_device_name,
                                 &mut active_output_mode,
                                 &mut fallback_reason,
@@ -1499,6 +1587,30 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
                             );
+                            #[cfg(target_os = "windows")]
+                            if !force_shared_after_exclusive_device_change {
+                                restore_preferred_output(
+                                    &selected_device_name,
+                                    &mut output,
+                                    &host,
+                                    &mut current_sink,
+                                    &mut exclusive_playback,
+                                    &mut active_device_name,
+                                    &mut active_output_mode,
+                                    &mut fallback_reason,
+                                    requested_output_mode,
+                                    &current_path,
+                                    current_volume,
+                                    is_playing_flag,
+                                    &thread_progress,
+                                    current_volume_balance_gain,
+                                    thread_eq_handle.clone(),
+                                    thread_se_handle.clone(),
+                                    thread_user_volume.clone(),
+                                    current_remote_stream.as_ref(),
+                                    current_streaming_state.as_ref(),
+                                );
+                            }
 
                             emit_output_status(
                                 &thread_app_handle,

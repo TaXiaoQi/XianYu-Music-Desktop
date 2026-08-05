@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 
 import type { FolderNode, Song } from '../../types';
-import DetailHeader from '../headers/DetailHeader.vue';
-import FoldersHeader from '../headers/FoldersHeader.vue';
-import LocalMusicHeader from '../headers/LocalMusicHeader.vue';
+
+const DetailHeader = defineAsyncComponent(() => import('../headers/DetailHeader.vue'));
+const FoldersHeader = defineAsyncComponent(() => import('../headers/FoldersHeader.vue'));
+const LocalMusicHeader = defineAsyncComponent(() => import('../headers/LocalMusicHeader.vue'));
 
 interface PlaylistDetail {
   name: string;

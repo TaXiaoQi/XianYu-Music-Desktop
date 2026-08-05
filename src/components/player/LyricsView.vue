@@ -116,6 +116,10 @@ const amllCurrentTime = computed(() => {
   return Math.max(0, Math.floor((currentTime.value - audioDelay.value) * 1000));
 });
 
+// 详情页关闭时 LyricsView 可能还会短暂保留用于热缓存；此时立即卸载 AMLL 实例，
+// 释放其 DOM、内部监听与 rAF 相关状态，避免不可见歌词页继续占用显存/内存。
+const shouldMountAmlPlayer = computed(() => amllLines.value.length > 0 && !props.disabled);
+
 const emptyStateText = computed(() => {
   if (lyricsStatus.value === 'loading') return 'Loading lyrics...';
   if (lyricsStatus.value === 'error') return 'Lyrics unavailable';
@@ -340,6 +344,32 @@ function handleClickOutside(event: MouseEvent) {
   showLyricsPlayerSettingsPanel.value = false;
 }
 
+let globalListenersAttached = false;
+
+function attachGlobalListeners() {
+  if (globalListenersAttached) return;
+
+  window.addEventListener('mousedown', handleClickOutside);
+  window.addEventListener('resize', updateFontPresetMenuPosition);
+  window.addEventListener('resize', updateFontPanelPosition);
+  globalListenersAttached = true;
+}
+
+function detachGlobalListeners() {
+  if (!globalListenersAttached) return;
+
+  window.removeEventListener('mousedown', handleClickOutside);
+  window.removeEventListener('resize', updateFontPresetMenuPosition);
+  window.removeEventListener('resize', updateFontPanelPosition);
+  globalListenersAttached = false;
+}
+
+function closeTransientPanels() {
+  showLyricsPlayerSettingsPanel.value = false;
+  isFontPresetMenuOpen.value = false;
+  fontPanelDynamicStyle.value = {};
+}
+
 async function handleLineClick(event: LyricLineMouseEvent) {
   const lineStartTimeMs = event.line.getLine().startTime;
   amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
@@ -349,18 +379,24 @@ async function handleLineClick(event: LyricLineMouseEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener('mousedown', handleClickOutside);
-  window.addEventListener('resize', updateFontPresetMenuPosition);
-  window.addEventListener('resize', updateFontPanelPosition);
+  if (!props.disabled) {
+    attachGlobalListeners();
+  }
   void loadSystemLyricsFonts();
 });
 
 onUnmounted(() => {
-  window.removeEventListener('mousedown', handleClickOutside);
-  window.removeEventListener('resize', updateFontPresetMenuPosition);
-  window.removeEventListener('resize', updateFontPanelPosition);
-  showLyricsPlayerSettingsPanel.value = false;
-  isFontPresetMenuOpen.value = false;
+  detachGlobalListeners();
+  closeTransientPanels();
+});
+
+watch(() => props.disabled, (disabled) => {
+  if (disabled) {
+    detachGlobalListeners();
+    closeTransientPanels();
+  } else {
+    attachGlobalListeners();
+  }
 });
 
 // 面板可见性变化时重新检测位置
@@ -723,6 +759,7 @@ watch(() => props.coverHidden, async () => {
     >
       <div class="lyrics-position-frame h-full min-h-0 w-full min-w-0">
         <AmlLyricPlayer
+          v-if="shouldMountAmlPlayer"
           ref="amlPlayerRef"
           class="amll-host h-full min-h-0 w-full min-w-0"
           :lyric-lines="amllLines"

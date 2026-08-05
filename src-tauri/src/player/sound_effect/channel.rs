@@ -284,10 +284,28 @@ impl ChannelRack {
                 } else {
                     1.0
                 };
-                self.dyn_comp_reduction[i] += (target - self.dyn_comp_reduction[i]) * 0.1;
+                self.dyn_comp_reduction[i] = smooth_gain(self.dyn_comp_reduction[i], target, 1.0, 50.0, self.sample_rate);
                 let merged = low + high * self.dyn_comp_reduction[i];
                 frame[i] = in_s * (1.0 - w) + merged * w;
             }
         }
     }
+}
+
+#[inline]
+fn smoothing_amount(ms: f32, sr: f32) -> f32 {
+    let ms = ms.max(0.1);
+    let sr = sr.max(1.0);
+    1.0 - (-1.0 / (ms * 0.001 * sr)).exp()
+}
+
+#[inline]
+fn smooth_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
+    let t = if target.is_finite() { target.clamp(0.0, 32.0) } else { 1.0 };
+    let c = if t < current {
+        smoothing_amount(attack_ms, sr)
+    } else {
+        smoothing_amount(release_ms, sr)
+    };
+    current + (t - current) * c
 }

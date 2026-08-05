@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import HomeEmptyState from './HomeEmptyState.vue';
+import { defineAsyncComponent } from 'vue';
+
+const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
 
 interface ArtistAlbumItem {
   key: string;

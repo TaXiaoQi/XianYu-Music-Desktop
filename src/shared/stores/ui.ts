@@ -10,6 +10,7 @@ export const useUiStore = defineStore('ui', () => {
   const showQueue = ref(false);
   const isMiniMode = ref(false);
   const showVolumePopover = ref(false);
+  const mainWindowUiSleepRequested = ref(false);
   const skipNextPageTransition = ref(false);
   const startupCompositionMaskVisible = ref(false);
   const dominantColors = ref<string[]>([...defaultDominantColors]);
@@ -32,6 +33,7 @@ export const useUiStore = defineStore('ui', () => {
     showQueue,
     isMiniMode,
     showVolumePopover,
+    mainWindowUiSleepRequested,
     skipNextPageTransition,
     startupCompositionMaskVisible,
     dominantColors,

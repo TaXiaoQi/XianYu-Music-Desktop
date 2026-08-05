@@ -15,6 +15,7 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<string>>();
+let cacheEpoch = 0;
 
 function buildCacheKey(src: string, options: PreblurOptions) {
   return JSON.stringify({
@@ -84,8 +85,17 @@ function setCachedUrl(key: string, url: string) {
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Failed to load background image'));
+    image.onload = () => {
+      image.onload = null;
+      image.onerror = null;
+      resolve(image);
+    };
+    image.onerror = () => {
+      image.onload = null;
+      image.onerror = null;
+      image.src = '';
+      reject(new Error('Failed to load background image'));
+    };
     image.crossOrigin = 'Anonymous';
     image.decoding = 'async';
     image.src = src;
@@ -121,40 +131,46 @@ function canvasToBlob(canvas: HTMLCanvasElement) {
 async function createPreblurredUrl(src: string, options: PreblurOptions) {
   const image = await loadImage(src);
   const canvas = document.createElement('canvas');
-  const size = getCanvasSize(image);
-  const context = canvas.getContext('2d');
 
-  if (!context) {
-    return src;
+  try {
+    const size = getCanvasSize(image);
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      return src;
+    }
+
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const sourceSize = Math.min(sourceWidth, sourceHeight);
+    const sourceX = Math.max(0, (sourceWidth - sourceSize) / 2);
+    const sourceY = Math.max(0, (sourceHeight - sourceSize) / 2);
+    const blurAtCanvasScale = Math.max(8, Math.round(options.blur * (size / MAX_CANVAS_SIZE)));
+
+    context.filter = `blur(${blurAtCanvasScale}px) brightness(${options.brightness})`;
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      size,
+      size,
+    );
+
+    const blob = await canvasToBlob(canvas);
+    return URL.createObjectURL(blob);
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+    image.onload = null;
+    image.onerror = null;
+    image.src = '';
   }
-
-  canvas.width = size;
-  canvas.height = size;
-
-  const sourceWidth = image.naturalWidth || image.width;
-  const sourceHeight = image.naturalHeight || image.height;
-  const sourceSize = Math.min(sourceWidth, sourceHeight);
-  const sourceX = Math.max(0, (sourceWidth - sourceSize) / 2);
-  const sourceY = Math.max(0, (sourceHeight - sourceSize) / 2);
-  const blurAtCanvasScale = Math.max(8, Math.round(options.blur * (size / MAX_CANVAS_SIZE)));
-
-  context.filter = `blur(${blurAtCanvasScale}px) brightness(${options.brightness})`;
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    sourceSize,
-    sourceSize,
-    0,
-    0,
-    size,
-    size,
-  );
-
-  const blob = await canvasToBlob(canvas);
-  canvas.width = 0;
-  canvas.height = 0;
-  return URL.createObjectURL(blob);
 }
 
 export async function getPreblurredBackgroundUrl(src: string, options: PreblurOptions) {
@@ -173,8 +189,16 @@ export async function getPreblurredBackgroundUrl(src: string, options: PreblurOp
     return existingRequest;
   }
 
+  const requestEpoch = cacheEpoch;
   const request = createPreblurredUrl(src, options)
     .then(url => {
+      if (requestEpoch !== cacheEpoch) {
+        if (url !== src) {
+          URL.revokeObjectURL(url);
+        }
+        return src;
+      }
+
       if (url !== src) {
         setCachedUrl(key, url);
       }
@@ -190,18 +214,44 @@ export async function getPreblurredBackgroundUrl(src: string, options: PreblurOp
 }
 
 export function clearPreblurredBackgroundCache() {
+  cacheEpoch += 1;
   for (const entry of cache.values()) {
     revokeEntry(entry);
   }
 
   cache.clear();
+  inFlight.clear();
+}
+
+let visibilityCleanupRegistered = false;
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    clearPreblurredBackgroundCache();
+  }
+}
+
+function registerVisibilityCleanup() {
+  if (visibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  visibilityCleanupRegistered = true;
+}
+
+function cleanupVisibilityCleanup() {
+  if (!visibilityCleanupRegistered || typeof document === 'undefined') {
+    return;
+  }
+
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  visibilityCleanupRegistered = false;
 }
 
 // 窗口最小化/隐藏时清理 blob URL，释放关联的图像数据内存
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      clearPreblurredBackgroundCache();
-    }
-  });
+registerVisibilityCleanup();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(cleanupVisibilityCleanup);
 }

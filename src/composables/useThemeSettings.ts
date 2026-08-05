@@ -11,6 +11,17 @@ import type { WindowMaterialMode } from './windowMaterial';
 
 const systemPrefersDark = ref(false);
 let systemThemeListenerInitialized = false;
+let systemThemeMediaQuery: MediaQueryList | null = null;
+
+function handleSystemThemeChange(event: MediaQueryListEvent) {
+  systemPrefersDark.value = event.matches;
+}
+
+function cleanupSystemThemeListener() {
+  systemThemeMediaQuery?.removeEventListener('change', handleSystemThemeChange);
+  systemThemeMediaQuery = null;
+  systemThemeListenerInitialized = false;
+}
 
 function ensureSystemThemeListener() {
   if (systemThemeListenerInitialized || typeof window === 'undefined' || !window.matchMedia) {
@@ -18,14 +29,16 @@ function ensureSystemThemeListener() {
   }
   systemThemeListenerInitialized = true;
 
-  const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  systemPrefersDark.value = mq.matches;
-  mq.addEventListener('change', (e: MediaQueryListEvent) => {
-    systemPrefersDark.value = e.matches;
-  });
+  systemThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  systemPrefersDark.value = systemThemeMediaQuery.matches;
+  systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
 }
 
 ensureSystemThemeListener();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(cleanupSystemThemeListener);
+}
 
 const resolveThemeDarkMode = (theme: ThemeSettings) => {
   if (theme.mode === 'system') {

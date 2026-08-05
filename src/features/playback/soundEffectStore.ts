@@ -306,9 +306,10 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   // ===== AB 对比旁通 =====
   const bypassAll = ref(false)
 
-  // ===== 音频性能增强 =====
-  // 0-100 级别控制，值越高 CPU/内存占用越大，音频处理精度越高
-  const audioBoost = ref(60)
+  // ===== 音频增强增益 =====
+  // 0-100 映射到 Rust 侧 0~6dB 增益。默认必须为 0，避免未开启音效时仍被放大、
+  // 触发削波/软限幅，表现为本地播放失真、破音。
+  const audioBoost = ref(0)
 
   // =========================================================================
   // 统一同步：收集全部音效状态 → SoundEffectSettings → 防抖发送到 Rust 后端

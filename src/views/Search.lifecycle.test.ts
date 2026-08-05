@@ -6,9 +6,9 @@ import routerSource from '../router/index.ts?raw';
 import searchSource from './Search.vue?raw';
 
 describe('Search page lifecycle', () => {
-  it('does not keep the main search page alive after navigation', () => {
-    expect(mainShellSource).toContain('<KeepAlive include="Home">');
-    expect(mainShellSource).not.toContain('include="Home,Search"');
+  it('destroys routed main pages after navigation instead of keeping them alive', () => {
+    expect(mainShellSource).not.toContain('<KeepAlive');
+    expect(routerSource).toContain("{ path: '/', name: 'Home', component: Home }");
     expect(routerSource).toContain("{ path: '/search', name: 'Search', component: Search }");
   });
 

@@ -31,6 +31,30 @@ const handleSave = () => {
   emit('close');
 };
 
+const loadImageMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+  const img = new Image();
+
+  const cleanup = () => {
+    img.onload = null;
+    img.onerror = null;
+    img.src = '';
+  };
+
+  img.onload = () => {
+    const metadata = {
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    };
+    cleanup();
+    resolve(metadata);
+  };
+  img.onerror = () => {
+    cleanup();
+    reject(new Error('图片加载失败'));
+  };
+  img.src = src;
+});
+
 // --- 背景物理与视口几何管理 ---
 const containerRef = ref<HTMLDivElement | null>(null);
 const isDragging = ref(false);
@@ -248,6 +272,7 @@ watch(
 
 // --- 挂载与销毁生命周期生命体征 ---
 let resizeObserver: ResizeObserver | null = null;
+let isUnmounted = false;
 
 onMounted(async () => {
   updateViewportSize();
@@ -263,21 +288,19 @@ onMounted(async () => {
   // 旧皮肤配置的异步高度模糊补偿与尺寸补齐回写机制
   if (preview.value.imagePath && (!imageNaturalWidth.value || !imageNaturalHeight.value)) {
     try {
-      const img = new Image();
-      img.src = convertFileSrc(preview.value.imagePath);
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-      imageNaturalWidth.value = img.naturalWidth;
-      imageNaturalHeight.value = img.naturalHeight;
-      preview.value.imageWidth = img.naturalWidth;
-      preview.value.imageHeight = img.naturalHeight;
+      const metadata = await loadImageMetadata(convertFileSrc(preview.value.imagePath));
+      if (isUnmounted) return;
+
+      imageNaturalWidth.value = metadata.width;
+      imageNaturalHeight.value = metadata.height;
+      preview.value.imageWidth = metadata.width;
+      preview.value.imageHeight = metadata.height;
     } catch {}
   }
 });
 
 onUnmounted(() => {
+  isUnmounted = true;
   window.removeEventListener('resize', updateViewportSize);
   if (resizeObserver) {
     resizeObserver.disconnect();
@@ -297,16 +320,13 @@ const handleSelectNewImage = async () => {
 
     // 获取新选图片的真实宽高并写入持久化 preview 对象中
     try {
-      const img = new Image();
-      img.src = convertFileSrc(newImagePath);
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-      imageNaturalWidth.value = img.naturalWidth;
-      imageNaturalHeight.value = img.naturalHeight;
-      preview.value.imageWidth = img.naturalWidth;
-      preview.value.imageHeight = img.naturalHeight;
+      const metadata = await loadImageMetadata(convertFileSrc(newImagePath));
+      if (isUnmounted) return;
+
+      imageNaturalWidth.value = metadata.width;
+      imageNaturalHeight.value = metadata.height;
+      preview.value.imageWidth = metadata.width;
+      preview.value.imageHeight = metadata.height;
     } catch (err) {
       console.error('Failed to load image size metadata', err);
       imageNaturalWidth.value = 0;
@@ -327,16 +347,13 @@ const handleWallpaperSelect = async (localPath: string) => {
   preview.value.translateY = 0;
 
   try {
-    const img = new Image();
-    img.src = convertFileSrc(localPath);
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-    });
-    imageNaturalWidth.value = img.naturalWidth;
-    imageNaturalHeight.value = img.naturalHeight;
-    preview.value.imageWidth = img.naturalWidth;
-    preview.value.imageHeight = img.naturalHeight;
+    const metadata = await loadImageMetadata(convertFileSrc(localPath));
+    if (isUnmounted) return;
+
+    imageNaturalWidth.value = metadata.width;
+    imageNaturalHeight.value = metadata.height;
+    preview.value.imageWidth = metadata.width;
+    preview.value.imageHeight = metadata.height;
   } catch (err) {
     console.error('Failed to load wallpaper size metadata', err);
     imageNaturalWidth.value = 0;

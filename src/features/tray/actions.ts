@@ -21,11 +21,6 @@ export type TrayMenuAction =
   | 'quit'
   | 'toggle-favorite';
 
-export interface TrayMenuOpenPayload {
-  x: number;
-  y: number;
-}
-
 export interface TrayMenuStatePayload {
   currentSong: Song | null;
   isPlaying: boolean;
@@ -34,6 +29,7 @@ export interface TrayMenuStatePayload {
   showDesktopLyrics: boolean;
   isFavorite: boolean;
   isMiniMode: boolean;
+  useCustomTrayMenu: boolean;
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   windowBlurTint: number;
 }
@@ -67,7 +63,6 @@ export async function handleTrayMenuAction(action: TrayMenuAction, deps: TrayMen
       deps.cyclePlayMode();
       break;
     case 'show-mini-player':
-      // 切换 mini 模式：已开启则恢复主窗口，未开启则进入 mini 模式
       if (deps.isMiniMode.value) {
         deps.isMiniMode.value = false;
         await deps.revealMainWindow();

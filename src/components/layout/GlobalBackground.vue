@@ -41,6 +41,30 @@ const updateContainerSize = () => {
 const imageNaturalWidth = ref(theme.value.customBackground?.imageWidth || 0);
 const imageNaturalHeight = ref(theme.value.customBackground?.imageHeight || 0);
 
+const loadImageMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+  const img = new Image();
+
+  const cleanup = () => {
+    img.onload = null;
+    img.onerror = null;
+    img.src = '';
+  };
+
+  img.onload = () => {
+    const metadata = {
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    };
+    cleanup();
+    resolve(metadata);
+  };
+  img.onerror = () => {
+    cleanup();
+    reject(new Error('图片加载失败'));
+  };
+  img.src = src;
+});
+
 // 监听自定义背景图片路径及尺寸
 watch(
   [
@@ -48,7 +72,12 @@ watch(
     () => theme.value.customBackground?.imageWidth,
     () => theme.value.customBackground?.imageHeight
   ],
-  async ([path, w, h]) => {
+  async ([path, w, h], _oldValue, onCleanup) => {
+    let isCancelled = false;
+    onCleanup(() => {
+      isCancelled = true;
+    });
+
     if (!path) {
       imageNaturalWidth.value = 0;
       imageNaturalHeight.value = 0;
@@ -64,21 +93,18 @@ watch(
 
     // 否则为旧版配置，需要异步加载元数据并写回
     try {
-      const img = new Image();
-      img.src = convertFileSrc(path);
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-      imageNaturalWidth.value = img.naturalWidth;
-      imageNaturalHeight.value = img.naturalHeight;
+      const metadata = await loadImageMetadata(convertFileSrc(path));
+      if (isCancelled) return;
+
+      imageNaturalWidth.value = metadata.width;
+      imageNaturalHeight.value = metadata.height;
       
       // 回写补齐配置
       patchTheme({
         customBackground: {
           ...theme.value.customBackground,
-          imageWidth: img.naturalWidth,
-          imageHeight: img.naturalHeight
+          imageWidth: metadata.width,
+          imageHeight: metadata.height
         }
       });
     } catch (err) {

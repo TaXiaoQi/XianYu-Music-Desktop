@@ -33,6 +33,12 @@ export function useSettingsThemeControls() {
       patchTheme({ keepWindowMaterialOnBlur: value });
     },
   });
+  const useCustomTrayMenu = computed({
+    get: () => theme.value.useCustomTrayMenu,
+    set: (value: boolean) => {
+      patchTheme({ useCustomTrayMenu: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -171,6 +177,10 @@ export function useSettingsThemeControls() {
     keepWindowMaterialOnBlur.value = value;
   };
 
+  const setUseCustomTrayMenu = (value: boolean) => {
+    useCustomTrayMenu.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -181,6 +191,7 @@ export function useSettingsThemeControls() {
     colorScheme,
     materialMode,
     keepWindowMaterialOnBlur,
+    useCustomTrayMenu,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -202,5 +213,6 @@ export function useSettingsThemeControls() {
     setFlowTexture,
     setWindowBlurTint,
     setKeepWindowMaterialOnBlur,
+    setUseCustomTrayMenu,
   };
 }

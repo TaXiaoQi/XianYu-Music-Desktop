@@ -12,8 +12,8 @@ import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
 import GlobalBackground from './GlobalBackground.vue';
-import OnboardingModal from '../onboarding/OnboardingModal.vue';
 
+const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
 const PlayQueueSidebar = defineAsyncComponent(() => import('../player/PlayQueueSidebar.vue'));
 const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.vue'));
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
@@ -21,6 +21,10 @@ const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
 const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
+
+defineProps<{
+  sleep?: boolean;
+}>();
 
 const {
   isMiniMode,
@@ -93,6 +97,7 @@ onMounted(() => {
   <div
     class="flex flex-col h-screen w-full text-gray-800 dark:text-gray-200 relative overflow-hidden font-sans"
   >
+    <template v-if="!sleep">
     <template v-if="showOnboarding">
       <OnboardingModal
         v-if="!isMiniMode"
@@ -203,12 +208,10 @@ onMounted(() => {
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
             <transition :name="skipNextPageTransition ? '' : 'page-fade'" mode="out-in">
-              <KeepAlive include="Home">
-                <component
-                  :is="Component"
-                  :key="String(route.name ?? route.path)"
-                />
-              </KeepAlive>
+              <component
+                :is="Component"
+                :key="String(route.name ?? route.path)"
+              />
             </transition>
           </router-view>
         </main>
@@ -231,7 +234,7 @@ onMounted(() => {
     <PlayQueueSidebar v-if="!isMiniMode" />
 
     <AddToPlaylistModal
-      v-if="!isMiniMode"
+      v-if="!isMiniMode && showAddToPlaylistModal"
       :visible="showAddToPlaylistModal"
       :selectedCount="playlistAddTargetSongs.length"
       @close="closeAddToPlaylistDialog"
@@ -239,7 +242,7 @@ onMounted(() => {
     />
 
     <SongInfoModal
-      v-if="!isMiniMode"
+      v-if="!isMiniMode && isSongInfoVisible"
       :visible="isSongInfoVisible"
       :song="currentSongInfo"
       :initial-action="songInfoInitialAction"
@@ -247,7 +250,7 @@ onMounted(() => {
     />
 
     <AnnouncementModal
-      v-if="!isMiniMode"
+      v-if="!isMiniMode && announcementVisible"
       :visible="announcementVisible"
       :announcement="currentAnnouncement"
       @close="closeAnnouncement"
@@ -255,7 +258,7 @@ onMounted(() => {
     />
 
     <UpdateModal
-      v-if="!isMiniMode"
+      v-if="!isMiniMode && updateVisible"
       :visible="updateVisible"
       :update="latestUpdate"
       :is-downloading="isDownloading"
@@ -263,6 +266,7 @@ onMounted(() => {
       @close="closeUpdate"
       @download="downloadAndInstall"
     />
+    </template>
     </template>
 
     <Toast />
