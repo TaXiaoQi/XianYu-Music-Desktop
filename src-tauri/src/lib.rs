@@ -37,8 +37,8 @@ use music::{
     get_song_cover_thumbnail, get_song_detail, get_song_lyrics, get_song_lyrics_for_edit,
     get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_files,
     parse_lyrics_text, parse_music_folder, remove_library_folder, remove_sidebar_folder,
-    save_artist_avatar, save_song_info, save_song_lyrics, scan_folder_as_playlists, scan_library,
-    scan_music_folder, show_in_folder,
+    read_lyrics_file, save_artist_avatar, save_song_info, save_song_lyrics, scan_folder_as_playlists,
+    scan_library, scan_music_folder, show_in_folder,
 };
 use player::{
     clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_current_output_device,
@@ -122,8 +122,10 @@ pub fn run() {
             get_song_cover,
             clear_cover_cache,
             get_song_lyrics,
+            read_lyrics_file,
             parse_lyrics_text,
-get_song_lyrics_payload,            get_song_lyrics_for_edit,
+            get_song_lyrics_payload,
+            get_song_lyrics_for_edit,
             save_song_lyrics,
             save_song_info,
             get_song_detail,

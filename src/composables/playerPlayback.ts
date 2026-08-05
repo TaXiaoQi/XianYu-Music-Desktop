@@ -959,6 +959,10 @@ const authStore = useAuthStore();
             console.log('[Lyrics] LX 歌词获取成功但已被切歌:', song.path);
             return;
           }
+          if (song.lyrics_raw?.trim() || currentSong.value?.lyrics_raw?.trim()) {
+            console.log('[Lyrics] LX 歌词获取完成前歌词已被手动替换，忽略旧结果:', song.path);
+            return;
+          }
 
           song.lyrics_raw = lyricsRaw;
           // [修复] 同步更新 library store 中的 songPool 条目。
@@ -998,6 +1002,10 @@ const authStore = useAuthStore();
               requestId !== playRequestId
               || currentSong.value?.path !== song.path
             ) {
+              return;
+            }
+            if (song.lyrics_raw?.trim() || currentSong.value?.lyrics_raw?.trim()) {
+              console.log('[Lyrics] 插件歌词获取完成前歌词已被手动替换，忽略旧结果:', song.path);
               return;
             }
             song.lyrics_raw = lyricData.lyricsRaw;

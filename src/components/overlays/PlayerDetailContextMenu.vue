@@ -16,6 +16,8 @@ type DetailMenuAction =
   | 'viewArtist'
   | 'viewAlbum'
   | 'viewSongInfo'
+  | 'changeCover'
+  | 'changeLyrics'
   | 'addToPlaylist';
 
 interface MenuEntry {
@@ -33,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
+  (e: 'change-lyrics'): void;
 }>();
 
 const router = useRouter();
@@ -79,6 +82,27 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
       { d: 'M12 19a7 7 0 100-14 7 7 0 000 14z' },
     ],
   },
+  changeCover: {
+    viewBox: '0 0 24 24',
+    fill: false,
+    paths: [
+      { d: 'M4 5.5h16a1.5 1.5 0 011.5 1.5v10A1.5 1.5 0 0120 18.5H4A1.5 1.5 0 012.5 17V7A1.5 1.5 0 014 5.5z' },
+      { d: 'M8 11.5a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z' },
+      { d: 'M3.5 16.5l4.2-4.2a1 1 0 011.4 0l2.4 2.4a1 1 0 001.4 0l1.6-1.6a1 1 0 011.4 0l4.2 4.2' },
+    ],
+  },
+  changeLyrics: {
+    viewBox: '0 0 24 24',
+    fill: false,
+    paths: [
+      { d: 'M7 5.5h10' },
+      { d: 'M7 9.5h7' },
+      { d: 'M7 13.5h5' },
+      { d: 'M15.5 13.5l3 3' },
+      { d: 'M18.5 13.5l-3 3' },
+      { d: 'M5 3.5h14a1.5 1.5 0 011.5 1.5v14A1.5 1.5 0 0119 20.5H5A1.5 1.5 0 013.5 19V5A1.5 1.5 0 015 3.5z' },
+    ],
+  },
   addToPlaylist: {
     viewBox: '0 0 24 24',
     fill: false,
@@ -89,7 +113,7 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
   },
 };
 
-/** 菜单项：歌手/专辑 → 歌曲信息(仅本地) → 分隔线 → 添加到歌单 */
+/** 菜单项：歌手/专辑 → 歌曲信息(仅本地) → 更改歌词 → 分隔线 → 添加到歌单 */
 const menuEntries = computed<MenuEntry[]>(() => {
   const entries: MenuEntry[] = [];
 
@@ -106,14 +130,25 @@ const menuEntries = computed<MenuEntry[]>(() => {
     },
   );
 
-  // 本地歌曲才显示"查看歌曲信息"，在线歌曲屏蔽
+  // 本地歌曲才显示"查看歌曲信息"和"修改歌曲封面"，在线歌曲屏蔽
   if (!isOnlineSong.value) {
     entries.push({
       key: 'viewSongInfo',
       label: '查看歌曲信息',
       icon: menuIcons.viewSongInfo,
     });
+    entries.push({
+      key: 'changeCover',
+      label: '修改歌曲封面',
+      icon: menuIcons.changeCover,
+    });
   }
+
+  entries.push({
+    key: 'changeLyrics',
+    label: '更改歌词 (LRC)',
+    icon: menuIcons.changeLyrics,
+  });
 
   // 添加到歌单放置在最后
   entries.push({
@@ -125,8 +160,8 @@ const menuEntries = computed<MenuEntry[]>(() => {
   return entries;
 });
 
-/** 分隔线位置：在 viewSongInfo 后（与添加到歌单组分隔） */
-const dividerAfterKeys = computed(() => new Set<DetailMenuAction>(['viewSongInfo']));
+/** 分隔线位置：在歌词操作后（与添加到歌单组分隔） */
+const dividerAfterKeys = computed(() => new Set<DetailMenuAction>(['changeLyrics']));
 
 watch(
   () => props.visible,
@@ -324,6 +359,12 @@ const handleAction = (action: DetailMenuAction) => {
       break;
     case 'viewSongInfo':
       openSongInfo(props.song);
+      break;
+    case 'changeCover':
+      openSongInfo(props.song, 'cover');
+      break;
+    case 'changeLyrics':
+      emit('change-lyrics');
       break;
     case 'addToPlaylist':
       openAddToPlaylistDialog(props.song.path, { songs: [props.song] });

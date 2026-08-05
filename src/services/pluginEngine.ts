@@ -418,6 +418,11 @@ if (!_globalThis.__pluginInstances) {
 }
 const pluginInstances: Map<string, PluginInstance> = _globalThis.__pluginInstances;
 
+if (!_globalThis.__pluginInstanceErrors) {
+  _globalThis.__pluginInstanceErrors = new Map<string, string>();
+}
+const pluginInstanceErrors: Map<string, string> = _globalThis.__pluginInstanceErrors;
+
 // ==================== resetMediaItem（与 MusicFree mediaUtils.ts 完全一致）====================
 
 /**
@@ -644,30 +649,70 @@ pluginInstances.set(hash, { source, instance: _instance, script });
  *   }
  *   return { isEnd: true, data: [] };
  */
-export async function pluginSearch(
+export type PluginMusicSearchStatus =
+  | 'success'
+  | 'empty'
+  | 'init_failed'
+  | 'search_unsupported'
+  | 'lyrics_unsupported'
+  | 'invalid_response'
+  | 'search_failed';
+
+export interface PluginMusicSearchDiagnostics {
+  results: PluginSearchResult[];
+  status: PluginMusicSearchStatus;
+  reason: string;
+  searchType?: string;
+  supportsLyrics: boolean;
+}
+
+/** 音乐搜索诊断版：保留初始化、能力和接口错误，供歌词选择页直接展示原因。 */
+export async function pluginMusicSearchWithDiagnostics(
   source: PluginSource,
   keyword: string,
   page: number,
   _limit: number,
-): Promise<PluginSearchResult[]> {
+): Promise<PluginMusicSearchDiagnostics> {
   log(`[pluginSearch] 开始: ${source.name}, keyword="${keyword}", page=${page}`);
   const inst = await ensurePluginInstance(source);
   if (!inst) {
     log(`[pluginSearch] 实例为 null: ${source.name}`);
-    return [];
+    return {
+      results: [],
+      status: 'init_failed',
+      reason: pluginInstanceErrors.get(source.id) || '插件实例初始化失败，请检查插件文件、订阅地址或插件日志',
+      supportsLyrics: false,
+    };
   }
   log(`[pluginSearch] 实例就绪: ${source.name}, search=${typeof inst.instance.search}`);
 
-  try {
-    if (typeof inst.instance.search !== 'function') {
-      log(`[${source.name}] 无 search 函数`);
-      return [];
-    }
+  if (typeof inst.instance.search !== 'function') {
+    log(`[${source.name}] 无 search 函数`);
+    return {
+      results: [],
+      status: 'search_unsupported',
+      reason: '插件未实现歌曲搜索方法 search，无法按搜索内容查找歌词',
+      supportsLyrics: typeof inst.instance.getLyric === 'function',
+    };
+  }
 
+  if (typeof inst.instance.getLyric !== 'function') {
+    log(`[${source.name}] 无 getLyric 函数`);
+    return {
+      results: [],
+      status: 'lyrics_unsupported',
+      reason: '插件可以提供音乐资源，但未实现独立歌词方法 getLyric，不能用于更改歌词',
+      supportsLyrics: false,
+    };
+  }
+
+  try {
     // 与 MusicFree useSearch.ts 第52~53行一致
-    const searchType = inst.instance.defaultSearchType
-      ?? inst.instance.supportedSearchType?.[0]
-      ?? 'music';
+    // 歌词候选必须搜索歌曲；若插件明确声明 music，则不能沿用 album/sheet 等默认类型。
+    const supportedSearchTypes = inst.instance.supportedSearchType ?? [];
+    const searchType = supportedSearchTypes.includes('music')
+      ? 'music'
+      : (inst.instance.defaultSearchType ?? supportedSearchTypes[0] ?? 'music');
     log(`[pluginSearch] ${source.name} searchType=${searchType}, 开始调用 search()`);
 
     // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
@@ -682,15 +727,44 @@ export async function pluginSearch(
       });
 
       // 将 resetMediaItem 后的对象转为 PluginSearchResult
-      return result.data.map((item: any) => toPluginSearchResult(item, source));
+      const results = result.data.map((item: any) => toPluginSearchResult(item, source));
+      return {
+        results,
+        status: results.length > 0 ? 'success' : 'empty',
+        reason: results.length > 0
+          ? `插件返回 ${results.length} 首歌曲，可逐项获取歌词`
+          : `插件搜索成功，但没有找到与“${keyword}”匹配的歌曲`,
+        searchType,
+        supportsLyrics: true,
+      };
     }
-    return [];
+    return {
+      results: [],
+      status: 'invalid_response',
+      reason: `插件 search 返回格式无效：期望 data 数组，实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
+      searchType,
+      supportsLyrics: true,
+    };
   } catch (e: any) {
     // [修复防御]: 完整序列化错误信息，方便调试
     const errMsg = e?.message || (typeof e === 'string' ? e : '') || 'Unknown error';
     log(`[${source.name}] 搜索失败: ${errMsg}`);
-    return [];
+    return {
+      results: [],
+      status: 'search_failed',
+      reason: `插件搜索调用失败：${errMsg}`,
+      supportsLyrics: true,
+    };
   }
+}
+
+export async function pluginSearch(
+  source: PluginSource,
+  keyword: string,
+  page: number,
+  limit: number,
+): Promise<PluginSearchResult[]> {
+  return (await pluginMusicSearchWithDiagnostics(source, keyword, page, limit)).results;
 }
 
 // ==================== 插件歌单搜索 ====================
@@ -1337,12 +1411,16 @@ export async function pluginGetSupportedQualities(source: PluginSource): Promise
  */
 async function ensurePluginInstance(source: PluginSource): Promise<PluginInstance | null> {
   const inst = pluginInstances.get(source.id);
-  if (inst) return inst;
+  if (inst) {
+    pluginInstanceErrors.delete(source.id);
+    return inst;
+  }
 
   log(`插件实例未缓存，重新加载: ${source.name} (${source.filePath})`);
 
   try {
     let script = '';
+    let readError = '';
     if (source.filePath.startsWith('builtin://')) {
       const webPath = BUILTIN_PLUGINS[source.filePath];
       if (webPath) {
@@ -1353,21 +1431,29 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
       // [修复防御]: 远程 URL 先尝试浏览器 fetch，失败则回退 Tauri 后端（绕过 CORS）
       const resp = await fetchWithTimeout(source.filePath, 10000);
       if (resp.ok) script = await resp.text();
+      else readError = `插件地址返回 HTTP ${resp.status}`;
       if (!script) {
         try {
           const { pluginApi } = await import('./tauri/pluginApi');
           script = await pluginApi.fetchPluginUrl(source.filePath);
-        } catch { /* ignore */ }
+        } catch (error) {
+          readError = `无法下载插件脚本：${String(error)}`;
+        }
       }
     } else if (source.filePath) {
       try {
         const { pluginApi } = await import('./tauri/pluginApi');
         script = await pluginApi.readPluginFile(source.filePath);
-      } catch { /* ignore */ }
+      } catch (error) {
+        readError = `无法读取插件文件：${String(error)}`;
+      }
     }
 
     if (script) {
       const loadedSource = await loadPluginFromScript(script, source.filePath);
+      if (!loadedSource) {
+        readError = '插件脚本执行失败或缺少 platform 字段，请查看插件日志';
+      }
       // [修复] 直接用 source.id 缓存实例，不依赖 SHA256 hash 匹配
       if (loadedSource) {
         const entry = pluginInstances.get(loadedSource.id);
@@ -1386,9 +1472,13 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
       }
     }
 
-    return pluginInstances.get(source.id) || null;
+    const resolved = pluginInstances.get(source.id) || null;
+    if (resolved) pluginInstanceErrors.delete(source.id);
+    else pluginInstanceErrors.set(source.id, readError || '插件脚本为空或实例未注册');
+    return resolved;
   } catch (e) {
     log(`插件重新加载失败: ${source.name} ${e}`);
+    pluginInstanceErrors.set(source.id, `插件初始化异常：${String(e)}`);
     return null;
   }
 }
@@ -2328,4 +2418,3 @@ export async function installAllSubscriptions(
 // ==================== 导出 ====================
 
 export type { IPluginInstance };
-

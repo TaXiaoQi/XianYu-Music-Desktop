@@ -52,8 +52,16 @@ const findNode = (nodes: FolderNode[], targetPath: string): FolderNode | null =>
   return null;
 };
 
-const findOwningRoot = (nodes: FolderNode[], targetPath: string) =>
-  nodes.find(node => isSameOrAncestorPath(node.path, targetPath)) ?? null;
+const findOwningRoot = (nodes: FolderNode[], targetPath: string) => {
+  // 优先精确匹配根级节点，避免同时导入父级 F 与子级 S 时，
+  // 恢复展开状态把 S 当作 F 的后代来展开，而非直接展开根级 S。
+  const exactMatch = nodes.find(node => node.path === targetPath);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  return nodes.find(node => isSameOrAncestorPath(node.path, targetPath)) ?? null;
+};
 
 const sortPathsByDepth = (paths: Iterable<string>) =>
   [...paths].sort((left, right) => normalizePath(left).length - normalizePath(right).length);
@@ -77,12 +85,7 @@ export const createPlayerFolderTree = ({
   const libraryStore = useLibraryStore();
   const { folderTree } = storeToRefs(libraryStore);
 
-  const ensureFolderChildrenLoaded = async (targetPath: string) => {
-    const targetNode = findNode(folderTree.value, targetPath);
-    if (!targetNode) {
-      return null;
-    }
-
+  const ensureFolderChildrenLoaded = async (targetNode: FolderNode) => {
     if (targetNode.children_loaded || targetNode.child_count === 0) {
       return targetNode;
     }
@@ -94,7 +97,7 @@ export const createPlayerFolderTree = ({
     targetNode.is_loading = true;
     try {
       const previousChildren = createNodeMap(targetNode.children);
-      const children = await libraryApi.getFolderChildren(targetPath);
+      const children = await libraryApi.getFolderChildren(targetNode.path);
       targetNode.children = children.map(child => {
         const previousChild = previousChildren.get(child.path);
         return previousChild ? { ...child, is_expanded: previousChild.is_expanded } : child;
@@ -115,7 +118,7 @@ export const createPlayerFolderTree = ({
 
     if (rootNode.path === targetPath) {
       if (rootNode.child_count > 0) {
-        await ensureFolderChildrenLoaded(rootNode.path);
+        await ensureFolderChildrenLoaded(rootNode);
       }
       rootNode.is_expanded = true;
       return true;
@@ -125,7 +128,7 @@ export const createPlayerFolderTree = ({
 
     while (currentNode.path !== targetPath) {
       if (!currentNode.children_loaded && currentNode.child_count > 0) {
-        const loadedNode = await ensureFolderChildrenLoaded(currentNode.path);
+        const loadedNode = await ensureFolderChildrenLoaded(currentNode);
         if (!loadedNode) {
           return false;
         }
@@ -145,19 +148,17 @@ export const createPlayerFolderTree = ({
     return true;
   };
 
-  const toggleFolderNode = async (targetPath: string) => {
-    const targetNode = findNode(folderTree.value, targetPath);
-    if (!targetNode) {
-      return;
-    }
-
+  // 直接接受用户点击的 node 对象引用进行操作，不再用 path 重新查找。
+  // 当同时导入父级 F 与子级 S 时，两者 path 相同，用 path 查找会命中错误的节点；
+  // 传 node 引用可确保「点哪个就展开/折叠哪个」。
+  const toggleFolderNode = async (targetNode: FolderNode) => {
     if (targetNode.is_expanded) {
       targetNode.is_expanded = false;
       return;
     }
 
     if (targetNode.child_count > 0) {
-      await ensureFolderChildrenLoaded(targetPath);
+      await ensureFolderChildrenLoaded(targetNode);
     }
 
     targetNode.is_expanded = true;
