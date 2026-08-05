@@ -51,6 +51,7 @@ export function useSettings() {
     sidebar,
     footerLayout,
     patchSettings: settingsStore.patchSettings,
+    replaceSettings: settingsStore.replaceSettings,
     patchTheme: settingsStore.patchTheme,
     replaceTheme: settingsStore.replaceTheme,
     patchSidebar: settingsStore.patchSidebar,

@@ -200,7 +200,7 @@ export const defaultAutoSyncConfig: AutoSyncConfig = {
 
 export const defaultLogSettings: LogSettings = {
   minimumLevel: 'info',
-  retentionDays: 14,
+  retentionDays: 1,
   autoAnalyze: true,
 };
 
@@ -561,9 +561,7 @@ export const mergeLogSettings = (
   minimumLevel: patch.minimumLevel && LOG_LEVELS.includes(patch.minimumLevel)
     ? patch.minimumLevel
     : base.minimumLevel,
-  retentionDays: typeof patch.retentionDays === 'number' && Number.isFinite(patch.retentionDays)
-    ? Math.min(365, Math.max(1, Math.round(patch.retentionDays)))
-    : base.retentionDays,
+  retentionDays: 1,
   autoAnalyze: typeof patch.autoAnalyze === 'boolean' ? patch.autoAnalyze : base.autoAnalyze,
 });
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
 import { watch, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
@@ -101,6 +102,15 @@ if (currentWindowLabel === 'main') {
         console.error('[AutoUpdate] 插件自动更新失败:', error);
       }
     });
+
+    // F12 打开 DevTools（WebView2 已禁用浏览器快捷键，需通过自定义命令恢复）
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'F12') {
+        event.preventDefault();
+        void invoke('open_devtools');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
   });
 }
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { FileText, RefreshCw, Trash2, X } from 'lucide-vue-next';
 
 import { useDeveloperMode } from '../../features/settings/developerMode';
@@ -32,7 +32,6 @@ const levelBadgeClass: Record<LogLevel, string> = {
   error: 'bg-rose-500/10 text-rose-700 dark:text-rose-300',
 };
 
-const retentionOptions = [1, 3, 7, 14, 30, 90];
 const filterOptions: LogFilter[] = ['all', ...LOG_LEVELS];
 const selectedFilter = ref<LogFilter>('all');
 const showLogViewer = ref(false);
@@ -46,8 +45,9 @@ const { entries, clearLogs } = useApplicationLogs();
 
 const analysis = ref<ApplicationLogAnalysis>(analyzeApplicationLogs(entries.value));
 const loggingSettings = computed(() => settings.value.logging);
-const latestLogId = computed(() => entries.value[entries.value.length - 1]?.id ?? '');
-const counts = computed(() => analyzeApplicationLogs(entries.value).counts);
+const entryCount = computed(() => entries.value.length);
+// 直接从 analysis 派生 counts，避免每次 entries 变化都重新执行 analyzeApplicationLogs
+const counts = computed(() => analysis.value.counts);
 const filteredEntries = computed(() => entries.value
   .filter(entry => selectedFilter.value === 'all' || entry.level === selectedFilter.value)
   .slice()
@@ -77,10 +77,15 @@ const openLogViewer = (filter: LogFilter = 'all') => {
   showLogViewer.value = true;
 };
 
+// 使用防抖避免日志快速写入时频繁触发分析（防止渲染→日志→分析→渲染反馈循环导致卡死）
+let analysisDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 watch(
-  latestLogId,
+  entryCount,
   () => {
-    if (loggingSettings.value.autoAnalyze) refreshAnalysis();
+    if (!loggingSettings.value.autoAnalyze) return;
+    if (analysisDebounceTimer) clearTimeout(analysisDebounceTimer);
+    analysisDebounceTimer = setTimeout(refreshAnalysis, 800);
   },
   { flush: 'post' },
 );
@@ -92,6 +97,10 @@ watch(
   },
   { flush: 'post' },
 );
+
+onBeforeUnmount(() => {
+  if (analysisDebounceTimer) clearTimeout(analysisDebounceTimer);
+});
 
 const formatLogTime = (timestamp: number) => new Intl.DateTimeFormat('zh-CN', {
   month: '2-digit',
@@ -163,7 +172,7 @@ const handleClearLogs = () => {
         </button>
       </div>
 
-      <div class="grid gap-3 md:grid-cols-3">
+      <div class="grid gap-3 md:grid-cols-2">
         <label class="rounded-xl border border-black/10 bg-white/40 p-4 dark:border-white/10 dark:bg-white/[0.03]">
           <span class="text-xs text-gray-500 dark:text-white/45">最低记录级别</span>
           <select
@@ -172,17 +181,6 @@ const handleClearLogs = () => {
             @change="updateLoggingSettings({ minimumLevel: ($event.target as HTMLSelectElement).value as LogLevel })"
           >
             <option v-for="level in LOG_LEVELS" :key="level" :value="level">{{ levelLabels[level] }}</option>
-          </select>
-        </label>
-
-        <label class="rounded-xl border border-black/10 bg-white/40 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-          <span class="text-xs text-gray-500 dark:text-white/45">日志保留时长</span>
-          <select
-            :value="loggingSettings.retentionDays"
-            class="mt-2 h-9 w-full rounded-lg border border-black/10 bg-white/70 px-3 text-sm text-gray-800 outline-none dark:border-white/10 dark:bg-black/20 dark:text-gray-100"
-            @change="updateLoggingSettings({ retentionDays: Number(($event.target as HTMLSelectElement).value) })"
-          >
-            <option v-for="days in retentionOptions" :key="days" :value="days">{{ days }} 天</option>
           </select>
         </label>
 
@@ -253,7 +251,7 @@ const handleClearLogs = () => {
         </span>
         <span>
           <span class="block text-sm font-medium text-gray-900 dark:text-gray-100">查看日志</span>
-          <span class="mt-0.5 block text-xs text-gray-500 dark:text-white/40">共 {{ entries.length }} 条本地日志</span>
+          <span class="mt-0.5 block text-xs text-gray-500 dark:text-white/40">共 {{ entryCount }} 条本地日志</span>
         </span>
       </span>
       <span class="text-sm text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-[#EC4141]">查看</span>
@@ -286,7 +284,7 @@ const handleClearLogs = () => {
         <header class="flex shrink-0 items-center justify-between gap-4 border-b border-black/10 px-5 py-4 dark:border-white/10">
           <div>
             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">应用日志</h3>
-            <p class="mt-0.5 text-xs text-gray-500 dark:text-white/40">保留期内共 {{ entries.length }} 条，列表最多展示最新 300 条</p>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-white/40">今日共 {{ entryCount }} 条，列表最多展示最新 300 条</p>
           </div>
           <button
             type="button"
@@ -311,7 +309,7 @@ const handleClearLogs = () => {
               @click="selectedFilter = filter"
             >
               {{ filter === 'all' ? '全部' : levelLabels[filter] }}
-              <span class="ml-1 opacity-70">{{ filter === 'all' ? entries.length : counts[filter] }}</span>
+              <span class="ml-1 opacity-70">{{ filter === 'all' ? entryCount : counts[filter] }}</span>
             </button>
           </div>
         </div>
