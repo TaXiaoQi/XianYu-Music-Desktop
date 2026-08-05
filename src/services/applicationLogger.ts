@@ -1,4 +1,4 @@
-import { readonly, ref } from 'vue';
+import { shallowReadonly, shallowRef } from 'vue';
 
 import type { LogLevel, LogSettings } from '../types';
 
@@ -43,6 +43,9 @@ let installed = false;
 let sequence = 0;
 let pendingEntries: ApplicationLogEntry[] = [];
 let isLogFlushScheduled = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const FLUSH_DELAY = 300; // ms — macrotask delay to break render→log→flush→re-render feedback loop
+const PERSIST_DELAY = 2000; // ms — debounce localStorage writes
 
 const isLogLevel = (value: unknown): value is LogLevel => (
   typeof value === 'string' && LOG_LEVELS.includes(value as LogLevel)
@@ -119,7 +122,7 @@ export const filterLogEntriesForRetention = (
     .slice(-MAX_LOG_ENTRIES);
 };
 
-const logEntries = ref<ApplicationLogEntry[]>(
+const logEntries = shallowRef<ApplicationLogEntry[]>(
   filterLogEntriesForRetention(readStoredEntries(), activeConfig.retentionDays),
 );
 
@@ -137,10 +140,19 @@ const persistEntries = () => {
   }
 };
 
+const schedulePersist = () => {
+  if (typeof localStorage === 'undefined') return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persistEntries();
+  }, PERSIST_DELAY);
+};
+
 const resolveCategory = (args: unknown[]) => {
   const first = args[0];
   if (typeof first === 'string') {
-    const taggedCategory = first.match(/^\[([^\]]{1,48})\]/)?.[1]?.trim();
+    const taggedCategory = first.match(/^\[([^\]]{1,48})]/)?.[1]?.trim();
     if (taggedCategory) return taggedCategory;
   }
   if (first instanceof Error && first.name) return first.name;
@@ -159,7 +171,8 @@ const flushPendingEntries = () => {
     activeConfig.retentionDays,
     now,
   );
-  persistEntries();
+  // 防抖写入 localStorage，避免每次 flush 都执行 JSON.stringify 3000 条日志
+  schedulePersist();
 };
 
 const recordLog = (level: LogLevel, scope: string, args: unknown[]) => {
@@ -175,13 +188,18 @@ const recordLog = (level: LogLevel, scope: string, args: unknown[]) => {
     message: args.map(serializeLogValue).join(' '),
   });
 
-  // console may be called while Vue is rendering the log viewer itself. Mutating
-  // its reactive log source synchronously would queue the same component again
-  // in the current render cycle and can end in "Maximum recursive updates".
-  // Batch console records into the next microtask to break that feedback loop.
+  // console may be called while Vue is rendering components that depend on
+  // logEntries. Using queueMicrotask would mutate the reactive source within
+  // the same microtask batch as Vue's re-render, creating a tight loop:
+  //   render → console.log → recordLog → microtask flush → logEntries mutated
+  //   → Vue schedules re-render → console.log → ... (never yields to paint)
+  //
+  // setTimeout pushes the flush to a macrotask, letting the browser paint
+  // between cycles. The 300ms delay also acts as a throttle: at most ~3
+  // reactive updates per second regardless of how many console calls fire.
   if (!isLogFlushScheduled) {
     isLogFlushScheduled = true;
-    queueMicrotask(flushPendingEntries);
+    setTimeout(flushPendingEntries, FLUSH_DELAY);
   }
 };
 
@@ -305,7 +323,7 @@ export function formatApplicationLogExport(
 
 export function useApplicationLogs() {
   return {
-    entries: readonly(logEntries),
+    entries: shallowReadonly(logEntries),
     clearLogs: clearApplicationLogs,
   };
 }

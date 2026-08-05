@@ -190,7 +190,7 @@ const handleImportAppBackup = async () => {
           @click="handleExportAppBackup"
         >
           <Loader2 v-if="exportingAppBackup" class="h-4 w-4 animate-spin" />
-          <FileDown v-else class="h-4 w-4 text-[#EC4141]" />
+          <FileUp v-else class="h-4 w-4 text-[#EC4141]" />
           {{ exportingAppBackup ? '正在导出…' : '导出备份' }}
         </button>
         <button
@@ -200,7 +200,7 @@ const handleImportAppBackup = async () => {
           @click="handleImportAppBackup"
         >
           <Loader2 v-if="importingAppBackup" class="h-4 w-4 animate-spin" />
-          <FileUp v-else class="h-4 w-4 text-[#EC4141]" />
+          <FileDown v-else class="h-4 w-4 text-[#EC4141]" />
           {{ importingAppBackup ? '正在导入…' : '导入备份' }}
         </button>
       </div>
@@ -223,7 +223,7 @@ const handleImportAppBackup = async () => {
         @click="importPluginBackup"
       >
         <Loader2 v-if="importingBackup" class="h-4 w-4 animate-spin" />
-        <FileUp v-else class="h-4 w-4 text-[#EC4141]" />
+        <FileDown v-else class="h-4 w-4 text-[#EC4141]" />
         {{ importingBackup ? '正在检查插件并导入…' : '从 BakaMusic 或 MusicFree 软件导入歌单' }}
       </button>
       <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
