@@ -442,6 +442,15 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     samples as f64 / total_samples_per_sec as f64
 }
 
+/// 获取当前音频源的总时长（秒）。
+/// 在线歌曲的 Song.duration 可能为 0，此命令从解码后的音频源提取实际时长，
+/// 供前端在播放开始后更新进度条的总时长显示。
+#[tauri::command]
+pub fn get_playback_duration(state: tauri::State<PlayerState>) -> f64 {
+    let bits = state.progress.total_duration_secs.load(Ordering::Relaxed);
+    f64::from_bits(bits)
+}
+
 // 播放是否已就绪：sample_rate>0 表示解码器已成功初始化（Decoder::new 成功后立即写入）。
 // 用于前端在线走 Rust 的「起播探测」：区分"仍在加载/下载中"（rate=0）与"已就绪"（rate>0），
 // 避免不支持 Range 的直链整曲下载耗时被误判为失败而回退 H5。

@@ -386,6 +386,24 @@ const authStore = useAuthStore();
           stalledProgressTicks = 0;
         }
         lastRawProgress = rawTime;
+
+        // [在线歌曲时长修正] Song.duration 可能为 0（插件未返回时长），
+        // 从 Rust 音频引擎获取解码后的实际时长，更新 currentSong 和 libraryStore
+        const songForDuration = currentSong.value;
+        if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0)) {
+          try {
+            const backendDuration = await playbackApi.getPlaybackDuration();
+            if (backendDuration > 0) {
+              const newDuration = Math.floor(backendDuration);
+              const updatedSong = { ...songForDuration, duration: newDuration };
+              currentSong.value = updatedSong;
+              playQueue.value = playQueue.value.map(item => (
+                item.path === songForDuration.path ? { ...item, duration: newDuration } : item
+              ));
+              libraryStore.patchSongMeta(songForDuration.path, { duration: newDuration } as Partial<Song>);
+            }
+          } catch {}
+        }
       } catch {}
     }, 1000);
   };

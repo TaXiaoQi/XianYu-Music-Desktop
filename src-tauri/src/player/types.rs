@@ -145,6 +145,12 @@ pub struct SharedProgress {
     /// 本次播放启动是否失败（远程取流 403/不支持 Range/解码失败等）。
     /// 供前端「在线走 Rust 起播探测」快速感知硬失败，无需死等超时即可回退 H5。
     pub start_failed: Arc<AtomicBool>,
+    /// 当前音频源的总时长（秒），0 表示未知。
+    /// 在 play_audio 创建音频源时从 Source::total_duration() 提取，
+    /// 供前端查询在线歌曲的实际时长（Song.duration 可能为 0）。
+    /// 使用 AtomicU64 存储 f64 的位模式（f64::to_bits / from_bits），
+    /// 因为 AtomicF64 在当前工具链不可用。
+    pub total_duration_secs: Arc<AtomicU64>,
 }
 
 pub enum AudioCommand {

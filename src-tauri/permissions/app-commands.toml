@@ -28,6 +28,7 @@ commands.allow = [
   "set_volume",
   "set_playback_speed",
   "get_playback_progress",
+  "get_playback_duration",
   "get_playback_ready",
   "get_playback_start_failed",
   "get_audio_visualizer_samples",

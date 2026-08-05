@@ -1,3 +1,5 @@
+import { markRaw } from 'vue';
+
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 import type { LxSearchResultItem } from './lxMusicSdk';
 
@@ -288,7 +290,10 @@ function buildBaseSong(
     source_type: 'remote',
     plugin_id: plugin.id,
     remote_source_id: path,
-    rawData,
+    // rawData 包含完整的插件搜索结果（含 qualities/privilege/singerList 等深层嵌套对象），
+    // 这些数据仅用于播放时传给插件引擎，不需要响应式追踪。
+    // 使用 markRaw 阻止 Vue 为每个嵌套属性创建代理，避免大量歌曲时界面卡顿。
+    rawData: markRaw(rawData),
   };
 
   if (typeof rawSong.rawLrc === 'string' && rawSong.rawLrc.trim()) {
