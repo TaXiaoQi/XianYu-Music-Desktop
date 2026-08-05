@@ -9,6 +9,7 @@ import router from './router'
 import { applyPersistedStartupTheme, shouldApplyStartupThemePaint } from './composables/startupTheme'
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger'
+import { reportError } from './services/usageStats'
 
 const currentWindowLabel = (() => {
   try {
@@ -106,6 +107,12 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 app.config.errorHandler = (error, _instance, info) => {
+  // 上报到后台报错日志（fire-and-forget，失败静默）
+  if (error instanceof Error) {
+    reportError(error.name || 'VueError', error.message, error.stack, info)
+  } else {
+    reportError('VueError', String(error), '', info)
+  }
   if (recoverDynamicImportError(error)) return
   showFatalError(`前端运行错误: ${info}`, error)
 }
@@ -114,6 +121,12 @@ document.addEventListener('contextmenu', (e) => e.preventDefault())
 
 window.addEventListener('error', (event) => {
   const error = event.error ?? event.message
+  // 上报到后台报错日志（fire-and-forget，失败静默）
+  if (error instanceof Error) {
+    reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`)
+  } else if (typeof error === 'string') {
+    reportError('WindowError', error, '', `${event.filename}:${event.lineno}:${event.colno}`)
+  }
   if (recoverDynamicImportError(error)) {
     event.preventDefault()
     return
@@ -122,6 +135,13 @@ window.addEventListener('error', (event) => {
 })
 
 window.addEventListener('unhandledrejection', (event) => {
+  // 上报到后台报错日志（fire-and-forget，失败静默）
+  const reason = event.reason
+  if (reason instanceof Error) {
+    reportError('unhandledrejection', reason.message, reason.stack)
+  } else {
+    reportError('unhandledrejection', String(reason))
+  }
   if (recoverDynamicImportError(event.reason)) {
     event.preventDefault()
     return
