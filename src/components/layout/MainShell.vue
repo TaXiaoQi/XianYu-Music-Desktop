@@ -19,6 +19,7 @@ const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.v
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
+const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
 const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
 
@@ -51,6 +52,12 @@ const {
   songInfoInitialAction,
   closeSongInfo,
 } = useSongInfoDialog();
+import { useDownloadDialog } from '../../composables/useDownloadDialog';
+const {
+  isDownloadDialogVisible,
+  currentDownloadSong,
+  closeDownloadDialog,
+} = useDownloadDialog();
 const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
 
 useDesktopLyricsWindowBridge();
@@ -247,6 +254,13 @@ onMounted(() => {
       :song="currentSongInfo"
       :initial-action="songInfoInitialAction"
       @close="closeSongInfo"
+    />
+
+    <DownloadDialog
+      v-if="!isMiniMode"
+      :visible="isDownloadDialogVisible"
+      :song="currentDownloadSong"
+      @close="closeDownloadDialog"
     />
 
     <AnnouncementModal
