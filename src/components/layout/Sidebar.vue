@@ -21,7 +21,7 @@ import { useLibraryStore } from '../../features/library/store';
 import { useToast } from '../../composables/toast';
 import type { Song, SidebarItemKey } from '../../types';
 import type { PlaylistImportResult } from '../../services/playlistImport';
-import type { ImportedPlaylist } from '../../services/backupImport';
+import { matchSongsToLocalLibrary, type ImportedPlaylist } from '../../services/backupImport';
 import type { PreparedPluginBackupImport } from '../../services/pluginBackupImport';
 import { cacheLxSong } from '../../services/lxSongCache';
 import SidebarBrand from './SidebarBrand.vue';
@@ -261,16 +261,30 @@ const confirmLocalFolderImport = (payload: { name: string; songs: Song[] }) => {
 const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
   if (playlists.length === 0) return;
 
+  // 椒盐音乐 / M3U 导出的路径来自导出设备，在当前机器上不存在。
+  // 用文件名、标题+歌手在本地库中匹配，将 path 替换为本地路径。
+  const { playlists: matchedPlaylists, matchedCount, unmatchedCount } =
+    matchSongsToLocalLibrary(playlists, libraryStore.canonicalSongs);
+
+  // 本地库路径集合：匹配成功的歌曲已在本地库中，无需写入 extraSongPool
+  const localPathSet = new Set(
+    libraryStore.canonicalSongs.map(s => s.path.toLowerCase()),
+  );
+
   let createdCount = 0;
   let totalSongs = 0;
+  const allExtraSongs: Song[] = [];
 
-  for (const pl of playlists) {
+  for (const pl of matchedPlaylists) {
     const playlistName = pl.name.trim();
     if (!playlistName || pl.songs.length === 0) continue;
 
     const songPaths = pl.songs.map((song) => song.path);
+    // 仅未匹配的歌曲需要写入 extraSongPool（匹配成功的已在本地库中）
     for (const song of pl.songs) {
-      libraryStore.setExtraSong(song);
+      if (!localPathSet.has(song.path.toLowerCase())) {
+        allExtraSongs.push(song);
+      }
     }
 
     const playlistId = createPlaylist(playlistName, songPaths, pl.songs);
@@ -280,8 +294,15 @@ const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
     }
   }
 
+  if (allExtraSongs.length > 0) {
+    libraryStore.setExtraSongs(allExtraSongs);
+  }
+
   if (createdCount > 0) {
-    showToast(`已创建 ${createdCount} 个歌单，共 ${totalSongs} 首歌曲`, 'success');
+    const msg = unmatchedCount > 0
+      ? `已创建 ${createdCount} 个歌单，匹配 ${matchedCount} 首，${unmatchedCount} 首未匹配本地文件`
+      : `已创建 ${createdCount} 个歌单，共 ${totalSongs} 首歌曲`;
+    showToast(msg, 'success');
   } else {
     showToast('创建歌单失败', 'error');
   }
@@ -295,14 +316,20 @@ const confirmOnlineBackupImport = (prepared: PreparedPluginBackupImport) => {
 
   let createdCount = 0;
 
+  // 批量收集所有需要写入 extraSongPool 的歌曲，避免逐首调用 setExtraSong
+  // 触发 N 次 songCatalogVersion 自增和 songLookup 重算
+  const allExtraSongs: Song[] = [];
+
   for (const playlist of prepared.playlists) {
     if (playlist.songs.length === 0) continue;
     const songPaths = playlist.songs.map(song => song.path);
-    for (const song of playlist.songs) {
-      libraryStore.setExtraSong(song);
-    }
+    allExtraSongs.push(...playlist.songs);
     const playlistId = createPlaylist(playlist.name, songPaths, playlist.songs);
     if (playlistId) createdCount++;
+  }
+
+  if (allExtraSongs.length > 0) {
+    libraryStore.setExtraSongs(allExtraSongs);
   }
 
   if (createdCount > 0) {

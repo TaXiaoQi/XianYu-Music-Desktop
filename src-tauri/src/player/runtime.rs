@@ -710,6 +710,15 @@ fn append_decoded_source<R>(
             progress.sample_rate.store(rate, Ordering::Relaxed);
             progress.channels.store(channels as u32, Ordering::Relaxed);
 
+            // 从解码后的音频源提取总时长，供前端查询（在线歌曲 Song.duration 可能为 0）
+            let duration_secs = source
+                .total_duration()
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            progress
+                .total_duration_secs
+                .store(duration_secs.to_bits(), Ordering::Relaxed);
+
             let offset = start_offset.unwrap_or(Duration::ZERO);
             let skip_samples =
                 (offset.as_secs_f64() * rate as f64 * channels as f64).round() as u64;
@@ -994,6 +1003,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         channels: Arc::new(AtomicU32::new(2)),
         visualizer: Arc::new(SharedVisualizer::new()),
         start_failed: Arc::new(AtomicBool::new(false)),
+        total_duration_secs: Arc::new(AtomicU64::new(0u64)),
     });
     let thread_progress = shared_progress.clone();
     let thread_app_handle = app.clone();
@@ -1807,6 +1817,7 @@ mod tests {
             channels: Arc::new(AtomicU32::new(channels)),
             visualizer: Arc::new(SharedVisualizer::new()),
             start_failed: Arc::new(AtomicBool::new(false)),
+            total_duration_secs: Arc::new(AtomicU64::new(0u64)),
         })
     }
 
