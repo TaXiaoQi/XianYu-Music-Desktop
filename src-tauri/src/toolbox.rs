@@ -417,12 +417,12 @@ pub async fn download_update_file(
 
     let filename = if url.ends_with(".exe") {
         if url.contains("portable") {
-            "Lycia.Player_Setup_Portable.exe"
+            "XianYu.Player_Setup_Portable.exe"
         } else {
-            "Lycia.Player_Setup_Standard.exe"
+            "XianYu.Player_Setup_Standard.exe"
         }
     } else {
-        "Lycia.Player_Setup.exe"
+        "XianYu.Player_Setup.exe"
     };
     let dest_path = download_dir.join(filename);
 

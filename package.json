@@ -1,7 +1,7 @@
 {
-  "name": "lycia-music",
+  "name": "xianyu-music",
   "private": true,
-  "version": "1.1.2-beta2",
+  "version": "1.1.2-beta4",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

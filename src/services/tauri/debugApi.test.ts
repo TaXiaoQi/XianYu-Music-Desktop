@@ -16,11 +16,11 @@ describe('debugApi', () => {
   });
 
   it('exports logs through the existing text-file writer command', () => {
-    debugApi.writeLogExport('C:\\Logs\\lycia.log', 'log content');
+    debugApi.writeLogExport('C:\\Logs\\xianyu.log', 'log content');
 
     expect(tauriInvoke).toHaveBeenCalledWith('save_download_lyrics', {
       content: 'log content',
-      destPath: 'C:\\Logs\\lycia.log',
+      destPath: 'C:\\Logs\\xianyu.log',
     });
   });
 });

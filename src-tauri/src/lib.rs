@@ -18,9 +18,10 @@ mod window_fullscreen;
 mod window_material;
 mod window_theme;
 mod window_z_order;
+mod webview_settings;
 
 use tauri::Manager;
-use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, setup_app};
+use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
@@ -262,6 +263,7 @@ recognize_system_audio,
             fetch_announcement,
             write_state_json,
             read_state_json,
+            open_devtools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -191,6 +191,10 @@ pub(crate) fn setup_app(
     install_window_boundary(app);
     build_tray(app)?;
 
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        crate::webview_settings::disable_browser_accelerator_keys(&window);
+    }
+
     Ok(())
 }
 
@@ -205,6 +209,15 @@ pub(crate) fn consume_pending_open_paths(
 #[tauri::command]
 pub(crate) fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or("main window not found")?;
+    let _: () = window.open_devtools();
+    Ok(())
 }
 
 

@@ -13,7 +13,7 @@ vi.mock('@applemusic-like-lyrics/lyric/pkg/amll_lyric.js', async () => {
   const cwd = (globalThis as any).process?.cwd?.() ?? '.';
 
   const pkgDir = path.resolve(cwd, 'node_modules', '@applemusic-like-lyrics', 'lyric', 'pkg');
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lycia-amll-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xianyu-amll-'));
   const tempModulePath = path.join(tempDir, 'amll_lyric_bg.mjs');
 
   await fs.copyFile(path.join(pkgDir, 'amll_lyric_bg.js'), tempModulePath);

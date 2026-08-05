@@ -479,7 +479,7 @@ export const createPlayerLifecycle = ({
       });
     });
 
-    const remoteAutoSyncKey = 'lycia_remote_auto_sync_at';
+    const remoteAutoSyncKey = 'xianyu_remote_auto_sync_at';
     const remoteAutoSyncIntervalMs = 24 * 60 * 60 * 1000;
     let remoteAutoSyncTimer: ReturnType<typeof setInterval> | null = null;
     let remoteAutoSyncRunning = false;

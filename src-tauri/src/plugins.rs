@@ -188,8 +188,11 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     }
 
     let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
-    if metadata.len() > 5 * 1024 * 1024 {
-        return Err("Plugin file is larger than 5 MB".to_string());
+    // JSON 备份文件可能包含封面 data URI 和歌词，允许更大体积（50MB）；
+    // JS/TXT 插件脚本仍保持 5MB 上限
+    let max_size = if ext == "json" { 50 * 1024 * 1024 } else { 5 * 1024 * 1024 };
+    if metadata.len() > max_size {
+        return Err(format!("File is larger than {} MB", max_size / 1024 / 1024));
     }
 
     fs::read_to_string(path_obj).map_err(|error| error.to_string())
