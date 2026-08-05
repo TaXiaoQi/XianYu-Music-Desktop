@@ -447,6 +447,13 @@ import { reportSearch, reportInputStats } from '../services/usageStats';
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 
+const formatSearchDuration = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 const router = useRouter();
 const { playSong } = usePlaybackController();
 const uiStore = useUiStore();
@@ -1038,12 +1045,7 @@ const handlePlaySong = (item: LxSearchResultItem) => {
 
 // ==================== MusicFree 插件歌曲播放 ====================
 
-const formatMfDuration = (seconds: number): string => {
-  if (!seconds || Number.isNaN(seconds)) return '--:--';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
+const formatMfDuration = formatSearchDuration;
 
 // B站图片代理：hdslb.com/bilivideo.com 需要 Referer 头
 const mfCoverProxyCache = new Map<string, string>();
@@ -1352,12 +1354,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
 
 // ==================== 本地歌曲播放与右键菜单 ====================
 
-const formatLocalDuration = (seconds: number): string => {
-  if (!seconds || Number.isNaN(seconds)) return '--:--';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
+const formatLocalDuration = formatSearchDuration;
 
 const getLocalCoverUrl = (song: Song): string => {
   if (!song.cover_thumb_path) return '';

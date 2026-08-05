@@ -9,6 +9,7 @@ import type { PluginSource, PluginSubscription } from '../../types';
 import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript } from '../../services/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
+import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
 import SettingHint from './SettingHint.vue';
 
 withDefaults(defineProps<{
@@ -96,54 +97,8 @@ const scrollContainer = ref<HTMLElement | null>(null);
 let latestPointerY = 0;
 let autoScrollFrame: number | null = null;
 
-const AUTO_SCROLL_EDGE_SIZE = 80;
-const AUTO_SCROLL_MAX_SPEED = 8;
-
-/** 查找列表所在的纵向滚动容器 */
-const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
-  let current = element.parentElement;
-  while (current) {
-    const { overflowY } = window.getComputedStyle(current);
-    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
-};
-
-/**
- * 根据指针位置和当前拖拽索引推导目标索引。
- * 只在越过相邻项中线后换位，避免列表重排后指针反向命中原位置而抖动。
- */
 const resolveTargetIndex = (clientY: number, currentIndex: number): number | null => {
-  const listEl = listRef.value;
-  if (!listEl) return null;
-
-  const rows = Array.from(
-    listEl.querySelectorAll<HTMLElement>('[data-plugin-row]'),
-  );
-  if (rows.length === 0) return null;
-
-  let target = currentIndex;
-
-  // 向上扫描
-  for (let i = currentIndex - 1; i >= 0; i--) {
-    const rect = rows[i].getBoundingClientRect();
-    if (clientY < rect.top + rect.height / 2) target = i;
-    else break;
-  }
-
-  if (target !== currentIndex) return target;
-
-  // 向下扫描
-  for (let i = currentIndex + 1; i < rows.length; i++) {
-    const rect = rows[i].getBoundingClientRect();
-    if (clientY > rect.top + rect.height / 2) target = i;
-    else break;
-  }
-
-  return target;
+  return resolveDragTargetIndex(listRef.value, '[data-plugin-row]', clientY, currentIndex);
 };
 
 /** 在已排序列表中移动插件（仅内存操作，拖拽结束后持久化） */
@@ -179,16 +134,7 @@ const runAutoScroll = () => {
   const container = scrollContainer.value;
   if (!container) return;
 
-  const rect = container.getBoundingClientRect();
-  let speed = 0;
-
-  if (latestPointerY < rect.top + AUTO_SCROLL_EDGE_SIZE) {
-    const intensity = Math.min(1, (rect.top + AUTO_SCROLL_EDGE_SIZE - latestPointerY) / AUTO_SCROLL_EDGE_SIZE);
-    speed = -AUTO_SCROLL_MAX_SPEED * intensity;
-  } else if (latestPointerY > rect.bottom - AUTO_SCROLL_EDGE_SIZE) {
-    const intensity = Math.min(1, (latestPointerY - (rect.bottom - AUTO_SCROLL_EDGE_SIZE)) / AUTO_SCROLL_EDGE_SIZE);
-    speed = AUTO_SCROLL_MAX_SPEED * intensity;
-  }
+  const speed = getEdgeAutoScrollSpeed(container, latestPointerY);
 
   if (speed === 0) return;
 
@@ -242,7 +188,7 @@ const startDragging = (index: number, event: PointerEvent) => {
 
   draggingIndex.value = index;
   latestPointerY = event.clientY;
-  scrollContainer.value = listRef.value ? findScrollContainer(listRef.value) : null;
+  scrollContainer.value = listRef.value ? findVerticalScrollContainer(listRef.value) : null;
   window.addEventListener('pointermove', handlePointerMove, { passive: false });
   window.addEventListener('pointerup', stopDragging);
   window.addEventListener('pointercancel', stopDragging);
