@@ -70,18 +70,18 @@ export function setLogCallback(cb: ((msg: string) => void) | null) {
 
 // ==================== 类型 ====================
 
-interface LxSourceInfo {
+export interface LxSourceInfo {
   type: 'music';
   actions: string[];
   qualitys: string[];
 }
 
-interface LxInitInfo {
+export interface LxInitInfo {
   sources: Record<string, LxSourceInfo>;
   openDevTools?: boolean;
 }
 
-interface LxPluginState {
+export interface LxPluginState {
   source: PluginSource;
   initInfo: LxInitInfo | null;
   status: 'loading' | 'ready' | 'error';

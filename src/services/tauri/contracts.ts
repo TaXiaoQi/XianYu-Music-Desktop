@@ -450,6 +450,7 @@ export interface TauriCommandMap {
   get_song_cover: { payload: { path: string }; response: string };
   clear_cover_cache: { payload: undefined; response: void };
   get_song_lyrics: { payload: { path: string }; response: string };
+  read_lyrics_file: { payload: { path: string }; response: string };
   get_song_lyrics_for_edit: { payload: { path: string }; response: SongLyricsForEdit };
   save_song_lyrics: {
     payload: {

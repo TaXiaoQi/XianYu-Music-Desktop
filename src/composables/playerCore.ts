@@ -32,7 +32,7 @@ import { useLibraryStore } from '../features/library/store';
 import { useNavigationStore } from '../shared/stores/navigation';
 import { usePlaybackStore } from '../features/playback/store';
 import { useUiStore } from '../shared/stores/ui';
-import type { HistoryItem, LibrarySong, Song } from '../types';
+import type { FolderNode, HistoryItem, LibrarySong, Song } from '../types';
 import { useSongDetailCache } from './useSongDetailCache';
 import {
   cleanupRemovedLibrarySongPaths,
@@ -452,16 +452,16 @@ function createPlayerCore() {
     return playerFolderTree.fetchFolderTree();
   }
 
-  async function ensureFolderChildrenLoaded(targetPath: string) {
-    return playerFolderTree.ensureFolderChildrenLoaded(targetPath);
+  async function ensureFolderChildrenLoaded(targetNode: FolderNode) {
+    return playerFolderTree.ensureFolderChildrenLoaded(targetNode);
   }
 
   async function createFolder(parentPath: string, folderName: string) {
     return playerFolderTree.createFolder(parentPath, folderName);
   }
 
-  async function toggleFolderNode(targetPath: string) {
-    return playerFolderTree.toggleFolderNode(targetPath);
+  async function toggleFolderNode(targetNode: FolderNode) {
+    return playerFolderTree.toggleFolderNode(targetNode);
   }
 
   async function addFoldersFromStructure() {

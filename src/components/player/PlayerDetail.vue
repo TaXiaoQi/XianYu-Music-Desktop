@@ -16,6 +16,7 @@ import PlayerDetailBackground from './PlayerDetailBackground.vue';
 import PlayerDetailLeft from './PlayerDetailLeft.vue';
 import QueueList from './QueueList.vue';
 import PlayerDetailContextMenu from '../overlays/PlayerDetailContextMenu.vue';
+import LyricsReplacementModal from '../overlays/LyricsReplacementModal.vue';
 import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 
 const {
@@ -357,6 +358,7 @@ const metaInfo = computed(() => {
 const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
+const lyricsReplacementVisible = ref(false);
 
 // 封面隐藏模式（点击封面切换为纯字幕居中）
 const coverHidden = ref(false);
@@ -384,6 +386,11 @@ const handleContextMenu = (e: MouseEvent) => {
 
 const closeContextMenu = () => {
   contextMenuVisible.value = false;
+};
+
+const openLyricsReplacement = () => {
+  contextMenuVisible.value = false;
+  lyricsReplacementVisible.value = true;
 };
 </script>
 
@@ -539,6 +546,12 @@ const closeContextMenu = () => {
       :y="contextMenuY"
       :song="currentSong"
       @close="closeContextMenu"
+      @change-lyrics="openLyricsReplacement"
+    />
+    <LyricsReplacementModal
+      :visible="lyricsReplacementVisible"
+      :song="currentSong"
+      @close="lyricsReplacementVisible = false"
     />
   </div>
 </template>

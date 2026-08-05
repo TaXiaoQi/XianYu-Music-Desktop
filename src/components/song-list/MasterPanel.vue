@@ -189,7 +189,7 @@ const handleTreeSelect = (node: FolderNode) => {
 
 const handleTreeToggle = async (node: FolderNode) => {
   syncActiveRoot(node.path);
-  await toggleFolderNode(node.path);
+  await toggleFolderNode(node);
 };
 
 const handleTreeContextMenu = ({ event, node }: { event: MouseEvent; node: FolderNode }) => {

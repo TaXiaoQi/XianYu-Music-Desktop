@@ -16,6 +16,7 @@ use crate::remote::{
     repository::{get_song_cache_path, get_source_for_remote_uri},
     webdav,
 };
+use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{MimeType, Picture, PictureType};
@@ -399,6 +400,48 @@ pub async fn get_song_lyrics(path: String, db_state: State<'_, DbState>) -> Resu
     Ok(read_song_lyrics_raw_for_path(&path, &db_state).await)
 }
 
+fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let (decoded, _, _) = UTF_16LE.decode(&bytes[2..]);
+        return decoded.trim_start_matches('\u{feff}').to_string();
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        let (decoded, _, _) = UTF_16BE.decode(&bytes[2..]);
+        return decoded.trim_start_matches('\u{feff}').to_string();
+    }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.trim_start_matches('\u{feff}').to_string();
+    }
+
+    let (decoded, _, _) = GBK.decode(bytes);
+    decoded.trim_start_matches('\u{feff}').to_string()
+}
+
+/// 读取用户主动选择的 LRC 文件。只允许歌词扩展名，并限制大小以避免误选大文件。
+#[tauri::command]
+pub fn read_lyrics_file(path: String) -> Result<String, String> {
+    const MAX_LYRICS_FILE_SIZE: u64 = 2 * 1024 * 1024;
+    let path_obj = Path::new(&path);
+    let is_lrc = path_obj
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("lrc"));
+    if !is_lrc {
+        return Err("请选择 .lrc 歌词文件".to_string());
+    }
+
+    let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("所选路径不是文件".to_string());
+    }
+    if metadata.len() > MAX_LYRICS_FILE_SIZE {
+        return Err("LRC 文件不能超过 2 MB".to_string());
+    }
+
+    let bytes = fs::read(path_obj).map_err(|error| error.to_string())?;
+    Ok(decode_lyrics_file_bytes(&bytes))
+}
+
 /// 直接解析歌词文本（用于网络音乐的预获取歌词）
 #[tauri::command]
 pub async fn parse_lyrics_text(text: String) -> Result<StructuredLyricsPayload, String> {
@@ -728,6 +771,20 @@ mod tests {
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn decode_lyrics_file_supports_utf8_bom_and_gbk() {
+        assert_eq!(
+            decode_lyrics_file_bytes(b"\xef\xbb\xbf[00:01.00]hello"),
+            "[00:01.00]hello"
+        );
+
+        let (gbk, _, _) = GBK.encode("[00:01.00]中文歌词");
+        assert_eq!(
+            decode_lyrics_file_bytes(gbk.as_ref()),
+            "[00:01.00]中文歌词"
+        );
+    }
 
     #[test]
     fn remote_sidecar_lrc_path_uses_remote_song_parent_and_stem() {
@@ -1147,4 +1204,3 @@ pub async fn save_artist_avatar(
         task_id,
     })
 }
-
