@@ -191,6 +191,10 @@ pub(crate) fn setup_app(
     install_window_boundary(app);
     build_tray(app)?;
 
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        crate::webview_settings::disable_browser_accelerator_keys(&window);
+    }
+
     Ok(())
 }
 

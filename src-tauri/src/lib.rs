@@ -18,6 +18,7 @@ mod window_fullscreen;
 mod window_material;
 mod window_theme;
 mod window_z_order;
+mod webview_settings;
 
 use tauri::Manager;
 use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, setup_app};
