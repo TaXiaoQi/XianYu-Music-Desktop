@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { FileDown, FileUp, Loader2, Trash2 } from 'lucide-vue-next';
 
@@ -32,6 +32,14 @@ const { entries, clearLogs } = useApplicationLogs();
 const collectionsStore = useCollectionsStore();
 const libraryStore = useLibraryStore();
 const showDeleteConfirmation = ref(false);
+
+// 使用本地 ref 存储 entryCount，避免模板直接依赖 entries 响应式源
+const entryCount = ref(entries.value.length);
+watch(
+  () => entries.value.length,
+  () => { entryCount.value = entries.value.length; },
+  { flush: 'post' },
+);
 const importingBackup = ref(false);
 const backupImportResult = ref<PreparedPluginBackupImport | null>(null);
 const createdPlaylistCount = ref(0);
@@ -246,7 +254,7 @@ const handleImportAppBackup = async () => {
       </div>
       <button
         type="button"
-        :disabled="entries.length === 0"
+        :disabled="entryCount === 0"
         class="inline-flex items-center gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.04] px-4 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-500/[0.09] disabled:cursor-not-allowed disabled:opacity-40 dark:text-rose-300"
         @click="showDeleteConfirmation = true"
       >

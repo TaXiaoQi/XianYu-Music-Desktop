@@ -272,7 +272,7 @@ onMounted(() => {
 <style>
 .page-fade-enter-active,
 .page-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .page-fade-enter-from {
