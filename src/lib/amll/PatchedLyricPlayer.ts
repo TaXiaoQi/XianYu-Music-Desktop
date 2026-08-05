@@ -13,6 +13,9 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
   // 集显上每帧对 N 行歌词写 blur filter 会触发 GPU 软件回退，是歌词滚动卡顿的主因。
   // 由 AmlLyricPlayer.vue 在实例化时根据 usePerformanceMode 设置。
   public disableBlurFilter = false;
+  // [性能优化]: 缓存每行上一次的 blur 值，仅在变化时才写入 filter DOM。
+  // blur 在弹簧收敛后稳定不变，每帧对 N 行歌词重复写相同 blur 值会触发无意义的 GPU 合成。
+  private blurCache = new WeakMap<object, number>();
 
   private hasFiniteTime(value: number | undefined): value is number {
     return Number.isFinite(value);
@@ -58,8 +61,15 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       lineElement.style.transform = `translateY(${posY.toFixed(3)}px) scale(${scale.toFixed(4)})`;
       // [修复防御]: 低性能模式跳过 blur filter 写入，仅保留 transform；will-change 也只保留 transform
       if (!this.disableBlurFilter) {
-        lineElement.style.filter = `blur(${Math.min(32, blur).toFixed(3)}px)`;
-        lineElement.style.willChange = 'transform, filter';
+        const clampedBlur = Math.min(32, blur);
+        const lineKey = lineObj as unknown as object;
+        const lastBlur = this.blurCache.get(lineKey);
+        // [性能优化]: blur 在弹簧收敛后稳定不变；仅在值变化时写入 filter，避免每帧 N 行 GPU 合成开销
+        if (lastBlur === undefined || Math.abs(lastBlur - clampedBlur) > 0.1) {
+          lineElement.style.filter = `blur(${clampedBlur.toFixed(3)}px)`;
+          lineElement.style.willChange = 'transform, filter';
+          this.blurCache.set(lineKey, clampedBlur);
+        }
       } else {
         lineElement.style.filter = '';
         lineElement.style.willChange = 'transform';

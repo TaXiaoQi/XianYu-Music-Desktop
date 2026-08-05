@@ -154,12 +154,27 @@ const handleEnterBatchMode = () => {
         </button>
 
         <!-- 批量操作 -->
-        <button 
-          @click="handleEnterBatchMode" 
+        <button
+          @click="handleEnterBatchMode"
           class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
           title="批量操作"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+        </button>
+
+        <!-- 清空播放记录 -->
+        <button
+          @click="emit('clearHistory')"
+          class="bg-white/1 hover:bg-red-50 dark:hover:bg-red-500/10 border border-white/1 text-gray-500 dark:text-gray-400 hover:text-[#EC4141] w-7 h-7 flex items-center justify-center rounded-full transition active:scale-95 shadow-sm hover:border-red-200 dark:hover:border-red-500/30"
+          title="清空播放记录"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" />
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+          </svg>
         </button>
 
         <!-- 排序方式：仅单曲 tab 有意义（歌单/专辑是聚合视图） -->

@@ -118,7 +118,8 @@ const {
   <!-- 收藏按钮 -->
   <button
     v-if="itemKey === 'favorite' && currentSong"
-    @click="toggleFavorite(currentSong)"
+    @mousedown.stop
+    @click.stop="toggleFavorite(currentSong)"
     class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
     :class="isFavorite(currentSong)
       ? 'text-[#EC4141]'

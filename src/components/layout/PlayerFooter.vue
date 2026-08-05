@@ -359,6 +359,9 @@ const progressBarRef = ref<HTMLElement | null>(null);
 const dragTime = ref(0); 
 
 const displayProgress = computed(() => {
+  // PlayerDetail 全屏覆盖 PlayerFooter 时进度条不可见，跳过 currentTime 访问
+  // 避免每帧（60fps）触发 computed 重算和 DOM diff
+  if (showPlayerDetail.value && !isDraggingProgress.value) return 0;
   if (!currentSong.value || currentSong.value.duration <= 0) return 0;
   const time = isDraggingProgress.value ? dragTime.value : currentTime.value;
   return Math.max(0, Math.min(100, (time / currentSong.value.duration) * 100));
@@ -411,7 +414,10 @@ const updateProgressFromEvent = (e: PointerEvent) => {
 };
 
 // 计算总时长与当前时间
-const currentTimeStr = computed(() => formatDuration(isDraggingProgress.value ? dragTime.value : currentTime.value));
+const currentTimeStr = computed(() => {
+  if (showPlayerDetail.value && !isDraggingProgress.value) return '';
+  return formatDuration(isDraggingProgress.value ? dragTime.value : currentTime.value);
+});
 const totalTimeStr = computed(() => currentSong.value ? formatDuration(currentSong.value.duration) : '0:00');
 const isCurrentRemoteDownloadActive = computed(() => {
   const progress = remoteDownloadProgress.value;
