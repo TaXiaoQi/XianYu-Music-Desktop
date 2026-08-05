@@ -38,7 +38,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis"
+      "msi"
     ],
     "copyright": "Copyright © 2026 XY-Music-Desktop Team",
     "shortDescription": "A beautiful local music player powered by Tauri.",
@@ -74,17 +74,11 @@
       "webviewInstallMode": {
         "type": "skip"
       },
-      "nsis": {
-        "installMode": "perMachine",
-        "languages": [
-          "SimpChinese",
-          "English"
-        ],
-        "displayLanguageSelector": true,
-        "installerIcon": "icons/icon.ico",
-        "uninstallerIcon": "icons/icon.ico",
-        "headerImage": "icons/header.bmp",
-        "sidebarImage": "icons/sidebar.bmp"
+      "wix": {
+        "language": [
+          "zh-CN",
+          "en-US"
+        ]
       }
     }
   }
