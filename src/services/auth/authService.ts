@@ -537,7 +537,32 @@ export async function getProfile(): Promise<{
   user: AuthUser;
   stats: ProfileStats;
 } | null> {
-  return null;
+  const token = getAuthToken();
+  const current = getStoredUser();
+  if (!token || !current) return null;
+
+  try {
+    const data = await requestAction<Record<string, unknown>>(
+      'get_user_info',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+      },
+      15_000,
+    );
+    const user = mapUser(data);
+    // 更新 localStorage 缓存，保证后续读取一致
+    saveAuth({ token, user });
+    return {
+      user,
+      stats: {
+        favorite_count: Number(data.favorite_count ?? 0),
+        playlist_count: Number(data.playlist_count ?? 0),
+      },
+    };
+  } catch (error) {
+    console.warn('[getProfile] 获取用户信息失败:', error);
+    return null;
+  }
 }
 
 /**
@@ -547,33 +572,63 @@ export async function getProfile(): Promise<{
 export async function updateProfile(
   nickname: string,
   avatar?: string,
-): Promise<{ user: AuthUser }> {
+): Promise<{ user: AuthUser; nicknamePending?: boolean }> {
   const token = getAuthToken();
   const current = getStoredUser();
   if (!token || !current) throw new Error('未登录');
 
   try {
-    const data = await requestAction<{ user?: AuthUser; avatar?: string }>('update_profile', {
+    const data = await requestAction<{ user?: AuthUser; avatar?: string; nickname_pending?: boolean }>('update_profile', {
       token,
+      ciyuanxi_id: current.ciyuanxi_id || '',
+      username: nickname,
       nickname,
       avatar: avatar || '',
     });
+
+    // 改名走审核流程：后端不会更新 username，前端也保持旧值
+    // nickname_pending=true 表示改名申请已提交待审核
+    const nicknamePending = data.nickname_pending === true;
     const nextUser: AuthUser = data.user ?? {
       ...current,
-      nickname: nickname || current.nickname,
       avatar: avatar ?? current.avatar,
     };
+    // 不在本地更新 username/nickname（需审核通过后才更新）
     saveAuth({ token, user: nextUser });
-    return { user: nextUser };
+    return { user: nextUser, nicknamePending };
   } catch {
-    // 接口暂不可用，回退为本地更新
+    // 接口暂不可用，回退为本地更新（不改名）
     const nextUser: AuthUser = {
       ...current,
-      nickname: nickname || current.nickname,
       avatar: avatar ?? current.avatar,
     };
     saveAuth({ token, user: nextUser });
     return { user: nextUser };
+  }
+}
+
+/**
+ * 查询当前用户改名审核状态。
+ * 返回 'pending'（审核中）/ 'rejected'（未通过）/ 'none'（无待处理）
+ */
+export async function getNicknameStatus(): Promise<'pending' | 'rejected' | 'none'> {
+  const current = getStoredUser();
+  if (!current) return 'none';
+
+  try {
+    const data = await requestAction<{ status: string }>(
+      'get_nickname_status',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+      },
+      15_000,
+    );
+    const status = data.status ?? 'none';
+    if (status === 'pending' || status === 'rejected') return status;
+    return 'none';
+  } catch (error) {
+    console.warn('[getNicknameStatus] 查询失败:', error);
+    return 'none';
   }
 }
 
@@ -619,10 +674,14 @@ function compressImageToDataUrl(
 /**
  * 上传头像。使用 Canvas 压缩后以 base64 JSON 方式提交（兼容 Tauri HTTP 插件）。
  * POST /api/?action=upload_avatar
+ *
+ * 上传后进入审核流程（和壁纸一样），头像不会立即生效，
+ * 需管理员审核通过后才更新到 app_users.avatar_url。
+ * 因此本函数不再更新本地 authStore 中的 avatar。
  */
 export async function uploadAvatar(
   file: Blob,
-): Promise<{ user: AuthUser; avatar?: string }> {
+): Promise<{ status: 'pending' }> {
   const token = getAuthToken();
   const current = getStoredUser();
   if (!token || !current) throw new Error('未登录');
@@ -633,7 +692,7 @@ export async function uploadAvatar(
   console.log('[uploadAvatar] 压缩完成, base64 长度=', avatarData.length);
 
   try {
-    // 头像上传首次请求可能触发 ALTER TABLE（varchar→LONGTEXT），需要更长超时
+    // 头像上传首次请求可能触发建表/ALTER TABLE，需要更长超时
     const TIMEOUT_MS = 60_000;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
@@ -641,8 +700,8 @@ export async function uploadAvatar(
       }, TIMEOUT_MS);
     });
 
-    const data = await Promise.race([
-      requestAction<{ avatar_url?: string; avatar?: string }>(
+    await Promise.race([
+      requestAction<{ status?: string }>(
         'upload_avatar',
         {
           ciyuanxi_id: current.ciyuanxi_id ?? current.id,
@@ -653,17 +712,40 @@ export async function uploadAvatar(
       timeoutPromise,
     ]);
 
-    const avatarUrl = data.avatar ?? data.avatar_url ?? '';
-    const nextUser: AuthUser = {
-      ...current,
-      avatar: avatarUrl || current.avatar,
-    };
-    saveAuth({ token, user: nextUser });
-    console.log('[uploadAvatar] 上传成功, avatar 长度=', avatarUrl.length);
-    return { user: nextUser, avatar: avatarUrl };
+    console.log('[uploadAvatar] 上传成功，等待管理员审核');
+    return { status: 'pending' };
   } catch (error) {
     console.error('[uploadAvatar] 上传失败:', error);
     throw new Error(getAuthErrorMessage(error, '头像上传失败'), { cause: error });
+  }
+}
+
+/**
+ * POST /api/?action=get_avatar_status
+ *
+ * 查询当前用户头像审核状态。
+ * - 'pending'：审核中
+ * - 'rejected'：审核未通过
+ * - 'none'：无待处理记录（头像已生效或从未上传）
+ */
+export async function getAvatarStatus(): Promise<'pending' | 'rejected' | 'none'> {
+  const current = getStoredUser();
+  if (!current) return 'none';
+
+  try {
+    const data = await requestAction<{ status: string }>(
+      'get_avatar_status',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+      },
+      15_000,
+    );
+    const status = data.status ?? 'none';
+    if (status === 'pending' || status === 'rejected') return status;
+    return 'none';
+  } catch (error) {
+    console.warn('[getAvatarStatus] 查询失败:', error);
+    return 'none';
   }
 }
 

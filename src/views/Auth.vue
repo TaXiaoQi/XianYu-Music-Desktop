@@ -18,6 +18,8 @@ import {
   sendEmailCode,
   updateProfile,
   uploadAvatar,
+  getAvatarStatus,
+  getNicknameStatus,
   type AuthMode,
   type ProfileStats,
   type VerifyCodeType,
@@ -40,6 +42,9 @@ const stats = ref<ProfileStats | null>(null);
 const nicknameDraft = ref('');
 const avatarDraft = ref('');
 const avatarUploading = ref(false);
+// 头像审核状态：none 无待处理 / pending 审核中 / rejected 审核未通过
+const avatarStatus = ref<'none' | 'pending' | 'rejected'>('none');
+const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none');
 // 头像弹窗定位
 const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
 const avatarBtnRef = ref<HTMLElement | null>(null);
@@ -76,6 +81,11 @@ const nicknameEditing = ref(false);
 const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
 async function startNicknameEdit() {
+  // 改名审核中时禁止再次编辑
+  if (nicknameStatus.value === 'pending') {
+    showToast('改名申请审核中，请等待审核完成', 'info');
+    return;
+  }
   nicknameEditing.value = true;
   await nextTick();
   nicknameInputRef.value?.focus();
@@ -292,10 +302,17 @@ async function handleSaveProfile() {
     const result = await updateProfile(nickname);
     if (result?.user) {
       authStore.setUser(result.user);
-      nicknameDraft.value = result.user.nickname || result.user.username;
+      // 改名走审核：不更新 nicknameDraft（保持旧名字直到审核通过）
       avatarDraft.value = result.user.avatar || '';
     }
-    showToast('个人信息已保存', 'success');
+    if (result?.nicknamePending) {
+      nicknameStatus.value = 'pending';
+      // 恢复显示旧名字（审核通过后才会真正更新）
+      nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
+      showToast('改名申请已提交，等待管理员审核', 'success');
+    } else {
+      showToast('个人信息已保存', 'success');
+    }
   } catch (error) {
     const tip = error instanceof Error ? error.message : '保存失败';
     showToast(tip, 'error');
@@ -323,15 +340,54 @@ async function handleAvatarFileChange(event: Event) {
 
   avatarUploading.value = true;
   try {
-    const result = await uploadAvatar(file);
-    if (result?.user) authStore.setUser(result.user);
-    avatarDraft.value = result.user.avatar || result.avatar || '';
-    showToast('头像已上传', 'success');
+    await uploadAvatar(file);
+    // 头像已上传但需审核，不更新本地头像（保持旧头像）
+    avatarStatus.value = 'pending';
+    showToast('头像已上传，等待管理员审核', 'success');
   } catch (error) {
     const tip = error instanceof Error ? error.message : '头像上传失败';
     showToast(tip, 'error');
   } finally {
     avatarUploading.value = false;
+  }
+}
+
+// 刷新头像审核状态：若审核已通过则重新拉取用户信息更新头像
+const refreshingAvatarStatus = ref(false);
+async function refreshAvatarStatus() {
+  if (refreshingAvatarStatus.value) return;
+  refreshingAvatarStatus.value = true;
+  try {
+    // 同时查询头像和改名审核状态
+    const [avatarSt, nicknameSt] = await Promise.all([getAvatarStatus(), getNicknameStatus().catch(() => 'none' as const)]);
+    avatarStatus.value = avatarSt;
+    nicknameStatus.value = nicknameSt;
+
+    // 如果任一审核已通过（status=none），重新拉取用户信息以获取最新数据
+    if (avatarSt === 'none' || nicknameSt === 'none') {
+      const profile = await getProfile();
+      if (profile) {
+        authStore.setUser(profile.user);
+        avatarDraft.value = profile.user.avatar || '';
+        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
+      }
+      if (avatarSt === 'none' && avatarStatus.value !== 'none') {
+        showToast('头像已更新', 'success');
+      }
+      if (nicknameSt === 'none' && nicknameStatus.value !== 'none') {
+        showToast('用户名已更新', 'success');
+      }
+    } else if (avatarSt === 'pending' && nicknameSt === 'pending') {
+      showToast('头像和改名均在审核中', 'info');
+    } else if (avatarSt === 'pending') {
+      showToast('头像仍在审核中', 'info');
+    } else if (nicknameSt === 'pending') {
+      showToast('改名仍在审核中', 'info');
+    }
+  } catch {
+    showToast('查询审核状态失败', 'error');
+  } finally {
+    refreshingAvatarStatus.value = false;
   }
 }
 
@@ -477,6 +533,13 @@ onMounted(async () => {
     }
   } catch {
     stats.value = null;
+  }
+  // 查询头像和改名审核状态
+  avatarStatus.value = await getAvatarStatus();
+  try {
+    nicknameStatus.value = await getNicknameStatus();
+  } catch {
+    nicknameStatus.value = 'none';
   }
 });
 </script>
@@ -782,6 +845,30 @@ onMounted(async () => {
                 @change="handleAvatarFileChange"
               />
             </div>
+            <!-- 头像审核状态提示 -->
+            <div
+              v-if="avatarStatus === 'pending'"
+              class="ml-2 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300"
+            >
+              <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              头像审核中
+              <button
+                type="button"
+                class="ml-1 flex items-center gap-0.5 underline-offset-2 hover:underline"
+                :disabled="refreshingAvatarStatus"
+                @click="refreshAvatarStatus"
+              >
+                <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                刷新
+              </button>
+            </div>
+            <div
+              v-else-if="avatarStatus === 'rejected'"
+              class="ml-2 flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-[10px] text-rose-600 dark:text-rose-300"
+            >
+              <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              头像审核未通过
+            </div>
             <!-- 昵称 + 副信息 -->
             <div class="min-w-0">
               <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.95vw,0.8rem)] font-light tracking-wider mb-1">个人中心</p>
@@ -829,6 +916,29 @@ onMounted(async () => {
                 >
                   {{ profileSaving ? '保存中…' : '保存' }}
                 </button>
+              </div>
+              <!-- 改名审核状态提示 -->
+              <div
+                v-if="nicknameStatus === 'pending'"
+                class="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300"
+              >
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                改名审核中
+                <button
+                  type="button"
+                  class="ml-1 underline-offset-2 hover:underline"
+                  :disabled="refreshingAvatarStatus"
+                  @click="refreshAvatarStatus"
+                >
+                  刷新
+                </button>
+              </div>
+              <div
+                v-else-if="nicknameStatus === 'rejected'"
+                class="mt-1.5 inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-[10px] text-rose-600 dark:text-rose-300"
+              >
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                改名审核未通过
               </div>
               <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light mt-1.5 truncate">
                 @{{ authStore.user?.username }} · {{ authStore.user?.email }}
