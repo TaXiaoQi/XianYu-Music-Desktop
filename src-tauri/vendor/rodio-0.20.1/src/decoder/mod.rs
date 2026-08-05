@@ -67,16 +67,16 @@ where
 
 impl<R: Read + Seek> DecoderImpl<R> {
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         match self {
             #[cfg(all(feature = "wav", not(feature = "symphonia-wav")))]
-            DecoderImpl::Wav(source) => source.next(),
+            DecoderImpl::Wav(source) => source.next().map(|s| s as f32 / 32768.0),
             #[cfg(all(feature = "vorbis", not(feature = "symphonia-vorbis")))]
-            DecoderImpl::Vorbis(source) => source.next(),
+            DecoderImpl::Vorbis(source) => source.next().map(|s| s as f32 / 32768.0),
             #[cfg(all(feature = "flac", not(feature = "symphonia-flac")))]
-            DecoderImpl::Flac(source) => source.next(),
+            DecoderImpl::Flac(source) => source.next().map(|s| s as f32 / 32768.0),
             #[cfg(all(feature = "minimp3", not(feature = "symphonia-mp3")))]
-            DecoderImpl::Mp3(source) => source.next(),
+            DecoderImpl::Mp3(source) => source.next().map(|s| s as f32 / 32768.0),
             #[cfg(feature = "symphonia")]
             DecoderImpl::Symphonia(source) => source.next(),
             DecoderImpl::None(_) => None,
@@ -395,10 +395,10 @@ impl<R> Iterator for Decoder<R>
 where
     R: Read + Seek,
 {
-    type Item = i16;
+    type Item = f32;
 
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         self.0.next()
     }
 
@@ -441,10 +441,10 @@ impl<R> Iterator for LoopedDecoder<R>
 where
     R: Read + Seek,
 {
-    type Item = i16;
+    type Item = f32;
 
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         if let Some(sample) = self.0.next() {
             Some(sample)
         } else {
@@ -455,7 +455,7 @@ where
                     let mut reader = source.into_inner();
                     reader.seek(SeekFrom::Start(0)).ok()?;
                     let mut source = wav::WavDecoder::new(reader).ok()?;
-                    let sample = source.next();
+                    let sample = source.next().map(|s| s as f32 / 32768.0);
                     (DecoderImpl::Wav(source), sample)
                 }
                 #[cfg(all(feature = "vorbis", not(feature = "symphonia-vorbis")))]
@@ -466,7 +466,7 @@ where
                     let mut source = vorbis::VorbisDecoder::from_stream_reader(
                         OggStreamReader::from_ogg_reader(reader).ok()?,
                     );
-                    let sample = source.next();
+                    let sample = source.next().map(|s| s as f32 / 32768.0);
                     (DecoderImpl::Vorbis(source), sample)
                 }
                 #[cfg(all(feature = "flac", not(feature = "symphonia-flac")))]
@@ -474,7 +474,7 @@ where
                     let mut reader = source.into_inner();
                     reader.seek(SeekFrom::Start(0)).ok()?;
                     let mut source = flac::FlacDecoder::new(reader).ok()?;
-                    let sample = source.next();
+                    let sample = source.next().map(|s| s as f32 / 32768.0);
                     (DecoderImpl::Flac(source), sample)
                 }
                 #[cfg(all(feature = "minimp3", not(feature = "symphonia-mp3")))]
@@ -482,7 +482,7 @@ where
                     let mut reader = source.into_inner();
                     reader.seek(SeekFrom::Start(0)).ok()?;
                     let mut source = mp3::Mp3Decoder::new(reader).ok()?;
-                    let sample = source.next();
+                    let sample = source.next().map(|s| s as f32 / 32768.0);
                     (DecoderImpl::Mp3(source), sample)
                 }
                 #[cfg(feature = "symphonia")]
