@@ -569,8 +569,21 @@ const authStore = useAuthStore();
   };
 
   const playSong = async (song: Song, options: PlaySongOptions = {}) => {
-    const requestId = ++playRequestId;
     const previousSong = currentSong.value;
+    const isSameCurrentlyPlayingSong = !!previousSong
+      && previousSong.path === song.path
+      && isPlaying.value
+      && !options.continueStatisticsSession
+      && options.startTime === undefined
+      && !options._sourceSwitchCtx;
+
+    // 重复点击正在播放的同一首歌时不重新加载，避免进度被重置、音频重建和封面动画重复触发。
+    // 音质切换、自动换源、指定起播时间等内部重播请求仍继续执行。
+    if (isSameCurrentlyPlayingSong) {
+      return;
+    }
+
+    const requestId = ++playRequestId;
 
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
