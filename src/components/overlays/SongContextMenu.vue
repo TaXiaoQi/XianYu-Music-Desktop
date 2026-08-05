@@ -18,7 +18,7 @@ import {
 } from '../../features/library/playerLibraryViewShared';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
-import { downloadToLocal } from '../../composables/useDownloadToLocal';
+import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import type { Song } from '../../types';
 
 type SongMenuAction =
@@ -450,8 +450,10 @@ const handleEntryMouseEnter = (action: SongMenuAction) => {
  * 下载至本地：复用共享下载逻辑（useDownloadToLocal），
  * 状态写入 download store，自动联动底栏下载 UI 动画。
  */
-const handleDownloadToLocal = async (song: Song) => {
-  await downloadToLocal(song);
+const { openDownloadDialog } = useDownloadDialog();
+
+const handleDownloadToLocal = (song: Song) => {
+  openDownloadDialog(song);
 };
 
 const handleAction = (action: SongMenuAction) => {

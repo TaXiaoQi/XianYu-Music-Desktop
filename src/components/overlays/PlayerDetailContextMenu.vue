@@ -178,6 +178,9 @@ watch(
     }
     menuSize.value = { width: 0, height: 0 };
   },
+  // 组件可能由 v-if 懒挂载，此时 props.visible 初始即为 true，
+  // 需 immediate 才能在挂载后立即测量尺寸，避免 menuSize 为 0 导致 visibility:hidden。
+  { immediate: true },
 );
 
 const menuStyle = computed<CSSProperties>(() => {
