@@ -91,62 +91,68 @@ const {
                       class="desktop-lyric-block"
                       :style="blockStyle"
                     >
-                      <div
-                        v-for="displayLine in visibleLyricLines"
-                        :key="`${displayLine.line.time}:${displayLine.line.text}:${displayLine.lineIndex}`"
-                        class="desktop-lyric-row"
-                        :class="{
-                          'desktop-lyric-row--active': displayLine.active,
-                          'desktop-lyric-row--inactive': !displayLine.active,
-                          'desktop-lyric-row--second-line': settings.showDoubleLine && !displayLine.active,
-                        }"
+                      <transition-group
+                        name="desktop-line"
+                        tag="div"
+                        class="desktop-lyric-rows"
                       >
                         <div
-                          class="desktop-lyric-main"
+                          v-for="displayLine in visibleLyricLines"
+                          :key="`${displayLine.line.time}:${displayLine.line.text}:${displayLine.lineIndex}`"
+                          class="desktop-lyric-row"
                           :class="{
-                            'desktop-lyric-main--inactive': !displayLine.active,
-                            'desktop-lyric-main--solid': !displayLine.words.length,
+                            'desktop-lyric-row--active': displayLine.active,
+                            'desktop-lyric-row--inactive': !displayLine.active,
+                            'desktop-lyric-row--second-line': settings.showDoubleLine && !displayLine.active,
                           }"
                         >
-                          <template v-if="displayLine.words.length">
-                            <span
-                              v-for="(word, index) in displayLine.words"
-                              :key="`${word.start}-${word.end}-${index}`"
-                              class="desktop-lyric-word"
-                              :class="{ 'desktop-lyric-word--with-romaji': displayLine.hasAlignedRomaji }"
-                            >
+                          <div
+                            class="desktop-lyric-main"
+                            :class="{
+                              'desktop-lyric-main--inactive': !displayLine.active,
+                              'desktop-lyric-main--solid': !displayLine.words.length,
+                            }"
+                          >
+                            <template v-if="displayLine.words.length">
                               <span
-                                class="desktop-lyric-word-main"
-                                :style="displayLine.active ? getWordStyle(word.start, word.end) : undefined"
+                                v-for="(word, index) in displayLine.words"
+                                :key="`${word.start}-${word.end}-${index}`"
+                                class="desktop-lyric-word"
+                                :class="{ 'desktop-lyric-word--with-romaji': displayLine.hasAlignedRomaji }"
                               >
-                                {{ word.text }}
+                                <span
+                                  class="desktop-lyric-word-main"
+                                  :style="displayLine.active ? getWordStyle(word.start, word.end) : undefined"
+                                >
+                                  {{ word.text }}
+                                </span>
+                                <span
+                                  v-if="displayLine.hasAlignedRomaji"
+                                  class="desktop-lyric-word-romaji"
+                                  :style="displayLine.active ? getRomajiWordStyle(word.start, word.end) : undefined"
+                                >
+                                  {{ word.romaji?.trim() }}
+                                </span>
                               </span>
-                              <span
-                                v-if="displayLine.hasAlignedRomaji"
-                                class="desktop-lyric-word-romaji"
-                                :style="displayLine.active ? getRomajiWordStyle(word.start, word.end) : undefined"
-                              >
-                                {{ word.romaji?.trim() }}
-                              </span>
-                            </span>
-                          </template>
-                          <template v-else>
-                            {{ displayLine.line.text }}
-                          </template>
-                        </div>
+                            </template>
+                            <template v-else>
+                              {{ displayLine.line.text }}
+                            </template>
+                          </div>
 
-                        <div
-                          v-for="secondaryLine in displayLine.secondaryLines"
-                          :key="`${displayLine.lineIndex}:${secondaryLine.kind}:${secondaryLine.text}`"
-                          class="desktop-lyric-sub"
-                          :class="`desktop-lyric-sub--${secondaryLine.kind}`"
-                          :style="secondaryLine.kind === 'romaji' && displayLine.active
-                            ? getRomajiLineStyle(displayLine.line, displayLine.lineIndex)
-                            : undefined"
-                        >
-                          {{ secondaryLine.text }}
+                          <div
+                            v-for="secondaryLine in displayLine.secondaryLines"
+                            :key="`${displayLine.lineIndex}:${secondaryLine.kind}:${secondaryLine.text}`"
+                            class="desktop-lyric-sub"
+                            :class="`desktop-lyric-sub--${secondaryLine.kind}`"
+                            :style="secondaryLine.kind === 'romaji' && displayLine.active
+                              ? getRomajiLineStyle(displayLine.line, displayLine.lineIndex)
+                              : undefined"
+                          >
+                            {{ secondaryLine.text }}
+                          </div>
                         </div>
-                      </div>
+                      </transition-group>
                     </div>
 
                     <div
@@ -303,6 +309,16 @@ const {
   transition: -webkit-text-stroke-width 180ms ease;
 }
 
+.desktop-lyric-rows {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: calc(0.22rem * var(--desktop-line-gap, 1));
+}
+
 .desktop-lyric-row {
   width: 100%;
   display: flex;
@@ -316,6 +332,32 @@ const {
     transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
     filter 480ms ease;
   will-change: opacity, transform, filter;
+}
+
+.desktop-line-move,
+.desktop-line-enter-active,
+.desktop-line-leave-active {
+  transition:
+    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 460ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 360ms ease;
+}
+
+.desktop-line-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+.desktop-line-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -12px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+.desktop-line-leave-active {
+  position: absolute;
+  inset-inline: 0;
 }
 
 .desktop-lyric-row--active {
@@ -492,6 +534,12 @@ const {
   height: 100%;
   max-width: 100%;
   align-items: stretch;
+  justify-content: center;
+  gap: 0;
+}
+
+.lyrics-align-split-corners .desktop-lyric-rows {
+  height: 100%;
   justify-content: space-between;
   gap: 0;
 }

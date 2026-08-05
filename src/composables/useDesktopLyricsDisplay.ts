@@ -1,5 +1,5 @@
 import { emitTo } from '@tauri-apps/api/event';
-import { computed, ref, watch, type CSSProperties, type Ref } from 'vue';
+import { computed, ref, type CSSProperties, type Ref } from 'vue';
 
 import {
   DEFAULT_DESKTOP_PLAYER_ALIGNMENT,
@@ -102,7 +102,6 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   const themeColors = ref<string[]>([]);
   const customLyricsFonts = ref<ImportedLyricsFont[]>([]);
   const songDuration = ref<number | null>(null);
-  const doubleLinePageStartIndex = ref(-1);
   const settings = ref<DesktopLyricsWindowSettings>({
     showTranslation: true,
     showRomaji: false,
@@ -560,35 +559,9 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
 
     return parsedLyrics.value[0] ?? null;
   });
-  watch(
-    [activeLyricIndex, parsedLyrics, () => settings.value.showDoubleLine],
-    () => {
-      if (parsedLyrics.value.length === 0) {
-        doubleLinePageStartIndex.value = -1;
-        return;
-      }
-
-      const currentIndex = activeLyricIndex.value >= 0 ? activeLyricIndex.value : 0;
-      if (!settings.value.showDoubleLine) {
-        doubleLinePageStartIndex.value = currentIndex;
-        return;
-      }
-
-      const pageStartIndex = doubleLinePageStartIndex.value;
-      const pageEndIndex = pageStartIndex + 1;
-      if (pageStartIndex < 0 || currentIndex < pageStartIndex || currentIndex > pageEndIndex) {
-        doubleLinePageStartIndex.value = currentIndex;
-      }
-    },
-    { immediate: true },
-  );
   const visiblePairStartIndex = computed(() => {
     if (parsedLyrics.value.length === 0) return -1;
-    if (!settings.value.showDoubleLine) {
-      return activeLyricIndex.value >= 0 ? activeLyricIndex.value : 0;
-    }
-
-    return doubleLinePageStartIndex.value >= 0 ? doubleLinePageStartIndex.value : 0;
+    return activeLyricIndex.value >= 0 ? activeLyricIndex.value : 0;
   });
   const blockTransitionKey = computed(() => {
     if (!activeLyricLine.value) return `${lyricsStatus.value}:${fallbackText.value}`;
@@ -598,12 +571,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
       return `${line.time}:${line.text}:${line.translation}:${line.romaji}`;
     }
 
-    const firstLine = parsedLyrics.value[visiblePairStartIndex.value];
-    const secondLine = parsedLyrics.value[visiblePairStartIndex.value + 1];
-    return [
-      firstLine ? `${firstLine.time}:${firstLine.text}:${firstLine.translation}:${firstLine.romaji}` : '',
-      secondLine ? `${secondLine.time}:${secondLine.text}:${secondLine.translation}:${secondLine.romaji}` : '',
-    ].join('|');
+    return `double-line:${lyricsStatus.value}`;
   });
   const visibleLyricLines = computed<DesktopLyricDisplayLine[]>(() => {
     if (parsedLyrics.value.length === 0 || visiblePairStartIndex.value < 0) return [];
