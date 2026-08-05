@@ -1191,7 +1191,7 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
     album_key: `${item.album || '未知专辑'}-${item.artist || '未知歌手'}`,
     is_various_artists_album: false,
     collapse_artist_credits: false,
-    duration: item.duration || 0,
+    duration: Math.floor((item.duration || 0) / 1000),
     cover_thumb_path: item.coverUrl || '',
     source_type: 'remote',
     plugin_id: item.pluginId,
