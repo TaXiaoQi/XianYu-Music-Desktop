@@ -121,6 +121,13 @@ watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
   }
 });
 
+// 用户名变化时刷新：用户修改名字后排行榜需显示最新名称
+watch(() => authStore.user?.username, () => {
+  if (isLeaderboardReady.value) {
+    void loadLeaderboard();
+  }
+});
+
 onMounted(async () => {
   statisticsStore.cancelHeavyDataRelease();
   // 每次进入统计页都强制刷新行为统计（不依赖缓存），确保听歌时长是最新的
