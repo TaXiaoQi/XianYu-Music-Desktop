@@ -371,6 +371,25 @@ const {
   filter: saturate(0.94);
 }
 
+.desktop-lyric-row.desktop-line-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+.desktop-lyric-row.desktop-line-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -12px, 0) scale(0.985);
+  filter: blur(6px);
+}
+
+.desktop-lyric-row.desktop-line-leave-active {
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .desktop-lyric-main {
   width: 100%;
   font-size: calc(max(26px, min(4.8vw, 6vh)) * var(--desktop-font-scale, 1));
