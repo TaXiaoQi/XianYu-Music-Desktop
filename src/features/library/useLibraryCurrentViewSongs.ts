@@ -616,7 +616,7 @@ export function useLibraryCurrentViewSongs({
       return [];
     }
 
-    // 优先使用 playlist.songs 缓存中的歌曲路径（在线歌曲可能尚未注入 extraSongPool）
+    // 优先使用 playlist.songs 缓存中的歌曲路径（在线歌曲可能尚未注入 songPool）
     if (playlist.songs && playlist.songs.length > 0) {
       const songPathSet = new Set(playlist.songs.map(s => s.path).filter(Boolean));
       // 合并 songPaths 和 songs 中的路径，确保所有歌曲都能被展示
@@ -635,7 +635,7 @@ export function useLibraryCurrentViewSongs({
       if (currentViewMode.value === 'all' && localSortMode.value !== 'custom') {
         if (localSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
-            allViewSongPaths.value.filter(path => songLookup.value.has(path)),
+            allViewSongPaths.value,
             (path) => getSongTitleLabel(songLookup.value.get(path)!),
           );
         }
@@ -683,13 +683,13 @@ export function useLibraryCurrentViewSongs({
         if (folderSortMode.value !== 'custom') {
           if (folderSortMode.value === 'name') {
             return sortItemsByAlphabetIndex(
-              folderViewSongPaths.value.filter(path => songLookup.value.has(path)),
+              folderViewSongPaths.value,
               (path) => getSongFileNameLabel(songLookup.value.get(path)!),
             );
           }
           if (folderSortMode.value === 'title') {
             return sortItemsByAlphabetIndex(
-              folderViewSongPaths.value.filter(path => songLookup.value.has(path)),
+              folderViewSongPaths.value,
               (path) => getSongTitleLabel(songLookup.value.get(path)!),
             );
           }
@@ -739,7 +739,6 @@ export function useLibraryCurrentViewSongs({
             pathsToRender = sortSongPathsByLocalMode(canonicalSongPaths.value, localSortMode.value);
           }
         }
-        pathsToRender = pathsToRender.filter(path => songLookup.value.has(path));
 
         if (localSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
@@ -771,13 +770,13 @@ export function useLibraryCurrentViewSongs({
       if (folderSortMode.value !== 'custom') {
         if (folderSortMode.value === 'name') {
           return sortItemsByAlphabetIndex(
-            folderViewSongPaths.value.filter(path => songLookup.value.has(path)),
+            folderViewSongPaths.value,
             (path) => getSongFileNameLabel(songLookup.value.get(path)!),
           );
         }
         if (folderSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
-            folderViewSongPaths.value.filter(path => songLookup.value.has(path)),
+            folderViewSongPaths.value,
             (path) => getSongTitleLabel(songLookup.value.get(path)!),
           );
         }
@@ -799,7 +798,13 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'recent') {
       if (localSortMode.value !== 'custom') {
-        return recentViewSongPaths.value;
+        // 异步加载期间 recentViewSongPaths 可能为空，用 resolveRecentSongPaths 做同步兜底，
+        // 避免切换到最近播放页时出现白屏
+        const paths = recentViewSongPaths.value;
+        if (paths.length > 0) {
+          return paths;
+        }
+        return resolveRecentSongPaths();
       }
 
       return sortSongPathsByLocalMode(resolveRecentSongPaths(), localSortMode.value);
@@ -807,7 +812,13 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'favorites') {
       if (localSortMode.value !== 'custom') {
-        return favoriteViewSongPaths.value;
+        // 异步加载期间 favoriteViewSongPaths 可能为空，用 resolveFavoriteFallbackPaths 做同步兜底，
+        // 避免切换到收藏页时出现白屏
+        const paths = favoriteViewSongPaths.value;
+        if (paths.length > 0) {
+          return paths;
+        }
+        return resolveFavoriteFallbackPaths();
       }
 
       const paths = resolveFavoriteFallbackPaths();
@@ -830,7 +841,7 @@ export function useLibraryCurrentViewSongs({
     const paths = currentViewSongPaths.value;
     const songsFromLookup = materializeSongPaths(paths);
 
-    // 歌单视图：如果 songLookup 找不到所有歌曲（在线歌曲重启后尚未注入 extraSongPool），
+    // 歌单视图：如果 songLookup 找不到所有歌曲（在线歌曲重启后尚未注入 songPool），
     // 从 playlist.songs 缓存中补充缺失的歌曲
     if (currentViewMode.value === 'playlist' && songsFromLookup.length < paths.length) {
       const playlist = playlists.value.find(item => item.id === filterCondition.value);

@@ -22,8 +22,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
 /// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
-/// 2MB ≈ 125s @ 128kbps，能吸收大部分网络抖动，避免播放中追上下载进度导致音频线程阻塞。
-pub const MIN_BUFFER_BYTES: u64 = 2 * 1024 * 1024;
+/// 512KB ≈ 32s @ 128kbps / 12.8s @ 320kbps，平衡起播速度和播放流畅度。
+/// 配合 StreamingTempFileReader 的阻塞等待机制，即使播放追上下载进度也能平滑等待。
+pub const MIN_BUFFER_BYTES: u64 = 512 * 1024;
 
 /// 流式临时文件读取器：包装 File，实现 Read + Seek。
 /// 读取位置接近下载进度时阻塞等待，直到数据就绪。

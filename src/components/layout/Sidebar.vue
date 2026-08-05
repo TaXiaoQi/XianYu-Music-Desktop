@@ -223,7 +223,7 @@ const confirmImportPlaylist = (payload: { result: PlaylistImportResult; rename?:
     }
   }
 
-  // 保存在线歌曲元信息到 libraryStore.extraSongPool
+  // 保存在线歌曲元信息到 libraryStore.songPool
   for (const song of songs) {
     libraryStore.setExtraSong(song);
   }
@@ -266,7 +266,7 @@ const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
   const { playlists: matchedPlaylists, matchedCount, unmatchedCount } =
     matchSongsToLocalLibrary(playlists, libraryStore.canonicalSongs);
 
-  // 本地库路径集合：匹配成功的歌曲已在本地库中，无需写入 extraSongPool
+  // 本地库路径集合：匹配成功的歌曲已在本地库中，无需写入 songPool
   const localPathSet = new Set(
     libraryStore.canonicalSongs.map(s => s.path.toLowerCase()),
   );
@@ -280,7 +280,7 @@ const confirmBackupImport = (playlists: ImportedPlaylist[]) => {
     if (!playlistName || pl.songs.length === 0) continue;
 
     const songPaths = pl.songs.map((song) => song.path);
-    // 仅未匹配的歌曲需要写入 extraSongPool（匹配成功的已在本地库中）
+    // 仅未匹配的歌曲需要写入 songPool（匹配成功的已在本地库中）
     for (const song of pl.songs) {
       if (!localPathSet.has(song.path.toLowerCase())) {
         allExtraSongs.push(song);
@@ -316,7 +316,7 @@ const confirmOnlineBackupImport = (prepared: PreparedPluginBackupImport) => {
 
   let createdCount = 0;
 
-  // 批量收集所有需要写入 extraSongPool 的歌曲，避免逐首调用 setExtraSong
+  // 批量收集所有需要写入 songPool 的歌曲，避免逐首调用 setExtraSong
   // 触发 N 次 songCatalogVersion 自增和 songLookup 重算
   const allExtraSongs: Song[] = [];
 
