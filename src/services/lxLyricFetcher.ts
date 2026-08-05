@@ -521,17 +521,17 @@ async function qrcDecrypt(encryptedHexOrBytes: string): Promise<string> {
 
 // ==================== Kugou (kg) Lyric Fetching ====================
 
-const KG_HEAD_EXP = /^.*\[id:\$\w+\]\n/;
+const KG_HEAD_EXP = /^.*\[id:\$\w+]\n/;
 
 function kgParseLyric(str: string): LxLyricResult {
   str = str.replace(/\r/g, '');
   if (KG_HEAD_EXP.test(str)) str = str.replace(KG_HEAD_EXP, '');
-  const trans = str.match(/\[language:([\w=\\/+]+)\]/);
+  const trans = str.match(/\[language:([\w=\\/+]+)]/);
   let lyric: string;
   let rlyric: string | any[] = '';
   let tlyric: string | any[] = '';
   if (trans) {
-    str = str.replace(/\[language:[\w=\\/+]+\]\n/, '');
+    str = str.replace(/\[language:[\w=\\/+]+]\n/, '');
     try {
       const json = JSON.parse(atob(trans[1]));
       for (const item of json.content) {
@@ -543,8 +543,8 @@ function kgParseLyric(str: string): LxLyricResult {
     } catch { /* ignore */ }
   }
   let i = 0;
-  let lxlyric = str.replace(/\[((\d+),\d+)\].*/g, (s) => {
-    const result = s.match(/\[((\d+),\d+)\].*/);
+  let lxlyric = str.replace(/\[((\d+),\d+)].*/g, (s) => {
+    const result = s.match(/\[((\d+),\d+)].*/);
     if (!result) return s;
     let time = parseInt(result[2]);
     const ms = time % 1000;
@@ -605,14 +605,14 @@ async function fetchKgLyric(songInfo: LxSongInfo): Promise<LxLyricResult | null>
 
 // ==================== Kuwo (kw) Lyric Fetching ====================
 
-const KW_TIME_EXP = /^\[([\d:.]*)\]{1}/g;
-const KW_EXIST_TIME_EXP = /\[\d{1,2}:.*\d{1,4}\]/;
+const KW_TIME_EXP = /^\[([\d:.]*)]{1}/g;
+const KW_EXIST_TIME_EXP = /\[\d{1,2}:.*\d{1,4}]/;
 const KW_LYRICX_TAG = /^<-?\d+,-?\d+>/;
 
 const kwLrcTools = {
   rxps: {
-    wordLine: /^(\[\d{1,2}:.*\d{1,4}\])\s*(\S+(?:\s+\S+)*)?\s*/,
-    tagLine: /\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*\]/,
+    wordLine: /^(\[\d{1,2}:.*\d{1,4}])\s*(\S+(?:\s+\S+)*)?\s*/,
+    tagLine: /\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]/,
     wordTimeAll: /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g,
     wordTime: /<(-?\d+),(-?\d+)(?:,-?\d+)?>/,
   },
@@ -621,7 +621,7 @@ const kwLrcTools = {
     const offset = parseInt(str);
     const offset2 = parseInt(str2);
     // 必须使用 Math.trunc 进行整数除法（与 Go 的整数除法一致）
-    // 否则浮点数如 150.5 无法被 normalizeLxlyricToRelative 的正则 /<(\d+),(\d+)>/g 匹配
+    // 否则浮点数如 150.5 无法被 normalizeLyricToRelative 的正则 /<(\d+),(\d+)>/g 匹配
     let startTime = Math.trunc(Math.abs((offset + offset2) / (this.offset * 2)));
     let endTime = Math.trunc(Math.abs((offset - offset2) / (this.offset2 * 2))) + startTime;
     if (prevWord) {
@@ -770,8 +770,8 @@ async function fetchKwLyric(songInfo: LxSongInfo): Promise<LxLyricResult | null>
 
 const txParseTools = {
   rxps: {
-    lineTime: /^\[(\d+),\d+\]/,
-    lineTime2: /^\[([\d:.]+)\]/,
+    lineTime: /^\[(\d+),\d+]/,
+    lineTime2: /^\[([\d:.]+)]/,
     wordTime: /\(\d+,\d+\)/,
     wordTimeAll: /(\(\d+,\d+\))/g,
   },
@@ -838,7 +838,7 @@ return `<${Math.max(parseInt(r[1]) - startMsTime, 0)},${r[2]}>`;
   getIntv(interval: string): number {
     if (!interval) return 0;
     if (!interval.includes('.')) interval += '.0';
-    const arr = interval.split(/:|\./);
+    const arr = interval.split(/[:.]/);
     while (arr.length < 3) arr.unshift('0');
     const [m, s, ms] = arr;
     return parseInt(m) * 3600000 + parseInt(s) * 1000 + parseInt(ms);
@@ -1028,7 +1028,7 @@ function wyFixTimeLabel(lrc: string, tlrc: string, romalrc: string): { lrc: stri
 function parseYRC(yrcText: string): string {
   const lines = yrcText.split('\n');
   const result: string[] = [];
-  const lineTimeRe = /^\[(\d+),(\d+)\]/;
+  const lineTimeRe = /^\[(\d+),(\d+)]/;
   const wordTagRe = /\((\d+),(\d+),\d+\)/g;
 
   for (let rawLine of lines) {
@@ -1097,12 +1097,12 @@ function tryExtractYRC(body: any): string {
   const klyric = body.klyric;
   if (klyric && typeof klyric === 'object' && typeof klyric.lyric === 'string' && klyric.lyric.length > 50) {
     // YRC 格式以 [数字,数字] 开头
-  if (/^\[\d+,\d+\]/m.test(klyric.lyric)) {
+  if (/^\[\d+,\d+]/m.test(klyric.lyric)) {
       const result = parseYRC(klyric.lyric);
       if (result) return result;
     }
   }
-  if (typeof klyric === 'string' && klyric.length > 50 && /^\[\d+,\d+\]/m.test(klyric)) {
+  if (typeof klyric === 'string' && klyric.length > 50 && /^\[\d+,\d+]/m.test(klyric)) {
     const result = parseYRC(klyric);
     if (result) return result;
   }
@@ -1242,7 +1242,7 @@ function tryExtractKRC(body: any): string {
       }
     }
     // 如果不是 base64，尝试直接作为文本解析（可能是 YRC 格式）
-    if (/^\[\d+,\d+\]/m.test(lyricStr)) {
+    if (/^\[\d+,\d+]/m.test(lyricStr)) {
       const result = parseYRC(lyricStr);
       if (result) return result;
     }

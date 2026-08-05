@@ -10,7 +10,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
-import { usePlaybackStore } from '../features/playback/store';
+import { usePlaybackStore } from '../features/playback';
 import { getCachedLxSong } from './lxSongCache';
 import {
   getStoredPlugins,

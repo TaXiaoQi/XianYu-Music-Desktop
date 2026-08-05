@@ -335,7 +335,6 @@ function parseM3UContent(content: string, filePath: string): ImportedPlaylist[] 
       }
     } else if (line.startsWith('#')) {
       // 其他指令（#EXTM3U, #PLAYLIST 等）忽略
-      continue;
     } else {
       // 文件路径行
       const song = createSongFromPath(line, pendingTitle, pendingArtist, pendingDuration);
