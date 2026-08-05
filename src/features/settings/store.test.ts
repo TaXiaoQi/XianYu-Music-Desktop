@@ -147,7 +147,7 @@ describe('settings store', () => {
 
     expect(settingsStore.settings.logging).toEqual({
       minimumLevel: 'info',
-      retentionDays: 14,
+      retentionDays: 1,
       autoAnalyze: true,
     });
 
@@ -161,7 +161,7 @@ describe('settings store', () => {
 
     expect(merged.logging).toEqual({
       minimumLevel: 'error',
-      retentionDays: 365,
+      retentionDays: 1,
       autoAnalyze: false,
     });
   });

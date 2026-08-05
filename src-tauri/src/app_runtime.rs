@@ -211,4 +211,13 @@ pub(crate) fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or("main window not found")?;
+    let _: () = window.open_devtools();
+    Ok(())
+}
+
 

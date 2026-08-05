@@ -34,7 +34,7 @@ export interface ApplicationLogAnalysis {
 
 const defaultConfig: LogSettings = {
   minimumLevel: 'info',
-  retentionDays: 14,
+  retentionDays: 1,
   autoAnalyze: true,
 };
 
@@ -107,10 +107,13 @@ const readStoredEntries = (): ApplicationLogEntry[] => {
 
 export const filterLogEntriesForRetention = (
   source: readonly ApplicationLogEntry[],
-  retentionDays: number,
+  _retentionDays: number,
   now = Date.now(),
 ) => {
-  const cutoff = now - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
+  // 只保留当天日志（从今天 00:00 开始）
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const cutoff = startOfToday.getTime();
   return source
     .filter(entry => entry.timestamp >= cutoff)
     .slice(-MAX_LOG_ENTRIES);
@@ -219,9 +222,7 @@ export function installApplicationLogger(scope = 'main') {
 export function configureApplicationLogger(config: LogSettings) {
   activeConfig = {
     minimumLevel: isLogLevel(config.minimumLevel) ? config.minimumLevel : defaultConfig.minimumLevel,
-    retentionDays: Number.isFinite(config.retentionDays)
-      ? Math.min(365, Math.max(1, Math.round(config.retentionDays)))
-      : defaultConfig.retentionDays,
+    retentionDays: 1,
     autoAnalyze: Boolean(config.autoAnalyze),
   };
   logEntries.value = filterLogEntriesForRetention(logEntries.value, activeConfig.retentionDays);
