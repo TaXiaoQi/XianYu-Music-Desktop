@@ -4,7 +4,7 @@ import { nextTick } from 'vue';
 
 import type { Song } from '../types';
 import { useLibraryStore } from '../features/library/store';
-import { usePlaybackStore } from '../features/playback/store';
+import { usePlaybackStore } from '../features/playback';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
 import { createPlayerLifecycle } from './playerLifecycle';

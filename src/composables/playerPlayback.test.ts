@@ -79,7 +79,7 @@ vi.mock('./useCoverCache', () => ({
 }));
 
 import type { Song } from '../types';
-import { usePlaybackStore } from '../features/playback/store';
+import { usePlaybackStore } from '../features/playback';
 import { playbackApi } from '../services/tauri/playbackApi';
 import { createPlayerPlayback } from './playerPlayback';
 import { useUiStore } from '../shared/stores/ui';

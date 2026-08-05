@@ -139,7 +139,7 @@ export function generateReverbIR(
           // 回声脉冲: 每个反弹周期开头有一个短脉冲，逐渐扩散
           // 脉冲宽度随反弹次数增大（越远的回声越模糊）
           const pulseWidth = 0.02 + bounceNum * 0.01 // 20ms + 每次+10ms
-          const pulseEnv = Math.exp(-Math.pow((phaseInBounce - 0) / pulseWidth, 2)) // 高斯窗
+          const pulseEnv = Math.exp(-Math.pow((phaseInBounce) / pulseWidth, 2)) // 高斯窗
 
           // 扩散噪声: 隧道壁的不规则反射
           const diffusion = (Math.random() * 2 - 1) * 0.7 + Math.sin(i * 0.01 + ch * 2.1) * 0.3

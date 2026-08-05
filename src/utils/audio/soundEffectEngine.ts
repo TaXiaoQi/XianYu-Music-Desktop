@@ -46,7 +46,13 @@ export const convolutions = [
 // 算法混响预设（程序生成 IR，无需音频文件）
 export { algorithmicReverbs, generateReverbIR } from './advancedEffects'
 export type { AlgorithmicReverbPreset } from './advancedEffects'
-import { algorithmicReverbs as _algorithmicReverbs, generateReverbIR as _generateReverbIR } from './advancedEffects'
+import type {EffectsRack} from './advancedEffects'
+// ===== 高级效果架 =====
+import {
+  algorithmicReverbs as _algorithmicReverbs,
+  createEffectsRack,
+  generateReverbIR as _generateReverbIR
+} from './advancedEffects'
 
 let audioContext: AudioContext | null = null
 let mediaSource: MediaElementAudioSourceNode | null = null
@@ -127,9 +133,6 @@ const speakerPositions51 = [
   { x: 0.707, y: 0, z: 0.707 },    // 后右 RR (+135°)
 ]
 
-// ===== 高级效果架 =====
-import { createEffectsRack } from './advancedEffects'
-import type { EffectsRack } from './advancedEffects'
 let effectsRack: EffectsRack | null = null
 
 // 卷积缓冲区缓存
@@ -370,7 +373,7 @@ export const connectAudioElement = async (audio: HTMLAudioElement) => {
     audio.defaultPlaybackRate = currentPlaybackRate
     audio.playbackRate = currentPlaybackRate
   }
-  if (currentPreservesPitch !== true) {
+  if (!currentPreservesPitch) {
     audio.preservesPitch = currentPreservesPitch
   }
 
@@ -476,8 +479,7 @@ export const setConvolver = async (fileName: string | null, mainGain: number, se
 
   if (fileName) {
     try {
-      const buffer = await loadBuffer(fileName)
-      convolver.buffer = buffer
+      convolver.buffer = await loadBuffer(fileName)
       // [修复电流声] 用 setTargetAtTime 替代直接 .value 赋值，避免 zipper noise
       // 混响启用时启用压缩器控制混响峰值
       const t = audioContext!.currentTime
@@ -820,7 +822,7 @@ export const startPanner36D = () => {
     const z = Math.sin(rad) * r
     // 3. 垂直摆动 (Y 轴): 幅度为基础半径的 100%,频率用 sin(rad*1.5) 错开水平旋转
     //    产生立体螺旋而非平面圆,且 HRTF 频谱线索更明显
-    const y = Math.sin(rad * 1.5) * baseR * 1.0
+    const y = Math.sin(rad * 1.5) * baseR
     // 4. 空气低通: 距离越远高频越衰减 (20000Hz → 2500Hz,远闷近亮对比明显)
     const dist = Math.sqrt(x * x + y * y + z * z)
     const distRatio = Math.min(1, dist / (baseR * 1.8 + 0.01))
@@ -1023,8 +1025,7 @@ export const setAlgorithmicReverb = async (presetLabel: string | null) => {
     if (!preset) return
     try {
       const ctx = getAudioContext()
-      const ir = _generateReverbIR(ctx, preset)
-      convolver.buffer = ir
+      convolver.buffer = _generateReverbIR(ctx, preset)
       // [修复电流声] 用 setTargetAtTime 替代直接 .value 赋值
       const t = ctx.currentTime
       convolverDynamicsCompressor!.threshold.setTargetAtTime(-12, t, 0.05)
@@ -1281,8 +1282,7 @@ export const setAudioBoost = (level: number) => {
 
   // 更新 AnalyserNode FFT 分辨率
   if (analyser) {
-    const fftSize = audioBoostLevel <= 0 ? 128 : audioBoostLevel <= 50 ? 256 : 512
-    analyser.fftSize = fftSize
+    analyser.fftSize = audioBoostLevel <= 0 ? 128 : audioBoostLevel <= 50 ? 256 : 512
     analyser.smoothingTimeConstant = 0.8 - (audioBoostLevel / 100) * 0.2
   }
 

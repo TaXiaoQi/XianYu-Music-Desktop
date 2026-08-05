@@ -18,11 +18,11 @@
  */
 
 import CryptoJs from 'crypto-js';
-import { Buffer } from 'buffer';
-import type { PluginSource } from '../types';
-import { invoke } from '@tauri-apps/api/core';
-import { pluginApi } from './tauri/pluginApi';
-import { fetchWithTimeout } from './pluginFetch';
+import {Buffer} from 'buffer';
+import type {PluginSource} from '../types';
+import {invoke} from '@tauri-apps/api/core';
+import {pluginApi} from './tauri/pluginApi';
+import {fetchWithTimeout} from './pluginFetch';
 
 // ==================== 常量 ====================
 
@@ -572,7 +572,7 @@ export async function loadLxPluginFromScript(
   (globalThis as any).lx = lxApi;
 
   // [新方案] 用初始化锁确保串行初始化，避免 globalThis.lx 冲突
-  const evalPromise = _initLock.then(async () => {
+  _initLock = _initLock.then(async () => {
     log(`[新方案] 开始 eval 插件脚本: ${scriptInfo.name}`);
     try {
       // 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）
@@ -585,7 +585,6 @@ export async function loadLxPluginFromScript(
       }
     }
   });
-  _initLock = evalPromise;
 
   // ----- 等待初始化 -----
   const timeoutPromise = new Promise<never>((_, reject) =>
@@ -628,7 +627,7 @@ export async function loadLxPluginFromScript(
 
   if (!initInfo?.sources || Object.keys(initInfo.sources).length === 0) {
     log('插件未声明任何源 (sources 为空)');
-    const fallbackSource: PluginSource = {
+    return {
       id: hash,
       name: scriptInfo.name || '未知插件',
       format: 'lx',
@@ -640,7 +639,6 @@ export async function loadLxPluginFromScript(
       enabled: false,
       sources: [],
     };
-    return fallbackSource;
   }
 
   // ----- 构建 PluginSource (复用已计算的 hash) -----

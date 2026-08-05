@@ -1,21 +1,21 @@
-import { storeToRefs } from 'pinia';
-import { watch } from 'vue';
-import type { QualityKey, Song } from '../../types';
-import { playbackApi } from '../../services/tauri/playbackApi';
-import { usePlaybackStore } from './store';
-import { useSettingsStore } from '../settings/store';
-import { useLibraryStore } from '../library/store';
-import { useUiStore } from '../../shared/stores/ui';
-import { useCoverCache } from '../../composables/useCoverCache';
-import { useRenderingPower } from '../../composables/renderingPower';
-import { fetchLxSongLyricsRaw } from '../../services/lxLyricFetcher';
-import { useToast } from '../../composables/toast';
-import { reportUserBehavior } from '../../services/usageStats';
-import { useAuthStore } from '../auth/store';
-import { preloadAmlLyricPlayer } from '../../components/player/amlLyricPlayerLoader';
-import { consumeFlyCoverPromise } from '../../composables/useFlyingCover';
-import { getStoredPlugins, pluginGetLyric } from '../../services/pluginEngine';
-import { getOnlineAvailableQualities, resolveOnlineAudio } from './onlinePlaybackResolver';
+import {storeToRefs} from 'pinia';
+import {watch} from 'vue';
+import type {QualityKey, Song} from '../../types';
+import {playbackApi} from '../../services/tauri/playbackApi';
+import {usePlaybackStore} from './store';
+import {useSettingsStore} from '../settings/store';
+import {useLibraryStore} from '../library/store';
+import {useUiStore} from '../../shared/stores/ui';
+import {useCoverCache} from '../../composables/useCoverCache';
+import {useRenderingPower} from '../../composables/renderingPower';
+import {fetchLxSongLyricsRaw} from '../../services/lxLyricFetcher';
+import {useToast} from '../../composables/toast';
+import {reportUserBehavior} from '../../services/usageStats';
+import {useAuthStore} from '../auth/store';
+import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
+import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
+import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
+import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -424,8 +424,7 @@ const authStore = useAuthStore();
             const backendDuration = await playbackApi.getPlaybackDuration();
             if (backendDuration > 0) {
               const newDuration = Math.floor(backendDuration);
-              const updatedSong = { ...songForDuration, duration: newDuration };
-              currentSong.value = updatedSong;
+              currentSong.value = {...songForDuration, duration: newDuration};
               libraryStore.patchSongMeta(songForDuration.path, { duration: newDuration } as Partial<Song>);
               playbackStore.patchQueueSongMeta(songForDuration.path, { duration: newDuration });
             }
@@ -806,8 +805,7 @@ const authStore = useAuthStore();
           // loadLyrics 读到的 currentSong.lyrics_raw 仍为空，导致歌词加载超时。
           libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
           playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
-          const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
-          currentSong.value = songWithLyrics;
+          currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
           console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
           void loadLyrics(lyricsRaw);
         })
@@ -842,8 +840,7 @@ const authStore = useAuthStore();
             // [修复] 同步更新 library store 池中条目（与 LX 歌词处理一致）
             libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
             playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
-            const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricData.lyricsRaw };
-            currentSong.value = songWithLyrics;
+            currentSong.value = {...currentSong.value, lyrics_raw: lyricData.lyricsRaw};
             void loadLyrics(lyricData.lyricsRaw);
           } catch (error) {
             console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
