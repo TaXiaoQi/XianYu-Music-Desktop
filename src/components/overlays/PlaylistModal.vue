@@ -70,8 +70,14 @@ const backupFileName = ref('');
 const backupDetectedFormat = ref('');
 const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
 const backupImportError = ref('');
-const backupMode = ref<'local' | 'online'>('local');
 const backupPluginResult = ref<PreparedPluginBackupImport | null>(null);
+
+/** 当前备份是否为 JSON（在线+本地混合模式） */
+const backupIsJson = computed(() => {
+  if (!backupFilePath.value) return false;
+  const ext = backupFilePath.value.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+  return ext === 'json';
+});
 
 // 拖放状态
 const isDragOver = ref(false);
@@ -136,20 +142,15 @@ function teardownDragListeners() {
 /** 处理拖放的路径，根据当前标签页分发 */
 async function handleDropPaths(paths: string[]) {
   if (activeTab.value === 'backupImport') {
-    // 在线模式仅接受 .json 文件
-    const validExtensions = backupMode.value === 'online'
-      ? ['json']
-      : SUPPORTED_IMPORT_EXTENSIONS;
+    // 找到第一个支持的文件
     const supportedFile = paths.find((p) => {
       const ext = p.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
-      return validExtensions.includes(ext);
+      return SUPPORTED_IMPORT_EXTENSIONS.includes(ext);
     });
     if (supportedFile) {
       await loadBackupFile(supportedFile);
     } else {
-      backupImportError.value = backupMode.value === 'online'
-        ? '在线恢复仅支持 .json 备份文件'
-        : `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
+      backupImportError.value = `请拖入支持的文件格式（${SUPPORTED_IMPORT_EXTENSIONS.map((e) => '.' + e).join(' / ')}）`;
     }
   } else if (activeTab.value === 'localFolderImport') {
     // 找到第一个文件夹
@@ -197,7 +198,6 @@ watch(
       backupDetectedFormat.value = '';
       backupPreviewPlaylists.value = [];
       backupImportError.value = '';
-      backupMode.value = 'local';
       backupPluginResult.value = null;
       importing.value = false;
       selectedSource.value = 'auto';
@@ -271,18 +271,6 @@ const closeSourceDropdown = () => {
   sourceDropdownOpen.value = false;
 };
 
-/** 切换备份导入模式时清理状态 */
-const switchBackupMode = (mode: 'local' | 'online') => {
-  if (backupMode.value === mode || importing.value) return;
-  backupMode.value = mode;
-  backupFilePath.value = '';
-  backupFileName.value = '';
-  backupDetectedFormat.value = '';
-  backupPreviewPlaylists.value = [];
-  backupImportError.value = '';
-  backupPluginResult.value = null;
-};
-
 const handleClose = () => {
   if (importing.value) return; // 导入中不允许关闭
   isClosing.value = true;
@@ -316,18 +304,15 @@ const handleChooseBackupFile = async () => {
   if (importing.value) return;
 
   try {
-    const filters = backupMode.value === 'online'
-      ? [{ name: 'JSON 备份', extensions: ['json'] }]
-      : [
-          { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
-          { name: 'JSON 备份', extensions: ['json'] },
-          { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
-          { name: '椒盐音乐导出', extensions: ['txt'] },
-        ];
     const selected = await open({
       multiple: false,
-      title: backupMode.value === 'online' ? '选择 BakaMusic 或 MusicFree 备份文件' : '选择备份/播放列表文件',
-      filters,
+      title: '选择备份/播放列表文件',
+      filters: [
+        { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
+        { name: 'JSON 备份', extensions: ['json'] },
+        { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
+        { name: '椒盐音乐导出', extensions: ['txt'] },
+      ],
     });
     if (typeof selected === 'string') {
       await loadBackupFile(selected);
@@ -348,8 +333,10 @@ async function loadBackupFile(filePath: string) {
   importing.value = true;
 
   try {
-    if (backupMode.value === 'online') {
-      // 在线恢复：匹配已安装插件，生成可在线播放的歌曲
+    const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+
+    if (ext === 'json') {
+      // JSON 备份：自动识别本地文件和在线插件匹配
       const prepared = await preparePluginBackupFile(filePath, getStoredPlugins());
       backupPluginResult.value = prepared;
       const formatName = prepared.format === 'bakamusic' ? 'BakaMusic' : 'MusicFree';
@@ -358,7 +345,7 @@ async function loadBackupFile(filePath: string) {
         : '';
       backupDetectedFormat.value = `${formatName} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
     } else {
-      // 本地恢复：解析本地文件路径
+      // M3U / TXT：纯本地文件解析
       const playlists = await importBackupFile(filePath);
       backupPreviewPlaylists.value = playlists;
       const totalSongs = playlists.reduce((sum, p) => sum + p.songs.length, 0);
@@ -458,8 +445,8 @@ const handleConfirm = async () => {
   } else if (activeTab.value === 'backupImport') {
     if (importing.value) return;
 
-    if (backupMode.value === 'online') {
-      // 在线恢复：直接将 PreparedPluginBackupImport 传给父组件处理
+    if (backupIsJson.value) {
+      // JSON 备份：使用插件匹配结果（含本地+在线）
       if (!backupPluginResult.value || backupPluginResult.value.importedSongCount === 0) {
         showToast('没有歌曲可以导入，请查看缺失插件说明', 'info');
         return;
@@ -473,7 +460,7 @@ const handleConfirm = async () => {
         isClosing.value = false;
       }, 200);
     } else {
-      // 本地恢复
+      // M3U / TXT：本地文件导入
       if (backupPreviewPlaylists.value.length === 0) return;
       const totalSongs = backupPreviewPlaylists.value.reduce(
         (sum, p) => sum + p.songs.length, 0,
@@ -504,7 +491,7 @@ const canConfirm = computed(() => {
   }
   if (activeTab.value === 'backupImport') {
     if (importing.value) return false;
-    if (backupMode.value === 'online') {
+    if (backupIsJson.value) {
       return !!backupPluginResult.value && backupPluginResult.value.importedSongCount > 0;
     }
     return backupPreviewPlaylists.value.length > 0;
@@ -773,37 +760,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
             <div
               v-else-if="activeTab === 'backupImport'"
               key="backup-import"
-              class="flex-1 flex flex-col space-y-3"
+              class="flex-1 flex flex-col space-y-4"
             >
-              <!-- 模式切换 -->
-              <div class="flex gap-1 rounded-xl bg-gray-100 dark:bg-black/20 p-1">
-                <button
-                  type="button"
-                  :disabled="importing"
-                  class="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
-                  :class="backupMode === 'local'
-                    ? 'bg-white dark:bg-gray-700 text-[#EC4141] shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-                  @click="switchBackupMode('local')"
-                >
-                  本地恢复
-                </button>
-                <button
-                  type="button"
-                  :disabled="importing"
-                  class="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
-                  :class="backupMode === 'online'
-                    ? 'bg-white dark:bg-gray-700 text-[#EC4141] shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
-                  @click="switchBackupMode('online')"
-                >
-                  在线恢复
-                </button>
-              </div>
-
               <div class="space-y-1.5 flex-1 flex flex-col">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                  {{ backupMode === 'online' ? 'BakaMusic / MusicFree JSON 备份' : '备份/播放列表文件' }} <span class="text-[#EC4141]">*</span>
+                  备份/播放列表文件 <span class="text-[#EC4141]">*</span>
                 </label>
                 <!-- 可拖入、可点击的选区（复用本地导入样式） -->
                 <button
@@ -823,18 +784,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                       {{ backupFileName }}
                     </p>
                     <p v-else class="drop-zone-text">
-                      {{ backupMode === 'online'
-                        ? '点击选择 .json 文件，或拖入 JSON 备份文件'
-                        : '点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件'
-                      }}
+                      点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件
                     </p>
                   </div>
                 </button>
               </div>
 
-              <!-- 本地恢复预览信息 -->
+              <!-- M3U/TXT 本地预览信息 -->
               <div
-                v-if="backupMode === 'local' && backupPreviewPlaylists.length > 0"
+                v-if="!backupIsJson && backupPreviewPlaylists.length > 0"
                 class="space-y-2"
               >
                 <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
@@ -853,16 +811,16 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                 </div>
               </div>
 
-              <!-- 在线恢复预览信息 -->
+              <!-- JSON 备份预览信息（本地+在线混合） -->
               <div
-                v-if="backupMode === 'online' && backupPluginResult"
+                v-if="backupIsJson && backupPluginResult"
                 class="space-y-2"
               >
                 <div class="flex items-center gap-2 text-xs font-medium text-green-600 dark:text-green-400">
                   <FileJson class="h-4 w-4" />
                   {{ backupDetectedFormat }}
                 </div>
-                <!-- 已关联插件 -->
+                <!-- 已关联插件 / 本地文件 -->
                 <div v-if="backupPluginResult.associations.length" class="space-y-1">
                   <div
                     v-for="assoc in backupPluginResult.associations"
@@ -893,12 +851,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
 
               <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
-                <template v-if="backupMode === 'online'">
-                  选择 BakaMusic 或 MusicFree 导出的 JSON 备份，自动匹配已安装的在线音源插件，将歌曲关联到插件以在线播放。
-                </template>
-                <template v-else>
-                  支持 BakaMusic / MusicFree JSON 备份、M3U / M3U8 播放列表、椒盐音乐导出格式，自动识别并导入本地文件。M3U 和椒盐格式从文件名或 EXTINF 提取歌曲信息。
-                </template>
+                支持 BakaMusic / MusicFree JSON 备份（自动识别本地文件和在线插件）、M3U / M3U8 播放列表、椒盐音乐导出格式。JSON 备份会自动匹配已安装的在线音源插件，有本地文件路径的歌曲直接作为本地歌曲导入。
               </p>
 
               <div
