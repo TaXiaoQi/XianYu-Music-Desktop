@@ -565,6 +565,10 @@ watch(
 // 点击/双击播放：触发飞入封面动画并立即开始加载播放（并行执行）
 // 飞封面动画用于掩盖起播延迟，与 playSong 同时启动可让动画结束时歌曲已就绪
 const handlePlayClick = (song: Song) => {
+  if (currentSong.value?.path === song.path && isPlaying.value) {
+    return;
+  }
+
   void launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
   emit('play', song);
 };

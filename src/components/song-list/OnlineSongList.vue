@@ -3,8 +3,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
+import { usePlaybackController } from '../../features/playback/usePlaybackController';
 
 const { settings } = useSettings();
+const { currentSong, isPlaying } = usePlaybackController();
 const songClickAction = computed(() => settings.value.songClickAction || 'double');
 
 const props = defineProps<{
@@ -29,7 +31,11 @@ const handleImgError = (e: Event) => {
 
 /** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
 const handlePlayClick = (song: Song) => {
-  launchFlyingCover(song.path, song.cover_thumb_path || '');
+  if (currentSong.value?.path === song.path && isPlaying.value) {
+    return;
+  }
+
+  void launchFlyingCover(song.path, song.cover_thumb_path || '');
   emit('play', song);
 };
 
