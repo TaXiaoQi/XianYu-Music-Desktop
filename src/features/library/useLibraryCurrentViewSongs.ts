@@ -313,7 +313,7 @@ export function useLibraryCurrentViewSongs({
         favoriteViewSongPaths.value = [];
       }
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
 
   watch(
@@ -359,7 +359,7 @@ export function useLibraryCurrentViewSongs({
         recentViewSongPaths.value = [];
       }
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
 
   watch(
@@ -607,7 +607,10 @@ export function useLibraryCurrentViewSongs({
     return sortedPaths;
   };
 
-  const resolvePlaylistSongPaths = () => {
+  // 改为 computed 缓存，避免每次 currentViewSongPaths 重算时重复执行 O(n) 查找和过滤
+  const resolvedPlaylistSongPaths = computed(() => {
+    if (currentViewMode.value !== 'playlist') return [];
+
     const playlist = playlists.value.find(item => item.id === filterCondition.value);
     if (!playlist) {
       return [];
@@ -617,14 +620,13 @@ export function useLibraryCurrentViewSongs({
     if (playlist.songs && playlist.songs.length > 0) {
       const songPathSet = new Set(playlist.songs.map(s => s.path).filter(Boolean));
       // 合并 songPaths 和 songs 中的路径，确保所有歌曲都能被展示
-      const allPaths = playlist.songPaths.filter(path => 
+      return playlist.songPaths.filter(path =>
         songLookup.value.has(path) || songPathSet.has(path)
       );
-      return allPaths;
     }
 
     return playlist.songPaths.filter(path => songLookup.value.has(path));
-  };
+  });
 
   const currentViewSongPaths = computed(() => {
     if (searchQuery.value.trim()) {
@@ -715,7 +717,7 @@ export function useLibraryCurrentViewSongs({
 
       if (currentViewMode.value === 'playlist') {
         return sortSongPathsByPlaylistMode(
-          resolvePlaylistSongPaths().filter(matchesQuery),
+          resolvedPlaylistSongPaths.value.filter(matchesQuery),
           playlistSortMode.value,
         );
       }
@@ -814,7 +816,7 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'playlist') {
       return sortSongPathsByPlaylistMode(
-        resolvePlaylistSongPaths(),
+        resolvedPlaylistSongPaths.value,
         playlistSortMode.value,
       );
     }

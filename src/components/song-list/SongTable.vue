@@ -184,13 +184,22 @@ const segmentedSongs = computed(() => {
 // 歌曲列表变化时重置首屏段，避免切换大歌单时一次性挂载全部行。
 // 仅当实际路径列表发生变化时才重置（切换歌单、增删歌曲），
 // 收藏切换等仅更新元信息的操作会产生新数组引用但路径不变，此时应保持滚动位置。
-let prevSongPathSignature = '';
+// 使用 O(1) 快速签名（长度 + 首尾路径）替代 O(n) 字符串拼接，避免大歌单卡顿。
+let prevSongsLen = -1;
+let prevFirstPath = '';
+let prevLastPath = '';
 watch(() => props.songs, (songs) => {
-  const currentSignature = songs.map(s => s.path).join('\u0001');
-  if (currentSignature === prevSongPathSignature) {
+  const len = songs.length;
+  const firstPath = len > 0 ? songs[0].path : '';
+  const lastPath = len > 0 ? songs[len - 1].path : '';
+
+  if (len === prevSongsLen && firstPath === prevFirstPath && lastPath === prevLastPath) {
     return;
   }
-  prevSongPathSignature = currentSignature;
+
+  prevSongsLen = len;
+  prevFirstPath = firstPath;
+  prevLastPath = lastPath;
   resetLoadedSongCount();
   downloadedOnlinePaths.value = new Set();
 }, { immediate: true });
@@ -536,10 +545,10 @@ watch(
   { immediate: true },
 );
 
-// 点击/双击播放：本地歌曲先触发飞入封面动画，等封面飞抵底栏后再开始加载播放
-// 这样用户先看到封面飞入效果，再听到歌曲起播，体验更连贯
-const handlePlayClick = async (song: Song) => {
-  await launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
+// 点击/双击播放：触发飞入封面动画并立即开始加载播放（并行执行）
+// 飞封面动画用于掩盖起播延迟，与 playSong 同时启动可让动画结束时歌曲已就绪
+const handlePlayClick = (song: Song) => {
+  void launchFlyingCover(song.path, getDisplayedCoverUrl(song.path));
   emit('play', song);
 };
 
@@ -682,6 +691,16 @@ onUnmounted(() => {
 
 defineExpose({ containerRef });
 
+// 预计算拖拽源在列表中的索引，避免 getRowStyle 每行都执行 O(n) findIndex
+const dragSourcePath = computed(() => {
+  if (!dragSession.active || !dragSession.songs.length) return '';
+  return dragSession.songs[0]?.path ?? '';
+});
+const dragIndex = computed(() => {
+  if (!dragSourcePath.value) return -1;
+  return props.songs.findIndex(song => song.path === dragSourcePath.value);
+});
+
 const getRowStyle = (songIndex: number, songPath: string) => {
   const baseStyle: Record<string, string | number> = { height: `${ROW_HEIGHT}px` };
 
@@ -689,12 +708,11 @@ const getRowStyle = (songIndex: number, songPath: string) => {
     return baseStyle;
   }
 
-  const dragSourcePath = dragSession.songs[0]?.path;
-  const dragIndex = props.songs.findIndex(song => song.path === dragSourcePath);
+  const currentDragIndex = dragIndex.value;
   const targetIndex = dragSession.insertIndex;
 
-  if (songPath === dragSourcePath) {
-    const diff = targetIndex - dragIndex;
+  if (songPath === dragSourcePath.value) {
+    const diff = targetIndex - currentDragIndex;
     return {
       ...baseStyle,
       transform: `translateY(${diff * 100}%)`,
@@ -706,12 +724,12 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 
   let translateY = 0;
 
-  if (targetIndex > dragIndex) {
-    if (songIndex > dragIndex && songIndex <= targetIndex) {
+  if (targetIndex > currentDragIndex) {
+    if (songIndex > currentDragIndex && songIndex <= targetIndex) {
       translateY = -100;
     }
-  } else if (targetIndex < dragIndex) {
-    if (songIndex >= targetIndex && songIndex < dragIndex) {
+  } else if (targetIndex < currentDragIndex) {
+    if (songIndex >= targetIndex && songIndex < currentDragIndex) {
       translateY = 100;
     }
   }
