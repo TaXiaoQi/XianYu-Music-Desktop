@@ -16,6 +16,7 @@ function toMs(seconds: number): number {
 const MAX_AML_LINE_LEAD_IN_MS = 300;
 const AML_LINE_LEAD_IN_RATIO = 0.25;
 const MIN_AML_LINE_DURATION_MS = 40;
+const AML_ROMAJI_WORD_SEPARATOR = '\u00a0';
 
 function getAdaptiveAmlLineLeadInMs(currentStartTime: number, nextStartTime: number): number {
   const gap = nextStartTime - currentStartTime;
@@ -73,19 +74,48 @@ function buildRomajiText(line: SemanticLine): string {
   return line.romanWords.map((word) => word.text).join('');
 }
 
+function getWordOverlapMs(
+  left: { startMs: number; endMs: number },
+  right: { startMs: number; endMs: number },
+) {
+  return Math.max(0, Math.min(left.endMs, right.endMs) - Math.max(left.startMs, right.startMs));
+}
+
+function findOverlappingRomanWord(
+  word: NonNullable<SemanticLine['mainWords']>[number],
+  romanWords: NonNullable<SemanticLine['romanWords']>,
+) {
+  if (word.endMs <= word.startMs) {
+    return undefined;
+  }
+
+  let bestWord: NonNullable<SemanticLine['romanWords']>[number] | undefined;
+  let bestOverlap = 0;
+
+  for (const romanWord of romanWords) {
+    const overlap = getWordOverlapMs(word, romanWord);
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestWord = romanWord;
+    }
+  }
+
+  return bestWord;
+}
+
 export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
   const renderLine = toRenderLine(line);
 
   const words = (line.mainWords || []).map((word) => {
     const timedRomaji = line.romanWords?.find((romanWord) => (
       romanWord.startMs === word.startMs && romanWord.endMs === word.endMs
-    ));
+    )) ?? (line.romanWords ? findOverlappingRomanWord(word, line.romanWords) : undefined);
 
     return {
       text: word.text,
       start: word.startMs / 1000,
       end: word.endMs / 1000,
-      romaji: timedRomaji?.text || word.romanText || '',
+      romaji: word.romanText || timedRomaji?.text || '',
     } satisfies LyricWord;
   });
 
@@ -96,8 +126,39 @@ export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
     translation: line.translationText || '',
     romaji: buildRomajiText(line),
     words: words.length > 0 ? words : undefined,
+    romajiWords: line.romanWords?.map((word) => ({
+      text: word.text,
+      start: word.startMs / 1000,
+      end: word.endMs / 1000,
+    })),
     secondary: line.secondaryTexts ? [...line.secondaryTexts] : undefined,
   };
+}
+
+function wordRequiresRomaji(word: LyricWord) {
+  return /[\p{L}\p{N}]/u.test(word.text);
+}
+
+function addAmlRomajiSeparators<T extends { romanWord: string }>(words: T[]): T[] {
+  return words.map((word, index) => {
+    const romanWord = word.romanWord || '';
+    if (!romanWord.trim()) {
+      return word;
+    }
+
+    if (/\s$/.test(romanWord)) {
+      return word;
+    }
+
+    const hasLaterRomaji = words
+      .slice(index + 1)
+      .some(nextWord => (nextWord.romanWord || '').trim().length > 0);
+
+    return {
+      ...word,
+      romanWord: hasLaterRomaji ? `${romanWord.trimEnd()}${AML_ROMAJI_WORD_SEPARATOR}` : romanWord,
+    };
+  });
 }
 
 function getOrderedSecondaryLyrics(
@@ -154,6 +215,11 @@ export function convertLyricsToAmlLines(
     const endTime = Math.max(startTime + MIN_AML_LINE_DURATION_MS, lineBoundaryEndTime);
 
     const sourceWords = effectiveWords ?? [];
+    const canUsePerWordRomaji = showRomaji
+      && sourceWords.length > 0
+      && sourceWords
+        .filter(wordRequiresRomaji)
+        .every((word) => Boolean((word.romaji || '').trim()));
     const convertedWords = sourceWords.map((word, wordIndex) => {
       const wordStart = toMs(word.start);
       const nextWordStart = sourceWords[wordIndex + 1]?.start;
@@ -166,14 +232,15 @@ export function convertLyricsToAmlLines(
         word: word.text,
         startTime: wordStart,
         endTime: wordEnd,
-        romanWord: showRomaji ? (word.romaji || '') : '',
+        romanWord: canUsePerWordRomaji ? (word.romaji || '') : '',
         obscene: false,
       };
-    }).filter((word) => word.word.trim().length > 0);
+    });
+    const separatedWords = addAmlRomajiSeparators(convertedWords);
     const hasTimedRomaji = convertedWords.some((word) => (word.romanWord || '').trim().length > 0);
 
-    const words = convertedWords.length > 0
-      ? convertedWords
+    const words = separatedWords.length > 0
+      ? separatedWords
       : [{
           word: line.text || renderLine.main[0]?.text || ' ',
           startTime,
@@ -186,6 +253,13 @@ export function convertLyricsToAmlLines(
       words,
       translatedLyric: renderLine.translation?.[0]?.text || '',
       romanLyric: showRomaji && !hasTimedRomaji ? (renderLine.roman?.[0]?.text || '') : '',
+      romajiWords: showRomaji && line.romajiWords
+        ? line.romajiWords.map((word) => ({
+          text: word.text,
+          startTime: toMs(word.start),
+          endTime: toMs(word.end),
+        }))
+        : undefined,
       startTime,
       endTime,
       isBG: false,
@@ -205,7 +279,13 @@ export function getCurrentLyricDisplayLines(
   }];
 
   if (showRomaji && line.romaji) {
-    const romajiWords = (line.words ?? [])
+    const romajiWords = line.romajiWords && line.romajiWords.length > 0
+      ? line.romajiWords.map((word) => ({
+        text: word.text,
+        start: word.start,
+        end: word.end,
+      }))
+      : (line.words ?? [])
       .filter((word) => (word.romaji || '').length > 0)
       .map((word) => ({
         text: word.romaji || '',

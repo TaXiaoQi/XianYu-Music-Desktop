@@ -271,7 +271,7 @@ const handleImportAppBackup = async () => {
       <div>
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">从其他软件导入</h3>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
-          从其他音乐软件的 JSON 备份恢复歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
+          从 BakaMusic 或 MusicFree 软件导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
         </p>
       </div>
       <button
