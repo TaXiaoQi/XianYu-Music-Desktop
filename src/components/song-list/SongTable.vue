@@ -41,10 +41,14 @@ const onlineQualityLabel = (song: Song) => {
 
 /** 已下载的在线歌曲 path 集合（响应式，供模板同步判断） */
 const downloadedOnlinePaths = ref<Set<string>>(new Set());
-const refreshDownloadedPaths = async () => {
+let downloadedPathsRequestId = 0;
+const refreshDownloadedPaths = async (songs: Song[]) => {
+  const requestId = ++downloadedPathsRequestId;
   await loadDownloadHistory();
+  if (requestId !== downloadedPathsRequestId) return;
+
   const set = new Set<string>();
-  for (const song of props.songs) {
+  for (const song of songs) {
     if (isOnlineSong(song) && getDownloadRecord(song.path)) {
       set.add(song.path);
     }
@@ -102,11 +106,14 @@ const { loadSongDetail } = useSongDetailCache();
 
 const ROW_HEIGHT = 72;
 const OVERSCAN = 20;
+const SEGMENT_BUFFER_ROWS = 4;
+const MIN_SEGMENT_BATCH_SIZE = 20;
 const VIEWPORT_SNAPSHOT_LIMIT = 72;
 const rootRef = ref<HTMLElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const containerHeight = ref(600);
+const loadedSongCount = ref(0);
 const isScrollbarHot = ref(false);
 const isScrollbarScrolling = ref(false);
 const isScrollbarActive = computed(() => isScrollbarHot.value || isScrollbarScrolling.value);
@@ -131,8 +138,62 @@ watch(
   { immediate: true },
 );
 
-// 歌曲列表变化时刷新已下载集合
-watch(() => props.songs, () => { void refreshDownloadedPaths(); });
+const getViewportPageSize = () => Math.max(
+  1,
+  Math.ceil(containerHeight.value / ROW_HEIGHT) + SEGMENT_BUFFER_ROWS,
+);
+
+const getSegmentBatchSize = () => Math.max(
+  MIN_SEGMENT_BATCH_SIZE,
+  getViewportPageSize(),
+);
+
+const resetLoadedSongCount = () => {
+  loadedSongCount.value = Math.min(props.songs.length, getViewportPageSize());
+  scrollTop.value = 0;
+  if (containerRef.value) {
+    containerRef.value.scrollTop = 0;
+  }
+};
+
+const loadNextSongSegment = () => {
+  if (loadedSongCount.value >= props.songs.length) return;
+  loadedSongCount.value = Math.min(
+    props.songs.length,
+    loadedSongCount.value + getSegmentBatchSize(),
+  );
+};
+
+const ensureViewportSegmentFilled = () => {
+  if (loadedSongCount.value === 0 && props.songs.length > 0) {
+    resetLoadedSongCount();
+    return;
+  }
+
+  if (loadedSongCount.value < getViewportPageSize()) {
+    loadedSongCount.value = Math.min(props.songs.length, getViewportPageSize());
+  }
+};
+
+const segmentedSongs = computed(() => {
+  if (props.songs.length === 0) return [];
+  const limit = loadedSongCount.value || getViewportPageSize();
+  return props.songs.slice(0, Math.min(props.songs.length, limit));
+});
+
+// 歌曲列表变化时重置首屏段，避免切换大歌单时一次性挂载全部行。
+// 仅当实际路径列表发生变化时才重置（切换歌单、增删歌曲），
+// 收藏切换等仅更新元信息的操作会产生新数组引用但路径不变，此时应保持滚动位置。
+let prevSongPathSignature = '';
+watch(() => props.songs, (songs) => {
+  const currentSignature = songs.map(s => s.path).join('\u0001');
+  if (currentSignature === prevSongPathSignature) {
+    return;
+  }
+  prevSongPathSignature = currentSignature;
+  resetLoadedSongCount();
+  downloadedOnlinePaths.value = new Set();
+}, { immediate: true });
 
 const tableViewportKey = computed(() =>
   [
@@ -208,6 +269,7 @@ const updateContainerHeight = () => {
   if (containerRef.value) {
     containerHeight.value = containerRef.value.clientHeight;
   }
+  ensureViewportSegmentFilled();
 };
 
 const restoreViewportCoverSnapshot = (key = tableViewportKey.value) => {
@@ -335,7 +397,7 @@ const {
 } = useListScrollMemory(tableViewportKey, containerRef);
 
 const virtualData = computed(() => {
-  const songs = Array.isArray(props.songs) ? props.songs : [];
+  const songs = Array.isArray(segmentedSongs.value) ? segmentedSongs.value : [];
   const total = songs.length;
   const start = Math.floor(scrollTop.value / ROW_HEIGHT);
   const visibleCount = Math.ceil(containerHeight.value / ROW_HEIGHT);
@@ -395,7 +457,11 @@ const handleSongTableMouseLeave = () => {
 };
 
 const onScroll = (event: Event) => {
-  scrollTop.value = (event.target as HTMLElement).scrollTop;
+  const target = event.target as HTMLElement;
+  scrollTop.value = target.scrollTop;
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * 3) {
+    loadNextSongSegment();
+  }
   showScrollbarDuringScroll();
 };
 
@@ -444,6 +510,7 @@ watch(
     const paths = newItems.map(song => song.path);
     preloadPriorityCovers(paths);
     loadVisibleSongComments(newItems);
+    void refreshDownloadedPaths(newItems);
   },
   { immediate: true },
 );
@@ -585,13 +652,13 @@ const handleArtistClick = (artistName: string) => {
 onMounted(() => {
   window.addEventListener('resize', updateContainerHeight);
   updateContainerHeight();
+  ensureViewportSegmentFilled();
   void restoreActiveViewportCovers();
-  void refreshDownloadedPaths();
 });
 
 onActivated(() => {
+  ensureViewportSegmentFilled();
   void restoreActiveViewportCovers();
-  void refreshDownloadedPaths();
 });
 
 onDeactivated(() => {
