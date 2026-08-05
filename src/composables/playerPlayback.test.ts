@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 const loadCoverMock = vi.fn().mockResolvedValue('');
@@ -19,6 +19,34 @@ vi.mock('../services/lxLyricFetcher', () => ({
   fetchLxSongLyricsRaw: fetchLxSongLyricsRawMock,
 }));
 
+vi.mock('../services/usageStats', () => ({
+  reportUserBehavior: vi.fn(),
+}));
+
+vi.mock('../services/pluginEngine', () => ({
+  getStoredPlugins: vi.fn(() => [{
+    id: 'lx-test-plugin',
+    name: 'LX Test Plugin',
+    enabled: true,
+    format: 'lx',
+    sources: ['wy', 'tx'],
+  }]),
+}));
+
+vi.mock('../services/lxPluginEngine', () => ({
+  ensureLxPluginInstance: vi.fn().mockResolvedValue(undefined),
+  lxPluginGetMusicUrl: vi.fn().mockResolvedValue({ url: 'https://example.test/audio.mp3' }),
+}));
+
+vi.mock('../services/lxSongCache', () => ({
+  getCachedLxSong: vi.fn(() => null),
+}));
+
+vi.mock('../services/lxSourceFallback', () => ({
+  findAlternativeLxSource: vi.fn().mockResolvedValue(null),
+  getLxSourceDisplayName: vi.fn((source: string) => source),
+}));
+
 vi.mock('../services/tauri/playbackApi', () => ({
   playbackApi: {
     playAudio: vi.fn().mockResolvedValue(undefined),
@@ -30,6 +58,8 @@ vi.mock('../services/tauri/playbackApi', () => ({
     setVolume: vi.fn().mockResolvedValue(undefined),
     stopAudio: vi.fn().mockResolvedValue(undefined),
     recordPlay: vi.fn().mockResolvedValue(undefined),
+    getPlaybackReady: vi.fn().mockResolvedValue(true),
+    getPlaybackStartFailed: vi.fn().mockResolvedValue(false),
   },
 }));
 
@@ -75,6 +105,7 @@ describe('player playback domain', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     loadCoverMock.mockResolvedValue('');
     loadCoverPathMock.mockResolvedValue('');
     loadFullCoverMock.mockResolvedValue('');
@@ -94,6 +125,11 @@ describe('player playback domain', () => {
       windowMinimized: false,
       miniMode: false,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('rebuilds the queue from the display song list order when playback starts', async () => {

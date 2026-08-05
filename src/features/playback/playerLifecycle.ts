@@ -67,7 +67,6 @@ interface CreatePlayerLifecycleDeps {
   legacyLastSongKey: string;
 }
 
-let lifecycleInitDone = false;
 let dominantColorTaskId = 0;
 let dominantColorSignature = '';
 
@@ -188,6 +187,7 @@ export const createPlayerLifecycle = ({
   lastSongPathKey,
   legacyLastSongKey,
 }: CreatePlayerLifecycleDeps) => {
+  let lifecycleInitDone = false;
   const collectionsStore = useCollectionsStore();
   const libraryStore = useLibraryStore();
   const playbackStore = usePlaybackStore();

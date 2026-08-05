@@ -38,6 +38,8 @@ vi.mock('./lxMusicSdk', () => ({
 
 vi.mock('../composables/lyrics', () => ({
   buildLyricsRaw: mocks.buildLyricsRaw,
+  createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
+  createDefaultLyricsSettings: vi.fn(() => ({})),
   loadLyrics: mocks.loadLyrics,
 }));
 

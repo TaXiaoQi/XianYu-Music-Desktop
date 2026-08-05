@@ -42,6 +42,11 @@ const CHANNEL_BLOCKS: usize = 64;
 /// 后台线程满载时的退避间隔。短到不影响 seek 响应，长到不空转浪费 CPU。
 const BACKOFF: Duration = Duration::from_micros(400);
 
+#[cfg(test)]
+const CONSUMER_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
+#[cfg(not(test))]
+const CONSUMER_WAIT_TIMEOUT: Duration = BACKOFF;
+
 // Windows 线程优先级 FFI：提升生产者线程优先级，防止系统负载下被抢占导致
 // 744ms 缓冲排空 → 静音卡顿。生产者只需略高于普通优先级即可在系统繁忙时
 // 仍能及时填充缓冲（cpal 音频回调线程为 MMCSS "Pro Audio" 最高优先级，
@@ -305,7 +310,7 @@ where
 
         // 2. 当前块耗尽，从通道拉取下一块
         loop {
-            match self.sample_rx.try_recv() {
+            match self.sample_rx.recv_timeout(CONSUMER_WAIT_TIMEOUT) {
                 Ok(block) => {
                     if block.is_empty() {
                         // 空块视为 EOF 信号
@@ -318,13 +323,14 @@ where
                     }
                     // 块非空但 pop 失败（不会发生），继续
                 }
-                Err(mpsc::TryRecvError::Empty) => {
+                Err(mpsc::RecvTimeoutError::Timeout) => {
                     // 通道暂时空：后台线程正在生产或被抢占。
+                    // 正常运行只短暂等待，避免实时回调长阻塞；测试环境等待更久以消除调度竞态。
                     // 返回静音样本避免 underrun 爆音，等下个回调再试。
                     // 持续空会持续静音，但后台线程恢复后立即补上。
                     return Some(0.0);
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
                     // 后台线程退出（EOF 或 Drop）。当前块已空 → 流结束。
                     self.exhausted = true;
                     return None;

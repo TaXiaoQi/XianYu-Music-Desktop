@@ -18,7 +18,7 @@ import { MINI_PLAYER_WINDOW_LABEL, VOLUME_POPOVER_WINDOW_LABEL } from './feature
 import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
 import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
-import { loadPlugins, checkAllPluginUpdates, performPluginUpdate } from './services/pluginEngine';
+import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugins } from './services/pluginEngine';
 import { configureApplicationLogger } from './services/applicationLogger';
 import { reportAppOpen } from './services/usageStats';
 import { useUiStore } from './shared/stores/ui';
@@ -87,7 +87,6 @@ if (currentWindowLabel === 'main') {
         let updated = 0;
         for (const [id, result] of results) {
           if (result.hasUpdate && result.newScript) {
-            const { getStoredPlugins } = await import('./services/pluginEngine');
             const plugin = getStoredPlugins().find(p => p.id === id);
             if (plugin) {
               const updateResult = await performPluginUpdate(plugin, result);

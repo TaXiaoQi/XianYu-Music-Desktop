@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
 import { restoreMainWindowFromMiniMode } from './useMiniPlayerWindowBridge';
@@ -30,6 +30,8 @@ vi.mock('./player', () => ({
 }));
 
 vi.mock('./lyrics', () => ({
+  createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
+  createDefaultLyricsSettings: vi.fn(() => ({})),
   useLyrics: vi.fn(),
 }));
 
@@ -46,6 +48,10 @@ describe('mini player window bridge', () => {
 
   afterAll(() => {
     delete (globalThis as any).window;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('restores the main window from mini mode before focusing it', async () => {

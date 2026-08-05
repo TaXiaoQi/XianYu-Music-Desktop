@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { releaseStartupCompositionMask } from './startupCompositionMask';
 import { waitForStartupRevealReadiness } from './startupCompositionMask';
@@ -6,6 +6,10 @@ import { waitForStartupRevealReadiness } from './startupCompositionMask';
 describe('startup composition mask', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('waits for stable paint and keeps the mask visible for the minimum duration', async () => {

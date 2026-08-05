@@ -6,7 +6,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript } from '../../services/pluginEngine';
+import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import SettingHint from './SettingHint.vue';
 
@@ -380,7 +381,6 @@ async function handleInstallFromUrl() {
 
     // 回退到 Tauri 后端代理
     if (!content) {
-      const { pluginApi } = await import('../../services/tauri/pluginApi');
       content = await pluginApi.fetchPluginUrl(url);
     }
 
@@ -418,8 +418,6 @@ async function handleInstallFromUrl() {
 
 /** 批量导入多插件 JSON 中的所有插件 */
 async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) {
-  const { loadPluginFromScript } = await import('../../services/pluginEngine');
-  const { pluginApi } = await import('../../services/tauri/pluginApi');
   let successCount = 0;
   let failCount = 0;
   const names: string[] = [];
@@ -483,7 +481,6 @@ function compareVer(a: string, b: string): number {
 
 async function installPluginFromScript(script: string, filePath: string) {
   // 使用 pluginEngine 的 loadPluginFromScript，自动检测格式（LX 或 MusicFree）
-  const { loadPluginFromScript } = await import('../../services/pluginEngine');
   const source = await loadPluginFromScript(script, filePath);
   if (!source) {
     showToast('插件加载失败', 'error');

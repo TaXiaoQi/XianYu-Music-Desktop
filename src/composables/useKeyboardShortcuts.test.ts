@@ -22,6 +22,8 @@ vi.mock('../features/settings/useSettings', () => ({
 }));
 
 vi.mock('./lyrics', () => ({
+  createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
+  createDefaultLyricsSettings: vi.fn(() => ({})),
   useLyrics: vi.fn(),
 }));
 

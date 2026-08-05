@@ -2,6 +2,7 @@ import { markRaw } from 'vue';
 
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 import type { LxSearchResultItem } from './lxMusicSdk';
+import { readPluginFile } from './tauri/pluginApi';
 
 export type SupportedPluginBackupFormat = 'bakamusic' | 'musicfree';
 
@@ -539,7 +540,6 @@ export async function preparePluginBackupFile(
   filePath: string,
   installedPlugins: PluginSource[],
 ): Promise<PreparedPluginBackupImport> {
-  const { readPluginFile } = await import('./tauri/pluginApi');
   const content = await readPluginFile(filePath);
   return preparePluginBackupImport(content, installedPlugins);
 }

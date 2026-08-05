@@ -15,6 +15,8 @@ import { invoke } from '@tauri-apps/api/core';
 import CryptoJS from 'crypto-js';
 import type { Song } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
+import { getStoredPlugins } from './pluginEngine';
+import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
 
 // ==================== Types ====================
 
@@ -1464,8 +1466,6 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   // LX 插件的 requestHandler 已在 URL 解析时初始化，直接调用 lyric 接口
   // 直接 API 作为后备：某些场景下插件可能不支持该音源的歌词，此时回退到直接 API
   try {
-    const { getStoredPlugins } = await import('./pluginEngine');
-    const { ensureLxPluginInstance, lxPluginGetLyric } = await import('./lxPluginEngine');
     const lxPlugins = getStoredPlugins().filter((p: any) => p.enabled && p.format === 'lx');
     let matchedPlugin = lxPlugins.find((p: any) => p.sources.includes(source));
     if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
