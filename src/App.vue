@@ -19,6 +19,7 @@ import { useSettings } from './features/settings/useSettings';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
 import { loadPlugins, checkAllPluginUpdates, performPluginUpdate } from './services/pluginEngine';
 import { configureApplicationLogger } from './services/applicationLogger';
+import { reportAppOpen } from './services/usageStats';
 import { useUiStore } from './shared/stores/ui';
 
 const currentWindowLabel = (() => {
@@ -58,6 +59,9 @@ if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
 
   onMounted(async () => {
+    // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
+    reportAppOpen();
+
     try {
       const version = await getVersion();
       showToast(`欢迎使用弦予音乐，当前版本 v${version}`, 'info');
