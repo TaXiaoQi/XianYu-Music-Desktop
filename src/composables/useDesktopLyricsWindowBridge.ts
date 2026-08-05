@@ -236,6 +236,8 @@ export function createDesktopLyricsWindowOptions({
     focus: false,
     focusable: true,
     minimizable: false,
+    // 禁用最大化能力，避免拖动到屏幕顶端时触发 Windows Aero Snap 自动最大化。
+    maximizable: false,
     center: !hasStoredBounds,
   };
 }
