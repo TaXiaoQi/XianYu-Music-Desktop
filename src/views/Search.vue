@@ -424,6 +424,7 @@ import {
 } from '../services/lxMusicSdk';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
+import { pluginApi } from '../services/tauri/pluginApi';
 import {
   getStoredPlugins,
   pluginsVersion,
@@ -1058,7 +1059,6 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
   // 异步代理并刷新
   (async () => {
     try {
-      const { pluginApi } = await import('../services/tauri/pluginApi');
       const dataUrl = await pluginApi.proxyImage(item.coverUrl);
       mfCoverProxyCache.set(item.id, dataUrl);
       // 触发响应式更新

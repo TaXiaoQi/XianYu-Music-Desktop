@@ -29,12 +29,14 @@ import type {
   PluginSubscription,
   PluginSearchResult,
   PluginMusicInfo,
+  PluginPlaylistSearchResult,
   QualityKey,
 } from '../types';
-import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, resolveOnlinePlayQuality } from '../types';
+import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError } from './lxPluginEngine';
+import { pluginApi } from './tauri/pluginApi';
 
 // ==================== 常量 ====================
 
@@ -117,7 +119,6 @@ function captureCookiesFromResponse(url: string, responseHeaders: Record<string,
 
 async function tauriAdapter(config: any): Promise<any> {
   try {
-    const { pluginApi } = await import('./tauri/pluginApi');
     const method = (config.method || 'GET').toUpperCase();
 
     let url = config.url || '';
@@ -359,7 +360,6 @@ export async function proxyFetch(input: RequestInfo | URL, init?: RequestInit): 
 
     log(`[proxyFetch] ${method} ${urlStr.substring(0, 120)}`);
 
-    const { pluginApi } = await import('./tauri/pluginApi');
     const response = await pluginApi.pluginHttpRequest(method, urlStr, headers, body);
 
     log(`[proxyFetch] ← ${response.status} bodyLen=${response.body?.length ?? 0}`);
@@ -773,7 +773,7 @@ export async function pluginPlaylistSearch(
   source: PluginSource,
   keyword: string,
   page: number,
-): Promise<import('../types').PluginPlaylistSearchResult[]> {
+): Promise<PluginPlaylistSearchResult[]> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -1029,7 +1029,6 @@ export async function pluginGetMusicInfo(
           tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
         }
       } else {
-        const { ALL_QUALITY_KEYS_DESC } = await import('../types');
         const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
         if (startIdx !== -1) {
           for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
@@ -1434,7 +1433,6 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
       else readError = `插件地址返回 HTTP ${resp.status}`;
       if (!script) {
         try {
-          const { pluginApi } = await import('./tauri/pluginApi');
           script = await pluginApi.fetchPluginUrl(source.filePath);
         } catch (error) {
           readError = `无法下载插件脚本：${String(error)}`;
@@ -1442,7 +1440,6 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
       }
     } else if (source.filePath) {
       try {
-        const { pluginApi } = await import('./tauri/pluginApi');
         script = await pluginApi.readPluginFile(source.filePath);
       } catch (error) {
         readError = `无法读取插件文件：${String(error)}`;
@@ -1786,13 +1783,11 @@ export async function loadPlugins(lazyLoad: boolean = false): Promise<void> {
         if (resp.ok) script = await resp.text();
         if (!script) {
           try {
-            const { pluginApi } = await import('./tauri/pluginApi');
             script = await pluginApi.fetchPluginUrl(source.filePath);
           } catch { /* ignore */ }
         }
       } else {
         try {
-          const { pluginApi } = await import('./tauri/pluginApi');
           script = await pluginApi.readPluginFile(source.filePath);
         } catch { /* ignore */ }
       }
@@ -1853,7 +1848,6 @@ async function fetchPluginScript(url: string): Promise<string | null> {
     if (resp.ok) return await resp.text();
   } catch { /* ignore */ }
   try {
-    const { pluginApi } = await import('./tauri/pluginApi');
     return await pluginApi.fetchPluginUrl(url);
   } catch { /* ignore */ }
   return null;
@@ -1906,7 +1900,6 @@ export async function checkPluginUpdate(source: PluginSource): Promise<PluginUpd
         if (source.filePath.startsWith('http')) {
           script = await fetchPluginScript(source.filePath) || '';
         } else if (source.filePath) {
-          const { pluginApi } = await import('./tauri/pluginApi');
           script = await pluginApi.readPluginFile(source.filePath);
         }
       } catch { /* ignore */ }
@@ -1921,7 +1914,6 @@ export async function checkPluginUpdate(source: PluginSource): Promise<PluginUpd
       if (source.filePath.startsWith('http')) {
         script = await fetchPluginScript(source.filePath) || '';
       } else if (source.filePath) {
-        const { pluginApi } = await import('./tauri/pluginApi');
         script = await pluginApi.readPluginFile(source.filePath);
       }
     } catch { /* ignore */ }
@@ -2077,7 +2069,6 @@ export async function getPluginScript(id: string): Promise<string | null> {
       const resp = await fetchWithTimeout(source.filePath, 10000);
       if (resp.ok) return await resp.text();
     } else {
-      const { pluginApi } = await import('./tauri/pluginApi');
       return await pluginApi.readPluginFile(source.filePath);
     }
   } catch {
@@ -2272,7 +2263,6 @@ async function fetchSubscriptionContent(url: string): Promise<string> {
   } catch { /* ignore, try Tauri backend */ }
   if (!content) {
     try {
-      const { pluginApi } = await import('./tauri/pluginApi');
       content = await pluginApi.fetchPluginUrl(url);
     } catch { /* ignore */ }
   }

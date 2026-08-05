@@ -139,6 +139,8 @@ vi.mock('../shared/stores/ui', () => ({
 }));
 
 vi.mock('./lyrics', () => ({
+  createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
+  createDefaultLyricsSettings: vi.fn(() => ({})),
   useLyrics: vi.fn(() => ({
     showDesktopLyrics: mocks.showDesktopLyrics,
     parsedLyrics: mocks.parsedLyrics,
@@ -150,6 +152,14 @@ vi.mock('./lyrics', () => ({
 }));
 
 vi.mock('./player', () => ({
+  usePlayer: vi.fn(() => ({
+    togglePlay: vi.fn(),
+    prevSong: vi.fn(),
+    nextSong: vi.fn(),
+  })),
+}));
+
+vi.mock('../features/playback/player', () => ({
   usePlayer: vi.fn(() => ({
     togglePlay: vi.fn(),
     prevSong: vi.fn(),

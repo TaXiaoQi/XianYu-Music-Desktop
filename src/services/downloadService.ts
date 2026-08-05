@@ -11,6 +11,15 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
 import { usePlaybackStore } from '../features/playback/store';
+import { getCachedLxSong } from './lxSongCache';
+import {
+  getStoredPlugins,
+  pluginGetCover,
+  pluginGetLyric,
+  pluginGetMusicInfo,
+  pluginGetSupportedQualities,
+} from './pluginEngine';
+import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl } from './lxPluginEngine';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 export type LxQuality = QualityKey;
@@ -158,10 +167,6 @@ async function prepareResolveContext(
   const songmid = parts.slice(1).join('/');
   if (!lxSource || !songmid) return null;
 
-  const { getStoredPlugins } = await import('./pluginEngine');
-  const { ensureLxPluginInstance } = await import('./lxPluginEngine');
-  const { getCachedLxSong } = await import('./lxSongCache');
-
   const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
   if (lxPlugins.length === 0) {
     throw new Error('未启用任何落雪音源插件，请先在设置中启用');
@@ -209,7 +214,6 @@ async function resolveUrlForQuality(
   ctx: ResolveDownloadContext,
   q: LxQuality,
 ): Promise<string | null> {
-  const { lxPluginGetMusicUrl } = await import('./lxPluginEngine');
   const result = await lxPluginGetMusicUrl(ctx.matchedPlugin, ctx.lxSource, ctx.baseSongInfo as any, q);
   const url = result?.url;
   if (!url || !/^https?:/.test(url)) return null;
@@ -257,7 +261,6 @@ async function preparePluginResolveContext(
   const pluginSearchResult = song.rawData;
   if (!pluginSearchResult?.pluginId) return null;
 
-  const { getStoredPlugins } = await import('./pluginEngine');
   const plugins = getStoredPlugins();
   const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
   if (!pluginSource) {
@@ -314,7 +317,6 @@ async function resolvePluginUrlForQuality(
   }
 
   // 2) 回退到插件 getMediaSource（传入 QualityKey，内部自动适配）
-  const { pluginGetMusicInfo } = await import('./pluginEngine');
   const musicInfo = await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
   const url = musicInfo?.url;
   if (!url || !/^https?:/.test(url)) return null;
@@ -445,7 +447,6 @@ async function probePluginAvailableQualities(song: Song): Promise<ProbedQuality[
   // 尝试从插件实例获取声明的支持音质列表
   let candidateQualities: LxQuality[] = ALL_QUALITY_KEYS_DESC;
   try {
-    const { pluginGetSupportedQualities } = await import('./pluginEngine');
     const supported = await pluginGetSupportedQualities(ctx.pluginSource);
     if (supported && supported.length > 0) {
       // 按品质从高到低排序
@@ -560,10 +561,6 @@ async function fetchLyricText(
   if (!lxSource || !songmid) return null;
 
   try {
-    const { getStoredPlugins } = await import('./pluginEngine');
-    const { lxPluginGetLyric, ensureLxPluginInstance } = await import('./lxPluginEngine');
-    const { getCachedLxSong } = await import('./lxSongCache');
-
     const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
     let matchedPlugin = lxPlugins.find((p) => p.sources.includes(lxSource));
     if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
@@ -618,7 +615,6 @@ async function fetchPluginLyricText(
   if (!pluginSearchResult?.pluginId) return null;
 
   try {
-    const { getStoredPlugins, pluginGetLyric } = await import('./pluginEngine');
     const plugins = getStoredPlugins();
     const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
     if (!pluginSource) return null;
@@ -756,8 +752,6 @@ async function resolveCoverUrl(song: Song): Promise<string | null> {
   const rawData = song.rawData;
   if (!rawData?.pluginId) return null;
   try {
-    const { getStoredPlugins } = await import('./pluginEngine');
-    const { pluginGetCover } = await import('./pluginEngine');
     const plugins = getStoredPlugins();
     const pluginSource = plugins.find(p => p.id === rawData.pluginId && p.enabled);
     if (!pluginSource) return null;

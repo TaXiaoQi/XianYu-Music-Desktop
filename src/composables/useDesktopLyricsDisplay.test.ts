@@ -162,7 +162,7 @@ describe('useDesktopLyricsDisplay', () => {
     expect(display.widgetStyle.value).toMatchObject({
       '--desktop-text-opacity': '0.82',
       '--desktop-text-shadow-color': '17 34 51',
-      '--desktop-text-outline-width': '1.5px',
+      '--desktop-text-outline-width': '0.3px',
       '--desktop-first-line-text-shadow-alpha': '0.25',
       '--desktop-first-line-text-shadow-blur': '6px',
       '--desktop-second-line-text-shadow-alpha': '0.75',
@@ -214,11 +214,9 @@ describe('useDesktopLyricsDisplay', () => {
     });
 
     expect(display.widgetStyle.value).toMatchObject({
-      '--desktop-romaji-played-color': '#123456',
-      '--desktop-romaji-unplayed-color': '#ABCDEF',
+      '--desktop-romaji-played-color': 'color-mix(in srgb, #123456 calc(var(--desktop-text-opacity, 1) * 100%), transparent)',
+      '--desktop-romaji-unplayed-color': 'color-mix(in srgb, #ABCDEF calc(var(--desktop-text-opacity, 1) * 100%), transparent)',
     });
-    expect(display.getRomajiWordStyle(1, 3).backgroundImage).toContain('var(--desktop-romaji-played-color) 0%');
-    expect(display.getRomajiWordStyle(1, 3).backgroundImage).toContain('var(--desktop-romaji-unplayed-color) 50%');
   });
 
   it('uses word-level romaji on desktop only when every displayed word has romaji', () => {

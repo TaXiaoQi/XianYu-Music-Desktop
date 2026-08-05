@@ -620,7 +620,7 @@ const loadPitchShifterNode = () => {
   // [修复] AudioWorklet.addModule() 不支持 ES module import 语句。
   // 原始 phase-vocoder.js 使用 import FFT/OLAProcessor 会导致加载失败。
   // 改用合并后的自包含文件 phase-vocoder-bundle.js
-  const workletUrl = new URL('./pitch-shifter/phase-vocoder-bundle.js', import.meta.url)
+  const workletUrl = new URL(/* @vite-ignore */ './pitch-shifter/phase-vocoder-bundle.js', import.meta.url)
 
   audioContext.audioWorklet.addModule(workletUrl).then(() => {
     pitchShifterNode = new AudioWorkletNode(audioContext!, 'phase-vocoder-processor', { outputChannelCount: [2] })

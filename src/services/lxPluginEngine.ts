@@ -21,6 +21,7 @@ import CryptoJs from 'crypto-js';
 import { Buffer } from 'buffer';
 import type { PluginSource } from '../types';
 import { invoke } from '@tauri-apps/api/core';
+import { pluginApi } from './tauri/pluginApi';
 
 // ==================== 常量 ====================
 
@@ -159,7 +160,6 @@ async function fetchLxPluginScript(filePath: string): Promise<string> {
   } else if (filePath.startsWith('http')) {
     // [修复防御]: 远程 URL 必须通过 Tauri 后端代理，浏览器 fetch 会被 CORS 阻止
     try {
-      const { pluginApi } = await import('./tauri/pluginApi');
       const resp = await pluginApi.pluginHttpRequest('GET', filePath, {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': '*/*',
@@ -170,7 +170,6 @@ async function fetchLxPluginScript(filePath: string): Promise<string> {
     }
   } else if (filePath) {
     try {
-      const { pluginApi } = await import('./tauri/pluginApi');
       script = await pluginApi.readPluginFile(filePath);
     } catch (e: any) {
       log(`[fetchLxPluginScript] 读取本地文件失败: ${filePath} - ${e?.message}`);
@@ -244,7 +243,6 @@ async function lxNativeRequest(
   timeout?: number | null, follow?: number | null,
 ): Promise<{ statusCode: number; statusMessage: string; headers: Record<string, string>; body: string }> {
   try {
-    const { pluginApi } = await import('./tauri/pluginApi');
     const response = await pluginApi.pluginHttpRequest(method, url, headers, body, timeout ?? undefined, follow ?? undefined);
 
     // [修复防御]: 返回原始字符串 body，不在此处 JSON.parse

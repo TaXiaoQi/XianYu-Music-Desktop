@@ -19,14 +19,6 @@ import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolde
 import { useSettingsStore } from '../settings/store';
 import { useLibraryStore } from './store';
 
-let hasBootstrappedLibrary = false;
-let libraryBootstrapPromise: Promise<void> | null = null;
-let libraryRefreshPromise: Promise<void> | null = null;
-let queuedLibraryRefreshOptions: Required<ScanLibraryOptions> | null = null;
-let queuedLibraryRefreshPromise: Promise<void> | null = null;
-let libraryRefreshIdleId: number | null = null;
-let libraryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-
 const LIBRARY_SCAN_VISIBILITY_PRIORITY: Record<LibraryScanVisibility, number> = {
   silent: 1,
   inline: 2,
@@ -60,6 +52,13 @@ export const createLibraryRuntime = ({
   const { clearLibraryCollectionSongPathCache } = useLibraryCollectionSongPathCache();
   const { clearLibraryDetailSongPathCache } = useLibraryDetailSongPathCache();
   const { clearLibraryFolderSongPathCache } = useLibraryFolderSongPathCache();
+  let hasBootstrappedLibrary = false;
+  let libraryBootstrapPromise: Promise<void> | null = null;
+  let libraryRefreshPromise: Promise<void> | null = null;
+  let queuedLibraryRefreshOptions: Required<ScanLibraryOptions> | null = null;
+  let queuedLibraryRefreshPromise: Promise<void> | null = null;
+  let libraryRefreshIdleId: number | null = null;
+  let libraryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   const clearLibraryPathCaches = () => {
     clearLibraryAllSongPathCache();

@@ -52,7 +52,7 @@ const menuEntries = computed<FooterMenuEntry[]>(() => {
 
   const entries: FooterMenuEntry[] = [
     { type: 'action', key: 'favorite', label: favoriteLabel, icon: Heart },
-    { type: 'action', key: 'addToPlaylist', label: '添加到歌单', icon: Plus },
+    { type: 'action', key: 'addToPlaylist', label: '收藏到歌单', icon: Plus },
     { type: 'action', key: 'viewArtist', label: '查看歌手', icon: UserRound },
     { type: 'action', key: 'viewAlbum', label: '查看专辑', icon: Disc3 },
   ];

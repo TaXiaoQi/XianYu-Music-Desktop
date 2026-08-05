@@ -21,6 +21,7 @@
  */
 
 import type { Song } from '../types';
+import { readPluginFile } from './tauri/pluginApi';
 
 // ==================== 类型定义 ====================
 
@@ -455,7 +456,7 @@ function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .replace(/[（(].*?[）)]/g, '')   // 去除圆括号内容
-    .replace(/[【\[].*?[】\]]/g, '') // 去除方括号内容
+    .replace(/[【[].*?[】\]]/g, '') // 去除方括号内容
     .replace(/[–—―]/g, '-')
     .replace(/\s*-\s*/g, '-')
     .replace(/\s+/g, ' ')
@@ -640,7 +641,6 @@ export function matchSongsToLocalLibrary(
  * @returns 导入的歌单列表
  */
 export async function importBackupFile(filePath: string): Promise<ImportedPlaylist[]> {
-  const { readPluginFile } = await import('./tauri/pluginApi');
   const content = await readPluginFile(filePath);
 
   const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';

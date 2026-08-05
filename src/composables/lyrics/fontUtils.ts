@@ -35,6 +35,7 @@ let importedLyricsFontStyleEl: HTMLStyleElement | null = null;
 let importedLyricsFontRegistrationVersion = 0;
 const importedLyricsFontFaces = new Map<string, FontFace>();
 export const importedLyricsFontsRevision = ref(0);
+const IMPORTED_LYRICS_FONT_LOAD_TIMEOUT_MS = 1200;
 
 async function loadImportedLyricsFontSource(font: ImportedLyricsFont): Promise<string | null> {
   try {
@@ -55,8 +56,18 @@ async function createImportedLyricsFontFace(
 
   try {
     const fontFace = new FontFace(font.family, `url(${JSON.stringify(sourceUrl)})`, { display: 'swap' });
-    await fontFace.load();
-    return fontFace;
+    const loadedFontFace = await Promise.race([
+      fontFace.load()
+        .then(() => fontFace)
+        .catch((error) => {
+          console.warn('Failed to load imported lyrics FontFace:', font.name, error);
+          return null;
+        }),
+      new Promise<FontFace>((resolve) => {
+        setTimeout(() => resolve(fontFace), IMPORTED_LYRICS_FONT_LOAD_TIMEOUT_MS);
+      }),
+    ]);
+    return loadedFontFace;
   } catch (error) {
     console.warn('Failed to create imported lyrics FontFace:', font.name, error);
     return null;

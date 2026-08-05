@@ -13,7 +13,7 @@
 import CryptoJs from 'crypto-js';
 import { pluginApi } from './tauri/pluginApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import { getStoredPlugins } from './pluginEngine';
+import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import type { PluginSearchResult, PluginSource } from '../types';
 
@@ -1294,9 +1294,6 @@ export async function importPlaylistFromMusicFreePlugin(
   if (!input) {
     throw new Error('请输入歌单名称或链接');
   }
-
-  // 动态导入避免循环依赖
-  const { pluginPlaylistSearch, pluginGetPlaylistDetail } = await import('./pluginEngine');
 
   log(`[MusicFree] 搜索歌单: "${input}" via ${pluginSource.name}`);
 

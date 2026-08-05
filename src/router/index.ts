@@ -1,5 +1,5 @@
 import { defineComponent } from 'vue';
-import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
+import { createMemoryHistory, createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
 
 import { useOnboarding } from '../composables/useOnboarding';
 import {
@@ -38,7 +38,7 @@ const routes: Array<RouteRecordRaw> = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: typeof window === 'undefined' ? createMemoryHistory() : createWebHistory(),
   routes,
 });
 

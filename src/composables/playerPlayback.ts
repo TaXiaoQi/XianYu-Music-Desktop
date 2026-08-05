@@ -15,6 +15,15 @@ import { reportUserBehavior } from '../services/usageStats';
 import { useAuthStore } from '../features/auth/store';
 import { preloadAmlLyricPlayer } from '../components/player/amlLyricPlayerLoader';
 import { consumeFlyCoverPromise } from './useFlyingCover';
+import { getCachedLxSong } from '../services/lxSongCache';
+import {
+  getStoredPlugins,
+  pluginGetCover,
+  pluginGetLyric,
+  pluginGetMusicInfo,
+  pluginGetSupportedQualities,
+} from '../services/pluginEngine';
+import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../services/lxPluginEngine';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -745,7 +754,6 @@ const authStore = useAuthStore();
           const lxSource = parts[0];
           const songmid = parts.slice(1).join('/');
           if (lxSource && songmid) {
-            const { getCachedLxSong } = await import('../services/lxSongCache');
             const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
             const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
             if (cachedInfo?._types) {
@@ -761,7 +769,6 @@ const authStore = useAuthStore();
           // plugin:// 歌曲：从插件实例的 supportedQualities 提取
           const pluginSearchResult = song.rawData;
           if (pluginSearchResult?.pluginId) {
-            const { getStoredPlugins, pluginGetSupportedQualities } = await import('../services/pluginEngine');
             const plugins = getStoredPlugins();
             const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
             if (pluginSource) {
@@ -795,9 +802,6 @@ const authStore = useAuthStore();
       const songmid = parts.slice(1).join('/');
       if (lxSource && songmid) {
         try {
-          const { getStoredPlugins } = await import('../services/pluginEngine');
-          const { lxPluginGetMusicUrl, ensureLxPluginInstance } = await import('../services/lxPluginEngine');
-          const { getCachedLxSong } = await import('../services/lxSongCache');
           // 从 localStorage 获取已启用的 LX 插件
           const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
           // 优先找到支持该音源的插件，否则用第一个
@@ -891,7 +895,6 @@ const authStore = useAuthStore();
         const pluginSearchResult = song.rawData;
         if (pluginSearchResult?.pluginId) {
           try {
-            const { getStoredPlugins, pluginGetMusicInfo, pluginGetCover } = await import('../services/pluginEngine');
             const plugins = getStoredPlugins();
             const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
             if (pluginSource) {
@@ -986,7 +989,6 @@ const authStore = useAuthStore();
       if (pluginSearchResult?.pluginId) {
         void (async () => {
           try {
-            const { getStoredPlugins, pluginGetLyric } = await import('../services/pluginEngine');
             const plugins = getStoredPlugins();
             const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
             if (!pluginSource) {

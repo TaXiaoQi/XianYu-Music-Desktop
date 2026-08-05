@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { nextTick } from 'vue';
 
 import type { Song } from '../types';
+import { useLibraryStore } from '../features/library/store';
+import { usePlaybackStore } from '../features/playback/store';
+import { useSettingsStore } from '../features/settings/store';
+import { useUiStore } from '../shared/stores/ui';
+import { createPlayerLifecycle } from './playerLifecycle';
+import * as colorExtraction from './colorExtraction';
 
 const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
@@ -88,49 +94,22 @@ const createLifecycleDeps = (loadLyrics = vi.fn()) => ({
   legacyLastSongKey: 'last-song',
 });
 
-const loadModules = async () => {
-  const [
-    { useLibraryStore },
-    { usePlaybackStore },
-    { useSettingsStore },
-    { useUiStore },
-    { createPlayerLifecycle },
-    colorExtraction,
-  ] = await Promise.all([
-    import('../features/library/store'),
-    import('../features/playback/store'),
-    import('../features/settings/store'),
-    import('../shared/stores/ui'),
-    import('./playerLifecycle'),
-    import('./colorExtraction'),
-  ]);
-
-  return {
-    useLibraryStore,
-    usePlaybackStore,
-    useSettingsStore,
-    useUiStore,
-    createPlayerLifecycle,
-    colorExtraction,
-  };
-};
+let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
 
 describe('player lifecycle', () => {
   beforeEach(() => {
-    vi.resetModules();
     setActivePinia(createPinia());
     vi.clearAllMocks();
     mocks.listen.mockResolvedValue(vi.fn());
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleWarnSpy?.mockRestore();
+    consoleWarnSpy = null;
   });
 
   it('extracts cover colors for desktop lyrics auto scheme when flow background is disabled', async () => {
-    const {
-      usePlaybackStore,
-      useSettingsStore,
-      useUiStore,
-      createPlayerLifecycle,
-      colorExtraction,
-    } = await loadModules();
     const playbackStore = usePlaybackStore();
     const settingsStore = useSettingsStore();
     const uiStore = useUiStore();
@@ -154,11 +133,6 @@ describe('player lifecycle', () => {
   });
 
   it('patches current remote song metadata when the backend finishes caching it', async () => {
-    const {
-      useLibraryStore,
-      usePlaybackStore,
-      createPlayerLifecycle,
-    } = await loadModules();
     const callbacks = new Map<string, (event: { payload: unknown }) => void>();
     mocks.listen.mockImplementation((eventName: string, callback: (event: { payload: unknown }) => void) => {
       callbacks.set(eventName, callback);
@@ -199,11 +173,6 @@ describe('player lifecycle', () => {
   });
 
   it('sends current song context when loudness settings change', async () => {
-    const {
-      usePlaybackStore,
-      useSettingsStore,
-      createPlayerLifecycle,
-    } = await loadModules();
     const playbackStore = usePlaybackStore();
     const settingsStore = useSettingsStore();
     playbackStore.currentSong = makeSong({

@@ -11,6 +11,8 @@ vi.mock('@tauri-apps/api/window', () => ({
 }));
 
 vi.mock('./lyrics', () => ({
+  createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
+  createDefaultLyricsSettings: vi.fn(() => ({})),
   loadSystemLyricsFonts: vi.fn(),
 }));
 
