@@ -80,7 +80,7 @@ pub fn import_lyrics_font(
     Ok(ImportedLyricsFont {
         id: id.clone(),
         name: display_name_from_path(&source),
-        family: format!("Lycia Imported Lyrics Font {id}"),
+        family: format!("XianYu Imported Lyrics Font {id}"),
         file_path: target_path.to_string_lossy().to_string(),
         imported_at: imported_at_millis()?,
         format: format.to_string(),

@@ -5,7 +5,7 @@ export interface ArtistTabItem {
   name: string;
 }
 
-export const ARTIST_TABS_STORAGE_KEY = 'lycia_artist_tabs_order';
+export const ARTIST_TABS_STORAGE_KEY = 'xianyu_artist_tabs_order';
 
 export const DEFAULT_ARTIST_TABS: ArtistTabId[] = ['songs', 'albums', 'details'];
 

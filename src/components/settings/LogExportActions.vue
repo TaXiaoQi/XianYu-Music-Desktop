@@ -49,7 +49,7 @@ onBeforeUnmount(() => {
 
 const createExportName = (mode: 'all' | 'error') => {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return `lycia-${mode === 'error' ? 'error' : 'all'}-logs-${timestamp}.log`;
+  return `xianyu-${mode === 'error' ? 'error' : 'all'}-logs-${timestamp}.log`;
 };
 
 const exportLogs = async (mode: 'all' | 'error') => {

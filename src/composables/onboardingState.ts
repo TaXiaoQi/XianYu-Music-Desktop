@@ -1,4 +1,4 @@
-export const ONBOARDING_STORAGE_KEY = 'lycia_onboarding_completed';
+export const ONBOARDING_STORAGE_KEY = 'xianyu_onboarding_completed';
 export const LEGACY_ONBOARDING_STORAGE_KEY = 'onboarding_completed';
 export const INITIALIZATION_ROUTE_NAME = 'Initialization';
 export const HOME_ROUTE_NAME = 'Home';
