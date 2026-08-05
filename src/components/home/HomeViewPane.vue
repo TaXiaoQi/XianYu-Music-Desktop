@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import type { FolderNode, Song } from '../../types';
 import HomeContentPanel from './HomeContentPanel.vue';
 import HomeHeaderPanel from './HomeHeaderPanel.vue';
@@ -18,7 +18,6 @@ interface ArtistAlbumItem {
 }
 
 interface Props {
-  viewTransitionKey: string;
   localViewMode: string;
   isBatchMode: boolean;
   isManagementMode: boolean;
@@ -97,11 +96,27 @@ const songTableMemoryScopeKey = computed(() =>
     }
   })(),
 );
+
+// [视图切换动画] 监听 localViewMode/filterCondition 变化时触发淡入动画。
+// 使用 CSS animation 而非 <transition> + :key，避免组件被销毁重建。
+const fadeKey = ref(0);
+let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => `${props.localViewMode}:${props.localFilterCondition}`,
+  () => {
+    fadeKey.value++;
+    if (fadeTimer) clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => { fadeKey.value = 0; }, 350);
+  },
+);
+onBeforeUnmount(() => { if (fadeTimer) clearTimeout(fadeTimer); });
 </script>
 
 <template>
-  <transition name="home-view-fade" mode="out-in">
-    <div :key="viewTransitionKey" class="flex flex-1 flex-col min-h-0 min-w-0">
+  <div
+    class="flex flex-1 flex-col min-h-0 min-w-0"
+    :class="fadeKey > 0 ? 'view-fade-in' : ''"
+  >
       <HomeHeaderPanel
         :localViewMode="localViewMode"
         :isBatchMode="isBatchMode"
@@ -160,5 +175,21 @@ const songTableMemoryScopeKey = computed(() =>
         @artistAlbumClick="$emit('artistAlbumClick', $event)"
       />
     </div>
-  </transition>
 </template>
+
+<style scoped>
+@keyframes viewFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.view-fade-in {
+  animation: viewFadeIn 0.3s ease;
+}
+</style>

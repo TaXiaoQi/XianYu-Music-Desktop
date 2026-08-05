@@ -347,7 +347,10 @@ watch(() => props.lyricLines, (value) => {
 }, { deep: false });
 
 watch(() => props.currentTime, (value) => {
-  player?.setCurrentTime(Math.trunc(value));
+  // [性能优化] disabled 态下 rAF 循环已停止，无需每帧调用 setCurrentTime 触发 AMLL 内部布局计算。
+  // 此前 disabled 时仍每帧调用 setCurrentTime，是"有歌词的在线歌曲播放卡顿、无歌词不卡顿"的主因之一。
+  if (!player || props.disabled) return;
+  player.setCurrentTime(Math.trunc(value));
 });
 </script>
 

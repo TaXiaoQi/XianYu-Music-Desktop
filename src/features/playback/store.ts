@@ -129,6 +129,22 @@ export const usePlaybackStore = defineStore('playback', () => {
     },
   });
 
+  /**
+   * O(1) 更新队列中单首歌曲的元数据（如 duration、lyrics_raw）。
+   * 直接修改 fallbackMap 中的条目，避免 playQueue.value.map(...) 遍历整个队列。
+   * songPool 中的歌曲由调用方的 patchSongMeta 负责，本方法只处理 fallback 条目。
+   */
+  const patchQueueSongMeta = (path: string, patch: Partial<Song>) => {
+    if (!path) return;
+    const qf = queueFallbackSongs.get(path);
+    if (qf) queueFallbackSongs.set(path, { ...qf, ...patch });
+    const tf = tempQueueFallbackSongs.get(path);
+    if (tf) tempQueueFallbackSongs.set(path, { ...tf, ...patch });
+    if (currentSongFallback.value?.path === path) {
+      currentSongFallback.value = { ...currentSongFallback.value, ...patch };
+    }
+  };
+
   const resetPlaybackState = () => {
     isPlaying.value = false;
     currentTime.value = 0;
@@ -191,6 +207,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     sessionQualityOverride,
     setSessionQualityOverride,
     resetPlaybackState,
+    patchQueueSongMeta,
     hasExternalStartupFile,
     isStartupPathsResolved,
     startupPathsPromise,

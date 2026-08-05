@@ -398,10 +398,8 @@ const authStore = useAuthStore();
               const newDuration = Math.floor(backendDuration);
               const updatedSong = { ...songForDuration, duration: newDuration };
               currentSong.value = updatedSong;
-              playQueue.value = playQueue.value.map(item => (
-                item.path === songForDuration.path ? { ...item, duration: newDuration } : item
-              ));
               libraryStore.patchSongMeta(songForDuration.path, { duration: newDuration } as Partial<Song>);
+              playbackStore.patchQueueSongMeta(songForDuration.path, { duration: newDuration });
             }
           } catch {}
         }
@@ -934,10 +932,8 @@ const authStore = useAuthStore();
           // songPool 中的对象而非入参 song 或 fallback。若不更新池中对象，
           // loadLyrics 读到的 currentSong.lyrics_raw 仍为空，导致歌词加载超时。
           libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
+          playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
           const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
-          playQueue.value = playQueue.value.map(item => (
-            item.path === song.path ? { ...item, lyrics_raw: lyricsRaw } : item
-          ));
           currentSong.value = songWithLyrics;
           console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
           void loadLyrics(lyricsRaw);
@@ -973,10 +969,8 @@ const authStore = useAuthStore();
             song.lyrics_raw = lyricData.lyricsRaw;
             // [修复] 同步更新 library store 池中条目（与 LX 歌词处理一致）
             libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw } as Partial<Song>);
+            playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricData.lyricsRaw });
             const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricData.lyricsRaw };
-            playQueue.value = playQueue.value.map(item => (
-              item.path === song.path ? { ...item, lyrics_raw: lyricData.lyricsRaw } : item
-            ));
             currentSong.value = songWithLyrics;
             void loadLyrics(lyricData.lyricsRaw);
           } catch (error) {

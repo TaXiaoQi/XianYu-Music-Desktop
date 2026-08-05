@@ -117,7 +117,7 @@ const handleTableDragStart = (...args: any[]) => {
         @batchMove="$emit('batchMove')"
       />
 
-      <Transition name="tab-slide" mode="out-in">
+      <Transition name="tab-slide">
         <StatisticsPage v-if="localViewMode === 'statistics'" />
 
         <ArtistAlbumGrid
