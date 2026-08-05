@@ -72,14 +72,14 @@ async function main() {
       config.bundle.windows.webviewInstallMode = {
         type: target.type
       };
-      config.bundle.targets = ["nsis"];
+      config.bundle.targets = ["msi"];
       writeJson(tauriConfigPath, config);
 
       // Clean old bundle output directory to avoid picking up old files
-      const nsisDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
-      if (fs.existsSync(nsisDir)) {
-        console.log(`正在清理旧的打包输出: ${nsisDir}`);
-        fs.rmSync(nsisDir, { recursive: true, force: true });
+      const msiDir = path.join(rootDir, 'src-tauri', 'target', 'release', 'bundle', 'msi');
+      if (fs.existsSync(msiDir)) {
+        console.log(`正在清理旧的打包输出: ${msiDir}`);
+        fs.rmSync(msiDir, { recursive: true, force: true });
       }
 
       // Run tauri build
@@ -87,29 +87,29 @@ async function main() {
       process.env.BUILD_RELEASES_MODE = 'true';
       runCommand('npm run tauri build', rootDir);
 
-      // Locate the built installer in nsis directory
-      if (!fs.existsSync(nsisDir)) {
-        throw new Error(`找不到构建输出目录: ${nsisDir}`);
+      // Locate the built installer in msi directory
+      if (!fs.existsSync(msiDir)) {
+        throw new Error(`找不到构建输出目录: ${msiDir}`);
       }
 
-      const files = fs.readdirSync(nsisDir);
-      const exeFiles = files.filter(f => f.endsWith('.exe'));
+      const files = fs.readdirSync(msiDir);
+      const msiFiles = files.filter(f => f.endsWith('.msi'));
 
-      if (exeFiles.length === 0) {
-        throw new Error(`在 ${nsisDir} 中未找到生成的 .exe 安装包`);
+      if (msiFiles.length === 0) {
+        throw new Error(`在 ${msiDir} 中未找到生成的 .msi 安装包`);
       }
 
-      // We expect only one setup exe, but process all .exe found just in case
-      for (const exeFile of exeFiles) {
-        const srcPath = path.join(nsisDir, exeFile);
+      // We expect only one MSI, but process all .msi found just in case
+      for (const msiFile of msiFiles) {
+        const srcPath = path.join(msiDir, msiFile);
         
-        // Target name formatting: replace spaces with dots, and append -suffix before .exe
-        // e.g. "Lycia Player_1.3.8_x64-setup.exe" -> "Lycia.Player_1.3.8_x64-setup-portable.exe"
-        let destName = exeFile.replace(/\s+/g, '.');
-        if (destName.endsWith('-setup.exe')) {
-          destName = destName.replace(/-setup\.exe$/, `-setup-${target.suffix}.exe`);
+        // Target name formatting: replace spaces with dots, and append -suffix before .msi
+        // e.g. "弦予音乐_1.1.2_x64_zh-CN.msi" -> "弦予音乐_1.1.2_x64_zh-CN-standard.msi"
+        let destName = msiFile.replace(/\s+/g, '.');
+        if (destName.endsWith('.msi')) {
+          destName = destName.replace(/\.msi$/, `-${target.suffix}.msi`);
         } else {
-          destName = destName.replace(/\.exe$/, `-${target.suffix}.exe`);
+          destName = `${destName}-${target.suffix}`;
         }
 
         const destPath = path.join(outputDir, destName);
