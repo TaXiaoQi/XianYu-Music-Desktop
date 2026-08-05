@@ -652,7 +652,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("lycia_remote_scan_{unique}.{ext}"))
+        std::env::temp_dir().join(format!("xianyu_remote_scan_{unique}.{ext}"))
     }
 
     fn write_tagged_mp3(path: &std::path::Path) {

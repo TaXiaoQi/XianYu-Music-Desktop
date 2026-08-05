@@ -105,7 +105,7 @@ const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
       </a>
 
       <a
-        href="https://github.com/Billy636/LyciaMusic"
+        href="https://github.com/Billy636/XianYuMusic"
         target="_blank"
         rel="noreferrer"
         class="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-xl bg-white/30 backdrop-blur-md border border-white/40 px-3.5 py-2 text-xs font-medium text-gray-800 no-underline transition active:scale-95 shadow-sm hover:bg-black/10 hover:border-black/10 dark:bg-black/20 dark:border-white/10 dark:text-white dark:hover:bg-white/10"

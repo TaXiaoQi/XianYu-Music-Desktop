@@ -103,7 +103,7 @@ const handleExportAppBackup = async () => {
 
   try {
     const filePath = await saveDialog({
-      defaultPath: `lycia-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      defaultPath: `xianyu-backup-${new Date().toISOString().slice(0, 10)}.json`,
       filters: [{ name: '应用备份文件', extensions: ['json'] }],
     });
     if (!filePath) return;

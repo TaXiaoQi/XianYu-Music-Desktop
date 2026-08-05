@@ -38,8 +38,8 @@ import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin
 
 // ==================== 常量 ====================
 
-const PLUGIN_SOURCES_KEY = 'lycia_plugin_sources_v4';
-const PLUGIN_SOURCES_KEY_LEGACY = 'lycia_plugin_sources_v3';
+const PLUGIN_SOURCES_KEY = 'xianyu_plugin_sources_v4';
+const PLUGIN_SOURCES_KEY_LEGACY = 'xianyu_plugin_sources_v3';
 const MAX_PLUGIN_SIZE = 2 * 1024 * 1024;
 
 // 内置插件定义：已取消所有内置插件，此映射保留为空用于清理旧版本遗留的内置插件条目
@@ -2059,11 +2059,11 @@ export async function restorePluginFromSync(
  * 订阅管理 —— 参考 MusicFreeDesktop 订阅管理设计
  *
  * 数据模型 PluginSubscription 见 src/types/index.ts
- * 持久化到 localStorage（key: lycia_plugin_subscriptions），与插件存储风格一致
+ * 持久化到 localStorage（key: xianyu_plugin_subscriptions），与插件存储风格一致
  * 安装逻辑复用 loadPluginFromScript + addPluginSource，支持单插件脚本与批量 JSON 两种订阅源格式
  */
 
-const PLUGIN_SUBSCRIPTIONS_KEY = 'lycia_plugin_subscriptions';
+const PLUGIN_SUBSCRIPTIONS_KEY = 'xianyu_plugin_subscriptions';
 
 /** 读取全部订阅 */
 export function getSubscriptions(): PluginSubscription[] {

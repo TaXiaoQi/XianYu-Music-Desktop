@@ -2,7 +2,7 @@ import { shallowReadonly, shallowRef } from 'vue';
 
 import type { LogLevel, LogSettings } from '../types';
 
-export const APPLICATION_LOG_STORAGE_KEY = 'lycia_application_logs_v1';
+export const APPLICATION_LOG_STORAGE_KEY = 'xianyu_application_logs_v1';
 export const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const MAX_LOG_ENTRIES = 3000;
 
