@@ -59,6 +59,34 @@ function readVersionFromTs(filePath) {
   return match[1];
 }
 
+function toMsiCompatibleVersion(version) {
+  const match = version.match(/^(\d+\.\d+\.\d+)(?:-(.+))?$/);
+  if (!match) {
+    throw new Error(`Invalid version: ${version}`);
+  }
+
+  const [, baseVersion, prerelease] = match;
+  if (!prerelease) {
+    return baseVersion;
+  }
+
+  const numericIdentifier = prerelease.match(/\d+/)?.[0];
+  if (!numericIdentifier) {
+    throw new Error(
+      `MSI requires numeric-only pre-release identifier, but got: ${version}`
+    );
+  }
+
+  const numericValue = Number(numericIdentifier);
+  if (!Number.isInteger(numericValue) || numericValue > 65535) {
+    throw new Error(
+      `MSI pre-release identifier must be an integer no greater than 65535, but got: ${numericIdentifier}`
+    );
+  }
+
+  return `${baseVersion}-${numericValue}`;
+}
+
 const cargoTomlContent = fs.readFileSync(cargoTomlPath, 'utf8');
 const cargoPackageNameMatch = cargoTomlContent.match(/^name\s*=\s*"([^"]+)"$/m);
 
@@ -68,9 +96,11 @@ if (!cargoPackageNameMatch) {
 }
 
 const cargoPackageName = cargoPackageNameMatch[1];
+const sourceVersion = readVersionFromTs(versionTsPath);
+const tauriVersion = toMsiCompatibleVersion(sourceVersion);
 
 const versions = {
-  'version.ts': readVersionFromTs(versionTsPath),
+  'version.ts': sourceVersion,
   'package.json': readJson(packageJsonPath).version,
   'package-lock.json': readJson(packageLockPath).version,
   'src-tauri/tauri.conf.json': readJson(tauriConfigPath).version,
@@ -83,11 +113,26 @@ for (const [file, version] of Object.entries(versions)) {
   console.log(`- ${file}: ${version}`);
 }
 
-const uniqueVersions = [...new Set(Object.values(versions))];
-if (uniqueVersions.length === 1) {
-  console.log(`Version status: OK (${uniqueVersions[0]})`);
+const expectedVersions = {
+  'version.ts': sourceVersion,
+  'package.json': sourceVersion,
+  'package-lock.json': sourceVersion,
+  'src-tauri/tauri.conf.json': tauriVersion,
+  'src-tauri/Cargo.toml': sourceVersion,
+  'src-tauri/Cargo.lock': sourceVersion
+};
+
+const mismatches = Object.entries(versions).filter(
+  ([file, version]) => version !== expectedVersions[file]
+);
+
+if (mismatches.length === 0) {
+  console.log(`Version status: OK (${sourceVersion}, MSI compatible: ${tauriVersion})`);
 } else {
-  console.log(`Version status: MISMATCH (${uniqueVersions.join(', ')})`);
+  console.log('Version status: MISMATCH');
+  for (const [file, version] of mismatches) {
+    console.log(`- ${file}: expected ${expectedVersions[file]}, got ${version}`);
+  }
   console.log('Run `npm run version` to synchronize from version.ts');
   process.exitCode = 1;
 }

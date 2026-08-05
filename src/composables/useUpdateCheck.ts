@@ -93,9 +93,9 @@ export function useUpdateCheck() {
    * 应用内下载更新并自动安装
    * 1. 监听下载进度事件
    * 2. 调用 download_update_file 下载安装包
-   * 3. 调用 run_installer 启动 NSIS 安装程序
+   * 3. 调用 run_installer 启动 MSI 安装程序
    * 4. 调用 exit_app 退出应用，安装程序接管
-   * 用户数据存储在 app_data_dir（%APPDATA%），NSIS 覆盖安装目录不影响数据
+   * 用户数据存储在 app_data_dir（%APPDATA%），MSI 覆盖安装目录不影响数据
    */
   const downloadAndInstall = async () => {
     if (!latestUpdate.value?.downloadUrl) {
@@ -119,7 +119,7 @@ export function useUpdateCheck() {
         url: latestUpdate.value!.downloadUrl,
       });
 
-      // 启动 NSIS 安装程序（非阻塞）
+      // 启动 MSI 安装程序（非阻塞）
       await invoke('run_installer', { path });
 
       // 等待安装程序初始化后退出应用

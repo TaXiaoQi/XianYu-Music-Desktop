@@ -49,6 +49,34 @@ function replaceInFile(filePath, pattern, replacement) {
   return true;
 }
 
+function toMsiCompatibleVersion(version) {
+  const match = version.match(/^(\d+\.\d+\.\d+)(?:-(.+))?$/);
+  if (!match) {
+    throw new Error(`Invalid version: ${version}`);
+  }
+
+  const [, baseVersion, prerelease] = match;
+  if (!prerelease) {
+    return baseVersion;
+  }
+
+  const numericIdentifier = prerelease.match(/\d+/)?.[0];
+  if (!numericIdentifier) {
+    throw new Error(
+      `MSI requires numeric-only pre-release identifier, but got: ${version}`
+    );
+  }
+
+  const numericValue = Number(numericIdentifier);
+  if (!Number.isInteger(numericValue) || numericValue > 65535) {
+    throw new Error(
+      `MSI pre-release identifier must be an integer no greater than 65535, but got: ${numericIdentifier}`
+    );
+  }
+
+  return `${baseVersion}-${numericValue}`;
+}
+
 function updateCargoLockVersion(filePath, packageName, nextVersion) {
   if (!fs.existsSync(filePath)) {
     return 'missing';
@@ -87,6 +115,8 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version)) {
   process.exit(1);
 }
 
+const tauriVersion = toMsiCompatibleVersion(version);
+
 // --- 同步到 package.json ---
 const packageJson = readJson(packageJsonPath);
 const packageJsonUpdated = packageJson.version !== version;
@@ -111,9 +141,9 @@ if (fs.existsSync(packageLockPath)) {
 
 // --- 同步到 tauri.conf.json ---
 const tauriConfig = readJson(tauriConfigPath);
-const tauriConfigUpdated = tauriConfig.version !== version;
+const tauriConfigUpdated = tauriConfig.version !== tauriVersion;
 if (tauriConfigUpdated) {
-  tauriConfig.version = version;
+  tauriConfig.version = tauriVersion;
   writeJson(tauriConfigPath, tauriConfig);
 }
 
@@ -140,7 +170,7 @@ const cargoLockStatus = updateCargoLockVersion(cargoLockPath, cargoPackageName, 
 console.log(`Synchronized version ${version} (source: version.ts)`);
 console.log(`- package.json${packageJsonUpdated ? '' : ' (already up to date)'}`);
 console.log(`- package-lock.json${packageLockUpdated ? '' : (fs.existsSync(packageLockPath) ? ' (already up to date)' : ' (not found)')}`);
-console.log(`- src-tauri/tauri.conf.json${tauriConfigUpdated ? '' : ' (already up to date)'}`);
+console.log(`- src-tauri/tauri.conf.json${tauriConfigUpdated ? ` (MSI compatible: ${tauriVersion})` : ` (already up to date, MSI compatible: ${tauriVersion})`}`);
 console.log(`- src-tauri/Cargo.toml${cargoTomlUpdated ? '' : ' (already up to date)'}`);
 console.log(
   `- src-tauri/Cargo.lock${
