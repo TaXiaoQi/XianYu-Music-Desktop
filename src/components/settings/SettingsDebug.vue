@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { FileText, RefreshCw, Trash2, X } from 'lucide-vue-next';
 
 import { useDeveloperMode } from '../../features/settings/developerMode';
@@ -43,7 +43,17 @@ const { settings, patchSettings } = useSettings();
 const { showToast } = useToast();
 const { entries, clearLogs } = useApplicationLogs();
 
-const analysis = ref<ApplicationLogAnalysis>(analyzeApplicationLogs(entries.value));
+// 延迟到 mount 后执行分析，避免阻塞页面首次渲染导致卡死
+const defaultAnalysis: ApplicationLogAnalysis = {
+  status: 'healthy',
+  headline: '正在分析日志…',
+  counts: { debug: 0, info: 0, warn: 0, error: 0 },
+  total: 0,
+  findings: [],
+  topErrorCategory: null,
+  latestErrorAt: null,
+};
+const analysis = ref<ApplicationLogAnalysis>(defaultAnalysis);
 const loggingSettings = computed(() => settings.value.logging);
 const entryCount = computed(() => entries.value.length);
 // 直接从 analysis 派生 counts，避免每次 entries 变化都重新执行 analyzeApplicationLogs
@@ -100,6 +110,13 @@ watch(
 
 onBeforeUnmount(() => {
   if (analysisDebounceTimer) clearTimeout(analysisDebounceTimer);
+});
+
+// 延迟到 mount + nextTick 后执行首次分析，避免阻塞页面首次渲染
+onMounted(() => {
+  nextTick(() => {
+    analysis.value = analyzeApplicationLogs(entries.value);
+  });
 });
 
 const formatLogTime = (timestamp: number) => new Intl.DateTimeFormat('zh-CN', {
