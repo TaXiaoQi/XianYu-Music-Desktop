@@ -75,9 +75,9 @@
         "type": "skip"
       },
       "wix": {
+        "upgradeCode": "4fab41aa-9212-5640-9c2c-8dc5363dfdaa",
         "language": [
-          "zh-CN",
-          "en-US"
+          "zh-CN"
         ]
       }
     }
