@@ -14,8 +14,8 @@ import { usePlaybackStore } from '../features/playback/store';
  * 调用方需提供与列表行 [data-cover-path] 一致的 songPath，以及该行当前展示的封面 URL。
  *
  * 返回值：Promise<void>，在飞行动画（封面从列表飞抵底栏）结束后 resolve。
- * 调用方通常不需要 await 此 Promise —— 飞封面动画与 playSong 并行执行，
- * 动画用于掩盖起播延迟，动画结束时歌曲应已加载就绪或即将就绪。
+ * playSong 内部会在调用 playAudio 前 await 此 Promise（通过 consumeFlyCoverPromise），
+ * 确保封面飞到底部栏后才开始播放音频。
  * 若动画未能启动（找不到元素、无封面 URL 等），Promise 立即 resolve，不阻塞调用方。
  */
 
@@ -26,6 +26,25 @@ const FLY_EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
 const PARK_TIMEOUT = 3000;
 
 let currentFlyId = 0;
+
+/**
+ * 当前飞封面动画的飞行 Promise（封面从列表飞抵底栏）。
+ * playSong 在调用 playAudio 前会 await 此 Promise，
+ * 确保封面飞到底部栏后才开始播放音频。
+ */
+let currentFlyPromise: Promise<void> | null = null;
+
+/** 获取当前飞封面飞行 Promise（如有），用于 playSong 同步等待 */
+export function getFlyCoverPromise(): Promise<void> | null {
+  return currentFlyPromise;
+}
+
+/** 消费（取出并清除）当前飞封面 Promise，避免后续 playSong 误等旧 Promise */
+export function consumeFlyCoverPromise(): Promise<void> | null {
+  const promise = currentFlyPromise;
+  currentFlyPromise = null;
+  return promise;
+}
 
 /** CSS 属性选择器转义：反斜杠在 CSS 选择器中是转义符，必须双写；双引号也需转义 */
 const escAttr = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -49,7 +68,7 @@ const findTargetEl = (): HTMLElement | null =>
  * @param coverUrl  列表行当前展示的封面 URL；为空则尝试从源元素 <img> 中提取
  */
 export function launchFlyingCover(songPath: string, coverUrl: string): Promise<void> {
-  return new Promise<void>((resolve) => {
+  const flyPromise = new Promise<void>((resolve) => {
     if (!songPath) { resolve(); return; }
     const flyId = ++currentFlyId;
 
@@ -200,6 +219,10 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
       }, 60);
     }
   });
+
+  // 记录当前飞封面 Promise，供 playSong 在 playAudio 前 await
+  currentFlyPromise = flyPromise;
+  return flyPromise;
 }
 
 /** 取消当前正在进行的飞入动画 */

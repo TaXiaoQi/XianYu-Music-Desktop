@@ -673,6 +673,47 @@ export async function loadLxPluginFromScript(
   return source;
 }
 
+// ==================== 歌曲级错误 ====================
+
+/**
+ * 歌曲级错误：表示歌曲本身不可用（不存在、版权限制、需要 VIP 等），
+ * 换音质无法解决，播放循环应立即停止尝试其他音质。
+ */
+export class LxSongLevelError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LxSongLevelError';
+  }
+}
+
+/**
+ * 检测错误消息是否为歌曲级错误（换音质无法解决）。
+ * 匹配 LX 插件常见的歌曲级错误模式：
+ * - "歌曲不存在" / "歌曲已下架"
+ * - "版权" + ("限制" | "保护" | "原因")
+ * - "需要登录" / "需登录"
+ * - "地区限制"
+ * - "VIP" / "会员" 歌曲限制
+ */
+const SONG_LEVEL_ERROR_PATTERNS = [
+  /歌曲不存在/i,
+  /歌曲已下架/i,
+  /已?下架/i,
+  /版权.{0,4}(限制|保护|原因)/i,
+  /需要?登录/i,
+  /地区限制/i,
+  /需要?\s*(VIP|会员|付费)/i,
+  /VIP歌曲/i,
+  /会员歌曲/i,
+  /付费歌曲/i,
+  /无版权/i,
+  /暂无版权/i,
+];
+
+export function isSongLevelError(message: string): boolean {
+  return SONG_LEVEL_ERROR_PATTERNS.some(pattern => pattern.test(message));
+}
+
 // ==================== 请求方法 ====================
 
 /**
@@ -787,6 +828,14 @@ export async function lxPluginRequest(
       // [修复防御]: 错误对象可能不是 Error 实例 (插件可能抛出字符串或任意值)
       const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
       log(`[lxPluginRequest] ${source.name} ${action} 失败: ${errMsg}`);
+
+      // [歌曲级错误] 当错误表明歌曲本身不可用（不存在/版权限制/VIP 等），
+      // 换音质无法解决，抛出 LxSongLevelError 让调用方立即停止音质回退循环，
+      // 避免对同一首不可用的歌曲发起 12 次无意义的 HTTP 请求。
+      if (action === 'musicUrl' && isSongLevelError(errMsg)) {
+        throw new LxSongLevelError(errMsg);
+      }
+
       return null;
   }
 }

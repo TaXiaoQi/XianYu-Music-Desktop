@@ -192,7 +192,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
 
     // 回退到按 path 从 libraryStore 查找
-    // 使用 songLookup（与歌单详情页一致），以包含 extraSongPool 中的在线收藏歌曲
+    // 使用 songLookup（与歌单详情页一致），以包含 songPool 中的在线收藏歌曲
     const lookup = libraryStore.songLookup;
     return playlist.songPaths
       .map(path => lookup.get(path))

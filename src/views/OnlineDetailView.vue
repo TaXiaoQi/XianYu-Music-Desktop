@@ -220,7 +220,7 @@ function handleAddToPlaylist() {
     return;
   }
 
-  // 将在线歌曲元信息缓存到 extraSongPool，确保歌单中能正确显示
+  // 将在线歌曲元信息缓存到 songPool，确保歌单中能正确显示
   for (const song of songList.value) {
     libraryStore.setExtraSong(song);
   }
@@ -242,7 +242,7 @@ function handleContextMenu(e: MouseEvent, song: Song) {
 function handleContextMenuAddToPlaylist() {
   const song = contextMenuTargetSong.value;
   if (!song) return;
-  // 缓存在线歌曲元信息到 extraSongPool
+  // 缓存在线歌曲元信息到 songPool
   libraryStore.setExtraSong(song);
   // 触发原生收藏到歌单弹窗
   openAddToPlaylistDialog([song.path], { songs: [song] });

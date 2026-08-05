@@ -173,7 +173,7 @@ export function useLibraryCollectionSelectors({
         recentPlaylistList.value = [];
       }
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
 
   return {

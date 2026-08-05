@@ -4,7 +4,7 @@ import { onMounted, onScopeDispose, watch, type Ref } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { clearPaletteCache, extractDominantColors } from './colorExtraction';
-import type { LibraryScanProgress, Song } from '../types';
+import type { LibraryScanProgress, LibrarySong, Song } from '../types';
 import {
   playerStorage,
   playerStorageKeys,
@@ -348,17 +348,26 @@ export const createPlayerLifecycle = ({
     watch(watchedFolders, scheduleStatePersistence);
     watch(favoritePaths, scheduleStatePersistence, { deep: true });
 
-    // 合并两个对 playlists 的 deep watch：持久化保存 + 在线歌曲注入 extraSongPool。
-    // 原先有两个独立的 deep watch 同时遍历 playlists，合并后只需遍历一次。
+    // 合并两个对 playlists 的 watch：持久化保存 + 在线歌曲注入 songPool。
+    // 使用 deep 监听以捕获歌单内歌曲增删，但批量合并 setExtraSongs 以减少 songCatalogVersion 递增。
+    let lastPlaylistSongsSignature = '';
     watch(playlists, (newPlaylists) => {
       // 1. 持久化保存
       scheduleStatePersistence();
-      // 2. 将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
+      // 2. 将 playlist.songs 缓存中的在线歌曲注入 songPool，
       //    确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中）
+      // 用签名检测歌曲内容是否实际变化，避免重命名等无关变更触发 setExtraSongs
+      const songGroups: LibrarySong[][] = [];
+      let currentSignature = '';
       for (const pl of newPlaylists) {
         if (pl.songs && pl.songs.length > 0) {
-          libraryStore.setExtraSongs(pl.songs);
+          songGroups.push(pl.songs);
+          currentSignature += `${pl.id}:${pl.songs.length};`;
         }
+      }
+      if (currentSignature !== lastPlaylistSongsSignature && songGroups.length > 0) {
+        lastPlaylistSongsSignature = currentSignature;
+        libraryStore.setExtraSongsBatch(songGroups);
       }
     }, { deep: true, immediate: true });
     watch(settings, scheduleStatePersistence, { deep: true });
@@ -585,26 +594,24 @@ export const createPlayerLifecycle = ({
       const favoriteSongMeta = playerStorage.readFavoriteSongMeta();
       collectionsStore.setFavoriteSongMetaMap(favoriteSongMeta);
       const extraSongs = Object.values(favoriteSongMeta);
-      if (extraSongs.length > 0) {
-        libraryStore.setExtraSongs(extraSongs);
-      }
 
       // 恢复在线最近播放歌曲的元信息，并写入额外歌曲池，
       // 使最近播放列表能反查出这些不在本地音乐库中的歌曲
       const recentSongMeta = playerStorage.readRecentSongMeta();
       collectionsStore.setRecentSongMetaMap(recentSongMeta);
       const recentExtraSongs = Object.values(recentSongMeta);
-      if (recentExtraSongs.length > 0) {
-        libraryStore.setExtraSongs(recentExtraSongs);
-      }
 
       // 恢复队列/歌单中在线歌曲的元信息（含非收藏），写入额外歌曲池，
       // 使 resolveSongsByPaths 能还原这些不在本地库的在线歌（含 duration），
       // 否则非收藏在线歌重启后会从播放队列中整首丢失
       const queueSongMeta = playerStorage.readQueueSongMeta();
       const queueExtraSongs = Object.values(queueSongMeta);
-      if (queueExtraSongs.length > 0) {
-        libraryStore.setExtraSongs(queueExtraSongs);
+
+      // 批量写入所有在线歌曲元信息，仅递增一次 songCatalogVersion，
+      // 避免 songLookup/canonicalSongs/currentViewSongs 级联重算 3+ 次
+      const extraSongGroups = [extraSongs, recentExtraSongs, queueExtraSongs].filter(g => g.length > 0);
+      if (extraSongGroups.length > 0) {
+        libraryStore.setExtraSongsBatch(extraSongGroups);
       }
 
       collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
@@ -619,12 +626,14 @@ export const createPlayerLifecycle = ({
         }
       }
 
-      // 恢复歌单后，将 playlist.songs 缓存中的在线歌曲注入 extraSongPool，
+      // 恢复歌单后，将 playlist.songs 缓存中的在线歌曲注入 songPool，
       // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中，重启后会丢失）
-      for (const pl of collectionsStore.playlists) {
-        if (pl.songs && pl.songs.length > 0) {
-          libraryStore.setExtraSongs(pl.songs);
-        }
+      // 批量合并所有歌单的在线歌曲，仅递增一次 songCatalogVersion
+      const playlistSongGroups = restoredPls
+        .filter(pl => pl.songs && pl.songs.length > 0)
+        .map(pl => pl.songs!);
+      if (playlistSongGroups.length > 0) {
+        libraryStore.setExtraSongsBatch(playlistSongGroups);
       }
 
       restoreSortSettings({

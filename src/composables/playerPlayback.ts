@@ -14,6 +14,7 @@ import { useToast } from './toast';
 import { reportUserBehavior } from '../services/usageStats';
 import { useAuthStore } from '../features/auth/store';
 import { preloadAmlLyricPlayer } from '../components/player/amlLyricPlayerLoader';
+import { consumeFlyCoverPromise } from './useFlyingCover';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -428,7 +429,7 @@ const authStore = useAuthStore();
     } else if (song.path.startsWith('http://') || song.path.startsWith('https://')) {
       songSource = 'online';
     } else if (song.path.startsWith('plugin://')) {
-      songSource = song.remote_source_id || 'plugin';
+      songSource = song.path.slice('plugin://'.length).split('/')[0] || 'plugin';
     }
     reportUserBehavior({
       song_id: song.id != null ? String(song.id) : song.path,
@@ -575,6 +576,11 @@ const authStore = useAuthStore();
     } else {
       cancelFade();
     }
+
+    // [可打断] fade-out 期间用户可能再次点击播放另一首歌，此时 playRequestId 已递增、
+    // cancelFade 已 resolve 旧的 fade promise。若不检查，旧的 playSong 会继续处理旧歌曲，
+    // 与新的 playSong 产生竞态（旧歌覆盖新歌的 currentSong/queue/playAudio）。
+    if (requestId !== playRequestId) return;
 
     flushPlaySession();
     if (!options.continueStatisticsSession) {
@@ -746,6 +752,9 @@ const authStore = useAuthStore();
     // [音质列表] 在 URL 解析前等待音质列表获取完成，确保后续音质回退逻辑能正确过滤
     await qualityListPromise;
 
+    // [可打断] 音质列表获取期间用户可能切歌，需检查是否仍是当前请求
+    if (requestId !== playRequestId) return;
+
     // [落雪] lx:// 协议需要通过落雪插件引擎解析真实播放 URL
     // 完全对齐 YinDongMusic 的实现：getStoredPlugins → ensureLxPluginInstance → lxPluginGetMusicUrl
     if (audioFilePath.startsWith('lx://')) {
@@ -781,29 +790,40 @@ const authStore = useAuthStore();
             );
 
             // 依次尝试音质列表，第一个返回有效 URL 的即采用
+            // [歌曲级错误优化] 当插件返回"歌曲不存在"等歌曲级错误时，LxSongLevelError 会被抛出，
+            // 立即跳出音质循环，避免对同一首不可用的歌曲发起 12 次无意义的 HTTP 请求
             for (const q of lxTryQualities) {
-              const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
-                songId: songmid,
-                name: song.name,
-                singer: song.artist,
-                albumName: song.album,
-                source: lxSource,
-                songmid,
-                hash: cachedInfo?.hash,
-                copyrightId: cachedInfo?.copyrightId,
-                strMediaMid: cachedInfo?.strMediaMid,
-                albumId: cachedInfo?.albumId,
-                albumMid: cachedInfo?.albumMid,
-                interval: cachedInfo?.interval,
-                _types: cachedInfo?._types,
-                types: cachedInfo?.types,
-              } as any, q);
-              const musicUrl = urlResult?.url;
-              if (musicUrl && /^https?:/.test(musicUrl)) {
-                audioFilePath = musicUrl;
-                playbackStore.currentPlayingQuality = q;
-                playbackStore.currentPlayingAudioUrl = musicUrl;
-                break;
+              try {
+                const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
+                  songId: songmid,
+                  name: song.name,
+                  singer: song.artist,
+                  albumName: song.album,
+                  source: lxSource,
+                  songmid,
+                  hash: cachedInfo?.hash,
+                  copyrightId: cachedInfo?.copyrightId,
+                  strMediaMid: cachedInfo?.strMediaMid,
+                  albumId: cachedInfo?.albumId,
+                  albumMid: cachedInfo?.albumMid,
+                  interval: cachedInfo?.interval,
+                  _types: cachedInfo?._types,
+                  types: cachedInfo?.types,
+                } as any, q);
+                const musicUrl = urlResult?.url;
+                if (musicUrl && /^https?:/.test(musicUrl)) {
+                  audioFilePath = musicUrl;
+                  playbackStore.currentPlayingQuality = q;
+                  playbackStore.currentPlayingAudioUrl = musicUrl;
+                  break;
+                }
+              } catch (urlErr: any) {
+                // LxSongLevelError: 歌曲级错误（不存在/版权/VIP），换音质无意义，立即停止
+                if (urlErr?.name === 'LxSongLevelError') {
+                  console.warn(`[Audio] Song-level error, skipping remaining qualities: ${urlErr.message}`);
+                  break;
+                }
+                // 其他异常继续尝试下一个音质
               }
             }
             if (audioFilePath.startsWith('lx://')) {
@@ -825,58 +845,14 @@ const authStore = useAuthStore();
       // 播放入口（如 handlePlayMfSong）会在播放前预获取 URL 并存到 remote_source_id
       const preUrl = song.remote_source_id;
       if (preUrl && /^https?:/.test(preUrl)) {
-        // [缓存复用] Baka 等前置请求易失败的音源，若该 URL 已缓存完成则直接复用，不再请求插件
-        // 避免每次播放都走 pluginGetMusicInfo（可能返回会失败的占位 URL）
-        let usePreUrlDirectly = true;
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const cached = await invoke<boolean>('is_stream_cached', { url: preUrl });
-          if (!cached && song.rawData?.pluginId) {
-            // 未缓存：走插件解析获取新 URL（插件可能返回不同音质/防盗链直链）
-            const { getStoredPlugins, pluginGetMusicInfo, pluginGetCover } = await import('../services/pluginEngine');
-            const plugins = getStoredPlugins();
-            const pluginSource = plugins.find(p => p.id === song.rawData!.pluginId && p.enabled);
-            if (pluginSource) {
-              const requestedQuality = playbackStore.sessionQualityOverride
-                || settingsStore.settings.audio.onlineDefaultQuality || '320k';
-              const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-              const musicInfo = await pluginGetMusicInfo(pluginSource, song.rawData, requestedQuality, fallbackBehavior, playbackStore.currentAvailableQualities);
-              if (musicInfo?.url && /^https?:/.test(musicInfo.url)) {
-                audioFilePath = musicInfo.url;
-                usePreUrlDirectly = false;
-                if (musicInfo.actualQuality) {
-                  playbackStore.currentPlayingQuality = musicInfo.actualQuality;
-                }
-                playbackStore.currentPlayingAudioUrl = musicInfo.url;
-                if (musicInfo.headers && Object.keys(musicInfo.headers).length > 0) {
-                  pluginHeaders = musicInfo.headers;
-                }
-                if (!song.lyrics_raw?.trim() && musicInfo.lyricsRaw) {
-                  song.lyrics_raw = musicInfo.lyricsRaw;
-                }
-                if (!song.cover_thumb_path) {
-                  if (musicInfo.coverUrl) {
-                    song.cover_thumb_path = musicInfo.coverUrl;
-                  } else {
-                    try {
-                      const cover = await pluginGetCover(pluginSource, song.rawData);
-                      if (cover) song.cover_thumb_path = cover;
-                    } catch { /* ignore cover error */ }
-                  }
-                }
-              }
-            }
-          }
-        } catch (e: any) {
-          console.warn('[Audio] 缓存检测/插件解析失败，回退到 preUrl:', e?.message);
-        }
-        if (usePreUrlDirectly) {
-          audioFilePath = preUrl;
-          // 记录实际播放直链，供下载时复用播放缓存
-          playbackStore.currentPlayingAudioUrl = preUrl;
-          if (song.remote_headers) {
-            pluginHeaders = song.remote_headers;
-          }
+        // 直接使用预获取的直链（由播放入口如 handlePlayMfSong 在播放前获取）
+        // 避免重复调用 pluginGetMusicInfo 导致额外的网络请求延迟（之前会先检查 is_stream_cached，
+        // 未缓存时再调一次 pluginGetMusicInfo，与播放入口的预获取重复，浪费 1-2 秒）
+        // 流式缓存模块会自动处理下载和缓冲，URL 过期导致 403 时由播放失败处理逻辑兜底
+        audioFilePath = preUrl;
+        playbackStore.currentPlayingAudioUrl = preUrl;
+        if (song.remote_headers) {
+          pluginHeaders = song.remote_headers;
         }
       } else {
         // 回退到插件解析：通过 rawData 调用 pluginGetMusicInfo 获取直链
@@ -934,6 +910,9 @@ const authStore = useAuthStore();
       }
     }
 
+    // [可打断] lx:///plugin:// URL 解析期间用户可能切歌，需检查是否仍是当前请求
+    if (requestId !== playRequestId) return;
+
     // [歌词获取] URL 解析完成后启动异步歌词请求。
     // 移至此处确保插件实例已初始化且 musicUrl 请求已完成（部分 LX 插件依赖 song-specific 状态才能获取歌词）。
     // LX 歌曲：通过落雪插件引擎或直接 API 获取歌词
@@ -950,9 +929,9 @@ const authStore = useAuthStore();
           }
 
           song.lyrics_raw = lyricsRaw;
-          // [修复] 同步更新 library store 中的 extraSongPool/songPool 条目。
-          // 当歌曲在 extraSongPool（在线收藏）中时，currentSong computed getter 会返回
-          // extraSongPool 中的对象而非入参 song 或 fallback。若不更新池中对象，
+          // [修复] 同步更新 library store 中的 songPool 条目。
+          // 当歌曲在 songPool（由 protectedPaths 保护的在线收藏）中时，currentSong computed getter 会返回
+          // songPool 中的对象而非入参 song 或 fallback。若不更新池中对象，
           // loadLyrics 读到的 currentSong.lyrics_raw 仍为空，导致歌词加载超时。
           libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
           const songWithLyrics = { ...currentSong.value, lyrics_raw: lyricsRaw };
@@ -1008,6 +987,12 @@ const authStore = useAuthStore();
     }
 
     try {
+      // [飞封面同步] consumeFlyCoverPromise 取出飞封面 Promise（取出后立即清除，避免后续误等）。
+      // - 在线歌曲：在 playAudio 前等待飞封面（URL 解析已在上游并行完成）
+      // - 本地歌曲（开启渐入渐出）：先 playAudio（fade-out 已将音量降为0，加载不发声），
+      //   再等待飞封面，实现加载与动画并行，封面飞到后淡入播放
+      const flyPromise = consumeFlyCoverPromise();
+
       const isNetworkAudio = audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://');
 
       // [lx:// URL 解析失败] 落雪插件获取直链失败（token 过期/无权限/接口异常等），
@@ -1139,6 +1124,22 @@ const authStore = useAuthStore();
         // [在线播放重构] 所有在线音乐统一走 Rust 后端：流式下载到临时文件 + 本地引擎播放。
         // Rust 后端处理下载、解码、设备切换恢复全流程。
 
+        // [飞封面同步] 在线歌曲 URL 解析耗时远超 520ms 飞行时间，此 await 通常已 resolve。
+        if (flyPromise) {
+          await Promise.race([
+            flyPromise,
+            new Promise<void>(resolve => setTimeout(resolve, 1200)),
+          ]);
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (cancelledPlayRequestId === requestId) {
+            isPlaying.value = false;
+            isSongLoaded.value = false;
+            stopPlaybackRuntime();
+            loadLyrics();
+            return;
+          }
+        }
+
         const rustOk = await tryPlayOnlineViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
@@ -1176,7 +1177,14 @@ const authStore = useAuthStore();
         }
       } else {
         // 本地音频走 Rust 后端播放
-        await playbackApi.playAudio({
+
+        // [飞封面并行优化] 当开启了渐入渐出（shouldFadeOnSwitch）且有飞封面动画时，
+        // 将 playAudio 提前到飞封面等待之前：fade-out 已将音量降为0，
+        // playAudio 加载新歌但不发声，与飞封面动画并行执行。
+        // 封面飞到后再淡入播放，避免浪费 520ms 等待时间。
+        const playBeforeFlyCover = shouldFadeOnSwitch && !!flyPromise;
+
+        const localPlayAudioParams = {
           path: actualAudioPath,
           title: getSmtcTitle(song),
           artist: song.artist || 'Unknown Artist',
@@ -1189,17 +1197,62 @@ const authStore = useAuthStore();
           volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
           gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
           preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
-        });
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+        };
 
-        // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
-        if (cancelledPlayRequestId === requestId) {
-          isSongLoaded.value = true;
-          isPlaying.value = false;
-          stopPlaybackRuntime();
-          try { await playbackApi.pauseAudio(); } catch {}
-          loadLyrics();
-          return;
+        if (playBeforeFlyCover) {
+          // fade-out 已将 currentBackendVolume 置为 0，playAudio 加载但不发声
+          await playbackApi.playAudio(localPlayAudioParams);
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+          // 用户在加载期间按了暂停：立刻暂停后端，保持暂停态
+          if (cancelledPlayRequestId === requestId) {
+            isSongLoaded.value = true;
+            isPlaying.value = false;
+            stopPlaybackRuntime();
+            try { await playbackApi.pauseAudio(); } catch {}
+            loadLyrics();
+            return;
+          }
+        }
+
+        // 等待飞封面动画飞抵底部栏
+        // playBeforeFlyCover 时歌曲已静音加载，此处仅等动画完成
+        // 非 playBeforeFlyCover 时按原逻辑等待后再 playAudio
+        if (flyPromise) {
+          await Promise.race([
+            flyPromise,
+            new Promise<void>(resolve => setTimeout(resolve, 1200)),
+          ]);
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+          if (cancelledPlayRequestId === requestId) {
+            if (playBeforeFlyCover) {
+              // playAudio 已调用，需暂停后端
+              isSongLoaded.value = true;
+              try { await playbackApi.pauseAudio(); } catch {}
+            } else {
+              isSongLoaded.value = false;
+            }
+            isPlaying.value = false;
+            stopPlaybackRuntime();
+            loadLyrics();
+            return;
+          }
+        }
+
+        if (!playBeforeFlyCover) {
+          // 标准流程：飞封面等待之后才 playAudio
+          await playbackApi.playAudio(localPlayAudioParams);
+          if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+
+          // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
+          if (cancelledPlayRequestId === requestId) {
+            isSongLoaded.value = true;
+            isPlaying.value = false;
+            stopPlaybackRuntime();
+            try { await playbackApi.pauseAudio(); } catch {}
+            loadLyrics();
+            return;
+          }
         }
 
         isSongLoaded.value = true;
@@ -1207,10 +1260,13 @@ const authStore = useAuthStore();
         loadLyrics();
         startPlaybackRuntime();
 
-        // [渐入渐出] 淡入：本地歌曲从 0 音量渐变到目标音量
+        // [渐入渐出] 淡入或设置音量
         if (shouldFadeOnSwitch) {
-          currentBackendVolume = 0;
-          try { await playbackApi.setVolume(0); } catch {}
+          // playBeforeFlyCover 时 volume 已为 0（来自 fade-out）；非 playBeforeFlyCover 时显式置 0
+          if (!playBeforeFlyCover) {
+            currentBackendVolume = 0;
+            try { await playbackApi.setVolume(0); } catch {}
+          }
           void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
         } else {
           // [渐入渐出] 非切歌场景（首次播放/恢复播放）：同步后端音量追踪值，

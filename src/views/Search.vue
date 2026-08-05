@@ -1257,7 +1257,7 @@ const openAddToPlaylistSelection = () => {
   const song = contextMenuTargetSong.value;
   if (!song) return;
 
-  // 缓存在线歌曲元信息到 extraSongPool，确保歌单中能正确显示
+  // 缓存在线歌曲元信息到 songPool，确保歌单中能正确显示
   libraryStore.setExtraSong(song);
 
   // 触发原生收藏到歌单弹窗，同时传入完整 Song 对象用于持久化

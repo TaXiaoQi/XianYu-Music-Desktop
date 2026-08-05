@@ -37,11 +37,15 @@ const resolveSharedPaths = (paths: string[], existing: string[], sibling: string
 export const useLibraryStore = defineStore('library', () => {
   const songPool = new Map<string, LibrarySong>();
   /**
-   * 额外歌曲元信息池：存放不属于本地音乐库、但需要长期可反查的歌曲
-   * （目前用于"已收藏的在线歌曲"）。
-   * 与 songPool 的关键区别：不受 pruneSongPool 清理，避免库更新时被删掉。
+   * 受保护路径集合：存放不属于本地音乐库、但需要长期可反查的在线歌曲路径
+   * （用于"已收藏的在线歌曲"、"最近播放的在线歌曲"等）。
+   * pruneSongPool 不会清理这些路径对应的 songPool 条目，避免库更新时被删掉。
+   *
+   * 与原 LyciaMusic 项目对齐：在线歌曲直接存入 songPool（而非独立 extraSongPool），
+   * 使 songLookup computed 返回稳定的 songPool 引用（O(1)），避免每次版本变更
+   * 都创建新的合并 Map（O(n+m)）导致下游 computed 级联重算。
    */
-  const extraSongPool = new Map<string, LibrarySong>();
+  const protectedPaths = new Set<string>();
   const songCatalogVersion = ref(0);
   const libraryDataVersion = ref(0);
   const stringPool = new Map<string, string>();
@@ -261,6 +265,7 @@ export const useLibraryStore = defineStore('library', () => {
     const referencedPaths = new Set<string>([
       ...canonicalSongPaths.value,
       ...sourceSongPaths.value,
+      ...protectedPaths,
     ]);
 
     let removed = false;
@@ -331,28 +336,29 @@ export const useLibraryStore = defineStore('library', () => {
     }
   };
 
-  /** 写入额外歌曲元信息（在线收藏歌曲用），不受库清理影响 */
+  /** 写入额外歌曲元信息（在线收藏歌曲用），存入 songPool 并标记为受保护路径 */
   const setExtraSong = (song: LibrarySong) => {
     if (!song?.path) {
       return;
     }
 
-    extraSongPool.set(song.path, { ...song });
-    songCatalogVersion.value += 1;
+    protectedPaths.add(song.path);
+    const interned = internSong(song);
+    if (interned.changed) {
+      songCatalogVersion.value += 1;
+    }
   };
 
   /**
-   * 就地更新 songPool / extraSongPool 中已存在歌曲的元数据（如 lyrics_raw）。
-   * 仅当 path 已在某个池中时才更新，不会新增条目。
+   * 就地更新 songPool 中已存在歌曲的元数据（如 lyrics_raw）。
+   * 仅当 path 已在池中时才更新，不会新增条目。
    * 解决在线歌曲异步获取歌词后 currentSong computed 仍返回旧对象（无 lyrics_raw）的问题。
    */
   const patchSongMeta = (path: string, patch: Partial<LibrarySong>) => {
     if (!path) return;
-    if (songPool.has(path)) {
-      songPool.set(path, { ...songPool.get(path)!, ...patch });
-      songCatalogVersion.value += 1;
-    } else if (extraSongPool.has(path)) {
-      extraSongPool.set(path, { ...extraSongPool.get(path)!, ...patch });
+    const existing = songPool.get(path);
+    if (existing) {
+      songPool.set(path, { ...existing, ...patch });
       songCatalogVersion.value += 1;
     }
   };
@@ -364,10 +370,37 @@ export const useLibraryStore = defineStore('library', () => {
       if (!song?.path) {
         return;
       }
-      extraSongPool.set(song.path, { ...song });
-      changed = true;
+      protectedPaths.add(song.path);
+      const interned = internSong(song);
+      if (interned.changed) {
+        changed = true;
+      }
     });
 
+    if (changed) {
+      songCatalogVersion.value += 1;
+    }
+  };
+
+  /**
+   * 批量合并多组额外歌曲元信息，仅递增一次 songCatalogVersion。
+   * 启动恢复期间收藏/最近/队列/歌单的在线歌曲元信息需要分多次写入，
+   * 用此方法可将多次版本号递增合并为一次，避免 songLookup/canonicalSongs/currentViewSongs 级联重算。
+   */
+  const setExtraSongsBatch = (songGroups: LibrarySong[][]) => {
+    let changed = false;
+    for (const songs of songGroups) {
+      songs.forEach((song) => {
+        if (!song?.path) {
+          return;
+        }
+        protectedPaths.add(song.path);
+        const interned = internSong(song);
+        if (interned.changed) {
+          changed = true;
+        }
+      });
+    }
     if (changed) {
       songCatalogVersion.value += 1;
     }
@@ -379,7 +412,8 @@ export const useLibraryStore = defineStore('library', () => {
       return;
     }
 
-    if (extraSongPool.delete(path)) {
+    protectedPaths.delete(path);
+    if (songPool.delete(path)) {
       songCatalogVersion.value += 1;
     }
   };
@@ -393,7 +427,7 @@ export const useLibraryStore = defineStore('library', () => {
       return fallback ?? null;
     }
 
-    return songPool.get(path) ?? extraSongPool.get(path) ?? fallback ?? null;
+    return songPool.get(path) ?? fallback ?? null;
   };
 
   const resolveSongsByPaths = (paths: string[], fallbackSongs: Song[] = []) => {
@@ -411,18 +445,10 @@ export const useLibraryStore = defineStore('library', () => {
 
   const songLookup = computed(() => {
     songCatalogVersion.value;
-
-    // 无额外歌曲时直接复用 songPool，避免无谓的 Map 复制
-    if (extraSongPool.size === 0) {
-      return songPool as Map<string, Song>;
-    }
-
-    // 合并：额外歌曲（在线收藏）在下，本地库歌曲优先覆盖
-    const merged = new Map<string, Song>(extraSongPool as Map<string, Song>);
-    songPool.forEach((song, path) => {
-      merged.set(path, song);
-    });
-    return merged;
+    // 与 LyciaMusic 对齐：直接返回 songPool 引用（稳定引用，O(1)），
+    // 在线歌曲已直接存入 songPool（通过 protectedPaths 防清理），
+    // 无需合并 extraSongPool，避免每次版本变更创建新 Map 导致下游级联重算。
+    return songPool as Map<string, Song>;
   });
 
   const canonicalSongs = computed<Song[]>({
@@ -603,6 +629,7 @@ export const useLibraryStore = defineStore('library', () => {
     setSongRecord,
     setExtraSong,
     setExtraSongs,
+    setExtraSongsBatch,
     patchSongMeta,
     removeExtraSong,
     libraryFolders,
