@@ -63,7 +63,7 @@ const importPluginBackup = async () => {
   try {
     const selected = await open({
       multiple: false,
-      title: '选择 BakaMusic 或 MusicFree 备份文件',
+      title: '选择备份文件',
       filters: [{ name: '音乐软件备份', extensions: ['json'] }],
     });
     if (typeof selected !== 'string') return;
@@ -194,7 +194,7 @@ const handleImportAppBackup = async () => {
         <button
           type="button"
           :disabled="exportingAppBackup"
-          class="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/55 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-white/55 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
           @click="handleExportAppBackup"
         >
           <Loader2 v-if="exportingAppBackup" class="h-4 w-4 animate-spin" />
@@ -204,7 +204,7 @@ const handleImportAppBackup = async () => {
         <button
           type="button"
           :disabled="importingAppBackup"
-          class="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/55 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-white/55 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
           @click="handleImportAppBackup"
         >
           <Loader2 v-if="importingAppBackup" class="h-4 w-4 animate-spin" />
@@ -221,7 +221,7 @@ const handleImportAppBackup = async () => {
       <div>
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">从其他软件导入</h3>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
-          从 BakaMusic 或 MusicFree 的 JSON 备份恢复歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
+          从其他音乐软件的 JSON 备份恢复歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
         </p>
       </div>
       <button
@@ -232,7 +232,7 @@ const handleImportAppBackup = async () => {
       >
         <Loader2 v-if="importingBackup" class="h-4 w-4 animate-spin" />
         <FileDown v-else class="h-4 w-4 text-[#EC4141]" />
-        {{ importingBackup ? '正在检查插件并导入…' : '从 BakaMusic 或 MusicFree 软件导入歌单' }}
+        {{ importingBackup ? '正在检查插件并导入…' : '从其他软件导入歌单' }}
       </button>
       <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
         导入完成后会统一列出成功关联的插件、缺失插件，以及所有未能导入的歌曲。
