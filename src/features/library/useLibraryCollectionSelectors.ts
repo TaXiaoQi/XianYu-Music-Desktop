@@ -138,7 +138,7 @@ export function useLibraryCollectionSelectors({
         recentAlbumList.value = [];
       }
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
 
   watch(

@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 
 import type { PlaylistSortMode } from '../../services/storage/playerStorage';
@@ -140,10 +140,13 @@ export const useCollectionsStore = defineStore('collections', () => {
       return 0;
     }
 
+    // 使用 Set 实现 O(1) 去重，替代 O(n) includes，避免大批量添加时的 O(n×m) 嵌套循环
     let addedCount = 0;
+    const existingPaths = new Set(playlist.songPaths);
     for (const path of songPaths) {
-      if (!playlist.songPaths.includes(path)) {
+      if (!existingPaths.has(path)) {
         playlist.songPaths.push(path);
+        existingPaths.add(path);
         addedCount += 1;
       }
     }
@@ -153,9 +156,11 @@ export const useCollectionsStore = defineStore('collections', () => {
       if (!playlist.songs) {
         playlist.songs = [];
       }
+      const existingSongPaths = new Set(playlist.songs.map(s => s.path));
       for (const song of fullSongs) {
-        if (song?.path && !playlist.songs.find(s => s.path === song.path)) {
+        if (song?.path && !existingSongPaths.has(song.path)) {
           playlist.songs.push({ ...song });
+          existingSongPaths.add(song.path);
         }
       }
     }
@@ -194,12 +199,15 @@ export const useCollectionsStore = defineStore('collections', () => {
       .filter((song): song is Song => !!song);
   };
 
+  // 预计算 Set 实现 O(1) 收藏状态查询，替代每行 O(n) includes
+  const favoritePathSet = computed(() => new Set(favoritePaths.value));
+
   const isFavoritePath = (path: string | null | undefined) => {
     if (!path) {
       return false;
     }
 
-    return favoritePaths.value.includes(path);
+    return favoritePathSet.value.has(path);
   };
 
   const toggleFavoritePath = (path: string) => {

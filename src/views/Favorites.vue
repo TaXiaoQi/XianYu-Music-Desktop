@@ -119,9 +119,8 @@ watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
 const handlePlayAll = () => {
   if (localSongList.value.length > 0) {
     const firstSong = localSongList.value[0];
-    void launchFlyingCover(firstSong.path, '').then(() => {
-      void playSong(firstSong);
-    });
+    void launchFlyingCover(firstSong.path, '');
+    void playSong(firstSong);
   }
 };
 
@@ -139,9 +138,8 @@ const handleBatchPlay = () => {
   const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
   if (selected.length > 0) {
     const firstSong = selected[0];
-    void launchFlyingCover(firstSong.path, '').then(() => {
-      void playSong(firstSong);
-    });
+    void launchFlyingCover(firstSong.path, '');
+    void playSong(firstSong);
   }
 };
 

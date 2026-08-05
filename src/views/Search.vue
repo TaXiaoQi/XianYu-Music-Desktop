@@ -1372,8 +1372,8 @@ const getLocalCoverUrl = (song: Song): string => {
   }
 };
 
-const handlePlayLocalSong = async (song: Song) => {
-  await launchFlyingCover(song.path, getLocalCoverUrl(song) || song.cover_thumb_path || '');
+const handlePlayLocalSong = (song: Song) => {
+  void launchFlyingCover(song.path, getLocalCoverUrl(song) || song.cover_thumb_path || '');
   void playSong(song, { insertAfterCurrent: true });
 };
 

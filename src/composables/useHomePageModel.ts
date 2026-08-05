@@ -232,9 +232,8 @@ export function useHomePageModel() {
   const handlePlayAll = () => {
     if (localSongList.value.length > 0) {
       const firstSong = localSongList.value[0];
-      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '').then(() => {
-        void playSong(firstSong);
-      });
+      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '');
+      void playSong(firstSong);
     }
   };
 
@@ -250,9 +249,8 @@ export function useHomePageModel() {
     const selectedSongs = localSongList.value.filter(song => selectedPaths.value.has(song.path));
     if (selectedSongs.length > 0) {
       const firstSong = selectedSongs[0];
-      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '').then(() => {
-        void playSong(firstSong);
-      });
+      void launchFlyingCover(firstSong.path, coverCache.get(firstSong.path) ?? '');
+      void playSong(firstSong);
     }
   };
 

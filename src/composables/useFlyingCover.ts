@@ -14,8 +14,8 @@ import { usePlaybackStore } from '../features/playback/store';
  * 调用方需提供与列表行 [data-cover-path] 一致的 songPath，以及该行当前展示的封面 URL。
  *
  * 返回值：Promise<void>，在飞行动画（封面从列表飞抵底栏）结束后 resolve。
- * 本地歌曲调用方可 await 此 Promise，等飞封面结束后再开始加载播放；
- * 在线歌曲调用方可忽略此 Promise，保持边飞边加载的并行行为。
+ * 调用方通常不需要 await 此 Promise —— 飞封面动画与 playSong 并行执行，
+ * 动画用于掩盖起播延迟，动画结束时歌曲应已加载就绪或即将就绪。
  * 若动画未能启动（找不到元素、无封面 URL 等），Promise 立即 resolve，不阻塞调用方。
  */
 
@@ -40,8 +40,8 @@ const findTargetEl = (): HTMLElement | null =>
  * 触发飞入封面动画。在歌曲列表「点击播放」时调用。
  *
  * 返回 Promise<void>：在飞行动画（封面从列表飞抵底栏位置）结束后 resolve。
- * - 本地歌曲：调用方可 await 此 Promise，等飞封面结束后再开始加载播放
- * - 在线歌曲：调用方可忽略此 Promise，保持边飞边加载的并行行为
+ * 调用方通常不需要 await 此 Promise —— 飞封面动画与 playSong 应并行执行，
+ * 动画用于掩盖起播延迟，动画结束时歌曲应已加载就绪或即将就绪。
  *
  * 若动画未能启动（找不到元素、无封面 URL、图片加载失败等），Promise 立即 resolve。
  *
@@ -125,7 +125,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
         { duration: FLY_DURATION, easing: FLY_EASING, fill: 'forwards' },
       );
 
-      // 飞行动画结束：resolve Promise（让本地歌曲开始加载），然后进入悬停阶段
+      // 飞行动画结束：resolve Promise（调用方通常不 await），然后进入悬停阶段
       flight.onfinish = () => {
         resolve();
         parkAtTarget();
