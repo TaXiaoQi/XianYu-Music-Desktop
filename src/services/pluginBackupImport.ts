@@ -311,14 +311,20 @@ function detectBackup(data: any): {
   format: SupportedPluginBackupFormat;
   sheets: any[];
 } {
-  if (data?.schema === 'bakamusic.music-sheet-backup' && Array.isArray(data?.data?.musicSheets)) {
-    return { format: 'bakamusic', sheets: data.data.musicSheets };
+  // BakaMusic: schema 字段存在时优先判定（不强制要求 musicSheets 位于 data.data 下）
+  if (typeof data?.schema === 'string' && data.schema.startsWith('bakamusic')) {
+    const sheets = Array.isArray(data?.data?.musicSheets) ? data.data.musicSheets
+      : Array.isArray(data?.musicSheets) ? data.musicSheets
+      : [];
+    return { format: 'bakamusic', sheets };
   }
-  if (Array.isArray(data?.musicSheets)) {
-    return { format: 'musicfree', sheets: data.musicSheets };
-  }
+  // BakaMusic: 无 schema 但 musicSheets 嵌套在 data 下
   if (Array.isArray(data?.data?.musicSheets)) {
     return { format: 'bakamusic', sheets: data.data.musicSheets };
+  }
+  // MusicFree: musicSheets 位于顶层
+  if (Array.isArray(data?.musicSheets)) {
+    return { format: 'musicfree', sheets: data.musicSheets };
   }
   throw new Error('无法识别备份格式，请选择 BakaMusic 或 MusicFree 导出的 JSON 文件');
 }
