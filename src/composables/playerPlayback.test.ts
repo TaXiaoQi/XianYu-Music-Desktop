@@ -27,6 +27,8 @@ vi.mock('../services/tauri/playbackApi', () => ({
     pauseAudio: vi.fn().mockResolvedValue(undefined),
     resumeAudio: vi.fn().mockResolvedValue(undefined),
     seekAudio: vi.fn().mockResolvedValue(undefined),
+    setVolume: vi.fn().mockResolvedValue(undefined),
+    stopAudio: vi.fn().mockResolvedValue(undefined),
     recordPlay: vi.fn().mockResolvedValue(undefined),
   },
 }));

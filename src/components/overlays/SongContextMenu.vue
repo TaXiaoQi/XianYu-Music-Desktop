@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSPropert
 import { useRoute, useRouter } from 'vue-router';
 
 import { usePlayer } from '../../composables/player';
+import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useToast } from '../../composables/toast';
@@ -497,6 +498,16 @@ const handleAction = (action: SongMenuAction) => {
 
   switch (action) {
     case 'play':
+      // [飞封面] 与双击播放保持一致：先启动飞封面动画，再调用 playSong。
+      // 在线歌曲（lx://plugin://http://）的 cover_thumb_path 是 URL，直接传入可靠；
+      // 本地歌曲的 cover_thumb_path 是文件路径（非 URL），传空让 launchFlyingCover
+      // 从列表行 [data-cover-path] 内的 <img> src 自动提取已转换的封面 URL。
+      void launchFlyingCover(
+        props.song.path,
+        props.song.cover_thumb_path && /^https?:\/\//.test(props.song.cover_thumb_path)
+          ? props.song.cover_thumb_path
+          : '',
+      );
       void playSong(props.song);
       break;
     case 'playNext':
