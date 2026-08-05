@@ -170,7 +170,8 @@ pub async fn plugin_http_request_binary(
     })
 }
 
-/// 读取本地插件 JS 文件内容
+/// 读取本地插件/备份文件内容
+/// 支持 .js / .json / .txt / .m3u / .m3u8 格式
 #[tauri::command]
 pub fn read_plugin_file(path: String) -> Result<String, String> {
     let path_obj = Path::new(&path);
@@ -183,13 +184,13 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !matches!(ext.as_str(), "js" | "json" | "txt") {
-        return Err("Only .js plugin files are supported".to_string());
+    if !matches!(ext.as_str(), "js" | "json" | "txt" | "m3u" | "m3u8") {
+        return Err("Unsupported file type".to_string());
     }
 
     let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
     // JSON 备份文件可能包含封面 data URI 和歌词，允许更大体积（50MB）；
-    // JS/TXT 插件脚本仍保持 5MB 上限
+    // 其他文本文件（JS/TXT/M3U）保持 5MB 上限
     let max_size = if ext == "json" { 50 * 1024 * 1024 } else { 5 * 1024 * 1024 };
     if metadata.len() > max_size {
         return Err(format!("File is larger than {} MB", max_size / 1024 / 1024));
