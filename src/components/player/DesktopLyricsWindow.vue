@@ -104,6 +104,8 @@ const {
                             'desktop-lyric-row--active': displayLine.active,
                             'desktop-lyric-row--inactive': !displayLine.active,
                             'desktop-lyric-row--second-line': settings.showDoubleLine && !displayLine.active,
+                            'desktop-lyric-row--stair-left': settings.showDoubleLine && displayLine.lineIndex % 2 === 0,
+                            'desktop-lyric-row--stair-right': settings.showDoubleLine && displayLine.lineIndex % 2 === 1,
                           }"
                         >
                           <div
@@ -338,9 +340,9 @@ const {
 .desktop-line-enter-active,
 .desktop-line-leave-active {
   transition:
-    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 460ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 360ms ease;
+    opacity 520ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 640ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 520ms ease;
 }
 
 .desktop-line-enter-from {
@@ -563,12 +565,12 @@ const {
   gap: 0;
 }
 
-.lyrics-align-split-corners .desktop-lyric-row:first-child {
+.lyrics-align-split-corners .desktop-lyric-row--stair-left {
   text-align: left;
   transform-origin: 0% center;
 }
 
-.lyrics-align-split-corners .desktop-lyric-row:nth-child(2) {
+.lyrics-align-split-corners .desktop-lyric-row--stair-right {
   --lyrics-text-align: right;
   --lyrics-line-transform-origin: 100%;
   text-align: right;
