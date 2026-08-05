@@ -11,6 +11,8 @@ import { useCoverCache } from './useCoverCache';
 import { useRenderingPower } from './renderingPower';
 import { fetchLxSongLyricsRaw } from '../services/lxLyricFetcher';
 import { useToast } from './toast';
+import { reportUserBehavior } from '../services/usageStats';
+import { useAuthStore } from '../features/auth/store';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -79,9 +81,10 @@ export const createPlayerPlayback = ({
   onBeforePlay,
 }: CreatePlayerPlaybackDeps) => {
   const playbackStore = usePlaybackStore();
-  const settingsStore = useSettingsStore();
-  const libraryStore = useLibraryStore();
-  const uiStore = useUiStore();
+const settingsStore = useSettingsStore();
+const libraryStore = useLibraryStore();
+const uiStore = useUiStore();
+const authStore = useAuthStore();
   const { showToast } = useToast();
   const { isMainWindowLowPower } = useRenderingPower();
   const {
@@ -374,6 +377,30 @@ export const createPlayerPlayback = ({
 
     const totalDuration = accumulatedTime + currentSession;
     const shouldPersist = totalDuration >= 10 || (currentPlayCountRecorded && totalDuration > 0);
+
+    // 上报用户播放行为到后台统计（不受 shouldPersist 限制，确保切歌/暂停都能及时上报）
+    const user = authStore.user;
+    let songSource = 'local';
+    if (song.path.startsWith('lx://')) {
+      songSource = song.path.slice('lx://'.length).split('/')[0] || 'lx';
+    } else if (song.path.startsWith('http://') || song.path.startsWith('https://')) {
+      songSource = 'online';
+    } else if (song.path.startsWith('plugin://')) {
+      songSource = song.remote_source_id || 'plugin';
+    }
+    reportUserBehavior({
+      song_id: song.id != null ? String(song.id) : song.path,
+      song_name: song.name,
+      singer: song.artist || '',
+      song_hash: song.path,
+      source: songSource,
+      action: totalDuration >= 10 ? (currentPlayCountRecorded ? 'switch' : 'play') : 'switch',
+      listen_duration: Math.floor(totalDuration),
+      play_count: totalDuration >= 10 && !currentPlayCountRecorded ? 1 : 0,
+      ciyuanxi_id: user?.ciyuanxi_id,
+      user_id: user?.id ? Number(user.id) : undefined,
+    });
+
     if (shouldPersist) {
       const countAsPlay = !currentPlayCountRecorded;
       if (countAsPlay) currentPlayCountRecorded = true;
@@ -484,14 +511,25 @@ export const createPlayerPlayback = ({
     // 本地、在线均适用：在线歌 URL 解析期间旧歌会持续淡出，解析完成新歌起播后再淡入。
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
-    const shouldFadeOnSwitch = fadeEnabled
+
+    // [音质切换防爆音] 同一首歌切换音质（continueStatisticsSession=true）时，
+    // 旧音频仍在播放中直接被替换会产生爆音/失真。此时无论渐入渐出是否开启，
+    // 都做一次短过渡（未开启时用 150ms），避免 DC offset 突变。
+    const isQualitySwitch = !!options.continueStatisticsSession
+      && !!previousSong
+      && previousSong.path === song.path;
+
+    const shouldFadeOnSwitch = (fadeEnabled || isQualitySwitch)
       && isPlaying.value
-      && previousSong
-      && previousSong.path !== song.path
-      && !options.continueStatisticsSession;
+      && !!previousSong
+      && (previousSong.path !== song.path || isQualitySwitch);
+
+    const effectiveFadeDuration = isQualitySwitch && !fadeEnabled
+      ? 150
+      : fadeDuration;
 
     if (shouldFadeOnSwitch) {
-      await fadeVolumeTo(0, fadeDuration);
+      await fadeVolumeTo(0, effectiveFadeDuration);
     } else {
       cancelFade();
     }
@@ -1081,7 +1119,7 @@ export const createPlayerPlayback = ({
             currentBackendVolume = 0;
             try { await playbackApi.setVolume(0); } catch {}
             finishRustPlaybackStart();
-            void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
+            void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
           } else {
             // 确保后端已接管，音量同步到后端
             currentBackendVolume = playbackStore.volume / 100;
@@ -1130,7 +1168,7 @@ export const createPlayerPlayback = ({
         if (shouldFadeOnSwitch) {
           currentBackendVolume = 0;
           try { await playbackApi.setVolume(0); } catch {}
-          void fadeVolumeTo(playbackStore.volume / 100, fadeDuration, 0);
+          void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
         } else {
           // [渐入渐出] 非切歌场景（首次播放/恢复播放）：同步后端音量追踪值，
           // 避免 currentBackendVolume 停留在模块初始值 1，导致首次淡出时音量跳变

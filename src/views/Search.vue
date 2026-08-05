@@ -441,6 +441,7 @@ import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } fro
 import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 import { useSettingsStore } from '../features/settings/store';
+import { reportSearch, reportInputStats } from '../services/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
@@ -641,6 +642,7 @@ const performSearch = async () => {
     searchAbortController.abort();
   }
   searchAbortController = new AbortController();
+  const activeController = searchAbortController;
 
   // 重置分页
   currentPage.value = 1;
@@ -804,8 +806,13 @@ const performSearch = async () => {
       pluginPlaylistResults.value = [];
     }
   } finally {
-    if (!searchAbortController.signal.aborted) {
+    if (!activeController.signal.aborted) {
       searching.value = false;
+      // 上报搜索行为到后台统计（fire-and-forget，失败静默）
+      // 仅在确实存在音源时上报，避免无源退化场景下上报过时结果数
+      if (selectedSourceItem.value) {
+        reportSearch(query, selectedSourceName.value, resultCount.value);
+      }
     }
   }
 };
@@ -941,7 +948,15 @@ const handleSelectSource = (source: SourceItem) => {
 
 // 监听关键词变化（防抖）
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-watch(searchQuery, () => {
+let lastQueryLength = 0;
+watch(searchQuery, (newVal) => {
+  // 上报输入字符数（仅统计新增字符，防抖批量上报）
+  const newLen = (newVal || '').length;
+  if (newLen > lastQueryLength) {
+    reportInputStats(newLen - lastQueryLength);
+  }
+  lastQueryLength = newLen;
+
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(() => {
     performSearch();
