@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { FileDown, FileUp, Loader2, Trash2 } from 'lucide-vue-next';
 
@@ -8,7 +8,9 @@ import { useCollectionsStore } from '../../features/collections/store';
 import { useLibraryStore } from '../../features/library/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useApplicationLogs } from '../../services/applicationLogger';
+import { getStoredAuth } from '../../services/auth/authService';
 import { getStoredPlugins } from '../../services/pluginEngine';
+import { submitFeedback } from '../../services/usageStats';
 import {
   preparePluginBackupFile,
   type PreparedPluginBackupImport,
@@ -44,6 +46,18 @@ const importingBackup = ref(false);
 const backupImportResult = ref<PreparedPluginBackupImport | null>(null);
 const createdPlaylistCount = ref(0);
 const showBackupImportResult = ref(false);
+
+// ─── 问题反馈 ───
+const feedbackTitle = ref('');
+const feedbackContent = ref('');
+const submittingFeedback = ref(false);
+const feedbackAuth = ref(getStoredAuth());
+
+// 登录态可能在设置页面打开后变化（如用户在其他窗口登录），聚焦时刷新一次
+const refreshFeedbackAuth = () => {
+  feedbackAuth.value = getStoredAuth();
+};
+const isFeedbackLoggedIn = computed(() => !!feedbackAuth.value?.user?.ciyuanxi_id);
 
 // 应用备份导出/导入状态
 const exportingAppBackup = ref(false);
@@ -93,6 +107,42 @@ const importPluginBackup = async () => {
     showToast(`导入备份失败：${error?.message || error}`, 'error');
   } finally {
     importingBackup.value = false;
+  }
+};
+
+const submitUserFeedback = async () => {
+  if (submittingFeedback.value) return;
+
+  const title = feedbackTitle.value.trim();
+  const content = feedbackContent.value.trim();
+
+  if (!title) {
+    showToast('请填写反馈标题', 'error');
+    return;
+  }
+  if (title.length > 60) {
+    showToast('标题不能超过 60 字', 'error');
+    return;
+  }
+  if (!content) {
+    showToast('请填写反馈内容', 'error');
+    return;
+  }
+  if (content.length > 1000) {
+    showToast('内容不能超过 1000 字', 'error');
+    return;
+  }
+
+  submittingFeedback.value = true;
+  try {
+    await submitFeedback(title, content);
+    showToast('反馈已提交，感谢您的支持', 'success');
+    feedbackTitle.value = '';
+    feedbackContent.value = '';
+  } catch (error: any) {
+    showToast(`提交失败：${error?.message || error}`, 'error');
+  } finally {
+    submittingFeedback.value = false;
   }
 };
 
@@ -261,6 +311,67 @@ const handleImportAppBackup = async () => {
         <Trash2 class="h-4 w-4" />
         删除全部日志
       </button>
+    </section>
+
+    <section
+      class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10"
+      @focusin="refreshFeedbackAuth"
+    >
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">问题反馈</h3>
+        <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
+          提交使用中遇到的问题或功能建议，我们会认真查看每一条反馈。
+        </p>
+      </div>
+
+      <!-- 未登录提示 -->
+      <div
+        v-if="!isFeedbackLoggedIn"
+        class="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-xs text-amber-700 dark:text-amber-300"
+      >
+        请先登录账号后再提交反馈。
+      </div>
+
+      <!-- 反馈表单（未登录时禁用） -->
+      <div class="space-y-3" :class="{ 'pointer-events-none opacity-50': !isFeedbackLoggedIn }">
+        <label class="block">
+          <span class="text-xs text-gray-500 dark:text-white/45">标题</span>
+          <input
+            v-model="feedbackTitle"
+            type="text"
+            maxlength="60"
+            placeholder="一句话描述问题或建议"
+            class="mt-2 h-9 w-full rounded-lg border border-black/10 bg-white/70 px-3 text-sm text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-white/10 dark:bg-black/20 dark:text-gray-100"
+          />
+          <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
+            {{ feedbackTitle.length }} / 60
+          </span>
+        </label>
+
+        <label class="block">
+          <span class="text-xs text-gray-500 dark:text-white/45">详细内容</span>
+          <textarea
+            v-model="feedbackContent"
+            rows="5"
+            maxlength="1000"
+            placeholder="请详细描述问题现象、复现步骤或建议内容"
+            class="mt-2 w-full resize-y rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-white/10 dark:bg-black/20 dark:text-gray-100"
+          />
+          <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
+            {{ feedbackContent.length }} / 1000
+          </span>
+        </label>
+
+        <button
+          type="button"
+          :disabled="submittingFeedback"
+          class="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/55 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          @click="submitUserFeedback"
+        >
+          <Loader2 v-if="submittingFeedback" class="h-4 w-4 animate-spin" />
+          {{ submittingFeedback ? '正在提交…' : '提交反馈' }}
+        </button>
+      </div>
     </section>
 
     <ConfirmModal
