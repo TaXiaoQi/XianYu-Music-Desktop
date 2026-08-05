@@ -578,11 +578,14 @@ where
 
 pub struct ClipGuardSource<I> {
     inner: I,
+    clip_count: u64,
+    total_count: u64,
+    max_seen: f32,
 }
 
 impl<I> ClipGuardSource<I> {
     pub fn new(inner: I) -> Self {
-        Self { inner }
+        Self { inner, clip_count: 0, total_count: 0, max_seen: 0.0 }
     }
 }
 
@@ -595,8 +598,23 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.inner.next()?;
-        // 强制 clamp 到 [-0.98, 0.98] 之间兜底，不溢出硬件动态极限
-        Some(sample.clamp(-0.98, 0.98))
+        self.total_count += 1;
+        let ax = sample.abs();
+        if ax > self.max_seen {
+            self.max_seen = ax;
+        }
+        if ax > 1.0 {
+            self.clip_count += 1;
+        }
+        // 每 10 秒（约 882000 样本 @ 44100 stereo）输出一次统计
+        if self.total_count % 882000 == 0 && self.clip_count > 0 {
+            eprintln!(
+                "[ClipGuard] 过去 10s: clip={} / total={} max_peak={:.4}",
+                self.clip_count, self.total_count, self.max_seen
+            );
+        }
+        // 安全限幅：±1.0 以内完全透传（零失真），超出时硬限幅保护 DAC
+        Some(sample.clamp(-1.0, 1.0))
     }
 }
 
@@ -758,17 +776,20 @@ mod tests {
 
     #[test]
     fn test_clip_guard_limit() {
-        let samples = vec![2.5, -3.0, 1.2, -0.99, 0.98, 0.0];
+        let samples = vec![2.5, -3.0, 1.2, -0.99, 0.98, 0.0, 0.5, 1.0, -1.0];
         let source = SignalSource::new(samples, 1, 44100);
         let mut clip_guard = ClipGuardSource::new(source);
 
-        // 强行 clamp 至 [-0.98, 0.98] 之间
-        assert_eq!(clip_guard.next().unwrap(), 0.98);
-        assert_eq!(clip_guard.next().unwrap(), -0.98);
-        assert_eq!(clip_guard.next().unwrap(), 0.98);
-        assert_eq!(clip_guard.next().unwrap(), -0.98);
-        assert_eq!(clip_guard.next().unwrap(), 0.98);
-        assert_eq!(clip_guard.next().unwrap(), 0.0);
+        // ±1.0 以内完全透传，超出时 clamp 到 ±1.0
+        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 2.5 → clamp 到 1.0
+        assert_eq!(clip_guard.next().unwrap(), -1.0);  // -3.0 → clamp 到 -1.0
+        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 1.2 → clamp 到 1.0
+        assert_eq!(clip_guard.next().unwrap(), -0.99); // -0.99 透传
+        assert_eq!(clip_guard.next().unwrap(), 0.98);  // 0.98 透传
+        assert_eq!(clip_guard.next().unwrap(), 0.0);   // 0.0 透传
+        assert_eq!(clip_guard.next().unwrap(), 0.5);   // 0.5 透传
+        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 1.0 透传（边界值）
+        assert_eq!(clip_guard.next().unwrap(), -1.0);  // -1.0 透传（边界值）
     }
 
     #[test]

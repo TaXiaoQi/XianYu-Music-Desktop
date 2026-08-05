@@ -28,7 +28,7 @@ pub(crate) struct SymphoniaDecoder {
     current_frame_offset: usize,
     format: Box<dyn FormatReader>,
     total_duration: Option<Time>,
-    buffer: SampleBuffer<i16>,
+    buffer: SampleBuffer<f32>,
     spec: SignalSpec,
 }
 
@@ -144,9 +144,9 @@ impl SymphoniaDecoder {
     }
 
     #[inline]
-    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<i16> {
+    fn get_buffer(decoded: AudioBufferRef, spec: &SignalSpec) -> SampleBuffer<f32> {
         let duration = units::Duration::from(decoded.capacity() as u64);
-        let mut buffer = SampleBuffer::<i16>::new(duration, *spec);
+        let mut buffer = SampleBuffer::<f32>::new(duration, *spec);
         buffer.copy_interleaved_ref(decoded);
         buffer
     }
@@ -306,10 +306,10 @@ fn skip_back_a_tiny_bit(
 }
 
 impl Iterator for SymphoniaDecoder {
-    type Item = i16;
+    type Item = f32;
 
     #[inline]
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         if self.current_frame_offset >= self.buffer.len() {
             let packet = self.format.next_packet().ok()?;
             let mut decoded = self.decoder.decode(&packet);
