@@ -108,6 +108,8 @@ const ROW_HEIGHT = 72;
 const OVERSCAN = 20;
 const SEGMENT_BUFFER_ROWS = 4;
 const MIN_SEGMENT_BATCH_SIZE = 20;
+/** 滚动到距底部剩余多少行时触发加载下一段 */
+const SCROLL_TRIGGER_ROWS = 10;
 const VIEWPORT_SNAPSHOT_LIMIT = 72;
 const rootRef = ref<HTMLElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
@@ -149,7 +151,7 @@ const getSegmentBatchSize = () => Math.max(
 );
 
 const resetLoadedSongCount = () => {
-  loadedSongCount.value = Math.min(props.songs.length, getViewportPageSize());
+  loadedSongCount.value = Math.min(props.songs.length, getSegmentBatchSize());
   scrollTop.value = 0;
   if (containerRef.value) {
     containerRef.value.scrollTop = 0;
@@ -170,8 +172,8 @@ const ensureViewportSegmentFilled = () => {
     return;
   }
 
-  if (loadedSongCount.value < getViewportPageSize()) {
-    loadedSongCount.value = Math.min(props.songs.length, getViewportPageSize());
+  if (loadedSongCount.value < getSegmentBatchSize()) {
+    loadedSongCount.value = Math.min(props.songs.length, getSegmentBatchSize());
   }
 };
 
@@ -468,7 +470,7 @@ const handleSongTableMouseLeave = () => {
 const onScroll = (event: Event) => {
   const target = event.target as HTMLElement;
   scrollTop.value = target.scrollTop;
-  if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * 3) {
+  if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * SCROLL_TRIGGER_ROWS) {
     loadNextSongSegment();
   }
   showScrollbarDuringScroll();

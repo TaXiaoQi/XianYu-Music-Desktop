@@ -1,7 +1,6 @@
 <template>
   <div class="flex flex-col h-full">
     <HomeViewPane
-      :viewTransitionKey="viewTransitionKey"
       :localViewMode="localViewMode"
       :isBatchMode="isBatchMode"
       :isManagementMode="isManagementMode"
@@ -133,7 +132,6 @@ import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 import { useHomePageModel } from '../composables/useHomePageModel';
 
 const {
-  viewTransitionKey,
   localViewMode,
   isBatchMode,
   isManagementMode,
@@ -202,18 +200,4 @@ const {
 </script>
 
 <style scoped>
-.home-view-fade-enter-active,
-.home-view-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.home-view-fade-enter-from {
-  opacity: 0;
-  transform: translateY(4px);
-}
-
-.home-view-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
 </style>

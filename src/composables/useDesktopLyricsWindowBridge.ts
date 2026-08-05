@@ -625,6 +625,8 @@ export function useDesktopLyricsWindowBridge() {
   watch(
     currentTime,
     (time) => {
+      // [性能优化] 桌面歌词未开启时跳过每帧的时钟采样，避免 60fps 无意义的函数调用
+      if (!showDesktopLyrics.value) return;
       playbackClockTracker.markPlaybackTimeSample(time);
     },
     { immediate: true },
@@ -702,6 +704,7 @@ export function useDesktopLyricsWindowBridge() {
         logDesktopLyricsBridgeError('sync flags for', error);
       });
     },
-    { deep: true },
+    // [性能优化] 去掉 deep:true：所有源都是 ref/getter 返回原始值或新数组引用，
+    // 不需要深度遍历。deep:true 会在歌词加载时遍历 parsedLyrics 的所有歌词行对象。
   );
 }

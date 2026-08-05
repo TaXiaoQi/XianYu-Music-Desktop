@@ -34,7 +34,7 @@ import type {
 import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
-import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo } from './lxPluginEngine';
+import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError } from './lxPluginEngine';
 
 // ==================== 常量 ====================
 
@@ -1005,6 +1005,9 @@ export async function pluginGetMusicInfo(
   let result: any = null;
   let lastError: any = null;
   let successPairIdx = -1;
+  // [歌曲级错误] 当插件返回"歌曲不存在"等歌曲级错误时，换音质无法解决，
+  // 立即跳出音质循环，避免对同一首不可用的歌曲发起多次无意义的请求。
+  let songLevelErrorDetected = false;
 
   for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
     const q = tryQualities[pairIdx];
@@ -1015,12 +1018,20 @@ export async function pluginGetMusicInfo(
         if (result?.url) break;
       } catch (e: any) {
         lastError = e;
-        log(`[getMediaSource] quality=${q} 第${retry + 1}次异常: ${e?.message || e}`);
+        const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
+        log(`[getMediaSource] quality=${q} 第${retry + 1}次异常: ${errMsg}`);
+        // [歌曲级错误] 检测"歌曲不存在"/"版权限制"/"VIP"等错误，换音质无意义，立即停止
+        if (isSongLevelError(errMsg)) {
+          log(`[getMediaSource] 歌曲级错误，跳过剩余音质: ${errMsg}`);
+          songLevelErrorDetected = true;
+          break;
+        }
         if (retry < 1) {
           await new Promise(r => setTimeout(r, 150));
         }
       }
     }
+    if (songLevelErrorDetected) break;
     if (result?.url) {
       successPairIdx = pairIdx;
       break;

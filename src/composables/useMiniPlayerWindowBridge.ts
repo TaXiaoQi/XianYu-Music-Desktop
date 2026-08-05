@@ -530,6 +530,14 @@ export function useMiniPlayerWindowBridge() {
     await hideMiniPlayerWindow();
   });
 
+  // [性能优化] 拆分原 deep watcher：
+  // 原 watcher 同时监听 currentTime（60fps 变化）和 playQueue/tempQueue/songList（600+ 歌曲数组），
+  // 并使用 deep:true，导致每帧 Vue traverse() 深度遍历所有歌曲对象的所有属性（O(n) per frame）。
+  // 当播放队列含 600+ 在线歌曲时，仅此 watcher 每帧就产生数万次属性访问，叠加歌词渲染开销后导致卡顿。
+  //
+  // 拆为两个 watcher：
+  // 1. 重量级 watcher：监听歌曲/队列/设置变化（不含 currentTime），去掉 deep:true
+  // 2. 轻量级 watcher：仅监听 currentTime，节流发送进度更新
   watch(
     [
       currentSong,
@@ -540,7 +548,6 @@ export function useMiniPlayerWindowBridge() {
       songList,
       isDarkTheme,
       () => currentLyricLine.value?.text,
-      currentTime,
       playMode,
       showDesktopLyrics,
     ],
@@ -548,6 +555,16 @@ export function useMiniPlayerWindowBridge() {
       if (!isMiniPlayerWindowVisible.value) return;
       void emitStateToMiniPlayer();
     },
-    { deep: true },
   );
+
+  // 轻量级进度 watcher：节流到每 250ms 最多发送一次，避免 60fps 全量状态序列化
+  let lastProgressEmitMs = 0;
+  const PROGRESS_EMIT_THROTTLE_MS = 250;
+  watch(currentTime, () => {
+    if (!isMiniPlayerWindowVisible.value) return;
+    const now = performance.now();
+    if (now - lastProgressEmitMs < PROGRESS_EMIT_THROTTLE_MS) return;
+    lastProgressEmitMs = now;
+    void emitStateToMiniPlayer();
+  });
 }

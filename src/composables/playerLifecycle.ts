@@ -215,7 +215,6 @@ export const createPlayerLifecycle = ({
     currentTime,
     isPlaying,
     playMode,
-    playQueue,
     playQueuePaths,
     volume,
   } = storeToRefs(playbackStore);
@@ -467,6 +466,28 @@ export const createPlayerLifecycle = ({
     }, { immediate: true });
 
     let lastPrecachedRemotePath = '';
+    let cachedQueueIndex = -1;
+    let cachedQueueVersion = -1;
+
+    // 切歌时（currentSongPath 变化）在 path 数组上算一次 indexOf，缓存 index。
+    // playQueuePaths 变化时（增删/重排）使缓存失效，下次切歌时重算。
+    // 这样播放期间的 currentTime watcher 只需 O(1) 读取缓存 index，
+    // 不再每帧读取 playQueue computed（会触发 600 首物化）+ findIndex(O(n))。
+    const ensureQueueIndex = (path: string) => {
+      const version = playQueuePaths.value.length;
+      if (cachedQueueVersion === version && cachedQueueIndex >= 0) {
+        return cachedQueueIndex;
+      }
+      cachedQueueVersion = version;
+      cachedQueueIndex = playQueuePaths.value.indexOf(path);
+      return cachedQueueIndex;
+    };
+
+    watch(currentSongPath, () => {
+      cachedQueueIndex = -1;
+      cachedQueueVersion = -1;
+    });
+
     // 仅 watch currentSong + currentTime，playQueue 在回调内直接读取。
     // 原先 watch 三源会在每次 currentTime 更新时创建 [song, time, queue] 数组，
     // 其中 queue 可能是包含数千首歌的大数组——移出 watch 源可避免每次 tick 的无谓读取和数组分配。
@@ -475,15 +496,26 @@ export const createPlayerLifecycle = ({
         return;
       }
 
-      const queue = playQueue.value;
-      const index = queue.findIndex(item => item.path === song.path);
-      const nextSong = index >= 0 ? queue[index + 1] : null;
-      if (!nextSong || !isRemoteSong(nextSong) || nextSong.path === lastPrecachedRemotePath) {
+      // 预缓存只针对 remote:// (WebDAV) 歌曲。
+      // 若当前歌不是 remote://，下一首也不需要预缓存，直接跳过队列扫描，
+      // 避免 lx:// / plugin:// 歌曲播放时每帧白跑 findIndex(O(n))。
+      if (!isRemoteSong(song)) {
         return;
       }
 
-      lastPrecachedRemotePath = nextSong.path;
-      remoteLibraryApi.precacheRemoteSong(nextSong.path).catch(error => {
+      const index = ensureQueueIndex(song.path);
+      const nextPath = index >= 0 ? playQueuePaths.value[index + 1] : null;
+      if (!nextPath || nextPath === lastPrecachedRemotePath) {
+        return;
+      }
+
+      // 确认下一首是 remote:// 歌曲，才发起预缓存
+      if (!nextPath.startsWith('remote://')) {
+        return;
+      }
+
+      lastPrecachedRemotePath = nextPath;
+      remoteLibraryApi.precacheRemoteSong(nextPath).catch(error => {
         console.warn('Failed to precache remote song:', error);
       });
     });

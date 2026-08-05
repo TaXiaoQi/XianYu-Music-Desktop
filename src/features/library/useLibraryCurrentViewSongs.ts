@@ -768,32 +768,50 @@ export function useLibraryCurrentViewSongs({
 
     if (currentViewMode.value === 'folder') {
       if (folderSortMode.value !== 'custom') {
+        // 异步加载期间 folderViewSongPaths 可能为空，用 currentFolderSongPaths 做同步兜底
+        const paths = folderViewSongPaths.value.length > 0
+          ? folderViewSongPaths.value
+          : currentFolderSongPaths.value;
         if (folderSortMode.value === 'name') {
           return sortItemsByAlphabetIndex(
-            folderViewSongPaths.value,
+            paths,
             (path) => getSongFileNameLabel(songLookup.value.get(path)!),
           );
         }
         if (folderSortMode.value === 'title') {
           return sortItemsByAlphabetIndex(
-            folderViewSongPaths.value,
+            paths,
             (path) => getSongTitleLabel(songLookup.value.get(path)!),
           );
         }
-        return folderViewSongPaths.value;
+        return paths;
       }
 
       return currentFolderSongPaths.value;
     }
 
     if (currentViewMode.value === 'artist') {
-      return localSortMode.value === 'custom'
+      // 异步加载期间 detailViewSongPaths 可能为空，用 canonicalSongPaths 同步过滤做兜底
+      const paths = detailViewSongPaths.value.length > 0
         ? detailViewSongPaths.value
-        : sortSongPathsByLocalMode(detailViewSongPaths.value, localSortMode.value);
+        : canonicalSongPaths.value.filter(path => {
+            const song = songLookup.value.get(path);
+            return song && songHasArtist(song, filterCondition.value);
+          });
+      return localSortMode.value === 'custom'
+        ? paths
+        : sortSongPathsByLocalMode(paths, localSortMode.value);
     }
 
     if (currentViewMode.value === 'album') {
-      return sortSongPathsByAlbumDetailMode(detailViewSongPaths.value, albumDetailSortMode.value);
+      // 异步加载期间 detailViewSongPaths 可能为空，用 canonicalSongPaths 同步过滤做兜底
+      const paths = detailViewSongPaths.value.length > 0
+        ? detailViewSongPaths.value
+        : canonicalSongPaths.value.filter(path => {
+            const song = songLookup.value.get(path);
+            return song && matchesAlbumKey(song, filterCondition.value);
+          });
+      return sortSongPathsByAlbumDetailMode(paths, albumDetailSortMode.value);
     }
 
     if (currentViewMode.value === 'recent') {
