@@ -7,8 +7,8 @@ import { useUpdateCheck } from '../../composables/useUpdateCheck';
 
 const { disableDeveloperMode } = useDeveloperMode();
 const { triggerOnboarding } = useOnboarding();
-const { manualCheckAnnouncement } = useAnnouncement();
-const { checkUpdateManual } = useUpdateCheck();
+const { simulateAnnouncement } = useAnnouncement();
+const { simulateUpdate } = useUpdateCheck();
 
 /** 测试设置同步冲突弹窗 */
 function testConflictDialog() {
@@ -19,7 +19,10 @@ function testConflictDialog() {
 <template>
   <div class="space-y-8">
     <div>
-      <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">调试</h2>
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        调试
+      </h2>
     </div>
 
     <section class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
@@ -36,8 +39,6 @@ function testConflictDialog() {
         </button>
       </div>
 
-      <div class="border-t border-black/5 dark:border-white/5"></div>
-
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
           <p class="text-sm font-medium text-gray-800 dark:text-gray-200">播放初始化动画</p>
@@ -50,8 +51,6 @@ function testConflictDialog() {
           播放
         </button>
       </div>
-
-      <div class="border-t border-black/5 dark:border-white/5"></div>
 
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
@@ -67,8 +66,6 @@ function testConflictDialog() {
         </button>
       </div>
 
-      <div class="border-t border-black/5 dark:border-white/5"></div>
-
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
           <p class="text-sm font-medium text-gray-800 dark:text-gray-200">公告展示框</p>
@@ -77,13 +74,11 @@ function testConflictDialog() {
         <button
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
-          @click="() => void manualCheckAnnouncement()"
+          @click="simulateAnnouncement"
         >
           弹出
         </button>
       </div>
-
-      <div class="border-t border-black/5 dark:border-white/5"></div>
 
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
@@ -93,7 +88,7 @@ function testConflictDialog() {
         <button
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
-          @click="() => void checkUpdateManual()"
+          @click="simulateUpdate"
         >
           弹出
         </button>

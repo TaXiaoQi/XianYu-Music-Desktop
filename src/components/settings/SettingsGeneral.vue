@@ -142,6 +142,15 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启动检测更新</div>
+          </div>
+          <button @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.checkUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.checkUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">GPU 加速</div>
           </div>
           <button @click="handleGpuAccelerationChange" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.gpuAcceleration ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">

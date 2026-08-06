@@ -7,7 +7,11 @@ import { useToast } from '../../composables/toast';
 import { useCollectionsStore } from '../../features/collections/store';
 import { useLibraryStore } from '../../features/library/store';
 import { useSettings } from '../../features/settings/useSettings';
-import { useApplicationLogs } from '../../services/applicationLogger';
+import {
+  analyzeApplicationLogs,
+  formatApplicationLogExport,
+  useApplicationLogs,
+} from '../../services/applicationLogger';
 import { getStoredAuth } from '../../services/auth/authService';
 import { getStoredPlugins } from '../../services/pluginEngine';
 import { submitFeedback } from '../../services/usageStats';
@@ -52,6 +56,8 @@ const feedbackTitle = ref('');
 const feedbackContent = ref('');
 const submittingFeedback = ref(false);
 const feedbackAuth = ref(getStoredAuth());
+const attachErrorLogs = ref(false);
+const attachAllLogs = ref(false);
 
 // 登录态可能在设置页面打开后变化（如用户在其他窗口登录），聚焦时刷新一次
 const refreshFeedbackAuth = () => {
@@ -135,10 +141,23 @@ const submitUserFeedback = async () => {
 
   submittingFeedback.value = true;
   try {
-    await submitFeedback(title, content);
+    let errorLogsText: string | undefined;
+    let allLogsText: string | undefined;
+    if (attachErrorLogs.value || attachAllLogs.value) {
+      const analysis = analyzeApplicationLogs(entries.value);
+      if (attachErrorLogs.value) {
+        errorLogsText = formatApplicationLogExport(entries.value, 'error', analysis);
+      }
+      if (attachAllLogs.value) {
+        allLogsText = formatApplicationLogExport(entries.value, 'all', analysis);
+      }
+    }
+    await submitFeedback(title, content, errorLogsText, allLogsText);
     showToast('反馈已提交，感谢您的支持', 'success');
     feedbackTitle.value = '';
     feedbackContent.value = '';
+    attachErrorLogs.value = false;
+    attachAllLogs.value = false;
   } catch (error: any) {
     showToast(`提交失败：${error?.message || error}`, 'error');
   } finally {
@@ -320,10 +339,7 @@ const handleImportAppBackup = async () => {
       </button>
     </section>
 
-    <section
-      class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 dark:border-gray-800/40 dark:bg-black/10"
-      @focusin="refreshFeedbackAuth"
-    >
+    <div class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -334,6 +350,10 @@ const handleImportAppBackup = async () => {
         </p>
       </div>
 
+      <section
+        class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 dark:border-gray-800/40 dark:bg-black/10"
+        @focusin="refreshFeedbackAuth"
+      >
       <!-- 未登录提示 -->
       <div
         v-if="!isFeedbackLoggedIn"
@@ -365,12 +385,34 @@ const handleImportAppBackup = async () => {
             rows="5"
             maxlength="1000"
             placeholder="请详细描述问题现象、复现步骤或建议内容"
-            class="mt-2 w-full resize-y rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:placeholder:text-white/35"
+            class="mt-2 w-full resize-y rounded-lg border border-black/10 bg-white/45 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
             {{ feedbackContent.length }} / 1000
           </span>
         </label>
+
+        <!-- 日志附送勾选 -->
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
+            <input
+              type="checkbox"
+              class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"
+              :checked="attachErrorLogs"
+              @change="attachErrorLogs = ($event.target as HTMLInputElement).checked"
+            />
+            附上错误日志
+          </label>
+          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
+            <input
+              type="checkbox"
+              class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"
+              :checked="attachAllLogs"
+              @change="attachAllLogs = ($event.target as HTMLInputElement).checked"
+            />
+            附上全部日志
+          </label>
+        </div>
 
         <button
           type="button"
@@ -383,6 +425,7 @@ const handleImportAppBackup = async () => {
         </button>
       </div>
     </section>
+    </div>
 
     <ConfirmModal
       :visible="showDeleteConfirmation"
