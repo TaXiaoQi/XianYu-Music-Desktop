@@ -395,6 +395,26 @@ export async function proxyFetch(input: RequestInfo | URL, init?: RequestInit): 
 
 // ==================== 插件实例缓存 ====================
 
+/** 用户变量定义（与 MusicFree IPlugin.IUserVariable 一致） */
+export interface PluginUserVariable {
+  /** 变量名，即 env.getUserVariables() 返回对象的 key */
+  name: string;
+  /** 显示标题 */
+  title?: string;
+  /** 变量类型: text/password/select */
+  type?: 'text' | 'password' | 'select';
+  /** 默认值 */
+  defaultValue?: string;
+  /** 选项列表（type=select 时使用） */
+  options?: string[];
+  /** 描述/提示文本 */
+  description?: string;
+  /** 输入框 placeholder */
+  placeholder?: string;
+  /** 是否为必填项 */
+  required?: boolean;
+}
+
 interface PluginInstance {
   source: PluginSource;
   instance: IPluginInstance;
@@ -410,7 +430,7 @@ interface IPluginInstance {
   description?: string;
   supportedSearchType?: string[];
   defaultSearchType?: string;
-  userVariables?: any[];
+  userVariables?: PluginUserVariable[];
   cacheControl?: string;
   /** 提示文本（与 MusicFree IPlugin.IPluginDefine.hints 一致） */
   hints?: Record<string, string[]>;
@@ -467,6 +487,10 @@ export async function loadPluginFromScript(
 
     log(`=== 开始加载插件: ${uri} (${script.length} chars) ===`);
 
+    // 预计算 hash，用于 env.getUserVariables() 按插件 ID 索引用户变量值。
+    // 提前到 Step 1 之前，确保插件脚本执行期间调用 getUserVariables() 也能拿到值。
+    const hash = CryptoJs.SHA256(script).toString();
+
     // ===== Step 1: 执行插件脚本（与 MusicFree mountPlugin 第911~955行完全一致）=====
     const _module: any = { exports: {} };
     let _instance: IPluginInstance;
@@ -481,7 +505,7 @@ export async function loadPluginFromScript(
 
     // 与 MusicFree plugin.ts 第94~104行一致
     const env = {
-      getUserVariables: () => ({}),
+      getUserVariables: () => getPluginUserVariableValues(hash),
       os: 'win32',
       appVersion: '1.0.0',
       lang: 'zh-CN',
@@ -563,8 +587,7 @@ export async function loadPluginFromScript(
       return null;
     }
 
-    // 与 MusicFree 第1006~1007行一致：hash = sha256(funcCode)
-    const hash = CryptoJs.SHA256(script).toString();
+    // hash 已在 Step 1 之前预计算（用于 env.getUserVariables 闭包）
 
     // 与 MusicFree 第993~995行一致：supportedMethods
     const supportedMethodsSet = new Set(
@@ -1438,6 +1461,52 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
   }
 }
 
+// ==================== 用户变量存储 ====================
+
+// 每个插件的用户变量值独立存储，key 格式: xianyu_plugin_user_vars_<pluginId>
+const userVarKey = (pluginId: string) => `xianyu_plugin_user_vars_${pluginId}`;
+
+/** 读取指定插件的用户变量值 */
+export function getPluginUserVariableValues(pluginId: string): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(userVarKey(pluginId));
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return {};
+}
+
+/** 保存指定插件的用户变量值 */
+export function setPluginUserVariableValues(pluginId: string, values: Record<string, string>) {
+  try {
+    localStorage.setItem(userVarKey(pluginId), JSON.stringify(values));
+  } catch { /* ignore */ }
+}
+
+/** 删除指定插件的用户变量值（卸载时调用） */
+export function removePluginUserVariableValues(pluginId: string) {
+  try {
+    localStorage.removeItem(userVarKey(pluginId));
+  } catch { /* ignore */ }
+}
+
+/**
+ * 获取插件实例定义的用户变量列表（用于 UI 渲染输入表单）。
+ * 需要插件已加载到实例缓存中，否则返回空数组。
+ */
+export function getPluginUserVariables(pluginId: string): PluginUserVariable[] {
+  const inst = pluginInstances.get(pluginId);
+  return inst?.instance?.userVariables ?? [];
+}
+
+/**
+ * 用户变量变更后重新加载插件实例，使新值通过 env.getUserVariables() 生效。
+ * 清除缓存后下次 ensurePluginInstance 会重新执行插件脚本。
+ */
+export function reloadPluginInstance(pluginId: string) {
+  pluginInstances.delete(pluginId);
+  bumpPluginsVersion();
+}
+
 // ==================== 插件存储 ====================
 
 // 所有插件（内置 + 用户导入）都持久化到 localStorage，跨重启保留。
@@ -1499,6 +1568,7 @@ export function removePluginSource(id: string) {
   const stored = readPluginsFromLocalStorage().filter(p => p.id !== id);
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
   pluginInstances.delete(id);
+  removePluginUserVariableValues(id);
   // [修复防御]: LX 插件删除时也要销毁 iframe
   destroyLxPlugin(id);
   bumpPluginsVersion();
