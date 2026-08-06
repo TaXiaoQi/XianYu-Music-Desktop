@@ -10,6 +10,10 @@ import {
   DEFAULT_PLAYER_LINE_GAP,
   DEFAULT_PLAYER_OFFSET_X,
   DEFAULT_PLAYER_OFFSET_Y,
+  DEFAULT_BACKGROUND_BLUR,
+  DEFAULT_CUSTOM_BACKGROUND_IMAGE,
+  MIN_BACKGROUND_BLUR,
+  MAX_BACKGROUND_BLUR,
   getLyricsFontFamily,
   LYRICS_FONT_OPTIONS,
   MAX_PLAYER_FONT_SCALE,
@@ -238,6 +242,41 @@ function resetPlayerFontPreset() {
   setPlayerFontPreset(DEFAULT_PLAYER_FONT_PRESET);
 }
 
+// --- 页面样式：Tab 栏状态 ---
+type SettingsTab = 'background' | 'lyrics';
+const activeSettingsTab = ref<SettingsTab>('background');
+
+// --- 背景样式设置 ---
+const backgroundBlurPercent = computed(() => `${Math.round(lyricsSettings.backgroundBlur)}%`);
+const backgroundBlurProgress = computed(() =>
+  ((lyricsSettings.backgroundBlur - MIN_BACKGROUND_BLUR) / (MAX_BACKGROUND_BLUR - MIN_BACKGROUND_BLUR)) * 100,
+);
+
+function setBackgroundBlur(value: number) {
+  lyricsSettings.backgroundBlur = Math.min(MAX_BACKGROUND_BLUR, Math.max(MIN_BACKGROUND_BLUR, value));
+}
+
+function resetBackgroundBlur() {
+  setBackgroundBlur(DEFAULT_BACKGROUND_BLUR);
+}
+
+function resetCustomBackgroundImage() {
+  lyricsSettings.customBackgroundImage = DEFAULT_CUSTOM_BACKGROUND_IMAGE;
+}
+
+/** 选择本地图片作为自定义背景 */
+const handleChooseBackgroundImage = async () => {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    multiple: false,
+    title: '选择背景图片',
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }],
+  });
+  if (selected && typeof selected === 'string') {
+    lyricsSettings.customBackgroundImage = selected;
+  }
+};
+
 function toggleTranslation() {
   lyricsSettings.showTranslation = !lyricsSettings.showTranslation;
 }
@@ -429,11 +468,106 @@ watch(() => props.coverHidden, async () => {
       <transition name="font-panel">
         <div
           v-if="showLyricsPlayerSettingsPanel"
-          class="lyrics-settings-glass pointer-events-auto flex max-h-[100%] min-h-0 w-full flex-col rounded-3xl border border-white/15 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
+          class="lyrics-settings-glass pointer-events-auto flex h-[640px] max-h-[100%] w-full flex-col rounded-3xl border border-white/15 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
           @click.stop
           @mousedown.stop
         >
-          <div class="min-h-0 overflow-y-auto px-4 py-4 custom-scrollbar">
+          <!-- Tab 栏：背景样式 / 歌词样式 -->
+          <div class="relative flex shrink-0 border-b border-white/10 px-2 pt-2">
+            <button
+              type="button"
+              class="relative px-3 py-2 text-[12px] font-medium transition-colors"
+              :class="activeSettingsTab === 'background' ? 'text-white' : 'text-white/40 hover:text-white/70'"
+              @click="activeSettingsTab = 'background'"
+            >
+              背景样式
+              <span
+                v-if="activeSettingsTab === 'background'"
+                class="absolute bottom-[-1px] left-2 right-2 h-[2px] rounded-full bg-[#EC4141]"
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="relative px-3 py-2 text-[12px] font-medium transition-colors"
+              :class="activeSettingsTab === 'lyrics' ? 'text-white' : 'text-white/40 hover:text-white/70'"
+              @click="activeSettingsTab = 'lyrics'"
+            >
+              歌词样式
+              <span
+                v-if="activeSettingsTab === 'lyrics'"
+                class="absolute bottom-[-1px] left-2 right-2 h-[2px] rounded-full bg-[#EC4141]"
+              ></span>
+            </button>
+          </div>
+
+          <!-- Tab 内容区（带切换动画） -->
+          <div class="relative min-h-0 flex-1">
+            <Transition name="tab-switch" mode="out-in">
+          <!-- 背景样式 Tab -->
+          <div v-if="activeSettingsTab === 'background'" key="background" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
+            <div class="mb-3">
+              <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Blur</div>
+              <div class="mt-1.5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-[13px] font-medium text-white/85">背景模糊程度</span>
+                  <button
+                    v-if="lyricsSettings.backgroundBlur !== DEFAULT_BACKGROUND_BLUR"
+                    type="button"
+                    class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white"
+                    @click="resetBackgroundBlur"
+                    title="重置"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
+                <span class="text-xs font-medium tabular-nums text-white/60">{{ backgroundBlurPercent }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <span class="text-[10px] text-white/40 w-6 text-right">0%</span>
+              <input
+                class="font-size-slider h-1 flex-1 cursor-pointer appearance-none rounded-full"
+                :style="{ background: `linear-gradient(to right, rgba(255,255,255,0.85) ${backgroundBlurProgress}%, rgba(255,255,255,0.12) ${backgroundBlurProgress}%)` }"
+                type="range"
+                :min="MIN_BACKGROUND_BLUR"
+                :max="MAX_BACKGROUND_BLUR"
+                :step="1"
+                :value="lyricsSettings.backgroundBlur"
+                @input="setBackgroundBlur(Number(($event.target as HTMLInputElement).value))"
+              />
+              <span class="text-[10px] text-white/40 w-6">100%</span>
+            </div>
+            <div class="mt-1.5 text-[10px] text-white/30">数值越小越清晰，越大越模糊</div>
+
+            <div class="mt-6 mb-3">
+              <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Custom</div>
+              <div class="mt-1.5">
+                <span class="text-[13px] font-medium text-white/85">自定义背景</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/10 text-white/85 hover:bg-white/20 transition-colors"
+                @click="handleChooseBackgroundImage"
+              >选择图片</button>
+              <button
+                v-if="lyricsSettings.customBackgroundImage"
+                type="button"
+                class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/5 text-white/50 hover:bg-white/10 transition-colors"
+                @click="resetCustomBackgroundImage"
+              >清除</button>
+            </div>
+            <div v-if="lyricsSettings.customBackgroundImage" class="mt-2 text-[10px] text-white/30 truncate" :title="lyricsSettings.customBackgroundImage">
+              {{ lyricsSettings.customBackgroundImage }}
+            </div>
+            <div v-else class="mt-2 text-[10px] text-white/30">未设置自定义背景，使用歌曲封面作为背景</div>
+          </div>
+
+          <!-- 歌词样式 Tab -->
+          <div v-else key="lyrics" class="min-h-0 h-full overflow-y-auto px-4 py-4 custom-scrollbar">
           <div class="mb-3">
             <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Lyrics</div>
             <div class="mt-1.5 flex items-center justify-between">
@@ -745,7 +879,7 @@ watch(() => props.coverHidden, async () => {
               </div>
             </transition>
           </div>
-
+            </Transition>
           </div>
         </div>
       </transition>
@@ -936,6 +1070,23 @@ watch(() => props.coverHidden, async () => {
 .font-preset-menu-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.98);
+}
+
+/* Tab 切换动画：淡入淡出 + 轻微横向滑动 */
+.tab-switch-enter-active,
+.tab-switch-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+  will-change: transform, opacity;
+}
+
+.tab-switch-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.tab-switch-leave-to {
+  opacity: 0;
+  transform: translateX(-12px);
 }
 
 .font-size-slider::-webkit-slider-thumb {

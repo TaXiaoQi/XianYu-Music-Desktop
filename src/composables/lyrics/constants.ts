@@ -31,6 +31,10 @@ export const DEFAULT_PLAYER_ALIGNMENT: LyricsPlayerAlignment = 'left';
 export const DEFAULT_DESKTOP_PLAYER_ALIGNMENT: DesktopLyricsPlayerAlignment = 'center';
 export const DEFAULT_PLAYER_FONT_PRESET: LyricsFontPreset = 'system';
 export const DEFAULT_PLAYER_RENDER_MODE: LyricsPlayerRenderMode = 'amll';
+export const DEFAULT_BACKGROUND_BLUR = 100;
+export const MIN_BACKGROUND_BLUR = 0;
+export const MAX_BACKGROUND_BLUR = 100;
+export const DEFAULT_CUSTOM_BACKGROUND_IMAGE = '';
 export const DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR = '#EC4141';
 export const DEFAULT_DESKTOP_CUSTOM_UNPLAYED_COLOR = '#FFFFFF';
 export const DEFAULT_DESKTOP_CUSTOM_ROMAJI_PLAYED_COLOR = '#BFDBFE';
@@ -116,6 +120,8 @@ export const defaultLyricsSettings: LyricsSettings = {
   playerOffsetY: DEFAULT_PLAYER_OFFSET_Y,
   playerAlignment: DEFAULT_PLAYER_ALIGNMENT,
   playerFontPreset: DEFAULT_PLAYER_FONT_PRESET,
+  backgroundBlur: DEFAULT_BACKGROUND_BLUR,
+  customBackgroundImage: DEFAULT_CUSTOM_BACKGROUND_IMAGE,
 };
 
 export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
@@ -182,6 +188,11 @@ export function clampPlayerOffsetX(value: number) {
 export function clampPlayerOffsetY(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_PLAYER_OFFSET_Y;
   return Math.min(MAX_PLAYER_OFFSET_Y, Math.max(MIN_PLAYER_OFFSET_Y, value));
+}
+
+export function clampBackgroundBlur(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_BACKGROUND_BLUR;
+  return Math.min(MAX_BACKGROUND_BLUR, Math.max(MIN_BACKGROUND_BLUR, value));
 }
 
 export function clampDesktopTextOpacity(value: number) {
@@ -320,6 +331,10 @@ export function normalizeLyricsSettingsPatch(patch: Partial<LyricsSettings>): Ly
     playerOffsetY: clampPlayerOffsetY(patch.playerOffsetY ?? DEFAULT_PLAYER_OFFSET_Y),
     playerAlignment: normalizePlayerAlignment(patch.playerAlignment, DEFAULT_PLAYER_ALIGNMENT),
     playerFontPreset: normalizeLyricsFontPreset(patch.playerFontPreset),
+    backgroundBlur: clampBackgroundBlur(patch.backgroundBlur ?? DEFAULT_BACKGROUND_BLUR),
+    customBackgroundImage: typeof patch.customBackgroundImage === 'string'
+      ? patch.customBackgroundImage
+      : DEFAULT_CUSTOM_BACKGROUND_IMAGE,
   };
 }
 

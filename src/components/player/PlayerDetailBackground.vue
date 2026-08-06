@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePlayer } from '../../features/playback';
+import { lyricsSettings } from '../../composables/lyrics';
 
 const props = defineProps<{
   bgOpacity?: number;
@@ -21,6 +23,29 @@ const updateViewportArea = () => {
 const thumbCoverUrl = computed(() => (
   (props.active ?? true) ? currentCover.value : ''
 ));
+
+/** 自定义背景图 URL：本地文件路径通过 convertFileSrc 转为可访问的 URL */
+const customBgUrl = computed(() => {
+  const path = lyricsSettings.customBackgroundImage;
+  if (!path) return '';
+  return path.startsWith('http') || path.startsWith('data:') || path.startsWith('asset:')
+    ? path
+    : convertFileSrc(path);
+});
+
+/** 背景模糊程度（0-100）：0% 时完全清晰，100% 时完全模糊 */
+const backgroundBlurPx = computed(() => {
+  const percent = lyricsSettings.backgroundBlur;
+  // 0% → 0px（清晰），100% → 52px（完全模糊）
+  return (percent / 100) * 52;
+});
+
+/** 封面背景的 filter 样式：模糊程度跟随用户设置 */
+const coverFilterStyle = computed(() => {
+  const blur = backgroundBlurPx.value;
+  if (blur === 0) return 'brightness(0.78) saturate(1.42) contrast(1.16)';
+  return `blur(${blur}px) brightness(0.78) saturate(1.42) contrast(1.16)`;
+});
 
 onMounted(() => {
   window.addEventListener('resize', updateViewportArea);
@@ -45,11 +70,23 @@ onUnmounted(() => {
       :style="{ backgroundColor: dominantColors[0] }"
     ></div>
 
-    <div v-if="thumbCoverUrl" class="absolute inset-0 overflow-hidden z-[1]">
+    <!-- 自定义背景图（用户上传）：覆盖默认封面背景 -->
+    <div v-if="customBgUrl" class="absolute inset-0 overflow-hidden z-[1]">
+      <img
+        :src="customBgUrl"
+        class="w-full h-full object-cover scale-110 select-none"
+        :style="{ filter: coverFilterStyle }"
+        draggable="false"
+        decoding="async"
+      />
+    </div>
+
+    <!-- 默认封面背景（无自定义背景图时显示） -->
+    <div v-else-if="thumbCoverUrl" class="absolute inset-0 overflow-hidden z-[1]">
       <img
         :src="thumbCoverUrl"
         class="w-full h-full object-cover scale-110 select-none"
-        :style="{ filter: isLargeViewport ? 'blur(40px) brightness(0.78) saturate(1.42) contrast(1.16)' : 'blur(52px) brightness(0.72) saturate(1.36) contrast(1.14)' }"
+        :style="{ filter: coverFilterStyle }"
         draggable="false"
         decoding="async"
       />

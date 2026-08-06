@@ -342,6 +342,8 @@ export interface LyricsSettings {
   playerOffsetY: number;
   playerAlignment: LyricsPlayerAlignment;
   playerFontPreset: LyricsFontPreset;
+  backgroundBlur: number;
+  customBackgroundImage: string;
 }
 
 export interface DesktopLyricsSettings {
