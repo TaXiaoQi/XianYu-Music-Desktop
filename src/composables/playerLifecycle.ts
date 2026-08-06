@@ -15,12 +15,11 @@ import {
   type LocalSortMode,
   type PlaylistSortMode,
 } from '../services/storage/playerStorage';
-import { playbackApi, createEqualizerSignature } from '../services/tauri/playbackApi';
+import { playbackApi } from '../services/tauri/playbackApi';
 import { remoteLibraryApi } from '../services/tauri/remoteLibraryApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
-import { useSoundEffectStore } from '../features/playback/soundEffectStore';
 import { useSettingsStore } from '../features/settings/store';
 import { defaultDominantColors, useUiStore } from '../shared/stores/ui';
 import { isRemoteSong } from '../utils/remoteSong';
@@ -223,57 +222,10 @@ export const createPlayerLifecycle = ({
   const scheduleStatePersistence = () => {
     schedulePersistedState();
   };
-  const syncLoudnessSettings = async () => {
-    const volumeBalance = settings.value.audio.volumeBalance;
-    const song = currentSong.value;
-    await playbackApi.updateLoudnessSettings({
-      enabled: volumeBalance.enabled,
-      songId: song?.id ?? null,
-      songPath: song ? (song.cue_source_path || song.path) : null,
-      gainOffsetDb: volumeBalance.gainOffsetDb,
-      preventClipping: volumeBalance.preventClipping,
-    }).catch(err => {
-      console.warn('Failed to update loudness settings:', err);
-    });
-  };
-
-  const syncEqualizerSettings = async () => {
-    // 10 段 EQ 的唯一数据源是 soundEffectStore.eqBands（新音效面板）。
-    // 不再读旧的 settings.audio.equalizer——其默认 enabled=false 会让 Rust Equalizer 整体
-    // 直通，导致新面板 EQ 滑块拖动后听不到任何变化（「均衡器没效果」的根因）。
-    // preamp 固定 0（新面板无 preamp 控件），enabled 由 bypassAll（AB 对比旁通）决定。
-    const soundEffectStore = useSoundEffectStore();
-    const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'] as const;
-    const gains = eqFreqLabels.map(label => soundEffectStore.eqBands[label] ?? 0);
-    const enabled = !soundEffectStore.bypassAll;
-    const preamp = 0;
-    const eq = { enabled, preamp, gains };
-    
-    // 生成当前即将写入的规范化高精度参数签名
-    const currentParamsSignature = createEqualizerSignature(eq.enabled, eq.preamp, eq.gains);
-    
-    // 从底层查询最后一次成功同步过的签名缓存
-    const lastSynced = playbackApi.getLastSyncedParams();
-    
-    if (currentParamsSignature === lastSynced) {
-      if (import.meta.env.DEV) {
-        console.log(`[playerLifecycle] EQ params already synced (${currentParamsSignature}), skipping duplicate IPC.`);
-      }
-      return;
-    }
-    
-    if (import.meta.env.DEV) {
-      console.log(`[playerLifecycle] EQ params changed from store. Triggering IPC. Signature: ${currentParamsSignature}`);
-    }
-
-    await playbackApi.setEqualizerSettings(
-      eq.enabled,
-      eq.preamp,
-      eq.gains
-    ).catch(err => {
-      console.warn('Failed to update equalizer settings:', err);
-    });
-  };
+  // [YinDong 播放引擎移植] 响度归一化已丢弃，EQ/音效改由 soundEffectStore 驱动：
+  // - HTML <audio> 路径：soundEffectStore → soundEffectEngine（Web Audio BiquadFilter）
+  // - WASAPI 独占路径：soundEffectStore → playbackApi.setAudioEffects（EffectParams）
+  // 故此处不再需要 syncLoudnessSettings / syncEqualizerSettings 向 Rust 同步。
 
   onMounted(async () => {
     await bootstrapLibrary();
@@ -362,20 +314,6 @@ export const createPlayerLifecycle = ({
       }
     }, { deep: true, immediate: true });
     watch(settings, scheduleStatePersistence, { deep: true });
-    watch(
-      () => settings.value.audio.volumeBalance,
-      () => {
-        void syncLoudnessSettings();
-      },
-      { deep: true }
-    );
-    watch(
-      () => settings.value.audio.equalizer,
-      () => {
-        void syncEqualizerSettings();
-      },
-      { deep: true }
-    );
     watch(artistCustomOrder, scheduleStatePersistence, { deep: true });
     watch(albumCustomOrder, scheduleStatePersistence, { deep: true });
     watch(folderCustomOrder, scheduleStatePersistence, { deep: true });
@@ -561,8 +499,8 @@ export const createPlayerLifecycle = ({
     onMounted(async () => {
       const storedVolume = playerStorage.readNumber(playerStorageKeys.volume);
       if (storedVolume !== null) {
+        // [修复音量无反应] 只设置 store，playerPlayback 的 watch 会自动应用音量
         volume.value = storedVolume;
-        await playbackApi.setVolume(volume.value / 100);
       }
 
       const storedPlayMode = playerStorage.readNumber(playerStorageKeys.playMode);
@@ -642,11 +580,6 @@ export const createPlayerLifecycle = ({
       await playbackApi.setAudioOutputMode(settings.value.audio.outputMode).catch(error => {
         console.warn('Failed to restore audio output mode:', error);
       });
-      const vb = settings.value.audio.volumeBalance;
-      if (vb) {
-        await syncLoudnessSettings();
-      }
-      await syncEqualizerSettings();
 
       await restorePathBackedState();
       await restoreRecentHistory();

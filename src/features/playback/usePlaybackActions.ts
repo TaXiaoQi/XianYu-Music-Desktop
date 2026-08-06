@@ -33,9 +33,9 @@ interface PlayerQueueApi {
 }
 
 interface PlayerUiShellApi {
-  handleVolume: (event: Event) => Promise<unknown>;
-  handleVolumeWheel: (event: WheelEvent) => Promise<unknown>;
-  toggleMute: () => Promise<unknown>;
+  handleVolume: (event: Event) => void;
+  handleVolumeWheel: (event: WheelEvent) => void;
+  toggleMute: () => void;
   togglePlaylist: () => void;
   toggleMiniPlaylist: () => void;
   closeMiniPlaylist: () => void;

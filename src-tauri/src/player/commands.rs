@@ -1,17 +1,16 @@
 use crate::database::DbState;
 use crate::music::scanner::apply_scan_changes;
 use crate::music::types::Song;
-use crate::player::equalizer::EqualizerSettings;
-use crate::player::sound_effect::SoundEffectSettings;
-use crate::player::loudness::{
-    calculate_playback_gain, get_song_loudness_record, process_song_on_play, LoudnessRecord,
-};
+use crate::player::effects::EffectParams;
+use crate::player::runtime::progress_duration;
 use crate::player::spectrum::build_frequency_bands;
 use crate::player::types::{
-    AudioCommand, AudioOutputMode, AudioSource, PlayerState, VISUALIZER_BAND_COUNT,
+    AudioCommand, AudioOutputMode, AudioSource, BitstreamInfo, PlayerState,
+    VISUALIZER_BAND_COUNT,
 };
 use crate::remote::cache::{
     ensure_cached_path, is_remote_uri, remote_playback_source, RemotePlaybackSource,
+    RemoteStreamSource,
 };
 use crate::remote::repository::get_source_for_remote_uri;
 use crate::remote::scanner::song_from_cached_remote_file;
@@ -21,18 +20,65 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tauri::Emitter;
+use std::io::Write;
 
 const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready";
-
-// 在线直链播放的默认 User-Agent（部分音源防盗链需要浏览器 UA）
-const DEFAULT_STREAM_USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct RemoteLyricsCacheReadyPayload {
     uri: String,
     song: Option<Song>,
+}
+
+/// [修复防御] 异步下载 HTTP URL 到临时文件，供 WASAPI 独占模式使用。
+/// 使用 async reqwest 避免在 Tauri async 命令上下文中创建 blocking runtime 导致 tokio panic。
+/// 下载失败时返回错误，调用方应回退到 Shared 流式播放。
+async fn download_url_to_tempfile(url: &str) -> Result<tempfile::NamedTempFile, String> {
+    let response = reqwest::get(url).await.map_err(|e| {
+        let msg = format!("HTTP GET failed: {e}");
+        eprintln!("[download_url_to_tempfile] {msg}");
+        msg
+    })?;
+
+    if !response.status().is_success() {
+        let msg = format!("HTTP {} for {}", response.status(), url);
+        eprintln!("[download_url_to_tempfile] {msg}");
+        return Err(msg);
+    }
+
+    // 获取 content-length 用于进度日志
+    let total_bytes = response.content_length();
+
+    let mut temp_file =
+        tempfile::NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {e}"))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+
+    temp_file
+        .write_all(&bytes)
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+
+    let size_mb = bytes.len() as f64 / 1_048_576.0;
+    if let Some(total) = total_bytes {
+        eprintln!(
+            "[download_url_to_tempfile] Downloaded {:.1} MB / {:.1} MB to {:?}",
+            size_mb,
+            total as f64 / 1_048_576.0,
+            temp_file.path()
+        );
+    } else {
+        eprintln!(
+            "[download_url_to_tempfile] Downloaded {:.1} MB to {:?}",
+            size_mb,
+            temp_file.path()
+        );
+    }
+
+    Ok(temp_file)
 }
 
 fn normalize_cover_for_smtc(cover: &str) -> Option<String> {
@@ -63,46 +109,56 @@ pub async fn play_audio(
     duration: u32,
     output_mode: AudioOutputMode,
     start_offset_ms: Option<u64>,
-    song_id: Option<i64>,
-    volume_balance_enabled: Option<bool>,
-    gain_offset_db: Option<f32>,
-    prevent_clipping: Option<bool>,// 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效
-    headers: Option<std::collections::HashMap<String, String>>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
     state: tauri::State<'_, PlayerState>,
 ) -> Result<(), String> {
     let playback_id = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let mut selected_output_mode = output_mode;
-    let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
-    let source = if is_http_stream {
-        // [在线播放重构] 把在线音频流式下载到本地临时文件，再用本地引擎播放。
-        // 这样所有音乐都走统一的 File::open + Decoder 路径，设备切换恢复天然支持，
-        // 无需维护 RemoteRangeReader 的复杂重建逻辑。
-        // 下载够最小缓冲（512KB）后才开始播放，避免起播立即卡顿。
-        selected_output_mode = AudioOutputMode::Shared;
-        let stream_state = crate::player::stream_cache::start_streaming_download(
-            &path,
-            headers.as_ref(),
-            Some(DEFAULT_STREAM_USER_AGENT),
-        )
-        .map_err(|e| format!("在线音频缓存启动失败: {}", e))?;
-
-        // 等待最小缓冲就绪（最多等 30 秒，超时则放弃等待直接播放让 reader 阻塞缓冲）
-        let wait_start = std::time::Instant::now();
-        while !crate::player::stream_cache::is_buffer_ready(&stream_state) {
-            if wait_start.elapsed() > std::time::Duration::from_secs(30) {
-                eprintln!("[Audio][rust] 在线音频最小缓冲等待超时，继续播放（reader 会阻塞等待）");
-                break;
+    let source = if path.starts_with("http://") || path.starts_with("https://") {
+        // [修复防御] 当用户启用 USB 独占模式时，下载网络歌曲到临时文件后作为本地文件播放，
+        // 避免强制回退到 Shared 模式导致音频输出到扬声器而非 USB DAC。
+        // Phase 1 推演：原代码 `selected_output_mode = AudioOutputMode::Shared` 直接丢弃了
+        // 用户选择的 WasapiExclusive，导致网络歌曲永远使用默认扬声器。
+        if output_mode == AudioOutputMode::WasapiExclusive {
+            eprintln!("[play_audio] Network URL with WasapiExclusive — downloading to temp file...");
+            match download_url_to_tempfile(&path).await {
+                Ok(temp_file) => {
+                    let kept_path = temp_file.path().to_string_lossy().to_string();
+                    eprintln!("[play_audio] Downloaded to temp: {kept_path}");
+                    let _ = temp_file.keep();
+                    AudioSource::LocalFile(kept_path)
+                }
+                Err(error) => {
+                    eprintln!("[play_audio] Download FAILED: {error} — falling back to Shared streaming");
+                    selected_output_mode = AudioOutputMode::Shared;
+                    AudioSource::RemoteWebDav(RemoteStreamSource {
+                        remote_uri: path.clone(),
+                        url: path,
+                        username: None,
+                        password: None,
+                        user_agent: None,
+                        referer: None,
+                        headers: None,
+                    })
+                }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        } else {
+            selected_output_mode = AudioOutputMode::Shared;
+            AudioSource::RemoteWebDav(RemoteStreamSource {
+                remote_uri: path.clone(),
+                url: path,
+                username: None,
+                password: None,
+                user_agent: None,
+                referer: None,
+                headers: None,
+            })
         }
-
-        AudioSource::StreamingTempFile(stream_state)
     } else if is_remote_uri(&path) {
-        match remote_playback_source(&db_state, &path) {
-            Ok(RemotePlaybackSource::Cached { path }) => AudioSource::LocalFile(path),
-            Ok(RemotePlaybackSource::Stream(stream)) => {
+        match remote_playback_source(&db_state, &path)? {
+            RemotePlaybackSource::Cached { path } => AudioSource::LocalFile(path),
+            RemotePlaybackSource::Stream(stream) => {
                 selected_output_mode = AudioOutputMode::Shared;
                 schedule_remote_cache_after_half(
                     app.clone(),
@@ -115,40 +171,19 @@ pub async fn play_audio(
                 );
                 AudioSource::RemoteWebDav(stream)
             }
-            // [落雪] URL 不在数据库中（非 WebDAV 远程源），作为直接 HTTP 音频流播放
-            Err(_) => {
-                selected_output_mode = AudioOutputMode::Shared;
-                AudioSource::RemoteWebDav(crate::remote::cache::RemoteStreamSource {
-                    remote_uri: path.clone(),
-                    url: path.clone(),
-                    user_agent: Some(DEFAULT_STREAM_USER_AGENT.to_string()),
-                    headers: headers.clone(),
-                    ..Default::default()
-                })
-            }
         }
     } else {
-        AudioSource::LocalFile(path.clone())
+        AudioSource::LocalFile(path)
     };
 
-    let mut volume_balance_gain = 1.0;
-    if let (Some(s_id), Some(true)) = (song_id, volume_balance_enabled) {
-        if let Ok(mut conn) = db_state.conn.lock() {
-            if let Ok(record) = process_song_on_play(&mut conn, s_id, &path) {
-                let offset_db = gain_offset_db.unwrap_or(0.0);
-                let prev_clip = prevent_clipping.unwrap_or(true);
-                volume_balance_gain = calculate_playback_gain(&record, offset_db, prev_clip);
-            }
-        }
-    }
-
     let normalized_cover = normalize_cover_for_smtc(&cover);
+    let display_path = source.display_path();
+    eprintln!("[play_audio] path='{display_path}' | output_mode={:?} | selected_output_mode={:?}", output_mode, selected_output_mode);
     let tx = state.tx.lock().map_err(|e| e.to_string())?;
     tx.send(AudioCommand::Play {
         source,
         output_mode: selected_output_mode,
         start_offset_ms,
-        volume_balance_gain,
     })
     .map_err(|e| e.to_string())?;
 
@@ -172,49 +207,6 @@ pub async fn play_audio(
     }
 
     Ok(())
-}
-
-/// 设置在线音频流式缓存上限（字节）
-#[tauri::command]
-pub fn set_stream_cache_max_size(bytes: u64) {
-    crate::player::stream_cache::set_max_cache_size(bytes);
-}
-
-/// 获取在线音频流式缓存信息：当前使用大小和上限（字节）
-#[tauri::command]
-pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {
-    let mut info = std::collections::HashMap::new();
-    info.insert("current", crate::player::stream_cache::current_cache_size());
-    info.insert("max", crate::player::stream_cache::max_cache_size());
-    info
-}
-
-/// 清空在线音频流式缓存
-#[tauri::command]
-pub fn clear_stream_cache() {
-    crate::player::stream_cache::clear_all();
-}
-
-/// 检查指定 URL 是否已缓存且下载完成（前端用于跳过插件重复请求）
-#[tauri::command]
-pub fn is_stream_cached(url: String) -> bool {
-    crate::player::stream_cache::is_url_cached(&url)
-}
-
-/// 将指定 URL 的播放缓存复制为目标下载文件（复用播放缓存，避免重复下载）
-#[tauri::command]
-pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> {
-    crate::player::stream_cache::copy_cache_to(&url, &dest_path)
-}
-
-/// 等待指定 URL 缓存下载完成，返回是否成功（前端用于 'wait' 失败行为）
-#[tauri::command]
-pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
-    tokio::task::spawn_blocking(move || {
-        crate::player::stream_cache::wait_url_complete(&url, timeout_secs)
-    })
-    .await
-    .unwrap_or(false)
 }
 
 fn schedule_remote_cache_after_half(
@@ -330,12 +322,12 @@ pub fn update_playback_metadata(
                     None
                 },
             });
+            // [修复防御]: 更新元数据时保留当前播放进度，避免任务栏进度条重置
+            let current_pos = MediaPosition(progress_duration(&state.progress));
             let _ = mc.set_playback(if is_playing {
-                MediaPlayback::Playing {
-                    progress: Some(MediaPosition(Duration::from_secs(0))),
-                }
+                MediaPlayback::Playing { progress: Some(current_pos) }
             } else {
-                MediaPlayback::Paused { progress: None }
+                MediaPlayback::Paused { progress: Some(current_pos) }
             });
         }
     }
@@ -347,21 +339,11 @@ pub fn update_playback_metadata(
 pub fn pause_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
     let tx = state.tx.lock().map_err(|e| e.to_string())?;
     tx.send(AudioCommand::Pause).map_err(|e| e.to_string())?;
+    // [修复防御]: 暂停时保留当前播放进度到任务栏，避免进度条丢失位置
+    let current_pos = MediaPosition(progress_duration(&state.progress));
     if let Ok(mut controls) = state.controls.lock() {
         if let Some(mc) = controls.as_mut() {
-            let _ = mc.set_playback(MediaPlayback::Paused { progress: None });
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn stop_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
-    let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::Stop).map_err(|e| e.to_string())?;
-    if let Ok(mut controls) = state.controls.lock() {
-        if let Some(mc) = controls.as_mut() {
-            let _ = mc.set_playback(MediaPlayback::Stopped);
+            let _ = mc.set_playback(MediaPlayback::Paused { progress: Some(current_pos) });
         }
     }
     Ok(())
@@ -371,9 +353,11 @@ pub fn stop_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
 pub fn resume_audio(state: tauri::State<PlayerState>) -> Result<(), String> {
     let tx = state.tx.lock().map_err(|e| e.to_string())?;
     tx.send(AudioCommand::Resume).map_err(|e| e.to_string())?;
+    // [修复防御]: 恢复时保留当前播放进度到任务栏，避免进度条跳回起点
+    let current_pos = MediaPosition(progress_duration(&state.progress));
     if let Ok(mut controls) = state.controls.lock() {
         if let Some(mc) = controls.as_mut() {
-            let _ = mc.set_playback(MediaPlayback::Playing { progress: None });
+            let _ = mc.set_playback(MediaPlayback::Playing { progress: Some(current_pos) });
         }
     }
     Ok(())
@@ -421,14 +405,6 @@ pub fn set_volume(volume: f32, state: tauri::State<PlayerState>) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn set_playback_speed(speed: f32, state: tauri::State<PlayerState>) -> Result<(), String> {
-    let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::SetSpeed(speed))
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
 pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     let samples = state.progress.samples_played.load(Ordering::Relaxed);
     let rate = state.progress.sample_rate.load(Ordering::Relaxed);
@@ -442,31 +418,6 @@ pub fn get_playback_progress(state: tauri::State<PlayerState>) -> f64 {
     samples as f64 / total_samples_per_sec as f64
 }
 
-/// 获取当前音频源的总时长（秒）。
-/// 在线歌曲的 Song.duration 可能为 0，此命令从解码后的音频源提取实际时长，
-/// 供前端在播放开始后更新进度条的总时长显示。
-#[tauri::command]
-pub fn get_playback_duration(state: tauri::State<PlayerState>) -> f64 {
-    let bits = state.progress.total_duration_secs.load(Ordering::Relaxed);
-    f64::from_bits(bits)
-}
-
-// 播放是否已就绪：sample_rate>0 表示解码器已成功初始化（Decoder::new 成功后立即写入）。
-// 用于前端在线走 Rust 的「起播探测」：区分"仍在加载/下载中"（rate=0）与"已就绪"（rate>0），
-// 避免不支持 Range 的直链整曲下载耗时被误判为失败而回退 H5。
-#[tauri::command]
-pub fn get_playback_ready(state: tauri::State<PlayerState>) -> bool {
-
-    state.progress.sample_rate.load(Ordering::Relaxed) > 0
-}
-
-// 本次播放启动是否失败（远程取流 403 / 不支持 Range / 解码失败）。
-// 供前端在线走 Rust 的起播探测快速感知硬失败，无需死等超时即可回退 H5。
-#[tauri::command]
-pub fn get_playback_start_failed(state: tauri::State<PlayerState>) -> bool {
-    state.progress.start_failed.load(Ordering::Relaxed)
-}
-
 #[tauri::command]
 pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32> {
     let visualizer = &state.progress.visualizer;
@@ -474,105 +425,61 @@ pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32
     build_frequency_bands(&visualizer.snapshot(), sample_rate, VISUALIZER_BAND_COUNT)
 }
 
-#[tauri::command]
-pub async fn get_track_loudness_info(
-    song_id: i64,
-    db_state: tauri::State<'_, DbState>,
-) -> Result<Option<LoudnessRecord>, String> {
-    let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
-    get_song_loudness_record(&conn, song_id)
-}
+// ==================== USB 独占模式相关命令 ====================
 
+/// [USB 独占模式] 设置音效参数
+/// 前端调用此命令更新共享的 effect_params
+/// 同时发送 SyncEffects 命令给播放线程，让当前活跃的播放实例应用新参数
 #[tauri::command]
-pub async fn update_loudness_settings(
-    enabled: bool,
-    song_id: Option<i64>,
-    song_path: Option<String>,
-    gain_offset_db: f32,
-    prevent_clipping: bool,
-    db_state: tauri::State<'_, DbState>,
-    state: tauri::State<'_, PlayerState>,
+pub fn set_audio_effects(
+    params: EffectParams,
+    state: tauri::State<PlayerState>,
 ) -> Result<(), String> {
-    let mut target_gain = 1.0;
-    if enabled {
-        if let (Some(s_id), Some(path)) = (song_id, song_path.as_deref()) {
-            if let Ok(mut conn) = db_state.conn.lock() {
-                if let Ok(record) = process_song_on_play(&mut conn, s_id, path) {
-                    target_gain =
-                        calculate_playback_gain(&record, gain_offset_db, prevent_clipping);
-                }
-            }
-        }
+    // 1. 更新共享参数
+    {
+        let mut guard = state.effect_params.lock().map_err(|e| e.to_string())?;
+        *guard = params;
     }
-
+    // 2. 通知播放线程同步音效（如果当前有活跃的独占播放实例）
     let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::SetVolumeBalance {
-        enabled,
-        target_gain,
-    })
-    .map_err(|e| e.to_string())?;
+    let _ = tx.send(AudioCommand::SyncEffects);
     Ok(())
 }
 
+/// [USB 独占模式] 获取当前位流信息
+/// 返回采样率、通道数、位深、设备名、输出模式、是否位完美等
 #[tauri::command]
-pub fn set_equalizer_settings(
-    enabled: bool,
-    preamp: f32,
-    gains: Vec<f32>,
-    state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
-    // 1. 严格入参校验：长度必须等于 10
-    if gains.len() != 10 {
-        return Err(format!("均衡器频段数量错误，期望 10，实际 {}", gains.len()));
-    }
+pub fn get_bitstream_info(state: tauri::State<PlayerState>) -> Result<BitstreamInfo, String> {
+    let sample_rate = state.progress.sample_rate.load(Ordering::Relaxed);
+    let channels = state.progress.channels.load(Ordering::Relaxed);
+    let samples = state.progress.samples_played.load(Ordering::Relaxed);
 
-    // 2. 校验浮点数有限性，严禁 NaN / Inf
-    if !preamp.is_finite() {
-        return Err("Preamp 增益必须为有限浮点数，严禁 NaN/Inf".to_string());
-    }
-    for (i, &gain) in gains.iter().enumerate() {
-        if !gain.is_finite() {
-            return Err(format!("频段 {} 增益必须为有限浮点数，严禁 NaN/Inf", i));
-        }
-    }
-
-    // 3. 数值 Clamp
-    let preamp_clamped = preamp.clamp(-12.0, 12.0);
-    let mut gains_clamped = [0.0; 10];
-    for i in 0..10 {
-        gains_clamped[i] = gains[i].clamp(-12.0, 12.0);
-    }
-
-    // 4. 发送指令
-    let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    let settings = EqualizerSettings {
-        enabled,
-        preamp: preamp_clamped,
-        gains: gains_clamped,
+    let (active_device_name, output_mode) = {
+        let status = state.output_status.lock().map_err(|e| e.to_string())?;
+        (status.active_device_name.clone(), status.active_output_mode)
     };
 
-    tx.send(AudioCommand::SetEqualizerSettings { settings })
-        .map_err(|e| e.to_string())?;
+    let position_seconds = if sample_rate == 0 || channels == 0 {
+        0.0
+    } else {
+        samples as f64 / (sample_rate as u64 * channels as u64) as f64
+    };
 
-    Ok(())
-}
+    // [修复防御] 位深从 WASAPI 协商格式推断
+    // 由于 SharedProgress 没有存储位深，这里返回 0 表示未知
+    // 真实位深在前端通过其他方式获取（或扩展 SharedProgress）
+    let bit_depth = 0u32;
 
-/// 设置音效参数（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）。
-///
-/// 前端 `soundEffectStore` 收集全部音效状态构建 `SoundEffectSettings`，防抖后单次调用本命令。
-/// Rust 侧通过 mpsc 通道转发到音频线程，由 `SoundEffectHandle` 持有，`SoundEffectSource` 读取。
-#[tauri::command]
-pub fn set_sound_effect_settings(
-    settings: SoundEffectSettings,
-    state: tauri::State<'_, PlayerState>,
-) -> Result<(), String> {
-    // 基本校验：关键浮点字段必须有限，防止 NaN/Inf 进入音频线程导致爆音。
-    if !settings.pitch_shift.is_finite() || !settings.playback_rate.is_finite() {
-        return Err("音效参数 pitchShift/playbackRate 必须为有限浮点数".to_string());
-    }
+    // 位完美判断：独占模式 + 非零采样率
+    let bit_perfect = output_mode == AudioOutputMode::WasapiExclusive && sample_rate > 0;
 
-    let tx = state.tx.lock().map_err(|e| e.to_string())?;
-    tx.send(AudioCommand::SetSoundEffectSettings { settings })
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(BitstreamInfo {
+        sample_rate,
+        channels,
+        bit_depth,
+        active_device_name,
+        output_mode,
+        bit_perfect,
+        position_seconds,
+    })
 }

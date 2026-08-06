@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlayer } from '../../composables/player';
 import { useToast } from '../../composables/toast';
 import { appApi } from '../../services/tauri/appApi';
-import { playbackApi } from '../../services/tauri/playbackApi';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
 
@@ -40,51 +39,6 @@ const isLibraryScanActive = computed(
   () => !!libraryScanProgress.value && !libraryScanProgress.value.done
 );
 
-// --- 在线播放流式缓存管理 ---
-const streamCacheCurrent = ref(0);
-const streamCacheMax = ref(0);
-const isClearingStreamCache = ref(false);
-
-const formatStreamCacheBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-};
-
-const refreshStreamCacheInfo = async () => {
-  try {
-    const info = await playbackApi.getStreamCacheInfo();
-    streamCacheCurrent.value = info.current;
-    streamCacheMax.value = info.max;
-  } catch {
-    // 非 Tauri 环境静默忽略
-  }
-};
-
-const patchStreamCacheSize = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const mb = Math.max(1, Math.min(10240, Math.round(parseFloat(target.value) || 1)));
-  target.value = String(mb);
-  settings.value.audio.streamCacheSizeMB = mb;
-  void playbackApi.setStreamCacheMaxSize(mb * 1024 * 1024).then(refreshStreamCacheInfo);
-};
-
-const handleClearStreamCache = async () => {
-  if (isClearingStreamCache.value) return;
-  isClearingStreamCache.value = true;
-  try {
-    await playbackApi.clearStreamCache();
-    await refreshStreamCacheInfo();
-    showToast('在线播放缓存已清理', 'success');
-  } catch (error) {
-    console.error('Failed to clear stream cache:', error);
-    showToast('清理在线播放缓存失败', 'error');
-  } finally {
-    isClearingStreamCache.value = false;
-  }
-};
-
 const openClearAllDataConfirm = () => {
   if (isClearingAllData.value || isLibraryScanActive.value) {
     return;
@@ -113,12 +67,6 @@ const handleClearAllData = async () => {
     isClearingAllData.value = false;
   }
 };
-
-onMounted(() => {
-  // 同步在线播放缓存上限到后端并读取当前用量
-  void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
-    .then(refreshStreamCacheInfo);
-});
 </script>
 
 <template>
@@ -235,55 +183,6 @@ onMounted(() => {
         存储空间
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden">
-        <!-- 播放缓存上限 -->
-        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放缓存上限</div>
-          </div>
-          <div class="flex shrink-0 items-center gap-3">
-            <SettingHint text="在线歌曲流式下载后缓存到本地，再次播放无需重新下载。缓存满后自动清理最久未播放的曲目。" />
-            <label class="stream-cache-input-wrap">
-              <input
-                :value="settings.audio.streamCacheSizeMB"
-                class="stream-cache-input"
-                type="number"
-                min="1"
-                max="10240"
-                step="1"
-                inputmode="numeric"
-                @change="patchStreamCacheSize($event)"
-              />
-              <span>MB</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 清理在线播放缓存 -->
-        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
-              清理在线播放缓存
-              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                {{ formatStreamCacheBytes(streamCacheCurrent) }} / {{ formatStreamCacheBytes(streamCacheMax) }}
-              </span>
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint text="清理后正在播放的在线歌曲不受影响，但已缓存的其他曲目需重新下载。" />
-            <button
-              type="button"
-              :disabled="isClearingStreamCache || streamCacheCurrent === 0"
-              @click="handleClearStreamCache"
-              class="settings-action-button shrink-0"
-              :class="isClearingStreamCache || streamCacheCurrent === 0
-                ? 'settings-action-button--disabled'
-                : 'settings-action-button--soft'"
-            >
-              {{ isClearingStreamCache ? '清理中...' : '清理' }}
-            </button>
-          </div>
-        </div>
-
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">重置数据</div>
@@ -356,60 +255,5 @@ onMounted(() => {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.45);
-}
-
-/* 播放缓存上限数字输入框（复用短音频输入框样式） */
-.stream-cache-input-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(55, 65, 81, 0.7);
-  font-size: 0.78rem;
-  flex-shrink: 0;
-}
-
-:global(.dark) .stream-cache-input-wrap {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.stream-cache-input {
-  width: 84px;
-  height: 34px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  color: #1f2937;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: right;
-  padding: 0 10px;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.stream-cache-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-.stream-cache-input::-webkit-outer-spin-button,
-.stream-cache-input::-webkit-inner-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
-.stream-cache-input[type="number"] {
-  appearance: textfield;
-}
-
-:global(.dark) .stream-cache-input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .stream-cache-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
 }
 </style>

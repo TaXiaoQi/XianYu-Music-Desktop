@@ -32,6 +32,44 @@ export interface AudioOutputStatus {
   fallback_reason: string | null;
 }
 
+// [YinDong 播放引擎移植] WASAPI 独占模式音效参数类型 —— 与 Rust effects/types.rs 对齐
+export interface EqBand {
+  frequency: number;
+  gain: number;
+  q: number;
+}
+
+export interface ReverbParams {
+  enabled: boolean;
+  mix: number;
+  roomSize: number;
+  damping: number;
+}
+
+export interface SurroundParams {
+  enabled: boolean;
+  width: number;
+}
+
+export interface EffectParams {
+  enabled: boolean;
+  pitchShiftSemitones: number;
+  equalizer: EqBand[];
+  reverb: ReverbParams;
+  surround: SurroundParams;
+}
+
+// [YinDong 播放引擎移植] WASAPI 独占模式位流信息 —— 当前 PCM 流参数
+export interface BitstreamInfo {
+  sampleRate: number;
+  channels: number;
+  bitDepth: number;
+  activeDeviceName: string | null;
+  outputMode: AudioOutputMode;
+  bitPerfect: boolean;
+  positionSeconds: number;
+}
+
 export interface MovedMusicFilePath {
   old_path: string;
   new_path: string;
@@ -102,29 +140,6 @@ export interface StatisticsImportResult {
   duplicateImportSkipped: boolean;
 }
 
-export interface LoudnessRecord {
-  songId: number;
-  songPath: string;
-  loudnessLufs: number | null;
-  estimatedLoudnessLufs: number | null;
-  samplePeak: number | null;
-  truePeak: number | null;
-  tagTrackGainDb: number | null;
-  tagTrackPeak: number | null;
-  tagAlbumGainDb: number | null;
-  tagAlbumPeak: number | null;
-  tagR128TrackGainDb: number | null;
-  tagR128AlbumGainDb: number | null;
-  fileSize: number;
-  fileModifiedAt: number;
-  scanSource: string;
-  analyzerName: string | null;
-  analyzerVersion: number;
-  scanStatus: string;
-  scannedAt: number | null;
-  errorMessage: string | null;
-}
-
 export interface PlayAudioOptions {
   path: string;
   title: string;
@@ -135,19 +150,8 @@ export interface PlayAudioOptions {
   outputMode: AudioOutputMode;
   startOffsetMs?: number;
   songId?: number | null;
-  volumeBalanceEnabled?: boolean | null;
-  gainOffsetDb?: number | null;
-  preventClipping?: boolean | null;
   /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效 */
   headers?: Record<string, string> | null;
-}
-
-export interface UpdateLoudnessSettingsOptions {
-  enabled: boolean;
-  songId?: number | null;
-  songPath?: string | null;
-  gainOffsetDb: number;
-  preventClipping: boolean;
 }
 
 export interface UpdatePlaybackMetadataOptions {
@@ -163,180 +167,6 @@ export interface SeekAudioOptions {
   time: number;
   isPlaying: boolean;
   requestId: number;
-}
-
-// ===== 音效参数（与 Rust src-tauri/src/player/sound_effect.rs 的 SoundEffectSettings 一一对应）=====
-// 字段单位与 UI 滑块一致（百分比 / dB / Hz / ms），Rust DSP 在各 Source 内部做单位换算。
-// 所有字段均可省略（Rust 侧 #[serde(default)]），便于跨版本前向兼容与增量更新。
-
-export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
-export type SpatialMode = 'none' | 'surround3d' | 'd8' | 'd36' | 'virtual';
-export type DistortionType = 'soft' | 'hard';
-export type DelayType = 'single' | 'pingpong';
-export type VirtualSurroundMode = '5.1' | '7.1';
-
-export interface ModulationParams {
-  enabled: boolean;
-  rate: number;
-  depth: number;
-}
-export interface FlangerParams {
-  enabled: boolean;
-  rate: number;
-  depth: number;
-  feedback: number;
-  mix: number;
-}
-export interface PhaserParams {
-  enabled: boolean;
-  rate: number;
-  depth: number;
-  feedback: number;
-  mix: number;
-}
-export interface DelayParams {
-  enabled: boolean;
-  timeMs: number;
-  feedback: number;
-  mix: number;
-  delayType: DelayType;
-}
-export interface CompressorParams {
-  enabled: boolean;
-  threshold: number;
-  ratio: number;
-  attack: number;
-  release: number;
-}
-export interface MultibandParams {
-  enabled: boolean;
-  lowFreq: number;
-  midFreq: number;
-  threshold: number;
-  ratio: number;
-}
-export interface LimiterParams {
-  enabled: boolean;
-  threshold: number;
-}
-export interface NoiseGateParams {
-  enabled: boolean;
-  threshold: number;
-  attack: number;
-  release: number;
-}
-export interface ExpanderParams {
-  enabled: boolean;
-  threshold: number;
-  ratio: number;
-}
-export interface AgcParams {
-  enabled: boolean;
-  targetLevel: number;
-}
-export interface DeEsserParams {
-  enabled: boolean;
-  threshold: number;
-  frequency: number;
-}
-export interface DistortionParams {
-  enabled: boolean;
-  amount: number;
-  distortionType: DistortionType;
-}
-export interface ExciterParams {
-  enabled: boolean;
-  amount: number;
-  frequency: number;
-}
-export interface SubBassParams {
-  enabled: boolean;
-  amount: number;
-  frequency: number;
-}
-export interface LoFiParams {
-  enabled: boolean;
-  sampleRate: number;
-  bitDepth: number;
-  noise: number;
-}
-export interface BitcrushParams {
-  enabled: boolean;
-  bits: number;
-}
-export interface StereoWidenParams {
-  enabled: boolean;
-  amount: number;
-}
-export interface StereoSepParams {
-  enabled: boolean;
-  width: number;
-  centerLevel: number;
-}
-export interface CrossfeedParams {
-  enabled: boolean;
-  strength: number;
-}
-export interface BassBoostParams {
-  enabled: boolean;
-  gain: number;
-  dynamic: boolean;
-}
-export interface DynamicEqParams {
-  enabled: boolean;
-}
-
-export interface SoundEffectSettings {
-  // 变调/变速
-  pitchShift: number; // 50-200 (百分比，100=原调)
-  playbackRate: number; // 50-200 (百分比，100=原速)
-  preservesPitch: boolean;
-  // 混响
-  reverbKind: ReverbKind;
-  reverbPreset: string;
-  reverbDry: number; // 干信号增益
-  reverbWet: number; // 湿信号增益
-  // 空间
-  spatialMode: SpatialMode;
-  spatialSpeed: number; // 秒/圈
-  spatialRadius: number; // 虚拟距离
-  spatialIntensity: number; // 环绕强度
-  virtualSurroundMode: VirtualSurroundMode;
-  virtualSurroundSpread: number; // 1-20
-  // 调制
-  vibrato: ModulationParams;
-  pitchDrift: ModulationParams;
-  tremolo: ModulationParams;
-  flanger: FlangerParams;
-  phaser: PhaserParams;
-  delay: DelayParams;
-  // 动态
-  compressor: CompressorParams;
-  multiband: MultibandParams;
-  limiter: LimiterParams;
-  noiseGate: NoiseGateParams;
-  expander: ExpanderParams;
-  agc: AgcParams;
-  deEsser: DeEsserParams;
-  // 波形整形
-  distortion: DistortionParams;
-  exciter: ExciterParams;
-  subBass: SubBassParams;
-  loFi: LoFiParams;
-  bitcrush: BitcrushParams;
-  // 声道处理
-  vocalRemoval: boolean;
-  stereoWiden: StereoWidenParams;
-  monoMerge: boolean;
-  channelSwap: boolean;
-  stereoSeparation: StereoSepParams;
-  crossfeed: CrossfeedParams;
-  bassBoost: BassBoostParams;
-  dynamicEq: DynamicEqParams;
-  // 组合
-  v4aEnabled: boolean;
-  bypass: boolean;
-  audioBoost: number; // 0-100
 }
 
 export interface WindowMaterialCapabilities {
@@ -478,6 +308,15 @@ export interface TauriCommandMap {
   set_output_device: { payload: { deviceId: string | null }; response: void };
   get_output_devices: { payload: undefined; response: AudioDevice[] };
   get_current_output_device: { payload: undefined; response: AudioOutputStatus };
+  // [YinDong 播放引擎移植] HTML <audio> 路径 URL 代理（注入 CORS 头）
+  get_proxied_audio_url: { payload: { url: string }; response: string };
+  get_local_audio_url: { payload: { path: string }; response: string };
+  // [YinDong 播放引擎移植] WASAPI 独占模式
+  get_usb_dac_devices: { payload: undefined; response: AudioDevice[] };
+  enable_usb_exclusive_mode: { payload: { deviceId: string | null }; response: void };
+  disable_usb_exclusive_mode: { payload: undefined; response: void };
+  set_audio_effects: { payload: { params: EffectParams }; response: void };
+  get_bitstream_info: { payload: undefined; response: BitstreamInfo };
   add_to_history: { payload: { songPath: string }; response: void };
   remove_from_recent_history: { payload: { songPaths: string[] }; response: void };
   remove_songs_from_history_and_statistics: { payload: { songPaths: string[] }; response: void };
@@ -579,34 +418,6 @@ export interface TauriCommandMap {
   save_download_lyrics: {
     payload: { content: string; destPath: string };
     response: string;
-  };
-  get_track_loudness_info: {
-    payload: { songId: number };
-    response: LoudnessRecord | null;
-  };
-  update_loudness_settings: {
-    payload: UpdateLoudnessSettingsOptions;
-    response: void;
-  };
-  set_equalizer_settings: {
-    payload: { enabled: boolean; preamp: number; gains: number[] };
-    response: void;
-  };
-  set_sound_effect_settings: {
-    payload: { settings: SoundEffectSettings };
-    response: void;
-  };
-  set_stream_cache_max_size: {
-    payload: { bytes: number };
-    response: void;
-  };
-  get_stream_cache_info: {
-    payload: undefined;
-    response: { current: number; max: number };
-  };
-  clear_stream_cache: {
-    payload: undefined;
-    response: void;
   };
   file_exists: {
     payload: { path: string };

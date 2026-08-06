@@ -2,38 +2,34 @@ import { tauriInvoke } from './invoke';
 import type {
   AudioDevice,
   AudioOutputStatus,
+  BitstreamInfo,
+  EffectParams,
   PlayAudioOptions,
   SeekAudioOptions,
-  SoundEffectSettings,
-  UpdateLoudnessSettingsOptions,
   UpdatePlaybackMetadataOptions,
-  LoudnessRecord,
 } from './contracts';
-import { useConcurrentScheduler } from '../../composables/useConcurrentScheduler';
 
-// 导出集中化高精度签名生成函数
-export function createEqualizerSignature(enabled: boolean, preamp: number, gains: number[]): string {
-  const gainsStr = gains.map(g => g.toFixed(1)).join(',');
-  return `${enabled}:${preamp.toFixed(1)}:[${gainsStr}]`;
-}
-
-// 模块级单例调度器与缓存
-const eqScheduler = useConcurrentScheduler();
-let lastSyncedParams: string | null = null;
-
-// 全局单例节流管理变量
-let throttleTimer: any = null;
-let nextRequestArgs: { enabled: boolean, preamp: number, gains: number[] } | null = null;
-let lastThrottleTime = 0;
-
+// [YinDong 播放引擎移植] 双路径播放 API：
+// - 默认（共享模式）：前端 HTML <audio> + Web Audio，无需 Rust 播放命令
+// - WASAPI 独占模式：Rust rodio + set_audio_effects
+// 本模块仅暴露 WASAPI 独占路径所需的 Rust 命令 + 设备管理 + URL 代理 + 统计。
+// HTML <audio> 路径的播放/暂停/seek/音量由 playerPlayback.ts 直接操作 networkAudio 元素。
 export const playbackApi = {
+  // ===== WASAPI 独占路径播放控制 =====
+  playAudio: (options: PlayAudioOptions): Promise<void> => tauriInvoke('play_audio', options),
+  pauseAudio: (): Promise<void> => tauriInvoke('pause_audio'),
+  resumeAudio: (): Promise<void> => tauriInvoke('resume_audio'),
+  seekAudio: (options: SeekAudioOptions): Promise<void> => tauriInvoke('seek_audio', options),
   setVolume: (volume: number): Promise<void> => tauriInvoke('set_volume', { volume }),
   getPlaybackProgress: (): Promise<number> => tauriInvoke('get_playback_progress'),
-  getPlaybackDuration: (): Promise<number> => tauriInvoke('get_playback_duration'),
-  getPlaybackReady: (): Promise<boolean> => tauriInvoke('get_playback_ready'),
-  getPlaybackStartFailed: (): Promise<boolean> => tauriInvoke('get_playback_start_failed'),
+  updatePlaybackMetadata: (options: UpdatePlaybackMetadataOptions): Promise<void> =>
+    tauriInvoke('update_playback_metadata', options),
+
+  // ===== 频谱可视化（WASAPI 独占模式回退用；HTML 路径用 soundEffectEngine.getAnalyser） =====
   getAudioVisualizerSamples: (): Promise<number[]> =>
     tauriInvoke('get_audio_visualizer_samples'),
+
+  // ===== 统计（XY 保留 countAsPlay 字段） =====
   recordPlay: (payload: {
     songPath: string;
     listenedMs: number;
@@ -45,13 +41,8 @@ export const playbackApi = {
     countAsPlay: boolean;
   }) =>
     tauriInvoke('record_play', { payload }),
-  playAudio: (options: PlayAudioOptions): Promise<void> => tauriInvoke('play_audio', options),
-  updatePlaybackMetadata: (options: UpdatePlaybackMetadataOptions): Promise<void> =>
-    tauriInvoke('update_playback_metadata', options),
-  pauseAudio: (): Promise<void> => tauriInvoke('pause_audio'),
-  stopAudio: (): Promise<void> => tauriInvoke('stop_audio'),
-  resumeAudio: (): Promise<void> => tauriInvoke('resume_audio'),
-  seekAudio: (options: SeekAudioOptions): Promise<void> => tauriInvoke('seek_audio', options),
+
+  // ===== 输出设备管理 =====
   setAudioOutputMode: (outputMode: PlayAudioOptions['outputMode']): Promise<void> =>
     tauriInvoke('set_audio_output_mode', { outputMode }),
   setOutputDevice: (deviceId: string | null) =>
@@ -59,83 +50,24 @@ export const playbackApi = {
   getOutputDevices: (): Promise<AudioDevice[]> => tauriInvoke('get_output_devices'),
   getCurrentOutputDevice: (): Promise<AudioOutputStatus> =>
     tauriInvoke('get_current_output_device'),
-  getTrackLoudnessInfo: (songId: number): Promise<LoudnessRecord | null> =>
-    tauriInvoke('get_track_loudness_info', { songId }),
-  updateLoudnessSettings: (options: UpdateLoudnessSettingsOptions): Promise<void> =>
-    tauriInvoke('update_loudness_settings', options),
 
-  // 音效参数同步（阶段 1：通路打通，Rust 侧 SoundEffectSource 为直通占位）
-  setSoundEffectSettings: (settings: SoundEffectSettings): Promise<void> =>
-    tauriInvoke('set_sound_effect_settings', { settings }),
+  // ===== HTML <audio> 路径 URL 代理（注入 CORS 头，使 createMediaElementSource 可处理跨域音频） =====
+  getProxiedAudioUrl: (url: string): Promise<string> =>
+    tauriInvoke('get_proxied_audio_url', { url }),
+  getLocalAudioUrl: (path: string): Promise<string> =>
+    tauriInvoke('get_local_audio_url', { path }),
 
-  // 在线音频流式缓存管理
-  setStreamCacheMaxSize: (bytes: number): Promise<void> =>
-    tauriInvoke('set_stream_cache_max_size', { bytes }),
-  getStreamCacheInfo: (): Promise<{ current: number; max: number }> =>
-    tauriInvoke('get_stream_cache_info'),
-  clearStreamCache: (): Promise<void> => tauriInvoke('clear_stream_cache'),
-
-  // 获取最后一次成功同步给底层的签名参数
-  getLastSyncedParams: () => lastSyncedParams,
-
-  // 原有 setEqualizerSettings 签名保持 100% 兼容。在内部使用通用并发调度器保护，且成功后更新签名。
-  setEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
-    return eqScheduler.execute(() => {
-      return tauriInvoke('set_equalizer_settings', { enabled, preamp, gains })
-        .then(() => {
-          lastSyncedParams = createEqualizerSignature(enabled, preamp, gains);
-          if (import.meta.env.DEV) {
-            console.log(`[PlaybackApi] set_equalizer_settings success. Updated signature: ${lastSyncedParams}`);
-          }
-        });
-    });
-  },
-
-  // 拖拽中 50ms 全局节流请求底层同步，内部使用已受并发保护的 setEqualizerSettings
-  requestEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]) => {
-    const now = Date.now();
-    nextRequestArgs = { enabled, preamp, gains };
-
-    const executeRequest = () => {
-      if (!nextRequestArgs) return;
-      const { enabled, preamp, gains } = nextRequestArgs;
-      nextRequestArgs = null;
-      lastThrottleTime = Date.now();
-      
-      if (import.meta.env.DEV) {
-        console.log(`[PlaybackApi] Throttled direct EQ sync executed. Preamp: ${preamp.toFixed(1)}`);
-      }
-      playbackApi.setEqualizerSettings(enabled, preamp, gains);
-    };
-
-    if (now - lastThrottleTime >= 50) {
-      if (throttleTimer) {
-        clearTimeout(throttleTimer);
-        throttleTimer = null;
-      }
-      executeRequest();
-    } else {
-      if (!throttleTimer) {
-        throttleTimer = setTimeout(() => {
-          throttleTimer = null;
-          executeRequest();
-        }, 50 - (now - lastThrottleTime));
-      }
-    }
-  },
-
-  // 松手/停止后强制最终同步，返回 Promise<void>，确保顺序并发互斥
-  flushEqualizerSettings: (enabled: boolean, preamp: number, gains: number[]): Promise<void> => {
-    if (throttleTimer) {
-      clearTimeout(throttleTimer);
-      throttleTimer = null;
-    }
-    nextRequestArgs = null;
-    
-    if (import.meta.env.DEV) {
-      console.log(`[PlaybackApi] Flush final EQ sync requested. Preamp: ${preamp.toFixed(1)}`);
-    }
-    
-    return playbackApi.setEqualizerSettings(enabled, preamp, gains);
-  }
+  // ===== USB 独占模式（WASAPI 独占） =====
+  // USB DAC 设备枚举
+  getUsbDacDevices: (): Promise<AudioDevice[]> => tauriInvoke('get_usb_dac_devices'),
+  // 启用 USB 独占模式（设置输出设备 + 切换为 WASAPI 独占）
+  enableUsbExclusiveMode: (deviceId: string | null): Promise<void> =>
+    tauriInvoke('enable_usb_exclusive_mode', { deviceId }),
+  // 禁用 USB 独占模式（回退到共享模式）
+  disableUsbExclusiveMode: (): Promise<void> => tauriInvoke('disable_usb_exclusive_mode'),
+  // 设置音效参数（EQ/混响/环绕/变调，仅 WASAPI 独占路径）
+  setAudioEffects: (params: EffectParams): Promise<void> =>
+    tauriInvoke('set_audio_effects', { params }),
+  // 获取当前位流信息（采样率/位深/设备名/位完美指示）
+  getBitstreamInfo: (): Promise<BitstreamInfo> => tauriInvoke('get_bitstream_info'),
 };

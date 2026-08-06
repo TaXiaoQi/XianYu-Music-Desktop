@@ -92,6 +92,37 @@ let panner36DInfo = {
   intv: null as ReturnType<typeof setInterval> | null,
 }
 
+// 95D 环绕声节点（双源 HRTF：声源 A 原调+亮色，声源 B 升 8 音分+暖色，反向旋转）
+// 目标：让大脑明确听到"两个独立声源"同时环绕（一右一左，反向旋转）。
+// [去相关原理] 同信号即使分置左右 HRTF 仍会被大脑融合（precedence effect），
+//   此前 20ms 延迟 / L/R 分离 / 梳状滤波均失败——大脑听得出是"同一首歌的变形"就会融合
+//   （房间驻波本身就是梳状滤波，人脑日常都能融合）。唯一可靠方法是让两源谐波不对齐：
+//   对声源 B 用相位声码器升 8 音分（pitchFactor≈1.0046），B 的泛音与 A 错开 →
+//   大脑按 Bregman ASA 的"基频分组"必然分离为两个声流（录音棚人声加倍 ADT 即此原理）。
+//   - 变调：+8 cents（相位声码器 worklet，复用 phase-vocoder-processor）
+//   - 暖色 EQ：低频架 +4dB，与 A 的高频架 +4dB 形成音色对比（辅助去相关）
+//   - 反向旋转：A 右起逆时针，B 左起顺时针，空间分离
+// 链路: prePanner → [toneA→filterA→pannerA→gainA] + [pitchB→toneB→filterB→pannerB→gainB] → panner
+let panner95DA: PannerNode | null = null
+let panner95DB: PannerNode | null = null
+let filter95DA: BiquadFilterNode | null = null   // 声源 A 空气低通（动态）
+let filter95DB: BiquadFilterNode | null = null   // 声源 B 空气低通（动态）
+let tone95DA: BiquadFilterNode | null = null     // 声源 A 音色：高频架 +4dB（偏亮）
+let tone95DB: BiquadFilterNode | null = null     // 声源 B 音色：低频架 +4dB（偏暖）
+let pitchShifter95DB: AudioWorkletNode | null = null  // 声源 B 变调器（+8 cents，去相关核心）
+let pitchShifter95DReady = false                 // worklet 是否就绪
+let pitchShifter95DLoading = false               // worklet 是否加载中
+let pitchShifter95DInserted = false              // 变调器是否已插入 B 链路（防重复连接加倍）
+let gain95DA: GainNode | null = null             // 双源叠加衰减，防削波
+let gain95DB: GainNode | null = null
+let panner95DInfo = {
+  enabled: false,
+  rad: 0,
+  speed: 10,
+  radius: 1, // 虚拟声源基础距离
+  intv: null as ReturnType<typeof setInterval> | null,
+}
+
 // 虚拟多声道环绕节点（7.1/5.1）
 // 使用 ChannelSplitterNode 分离 L/R 声道，分别路由到对应虚拟扬声器
 let virtualSurroundPanners: PannerNode[] = []
@@ -130,6 +161,13 @@ const speakerPositions51 = [
 // ===== 高级效果架 =====
 import { createEffectsRack } from './advancedEffects'
 import type { EffectsRack } from './advancedEffects'
+// [修复] AudioWorklet 模块 URL 必须用 Vite 的 `?url` 导入。
+// 原写法 `new URL('./pitch-shifter/phase-vocoder-bundle.js', import.meta.url)`
+// 在 dev 下可用（Vite dev server 能解析原始路径），但打包后 Vite 不会重写
+// `.js` 文件的相对路径，导致运行时请求 `/assets/pitch-shifter/phase-vocoder-bundle.js`
+// 而 404（实际产物是 `/assets/phase-vocoder-bundle-<hash>.js`），worklet 加载失败 →
+// 音调升降调完全无反应。`?url` 让 Vite 把文件当作静态资源输出并返回正确的哈希 URL。
+import pitchShifterWorkletUrl from './pitch-shifter/phase-vocoder-bundle.js?url'
 let effectsRack: EffectsRack | null = null
 
 // 卷积缓冲区缓存
@@ -229,6 +267,56 @@ const initAdvancedAudioFeatures = () => {
   filter36D.type = 'lowpass'
   filter36D.frequency.value = 20000 // 默认全通（不染色）
   filter36D.Q.value = 0.5
+
+  // 初始化 95D环绕声节点（双源 HRTF：A 干信号+亮色，B 梳状滤波+暖色，反向旋转）
+  // 链路: input → [toneA→filterA→pannerA→gainA] + [combB→toneB→filterB→pannerB→gainB] → panner
+  const ctx = audioContext // 局部非空引用，避免闭包内 null 窄化丢失
+  const makePanner95DNode = (): PannerNode => {
+    const p = ctx.createPanner()
+    p.panningModel = 'HRTF'
+    p.distanceModel = 'inverse'
+    p.refDistance = 1
+    p.maxDistance = 10000
+    p.rolloffFactor = 1
+    p.coneInnerAngle = 360
+    p.coneOuterAngle = 0
+    p.coneOuterGain = 0
+    p.positionX.value = 0
+    p.positionY.value = 0
+    p.positionZ.value = 0
+    return p
+  }
+  const makeFilter95DNode = (): BiquadFilterNode => {
+    const f = ctx.createBiquadFilter()
+    f.type = 'lowpass'
+    f.frequency.value = 20000 // 默认全通（不染色）
+    f.Q.value = 0.5
+    return f
+  }
+  panner95DA = makePanner95DNode() // 声源 A（干信号，右起 phase=0）
+  panner95DB = makePanner95DNode() // 声源 B（梳状滤波，左起 phase=π）
+  filter95DA = makeFilter95DNode()
+  filter95DB = makeFilter95DNode()
+  // 声源 A 音色：高频架 +4dB @6kHz（偏亮，与 B 形成音色对比，强化声流分离）
+  tone95DA = ctx.createBiquadFilter()
+  tone95DA.type = 'highshelf'
+  tone95DA.frequency.value = 6000
+  tone95DA.gain.value = 4
+  // 声源 B 音色：低频架 +4dB @250Hz（偏暖，与 A 形成音色对比）
+  tone95DB = ctx.createBiquadFilter()
+  tone95DB.type = 'lowshelf'
+  tone95DB.frequency.value = 250
+  tone95DB.gain.value = 4
+  // 声源 B 变调器（相位声码器）懒加载：worklet 模块异步，此处预触发加载，
+  // 使用户进入音效面板前就绪；startPanner95D 中若未就绪则先走干信号，就绪后自动插入。
+  // 设 +8 cents（pitchFactor≈1.0046）→ B 的谐波与 A 不对齐 → 大脑无法融合为单源。
+  preload95DPitchShifter()
+  // 双源叠加衰减：两路 HRTF 输出求和增大约 3~6dB，各衰减防削波
+  // （终端 safetyLimiter 仍会兜底，但前置衰减听感更自然）
+  gain95DA = ctx.createGain()
+  gain95DA.gain.value = 0.6
+  gain95DB = ctx.createGain()
+  gain95DB.gain.value = 0.6
 
   // 设置 AudioListener 位置和朝向（听众在原点，面朝 -Z 方向）
   // MDN: listener 的 forward 默认为 (0,0,-1)，up 默认为 (0,1,0)
@@ -415,6 +503,49 @@ export const getAnalyser = (): AnalyserNode | null => {
   return analyser
 }
 
+/**
+ * 获取频谱可视化采样数据（HTML 默认路径，从 AnalyserNode 读取）
+ *
+ * 与 Rust 端 build_frequency_bands 对齐：
+ * - barCount 个频段，40Hz~16000Hz 感知（二次方）频段分布
+ * - 每频段取峰值，归一化到 0~1
+ *
+ * @returns barCount 个 0~1 的振幅值；未连接音频源时返回 null（调用方回退到 Rust 采样）
+ */
+export const getAnalyserFrequencyData = (barCount: number): number[] | null => {
+  if (!isSourceConnected || !analyser || !audioContext) return null
+
+  const binCount = analyser.frequencyBinCount
+  if (binCount <= 0) return null
+  const dataArray = new Uint8Array(binCount)
+  analyser.getByteFrequencyData(dataArray)
+
+  const nyquist = audioContext.sampleRate * 0.5
+  const minFreq = 40
+  const maxFreq = Math.min(nyquist, 16000)
+  if (maxFreq <= minFreq) return new Array(barCount).fill(0)
+
+  const binHz = nyquist / binCount
+  const freqToBin = (freq: number) => Math.max(1, Math.min(binCount - 1, Math.round(freq / binHz)))
+
+  const result: number[] = []
+  for (let i = 0; i < barCount; i++) {
+    const startRatio = i / barCount
+    const endRatio = (i + 1) / barCount
+    // 二次方频段分布（与 Rust 端 start_ratio.powi(2) 一致），低频段更窄、高频段更宽
+    const startFreq = minFreq + (maxFreq - minFreq) * startRatio * startRatio
+    const endFreq = minFreq + (maxFreq - minFreq) * endRatio * endRatio
+    const startBin = freqToBin(startFreq)
+    const endBin = Math.max(startBin + 1, freqToBin(endFreq))
+    let peak = 0
+    for (let b = startBin; b < endBin && b < binCount; b++) {
+      if (dataArray[b] > peak) peak = dataArray[b]
+    }
+    result.push(peak / 255)
+  }
+  return result
+}
+
 /** 获取 BiquadFilter Map */
 export const getBiquadFilter = (): Map<`hz${Freqs}`, BiquadFilterNode> => {
   initAdvancedAudioFeatures()
@@ -576,20 +707,17 @@ export const startPanner = () => {
 const connectPitchShifterNode = () => {
   if (!pitchShifterNode || !audioContext) return
 
-  // [修复电流声] 移除 playing/pause/waiting/emptied 事件监听器
-  // 原实现会在 'waiting' 事件（拖动滑块时浏览器缓冲触发）断开 analyser 连接，
-  // 导致音频链路反复断开重连，产生一卡一卡的现象。
-  // phase-vocoder 本身有内部缓冲，播放暂停时保持连接即可，不需要断开。
-
   const lastFreq = freqs[freqs.length - 1]
   const lastBiquadFilter = biquads!.get(`hz${lastFreq}` as `hz${Freqs}`)!
 
   // [修复电流声] 不能直接 disconnect！硬断开会切断正在传输的音频信号，
   // 产生瞬态爆音（click）。改用增益淡入淡出：
-  // 1. 先用 convolverSourceGainNode 做临时的静音过渡
+  // [修复干信号增益丢失] 记录淡出前的干信号增益（可能被混响设为 mainGain≠1），
+  // 连接后恢复到该值，而不是硬编码 1，否则启用混响时调整音调会改变干信号音量。
+  const targetGain = convolverSourceGainNode!.gain.value
   const t = audioContext.currentTime
   convolverSourceGainNode!.gain.cancelScheduledValues(t)
-  convolverSourceGainNode!.gain.setValueAtTime(convolverSourceGainNode!.gain.value, t)
+  convolverSourceGainNode!.gain.setValueAtTime(targetGain, t)
   convolverSourceGainNode!.gain.linearRampToValueAtTime(0.0001, t + 0.005)
 
   setTimeout(() => {
@@ -600,11 +728,11 @@ const connectPitchShifterNode = () => {
     pitchShifterNode.connect(convolver!)
     pitchShifterNode.connect(convolverSourceGainNode!)
 
-    // 恢复增益
+    // 恢复增益到连接前的值（保持混响干信号增益不变）
     const t2 = audioContext.currentTime
     convolverSourceGainNode!.gain.cancelScheduledValues(t2)
     convolverSourceGainNode!.gain.setValueAtTime(0.0001, t2)
-    convolverSourceGainNode!.gain.linearRampToValueAtTime(1, t2 + 0.005)
+    convolverSourceGainNode!.gain.linearRampToValueAtTime(targetGain, t2 + 0.005)
   }, 6)
   pitchShifterNodeLoadStatus = 'connected'
   if (pitchShifterNodePitchFactor) {
@@ -612,17 +740,56 @@ const connectPitchShifterNode = () => {
   }
 }
 
+/** 断开 pitchShifter 节点，恢复 EQ → 混响直连（pitchShift=100% 时调用）
+ * [修复"变调后变不过来"] phase-vocoder 即使 pitchFactor=1 也会因累积相位/重叠缓冲
+ * 引入延迟和音色偏移，无法完全恢复原始信号。解决方法：100% 时彻底旁路 worklet，
+ * 直连 EQ → convolverSourceGainNode + convolver，保证零延迟零染色。
+ */
+const disconnectPitchShifterNode = () => {
+  if (!pitchShifterNode || !audioContext || !biquads) return
+
+  const lastFreq = freqs[freqs.length - 1]
+  const lastBiquadFilter = biquads.get(`hz${lastFreq}` as `hz${Freqs}`)!
+
+  // 同样用增益淡入淡出避免硬断开爆音
+  const targetGain = convolverSourceGainNode!.gain.value
+  const t = audioContext.currentTime
+  convolverSourceGainNode!.gain.cancelScheduledValues(t)
+  convolverSourceGainNode!.gain.setValueAtTime(targetGain, t)
+  convolverSourceGainNode!.gain.linearRampToValueAtTime(0.0001, t + 0.005)
+
+  setTimeout(() => {
+    if (!audioContext || !pitchShifterNode) return
+    // 断开 pitchShifter 的所有连接
+    try { pitchShifterNode.disconnect() } catch {}
+    try { lastBiquadFilter.disconnect() } catch {}
+    // 恢复直连：lastBiquadFilter → convolverSourceGainNode（干信号）+ convolver（混响输入）
+    lastBiquadFilter.connect(convolverSourceGainNode!)
+    lastBiquadFilter.connect(convolver!)
+    // 恢复干信号增益
+    const t2 = audioContext.currentTime
+    convolverSourceGainNode!.gain.cancelScheduledValues(t2)
+    convolverSourceGainNode!.gain.setValueAtTime(0.0001, t2)
+    convolverSourceGainNode!.gain.linearRampToValueAtTime(targetGain, t2 + 0.005)
+  }, 6)
+  // worklet 节点保留，状态设为 'unconnect'，下次需要变调时直接重连（无需重新加载）
+  pitchShifterNodeLoadStatus = 'unconnect'
+}
+
 const loadPitchShifterNode = () => {
-  pitchShifterNodeLoadStatus = 'loading'
   initAdvancedAudioFeatures()
-  if (!audioContext) return
+  // [修复] 必须在确认 audioContext 可用后再置 'loading'，否则一旦 audioContext 为 null
+  // 提前 return 会把状态永久卡在 'loading'，后续所有 setPitchShifter 调用都走 loading
+  // 空分支，音调功能彻底失效。
+  if (!audioContext) {
+    pitchShifterNodeLoadStatus = 'none'
+    return
+  }
+  pitchShifterNodeLoadStatus = 'loading'
 
-  // [修复] AudioWorklet.addModule() 不支持 ES module import 语句。
-  // 原始 phase-vocoder.js 使用 import FFT/OLAProcessor 会导致加载失败。
-  // 改用合并后的自包含文件 phase-vocoder-bundle.js
-  const workletUrl = new URL('./pitch-shifter/phase-vocoder-bundle.js', import.meta.url)
-
-  audioContext.audioWorklet.addModule(workletUrl).then(() => {
+  // [修复] 使用顶部 `?url` 静态导入的 URL，而不是 `new URL(..., import.meta.url)`。
+  // 见文件顶部注释：打包后 `new URL` 不会被 Vite 重写，导致 404。
+  audioContext.audioWorklet.addModule(pitchShifterWorkletUrl).then(() => {
     pitchShifterNode = new AudioWorkletNode(audioContext!, 'phase-vocoder-processor', { outputChannelCount: [2] })
     const pitchFactorParam = pitchShifterNode.parameters.get('pitchFactor')
     if (!pitchFactorParam) {
@@ -642,12 +809,20 @@ const loadPitchShifterNode = () => {
   })
 }
 
-/** 设置变调（pitchFactor: 0.5 ~ 1.5）
- * 参考 lx-music-desktop：直接在 AudioParam 上平滑过渡，不重连节点
- * 使用较大的 timeConstant (0.05) 让 phase-vocoder 内部缓冲自然过渡，避免咔哒声
+/** 设置变调（pitchFactor: 0.5 ~ 2.0）
+ * [修复"变调后变不过来"] val=1（100%）时彻底断开 pitchShifter 直通音频，
+ * 避免 phase-vocoder 的累积相位和内部缓冲导致音色无法完全恢复。
+ * val≠1 时才插入 worklet 节点，用 setTargetAtTime 平滑过渡 pitchFactor。
  */
 export const setPitchShifter = (val: number) => {
   pitchShifterNodeTempValue = val
+  // 100% = 原调：断开 pitchShifter 直通，保证零延迟零染色
+  if (val === 1) {
+    if (pitchShifterNodeLoadStatus === 'connected') {
+      disconnectPitchShifterNode()
+    }
+    return
+  }
   switch (pitchShifterNodeLoadStatus) {
     case 'loading':
       // 加载中，值已暂存到 pitchShifterNodeTempValue，加载完成后会自动应用
@@ -657,8 +832,7 @@ export const setPitchShifter = (val: number) => {
       break
     case 'connected':
       if (pitchShifterNodePitchFactor && audioContext) {
-        // [修复] 使用 setTargetAtTime + 较大时间常数(0.05)，让 phase-vocoder 内部重叠缓冲平滑过渡
-        // 0.01 太小会导致每次拖动滑块时产生离散跳变；0.05 约等于 2~3 帧的过渡
+        // 使用 setTargetAtTime + 较大时间常数(0.05)，让 phase-vocoder 内部重叠缓冲平滑过渡
         pitchShifterNodePitchFactor.setTargetAtTime(val, audioContext.currentTime, 0.05)
       }
       break
@@ -869,6 +1043,207 @@ export const setPanner36DSpeed = (secondsPerRound: number) => {
 /** 设置 36D虚拟声源距离 */
 export const setPanner36DRadius = (radius: number) => {
   panner36DInfo.radius = radius
+}
+
+// ===== 95D环绕声控制 =====
+// 双源 HRTF 反向旋转：声源 A 右起(phase=0, 逆时针, 原调+亮色) +
+//                      声源 B 左起(phase=π, 顺时针, 升8音分+暖色)
+// [去相关] B 经相位声码器升 8 音分，谐波与 A 错开 → 大脑分离为两个独立声流，无法融合
+// 链路: prePanner → [toneA→filterA→pannerA→gainA] + [pitchB→toneB→filterB→pannerB→gainB] → panner
+
+/** 预加载声源 B 的变调 worklet（相位声码器，复用 phase-vocoder-processor 模块）
+ *  worklet 模块异步加载，就绪后创建 AudioWorkletNode 并设 pitchFactor=1.0046(+8 cents)。
+ *  若 95D 已启用，自动把 B 链路从干信号切换到变调器。 */
+const preload95DPitchShifter = () => {
+  if (pitchShifter95DLoading || pitchShifter95DReady || !audioContext) return
+  pitchShifter95DLoading = true
+  audioContext.audioWorklet.addModule(pitchShifterWorkletUrl).then(() => {
+    if (!audioContext) { pitchShifter95DLoading = false; return }
+    pitchShifter95DB = new AudioWorkletNode(audioContext, 'phase-vocoder-processor', { outputChannelCount: [2] })
+    const param = pitchShifter95DB.parameters.get('pitchFactor')
+    if (param) param.value = 1.0046 // +8 cents：泛音与 A 错开，大脑无法融合
+    pitchShifter95DReady = true
+    pitchShifter95DLoading = false
+    // 若用户在 worklet 加载前就开了 95D，此时自动插入变调器
+    if (panner95DInfo.enabled && !pitchShifter95DInserted) insert95DPitchShifter()
+  }).catch((err) => {
+    console.error('[SoundEffect] 95D pitch shifter worklet load failed:', err)
+    pitchShifter95DLoading = false
+  })
+}
+
+/** 把声源 B 链路从干信号切换到变调器（worklet 就绪后调用） */
+const insert95DPitchShifter = () => {
+  if (!pitchShifter95DB || !tone95DB || pitchShifter95DInserted) return
+  const prePanner = getPrePannerNode()
+  try { prePanner.disconnect(tone95DB) } catch {} // 移除干信号直连边
+  prePanner.connect(pitchShifter95DB)
+  pitchShifter95DB.connect(tone95DB)
+  pitchShifter95DInserted = true
+}
+
+/** 启动 95D环绕声（双源反向旋转 + 变调去相关） */
+export const startPanner95D = () => {
+  initAdvancedAudioFeatures()
+  if (!panner95DA || !panner95DB || !filter95DA || !filter95DB || !tone95DA || !tone95DB ||
+      !gain95DA || !gain95DB || !panner || !convolverDynamicsCompressor) return
+
+  // 构建双源链路: prePanner 同时喂给 A（亮色 EQ 链）和 B（变调+暖色 EQ 链）
+  const prePanner = getPrePannerNode()
+  try { prePanner.disconnect() } catch {}
+  pitchShifter95DInserted = false
+  // 声源 A：干信号 → 亮色 EQ → 空气低通 → HRTF → 衰减 → panner（右起逆时针）
+  prePanner.connect(tone95DA)
+  tone95DA.connect(filter95DA)
+  filter95DA.connect(panner95DA)
+  panner95DA.connect(gain95DA)
+  gain95DA.connect(panner)
+  // 声源 B：干信号 → [变调器+8cents，就绪时] → 暖色 EQ → 空气低通 → HRTF → 衰减 → panner（左起顺时针）
+  // worklet 未就绪时先走干信号(prePanner→tone95DB)，就绪后由 insert95DPitchShifter 自动插入
+  if (pitchShifter95DReady && pitchShifter95DB) {
+    prePanner.connect(pitchShifter95DB)
+    pitchShifter95DB.connect(tone95DB)
+    pitchShifter95DInserted = true
+  } else {
+    prePanner.connect(tone95DB)
+    preload95DPitchShifter()
+  }
+  tone95DB.connect(filter95DB)
+  filter95DB.connect(panner95DB)
+  panner95DB.connect(gain95DB)
+  gain95DB.connect(panner)
+
+  panner95DInfo.enabled = true
+  panner95DInfo.rad = 0
+
+  if (panner95DInfo.intv) clearInterval(panner95DInfo.intv)
+  // [CPU优化] 根据设备性能动态调整定时器间隔
+  const intervalMs = getSpatialIntervalMs()
+  const radPerMs = (2 * Math.PI) / (panner95DInfo.speed * 1000)
+  // 单源位置更新（与 36D 三层动态一致：距离呼吸 + 水平旋转 + 垂直摆动 + 空气低通）
+  // dir: 旋转方向 (+1=逆时针 A, -1=顺时针 B)，两源反向 → 不始终镜像对称，双源感更强
+  const updateSource = (p: PannerNode, f: BiquadFilterNode, phase: number, dir: number, t: number) => {
+    const rad = panner95DInfo.rad * dir + phase
+    const baseR = panner95DInfo.radius
+    // 1. 距离波动 ±60%: r' 在 0.4~1.6 倍 baseR 间呼吸，配合 inverse 距离模型产生远近感
+    // [修复防御] 半径下限保护：避免 r'<=0 导致 HRTF 距离模型退化
+    const r = Math.max(0.3, baseR * (1 + 0.6 * Math.sin(rad * 0.5)))
+    // 2. 水平旋转 (X-Z 平面)
+    const x = Math.cos(rad) * r
+    const z = Math.sin(rad) * r
+    // 3. 垂直摆动 (Y 轴): 幅度为基础半径的 100%，频率 sin(rad*1.5) 错开水平旋转
+    const y = Math.sin(rad * 1.5) * baseR * 1.0
+    // 4. 空气低通: 距离越远高频越衰减 (20000Hz → 2500Hz，远闷近亮对比明显)
+    const dist = Math.sqrt(x * x + y * y + z * z)
+    const distRatio = Math.min(1, dist / (baseR * 1.8 + 0.01))
+    const freq = 20000 - distRatio * 17500
+    p.positionX.setTargetAtTime(x, t, SMOOTH_TC)
+    p.positionY.setTargetAtTime(y, t, SMOOTH_TC)
+    p.positionZ.setTargetAtTime(z, t, SMOOTH_TC)
+    f.frequency.setTargetAtTime(freq, t, SMOOTH_TC)
+  }
+  panner95DInfo.intv = setInterval(() => {
+    if (!panner95DA || !panner95DB || !filter95DA || !filter95DB || !audioContext) return
+    panner95DInfo.rad += radPerMs * intervalMs
+    const t = audioContext.currentTime
+    // 双源同时更新：A 右起(phase=0, 逆时针 dir=+1)，B 左起(phase=π, 顺时针 dir=-1)
+    updateSource(panner95DA, filter95DA, 0, 1, t)
+    updateSource(panner95DB, filter95DB, Math.PI, -1, t)
+  }, intervalMs)
+}
+
+/** 停止 95D环绕声 */
+export const stopPanner95D = () => {
+  if (!panner95DInfo.enabled) return
+  panner95DInfo.enabled = false
+  if (panner95DInfo.intv) {
+    clearInterval(panner95DInfo.intv)
+    panner95DInfo.intv = null
+  }
+  panner95DInfo.rad = 0
+  const t = audioContext?.currentTime ?? 0
+  // 两个声源复位到原点，滤波器恢复全通
+  for (const p of [panner95DA, panner95DB]) {
+    if (!p) continue
+    p.positionX.setTargetAtTime(0, t, SMOOTH_TC)
+    p.positionY.setTargetAtTime(0, t, SMOOTH_TC)
+    p.positionZ.setTargetAtTime(0, t, SMOOTH_TC)
+  }
+  for (const f of [filter95DA, filter95DB]) {
+    if (f) f.frequency.setTargetAtTime(20000, t, SMOOTH_TC)
+  }
+  // 断开双源链路（含变调器，下次 start 会重连）
+  pitchShifter95DInserted = false
+  try { tone95DA?.disconnect() } catch {}
+  try { tone95DB?.disconnect() } catch {}
+  try { filter95DA?.disconnect() } catch {}
+  try { filter95DB?.disconnect() } catch {}
+  try { pitchShifter95DB?.disconnect() } catch {} // 断开变调器输出（节点保留复用，不销毁）
+  try { panner95DA?.disconnect() } catch {}
+  try { panner95DB?.disconnect() } catch {}
+  try { gain95DA?.disconnect() } catch {}
+  try { gain95DB?.disconnect() } catch {}
+  const prePanner = getPrePannerNode()
+  try { prePanner.disconnect() } catch {}
+  try { prePanner.connect(panner!) } catch {}
+}
+
+/** 设置 95D旋转速度（秒/圈） */
+export const setPanner95DSpeed = (secondsPerRound: number) => {
+  panner95DInfo.speed = secondsPerRound
+  if (panner95DInfo.intv) startPanner95D()
+}
+
+/** 设置 95D虚拟声源距离 */
+export const setPanner95DRadius = (radius: number) => {
+  panner95DInfo.radius = radius
+}
+
+// ===== 空间音效可视化状态（供前端旋转示意图轮询）=====
+export type SpatialVizSource = { x: number; z: number; y: number; label?: string }
+export type SpatialVizEffect = '3d' | '8d' | '36d' | '95d' | 'virtual' | null
+export type SpatialVizState = { effect: SpatialVizEffect; sources: SpatialVizSource[]; baseRadius: number }
+
+/** 返回当前激活的空间音效声源位置（俯视图：x=左右，z=前后，y=高度用于点大小）。
+ *  前端用 requestAnimationFrame 轮询绘制旋转示意。同一时刻只有一个空间音效激活（互斥）。 */
+export const getSpatialVizState = (): SpatialVizState => {
+  // 95D：双源反向旋转（A 右起逆时针，B 左起顺时针），含距离呼吸 + 垂直摆动
+  if (panner95DInfo.enabled) {
+    const baseR = panner95DInfo.radius || 1
+    const mk = (dir: number, phase: number, label: string): SpatialVizSource => {
+      const rad = panner95DInfo.rad * dir + phase
+      const r = Math.max(0.3, baseR * (1 + 0.6 * Math.sin(rad * 0.5)))
+      return { x: Math.cos(rad) * r, z: Math.sin(rad) * r, y: Math.sin(rad * 1.5) * baseR, label }
+    }
+    return { effect: '95d', sources: [mk(1, 0, 'A'), mk(-1, Math.PI, 'B')], baseRadius: baseR }
+  }
+  // 36D：单源，距离呼吸 + 垂直摆动 + 空气低通
+  if (panner36DInfo.enabled) {
+    const baseR = panner36DInfo.radius || 1
+    const rad = panner36DInfo.rad
+    const r = Math.max(0.3, baseR * (1 + 0.6 * Math.sin(rad * 0.5)))
+    return { effect: '36d', sources: [{ x: Math.cos(rad) * r, z: Math.sin(rad) * r, y: Math.sin(rad * 1.5) * baseR, label: 'A' }], baseRadius: baseR }
+  }
+  // 8D：单源水平面圆周
+  if (panner8DInfo.enabled) {
+    const rad = panner8DInfo.rad
+    const r = panner8DInfo.radius || 1
+    return { effect: '8d', sources: [{ x: Math.cos(rad) * r, z: Math.sin(rad) * r, y: 0, label: 'A' }], baseRadius: r }
+  }
+  // 3D 立体环绕：rad 为角度，x=sin z=cos
+  if (pannerInfo.intv) {
+    const rad = pannerInfo.rad * Math.PI / 180
+    const r = pannerInfo.soundR || 1
+    return { effect: '3d', sources: [{ x: Math.sin(rad) * r, z: Math.cos(rad) * r, y: Math.cos(rad) * r, label: 'A' }], baseRadius: r }
+  }
+  // 虚拟多声道：固定扬声器布局（不旋转）
+  if (virtualSurroundInfo.enabled) {
+    const is71 = virtualSurroundInfo.mode === '7.1'
+    const pos = is71 ? speakerPositions71 : speakerPositions51
+    const labels = is71 ? ['FL', 'FR', 'C', 'SL', 'SR', 'RL', 'RR'] : ['FL', 'FR', 'C', 'RL', 'RR']
+    return { effect: 'virtual', sources: pos.map((p, i) => ({ x: p.x, z: p.z, y: 0, label: labels[i] })), baseRadius: 1 }
+  }
+  return { effect: null, sources: [], baseRadius: 1 }
 }
 
 // ===== 7.1/5.1 虚拟多声道环绕控制 =====
@@ -1292,6 +1667,9 @@ export const setAudioBoost = (level: number) => {
   }
   if (panner36DInfo.intv) {
     startPanner36D()
+  }
+  if (panner95DInfo.intv) {
+    startPanner95D()
   }
 }
 

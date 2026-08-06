@@ -546,14 +546,14 @@ export interface AudioSettings {
   onlineFailureBehavior: OnlineFailureBehavior;
   /** 在线歌曲默认音质播放失败时的音质回退行为，默认 'lower'（播放更低音质） */
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
-  /** 在线流式播放缓存上限（MB），默认 512MB */
-  streamCacheSizeMB: number;
   /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
   fadeInOutEnabled: boolean;
   /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
   fadeInOutDurationMs: number;
   /** 在线播放失败时自动切换到其他落雪音源（仅 lx:// 歌曲），默认 true */
   autoSwitchSourceOnFailure: boolean;
+  /** [YinDong 播放引擎移植] USB DAC 独占模式（WASAPI 独占）开关，默认关闭 */
+  usbExclusiveEnabled: boolean;
 }
 
 export type ShortcutActionId =

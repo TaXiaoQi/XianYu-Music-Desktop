@@ -151,10 +151,10 @@ export const defaultAudioSettings: AudioSettings = {
   onlineDefaultQuality: '320k',
   onlineFailureBehavior: 'skip',
   onlineQualityFallbackBehavior: 'lower',
-  streamCacheSizeMB: 512,
   fadeInOutEnabled: false,
   fadeInOutDurationMs: 1000,
   autoSwitchSourceOnFailure: true,
+  usbExclusiveEnabled: false,
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -484,9 +484,6 @@ export const mergeAudioSettings = (
     onlineQualityFallbackBehavior: VALID_QUALITY_FALLBACK_BEHAVIORS.includes(patch.onlineQualityFallbackBehavior as string)
       ? (patch.onlineQualityFallbackBehavior as AudioSettings['onlineQualityFallbackBehavior'])
       : base.onlineQualityFallbackBehavior ?? 'lower',
-    streamCacheSizeMB: Number.isFinite(patch.streamCacheSizeMB) && patch.streamCacheSizeMB! > 0
-      ? Math.round(patch.streamCacheSizeMB!)
-      : base.streamCacheSizeMB ?? 512,
     fadeInOutEnabled: typeof patch.fadeInOutEnabled === 'boolean'
       ? patch.fadeInOutEnabled
       : base.fadeInOutEnabled ?? false,

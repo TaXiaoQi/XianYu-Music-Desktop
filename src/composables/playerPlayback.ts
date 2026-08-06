@@ -14,6 +14,7 @@ import { useToast } from './toast';
 import { reportUserBehavior } from '../services/usageStats';
 import { useAuthStore } from '../features/auth/store';
 import { preloadAmlLyricPlayer } from '../components/player/amlLyricPlayerLoader';
+import { useSoundEffectStore } from '../features/playback/soundEffectStore';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -65,6 +66,10 @@ let playbackAnchorTime = 0;
 let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
+// [YinDong 播放引擎移植] HTML5 Audio 元素（默认共享模式播放路径）
+let networkAudio: HTMLAudioElement | null = null;
+// 是否走 Rust 后端播放（WASAPI 独占模式）；false = HTML5 Audio 默认路径
+let isBackendPlayback = false;
 let currentPlayCountRecorded = false;
 let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
@@ -73,6 +78,11 @@ let stalledProgressTicks = 0;
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
+
+// [YinDong 播放引擎移植] 暴露当前播放路径给可视化器等模块
+// true = WASAPI 独占（Rust 播放，频谱走 Rust get_audio_visualizer_samples）
+// false = HTML5 Audio（Web Audio，频谱走 AnalyserNode）
+export const isBackendPlaybackActive = (): boolean => isBackendPlayback;
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -256,6 +266,59 @@ const authStore = useAuthStore();
     }
   };
 
+  // [YinDong 播放引擎移植] 双路径播放控制辅助函数
+  // 设置播放音量（WASAPI 独占走 Rust setVolume，HTML5 Audio 走 audio.volume）
+  const setPlaybackVolume = (vol: number) => {
+    if (isBackendPlayback) {
+      void playbackApi.setVolume(vol).catch(() => {});
+    } else if (networkAudio) {
+      networkAudio.volume = vol;
+    }
+  };
+
+  // 停止 HTML5 Audio 元素（断开 src 并释放）
+  const stopHtmlAudio = () => {
+    if (networkAudio) {
+      networkAudio.pause();
+      networkAudio.removeAttribute('src');
+      networkAudio.load();
+      networkAudio = null;
+    }
+  };
+
+  // 停止所有播放（双路径统一入口）
+  const stopAllPlayback = () => {
+    if (isBackendPlayback) {
+      void playbackApi.pauseAudio().catch(() => {});
+    }
+    stopHtmlAudio();
+  };
+
+  // [YinDong 播放引擎移植] 双路径暂停/恢复/跳转
+  const pausePlayback = async () => {
+    if (isBackendPlayback) {
+      await playbackApi.pauseAudio();
+    } else if (networkAudio) {
+      networkAudio.pause();
+    }
+  };
+
+  const resumePlayback = async () => {
+    if (isBackendPlayback) {
+      await playbackApi.resumeAudio();
+    } else if (networkAudio) {
+      await networkAudio.play();
+    }
+  };
+
+  const seekPlayback = async (time: number, playing: boolean, requestId: number) => {
+    if (isBackendPlayback) {
+      await playbackApi.seekAudio({ time, isPlaying: playing, requestId });
+    } else if (networkAudio) {
+      networkAudio.currentTime = time;
+    }
+  };
+
   // [渐入渐出] 将实际输出音量从当前值渐变到目标值（不影响 playbackStore.volume 显示值）
   // startVolumeOverride 用于指定起始音量（如切歌淡入时从 0 开始），不传则从 currentBackendVolume 继续（支持中途打断）
   const fadeVolumeTo = (targetVolume: number, durationMs: number, startVolumeOverride?: number): Promise<void> => {
@@ -265,7 +328,7 @@ const authStore = useAuthStore();
       const targetVol = Math.max(0, Math.min(1, targetVolume));
       if (Math.abs(startVolume - targetVol) < 0.005 || durationMs <= 0) {
         currentBackendVolume = targetVol;
-        void playbackApi.setVolume(targetVol).catch(() => {});
+        setPlaybackVolume(targetVol);
         resolve();
         return;
       }
@@ -282,7 +345,7 @@ const authStore = useAuthStore();
           : 1 - (1 - progress) * (1 - progress);
         const currentVol = startVolume + (targetVol - startVolume) * eased;
         currentBackendVolume = currentVol;
-        void playbackApi.setVolume(currentVol).catch(() => {});
+        setPlaybackVolume(currentVol);
         if (progress < 1) {
           fadeFrameId = requestAnimationFrame(step);
         } else {
@@ -290,7 +353,7 @@ const authStore = useAuthStore();
           fadeResolveFn = null;
           currentBackendVolume = targetVol;
           // 确保最终设置精确的目标音量
-          void playbackApi.setVolume(targetVol).catch(() => {});
+          setPlaybackVolume(targetVol);
           resolve();
         }
       };
@@ -351,7 +414,11 @@ const authStore = useAuthStore();
       if (!isPlaying.value || isSeeking) return;
 
       try {
-        const rawTime = await playbackApi.getPlaybackProgress();
+        // [YinDong 播放引擎移植] 双路径进度同步：
+        // WASAPI 独占走 Rust getPlaybackProgress；HTML5 Audio 直接读 audio.currentTime
+        const rawTime = isBackendPlayback
+          ? await playbackApi.getPlaybackProgress()
+          : (networkAudio?.currentTime ?? 0);
         const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
         const adjustedTime = Math.max(0, rawTime - offsetSec);
         if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
@@ -388,11 +455,14 @@ const authStore = useAuthStore();
         lastRawProgress = rawTime;
 
         // [在线歌曲时长修正] Song.duration 可能为 0（插件未返回时长），
-        // 从 Rust 音频引擎获取解码后的实际时长，更新 currentSong 和 libraryStore
+        // 从音频引擎获取解码后的实际时长，更新 currentSong 和 libraryStore
+        // [YinDong 播放引擎移植] HTML5 Audio 路径直接读 audio.duration
         const songForDuration = currentSong.value;
         if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0)) {
           try {
-            const backendDuration = await playbackApi.getPlaybackDuration();
+            const backendDuration = isBackendPlayback
+              ? 0 // WASAPI 独占路径无 getPlaybackDuration 命令，依赖 song.duration
+              : (networkAudio?.duration ?? 0);
             if (backendDuration > 0) {
               const newDuration = Math.floor(backendDuration);
               const updatedSong = { ...songForDuration, duration: newDuration };
@@ -479,11 +549,11 @@ const authStore = useAuthStore();
     requestId: number,
     shouldFade: boolean | null,
   ): Promise<void> => {
-    try { await playbackApi.stopAudio(); } catch {}
+    stopAllPlayback();
     // [渐入渐出] 起播失败时恢复后端音量到用户设定值
     if (shouldFade) {
       currentBackendVolume = playbackStore.volume / 100;
-      void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+      setPlaybackVolume(currentBackendVolume);
     }
     isPlaying.value = false;
     isSongLoaded.value = false;
@@ -1071,84 +1141,62 @@ const authStore = useAuthStore();
           .catch(() => {});
       };
 
-      // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
-      // 成功返回 true；失败返回 false 由调用方处理错误。
-      const tryPlayOnlineViaRust = async (): Promise<boolean> => {
-        try {
-          await playbackApi.playAudio({
-            path: audioFilePath,
-            title: getSmtcTitle(song),
-            artist: song.artist || 'Unknown Artist',
-            album: song.album || 'Unknown Album',
-            cover: cachedCoverPath,
-            duration: Math.floor(song.duration),
-            outputMode: settingsStore.settings.audio.outputMode,
-            startOffsetMs: startOffsetMs || undefined,
-            songId: song.id ?? undefined,
-            volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
-            gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
-            preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
-            headers: pluginHeaders,
-          });
-        } catch (e: any) {
-          console.warn('[Audio] 在线直链 playAudio 调用失败:', e?.message || e);
-          return false;
-        }
+      // [YinDong 播放引擎移植] 双路径播放：
+      // - 默认（共享模式）：HTML5 <audio> + Web Audio 音效链（soundEffectEngine）
+      // - WASAPI 独占模式：Rust rodio 后端 + set_audio_effects
+      const useWasapiExclusive = settingsStore.settings.audio.usbExclusiveEnabled === true;
+      isBackendPlayback = useWasapiExclusive;
 
-        // [起播探测] play_audio 是异步投递命令：调用立即返回，真正的取流/解码/播放在后台线程进行。
-        // 若远程取流失败（防盗链 403 / 不支持 Range / 解码失败），后端不会抛错，需前端探测。
-        //
-        // 判定就绪的主信号：getPlaybackReady()（sample_rate>0，即 Decoder::new 成功）。
-        // - 对支持 Range 的流：解码器读到文件头即就绪，通常很快。
-        // - 对不支持 Range 的直链：后端会整曲下载到内存后才解码，可能耗时数秒到十几秒，
-        //   因此给较长超时；只要期间 ready 变 true 就算成功，不误判为失败。
-        //
-        // [优化] ready 后立即返回，不再等待进度推进 0.3 秒。
-        // 流式文件已在 play_audio 中等待 512KB 缓冲（约 15 秒音频），
-        // decoder ready 即意味着已有足够数据开始播放，无需额外等待。
-        const READY_TIMEOUT_MS = 20000;
-        const PROBE_INTERVAL_MS = 200;
-        const probeStart = Date.now();
-        let ready = false;
-        while (Date.now() - probeStart < READY_TIMEOUT_MS) {
-          if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            return true; // 已被新切歌请求接管，无需回退
-          }
+      if (useWasapiExclusive) {
+        // === WASAPI 独占路径（Rust 后端） ===
+        const tryPlayViaRust = async (): Promise<boolean> => {
           try {
-            // 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时
-            if (await playbackApi.getPlaybackStartFailed()) {
-              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错）');
-              return false;
-            }
-            if (!ready) {
-              ready = await playbackApi.getPlaybackReady();
-            }
-            if (ready) {
-              // decoder 就绪即可，不再等待进度推进
-              return true;
-            }
-          } catch { /* ignore, keep probing */ }
-          await new Promise(resolve => setTimeout(resolve, PROBE_INTERVAL_MS));
-        }
+            await playbackApi.playAudio({
+              path: isM4sLocal ? actualAudioPath : audioFilePath,
+              title: getSmtcTitle(song),
+              artist: song.artist || 'Unknown Artist',
+              album: song.album || 'Unknown Album',
+              cover: cachedCoverPath,
+              duration: Math.floor(song.duration),
+              outputMode: settingsStore.settings.audio.outputMode,
+              startOffsetMs: startOffsetMs || undefined,
+              songId: song.id ?? undefined,
+              headers: pluginHeaders,
+            });
+          } catch (e: any) {
+            console.warn('[Audio] WASAPI playAudio 调用失败:', e?.message || e);
+            return false;
+          }
 
-        console.warn('[Audio] 在线直链走 Rust 起播探测失败（未就绪）');
-        return false;
-      };
+          // [起播探测] play_audio 异步投递，通过 getBitstreamInfo 探测是否就绪
+          const READY_TIMEOUT_MS = 20000;
+          const PROBE_INTERVAL_MS = 200;
+          const probeStart = Date.now();
+          while (Date.now() - probeStart < READY_TIMEOUT_MS) {
+            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+              return true; // 已被新切歌请求接管
+            }
+            try {
+              const info = await playbackApi.getBitstreamInfo();
+              if (info.sampleRate > 0) {
+                return true;
+              }
+            } catch { /* keep probing */ }
+            await new Promise(resolve => setTimeout(resolve, PROBE_INTERVAL_MS));
+          }
+          console.warn('[Audio] WASAPI 独占起播探测失败（未就绪）');
+          return false;
+        };
 
-      if (isNetworkAudio && !isM4sLocal) {
-        // [在线播放重构] 所有在线音乐统一走 Rust 后端：流式下载到临时文件 + 本地引擎播放。
-        // Rust 后端处理下载、解码、设备切换恢复全流程。
-
-        const rustOk = await tryPlayOnlineViaRust();
+        const rustOk = await tryPlayViaRust();
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
-        // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态，不要继续出声
+        // 用户在解析直链期间按了暂停：停掉刚起来的播放并保持暂停态
         if (cancelledPlayRequestId === requestId) {
-          try { await playbackApi.stopAudio(); } catch {}
-          // [渐入渐出] 暂停时恢复后端音量到用户设定值
+          stopAllPlayback();
           if (shouldFadeOnSwitch) {
             currentBackendVolume = playbackStore.volume / 100;
-            void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+            setPlaybackVolume(currentBackendVolume);
           }
           isPlaying.value = false;
           isSongLoaded.value = false;
@@ -1158,90 +1206,132 @@ const authStore = useAuthStore();
 
         if (rustOk) {
           if (shouldFadeOnSwitch) {
-            // [渐入渐出] 淡入：新歌从 0 音量起播，然后渐变到目标音量
             currentBackendVolume = 0;
-            try { await playbackApi.setVolume(0); } catch {}
+            setPlaybackVolume(0);
             finishRustPlaybackStart();
             void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
           } else {
-            // 确保后端已接管，音量同步到后端
             currentBackendVolume = playbackStore.volume / 100;
-            try { await playbackApi.setVolume(currentBackendVolume); } catch {}
+            setPlaybackVolume(currentBackendVolume);
             finishRustPlaybackStart();
           }
-        } else {
-          // [在线播放起播失败] Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时）
+        } else if (isNetworkAudio && !isM4sLocal) {
+          // 在线起播失败：触发换源/失败处理
           await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
           return;
+        } else {
+          // 本地文件 WASAPI 起播失败：回退到 HTML5 Audio
+          isBackendPlayback = false;
         }
-      } else {
-        // 本地音频走 Rust 后端播放
-        await playbackApi.playAudio({
-          path: actualAudioPath,
-          title: getSmtcTitle(song),
-          artist: song.artist || 'Unknown Artist',
-          album: song.album || 'Unknown Album',
-          cover: cachedCoverPath,
-          duration: Math.floor(song.duration),
-          outputMode: settingsStore.settings.audio.outputMode,
-          startOffsetMs: startOffsetMs || undefined,
-          songId: song.id,
-          volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
-          gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
-          preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
-        });
-        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+      }
 
-        // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
+      if (!isBackendPlayback) {
+        // === HTML5 Audio 默认路径 ===
+        stopHtmlAudio();
+        const soundEffectStore = useSoundEffectStore();
+
+        const audio = new Audio();
+        audio.preload = 'auto';
+        audio.crossOrigin = 'anonymous';
+
+        // URL 解析：网络音频走代理（注入 CORS 头），本地文件走本地代理 URL
+        const audioSrc = (isNetworkAudio && !isM4sLocal)
+          ? await playbackApi.getProxiedAudioUrl(audioFilePath)
+          : await playbackApi.getLocalAudioUrl(actualAudioPath);
+        audio.src = audioSrc;
+        audio.volume = playbackStore.volume / 100;
+
+        // 连接到 Web Audio 音效处理链
+        try {
+          await soundEffectStore.connectAudio(audio);
+        } catch (e: any) {
+          console.warn('[Audio] 连接音效链失败:', e?.message || e);
+        }
+
+        // 等待 canplay 或 error（超时 20s）
+        const canPlay = await new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => resolve(false), 20000);
+          audio.addEventListener('canplay', () => {
+            clearTimeout(timeout);
+            resolve(true);
+          }, { once: true });
+          audio.addEventListener('error', () => {
+            clearTimeout(timeout);
+            resolve(false);
+          }, { once: true });
+        });
+
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
+          stopHtmlAudio();
+          return;
+        }
+
+        if (!canPlay) {
+          stopHtmlAudio();
+          if (isNetworkAudio && !isM4sLocal) {
+            await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+          } else {
+            isPlaying.value = false;
+            isSongLoaded.value = false;
+            stopPlaybackRuntime();
+          }
+          return;
+        }
+
+        // 用户在解析直链期间按了暂停
         if (cancelledPlayRequestId === requestId) {
-          isSongLoaded.value = true;
+          stopHtmlAudio();
           isPlaying.value = false;
+          isSongLoaded.value = false;
           stopPlaybackRuntime();
-          try { await playbackApi.pauseAudio(); } catch {}
           loadLyrics();
           return;
         }
 
-        isSongLoaded.value = true;
-        sessionStartTime = Date.now();
-        loadLyrics();
-        startPlaybackRuntime();
+        // 起播
+        try {
+          if (startOffsetMs && startOffsetMs > 0) {
+            audio.currentTime = startOffsetMs / 1000;
+          }
+          await audio.play();
+        } catch (e: any) {
+          console.warn('[Audio] HTML5 Audio play() 失败:', e?.message || e);
+          stopHtmlAudio();
+          isPlaying.value = false;
+          isSongLoaded.value = false;
+          stopPlaybackRuntime();
+          return;
+        }
+        networkAudio = audio;
 
-        // [渐入渐出] 淡入：本地歌曲从 0 音量渐变到目标音量
-        if (shouldFadeOnSwitch) {
-          currentBackendVolume = 0;
-          try { await playbackApi.setVolume(0); } catch {}
-          void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
-        } else {
-          // [渐入渐出] 非切歌场景（首次播放/恢复播放）：同步后端音量追踪值，
-          // 避免 currentBackendVolume 停留在模块初始值 1，导致首次淡出时音量跳变
-          currentBackendVolume = playbackStore.volume / 100;
-          void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+        // [在线歌曲时长修正] 从 audio.duration 获取实际时长
+        if (audio.duration && audio.duration > 0 && (!song.duration || song.duration <= 0)) {
+          const newDuration = Math.floor(audio.duration);
+          const updatedSong = { ...song, duration: newDuration };
+          currentSong.value = updatedSong;
+          playQueue.value = playQueue.value.map(item => (
+            item.path === song.path ? { ...item, duration: newDuration } : item
+          ));
+          libraryStore.patchSongMeta(song.path, { duration: newDuration } as Partial<Song>);
         }
 
-        void currentThumbnailLoad
-          .then(async ([cover, coverPath]) => {
-            if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-              return;
-            }
+        // 播放结束事件
+        audio.addEventListener('ended', () => {
+          if (requestId !== playRequestId) return;
+          handleAutoNext();
+        });
 
-            const normalizedCover = cover || '';
-            const normalizedCoverPath = coverPath || '';
-            currentCover.value = normalizedCover;
-            if (!currentCoverFull.value) {
-              currentCoverFull.value = normalizedCover;
-            }
-
-            await playbackApi.updatePlaybackMetadata({
-              title: getSmtcTitle(song),
-              artist: song.artist || 'Unknown Artist',
-              album: song.album || 'Unknown Album',
-              cover: normalizedCoverPath,
-              duration: Math.floor(song.duration),
-              isPlaying: isPlaying.value,
-            }).catch(() => {});
-          })
-          .catch(() => {});
+        // 渐入渐出 + 收尾
+        if (shouldFadeOnSwitch) {
+          currentBackendVolume = 0;
+          audio.volume = 0;
+          finishRustPlaybackStart();
+          void fadeVolumeTo(playbackStore.volume / 100, effectiveFadeDuration, 0);
+        } else {
+          currentBackendVolume = playbackStore.volume / 100;
+          audio.volume = currentBackendVolume;
+          finishRustPlaybackStart();
+        }
       }
     } catch {
       // [异常兜底] 仅处理状态清理，不执行起播失败行为
@@ -1251,7 +1341,7 @@ const authStore = useAuthStore();
       // [渐入渐出] 异常时恢复后端音量到用户设定值
       if (shouldFadeOnSwitch) {
         currentBackendVolume = playbackStore.volume / 100;
-        void playbackApi.setVolume(currentBackendVolume).catch(() => {});
+        setPlaybackVolume(currentBackendVolume);
       }
       isPlaying.value = false;
       isSongLoaded.value = false;
@@ -1283,17 +1373,17 @@ const authStore = useAuthStore();
     }
 
     isPlaying.value = false;
-    await playbackApi.pauseAudio();
+    await pausePlayback();
     stopPlaybackRuntime();
 
-    // [渐入渐出] 淡出完成后延迟恢复后端音量：
+    // [渐入渐出] 淡出完成后延迟恢复音量：
     // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
     // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
     if (fadeEnabled) {
       const restoreVol = playbackStore.volume / 100;
       setTimeout(() => {
         currentBackendVolume = restoreVol;
-        void playbackApi.setVolume(restoreVol).catch(() => {});
+        setPlaybackVolume(restoreVol);
       }, 200);
     }
   };
@@ -1333,11 +1423,11 @@ const authStore = useAuthStore();
         if (myToken !== togglePlayToken) return;
       }
 
-      await playbackApi.pauseAudio();
+      await pausePlayback();
       if (myToken !== togglePlayToken) return;
       stopPlaybackRuntime();
 
-      // [渐入渐出] 淡出完成后延迟恢复后端音量：
+      // [渐入渐出] 淡出完成后延迟恢复音量：
       // pauseAudio 后 WASAPI 可能仍在播放已提交的缓冲区尾部，立即把音量从 0 拉回原值
       // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
       if (fadeEnabled) {
@@ -1345,7 +1435,7 @@ const authStore = useAuthStore();
         setTimeout(() => {
           if (myToken !== togglePlayToken) return;
           currentBackendVolume = restoreVol;
-          void playbackApi.setVolume(restoreVol).catch(() => {});
+          setPlaybackVolume(restoreVol);
         }, 200);
       }
       return;
@@ -1375,15 +1465,15 @@ const authStore = useAuthStore();
         : 0;
       if (startVol === 0) {
         currentBackendVolume = 0;
-        try { await playbackApi.setVolume(0); } catch {}
+        setPlaybackVolume(0);
       }
       if (myToken !== togglePlayToken) return;
-      await playbackApi.resumeAudio();
+      await resumePlayback();
       sessionStartTime = Date.now();
       startPlaybackRuntime();
       void fadeVolumeTo(targetVol, fadeDuration, startVol);
     } else {
-      await playbackApi.resumeAudio();
+      await resumePlayback();
       sessionStartTime = Date.now();
       startPlaybackRuntime();
     }
@@ -1410,11 +1500,7 @@ const authStore = useAuthStore();
 
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
-      await playbackApi.seekAudio({
-        time: targetTime + offsetSec,
-        isPlaying: isPlaying.value,
-        requestId,
-      });
+      await seekPlayback(targetTime + offsetSec, isPlaying.value, requestId);
       reanchorPlaybackClock(targetTime);
       if (isPlaying.value) {
         startPlaybackRuntime();
@@ -1465,6 +1551,7 @@ const authStore = useAuthStore();
   const dispose = () => {
     stopPlaybackRuntime();
     stopPowerModeWatcher();
+    stopVolumeWatcher();
   };
 
   const stopPowerModeWatcher = watch(isMainWindowLowPower, () => {
@@ -1472,6 +1559,17 @@ const authStore = useAuthStore();
       startPlaybackRuntime();
     }
   });
+
+  // [修复音量调节无反应] 统一音量应用入口：UI 滑块/滚轮/快捷键/静音/启动恢复
+  // 只需设置 playbackStore.volume，此 watch 自动双路径分流：
+  //   - WASAPI 后端：playbackApi.setVolume(vol)
+  //   - HTML5 Audio：networkAudio.volume = vol
+  // 原先 playerUiShell 直接调用 playbackApi.setVolume() 只对 Rust 后端生效，
+  // HTML5 Audio 路径下 audio.volume 不更新，导致默认路径音量滑块完全无反应。
+  const stopVolumeWatcher = watch(
+    () => playbackStore.volume,
+    (vol) => { setPlaybackVolume(vol / 100); },
+  );
 
   return {
     flushPlaySession,
