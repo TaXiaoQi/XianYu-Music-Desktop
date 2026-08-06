@@ -759,7 +759,7 @@ onUnmounted(() => {
 
 <template>
   <footer 
-    class="h-20 flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
+    class="player-footer h-20 flex items-center justify-between px-4 z-[60] relative select-none bg-transparent"
     @mouseenter="handleFooterMouseEnter"
     @mousemove="handleFooterMouseMove"
     @mouseleave="handleFooterMouseLeave"
@@ -821,7 +821,7 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="flex items-center w-1/3 min-w-[150px]"
+      class="footer-left-section flex items-center w-1/3 min-w-[150px]"
       @contextmenu="handleContextMenu"
     >
       <div
@@ -831,10 +831,10 @@ onUnmounted(() => {
       ></div>
 
       <div
-        class="flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 ml-3 min-w-0"
+        class="footer-left-content flex-1 relative h-10 transition-transform duration-500 flex items-center gap-1 ml-3 min-w-0"
         :class="showPlayerDetail ? '-translate-x-[60px]' : 'translate-x-0'"
       >
-        <div class="overflow-hidden w-28 relative h-full shrink-0">
+        <div class="footer-track-info overflow-hidden w-28 relative h-full shrink-0">
         <!-- State A: Default View (Title & Artist) -->
         <div
           class="absolute inset-0 flex flex-col justify-center transition-all duration-500"
@@ -879,7 +879,7 @@ onUnmounted(() => {
 
         <!-- 左侧容器可配置控件（按 leftItems 顺序渲染，最多 2 个） -->
         <div
-          class="flex items-center gap-1 transition-opacity duration-700"
+          class="footer-left-controls flex items-center gap-1 transition-opacity duration-700"
           :class="{ 'opacity-0 pointer-events-none': isIdle }"
         >
           <FooterControlItem v-for="key in leftItems" :key="key" :item-key="key" />
@@ -888,7 +888,7 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
+      class="footer-center-section flex items-center justify-center flex-1 gap-6 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     >
       <!-- 中间左侧可配置控件（紧邻"上一首"，最多 1 个） -->
@@ -923,7 +923,7 @@ onUnmounted(() => {
     </div>
 
     <div 
-      class="flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
+      class="footer-right-section flex items-center justify-end w-1/3 min-w-[150px] gap-2 pr-2 transition-opacity duration-700"
       :class="{ 'opacity-0 pointer-events-none': isIdle }"
     > 
       <!-- 右侧容器可配置控件（按 rightItems 顺序渲染，最多 5 个） -->
@@ -1071,5 +1071,51 @@ onUnmounted(() => {
 
 .animate-marquee {
   animation: footer-marquee var(--marquee-duration, 12s) linear infinite;
+}
+
+/* 窄窗口优化：左侧仅保留封面，控制区压缩间距，避免底栏拥挤溢出 */
+@media (max-width: 720px) {
+  .player-footer {
+    padding-left: 12px;
+    padding-right: 10px;
+  }
+
+  .footer-left-section {
+    width: auto;
+    min-width: 52px;
+    flex: 0 0 auto;
+  }
+
+  .footer-left-content {
+    display: none;
+  }
+
+  .footer-center-section {
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .footer-right-section {
+    width: auto;
+    min-width: 44px;
+    flex: 0 0 auto;
+    gap: 4px;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .player-footer {
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+
+  .footer-center-section {
+    gap: 8px;
+  }
+
+  .footer-right-section {
+    gap: 2px;
+  }
 }
 </style>

@@ -22,16 +22,17 @@ describe('footer layout visual editor helpers', () => {
     expect(computeCollapsedItems(layout)).toEqual([]);
   });
 
-  it('really hides a button instead of moving it into more tools', () => {
+  it('moves a disabled main-bar button into more tools', () => {
     const hidden = setFooterItemVisibility(DEFAULT_FOOTER_LAYOUT, 'equalizer', false);
 
     expect(hidden.hidden).toContain('equalizer');
     expect(hidden.right).toContain('equalizer');
-    expect(computeCollapsedItems(hidden)).not.toContain('equalizer');
+    expect(computeCollapsedItems(hidden)).toContain('equalizer');
 
     const visibleAgain = setFooterItemVisibility(hidden, 'equalizer', true);
     expect(visibleAgain.hidden).not.toContain('equalizer');
     expect(visibleAgain.right).toContain('equalizer');
+    expect(computeCollapsedItems(visibleAgain)).not.toContain('equalizer');
   });
 
   it('keeps the right-side buttons compacted against the right edge', () => {

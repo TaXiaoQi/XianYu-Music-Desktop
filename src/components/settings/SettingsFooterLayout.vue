@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, onUnmounted, provide, ref } from 'vue';
 import {
   ChevronUp,
   Play,
@@ -13,6 +13,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import {
   DEFAULT_FOOTER_LAYOUT,
   FOOTER_ITEMS,
+  computeCollapsedItems,
   getFooterItemMeta,
   getFooterPreviewSlotItems,
   moveFooterItemToPreviewSlot,
@@ -20,8 +21,9 @@ import {
   setFooterItemVisibility,
   type FooterPreviewSlot,
 } from '../../features/settings/footerItems';
-import type { FooterItemKey } from '../../types';
+import type { DownloadQuality, FooterItemKey, QualityKey } from '../../types';
 import FooterControlIcon from '../layout/FooterControlIcon.vue';
+import FooterControlItem from '../layout/FooterControlItem.vue';
 import SettingHint from './SettingHint.vue';
 
 const { footerLayout, patchFooterLayout } = useSettings();
@@ -29,6 +31,7 @@ const { showToast } = useToast();
 
 const layout = computed(() => normalizeFooterLayout(footerLayout.value));
 const previewSlots = computed(() => getFooterPreviewSlotItems(layout.value));
+const collapsedPreviewItems = computed(() => computeCollapsedItems(layout.value));
 
 const LEFT_SLOTS: FooterPreviewSlot[] = ['left-0', 'left-1'];
 const MIDDLE_LEFT_SLOTS: FooterPreviewSlot[] = ['middle-left'];
@@ -37,6 +40,73 @@ const RIGHT_SLOTS: FooterPreviewSlot[] = ['right-0', 'right-1', 'right-2', 'righ
 
 const getItemLabel = (key: FooterItemKey | null) => key ? getFooterItemMeta(key)?.label ?? key : '';
 const isItemVisible = (key: FooterItemKey) => !layout.value.hidden.includes(key);
+
+// 预览区直接复用真实底部栏控件组件；这里提供一套轻量 mock 上下文，只用于渲染外观。
+const previewCurrentSong = ref<any>({
+  title: 'I\'m leaving home',
+  name: 'I\'m leaving home',
+  artist: 'Coastline',
+  path: 'preview://footer',
+  duration: 225,
+});
+const previewBoolean = ref(false);
+const previewShowPlayerDetail = ref(false);
+const previewVolume = ref(72);
+const previewPlayMode = ref(0);
+const previewDownloadedRecord = ref(null);
+const previewElementRef = ref<HTMLElement | null>(null);
+const previewQuality = ref<QualityKey>('320k');
+const previewDownloadQuality = ref<DownloadQuality>('320k');
+const previewQualityOptions = ref<Array<{ label: string; value: QualityKey; description: string }>>([
+  { label: 'HQ', value: '320k', description: '320k' },
+]);
+const previewDownloadQualityOptions = ref<Array<{ label: string; value: DownloadQuality; description: string }>>([
+  { label: 'HQ', value: '320k', description: '320k' },
+]);
+
+provide('footerContext', {
+  currentSong: previewCurrentSong,
+  showPlayerDetail: previewShowPlayerDetail,
+  isFavorite: () => false,
+  toggleFavorite: () => {},
+  isOnlineSong: ref(true),
+  isDownloading: ref(false),
+  downloadedRecord: previewDownloadedRecord,
+  handleDownloadClick: () => {},
+  downloadButtonTitle: ref('下载歌曲'),
+  showDownloadQualityMenu: ref(false),
+  DOWNLOAD_QUALITY_OPTIONS: previewDownloadQualityOptions,
+  selectedDownloadQuality: previewDownloadQuality,
+  startDownload: async () => {},
+  downloadQualityButtonRef: previewElementRef,
+  downloadQualityMenuRef: previewElementRef,
+  playMode: previewPlayMode,
+  toggleMode: () => {},
+  showDesktopLyrics: previewBoolean,
+  toggleLyrics: () => {},
+  isQualitySelectableSong: ref(true),
+  qualityButtonLabel: ref('HQ'),
+  showQualityMenu: ref(false),
+  toggleQualityMenu: () => {},
+  QUALITY_OPTIONS: previewQualityOptions,
+  activeQualityKey: previewQuality,
+  selectQuality: async () => {},
+  qualityButtonRef: previewElementRef,
+  qualityMenuRef: previewElementRef,
+  volume: previewVolume,
+  showVolumeSlider: ref(false),
+  isDraggingVolume: ref(false),
+  handleVolumeEnter: () => {},
+  handleVolumeLeave: () => {},
+  handleVolumeWheel: () => {},
+  volumeBarRef: previewElementRef,
+  startDrag: () => {},
+  toggleMute: () => {},
+  showEqPanel: ref(false),
+  toggleEqPanel: () => {},
+  showPlaylist: ref(false),
+  togglePlaylist: () => {},
+});
 
 interface FooterDragState {
   key: FooterItemKey;
@@ -131,27 +201,31 @@ onUnmounted(cancelDragging);
       底部栏布局与预览
     </h2>
 
-    <div class="footer-layout-preview-container select-none">
+    <div class="footer-layout-preview-container select-none overflow-hidden rounded-2xl border border-white/30 shadow-sm backdrop-blur-md dark:border-white/10">
       <div class="footer-layout-preview-header">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
-          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/40">按住按钮并拖到预览中的其他位置</div>
+          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/40">按住按钮可拖到预览中的其他位置；关闭主栏显示后会进入更多菜单</div>
         </div>
         <div class="flex items-center gap-2">
           <SettingHint text="封面、歌曲信息和上一首/播放/下一首为固定区域；其余按钮可直接拖拽交换位置。" />
-          <button type="button" class="footer-preview-reset" @click="restoreDefault">
+          <button
+            type="button"
+            class="footer-preview-reset border border-white/40 bg-white/30 backdrop-blur-md shadow-sm hover:border-black/10 hover:bg-black/10 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10"
+            @click="restoreDefault"
+          >
             <RotateCcw class="h-3.5 w-3.5" />
             恢复默认
           </button>
         </div>
       </div>
 
-      <div class="footer-player-preview">
+      <div class="footer-player-preview bg-white/45 dark:bg-black/20">
         <div class="footer-preview-left">
           <div class="footer-preview-cover">
             <div class="h-full w-full bg-gradient-to-br from-[#EC4141] via-rose-400 to-orange-300"></div>
           </div>
-          <div class="min-w-0 flex-1">
+          <div class="footer-preview-track-info min-w-0 flex-1">
             <div class="truncate text-xs font-bold text-gray-800 dark:text-white">I'm leaving home</div>
             <div class="mt-0.5 truncate text-[10px] text-gray-500 dark:text-white/45">Coastline</div>
           </div>
@@ -160,19 +234,22 @@ onUnmounted(cancelDragging);
               v-for="slot in LEFT_SLOTS"
               :key="slot"
               class="footer-preview-slot"
-              :class="{ 'footer-preview-slot--target': dragState?.targetSlot === slot }"
+              :class="{
+                'footer-preview-slot--empty': !previewSlots[slot],
+                'footer-preview-slot--drag-active': !!dragState,
+                'footer-preview-slot--target': dragState?.targetSlot === slot,
+              }"
               :data-footer-preview-slot="slot"
             >
-              <button
+              <div
                 v-if="previewSlots[slot]"
-                type="button"
-                class="footer-preview-control"
-                :class="{ 'footer-preview-control--dragging': dragState?.key === previewSlots[slot] }"
+                class="footer-preview-control-shell"
+                :class="{ 'footer-preview-control-shell--dragging': dragState?.key === previewSlots[slot] }"
                 :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
                 @pointerdown="startDragging($event, previewSlots[slot]!)"
               >
-                <FooterControlIcon :item-key="previewSlots[slot]!" class="h-5 w-5" />
-              </button>
+                <FooterControlItem :item-key="previewSlots[slot]!" />
+              </div>
             </div>
           </div>
         </div>
@@ -183,44 +260,68 @@ onUnmounted(cancelDragging);
               v-for="slot in MIDDLE_LEFT_SLOTS"
               :key="slot"
               class="footer-preview-slot"
-              :class="{ 'footer-preview-slot--target': dragState?.targetSlot === slot }"
+              :class="{
+                'footer-preview-slot--empty': !previewSlots[slot],
+                'footer-preview-slot--drag-active': !!dragState,
+                'footer-preview-slot--target': dragState?.targetSlot === slot,
+              }"
               :data-footer-preview-slot="slot"
             >
-              <button
+              <div
                 v-if="previewSlots[slot]"
-                type="button"
-                class="footer-preview-control"
-                :class="{ 'footer-preview-control--dragging': dragState?.key === previewSlots[slot] }"
+                class="footer-preview-control-shell"
+                :class="{ 'footer-preview-control-shell--dragging': dragState?.key === previewSlots[slot] }"
                 :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
                 @pointerdown="startDragging($event, previewSlots[slot]!)"
               >
-                <FooterControlIcon :item-key="previewSlots[slot]!" class="h-5 w-5" />
-              </button>
+                <FooterControlItem :item-key="previewSlots[slot]!" />
+              </div>
             </div>
           </div>
 
-          <button type="button" class="footer-preview-playback" title="上一首（固定）"><SkipBack class="h-5 w-5" /></button>
-          <button type="button" class="footer-preview-play"><Play class="ml-0.5 h-5 w-5 fill-current" /></button>
-          <button type="button" class="footer-preview-playback" title="下一首（固定）"><SkipForward class="h-5 w-5" /></button>
+          <button
+            type="button"
+            class="transition-colors hover:scale-110 transform duration-200 text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white"
+            title="上一首（固定）"
+          >
+            <SkipBack class="h-7 w-7 fill-current" />
+          </button>
+          <button
+            type="button"
+            class="flex items-center justify-center transition-all active:scale-95 shrink-0 w-11 h-11 rounded-full border text-gray-800 dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20 border-black/5 dark:border-white/5"
+            title="播放/暂停（固定）"
+          >
+            <Play class="ml-0.5 h-7 w-7 fill-current" />
+          </button>
+          <button
+            type="button"
+            class="transition-colors hover:scale-110 transform duration-200 text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white"
+            title="下一首（固定）"
+          >
+            <SkipForward class="h-7 w-7 fill-current" />
+          </button>
 
           <div class="footer-preview-zone">
             <div
               v-for="slot in MIDDLE_RIGHT_SLOTS"
               :key="slot"
               class="footer-preview-slot"
-              :class="{ 'footer-preview-slot--target': dragState?.targetSlot === slot }"
+              :class="{
+                'footer-preview-slot--empty': !previewSlots[slot],
+                'footer-preview-slot--drag-active': !!dragState,
+                'footer-preview-slot--target': dragState?.targetSlot === slot,
+              }"
               :data-footer-preview-slot="slot"
             >
-              <button
+              <div
                 v-if="previewSlots[slot]"
-                type="button"
-                class="footer-preview-control"
-                :class="{ 'footer-preview-control--dragging': dragState?.key === previewSlots[slot] }"
+                class="footer-preview-control-shell"
+                :class="{ 'footer-preview-control-shell--dragging': dragState?.key === previewSlots[slot] }"
                 :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
                 @pointerdown="startDragging($event, previewSlots[slot]!)"
               >
-                <FooterControlIcon :item-key="previewSlots[slot]!" class="h-5 w-5" />
-              </button>
+                <FooterControlItem :item-key="previewSlots[slot]!" />
+              </div>
             </div>
           </div>
         </div>
@@ -231,36 +332,52 @@ onUnmounted(cancelDragging);
               v-for="slot in RIGHT_SLOTS"
               :key="slot"
               class="footer-preview-slot"
-              :class="{ 'footer-preview-slot--target': dragState?.targetSlot === slot }"
+              :class="{
+                'footer-preview-slot--empty': !previewSlots[slot],
+                'footer-preview-slot--drag-active': !!dragState,
+                'footer-preview-slot--target': dragState?.targetSlot === slot,
+              }"
               :data-footer-preview-slot="slot"
             >
-              <button
+              <div
                 v-if="previewSlots[slot]"
-                type="button"
-                class="footer-preview-control"
-                :class="{ 'footer-preview-control--dragging': dragState?.key === previewSlots[slot] }"
+                class="footer-preview-control-shell"
+                :class="{ 'footer-preview-control-shell--dragging': dragState?.key === previewSlots[slot] }"
                 :title="`${getItemLabel(previewSlots[slot])}（拖拽调整位置）`"
                 @pointerdown="startDragging($event, previewSlots[slot]!)"
               >
-                <FooterControlIcon :item-key="previewSlots[slot]!" class="h-5 w-5" />
-              </button>
+                <FooterControlItem :item-key="previewSlots[slot]!" />
+              </div>
             </div>
           </div>
-          <button type="button" class="footer-preview-control opacity-55" title="更多工具（固定）">
+          <button
+            type="button"
+            class="footer-preview-more relative transition-colors w-8 h-8 flex items-center justify-center rounded-full text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10"
+            :title="`更多工具（固定）：已收纳 ${collapsedPreviewItems.length} 个控件`"
+          >
             <ChevronUp class="h-4 w-4" />
+            <span v-if="collapsedPreviewItems.length > 0" class="footer-preview-more-badge">{{ collapsedPreviewItems.length }}</span>
           </button>
         </div>
       </div>
     </div>
 
     <div class="pt-2">
-      <div class="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">按钮显示</div>
+      <div class="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">主栏显示</div>
+          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/35">关闭后不会隐藏功能，会收入右侧“更多工具”菜单。</div>
+        </div>
+        <div v-if="collapsedPreviewItems.length > 0" class="shrink-0 rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-semibold text-[#EC4141]">
+          更多菜单 {{ collapsedPreviewItems.length }} 项
+        </div>
+      </div>
       <div class="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
         <button
           v-for="item in FOOTER_ITEMS"
           :key="item.key"
           type="button"
-          class="footer-visibility-row"
+          class="footer-visibility-row rounded-2xl border border-gray-200/70 bg-white/45 shadow-sm backdrop-blur-md hover:border-[#EC4141]/35 hover:bg-white/60 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10"
           @click="toggleItemVisibility(item.key)"
         >
           <span class="flex min-w-0 items-center gap-2.5">
@@ -279,7 +396,7 @@ onUnmounted(cancelDragging);
     <Teleport to="body">
       <div
         v-if="dragState?.moved"
-        class="pointer-events-none fixed z-[10020] flex items-center gap-2 rounded-full border border-[#EC4141]/25 bg-white/95 px-3 py-2 text-[#EC4141] shadow-2xl backdrop-blur-xl dark:bg-zinc-900/95"
+        class="pointer-events-none fixed z-[10020] flex items-center gap-2 rounded-full border border-[#EC4141]/25 bg-white/40 px-3 py-2 text-[#EC4141] shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-black/20"
         :style="{ left: `${dragState.x + 14}px`, top: `${dragState.y + 14}px` }"
       >
         <FooterControlIcon :item-key="dragState.key" class="h-4 w-4" />
@@ -290,30 +407,13 @@ onUnmounted(cancelDragging);
 </template>
 
 <style scoped>
-.footer-layout-preview-container {
-  overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
-}
-
-:global(.dark) .footer-layout-preview-container {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.025);
-}
-
 .footer-layout-preview-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-}
-
-:global(.dark) .footer-layout-preview-header {
-  border-bottom-color: rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
 }
 
 .footer-preview-reset {
@@ -321,7 +421,6 @@ onUnmounted(cancelDragging);
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 999px;
   color: rgb(75 85 99);
   font-size: 12px;
@@ -330,27 +429,20 @@ onUnmounted(cancelDragging);
 }
 
 .footer-preview-reset:hover {
-  border-color: #ec4141;
   color: #ec4141;
 }
 
 :global(.dark) .footer-preview-reset {
-  border-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.7);
 }
 
 .footer-player-preview {
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
+  grid-template-columns: minmax(170px, 1fr) minmax(168px, auto) minmax(170px, 1fr);
   align-items: center;
-  min-height: 88px;
-  gap: 14px;
-  padding: 14px 16px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.64));
-}
-
-:global(.dark) .footer-player-preview {
-  background: linear-gradient(135deg, rgba(24, 24, 27, 0.9), rgba(9, 9, 11, 0.72));
+  min-height: 80px;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 .footer-preview-left,
@@ -361,10 +453,10 @@ onUnmounted(cancelDragging);
   align-items: center;
 }
 
-.footer-preview-left { min-width: 0; gap: 9px; }
-.footer-preview-center { justify-content: center; gap: 5px; }
-.footer-preview-right { justify-content: flex-end; min-width: 0; gap: 3px; }
-.footer-preview-zone { gap: 3px; }
+.footer-preview-left { min-width: 0; gap: 10px; }
+.footer-preview-center { justify-content: center; gap: 7px; }
+.footer-preview-right { justify-content: flex-end; min-width: 0; gap: 4px; }
+.footer-preview-zone { gap: 2px; }
 
 .footer-preview-cover {
   width: 46px;
@@ -385,50 +477,61 @@ onUnmounted(cancelDragging);
   transition: 150ms ease;
 }
 
+.footer-preview-slot--empty {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.footer-preview-slot--empty.footer-preview-slot--drag-active {
+  width: 34px;
+  opacity: 1;
+  pointer-events: auto;
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
 .footer-preview-slot--target {
   border-color: rgba(236, 65, 65, 0.7);
   background: rgba(236, 65, 65, 0.1);
   transform: scale(1.08);
 }
 
-.footer-preview-control,
-.footer-preview-playback {
+.footer-preview-control-shell {
   display: grid;
   width: 32px;
   height: 32px;
-  flex: 0 0 auto;
   place-items: center;
-  border-radius: 999px;
-  color: rgb(55 65 81);
-  transition: 150ms ease;
-}
-
-.footer-preview-control {
   cursor: grab;
   touch-action: none;
 }
 
-.footer-preview-control:hover {
-  color: #ec4141;
-  background: rgba(236, 65, 65, 0.08);
+.footer-preview-control-shell:active {
+  cursor: grabbing;
 }
 
-.footer-preview-control:active { cursor: grabbing; }
-.footer-preview-control--dragging { opacity: 0.28; transform: scale(0.9); }
+.footer-preview-control-shell--dragging {
+  opacity: 0.28;
+  transform: scale(0.9);
+}
 
-:global(.dark) .footer-preview-control,
-:global(.dark) .footer-preview-playback { color: rgba(255, 255, 255, 0.78); }
+.footer-preview-more {
+  cursor: default;
+}
 
-.footer-preview-play {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-  place-items: center;
+.footer-preview-more-badge {
+  position: absolute;
+  top: -4px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
   border-radius: 999px;
-  color: white;
   background: #ec4141;
-  box-shadow: 0 6px 18px rgba(236, 65, 65, 0.24);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  box-shadow: 0 3px 8px rgba(236, 65, 65, 0.25);
 }
 
 .footer-visibility-row {
@@ -438,12 +541,12 @@ onUnmounted(cancelDragging);
   justify-content: space-between;
   gap: 12px;
   padding: 7px 10px;
-  border-radius: 12px;
   transition: 150ms ease;
 }
 
-.footer-visibility-row:hover { background: rgba(15, 23, 42, 0.035); }
-:global(.dark) .footer-visibility-row:hover { background: rgba(255, 255, 255, 0.04); }
+.footer-visibility-row:hover {
+  color: #ec4141;
+}
 
 .footer-visibility-icon {
   display: grid;
@@ -483,12 +586,37 @@ onUnmounted(cancelDragging);
 
 .footer-visibility-switch--on .footer-visibility-switch-thumb { transform: translateX(16px); }
 
-@media (max-width: 780px) {
+@media (max-width: 720px) {
   .footer-player-preview {
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: 52px 1fr auto;
+    gap: 8px;
   }
-  .footer-preview-center { order: -1; }
-  .footer-preview-right { justify-content: flex-start; }
+  .footer-preview-track-info,
+  .footer-preview-left .footer-preview-zone {
+    display: none;
+  }
+  .footer-preview-left {
+    gap: 0;
+  }
+  .footer-preview-center {
+    gap: 6px;
+  }
+  .footer-preview-right {
+    justify-content: flex-end;
+    gap: 2px;
+  }
+}
+
+@media (max-width: 560px) {
+  .footer-player-preview {
+    grid-template-columns: 48px 1fr 40px;
+    padding: 10px 12px;
+  }
+  .footer-preview-right .footer-preview-zone {
+    display: none;
+  }
+  .footer-preview-center {
+    gap: 4px;
+  }
 }
 </style>
