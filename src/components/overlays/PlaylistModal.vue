@@ -40,7 +40,12 @@ const emit = defineEmits<{
 
 const { showToast } = useToast();
 
-const activeTab = ref<TabType>('create');
+const getDefaultTab = (): TabType => {
+  const mode = props.mode ?? 'all';
+  return mode === 'import' ? 'backupImport' : 'create';
+};
+
+const activeTab = ref<TabType>(getDefaultTab());
 const isClosing = ref(false);
 
 // 新建歌单
@@ -176,16 +181,12 @@ async function handleDropPaths(paths: string[]) {
 
 // 弹窗打开时重置状态
 watch(
-  () => props.visible,
+  () => [props.visible, props.mode] as const,
   async (val) => {
-    if (val) {
+    const [visible] = val;
+    if (visible) {
       // 根据模式设置默认标签页
-      const mode = props.mode ?? 'all';
-      if (mode === 'import') {
-        activeTab.value = 'backupImport';
-      } else {
-        activeTab.value = 'create';
-      }
+      activeTab.value = getDefaultTab();
       createName.value = '';
       importInput.value = '';
       importRename.value = '';
@@ -210,6 +211,7 @@ watch(
       teardownDragListeners();
     }
   },
+  { immediate: true },
 );
 
 // 组件卸载时清理
