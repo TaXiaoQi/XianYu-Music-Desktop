@@ -2,9 +2,13 @@
 import { useDeveloperMode } from '../../features/settings/developerMode';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { showSettingsConflict } from '../../composables/useSettingsConflict';
+import { useAnnouncement } from '../../composables/useAnnouncement';
+import { useUpdateCheck } from '../../composables/useUpdateCheck';
 
 const { disableDeveloperMode } = useDeveloperMode();
 const { triggerOnboarding } = useOnboarding();
+const { manualCheckAnnouncement } = useAnnouncement();
+const { checkUpdateManual } = useUpdateCheck();
 
 /** 测试设置同步冲突弹窗 */
 function testConflictDialog() {
@@ -58,6 +62,38 @@ function testConflictDialog() {
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
           @click="testConflictDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="border-t border-black/5 dark:border-white/5"></div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">公告展示框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试公告弹窗显示</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="() => void manualCheckAnnouncement()"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="border-t border-black/5 dark:border-white/5"></div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">更新提示框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试更新弹窗显示</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="() => void checkUpdateManual()"
         >
           弹出
         </button>
