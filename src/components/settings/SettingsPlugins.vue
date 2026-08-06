@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy } from 'lucide-vue-next';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, type PluginUserVariable } from '../../services/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -86,6 +86,17 @@ const filteredPlugins = computed(() => {
     p.sources.join(',').toLowerCase().includes(keyword) ||
     (p.author?.toLowerCase().includes(keyword) ?? false)
   );
+});
+
+// 缓存有用户变量定义的插件 ID 集合（用于卡片上显示徽标）
+const pluginsWithUserVars = computed(() => {
+  const set = new Set<string>();
+  for (const p of plugins.value) {
+    if (getPluginUserVariables(p.id).length > 0) {
+      set.add(p.id);
+    }
+  }
+  return set;
 });
 
 // ==================== 拖拽排序（基于 pointer 事件）====================
@@ -742,12 +753,28 @@ function confirmRemoveSubscription() {
 // ==================== 插件详情弹窗 ====================
 const detailPlugin = ref<PluginSource | null>(null);
 
+// ==================== 用户变量编辑 ====================
+const detailUserVariables = ref<PluginUserVariable[]>([]);
+const detailUserVarValues = ref<Record<string, string>>({});
+const savingUserVars = ref(false);
+
 function openPluginDetail(plugin: PluginSource) {
   detailPlugin.value = plugin;
+  // 加载用户变量定义和已存储的值
+  detailUserVariables.value = getPluginUserVariables(plugin.id);
+  detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
+  // 对未设置值的变量填充默认值
+  for (const v of detailUserVariables.value) {
+    if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
+      detailUserVarValues.value[v.name] = v.defaultValue;
+    }
+  }
 }
 
 function closePluginDetail() {
   detailPlugin.value = null;
+  detailUserVariables.value = [];
+  detailUserVarValues.value = {};
 }
 
 async function copyPluginLink() {
@@ -757,6 +784,21 @@ async function copyPluginLink() {
     showToast('插件链接已复制', 'success');
   } catch {
     showToast('复制失败，请手动选择复制', 'error');
+  }
+}
+
+async function saveUserVariables() {
+  if (!detailPlugin.value) return;
+  savingUserVars.value = true;
+  try {
+    setPluginUserVariableValues(detailPlugin.value.id, { ...detailUserVarValues.value });
+    // 清除缓存的插件实例，下次使用时会重新加载并读取新的用户变量值
+    reloadPluginInstance(detailPlugin.value.id);
+    showToast('用户变量已保存，插件将在下次使用时重新加载', 'success');
+  } catch {
+    showToast('保存失败，请重试', 'error');
+  } finally {
+    savingUserVars.value = false;
   }
 }
 </script>
@@ -1183,6 +1225,14 @@ async function copyPluginLink() {
                 >
                   可更新
                 </span>
+                <span
+                  v-if="pluginsWithUserVars.has(plugin.id)"
+                  class="settings-plugin-tag settings-plugin-tag--vars"
+                  title="此插件支持用户变量配置"
+                >
+                  <KeyRound class="h-3 w-3" />
+                  变量
+                </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
                 v{{ plugin.version }}
@@ -1477,6 +1527,66 @@ async function copyPluginLink() {
                 >
                   <Copy class="h-3.5 w-3.5 shrink-0" />
                   <span class="truncate">{{ detailPlugin.filePath || '—' }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 用户变量区域 -->
+            <div v-if="detailUserVariables.length > 0" class="plugin-detail-user-vars">
+              <div class="plugin-detail-user-vars-header">
+                <KeyRound class="h-4 w-4 text-[#EC4141] shrink-0" />
+                <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">用户变量</span>
+                <span class="text-xs text-gray-400 dark:text-white/40">插件运行所需的自定义参数</span>
+              </div>
+              <div class="plugin-detail-user-vars-body">
+                <div
+                  v-for="v in detailUserVariables"
+                  :key="v.name"
+                  class="plugin-detail-var-row"
+                >
+                  <label class="plugin-detail-var-label">
+                    {{ v.title || v.name }}
+                    <span v-if="v.required" class="text-[#EC4141]">*</span>
+                  </label>
+                  <p v-if="v.description" class="plugin-detail-var-desc">{{ v.description }}</p>
+                  <!-- select 类型 -->
+                  <select
+                    v-if="v.type === 'select'"
+                    v-model="detailUserVarValues[v.name]"
+                    class="plugin-detail-var-select"
+                  >
+                    <option value="" disabled>{{ v.placeholder || '请选择' }}</option>
+                    <option v-for="opt in v.options" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                  <!-- password 类型 -->
+                  <input
+                    v-else-if="v.type === 'password'"
+                    type="password"
+                    v-model="detailUserVarValues[v.name]"
+                    :placeholder="v.placeholder || ''"
+                    class="plugin-detail-var-input"
+                    autocomplete="off"
+                  />
+                  <!-- text 类型（默认） -->
+                  <input
+                    v-else
+                    type="text"
+                    v-model="detailUserVarValues[v.name]"
+                    :placeholder="v.placeholder || ''"
+                    class="plugin-detail-var-input"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
+              <div class="plugin-detail-user-vars-footer">
+                <button
+                  type="button"
+                  class="plugin-detail-var-save"
+                  :disabled="savingUserVars"
+                  @click="saveUserVariables"
+                >
+                  <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': savingUserVars }" />
+                  {{ savingUserVars ? '保存中...' : '保存并重载插件' }}
                 </button>
               </div>
             </div>
@@ -1834,6 +1944,14 @@ async function copyPluginLink() {
   color: #ec4141;
 }
 
+.settings-plugin-tag--vars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
 .settings-pop-panel-enter-active,
 .settings-pop-panel-leave-active {
   transition:
@@ -1984,6 +2102,121 @@ async function copyPluginLink() {
 
 .plugin-detail-link:hover {
   background: rgba(236, 65, 65, 0.12);
+}
+
+/* 用户变量区域 */
+.plugin-detail-user-vars {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 16px 20px;
+}
+
+.dark .plugin-detail-user-vars {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.plugin-detail-user-vars-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.plugin-detail-user-vars-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plugin-detail-var-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plugin-detail-var-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  user-select: none;
+}
+
+.dark .plugin-detail-var-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.plugin-detail-var-desc {
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.dark .plugin-detail-var-desc {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.plugin-detail-var-input,
+.plugin-detail-var-select {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.02);
+  font-size: 12px;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.dark .plugin-detail-var-input,
+.dark .plugin-detail-var-select {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.plugin-detail-var-input:focus,
+.plugin-detail-var-select:focus {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.04);
+}
+
+.dark .plugin-detail-var-input:focus,
+.dark .plugin-detail-var-select:focus {
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(236, 65, 65, 0.08);
+}
+
+.plugin-detail-user-vars-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.plugin-detail-var-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: #EC4141;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.plugin-detail-var-save:hover:not(:disabled) {
+  background: #d63a3a;
+}
+
+.plugin-detail-var-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* 弹窗过渡动画 */
@@ -2146,6 +2379,11 @@ async function copyPluginLink() {
 .dark .settings-plugin-tag--accent {
   background: rgba(236, 65, 65, 0.18);
   color: #ff8b8b;
+}
+
+.dark .settings-plugin-tag--vars {
+  background: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
 }
 
 .dark .settings-plugin-icon-button {

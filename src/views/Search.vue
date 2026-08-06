@@ -777,6 +777,7 @@ const performSearch = async () => {
     pluginAlbumResults.value = [];
     pluginPlaylistResults.value = [];
     hasMore.value = false;
+    mfCoverLoadVersion += 1; // 取消 pending 的 MF 封面拉取
     return;
   }
 
@@ -902,6 +903,7 @@ const performSearch = async () => {
         if (searchAbortController.signal.aborted) return;
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
+        triggerMfCoverLoading();
       } else if (activeSearchType.value === 'artist') {
         // 歌手搜索
         pluginSearchResults.value = [];
@@ -998,6 +1000,7 @@ const loadMore = async () => {
         currentPage.value = nextPage;
         pluginSearchResults.value = [...pluginSearchResults.value, ...results];
         hasMore.value = results.length >= 30;
+        triggerMfCoverLoading();
       } else {
         hasMore.value = false;
       }
@@ -1095,6 +1098,69 @@ const handleImgError = (item: LxSearchResultItem) => {
   item.img = '';
   lxSearchResults.value = [...lxSearchResults.value];
 };
+
+// MF 插件（如网易云）搜索结果可能不含封面 URL，需异步调用 getMusicInfo 补获。
+// 与 LX 封面加载类似：滑动窗口并发 + 定时批量刷新视图。
+let mfCoverLoadVersion = 0;
+let mfCoverLoadUiTimer: ReturnType<typeof setInterval> | null = null;
+
+function triggerMfCoverLoading() {
+  const pluginSource = selectedSourceItem.value?.source;
+  if (!pluginSource) return;
+
+  const version = ++mfCoverLoadVersion;
+  if (mfCoverLoadUiTimer) {
+    clearInterval(mfCoverLoadUiTimer);
+    mfCoverLoadUiTimer = null;
+  }
+
+  // 只处理没有 coverUrl 的项
+  const items = pluginSearchResults.value.filter(item => !item.coverUrl);
+  if (items.length === 0) return;
+
+  const CONCURRENCY = 3; // getMusicInfo 较重，并发数低于 LX
+  let nextIdx = 0;
+  let hasUpdate = false;
+
+  const worker = async () => {
+    while (nextIdx < items.length) {
+      if (version !== mfCoverLoadVersion) return;
+      const item = items[nextIdx++];
+      try {
+        const cover = await pluginGetCover(pluginSource, item);
+        if (version !== mfCoverLoadVersion) return;
+        if (cover) {
+          item.coverUrl = cover;
+          hasUpdate = true;
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const workers = Array.from({ length: CONCURRENCY }, () => worker());
+
+  // 定时刷新视图（500ms 一次）
+  const uiTimer = setInterval(() => {
+    if (version !== mfCoverLoadVersion) {
+      clearInterval(uiTimer);
+      if (mfCoverLoadUiTimer === uiTimer) mfCoverLoadUiTimer = null;
+      return;
+    }
+    if (hasUpdate) {
+      hasUpdate = false;
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    }
+  }, 500);
+  mfCoverLoadUiTimer = uiTimer;
+
+  Promise.all(workers).then(() => {
+    clearInterval(uiTimer);
+    if (mfCoverLoadUiTimer === uiTimer) mfCoverLoadUiTimer = null;
+    if (version === mfCoverLoadVersion && hasUpdate) {
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    }
+  });
+}
 
 // 切换来源
 const handleSelectSource = (source: SourceItem) => {
@@ -1835,6 +1901,11 @@ onBeforeUnmount(() => {
   searchAbortController = null;
   coverLoadVersion += 1;
   clearCoverLoadUiTimer();
+  mfCoverLoadVersion += 1;
+  if (mfCoverLoadUiTimer) {
+    clearInterval(mfCoverLoadUiTimer);
+    mfCoverLoadUiTimer = null;
+  }
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;

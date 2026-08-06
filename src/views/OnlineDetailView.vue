@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from 'lucide-vue-next';
 
@@ -116,6 +116,46 @@ function mfResultToSong(item: PluginSearchResult): Song {
 
 const songList = computed<Song[]>(() => songs.value.map(mfResultToSong));
 
+// MF 插件（如网易云）的 search/getAlbumInfo/getArtistWorks 可能不返回封面 URL，
+// 只在 getMusicInfo 时才有。此处异步补获列表中缺失封面的歌曲，不阻塞页面渲染。
+let mfCoverFetchVersion = 0;
+const MF_COVER_CONCURRENCY = 3;
+
+async function fetchMissingMfCovers() {
+  if (!ctx.value) return;
+  const version = ++mfCoverFetchVersion;
+  const { pluginSource } = ctx.value;
+
+  // 筛选没有封面的歌曲（拷贝索引，避免遍历期间数组变化）
+  const pending: { index: number; item: PluginSearchResult }[] = [];
+  songs.value.forEach((item, index) => {
+    if (!item.coverUrl && item.rawData) {
+      pending.push({ index, item });
+    }
+  });
+  if (pending.length === 0) return;
+
+  // 有限并发拉取封面
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pending.length) {
+      const { index, item } = pending[cursor++];
+      if (version !== mfCoverFetchVersion) return; // 新数据加载，取消旧任务
+      try {
+        const cover = await pluginGetCover(pluginSource, item);
+        if (version !== mfCoverFetchVersion) return;
+        if (cover && songs.value[index]) {
+          // 响应式更新：替换数组项以触发 computed 重算
+          songs.value[index] = { ...songs.value[index], coverUrl: cover };
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(MF_COVER_CONCURRENCY, pending.length) }, () => worker());
+  void Promise.all(workers);
+}
+
 async function loadData(page = 1) {
   if (!ctx.value) return;
   loading.value = true;
@@ -147,6 +187,11 @@ async function loadData(page = 1) {
   } finally {
     loading.value = false;
     hasInitialLoad.value = true;
+  }
+
+  // 歌曲列表加载完成后，异步补获缺失的封面（不阻塞渲染）
+  if (songs.value.some(s => !s.coverUrl)) {
+    void fetchMissingMfCovers();
   }
 }
 
@@ -346,6 +391,10 @@ onMounted(() => {
     return;
   }
   void loadData(1);
+});
+
+onBeforeUnmount(() => {
+  mfCoverFetchVersion += 1; // 取消 pending 的封面拉取
 });
 
 // 路由 type 变化时：尝试恢复上下文并重新加载
