@@ -10,8 +10,8 @@ export const extractCoverUrl = (item: any): string => {
   if (!item || typeof item !== 'object') return '';
   const raw = item.rawData || item.raw || item;
   let url =
-    item.artwork || item.cover || item.coverUrl || item.cover_url || item.pic || item.img || item.albumPic || item.picture ||
-    raw.artwork || raw.cover || raw.coverUrl || raw.cover_url || raw.pic || raw.img || raw.albumPic || raw.picture || '';
+    item.artwork || item.cover || item.coverImg || item.coverUrl || item.cover_url || item.pic || item.picurl || item.img || item.imgurl || item.imgUrl || item.albumPic || item.picture ||
+    raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || '';
 
   if (!url && (item.al?.picUrl || raw.al?.picUrl)) url = item.al?.picUrl || raw.al?.picUrl;
   if (!url && (item.album?.picUrl || raw.album?.picUrl)) url = item.album?.picUrl || raw.album?.picUrl;

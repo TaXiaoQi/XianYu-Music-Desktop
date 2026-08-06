@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Eye, EyeOff } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Eye, EyeOff, Palette } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -201,7 +201,7 @@ const toggleLyricsPlayerSettings = () => {
     return;
   }
   showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value;
-  // 打开歌词样式面板时收起底栏工具弹窗，避免弹窗遮挡歌词样式面板
+  // 打开页面样式面板时收起底栏工具弹窗，避免弹窗遮挡页面样式面板
   if (showLyricsPlayerSettingsPanel.value) {
     showFooterTools.value = false;
   }
@@ -967,9 +967,9 @@ onUnmounted(() => {
               @mousedown.stop
               @click.stop="toggleLyricsPlayerSettings"
               :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/80 hover:text-white hover:bg-white/10']"
-              title="歌词样式"
+              title="页面样式"
             >
-              A
+              <Palette class="h-4 w-4" :stroke-width="2.2" />
             </button>
 
             <button @click="togglePin"

@@ -48,3 +48,37 @@ describe('extractCoverUrl netease picId fallback', () => {
     );
   });
 });
+
+// Baka 系插件（长青SVIP音源、咪咕、QQ音乐等）使用 coverImg / imgUrl / imgurl / picurl
+// 作为封面字段名，extractCoverUrl 需兼容这些字段以正确显示歌单/排行榜封面
+describe('extractCoverUrl Baka plugin cover fields', () => {
+  it('extracts coverImg (Baka top list / playlist cover)', () => {
+    expect(extractCoverUrl({ coverImg: 'https://d.musicapp.migu.cn/cover.png' }))
+      .toBe('https://d.musicapp.migu.cn/cover.png');
+  });
+
+  it('extracts imgUrl (camelCase variant)', () => {
+    expect(extractCoverUrl({ imgUrl: 'https://example.com/img.jpg' }))
+      .toBe('https://example.com/img.jpg');
+  });
+
+  it('extracts imgurl (lowercase variant)', () => {
+    expect(extractCoverUrl({ imgurl: 'https://example.com/img.jpg' }))
+      .toBe('https://example.com/img.jpg');
+  });
+
+  it('extracts picurl (lowercase variant)', () => {
+    expect(extractCoverUrl({ picurl: 'https://example.com/pic.jpg' }))
+      .toBe('https://example.com/pic.jpg');
+  });
+
+  it('extracts coverImg from rawData nested object', () => {
+    expect(extractCoverUrl({ rawData: { coverImg: 'https://example.com/cover.png' } }))
+      .toBe('https://example.com/cover.png');
+  });
+
+  it('upgrades http:// coverImg to https://', () => {
+    expect(extractCoverUrl({ coverImg: 'http://example.com/cover.png' }))
+      .toBe('https://example.com/cover.png');
+  });
+});

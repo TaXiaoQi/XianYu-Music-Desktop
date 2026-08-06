@@ -16,6 +16,8 @@ export interface LxSearchResultItem {
   source: 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
   interval: string;
   img: string | null;
+  /** 各歌手的头像 URL（key 为歌手名，value 为头像 URL），搜索接口直接返回时填充 */
+  singerAvatars?: Record<string, string>;
   types: { type: string; size: string | null; hash?: string }[];
   _types: Record<string, { size: string | null; hash?: string }>;
   // source-specific fields
@@ -333,6 +335,19 @@ async function searchKw(str: string, page = 1, limit = 30, retryNum = 0): Promis
 
 // ==================== KG (酷狗) Search ====================
 
+/**
+ * 构造酷狗封面 URL：搜索结果 Image 字段含 {size} 占位符，替换为实际尺寸并升级为 HTTPS。
+ * 例：`http://imge.kugou.com/stdmusic/{size}/xxx.jpg` → `https://imge.kugou.com/stdmusic/480/xxx.jpg`
+ */
+function buildKugouCoverUrl(url: string | null | undefined, size = 480): string | null {
+  if (!url || typeof url !== 'string') return null;
+  let u = url.trim();
+  if (!u) return null;
+  u = u.replace(/^http:\/\//i, 'https://');
+  u = u.replace('{size}', String(size));
+  return u;
+}
+
 function kgFilterData(rawData: any): LxSearchResultItem {
   const types: LxSearchResultItem['types'] = [];
   const _types: LxSearchResultItem['_types'] = {};
@@ -356,6 +371,8 @@ function kgFilterData(rawData: any): LxSearchResultItem {
     types.push({ type: 'flac24bit', size, hash: rawData.ResFileHash });
     _types.flac24bit = { size, hash: rawData.ResFileHash };
   }
+  // 酷狗搜索结果 Image 字段含专辑封面 URL（带 {size} 占位符），直接提取避免 img=null
+  const imgUrl = buildKugouCoverUrl(rawData.Image || rawData.trans_param?.union_cover);
   return {
     singer: decodeName(formatSingerName(rawData.Singers, 'name')),
     name: decodeName(rawData.SongName),
@@ -364,7 +381,7 @@ function kgFilterData(rawData: any): LxSearchResultItem {
     songmid: rawData.Audioid,
     source: 'kg',
     interval: formatPlayTime(rawData.Duration),
-    img: null,
+    img: imgUrl,
     hash: rawData.FileHash,
     types,
     _types,
@@ -541,6 +558,13 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
       al.picUrl
       || neteasePicIdToUrl(al.picId_str || al.pic_str || al.picId)
       || null;
+    // 网易云搜索接口 artists[].img1v1Url 为歌手头像，提取供歌手搜索页使用
+    const singerAvatars: Record<string, string> = {};
+    for (const s of ar) {
+      if (s && s.name && s.img1v1Url) {
+        singerAvatars[s.name] = s.img1v1Url;
+      }
+    }
     return {
       singer: ar.map((s: any) => s.name).join('、'),
       name: song.name,
@@ -550,6 +574,7 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
       interval: formatPlayTime((song.duration || 0) / 1000),
       songmid: String(song.id),
       img,
+      singerAvatars: Object.keys(singerAvatars).length > 0 ? singerAvatars : undefined,
       types,
       _types,
     };
@@ -701,18 +726,22 @@ export function deriveLxArtistResults(list: LxSearchResultItem[]): LxArtistSearc
   for (const song of list) {
     for (const name of splitLxArtists(song.singer)) {
       const key = name.toLocaleLowerCase();
+      // 优先使用歌手头像（singerAvatars），其次回退到歌曲封面（song.img）
+      const singerAvatar = song.singerAvatars?.[name];
+      const avatarUrl = singerAvatar || song.img || '';
       const existing = artists.get(key);
       if (existing) {
         existing.songCount = (existing.songCount ?? 0) + 1;
-        if (!existing.avatarUrl && song.img) existing.avatarUrl = song.img;
+        if (!existing.avatarUrl && avatarUrl) existing.avatarUrl = avatarUrl;
         continue;
       }
       artists.set(key, {
         id: `${song.source}:artist:${name}`,
         name,
-        avatarUrl: song.img || '',
+        avatarUrl,
         songCount: 1,
-        rawData: { source: song.source, name },
+        // 保存 source/songmid 供 lxCatalogSearch 异步补充头像（kw 源搜索结果无图片）
+        rawData: { source: song.source, name, songmid: song.songmid },
       });
     }
   }
@@ -873,7 +902,39 @@ export async function lxCatalogSearch(
 ): Promise<LxArtistSearchResult[] | LxAlbumSearchResult[] | LxPlaylistSearchResult[]> {
   if (type === 'playlist') return searchLxPlaylists(source, keyword, page, limit);
   const result = await lxSearch(source, keyword, page, limit);
-  return type === 'artist' ? deriveLxArtistResults(result.list) : deriveLxAlbumResults(result.list);
+  if (type !== 'artist') return deriveLxAlbumResults(result.list);
+  const artists = deriveLxArtistResults(result.list);
+  // kw 源搜索结果无图片字段，用 songmid 调 artistpicserver 异步获取封面作为歌手头像
+  if (source === 'kw') {
+    await fillKwArtistAvatars(artists);
+  }
+  return artists;
+}
+
+/**
+ * 酷我搜索结果无任何图片字段，用 songmid 调 artistpicserver 获取歌曲封面作为歌手头像。
+ * 并行请求所有缺失头像的歌手，最多等待 3 秒避免阻塞搜索过久。
+ */
+async function fillKwArtistAvatars(artists: LxArtistSearchResult[]): Promise<void> {
+  const tasks = artists
+    .filter(a => !a.avatarUrl && (a.rawData as any)?.songmid)
+    .map(async a => {
+      try {
+        const songmid = (a.rawData as any).songmid as string;
+        const resp = await httpFetch(
+          `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${songmid}`,
+          { method: 'GET' },
+        );
+        if (resp.status === 200 && /^http/.test(resp.body?.trim())) {
+          const url = normalizeKuwoCoverUrl(resp.body.trim());
+          if (url) a.avatarUrl = url;
+        }
+      } catch { /* 单个歌手获取失败不影响整体 */ }
+    });
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise(resolve => setTimeout(resolve, 3000)),
+  ]);
 }
 
 // ==================== Main Export ====================
