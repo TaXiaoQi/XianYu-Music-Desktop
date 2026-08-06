@@ -100,7 +100,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             <button
               type="button"
               class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap"
-              :class="'bg-[#EC4141]/10 text-[#EC4141] hover:bg-[#EC4141]/20'"
+              :class="'bg-[#EC4141] text-white hover:bg-[#d13b3b]'"
               @click="chooseDir"
             >
               <FolderOpen class="h-3.5 w-3.5" />

@@ -277,7 +277,7 @@ onMounted(() => {
               class="settings-action-button shrink-0"
               :class="isClearingStreamCache || streamCacheCurrent === 0
                 ? 'settings-action-button--disabled'
-                : 'settings-action-button--soft'"
+                : 'settings-action-button--solid'"
             >
               {{ isClearingStreamCache ? '清理中...' : '清理' }}
             </button>
@@ -295,7 +295,7 @@ onMounted(() => {
             class="settings-action-button shrink-0"
             :class="isClearingAllData || isLibraryScanActive
               ? 'settings-action-button--disabled'
-              : 'settings-action-button--soft'"
+              : 'settings-action-button--solid'"
           >
             {{ isClearingAllData ? '重置中...' : isLibraryScanActive ? '扫描中不可用' : '重置' }}
           </button>
@@ -342,6 +342,16 @@ onMounted(() => {
 .settings-action-button--soft:hover:not(:disabled) {
   border-color: rgba(236, 65, 65, 0.34);
   background: rgba(236, 65, 65, 0.1);
+}
+
+.settings-action-button--solid {
+  background: #ec4141;
+  color: white;
+  border-color: rgba(236, 65, 65, 0.5);
+}
+
+.settings-action-button--solid:hover:not(:disabled) {
+  background: #d13b3b;
 }
 
 .settings-action-button--disabled {

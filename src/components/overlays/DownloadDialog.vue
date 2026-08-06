@@ -197,7 +197,7 @@ const handleDownload = async () => {
                 </div>
                 <button
                   type="button"
-                  class="shrink-0 px-3 py-2 text-xs font-medium rounded-md bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                  class="shrink-0 px-3 py-2 text-xs font-medium rounded-md bg-[#EC4141] text-white hover:bg-[#d13b3b] transition-colors"
                   @click="chooseDir"
                 >
                   选择

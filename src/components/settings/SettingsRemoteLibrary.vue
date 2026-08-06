@@ -318,7 +318,7 @@ onScopeDispose(() => {
         </h2>
         <div class="remote-cache-row">
           <span>{{ cacheUsageText }}</span>
-          <button type="button" class="remote-action remote-action--soft" :disabled="isClearingCache" @click="clearRemoteCache">
+          <button type="button" class="remote-action" :disabled="isClearingCache" @click="clearRemoteCache">
             {{ isClearingCache ? '清理中...' : '清理缓存' }}
           </button>
         </div>
@@ -419,7 +419,8 @@ onScopeDispose(() => {
 .remote-browser,
 .remote-panel {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   padding: 16px;
 }
 
@@ -477,11 +478,15 @@ onScopeDispose(() => {
   min-height: 36px;
   border: 1px solid rgba(236, 65, 65, 0.18);
   border-radius: 999px;
-  background: rgba(236, 65, 65, 0.95);
+  background: #ec4141;
   color: white;
   font-size: 12px;
   font-weight: 700;
   padding: 0 15px;
+}
+
+.remote-action:hover:not(:disabled) {
+  background: #d13b3b;
 }
 
 .remote-action--soft,
@@ -595,47 +600,54 @@ onScopeDispose(() => {
   font-size: 13px;
   font-weight: 700;
 }
+</style>
 
-:global(.dark) .remote-source-list,
-:global(.dark) .remote-cache-row,
-:global(.dark) .remote-browser,
-:global(.dark) .remote-panel {
-  background: rgba(255, 255, 255, 0.04);
+<!-- 深色模式使用非 scoped style 块 -->
+<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
+     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
+     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
+<style>
+html.dark .remote-source-list,
+html.dark .remote-cache-row,
+html.dark .remote-browser,
+html.dark .remote-panel {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
-:global(.dark) .remote-field {
+html.dark .remote-field {
   color: rgba(255, 255, 255, 0.72);
 }
 
-:global(.dark) .remote-input {
+html.dark .remote-input {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   color: rgb(243 244 246);
 }
 
-:global(.dark) .remote-input::placeholder {
+html.dark .remote-input::placeholder {
   color: rgba(255, 255, 255, 0.35);
 }
 
-:global(.dark) .remote-input:focus {
+html.dark .remote-input:focus {
   background: rgba(255, 255, 255, 0.1);
 }
 
-:global(.dark) .remote-source-row {
+html.dark .remote-source-row {
   background: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .remote-cache-row,
-:global(.dark) .remote-browser__bar,
-:global(.dark) .remote-browser__entry {
+html.dark .remote-cache-row,
+html.dark .remote-browser__bar,
+html.dark .remote-browser__entry {
   color: rgba(255, 255, 255, 0.86);
 }
 
-:global(.dark) .remote-browser__entry {
+html.dark .remote-browser__entry {
   background: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .remote-progress__top {
+html.dark .remote-progress__top {
   color: rgba(255, 255, 255, 0.7);
 }
 </style>
