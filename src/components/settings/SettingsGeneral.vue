@@ -253,7 +253,7 @@ onMounted(() => {
                 inputmode="numeric"
                 @change="patchStreamCacheSize($event)"
               />
-              <span>MB</span>
+              <span class="text-gray-500 dark:text-gray-400">MB</span>
             </label>
           </div>
         </div>
