@@ -168,10 +168,23 @@ function queueRecovery(reason: string) {
   }
 
   let attempts = 0;
-  const runRecovery = () => {
+  let lastTime = -1;
+  const runRecovery = (time: number) => {
     if (!player) return;
 
+    if (lastTime === -1) lastTime = time;
+    const delta = time - lastTime;
+    lastTime = time;
+
     player.recoverLayout(`${reason}:${attempts}`);
+    // recoverLayout 内部的 update(0) 不推进弹簧（delta=0），
+    // 暂停态下 animationLoop 已停止，弹簧目标无法收敛到正确位置，
+    // 歌词行会停在初始位置（posY=0）全部挤在一起。
+    // 用真实时间差 delta 调用 update 推进弹簧收敛。
+    if (delta > 0) {
+      player.update(delta);
+    }
+
     if (attempts < 12) {
       attempts += 1;
       recoveryFrameId = requestAnimationFrame(runRecovery);
@@ -220,6 +233,11 @@ onMounted(() => {
 
   resizeObserver = new ResizeObserver(() => {
     queueRecovery('resize');
+    // 暂停态下 animationLoop 已停止，resize 后 calcLayout 重设的弹簧目标无法收敛。
+    // 启动动画爆发让弹簧落位到新布局（与 wheel handler 处理方式一致）。
+    if (!props.playing) {
+      runSeekBurst();
+    }
   });
   resizeObserver.observe(wrapper);
 
