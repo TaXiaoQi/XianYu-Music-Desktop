@@ -1,12 +1,13 @@
+use crate::audio_proxy::AudioProxy;
 use crate::database::DbState;
 use crate::music::{
     run_cache_cleanup, FullCoverImageConcurrencyLimit, ThumbnailImageConcurrencyLimit,
     FULL_COVER_IMAGE_CONCURRENCY_LIMIT, THUMBNAIL_IMAGE_CONCURRENCY_LIMIT,
 };
-use crate::player::init_player;
+use crate::player::{init_player, start_usb_device_monitor};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
@@ -27,6 +28,10 @@ struct TrayMenuOpenPayload {
 
 #[derive(Default)]
 pub(crate) struct PendingOpenPaths(pub(crate) Mutex<Vec<String>>);
+
+/// Holds the local audio proxy instance (started once on app launch).
+/// [YinDong 播放引擎移植] 为 HTML <audio> + Web Audio 路径提供带 CORS 头的本地代理。
+pub struct AudioProxyState(pub(crate) Arc<Mutex<Option<AudioProxy>>>);
 
 fn append_unique_paths(target: &mut Vec<String>, incoming: impl IntoIterator<Item = String>) {
     let mut seen = target.iter().cloned().collect::<HashSet<_>>();
@@ -175,6 +180,10 @@ pub(crate) fn setup_app(
     let player_state = init_player(app.handle());
     app.manage(player_state);
 
+    // [YinDong 播放引擎移植] 启动 USB 设备热插拔监视器，前端通过 usb-device-changed 事件接收变更
+    let usb_monitor = start_usb_device_monitor(app.handle());
+    app.manage(usb_monitor);
+
     app.manage(ThumbnailImageConcurrencyLimit(Semaphore::new(
         THUMBNAIL_IMAGE_CONCURRENCY_LIMIT,
     )));
@@ -193,6 +202,14 @@ pub(crate) fn setup_app(
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         crate::webview_settings::disable_browser_accelerator_keys(&window);
+    }
+
+    // [YinDong 播放引擎移植] 启动本地音频代理：为 HTML <audio> + Web Audio 路径
+    // 提供 CORS 头（createMediaElementSource 要求 crossOrigin="anonymous"）。
+    // spawn() 在独立 OS 线程跑 accept loop，存活整个 app 生命周期。
+    let proxy = AudioProxy::spawn();
+    if let Some(proxy) = proxy {
+        app.manage(AudioProxyState(Arc::new(Mutex::new(Some(proxy)))));
     }
 
     Ok(())
@@ -218,6 +235,35 @@ pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or("main window not found")?;
     let _: () = window.open_devtools();
     Ok(())
+}
+
+/// [YinDong 播放引擎移植] 为远程音频 URL 生成本地代理 URL。
+/// 代理在服务端拉取远程音频并注入 CORS 头，使浏览器 Web Audio API
+/// （createMediaElementSource）能处理跨域音频。
+#[tauri::command]
+pub(crate) fn get_proxied_audio_url(
+    state: tauri::State<'_, AudioProxyState>,
+    url: String,
+) -> Result<String, String> {
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    match guard.as_ref() {
+        Some(proxy) => Ok(proxy.proxied_url(&url, None)),
+        None => Err("Audio proxy not available".to_string()),
+    }
+}
+
+/// [YinDong 播放引擎移植] 为本地音频文件路径生成本地代理 URL。
+/// 代理从磁盘读文件并注入 CORS 头，使 Web Audio API 能处理本地音频。
+#[tauri::command]
+pub(crate) fn get_local_audio_url(
+    state: tauri::State<'_, AudioProxyState>,
+    path: String,
+) -> Result<String, String> {
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    match guard.as_ref() {
+        Some(proxy) => Ok(proxy.local_url(&path)),
+        None => Err("Audio proxy not available".to_string()),
+    }
 }
 
 

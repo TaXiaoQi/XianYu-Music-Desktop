@@ -1,10 +1,9 @@
-use crate::player::equalizer::EqualizerSettings;
-use crate::player::sound_effect::SoundEffectSettings;
+use crate::player::effects::EffectParams;
 use rodio::source::SeekError;
 use rodio::Source;
 use serde::{Deserialize, Serialize};
 use souvlaki::MediaControls;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -142,15 +141,6 @@ pub struct SharedProgress {
     pub sample_rate: Arc<AtomicU32>,
     pub channels: Arc<AtomicU32>,
     pub visualizer: Arc<SharedVisualizer>,
-    /// 本次播放启动是否失败（远程取流 403/不支持 Range/解码失败等）。
-    /// 供前端「在线走 Rust 起播探测」快速感知硬失败，无需死等超时即可回退 H5。
-    pub start_failed: Arc<AtomicBool>,
-    /// 当前音频源的总时长（秒），0 表示未知。
-    /// 在 play_audio 创建音频源时从 Source::total_duration() 提取，
-    /// 供前端查询在线歌曲的实际时长（Song.duration 可能为 0）。
-    /// 使用 AtomicU64 存储 f64 的位模式（f64::to_bits / from_bits），
-    /// 因为 AtomicF64 在当前工具链不可用。
-    pub total_duration_secs: Arc<AtomicU64>,
 }
 
 pub enum AudioCommand {
@@ -158,10 +148,8 @@ pub enum AudioCommand {
         source: AudioSource,
         output_mode: AudioOutputMode,
         start_offset_ms: Option<u64>,
-        volume_balance_gain: f32,
     },
     Pause,
-    Stop,
     Resume,
     Seek {
         time: f64,
@@ -169,27 +157,16 @@ pub enum AudioCommand {
         request_id: u64,
     },
     SetVolume(f32),
-    SetSpeed(f32),
-    SetVolumeBalance {
-        enabled: bool,
-        target_gain: f32,
-    },
-    SetEqualizerSettings {
-        settings: EqualizerSettings,
-    },
-    SetSoundEffectSettings {
-        settings: SoundEffectSettings,
-    },
     SetDevice(Option<String>),
     SetOutputMode(AudioOutputMode),
+    /// [USB 独占模式] 同步最新音效参数到当前播放实例
+    SyncEffects,
 }
 
 #[derive(Clone, Debug)]
 pub enum AudioSource {
     LocalFile(String),
     RemoteWebDav(crate::remote::cache::RemoteStreamSource),
-    /// 流式临时文件：在线音频下载到本地临时文件，边下边播
-    StreamingTempFile(crate::player::stream_cache::StreamingTempFileState),
 }
 
 impl AudioSource {
@@ -197,7 +174,6 @@ impl AudioSource {
         match self {
             AudioSource::LocalFile(path) => path.clone(),
             AudioSource::RemoteWebDav(source) => source.remote_uri.clone(),
-            AudioSource::StreamingTempFile(state) => state.path.clone(),
         }
     }
 
@@ -212,6 +188,13 @@ pub struct PlayerState {
     pub playback_id: Arc<AtomicU64>,
     pub controls: Arc<Mutex<Option<MediaControls>>>,
     pub output_status: Arc<Mutex<AudioOutputStatus>>,
+    /// [USB 独占模式] 共享音效参数，前端通过 set_audio_effects 命令更新
+    pub effect_params: Arc<Mutex<EffectParams>>,
+    /// [USB 独占模式] 当前活跃的独占播放实例（用于 sync_effects）
+    /// 通过 runtime 线程的 exclusive_playback 持有，这里只是信号量
+    pub usb_exclusive_active: Arc<std::sync::atomic::AtomicBool>,
+    /// [USB 独占模式] 当前独占的设备名称（由播放线程更新）
+    pub exclusive_device_name: Arc<std::sync::RwLock<Option<String>>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -242,4 +225,24 @@ pub enum AudioOutputMode {
 pub(crate) struct SeekCompletedPayload {
     pub request_id: u64,
     pub time: f64,
+}
+
+/// [USB 独占模式] 位流信息 —— 当前播放的 PCM 流参数
+#[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BitstreamInfo {
+    /// 采样率（Hz）
+    pub sample_rate: u32,
+    /// 通道数
+    pub channels: u32,
+    /// 采样位深（16/24/32）
+    pub bit_depth: u32,
+    /// 当前活跃的输出设备名称
+    pub active_device_name: Option<String>,
+    /// 当前输出模式（shared / wasapiExclusive）
+    pub output_mode: AudioOutputMode,
+    /// 是否为位完美输出（独占模式 + 原始采样率）
+    pub bit_perfect: bool,
+    /// 当前已播放时长（秒）
+    pub position_seconds: f64,
 }

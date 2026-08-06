@@ -16,6 +16,7 @@ pub(crate) fn is_remote_uri(path: &str) -> bool {
     path.starts_with("remote://")
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RemoteStreamSource {
     pub remote_uri: String,

@@ -8,6 +8,13 @@ const CACHED_FFT_SIZE: usize = 2048;
 
 static FFT_2048: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 
+// [修复防御]: 复用 thread_local buffer 避免每次 build_frequency_bands 调用都分配 Vec<Complex<f32>>。
+// 前端以 20-60 FPS 调用 get_audio_visualizer_samples，原实现每秒分配 20-60 个 2048 元素 Vec，
+// 在低配 CPU 上产生显著 GC 压力与主线程卡顿。复用后零分配。
+thread_local! {
+    static FFT_BUFFER: std::cell::RefCell<Vec<Complex<f32>>> = std::cell::RefCell::new(Vec::with_capacity(CACHED_FFT_SIZE));
+}
+
 fn plan_fft(sample_count: usize) -> Arc<dyn Fft<f32>> {
     if sample_count == CACHED_FFT_SIZE {
         return FFT_2048
@@ -33,53 +40,58 @@ pub fn build_frequency_bands(samples: &[f32], sample_rate: u32, band_count: usiz
 
     let fft = plan_fft(samples.len());
     let sample_len = samples.len() as f32;
-    let mut buffer: Vec<Complex<f32>> = samples
-        .iter()
-        .enumerate()
-        .map(|(index, sample)| {
-            let window = 0.5 - 0.5 * (std::f32::consts::TAU * index as f32 / sample_len).cos();
-            Complex::new(sample.clamp(-1.0, 1.0) * window, 0.0)
-        })
-        .collect();
 
-    fft.process(&mut buffer);
-
-    let max_frequency = ((sample_rate as f32) * 0.5).min(MAX_VISUALIZER_FREQUENCY_HZ);
-    if max_frequency <= MIN_VISUALIZER_FREQUENCY_HZ {
-        return vec![0.0; band_count];
-    }
-
-    let half_len = samples.len() / 2;
+    // [修复防御]: 使用 thread_local 复用 buffer，避免高频调用下的堆分配
     let magnitude_scale = samples.len() as f32 * 0.25;
+    let half_len = samples.len() / 2;
 
-    (0..band_count)
-        .map(|band| {
-            let start_ratio = band as f32 / band_count as f32;
-            let end_ratio = (band + 1) as f32 / band_count as f32;
-            let start_frequency = MIN_VISUALIZER_FREQUENCY_HZ
-                + (max_frequency - MIN_VISUALIZER_FREQUENCY_HZ) * start_ratio.powi(2);
-            let end_frequency = MIN_VISUALIZER_FREQUENCY_HZ
-                + (max_frequency - MIN_VISUALIZER_FREQUENCY_HZ) * end_ratio.powi(2);
-            let start_bin = ((start_frequency * samples.len() as f32) / sample_rate as f32)
-                .floor()
-                .max(1.0) as usize;
-            let end_bin = ((end_frequency * samples.len() as f32) / sample_rate as f32)
-                .ceil()
-                .max((start_bin + 1) as f32) as usize;
-            let capped_end = end_bin.min(half_len);
+    let bands = FFT_BUFFER.with(|cell| {
+        let mut buffer = cell.borrow_mut();
+        buffer.clear();
+        buffer.reserve_exact(samples.len());
+        for (index, sample) in samples.iter().enumerate() {
+            let window = 0.5 - 0.5 * (std::f32::consts::TAU * index as f32 / sample_len).cos();
+            buffer.push(Complex::new(sample.clamp(-1.0, 1.0) * window, 0.0));
+        }
 
-            if start_bin >= capped_end {
-                return 0.0;
-            }
+        fft.process(&mut buffer);
 
-            let peak = buffer[start_bin..capped_end]
-                .iter()
-                .map(|value| value.norm() / magnitude_scale)
-                .fold(0.0_f32, f32::max);
+        let max_frequency = ((sample_rate as f32) * 0.5).min(MAX_VISUALIZER_FREQUENCY_HZ);
+        if max_frequency <= MIN_VISUALIZER_FREQUENCY_HZ {
+            return vec![0.0; band_count];
+        }
 
-            peak.powf(0.55).min(1.0)
-        })
-        .collect()
+        (0..band_count)
+            .map(|band| {
+                let start_ratio = band as f32 / band_count as f32;
+                let end_ratio = (band + 1) as f32 / band_count as f32;
+                let start_frequency = MIN_VISUALIZER_FREQUENCY_HZ
+                    + (max_frequency - MIN_VISUALIZER_FREQUENCY_HZ) * start_ratio.powi(2);
+                let end_frequency = MIN_VISUALIZER_FREQUENCY_HZ
+                    + (max_frequency - MIN_VISUALIZER_FREQUENCY_HZ) * end_ratio.powi(2);
+                let start_bin = ((start_frequency * samples.len() as f32) / sample_rate as f32)
+                    .floor()
+                    .max(1.0) as usize;
+                let end_bin = ((end_frequency * samples.len() as f32) / sample_rate as f32)
+                    .ceil()
+                    .max((start_bin + 1) as f32) as usize;
+                let capped_end = end_bin.min(half_len);
+
+                if start_bin >= capped_end {
+                    return 0.0;
+                }
+
+                let peak = buffer[start_bin..capped_end]
+                    .iter()
+                    .map(|value| value.norm() / magnitude_scale)
+                    .fold(0.0_f32, f32::max);
+
+                peak.powf(0.55).min(1.0)
+            })
+            .collect()
+    });
+
+    bands
 }
 
 #[cfg(test)]

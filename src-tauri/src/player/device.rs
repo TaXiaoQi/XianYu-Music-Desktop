@@ -7,13 +7,8 @@ use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 pub async fn get_output_devices() -> Result<Vec<AudioDevice>, String> {
-    // cpal 的 output_devices() 与 device.name() 在 Windows 上走 WASAPI，
-    // 枚举设备（尤其存在蓝牙 / 虚拟声卡 / HDMI 设备时）可能耗时数秒，且为同步阻塞操作。
-    // 原先是同步 #[tauri::command]，会直接在 Tauri 主线程（webview 线程）上执行，
-    // 导致每次进入设置页调用 get_output_devices 时整个 UI 卡死数秒。
-    // 改为 async 并通过 spawn_blocking 把枚举放到后台阻塞线程池，
-    // 主线程 / webview 不再被阻塞，设备列表在后台加载完成后异步返回。
-    // （本项目播放线程本就在非主线程上使用 cpal，cpal 会自行在调用线程初始化 COM，故后台线程可用。）
+    // [修复防御]: cpal 的 host.output_devices() 在 Windows 上可能阻塞数秒
+    // （WASAPI 设备枚举），必须用 spawn_blocking 避免阻塞 Tauri 主线程。
     tauri::async_runtime::spawn_blocking(|| {
         let host = cpal::default_host();
         let devices = host.output_devices().map_err(|e| e.to_string())?;

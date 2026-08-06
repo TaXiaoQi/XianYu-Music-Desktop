@@ -533,9 +533,9 @@ function createPlayerCore() {
   };
 
   const stopPlaybackForMissingSong = async () => {
-    await playbackApi.stopAudio().catch(async () => {
-      await playbackApi.pauseAudio().catch(() => {});
-    });
+    // [YinDong 播放引擎移植] stopAudio 已移除：HTML 路径 networkAudio 由 playerPlayback 切歌时清理，
+    // WASAPI 独占路径用 pauseAudio 停止。此处 best-effort 暂停即可。
+    await playbackApi.pauseAudio().catch(() => {});
     playerPlayback.stopPlaybackRuntime();
     isPlaying.value = false;
     isSongLoaded.value = false;

@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   setVolume: vi.fn().mockResolvedValue(undefined),
   setOutputDevice: vi.fn().mockResolvedValue(undefined),
   setAudioOutputMode: vi.fn().mockResolvedValue(undefined),
-  updateLoudnessSettings: vi.fn().mockResolvedValue(undefined),
   getRemoteSources: vi.fn().mockResolvedValue([]),
   syncRemoteSource: vi.fn().mockResolvedValue(undefined),
   precacheRemoteSong: vi.fn().mockResolvedValue(undefined),
@@ -28,7 +27,6 @@ vi.mock('../services/tauri/playbackApi', () => ({
     setVolume: mocks.setVolume,
     setOutputDevice: mocks.setOutputDevice,
     setAudioOutputMode: mocks.setAudioOutputMode,
-    updateLoudnessSettings: mocks.updateLoudnessSettings,
   },
 }));
 
@@ -196,36 +194,5 @@ describe('player lifecycle', () => {
     expect(playbackStore.currentSong?.album).toBe('我们的纪念日');
     expect(playbackStore.currentSong?.duration).toBe(249);
     expect(loadLyrics).toHaveBeenCalledTimes(1);
-  });
-
-  it('sends current song context when loudness settings change', async () => {
-    const {
-      usePlaybackStore,
-      useSettingsStore,
-      createPlayerLifecycle,
-    } = await loadModules();
-    const playbackStore = usePlaybackStore();
-    const settingsStore = useSettingsStore();
-    playbackStore.currentSong = makeSong({
-      id: 42,
-      path: 'C:\\Music\\album.cue::track01',
-      cue_source_path: 'C:\\Music\\album.flac',
-    });
-
-    createPlayerLifecycle(createLifecycleDeps()).init();
-    settingsStore.settings.audio.volumeBalance.enabled = true;
-    settingsStore.settings.audio.volumeBalance.gainOffsetDb = -2;
-    settingsStore.settings.audio.volumeBalance.preventClipping = false;
-
-    await nextTick();
-    await Promise.resolve();
-
-    expect(mocks.updateLoudnessSettings).toHaveBeenLastCalledWith({
-      enabled: true,
-      songId: 42,
-      songPath: 'C:\\Music\\album.flac',
-      gainOffsetDb: -2,
-      preventClipping: false,
-    });
   });
 });

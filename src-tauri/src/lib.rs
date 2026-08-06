@@ -1,4 +1,5 @@
 mod app_runtime;
+mod audio_proxy;
 mod custom_fonts;
 mod database;
 pub mod error;
@@ -21,7 +22,7 @@ mod window_z_order;
 mod webview_settings;
 
 use tauri::Manager;
-use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app};
+use app_runtime::{consume_pending_open_paths, exit_app, get_local_audio_url, get_proxied_audio_url, handle_single_instance, open_devtools, setup_app};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
@@ -41,13 +42,11 @@ use music::{
     scan_music_folder, show_in_folder,
 };
 use player::{
-    clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_current_output_device,
-    get_output_devices, get_playback_duration, get_playback_progress, get_playback_ready,
-    get_playback_start_failed, get_stream_cache_info, get_track_loudness_info, is_stream_cached,
-    pause_audio, play_audio, resume_audio, seek_audio, set_audio_output_mode,
-    set_equalizer_settings, set_output_device, set_playback_speed, set_sound_effect_settings,
-    set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata, wait_stream_complete,
+    disable_usb_exclusive_mode, enable_usb_exclusive_mode, get_audio_visualizer_samples,
+    get_bitstream_info, get_current_output_device, get_output_devices, get_playback_progress,
+    get_usb_dac_devices, pause_audio, play_audio, query_exclusive_status, resume_audio,
+    seek_audio, set_audio_effects, set_audio_output_mode, set_output_device, set_volume,
+    update_playback_metadata,
 };
 use remote::{
     add_remote_source, clear_remote_cache, get_remote_cache_usage, get_remote_sources,
@@ -115,6 +114,8 @@ pub fn run() {
         .setup(|app| setup_app(app))
         .invoke_handler(tauri::generate_handler![
             scan_music_folder,
+            get_local_audio_url,
+            get_proxied_audio_url,
             parse_audio_files,
             parse_music_folder,
             scan_folder_as_playlists,
@@ -134,32 +135,23 @@ get_song_lyrics_payload,            get_song_lyrics_for_edit,
             play_audio,
             update_playback_metadata,
             pause_audio,
-            stop_audio,
             resume_audio,
             seek_audio,
             set_volume,
-            set_playback_speed,
             get_playback_progress,
-            get_playback_duration,
-            get_playback_ready,
-            get_playback_start_failed,
             get_audio_visualizer_samples,
-            get_track_loudness_info,
-            update_loudness_settings,
-            set_equalizer_settings,
-            set_sound_effect_settings,
+            set_audio_effects,
+            get_bitstream_info,
+            get_usb_dac_devices,
+            enable_usb_exclusive_mode,
+            disable_usb_exclusive_mode,
+            query_exclusive_status,
             preview_rename,
             apply_rename,
             get_output_devices,
             get_current_output_device,
             set_output_device,
             set_audio_output_mode,
-            set_stream_cache_max_size,
-            get_stream_cache_info,
-            clear_stream_cache,
-            is_stream_cached,
-            copy_stream_cache,
-            wait_stream_complete,
             get_library_folders,
             is_directory,
             save_artist_avatar,

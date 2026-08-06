@@ -3,6 +3,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { smoothVisualizerLevel } from './audioVisualizerMath';
+import { getAnalyserFrequencyData } from '../../utils/audio/soundEffectEngine';
+import { isBackendPlaybackActive } from '../../composables/playerPlayback';
 
 const props = defineProps<{
   active: boolean;
@@ -141,8 +143,15 @@ const fetchSamples = async () => {
   if (!shouldFetchSamples()) return;
 
   try {
-    // 所有音频（本地 + 在线流式缓存）统一走 Rust 后端采样
-    const nextLevels = await playbackApi.getAudioVisualizerSamples();
+    // [YinDong 播放引擎移植] 双路径频谱采样：
+    // HTML5 Audio 路径直接读 Web Audio AnalyserNode；WASAPI 独占路径回退到 Rust 后端采样
+    let nextLevels: number[];
+    if (!isBackendPlaybackActive()) {
+      const analyserData = getAnalyserFrequencyData(BAR_COUNT);
+      nextLevels = analyserData ?? [];
+    } else {
+      nextLevels = await playbackApi.getAudioVisualizerSamples();
+    }
     if (nextLevels.length > 0) {
       levels.value = nextLevels.slice(0, BAR_COUNT);
       scheduleDraw();

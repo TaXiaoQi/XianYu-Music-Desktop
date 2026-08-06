@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useSoundEffectStore, eqPresetNames, advancedEqPresetNames } from '../../../features/playback/soundEffectStore';
 import { convolutions } from '../../../utils/audio/soundEffectEngine';
+import SpatialVizCanvas from './SpatialVizCanvas.vue';
 import { computed, ref } from 'vue';
 
 defineProps<{
@@ -260,6 +261,32 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                           </div>
                         </div>
 
+                        <!-- 95D环绕音效 -->
+                        <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
+                          <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                              95D环绕音效
+                              <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">耳机·双源</span>
+                            </div>
+                            <button class="fx-toggle" :class="{ on: store.enable95D }" @click="store.enable95D = !store.enable95D">
+                              <span class="fx-toggle-knob"></span>
+                            </button>
+                          </div>
+                          <div v-show="store.enable95D" class="mt-2 space-y-1.5">
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">旋转速度</span>
+                              <input type="range" class="fx-slider" min="2" max="60" v-model.number="store.rotationSpeed95D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.rotationSpeed95D }}s</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">声源距离</span>
+                              <input type="range" class="fx-slider" min="1" max="20" v-model.number="store.virtualDistance95D">
+                              <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualDistance95D }}</span>
+                            </div>
+                            <p class="pl-[72px] text-[10px] leading-tight text-gray-400 dark:text-gray-500">双声源同时环绕：一从右起、一从左起，同步绕头旋转</p>
+                          </div>
+                        </div>
+
                         <!-- 虚拟多声道 -->
                         <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
                           <div class="flex items-center justify-between">
@@ -285,6 +312,23 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                               <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.virtualSurroundSpread }}</span>
                             </div>
                           </div>
+                        </div>
+                      </div>
+
+                      <!-- 旋转示意图：实时反映当前激活的空间音效声源运动轨迹 -->
+                      <div class="rounded-xl border border-gray-200/70 bg-white/40 p-3 dark:border-white/10 dark:bg-white/5">
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                            旋转示意图
+                            <span class="rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/10 dark:text-gray-400">实时</span>
+                          </div>
+                          <button class="fx-toggle" :class="{ on: store.showSpatialViz }" @click="store.showSpatialViz = !store.showSpatialViz">
+                            <span class="fx-toggle-knob"></span>
+                          </button>
+                        </div>
+                        <div class="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">俯视图：实时显示当前音效的声源运动轨迹，可关闭</div>
+                        <div v-show="store.showSpatialViz" class="mt-2 flex justify-center">
+                          <SpatialVizCanvas :visible="store.showSpatialViz" />
                         </div>
                       </div>
                     </section>
@@ -322,6 +366,11 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                         <input type="range" class="fx-slider flex-1" min="50" max="200" v-model.number="store.playbackRate" :style="{ '--pitch-progress': playbackRateProgress + '%' }">
                         <button class="fx-reset-btn" @click="handleResetPlaybackRate">重置</button>
                       </div>
+                      <!-- 音调补偿：变速时保持音调（浏览器原生 time-stretching） -->
+                      <label class="flex items-center gap-1.5 pt-0.5 text-[11px] text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                        <input type="checkbox" class="fx-check-mini" v-model="store.preservesPitch">
+                        音调补偿（变速不变调）
+                      </label>
                     </section>
 
                     <!-- 卡拉OK消人声 -->

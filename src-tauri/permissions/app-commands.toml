@@ -3,6 +3,8 @@ identifier = "allow-app-commands"
 description = "Allows XY-Music application commands used by the frontend."
 commands.allow = [
   "scan_music_folder",
+  "get_local_audio_url",
+  "get_proxied_audio_url",
   "parse_audio_files",
   "parse_music_folder",
   "scan_folder_as_playlists",
@@ -42,12 +44,6 @@ commands.allow = [
   "get_current_output_device",
   "set_output_device",
   "set_audio_output_mode",
-  "set_stream_cache_max_size",
-  "get_stream_cache_info",
-  "clear_stream_cache",
-  "is_stream_cached",
-  "copy_stream_cache",
-  "wait_stream_complete",
   "get_library_folders",
   "is_directory",
   "add_library_folder",

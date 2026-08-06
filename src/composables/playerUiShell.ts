@@ -2,7 +2,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { storeToRefs } from 'pinia';
 
 import type { Song } from '../types';
-import { playbackApi } from '../services/tauri/playbackApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useNavigationStore } from '../shared/stores/navigation';
@@ -37,31 +36,29 @@ export const createPlayerUiShell = ({
   const { canonicalSongs, sourceSongs } = storeToRefs(libraryStore);
   const { favoritePaths } = storeToRefs(collectionsStore);
 
-  const handleVolume = async (event: Event) => {
+  const handleVolume = (event: Event) => {
     const volume = clampVolumePercent(parseInt((event.target as HTMLInputElement).value, 10));
+    // [修复音量无反应] 只设置 store，playerPlayback 中的 watch 会自动双路径分流
+    // （WASAPI 走 playbackApi.setVolume，HTML5 Audio 走 audio.volume）
     playbackStore.volume = volume;
-    await playbackApi.setVolume(volume / 100);
   };
 
-  const handleVolumeWheel = async (event: WheelEvent) => {
+  const handleVolumeWheel = (event: WheelEvent) => {
     const volume = getNextWheelVolume(playbackStore.volume, event.deltaY);
     if (volume === playbackStore.volume) {
       return;
     }
 
     playbackStore.volume = volume;
-    await playbackApi.setVolume(volume / 100);
   };
 
-  const toggleMute = async () => {
+  const toggleMute = () => {
     if (playbackStore.volume > 0) {
       playbackStore.volume = 0;
-      await playbackApi.setVolume(0);
       return;
     }
 
     playbackStore.volume = 100;
-    await playbackApi.setVolume(1);
   };
 
   const togglePlaylist = () => {
