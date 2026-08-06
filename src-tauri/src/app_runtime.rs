@@ -8,9 +8,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{
-    menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, Runtime,
+    Emitter, Manager,
 };
 use tokio::sync::Semaphore;
 
@@ -194,14 +194,6 @@ fn set_native_tray_menu_state<R: tauri::Runtime>(
     Ok(())
 }
 
-fn get_native_tray_menu_state<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> NativeTrayMenuState {
-    app.try_state::<TrayMenuRuntimeState>()
-        .and_then(|state| state.native_menu_state.lock().ok().map(|value| value.clone()))
-        .unwrap_or_default()
-}
-
 fn clean_track_name(name: &str) -> String {
     Path::new(name)
         .file_stem()
@@ -340,78 +332,19 @@ fn build_tray_menu<R: tauri::Runtime>(
 
 fn apply_tray_menu<R: tauri::Runtime>(
     manager: &impl Manager<R>,
-    _state: &NativeTrayMenuState,
+    state: &NativeTrayMenuState,
 ) -> tauri::Result<()> {
     if let Some(tray) = manager.app_handle().tray_by_id(TRAY_ID) {
         tray.set_show_menu_on_left_click(false)?;
-        tray.set_menu(None::<Menu<R>>)?;
-    }
-    Ok(())
-}
 
-#[cfg(target_os = "windows")]
-fn popup_native_tray_menu<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    x: f64,
-    y: f64,
-) -> Result<(), String> {
-    use raw_window_handle::HasWindowHandle;
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        HMENU, PostMessageW, SetForegroundWindow, TrackPopupMenu, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
-        WM_NULL,
-    };
-
-    let state = get_native_tray_menu_state(app);
-    let menu = build_tray_menu(app, &state).map_err(|error| error.to_string())?;
-    let hmenu = menu.hpopupmenu().map_err(|error| error.to_string())? as HMENU;
-    let window = app
-        .get_webview_window(MAIN_WINDOW_LABEL)
-        .ok_or_else(|| "main window not found".to_string())?;
-    let raw_window = window.as_ref().window();
-    let handle = raw_window
-        .window_handle()
-        .map_err(|error| error.to_string())?;
-
-    let hwnd = match handle.as_raw() {
-        raw_window_handle::RawWindowHandle::Win32(win32) => win32.hwnd.get() as isize as HWND,
-        _ => return Err("unsupported window handle".to_string()),
-    };
-
-    unsafe {
-        SetForegroundWindow(hwnd);
-        let result = TrackPopupMenu(
-            hmenu,
-            TPM_BOTTOMALIGN | TPM_LEFTALIGN,
-            x.round() as i32,
-            y.round() as i32,
-            0,
-            hwnd,
-            std::ptr::null(),
-        );
-        let _ = PostMessageW(hwnd, WM_NULL, 0, 0);
-
-        if result == 0 {
-            return Err("TrackPopupMenu failed".to_string());
+        if state.use_custom_tray_menu {
+            tray.set_menu(None::<Menu<R>>)?;
+        } else {
+            let menu = build_tray_menu(manager, state)?;
+            tray.set_menu(Some(menu))?;
         }
     }
-
     Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn popup_native_tray_menu<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    _x: f64,
-    _y: f64,
-) -> Result<(), String> {
-    let state = get_native_tray_menu_state(app);
-    let menu = build_tray_menu(app, &state).map_err(|error| error.to_string())?;
-    let window = app
-        .get_webview_window(MAIN_WINDOW_LABEL)
-        .ok_or_else(|| "main window not found".to_string())?;
-
-    window.popup_menu(&menu).map_err(|error| error.to_string())
 }
 
 fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) {
@@ -470,8 +403,6 @@ fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
                 let app = tray.app_handle();
                 if !is_native_tray_menu_enabled(&app) {
                     emit_tray_menu_open(&app, position.x, position.y);
-                } else if let Err(error) = popup_native_tray_menu(&app, position.x, position.y) {
-                    eprintln!("Failed to popup native tray menu: {error}");
                 }
             }
         })
