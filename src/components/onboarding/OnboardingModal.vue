@@ -543,15 +543,15 @@ onUnmounted(() => {
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-md"
                         style="font-size: clamp(14px, 1.1vw, 17px);"
                       >
-                        可在设置中随时更改。深色模式护眼沉浸，浅色模式明亮清新，自定义支持个性化皮肤。
+                        可在设置中随时更改。浅色模式明亮清新，深色模式护眼沉浸，自定义支持个性化皮肤。
                       </p>
                     </header>
 
                     <div class="grid grid-cols-3 gap-[clamp(0.75rem,1.5vw,1.5rem)]">
                       <button
                         v-for="opt in [
-                          { value: 'dark', label: '深色模式', desc: '护眼沉浸' },
                           { value: 'light', label: '浅色模式', desc: '明亮清新' },
+                          { value: 'dark', label: '深色模式', desc: '护眼沉浸' },
                           { value: 'custom', label: '自定义', desc: '个性化皮肤' },
                         ]"
                         :key="opt.value"

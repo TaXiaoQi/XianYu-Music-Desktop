@@ -94,7 +94,7 @@ const exportLogs = async (mode: 'all' | 'error') => {
     <button
       type="button"
       :disabled="exportingMode !== null || errorCount === 0"
-      class="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.03] px-4 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-500/[0.07] disabled:cursor-not-allowed disabled:opacity-40 dark:text-rose-300"
+      class="inline-flex items-center justify-center gap-2 rounded-xl border border-[#EC4141]/50 bg-[#EC4141] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#d13b3b] disabled:cursor-not-allowed disabled:opacity-40"
       @click="exportLogs('error')"
     >
       <FileWarning class="h-4 w-4" />

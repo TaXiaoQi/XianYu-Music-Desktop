@@ -312,7 +312,7 @@ const handleImportAppBackup = async () => {
       <button
         type="button"
         :disabled="entryCount === 0"
-        class="inline-flex items-center gap-2 rounded-xl border border-rose-500/25 bg-rose-500/[0.04] px-4 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-500/[0.09] disabled:cursor-not-allowed disabled:opacity-40 dark:text-rose-300"
+        class="inline-flex items-center gap-2 rounded-xl border border-[#EC4141]/50 bg-[#EC4141] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#d13b3b] disabled:cursor-not-allowed disabled:opacity-40"
         @click="showDeleteConfirmation = true"
       >
         <Trash2 class="h-4 w-4" />
