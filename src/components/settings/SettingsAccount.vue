@@ -316,11 +316,12 @@ function updateAutoSyncMaxDelay(event: Event) {
         </span>
         <SettingHint text="选择需要同步到云端的数据类型，关闭后该项数据将仅保留在本地。" />
       </h2>
-      <div class="grid gap-2">
+      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div
-          v-for="item in uploadItems"
+          v-for="(item, idx) in uploadItems"
           :key="item.key"
-          class="upload-item"
+          class="flex items-center justify-between gap-4 p-4"
+          :class="idx < uploadItems.length - 1 ? 'border-b border-gray-200/20 dark:border-gray-800/20' : ''"
         >
           <div class="upload-copy">
             <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
@@ -353,7 +354,7 @@ function updateAutoSyncMaxDelay(event: Event) {
       </h2>
 
       <!-- 歌单同步项 -->
-      <div class="manual-sync-item">
+      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
         <div class="manual-sync-head">
           <div class="upload-copy min-w-0">
             <div class="upload-label text-gray-900 dark:text-white/90">歌单</div>
@@ -398,7 +399,7 @@ function updateAutoSyncMaxDelay(event: Event) {
       </div>
 
       <!-- 插件同步项 -->
-      <div class="manual-sync-item">
+      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
         <div class="manual-sync-head">
           <div class="upload-copy min-w-0">
             <div class="upload-label text-gray-900 dark:text-white/90">插件</div>
@@ -442,7 +443,7 @@ function updateAutoSyncMaxDelay(event: Event) {
       </div>
 
       <!-- 设置同步项 -->
-      <div class="manual-sync-item">
+      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
         <div class="manual-sync-head">
           <div class="upload-copy min-w-0">
             <div class="upload-label text-gray-900 dark:text-white/90">设置</div>
@@ -497,7 +498,7 @@ function updateAutoSyncMaxDelay(event: Event) {
       </h2>
 
       <!-- 自动同步开关 -->
-      <div class="upload-item">
+      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
         <div class="upload-copy">
           <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
         </div>
@@ -618,61 +619,6 @@ function updateAutoSyncMaxDelay(event: Event) {
 </template>
 
 <style scoped>
-.upload-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(229, 231, 235, 0.4);
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.upload-item:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(236, 65, 65, 0.18);
-}
-
-:global(.dark) .upload-item {
-  background: rgba(0, 0, 0, 0.1);
-  border-color: rgba(31, 41, 55, 0.4);
-}
-
-:global(.dark) .upload-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(236, 65, 65, 0.3);
-}
-
-/* 手动同步二级项（与 upload-item 同款卡片样式） */
-.manual-sync-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(229, 231, 235, 0.4);
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.manual-sync-item:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(236, 65, 65, 0.18);
-}
-
-:global(.dark) .manual-sync-item {
-  background: rgba(0, 0, 0, 0.1);
-  border-color: rgba(31, 41, 55, 0.4);
-}
-
-:global(.dark) .manual-sync-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(236, 65, 65, 0.3);
-}
-
 .manual-sync-head {
   display: flex;
   align-items: center;

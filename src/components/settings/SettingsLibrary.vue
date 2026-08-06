@@ -1,6 +1,10 @@
 <template>
   <div class="settings-content">
     <div class="setting-item-group">
+      <h2 class="mb-3 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        添加本地音乐
+      </h2>
       <button
         type="button"
         class="drop-zone"

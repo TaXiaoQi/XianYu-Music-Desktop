@@ -228,14 +228,12 @@ const handleImportAppBackup = async () => {
 
 <template>
   <div class="space-y-8">
-    <div>
-      <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">高级设置</h2>
-      <p class="mt-1 text-sm text-gray-500 dark:text-white/45">面向问题排查与数据管理的高级功能。</p>
-    </div>
-
     <section class="space-y-3">
       <div>
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">应用备份</h3>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          应用备份
+        </h2>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
           将歌单（自动区分本地/在线/混合）、插件和本地设置导出为单个 JSON 文件，可快速导入恢复。
         </p>
@@ -269,7 +267,10 @@ const handleImportAppBackup = async () => {
 
     <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
       <div>
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">从其他软件导入</h3>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          从其他软件导入
+        </h2>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
           从 BakaMusic 或 MusicFree 软件导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
         </p>
@@ -291,7 +292,10 @@ const handleImportAppBackup = async () => {
 
     <section class="space-y-3">
       <div>
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">导出日志</h3>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          导出日志
+        </h2>
         <p class="mt-1 text-xs text-gray-500 dark:text-white/45">导出本机保留的应用日志，便于反馈问题或自行排查。</p>
       </div>
       <LogExportActions />
@@ -299,7 +303,10 @@ const handleImportAppBackup = async () => {
 
     <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
       <div>
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">日志管理</h3>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          日志管理
+        </h2>
         <p class="mt-1 text-xs text-gray-500 dark:text-white/45">删除后无法恢复，建议先导出需要保留的日志。</p>
       </div>
       <button
@@ -318,7 +325,10 @@ const handleImportAppBackup = async () => {
       @focusin="refreshFeedbackAuth"
     >
       <div>
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">问题反馈</h3>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          问题反馈
+        </h2>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
           提交使用中遇到的问题或功能建议，我们会认真查看每一条反馈。
         </p>
