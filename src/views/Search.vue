@@ -127,6 +127,7 @@
                     class="w-full h-full object-cover"
                     alt=""
                     loading="lazy"
+                    referrerpolicy="no-referrer"
                     @error="handleVirtualTrackImageError($event, entry)"
                   />
                   <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -196,6 +197,7 @@
                     class="w-full h-full object-cover"
                     alt=""
                     loading="lazy"
+                    referrerpolicy="no-referrer"
                     @error="handlePluginImgError($event)"
                   />
                   <svg v-else-if="entry.type === 'artist'" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -1140,7 +1142,7 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
         );
         if (version !== coverLoadVersion) return;
         if (coverUrl) {
-          item.coverUrl = coverUrl;
+          item.coverUrl = coverUrl.startsWith('http://') ? coverUrl.replace('http://', 'https://') : coverUrl;
           hasUpdate = true;
         }
       } catch { /* 已在 WeakSet 中标记，不再重试 */ }
@@ -1309,18 +1311,18 @@ const coverProxyAttempted = new Set<string>();
 /**
  * 判断 URL 是否需要通过后端代理加载。
  * 以下情况需要代理：
- * - http:// 协议（混合内容会被浏览器阻止）
- * - B站图片域名（需要 Referer 头）
- * - 酷我图片域名（需要 Referer 头）
+ * - http:// 协议（混合内容会被 WebView2 阻止）
+ * - B站图片域名（需特殊 Referer 头）
  */
 const needsProxy = (url: string): boolean => {
   if (!url) return false;
   if (url.startsWith('data:') || url.startsWith('asset:')) return false;
   if (url.startsWith('http://')) return true;
-  if (url.includes('hdslb.com') || url.includes('bilivideo.com')) return true;
-  if (url.includes('kuwo.cn') || url.includes('kuwo.com')) return true;
-  if (url.includes('kugou.com') || url.includes('kgmusic.com')) return true;
-  return false;
+  const proxyDomains = [
+    'hdslb.com',
+    'bilivideo.com',
+  ];
+  return proxyDomains.some(domain => url.includes(domain));
 };
 
 /**
@@ -1372,7 +1374,6 @@ const handleMfImgError = (e: Event) => {
       } catch { /* ignore */ }
     })();
   }
-  img.style.display = 'none';
 };
 
 const handlePlayMfSong = async (item: PluginSearchResult) => {

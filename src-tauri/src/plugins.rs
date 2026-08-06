@@ -210,10 +210,20 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .map_err(|e| e.to_string())?;
 
     let mut req = client.get(&url);
-    // B站 CDN 需要 Referer 头
+    // 各 CDN 图片服务器防盗链所需的 Referer 头
     let ref_url = referer.unwrap_or_else(|| {
         if url.contains("hdslb.com") || url.contains("bilivideo.com") {
             "https://www.bilibili.com".to_string()
+        } else if url.contains("126.net") || url.contains("163.com") {
+            "https://music.163.com/".to_string()
+        } else if url.contains("kuwo.cn") || url.contains("kuwo.com") {
+            "http://www.kuwo.cn/".to_string()
+        } else if url.contains("kugou.com") || url.contains("kgmusic.com") {
+            "http://www.kugou.com/".to_string()
+        } else if url.contains("gtimg.cn") || url.contains("qq.com") {
+            "https://y.qq.com/".to_string()
+        } else if url.contains("migu.cn") {
+            "https://m.music.migu.cn/".to_string()
         } else {
             String::new()
         }

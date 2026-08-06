@@ -1,4 +1,5 @@
 import type { PluginSearchResult, PluginSource, QualityKey } from '../types';
+import { extractNeteasePicId, neteasePicIdToUrl } from '../utils/coverUrl';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -6,16 +7,27 @@ export const stripHtmlTags = (str: unknown): string => {
 };
 
 export const extractCoverUrl = (item: any): string => {
-  let url = item.artwork || item.cover || item.pic || item.img || item.albumPic || item.picture || '';
-  if (!url && item.al?.picUrl) url = item.al.picUrl;
-  if (!url && item.album?.picUrl) url = item.album.picUrl;
-  if (!url && item.album?.blurPicUrl) url = item.album.blurPicUrl;
-  if (!url && item.coverImgUrl) url = item.coverImgUrl;
-  if (!url && item.picUrl) url = item.picUrl;
-  if (url && url.startsWith('http://')) {
+  if (!item || typeof item !== 'object') return '';
+  const raw = item.rawData || item.raw || item;
+  let url =
+    item.artwork || item.cover || item.coverUrl || item.cover_url || item.pic || item.img || item.albumPic || item.picture ||
+    raw.artwork || raw.cover || raw.coverUrl || raw.cover_url || raw.pic || raw.img || raw.albumPic || raw.picture || '';
+
+  if (!url && (item.al?.picUrl || raw.al?.picUrl)) url = item.al?.picUrl || raw.al?.picUrl;
+  if (!url && (item.album?.picUrl || raw.album?.picUrl)) url = item.album?.picUrl || raw.album?.picUrl;
+  if (!url && (item.album?.blurPicUrl || raw.album?.blurPicUrl)) url = item.album?.blurPicUrl || raw.album?.blurPicUrl;
+  if (!url && (item.coverImgUrl || raw.coverImgUrl)) url = item.coverImgUrl || raw.coverImgUrl;
+  if (!url && (item.picUrl || raw.picUrl)) url = item.picUrl || raw.picUrl;
+
+  // 网易云 weapi/search 常只给 picId 不给 picUrl；直接加密拼 CDN，避免再打 getMusicInfo
+  if (!url) {
+    const picId = extractNeteasePicId(item) ?? extractNeteasePicId(raw);
+    if (picId !== null) url = neteasePicIdToUrl(picId);
+  }
+  if (url && typeof url === 'string' && url.startsWith('http://')) {
     url = url.replace('http://', 'https://');
   }
-  return url;
+  return typeof url === 'string' ? url : '';
 };
 
 export const resetMediaItem = (mediaItem: any, pluginName: string): any => {

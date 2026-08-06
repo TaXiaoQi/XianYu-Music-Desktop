@@ -1,4 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+import {
+  buildKuwoAlbumCoverUrl,
+  neteasePicIdToUrl,
+  normalizeKuwoCoverUrl,
+} from '../utils/coverUrl';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
 
 // ==================== Types ====================
@@ -291,6 +296,8 @@ function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
     }
     types.reverse();
     const interval = parseInt(info.DURATION);
+    // 搜索结果自带 web_albumpic_short，直接拼封面，避免再请求 artistpicserver
+    const imgFromSearch = buildKuwoAlbumCoverUrl(info.web_albumpic_short) || null;
     result.push({
       name: decodeName(info.SONGNAME),
       singer: decodeName(info.ARTIST).replace(/&/g, '、'),
@@ -299,7 +306,7 @@ function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
       albumId: decodeName(info.ALBUMID || ''),
       interval: Number.isNaN(interval) ? '00:00' : formatPlayTime(interval),
       albumName: info.ALBUM ? decodeName(info.ALBUM) : '',
-      img: null,
+      img: imgFromSearch,
       types,
       _types,
     });
@@ -528,6 +535,12 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
     types.reverse();
     const ar = song.artists || [];
     const al = song.album || {};
+    // 优先 picUrl；其次可靠的 picId_str（大整数 number 会丢精度，neteasePicIdToUrl 会拒绝）
+    // 都没有则保持 null，交给 triggerCoverLoading → lxGetPic 走 song/detail
+    const img =
+      al.picUrl
+      || neteasePicIdToUrl(al.picId_str || al.pic_str || al.picId)
+      || null;
     return {
       singer: ar.map((s: any) => s.name).join('、'),
       name: song.name,
@@ -536,7 +549,7 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
       source: 'wy' as const,
       interval: formatPlayTime((song.duration || 0) / 1000),
       songmid: String(song.id),
-      img: al.picUrl || null,
+      img,
       types,
       _types,
     };
@@ -915,7 +928,7 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
   const source = songInfo.source;
 
   // 如果搜索结果已有封面，直接返回
-  if (songInfo.img) return songInfo.img;
+  if (songInfo.img) return normalizeKuwoCoverUrl(songInfo.img) || songInfo.img;
 
   switch (source) {
     case 'kw': {
@@ -925,8 +938,8 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
           { method: 'GET' },
         );
         if (resp.status === 200 && /^http/.test(resp.body?.trim())) {
-          // 确保使用 https:// 避免混合内容阻塞
-          return resp.body.trim().replace('http://', 'https://');
+          // img1.kwcdn 部分网络不可达，统一改写到 img3.kuwo.cn
+          return normalizeKuwoCoverUrl(resp.body.trim());
         }
       } catch { /* ignore */ }
       return null;
