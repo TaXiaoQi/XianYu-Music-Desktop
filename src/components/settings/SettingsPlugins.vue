@@ -988,7 +988,7 @@ async function saveUserVariables() {
                 <div
                   v-for="sub in subscriptions"
                   :key="sub.id"
-                  class="flex items-center gap-3 p-2.5 rounded-lg bg-white/50 dark:bg-white/5 border border-black/5 dark:border-white/5"
+                  class="flex items-center gap-3 p-2.5 rounded-lg bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
                 >
                   <div class="min-w-0 flex-1">
                     <!-- 名称：非编辑态可点击编辑，编辑态显示 input -->
@@ -1060,9 +1060,9 @@ async function saveUserVariables() {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         插件设置
       </h2>
-      <div class="space-y-1 rounded-lg border border-black/5 dark:border-white/5 divide-y divide-black/5 dark:divide-white/5 overflow-hidden">
+      <div class="space-y-1 overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 divide-y divide-gray-200/20 dark:divide-gray-800/20">
         <!-- 启动时自动更新插件 -->
-        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
@@ -1080,7 +1080,7 @@ async function saveUserVariables() {
           </div>
         </div>
         <!-- 插件懒加载 -->
-        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">插件懒加载</p>
@@ -1098,7 +1098,7 @@ async function saveUserVariables() {
           </div>
         </div>
         <!-- 安装时不校验版本 -->
-        <div class="flex items-center justify-between px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+        <div class="flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>

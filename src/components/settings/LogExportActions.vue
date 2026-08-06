@@ -85,7 +85,7 @@ const exportLogs = async (mode: 'all' | 'error') => {
     <button
       type="button"
       :disabled="exportingMode !== null || entryCount === 0"
-      class="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 bg-white/40 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-white/70 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-200 dark:hover:bg-white/[0.06]"
+      class="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/[0.06]"
       @click="exportLogs('all')"
     >
       <Upload class="h-4 w-4" />

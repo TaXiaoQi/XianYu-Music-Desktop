@@ -201,7 +201,7 @@ onUnmounted(cancelDragging);
       底部栏布局与预览
     </h2>
 
-    <div class="footer-layout-preview-container select-none overflow-hidden rounded-2xl border border-white/30 shadow-sm backdrop-blur-md dark:border-white/10">
+    <div class="footer-layout-preview-container select-none overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
       <div class="footer-layout-preview-header">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
@@ -211,7 +211,7 @@ onUnmounted(cancelDragging);
           <SettingHint text="封面、歌曲信息和上一首/播放/下一首为固定区域；其余按钮可直接拖拽交换位置。" />
           <button
             type="button"
-            class="footer-preview-reset border border-white/40 bg-white/30 backdrop-blur-md shadow-sm hover:border-black/10 hover:bg-black/10 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10"
+            class="footer-preview-reset border border-gray-200/40 bg-white/20 backdrop-blur-md shadow-sm hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
             @click="restoreDefault"
           >
             <RotateCcw class="h-3.5 w-3.5" />
@@ -220,7 +220,7 @@ onUnmounted(cancelDragging);
         </div>
       </div>
 
-      <div class="footer-player-preview bg-white/45 dark:bg-black/20">
+      <div class="footer-player-preview">
         <div class="footer-preview-left">
           <div class="footer-preview-cover">
             <div class="h-full w-full bg-gradient-to-br from-[#EC4141] via-rose-400 to-orange-300"></div>
@@ -362,7 +362,7 @@ onUnmounted(cancelDragging);
       </div>
     </div>
 
-    <div class="pt-2">
+    <div class="rounded-xl border border-gray-200/40 bg-white/20 p-3 dark:border-gray-800/40 dark:bg-black/10">
       <div class="mb-2 flex items-center justify-between gap-3">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">主栏显示</div>
@@ -377,7 +377,7 @@ onUnmounted(cancelDragging);
           v-for="item in FOOTER_ITEMS"
           :key="item.key"
           type="button"
-          class="footer-visibility-row rounded-2xl border border-gray-200/70 bg-white/45 shadow-sm backdrop-blur-md hover:border-[#EC4141]/35 hover:bg-white/60 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10"
+          class="footer-visibility-row rounded-2xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
           @click="toggleItemVisibility(item.key)"
         >
           <span class="flex min-w-0 items-center gap-2.5">
@@ -396,7 +396,7 @@ onUnmounted(cancelDragging);
     <Teleport to="body">
       <div
         v-if="dragState?.moved"
-        class="pointer-events-none fixed z-[10020] flex items-center gap-2 rounded-full border border-[#EC4141]/25 bg-white/40 px-3 py-2 text-[#EC4141] shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-black/20"
+        class="pointer-events-none fixed z-[10020] flex items-center gap-2 rounded-full border border-[#EC4141]/25 bg-white/20 px-3 py-2 text-[#EC4141] shadow-2xl backdrop-blur-xl dark:border-gray-800/40 dark:bg-black/10"
         :style="{ left: `${dragState.x + 14}px`, top: `${dragState.y + 14}px` }"
       >
         <FooterControlIcon :item-key="dragState.key" class="h-4 w-4" />
@@ -565,11 +565,16 @@ onUnmounted(cancelDragging);
   height: 22px;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: rgb(209 213 219);
+  border: 1px solid rgba(229, 231, 235, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   transition: 180ms ease;
 }
 
-:global(.dark) .footer-visibility-switch { background: rgb(63 63 70); }
+:global(.dark) .footer-visibility-switch {
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
+}
 .footer-visibility-switch--on { background: #ec4141 !important; }
 
 .footer-visibility-switch-thumb {

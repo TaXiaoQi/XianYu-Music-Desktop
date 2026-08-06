@@ -157,7 +157,7 @@ onUnmounted(stopDragging);
         <SettingHint text="拖动左侧手柄或使用上下箭头调整排列顺序，右侧开关控制是否在侧边栏显示。" />
       </h2>
 
-      <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden">
+      <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 首页：固定置顶，不可隐藏、不可排序 -->
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 opacity-70 cursor-not-allowed">
           <div class="flex min-w-0 items-center gap-3">

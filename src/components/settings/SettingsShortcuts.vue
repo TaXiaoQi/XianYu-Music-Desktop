@@ -118,7 +118,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         快捷键
       </h2>
 
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">窗口内快捷键</div>
           <SettingHint text="软件打开且窗口处于焦点时生效。默认支持按下 Space 播放/暂停。点击快捷键按钮后直接按键录入，按 Esc 取消，按 Backspace 或 Delete 清空当前绑定。" />
@@ -151,7 +151,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
             class="w-full min-w-0 truncate whitespace-nowrap rounded-full border px-4 py-3 text-left text-sm transition-all backdrop-blur-md"
             :class="isCapturing('local', row.actionId)
               ? 'border-[#EC4141] bg-red-500/10 text-[#EC4141] dark:bg-red-500/20 shadow-[0_0_12px_rgba(236,65,65,0.2)]'
-              : 'border-white/30 bg-white/40 text-gray-800 shadow-sm hover:border-[#EC4141] hover:text-[#EC4141] hover:bg-white/50 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20 dark:hover:border-[#EC4141]'"
+              : 'border-gray-200/40 bg-white/20 text-gray-800 shadow-sm hover:border-[#EC4141] hover:text-[#EC4141] hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10 dark:hover:border-[#EC4141]'"
           >
             {{ isCapturing('local', row.actionId) ? '按下新的快捷键' : formatShortcutBinding(row.localBinding) }}
           </button>
@@ -168,7 +168,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
               ? 'border-[#EC4141] bg-red-500/10 text-[#EC4141] dark:bg-red-500/20 shadow-[0_0_12px_rgba(236,65,65,0.2)]'
               : occupiedActionIdSet.has(row.actionId)
                 ? 'border-[#f3b0b0] bg-[#f9ecec] text-[#b14c4c] shadow-sm hover:border-[#e78f8f] hover:bg-[#f7e4e4] dark:border-[#6a3030] dark:bg-[#3a1f1f]/80 dark:text-[#f2b1b1] dark:hover:border-[#874444] dark:hover:bg-[#472525]/80'
-              : 'border-white/30 bg-white/40 text-gray-800 shadow-sm hover:border-[#EC4141] hover:text-[#EC4141] hover:bg-white/50 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20 dark:hover:border-[#EC4141]'"
+              : 'border-gray-200/40 bg-white/20 text-gray-800 shadow-sm hover:border-[#EC4141] hover:text-[#EC4141] hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10 dark:hover:border-[#EC4141]'"
           >
             {{ isCapturing('global', row.actionId) ? '按下新的快捷键' : formatShortcutBinding(row.globalBinding) }}
           </button>
@@ -189,7 +189,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         选项
       </h2>
 
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用窗口内快捷键</div>

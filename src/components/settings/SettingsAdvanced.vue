@@ -244,7 +244,7 @@ const handleImportAppBackup = async () => {
         <button
           type="button"
           :disabled="exportingAppBackup"
-          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-white/55 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
           @click="handleExportAppBackup"
         >
           <Loader2 v-if="exportingAppBackup" class="h-4 w-4 animate-spin" />
@@ -254,7 +254,7 @@ const handleImportAppBackup = async () => {
         <button
           type="button"
           :disabled="importingAppBackup"
-          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-black/10 bg-white/55 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-6 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
           @click="handleImportAppBackup"
         >
           <Loader2 v-if="importingAppBackup" class="h-4 w-4 animate-spin" />
@@ -277,7 +277,7 @@ const handleImportAppBackup = async () => {
       <button
         type="button"
         :disabled="importingBackup"
-        class="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/55 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+        class="inline-flex items-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
         @click="importPluginBackup"
       >
         <Loader2 v-if="importingBackup" class="h-4 w-4 animate-spin" />
@@ -314,7 +314,7 @@ const handleImportAppBackup = async () => {
     </section>
 
     <section
-      class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10"
+      class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10"
       @focusin="refreshFeedbackAuth"
     >
       <div>
@@ -341,7 +341,7 @@ const handleImportAppBackup = async () => {
             type="text"
             maxlength="60"
             placeholder="一句话描述问题或建议"
-            class="mt-2 h-9 w-full rounded-lg border border-black/10 bg-white/70 px-3 text-sm text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-white/10 dark:bg-black/20 dark:text-gray-100"
+            class="mt-2 h-9 w-full rounded-lg border border-gray-200/40 bg-white/20 px-3 text-sm text-gray-800 shadow-sm backdrop-blur-md outline-none transition focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
             {{ feedbackTitle.length }} / 60
@@ -355,7 +355,7 @@ const handleImportAppBackup = async () => {
             rows="5"
             maxlength="1000"
             placeholder="请详细描述问题现象、复现步骤或建议内容"
-            class="mt-2 w-full resize-y rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-white/10 dark:bg-black/20 dark:text-gray-100"
+            class="mt-2 w-full resize-y rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-sm leading-6 text-gray-800 shadow-sm backdrop-blur-md outline-none transition focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
             {{ feedbackContent.length }} / 1000
@@ -365,7 +365,7 @@ const handleImportAppBackup = async () => {
         <button
           type="button"
           :disabled="submittingFeedback"
-          class="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white/55 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/80 disabled:cursor-wait disabled:opacity-55 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/8"
+          class="inline-flex items-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-3 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
           @click="submitUserFeedback"
         >
           <Loader2 v-if="submittingFeedback" class="h-4 w-4 animate-spin" />

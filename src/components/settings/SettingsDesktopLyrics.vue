@@ -787,7 +787,7 @@ onUnmounted(() => {
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         显示与行为
       </h2>
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <button
           type="button"
           class="desktop-setting-row"
@@ -908,7 +908,7 @@ onUnmounted(() => {
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         歌词同步
       </h2>
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <button
           type="button"
           class="desktop-setting-row"
@@ -940,7 +940,7 @@ onUnmounted(() => {
                 <div class="flex min-w-[240px] flex-1 items-center gap-2">
                   <button
                     type="button"
-                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                     :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS"
                     aria-label="歌词偏移减少 5 毫秒"
                     @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"
@@ -957,7 +957,7 @@ onUnmounted(() => {
                   />
                   <button
                     type="button"
-                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                     :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS"
                     aria-label="歌词偏移增加 5 毫秒"
                     @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"
@@ -1197,7 +1197,7 @@ onUnmounted(() => {
           <!-- 对齐方式 (Segmented Control) -->
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">对齐</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-for="option in ALIGNMENT_OPTIONS"
                 :key="option.value"
@@ -1213,7 +1213,7 @@ onUnmounted(() => {
 
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">双行显示</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-if="desktopLyricsSettings.showDoubleLine"
                 type="button"
@@ -1238,7 +1238,7 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示翻译</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-if="lyricsSettings.showTranslation"
                 type="button"
@@ -1259,7 +1259,7 @@ onUnmounted(() => {
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示罗马音</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-if="lyricsSettings.showRomaji"
                 type="button"
@@ -1422,7 +1422,7 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">逐字效果</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-if="desktopLyricsSettings.enableWordEffect"
                 type="button"
@@ -1443,7 +1443,7 @@ onUnmounted(() => {
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">歌词描边</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200 bg-white/40 dark:border-white/10 dark:bg-white/5">
+            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
               <button
                 v-if="desktopLyricsSettings.enableTextOutline"
                 type="button"

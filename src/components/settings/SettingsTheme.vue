@@ -104,7 +104,7 @@ const {
           <button
             type="button"
             class="group flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'dark' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-white/30 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/5 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            :class="colorScheme === 'dark' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('dark')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
@@ -114,7 +114,7 @@ const {
           <button
             type="button"
             class="group flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'light' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-white/30 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/5 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            :class="colorScheme === 'light' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('light')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
@@ -124,7 +124,7 @@ const {
           <button
             type="button"
             class="group flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'system' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-white/30 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/5 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            :class="colorScheme === 'system' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('system')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
@@ -134,7 +134,7 @@ const {
           <button
             type="button"
             class="group flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition-all"
-            :class="colorScheme === 'custom' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-white/30 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/5 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            :class="colorScheme === 'custom' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
             @click="setColorScheme('custom'); openCustomModal()"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg>
@@ -160,7 +160,7 @@ const {
               class="rounded-xl border px-4 py-3 text-left transition-all"
               :class="theme.dynamicBgType === 'none'
                 ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10'"
+                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
               @click="setDynamicType('none')"
             >
               <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicOff }}</div>
@@ -172,7 +172,7 @@ const {
                 class="w-full rounded-xl border px-4 py-3 pr-12 text-left transition-all"
                 :class="theme.dynamicBgType === 'flow'
                   ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                  : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10'"
+                  : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
                 @click="setDynamicType('flow')"
               >
                 <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicFlow }}</div>
@@ -203,7 +203,7 @@ const {
               class="rounded-xl border px-4 py-3 text-left transition-all"
               :class="theme.dynamicBgType === 'blur'
                 ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10'"
+                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10'"
               @click="setDynamicType('blur')"
             >
               <div class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.dynamicBlur }}</div>
@@ -213,7 +213,7 @@ const {
           <transition name="flow-panel">
             <div
               v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled"
-              class="mt-4 rounded-2xl border border-[#EC4141]/15 bg-white/50 p-4 shadow-sm dark:border-white/8 dark:bg-black/25"
+              class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
             >
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -347,7 +347,7 @@ const {
             :class="[
               materialMode === 'acrylic'
                 ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10',
+                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
               isWindowMaterialButtonDisabled('acrylic') ? 'cursor-not-allowed opacity-45' : '',
             ]"
             :disabled="isWindowMaterialButtonDisabled('acrylic')"
@@ -366,7 +366,7 @@ const {
             :class="[
               materialMode === 'mica'
                 ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10',
+                : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
               isWindowMaterialButtonDisabled('mica') ? 'cursor-not-allowed opacity-45' : '',
             ]"
             :disabled="isWindowMaterialButtonDisabled('mica')"
@@ -386,7 +386,7 @@ const {
               :class="[
                 materialMode === 'blur'
                   ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
-                  : 'border-gray-200/70 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:hover:bg-white/10',
+                  : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10',
                 isWindowMaterialButtonDisabled('blur') ? 'cursor-not-allowed opacity-45' : '',
               ]"
               :disabled="isWindowMaterialButtonDisabled('blur')"
@@ -420,8 +420,8 @@ const {
         </div>
 
         <label
-          class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/70 bg-white/45 px-4 py-3 transition-all dark:border-white/10 dark:bg-black/20"
-          :class="materialMode === 'none' ? 'cursor-not-allowed opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/60 dark:hover:bg-white/10'"
+          class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all dark:border-gray-800/40 dark:bg-black/10"
+          :class="materialMode === 'none' ? 'cursor-not-allowed opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/30 dark:hover:bg-white/10'"
         >
           <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
           <input
@@ -448,7 +448,7 @@ const {
         <transition name="flow-panel">
           <div
             v-if="materialMode === 'blur' && showBlurTuning"
-            class="mt-4 rounded-2xl border border-[#EC4141]/15 bg-white/50 p-4 shadow-sm dark:border-white/8 dark:bg-black/25"
+            class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
           >
             <div class="mb-4 flex items-center justify-between gap-3">
               <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div>
@@ -486,7 +486,7 @@ const {
         <SettingHint :text="TEXT.customTrayMenuHint" />
       </h2>
 
-      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/70 bg-white/45 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/60 dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/10">
+      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
           <span class="mt-1 block text-xs text-gray-500 dark:text-white/50">

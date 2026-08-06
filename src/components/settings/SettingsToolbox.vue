@@ -276,7 +276,7 @@ const restart = () => {
                   ? 'border-[#EC4141] bg-[#EC4141] text-white shadow-[0_10px_24px_-16px_rgba(236,65,65,0.9)]'
                   : index === currentProgressIndex
                   ? 'border-[#EC4141]/30 bg-[#EC4141]/10 text-[#EC4141]'
-                  : 'border-slate-200 bg-slate-50 text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500'
+                  : 'border-gray-200/40 bg-white/20 text-slate-400 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-500'
               "
             >
               <span v-if="index < currentProgressIndex">✓</span>
@@ -301,7 +301,7 @@ const restart = () => {
             :class="
               index < currentProgressIndex
                 ? 'bg-[#EC4141]'
-                : 'bg-slate-200 dark:bg-white/10'
+                : 'bg-white/20 dark:bg-black/10'
             "
           ></div>
         </template>
@@ -312,7 +312,7 @@ const restart = () => {
       v-if="currentView !== 'setup' && targetPath"
       class="px-6"
     >
-      <div class="rounded-[28px] border border-white/40 bg-white/55 px-6 py-2 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.45)] backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+      <div class="rounded-[28px] border border-gray-200/40 bg-white/20 px-6 py-2 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600 dark:text-white/70">
           <span class="text-[15px] font-semibold text-slate-900 dark:text-white">当前文件夹路径</span>
           <span class="break-all">{{ targetPath }}</span>
@@ -324,13 +324,13 @@ const restart = () => {
       v-if="currentView === 'setup'"
       class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(520px,3fr)]"
     >
-      <section class="space-y-4 p-7">
+      <section class="space-y-4 rounded-xl border border-gray-200/40 bg-white/20 p-7 dark:border-gray-800/40 dark:bg-black/10">
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
           基础配置
         </h2>
 
-        <div class="flex flex-col overflow-hidden rounded-xl border border-white/30 bg-white/40 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+        <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
           <div class="border-b border-white/30 p-5 transition-colors dark:border-white/5">
             <div class="mb-3 flex items-center justify-between gap-4">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
@@ -338,13 +338,13 @@ const restart = () => {
                 <SettingHint text="用于歌曲标签写入和人工校对。" />
                 <button
                   @click="selectExecutable"
-                  class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 shadow-sm backdrop-blur-md transition hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
                 >
                   选择路径
                 </button>
               </div>
             </div>
-            <div class="rounded-lg border border-dashed border-gray-300 bg-white/50 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
+            <div class="rounded-lg border border-dashed border-gray-200/60 bg-white/20 px-4 py-3 text-xs text-slate-500 dark:border-gray-800/40 dark:bg-black/10 dark:text-white/60">
               <span v-if="musicTagPath" class="break-all text-slate-700 dark:text-slate-200">{{ musicTagPath }}</span>
               <span v-else>请选择 MusicTag.exe</span>
             </div>
@@ -357,13 +357,13 @@ const restart = () => {
                 <SettingHint severity="warning" text="这里决定本次要处理的整批歌曲文件。" />
                 <button
                   @click="selectTargetFolder"
-                  class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 shadow-sm backdrop-blur-md transition hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
                 >
                   选择文件夹
                 </button>
               </div>
             </div>
-            <div class="rounded-lg border border-dashed border-gray-300 bg-white/50 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
+            <div class="rounded-lg border border-dashed border-gray-200/60 bg-white/20 px-4 py-3 text-xs text-slate-500 dark:border-gray-800/40 dark:bg-black/10 dark:text-white/60">
               <span v-if="targetPath" class="break-all text-slate-700 dark:text-slate-200">{{ targetPath }}</span>
               <span v-else>请选择要整理的歌曲目录</span>
             </div>
@@ -382,12 +382,12 @@ const restart = () => {
       </section>
 
       <aside class="xl:sticky xl:top-6 xl:self-start">
-        <section class="p-6">
+        <section class="rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10">
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
             </div>
-            <div class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+            <div class="rounded-full border border-gray-200/40 bg-white/20 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300">
               {{ setupReadyCount }}/2
             </div>
           </div>
@@ -395,14 +395,14 @@ const restart = () => {
           <div class="mt-5 space-y-4">
             <div
               v-if="!targetPath"
-              class="rounded-2xl border border-white/30 bg-white/40 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+              class="rounded-2xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
             >
               请先在左侧选择目标文件夹，这里会显示该文件夹下所有支持的音频文件。
             </div>
 
             <div
               v-else-if="isLoadingSongs"
-              class="flex items-center justify-center gap-3 rounded-2xl border border-white/30 bg-white/40 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+              class="flex items-center justify-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
             >
               <svg class="h-5 w-5 animate-spin text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -420,7 +420,7 @@ const restart = () => {
 
             <div
               v-else
-              class="overflow-hidden rounded-2xl border border-white/30 bg-white/40 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/20"
+              class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10"
             >
               <div class="flex justify-between border-b border-white/30 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/5 dark:text-white">
                 <span>歌曲预览</span>
@@ -449,7 +449,11 @@ const restart = () => {
           : 'grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(520px,3fr)]'
       "
     >
-      <section :class="currentView === 'tagging' ? 'max-w-[520px] p-6' : 'p-6'">
+      <section
+        :class="currentView === 'tagging'
+          ? 'max-w-[520px] rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10'
+          : 'rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10'"
+      >
         <ToolboxStep1
           v-if="currentView === 'preprocess'"
           :target-path="targetPath"
@@ -489,7 +493,7 @@ const restart = () => {
         v-if="currentView !== 'tagging'"
         class="xl:sticky xl:top-6 xl:self-start"
       >
-        <section class="p-6">
+        <section class="rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10">
           <template v-if="currentView === 'preprocess'">
             <div class="flex items-center justify-between">
               <div>
@@ -501,8 +505,8 @@ const restart = () => {
             </div>
 
             <div class="mt-5">
-              <div class="overflow-hidden rounded-[32px] border border-white/30 bg-white/45 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/20">
-                <div class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center border-b border-slate-100/80 bg-slate-50/80 px-6 py-4 text-sm font-semibold text-slate-900 dark:border-white/5 dark:bg-white/5 dark:text-white">
+              <div class="overflow-hidden rounded-[32px] border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
+                <div class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center border-b border-gray-200/20 bg-white/20 px-6 py-4 text-sm font-semibold text-slate-900 dark:border-gray-800/20 dark:bg-black/10 dark:text-white">
                   <span>标记</span>
                   <span>原先的歌曲</span>
                   <span></span>
@@ -527,7 +531,7 @@ const restart = () => {
                   <div
                     v-for="item in preprocessDisplayItems"
                     :key="`${item.originalName}-${item.newName}`"
-                    class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 rounded-2xl px-3 py-4 text-sm transition odd:bg-white/40 dark:odd:bg-white/[0.03]"
+                    class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-transparent px-3 py-4 text-sm transition odd:border-gray-200/40 odd:bg-white/20 odd:shadow-sm odd:backdrop-blur-md dark:odd:border-gray-800/40 dark:odd:bg-black/10"
                   >
                     <div class="flex items-center justify-center">
                       <span
@@ -564,21 +568,21 @@ const restart = () => {
             <div class="mt-5 space-y-4">
               <div
                 v-if="renamePreview.isScanning"
-                class="rounded-3xl border border-white/30 bg-white/40 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+                class="rounded-3xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
               >
                 正在生成重命名预览，请稍候...
               </div>
 
               <div
                 v-else-if="renamePreview.items.length === 0"
-                class="rounded-3xl border border-white/30 bg-white/40 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+                class="rounded-3xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
               >
                 暂无可显示的重命名结果。
               </div>
 
               <div
                 v-else
-                class="overflow-hidden rounded-3xl border border-white/30 bg-white/40 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/20"
+                class="overflow-hidden rounded-3xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10"
               >
                 <div class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/5 dark:text-white">
                   重命名预览
@@ -608,7 +612,7 @@ const restart = () => {
                   :class="
                     refreshPreview.refreshed
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                      : 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300'
+                      : 'border border-gray-200/40 bg-white/20 text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
                   "
                 >
                   {{ refreshPreview.refreshed ? '已完成' : '待刷新' }}
@@ -617,7 +621,7 @@ const restart = () => {
             </div>
 
             <div class="mt-5 space-y-4">
-              <div class="rounded-3xl border border-white/30 bg-white/40 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+              <div class="rounded-3xl border border-gray-200/40 bg-white/20 p-4 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
                 <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Folder</div>
                 <div class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-white">{{ refreshPreview.targetPath || targetPath }}</div>
               </div>
@@ -626,7 +630,7 @@ const restart = () => {
                 class="rounded-3xl border p-5 text-sm"
                 :class="
                   refreshPreview.isRefreshing
-                    ? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'
+                    ? 'border-gray-200/40 bg-white/20 text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
                     : refreshPreview.refreshed
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
                     : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300'
