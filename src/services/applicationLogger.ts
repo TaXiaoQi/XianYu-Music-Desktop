@@ -4,7 +4,8 @@ import type { LogLevel, LogSettings } from '../types';
 
 export const APPLICATION_LOG_STORAGE_KEY = 'xianyu_application_logs_v1';
 export const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
-const MAX_LOG_ENTRIES = 3000;
+const MAX_LOG_ENTRIES = 100;
+const MAX_ERROR_LOG_ENTRIES = 10;
 
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 0,
@@ -115,15 +116,19 @@ const readStoredEntries = (): ApplicationLogEntry[] => {
 export const filterLogEntriesForRetention = (
   source: readonly ApplicationLogEntry[],
   _retentionDays: number,
-  now = Date.now(),
+  _now = Date.now(),
 ) => {
-  // 只保留当天日志（从今天 00:00 开始）
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const cutoff = startOfToday.getTime();
-  return source
-    .filter(entry => entry.timestamp >= cutoff)
-    .slice(-MAX_LOG_ENTRIES);
+  // 只保留最近 100 条日志，错误日志只保留最近 10 条，超过从最远的开始清除
+  let result = source.slice(-MAX_LOG_ENTRIES);
+  // 在保留的条目中，错误日志只保留最近 10 条
+  const errorEntries = result.filter(e => e.level === 'error');
+  if (errorEntries.length > MAX_ERROR_LOG_ENTRIES) {
+    const oldestErrorIdsToRemove = new Set(
+      errorEntries.slice(0, errorEntries.length - MAX_ERROR_LOG_ENTRIES).map(e => e.id),
+    );
+    result = result.filter(e => !oldestErrorIdsToRemove.has(e.id));
+  }
+  return result;
 };
 
 const logEntries = shallowRef<ApplicationLogEntry[]>(
@@ -175,7 +180,7 @@ const flushPendingEntries = () => {
     activeConfig.retentionDays,
     now,
   );
-  // 防抖写入 localStorage，避免每次 flush 都执行 JSON.stringify 3000 条日志
+  // 防抖写入 localStorage，避免每次 flush 都执行 JSON.stringify 大量日志
   schedulePersist();
 };
 
@@ -287,7 +292,7 @@ export function analyzeApplicationLogs(
     findings.push('错误发生前伴随较多警告，建议结合时间相邻的警告日志排查。');
   }
   if (source.length >= MAX_LOG_ENTRIES) {
-    findings.push('日志数量已达到本地上限，较早记录可能已被自动清理。');
+    findings.push(`日志数量已达到本地上限（${MAX_LOG_ENTRIES} 条），较早记录可能已被自动清理。`);
   }
   if (findings.length === 0) {
     findings.push(source.length === 0 ? '当前没有可分析的日志。' : '日志级别分布正常，暂无集中故障特征。');

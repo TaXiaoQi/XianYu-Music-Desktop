@@ -15,6 +15,7 @@ interface Wallpaper {
   imageUrl: string;
   thumbnailUrl: string;
   category: string;
+  uploaderId?: string;
 }
 
 interface MyWallpaper extends Wallpaper {
@@ -32,6 +33,17 @@ const loadError = ref('');
 const downloadingId = ref<number | null>(null);
 const downloadError = ref('');
 
+// --- 淡出动画 ---
+const isClosing = ref(false);
+
+const handleClose = () => {
+  if (isClosing.value) return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('close');
+  }, 220);
+};
+
 // 当前标签：browse 浏览壁纸中心 / mine 我的上传
 const activeTab = ref<'browse' | 'mine'>('browse');
 
@@ -47,6 +59,7 @@ const myError = ref('');
 
 // 上传相关
 const showUploadModal = ref(false);
+const isUploadClosing = ref(false);
 const uploadForm = ref({ title: '', description: '', category: '' });
 const uploadFile = ref<File | null>(null);
 const uploadPreview = ref('');
@@ -70,7 +83,16 @@ const fetchWallpapers = async () => {
     }
     const data = await response.json();
     if (data.code === 200 && Array.isArray(data.data)) {
-      wallpapers.value = data.data;
+      // 映射上传者 ID，兼容多种字段名
+      wallpapers.value = data.data.map((w: Record<string, unknown>) => ({
+        id: w.id as number,
+        title: w.title as string,
+        description: w.description as string,
+        imageUrl: w.imageUrl as string,
+        thumbnailUrl: w.thumbnailUrl as string,
+        category: w.category as string,
+        uploaderId: (w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? w.uploader ?? '') as string,
+      }));
     } else {
       throw new Error(data.msg || '接口返回异常');
     }
@@ -118,10 +140,14 @@ const openUploadModal = () => {
 };
 
 const closeUploadModal = () => {
-  if (uploading.value) return;
-  showUploadModal.value = false;
-  uploadFile.value = null;
-  clearUploadPreview();
+  if (uploading.value || isUploadClosing.value) return;
+  isUploadClosing.value = true;
+  setTimeout(() => {
+    showUploadModal.value = false;
+    isUploadClosing.value = false;
+    uploadFile.value = null;
+    clearUploadPreview();
+  }, 150);
 };
 
 const onFileChange = (e: Event) => {
@@ -223,9 +249,13 @@ const doUpload = async () => {
       },
       { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
     );
-    showUploadModal.value = false;
-    uploadFile.value = null;
-    clearUploadPreview();
+    isUploadClosing.value = true;
+    setTimeout(() => {
+      showUploadModal.value = false;
+      isUploadClosing.value = false;
+      uploadFile.value = null;
+      clearUploadPreview();
+    }, 150);
     // 切到「我的上传」并刷新
     activeTab.value = 'mine';
     await fetchMyWallpapers();
@@ -257,7 +287,7 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
       filename,
     });
     emit('select', localPath);
-    emit('close');
+    handleClose();
   } catch (err) {
     downloadError.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -276,8 +306,14 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div class="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md">
+    <div
+      class="wallpaper-overlay fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      :class="{ 'is-closing': isClosing }"
+    >
+      <div
+        class="wallpaper-card flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
+        :class="{ 'is-closing': isClosing }"
+      >
         <!-- 头部 -->
         <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <div class="flex items-center gap-2">
@@ -289,7 +325,7 @@ onBeforeUnmount(() => {
             <span class="text-base font-bold">壁纸中心</span>
             <span v-if="activeTab === 'browse' && wallpapers.length" class="text-xs text-white/40">{{ wallpapers.length }} 张</span>
           </div>
-          <button @click="emit('close')" class="text-white/50 transition hover:text-white">
+          <button @click="handleClose" class="text-white/50 transition hover:text-white">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
             </svg>
@@ -319,7 +355,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 未登录提示（我的上传） -->
-        <div v-if="activeTab === 'mine' && !isLoggedIn" class="flex flex-col items-center justify-center py-16 text-white/40">
+        <div v-if="activeTab === 'mine' && !isLoggedIn" class="flex h-[60vh] flex-col items-center justify-center text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="mb-3 h-10 w-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
@@ -327,7 +363,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 内容区 -->
-        <div v-else class="flex-1 overflow-y-auto p-6">
+        <div v-else class="h-[60vh] overflow-y-auto p-6">
           <!-- ====== 浏览：加载中 ====== -->
           <div v-if="activeTab === 'browse' && isLoading" class="flex flex-col items-center justify-center py-20 text-white/40">
             <svg class="mb-3 h-8 w-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -363,6 +399,10 @@ onBeforeUnmount(() => {
             >
               <div class="aspect-[16/10] w-full overflow-hidden">
                 <img :src="wallpaper.thumbnailUrl" :alt="wallpaper.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+              </div>
+              <!-- 上传者 ID 徽标 -->
+              <div v-if="wallpaper.uploaderId" class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
+                @{{ wallpaper.uploaderId }}
               </div>
               <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                 <div class="p-3">
@@ -455,8 +495,16 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 上传弹窗 -->
-      <div v-if="showUploadModal" class="fixed inset-0 z-[10002] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150" @click.self="closeUploadModal">
-        <div class="w-full max-w-md overflow-hidden rounded-2xl border border-white/20 bg-neutral-900/95 text-white shadow-2xl">
+      <div
+        v-if="showUploadModal"
+        class="upload-overlay fixed inset-0 z-[10002] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+        :class="{ 'is-closing': isUploadClosing }"
+        @click.self="closeUploadModal"
+      >
+        <div
+          class="upload-card w-full max-w-md overflow-hidden rounded-2xl border border-white/20 bg-neutral-900/95 text-white shadow-2xl"
+          :class="{ 'is-closing': isUploadClosing }"
+        >
           <div class="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
             <span class="text-sm font-bold">上传壁纸</span>
             <button @click="closeUploadModal" :disabled="uploading" class="text-white/50 transition hover:text-white disabled:opacity-40">
@@ -501,3 +549,69 @@ onBeforeUnmount(() => {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* ==================== 主弹窗动画 ==================== */
+.wallpaper-overlay {
+  animation: wallpaper-overlay-in 0.2s ease;
+  transition: opacity 0.2s ease;
+}
+
+.wallpaper-card {
+  animation: wallpaper-card-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes wallpaper-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes wallpaper-card-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 离开动画（is-closing 类驱动） */
+.wallpaper-overlay.is-closing {
+  opacity: 0;
+}
+
+.wallpaper-card.is-closing {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* ==================== 上传弹窗动画 ==================== */
+.upload-overlay {
+  animation: upload-overlay-in 0.15s ease;
+  transition: opacity 0.15s ease;
+}
+
+.upload-card {
+  animation: upload-card-in 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes upload-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes upload-card-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 离开动画（is-closing 类驱动） */
+.upload-overlay.is-closing {
+  opacity: 0;
+}
+
+.upload-card.is-closing {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+</style>
