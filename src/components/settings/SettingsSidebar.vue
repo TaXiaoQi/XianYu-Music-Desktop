@@ -159,7 +159,7 @@ onUnmounted(stopDragging);
 
       <div ref="listRef" class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 首页：固定置顶，不可隐藏、不可排序 -->
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 opacity-70 cursor-not-allowed">
+        <div class="p-4 flex items-center justify-between opacity-70 cursor-not-allowed">
           <div class="flex min-w-0 items-center gap-3">
             <span class="w-4 shrink-0"></span>
             <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 shrink-0">
@@ -183,7 +183,7 @@ onUnmounted(stopDragging);
             v-for="(item, index) in orderedItems"
             :key="item.key"
             data-sidebar-row
-            class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 transition-colors"
+            class="p-4 flex items-center justify-between transition-colors"
             :class="draggingIndex === index
               ? 'bg-[#EC4141]/10 ring-1 ring-inset ring-[#EC4141]/30'
               : 'hover:bg-white/40 dark:hover:bg-white/10'"

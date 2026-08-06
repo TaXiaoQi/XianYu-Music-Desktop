@@ -191,7 +191,7 @@ export const defaultPluginSettings: PluginSettings = {
 
 export const defaultAutoSyncConfig: AutoSyncConfig = {
   enabled: false,
-  syncIntervalSeconds: 10800,
+  syncIntervalSeconds: 3600,
   maxDelayMinutes: 30,
   delayedCount: 0,
   lastSyncAttemptAt: 0,

@@ -201,7 +201,7 @@ onUnmounted(cancelDragging);
       底部栏布局与预览
     </h2>
 
-    <div class="footer-layout-preview-container select-none overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
+    <div class="footer-layout-preview-container select-none overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
       <div class="footer-layout-preview-header">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
@@ -211,7 +211,7 @@ onUnmounted(cancelDragging);
           <SettingHint text="封面、歌曲信息和上一首/播放/下一首为固定区域；其余按钮可直接拖拽交换位置。" />
           <button
             type="button"
-            class="footer-preview-reset border border-gray-200/40 bg-white/20 backdrop-blur-md shadow-sm hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+            class="footer-preview-reset border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
             @click="restoreDefault"
           >
             <RotateCcw class="h-3.5 w-3.5" />
@@ -362,8 +362,8 @@ onUnmounted(cancelDragging);
       </div>
     </div>
 
-    <div class="rounded-xl border border-gray-200/40 bg-white/20 p-3 dark:border-gray-800/40 dark:bg-black/10">
-      <div class="mb-2 flex items-center justify-between gap-3">
+    <div class="space-y-2">
+      <div class="flex items-center justify-between gap-3">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">主栏显示</div>
           <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/35">关闭后不会隐藏功能，会收入右侧“更多工具”菜单。</div>
@@ -377,7 +377,7 @@ onUnmounted(cancelDragging);
           v-for="item in FOOTER_ITEMS"
           :key="item.key"
           type="button"
-          class="footer-visibility-row rounded-2xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+          class="footer-visibility-row rounded-xl border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
           @click="toggleItemVisibility(item.key)"
         >
           <span class="flex min-w-0 items-center gap-2.5">

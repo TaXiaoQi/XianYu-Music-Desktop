@@ -814,7 +814,7 @@ async function saveUserVariables() {
 
       <div class="flex flex-col gap-3 rounded-xl">
         <!-- 描述 -->
-        <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
+        <div class="flex items-center justify-between gap-4 p-4">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
           <SettingHint severity="warning" text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。" />
         </div>
@@ -1060,7 +1060,7 @@ async function saveUserVariables() {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         插件设置
       </h2>
-      <div class="space-y-1 overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10 divide-y divide-gray-200/20 dark:divide-gray-800/20">
+      <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <!-- 启动时自动更新插件 -->
         <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">

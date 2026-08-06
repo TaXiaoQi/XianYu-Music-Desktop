@@ -1719,13 +1719,11 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   text-align: left;
   transition: background-color 160ms ease;
 }
 
 .desktop-setting-row:last-child {
-  border-bottom: 0;
 }
 
 .desktop-setting-row:hover {
@@ -1733,7 +1731,6 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-setting-row {
-  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 :global(.dark) .desktop-setting-row:hover {
@@ -1749,7 +1746,6 @@ onUnmounted(() => {
 
 .desktop-setting-expand {
   overflow: hidden;
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .desktop-setting-expand-inner {
@@ -1757,17 +1753,14 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-setting-expand {
-  border-top-color: rgba(255, 255, 255, 0.05);
 }
 
 .desktop-typography-row {
   padding: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   transition: background-color 160ms ease;
 }
 
 .desktop-typography-row:last-child {
-  border-bottom: 0;
 }
 
 .desktop-typography-row:hover {
@@ -1775,7 +1768,6 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-typography-row {
-  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 :global(.dark) .desktop-typography-row:hover {

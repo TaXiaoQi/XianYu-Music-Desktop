@@ -87,7 +87,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         下载位置
       </h2>
-      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="desktop-setting-row rounded-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">下载目录</div>
@@ -117,8 +117,8 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         下载音质
       </h2>
-      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="desktop-setting-row rounded-t-xl border-b border-gray-200/20 dark:border-gray-800/20">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">默认下载音质</div>
           </div>
@@ -132,7 +132,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
         </div>
-        <div class="desktop-setting-row rounded-b-xl">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音质缺失行为</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">所选音质不可用时采取的回退策略</div>
@@ -361,9 +361,9 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         下载文件
       </h2>
-      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 文件名样式 -->
-        <div class="desktop-setting-row rounded-t-xl border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">文件名样式</div>
           </div>
@@ -378,7 +378,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 保留源文件名 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">保留源文件名</div>
           </div>
@@ -396,7 +396,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 下载独立歌词 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">下载独立歌词</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">在音频文件旁保存独立的 .lrc/.txt 歌词文件</div>
@@ -415,7 +415,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 歌词格式 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词格式</div>
           </div>
@@ -430,7 +430,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 歌词样式 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词样式</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">选择下载的歌词类型</div>
@@ -446,7 +446,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 写入歌曲元数据 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">写入歌曲元数据</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">将标题、歌手、专辑等信息写入音频文件标签</div>
@@ -465,7 +465,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 嵌入歌词 -->
-        <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入歌词</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">将歌词写入音频文件标签，可在支持标签的播放器中显示</div>
@@ -484,7 +484,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         </div>
 
         <!-- 嵌入封面 -->
-        <div class="desktop-setting-row rounded-b-xl">
+        <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">嵌入封面</div>
             <div class="text-xs text-gray-500 dark:text-gray-400">将封面图片写入音频文件标签</div>
@@ -510,7 +510,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         文件覆盖
       </h2>
-      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="desktop-setting-row rounded-xl">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">覆盖已存在的文件</div>
