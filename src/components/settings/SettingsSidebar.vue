@@ -232,7 +232,7 @@ onUnmounted(stopDragging);
             <div class="flex items-center gap-1.5">
               <button
               type="button"
-              class="settings-sidebar-move"
+              class="settings-sidebar-move border border-slate-400/24 text-slate-600 hover:border-[#EC4141]/34 hover:bg-[#EC4141]/8 hover:text-[#EC4141] dark:border-white/12 dark:text-white/60 dark:hover:border-[#EC4141]/40 dark:hover:bg-[#EC4141]/16 dark:hover:text-[#ff8b8b]"
               title="上移"
               :disabled="index === 0"
               @click.stop="moveUp(index)"
@@ -241,7 +241,7 @@ onUnmounted(stopDragging);
               </button>
               <button
               type="button"
-              class="settings-sidebar-move"
+              class="settings-sidebar-move border border-slate-400/24 text-slate-600 hover:border-[#EC4141]/34 hover:bg-[#EC4141]/8 hover:text-[#EC4141] dark:border-white/12 dark:text-white/60 dark:hover:border-[#EC4141]/40 dark:hover:bg-[#EC4141]/16 dark:hover:text-[#ff8b8b]"
               title="下移"
               :disabled="index === orderedItems.length - 1"
               @click.stop="moveDown(index)"
@@ -305,30 +305,11 @@ onUnmounted(stopDragging);
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(71, 85, 105, 0.85);
   transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
-}
-
-.settings-sidebar-move:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.34);
-  background: rgba(236, 65, 65, 0.08);
-  color: #ec4141;
 }
 
 .settings-sidebar-move:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-:global(.dark) .settings-sidebar-move {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.6);
-}
-
-:global(.dark) .settings-sidebar-move:hover:not(:disabled) {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(236, 65, 65, 0.16);
-  color: #ff8b8b;
 }
 </style>

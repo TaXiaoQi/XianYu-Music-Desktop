@@ -919,42 +919,37 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   transform: translateY(-4px);
 }
 
-/* ==================== 共享拖放区域样式 ==================== */
+/* ==================== 共享拖放区域样式（与音乐库设置页拖拽框材质统一） ==================== */
 .drop-zone {
   display: flex;
   flex-direction: column;
   width: 100%;
-  padding: 4px;
-  border: 2px dashed rgb(209 213 219); /* gray-300 */
+  padding: 20px;
+  border: none;
   border-radius: 12px;
-  background: rgb(249 250 251); /* gray-50 */
+  background: rgba(0, 0, 0, 0.04);
   color: inherit;
   cursor: pointer;
   font: inherit;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 
 .drop-zone:hover:not(:disabled) {
-  border-color: rgb(156 163 175); /* gray-400 */
-  background: rgb(243 244 246); /* gray-100 */
+  background: rgba(0, 0, 0, 0.07);
   transform: translateY(-1px);
 }
 
 .drop-zone--active {
-  border-color: #EC4141;
-  background: rgba(236, 65, 65, 0.05);
+  background: rgba(236, 65, 65, 0.06);
   transform: scale(1.01);
 }
 
 .drop-zone--filled {
-  border-style: solid;
-  border-color: rgb(34 197 94); /* green-500 */
-  background: rgba(34, 197, 94, 0.04);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .drop-zone--filled:hover:not(:disabled) {
-  border-color: rgb(22 163 74); /* green-600 */
-  background: rgba(34, 197, 94, 0.08);
+  background: rgba(0, 0, 0, 0.09);
 }
 
 .drop-zone:disabled {
@@ -973,27 +968,24 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 }
 
 .drop-zone-icon {
-  width: 28px;
-  height: 28px;
-  color: rgb(156 163 175); /* gray-400 */
-  opacity: 0.7;
-  margin-bottom: 8px;
+  width: 40px;
+  height: 40px;
+  color: rgba(71, 85, 105, 0.5);
+  margin-bottom: 12px;
   transition: color 0.2s ease;
 }
 
 .drop-zone--active .drop-zone-icon {
   color: #EC4141;
-  opacity: 1;
 }
 
 .drop-zone-icon--filled {
-  color: rgb(34 197 94); /* green-500 */
-  opacity: 1;
+  color: rgba(34, 197, 94, 0.9);
 }
 
 .drop-zone-text {
-  font-size: 0.8125rem; /* text-sm */
-  color: rgb(156 163 175); /* gray-400 */
+  font-size: 0.95rem;
+  color: rgba(71, 85, 105, 0.7);
   margin: 0;
   text-align: center;
   transition: color 0.2s ease;
@@ -1001,30 +993,44 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
 .drop-zone--active .drop-zone-text {
   color: #EC4141;
+  font-weight: 600;
 }
 
 .drop-zone-text.filled-text {
-  color: rgb(55 65 81); /* gray-700 */
+  color: rgb(55 65 81);
   font-weight: 500;
   word-break: break-all;
 }
 
 /* 暗色模式 */
 :global(.dark) .drop-zone {
-  border-color: rgb(55 65 81); /* gray-700 */
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px dashed rgba(255, 255, 255, 0.2);
 }
 
 :global(.dark) .drop-zone:hover:not(:disabled) {
-  border-color: rgb(75 85 99); /* gray-600 */
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.35);
+  border-style: solid;
 }
 
-:global(.dark) .drop-zone-text.filled-text {
-  color: rgb(229 231 235); /* gray-200 */
+:global(.dark) .drop-zone--filled {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:global(.dark) .drop-zone--filled:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+:global(.dark) .drop-zone-icon {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 :global(.dark) .drop-zone-text {
-  color: rgb(156 163 175);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+:global(.dark) .drop-zone-text.filled-text {
+  color: rgb(229 231 235);
 }
 </style>

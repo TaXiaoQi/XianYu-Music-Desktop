@@ -245,7 +245,7 @@ onMounted(() => {
             <label class="stream-cache-input-wrap">
               <input
                 :value="settings.audio.streamCacheSizeMB"
-                class="stream-cache-input"
+                class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                 type="number"
                 min="1"
                 max="10240"
@@ -370,46 +370,5 @@ onMounted(() => {
 
 :global(.dark) .stream-cache-input-wrap {
   color: rgba(255, 255, 255, 0.55);
-}
-
-.stream-cache-input {
-  width: 84px;
-  height: 34px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  color: #1f2937;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: right;
-  padding: 0 10px;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.stream-cache-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-.stream-cache-input::-webkit-outer-spin-button,
-.stream-cache-input::-webkit-inner-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
-.stream-cache-input[type="number"] {
-  appearance: textfield;
-}
-
-:global(.dark) .stream-cache-input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .stream-cache-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
 }
 </style>

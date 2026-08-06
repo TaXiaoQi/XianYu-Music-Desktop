@@ -42,6 +42,17 @@ button:focus {
   outline: none !important;
 }
 
+/* 🟢 隐藏 number 输入框的原生上下调整按钮，深色模式下会显示白底不一致 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* 🟢 统一弹窗开/关过渡动效（遮罩淡入淡出 + 内容缩放位移） */
 .modal-pop-enter-active,
 .modal-pop-leave-active {

@@ -211,7 +211,7 @@ onUnmounted(cancelDragging);
           <SettingHint text="封面、歌曲信息和上一首/播放/下一首为固定区域；其余按钮可直接拖拽交换位置。" />
           <button
             type="button"
-            class="footer-preview-reset border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+            class="footer-preview-reset border border-gray-200/40 bg-white/20 text-gray-600 hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-white/70 dark:hover:bg-white/10"
             @click="restoreDefault"
           >
             <RotateCcw class="h-3.5 w-3.5" />
@@ -422,7 +422,6 @@ onUnmounted(cancelDragging);
   gap: 6px;
   padding: 7px 12px;
   border-radius: 999px;
-  color: rgb(75 85 99);
   font-size: 12px;
   font-weight: 600;
   transition: 160ms ease;
@@ -430,10 +429,6 @@ onUnmounted(cancelDragging);
 
 .footer-preview-reset:hover {
   color: #ec4141;
-}
-
-:global(.dark) .footer-preview-reset {
-  color: rgba(255, 255, 255, 0.7);
 }
 
 .footer-player-preview {

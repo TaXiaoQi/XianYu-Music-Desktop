@@ -905,7 +905,7 @@ async function saveUserVariables() {
                     v-model="installUrl"
                     type="text"
                     placeholder="https://example.com/plugin.js"
-                    class="settings-plugin-input flex-1"
+                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10 flex-1"
                     @keydown.enter="handleInstallFromUrl"
                   />
                   <button
@@ -966,7 +966,7 @@ async function saveUserVariables() {
                       v-model="newSubscriptionUrl"
                       type="text"
                       placeholder="https://example.com/subscription.json"
-                      class="settings-plugin-input flex-1"
+                      class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10 flex-1"
                       @keydown.enter="confirmAddSubscription"
                     />
                     <button
@@ -996,7 +996,7 @@ async function saveUserVariables() {
                       v-if="editingSubId === sub.id"
                       v-model="editingSubName"
                       type="text"
-                      class="settings-plugin-input settings-plugin-input--inline text-sm font-medium"
+                      class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                       @keydown.enter="saveSubName(sub)"
                       @keydown.esc="cancelEditSubName"
                       @blur="saveSubName(sub)"
@@ -1143,13 +1143,13 @@ async function saveUserVariables() {
       </div>
 
       <!-- 搜索栏 -->
-      <div class="settings-plugin-search">
-        <Search class="h-4 w-4 text-gray-400 shrink-0" />
+      <div class="relative">
+        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 dark:text-white/40" />
         <input
           v-model="searchQuery"
           type="text"
           placeholder="搜索插件名称、平台或作者"
-          class="bg-transparent outline-none flex-1 text-sm placeholder-gray-400 text-gray-800 dark:text-gray-100"
+          class="h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
         />
       </div>
 
@@ -1175,9 +1175,13 @@ async function saveUserVariables() {
         <div class="text-sm text-gray-500 dark:text-white/60">未找到匹配的插件</div>
       </div>
 
-      <!-- 插件卡片 -->
-      <div v-else ref="listRef">
-      <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col gap-2">
+      <!-- 插件卡片容器 -->
+      <div
+        v-else
+        ref="listRef"
+        class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40"
+      >
+      <TransitionGroup name="plugin-sort" tag="div" class="flex flex-col">
         <div
           v-for="(plugin, index) in filteredPlugins"
           :key="plugin.id"
@@ -1564,7 +1568,7 @@ async function saveUserVariables() {
                     type="password"
                     v-model="detailUserVarValues[v.name]"
                     :placeholder="v.placeholder || ''"
-                    class="plugin-detail-var-input"
+                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                     autocomplete="off"
                   />
                   <!-- text 类型（默认） -->
@@ -1573,7 +1577,7 @@ async function saveUserVariables() {
                     type="text"
                     v-model="detailUserVarValues[v.name]"
                     :placeholder="v.placeholder || ''"
-                    class="plugin-detail-var-input"
+                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                     autocomplete="off"
                   />
                 </div>
@@ -1605,10 +1609,10 @@ async function saveUserVariables() {
   gap: 6px;
   min-height: 38px;
   padding: 0 16px;
-  border: 1px solid rgba(236, 65, 65, 0.18);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   border-radius: 999px;
-  background: rgba(236, 65, 65, 0.06);
-  color: #ec4141;
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(55, 65, 81, 0.85);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -1623,9 +1627,10 @@ async function saveUserVariables() {
 
 .settings-plugin-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(236, 65, 65, 0.34);
-  background: rgba(236, 65, 65, 0.1);
-  box-shadow: 0 10px 20px rgba(236, 65, 65, 0.08);
+  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.85);
+  color: rgb(31 41 55);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 .settings-plugin-button--active {
@@ -1662,15 +1667,15 @@ async function saveUserVariables() {
 }
 
 .settings-plugin-button--danger {
-  border-color: rgba(220, 38, 38, 0.24);
-  background: rgba(220, 38, 38, 0.06);
-  color: rgb(220 38 38);
+  border-color: rgba(220, 38, 38, 0.5);
+  background: #dc2626;
+  color: #fff;
 }
 
 .settings-plugin-button--danger:hover:not(:disabled) {
-  border-color: rgba(220, 38, 38, 0.4);
-  background: rgba(220, 38, 38, 0.1);
-  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.7);
+  background: #c42f2f;
+  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.2);
 }
 
 .settings-plugin-button--ghost {
@@ -1837,24 +1842,6 @@ async function saveUserVariables() {
   color: rgba(100, 116, 139, 0.8);
 }
 
-.settings-plugin-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.6);
-  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
-}
-
-.settings-plugin-search:focus-within {
-  border-color: rgba(236, 65, 65, 0.3);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.08);
-}
-
 .settings-plugin-empty {
   padding: 20px 0;
   text-align: center;
@@ -1867,17 +1854,19 @@ async function saveUserVariables() {
   align-items: center;
   gap: 16px;
   padding: 14px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.6);
-  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  border: none;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 0;
+  background: transparent;
+  transition: background-color 160ms ease;
+}
+
+.settings-plugin-card:last-child {
+  border-bottom: none;
 }
 
 .settings-plugin-card:hover {
-  transform: translateY(-1px);
-  border-color: rgba(236, 65, 65, 0.22);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 /* 拖拽手柄 */
@@ -1910,9 +1899,7 @@ async function saveUserVariables() {
 
 /* 拖拽中的卡片 */
 .settings-plugin-card--dragging {
-  border-color: rgba(236, 65, 65, 0.35);
   background: rgba(236, 65, 65, 0.06);
-  box-shadow: 0 8px 20px rgba(236, 65, 65, 0.12);
 }
 
 /* FLIP 排序动画 */
@@ -2254,8 +2241,19 @@ async function saveUserVariables() {
 }
 
 .dark .settings-plugin-card--dragging {
-  border-color: rgba(236, 65, 65, 0.4);
   background: rgba(236, 65, 65, 0.1);
+}
+
+.dark .settings-plugin-button {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dark .settings-plugin-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.96);
 }
 
 .dark .settings-plugin-button--secondary {
@@ -2296,6 +2294,17 @@ async function saveUserVariables() {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.35);
+}
+
+.dark .settings-plugin-button--danger {
+  border-color: rgba(220, 38, 38, 0.5);
+  background: #dc2626;
+  color: #fff;
+}
+
+.dark .settings-plugin-button--danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.7);
+  background: #c42f2f;
 }
 
 .dark .settings-plugin-input {
@@ -2345,30 +2354,16 @@ async function saveUserVariables() {
   color: rgba(255, 255, 255, 0.45);
 }
 
-.dark .settings-plugin-search {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.dark .settings-plugin-search:focus-within {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
 .dark .settings-plugin-empty {
   color: rgba(255, 255, 255, 0.4);
 }
 
 .dark .settings-plugin-card {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.08);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 
 .dark .settings-plugin-card:hover {
-  border-color: rgba(236, 65, 65, 0.35);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .dark .settings-plugin-tag {

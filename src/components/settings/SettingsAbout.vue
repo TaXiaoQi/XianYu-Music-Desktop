@@ -116,9 +116,9 @@ const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
       </div>
     </div>
 
-    <div class="mt-auto max-w-full shrink-0 space-y-1.5 pt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-gray-600">
+    <div class="mt-auto max-w-full shrink-0 space-y-1.5 pt-5 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
       <div class="flex flex-wrap items-center justify-center gap-x-1">
-        <span>开发者名单（排名不分先后）：</span><a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@ShenYichenCN</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@知难辞</a> <a href="https://github.com/kaishui-server" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@绛狐</a> <a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-gray-400 transition-colors">@TaXiaoQi</a>
+        <span>开发者名单（排名不分先后）：</span><a href="https://github.com/ShenYichenCN" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-white/60 transition-colors">@ShenYichenCN</a> <a href="https://github.com/88541" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-white/60 transition-colors">@知难辞</a> <a href="https://github.com/kaishui-server" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-white/60 transition-colors">@绛狐</a> <a href="https://github.com/TaXiaoQi" target="_blank" rel="noreferrer" class="cursor-pointer no-underline text-inherit hover:text-gray-600 dark:hover:text-white/60 transition-colors">@TaXiaoQi</a>
       </div>
       <div>
         Copyright © 2026 XY-Music-Desktop Developer. Licensed under AGPL-3.0-only.
