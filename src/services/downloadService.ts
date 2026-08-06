@@ -693,6 +693,8 @@ export interface DownloadSongOptions {
   embedLyrics: boolean;
   /** 是否将封面嵌入音频文件 tag */
   embedCover: boolean;
+  /** 是否独立保存封面图片文件（与 embedCover 独立，可同时开启） */
+  downloadCover: boolean;
   /** 下载进度回调（0-100）。Worker 下载时逐块回报；Rust 回退时通过事件回报。 */
   onProgress?: (percent: number) => void;
 }
@@ -701,6 +703,7 @@ export interface DownloadSongResult {
   filePath: string;
   hitQuality: LxQuality;
   lyricsSaved: boolean;
+  coverSaved: boolean;
   metadataEmbedded: boolean;
 }
 
@@ -918,11 +921,12 @@ export async function downloadSong(
     }
   }
 
-  // 封面：仅用于嵌入 tag，不保存独立文件
+  // 封面：独立文件保存 + 嵌入 tag 复用同一份数据
   // 使用 Rust 后端下载（绕过 WebView 的 CORS 限制），前端 fetch 会因跨域策略静默失败
   let savedCoverData: Uint8Array | null = null;
   let savedCoverMime = 'image/jpeg';
-  if (options.embedCover) {
+  let coverSaved = false;
+  if (options.downloadCover || options.embedCover) {
     try {
       const coverUrl = await resolveCoverUrl(song);
       if (coverUrl) {
@@ -930,6 +934,21 @@ export async function downloadSong(
         if (result?.data?.length) {
           savedCoverData = new Uint8Array(result.data);
           savedCoverMime = result.mime || 'image/jpeg';
+          if (options.downloadCover) {
+            const dot = filePath.lastIndexOf('.');
+            const coverBase = dot === -1 ? filePath : filePath.slice(0, dot);
+            const coverExt = savedCoverMime.includes('png') ? '.png' : '.jpg';
+            const coverPath = `${coverBase}${coverExt}`;
+            try {
+              await invoke<string>('save_download_bytes', {
+                data: Array.from(savedCoverData),
+                destPath: coverPath,
+              });
+              coverSaved = true;
+            } catch (e: any) {
+              console.warn('[Download] 保存封面文件失败:', e?.message);
+            }
+          }
         }
       }
     } catch (e: any) {
@@ -962,5 +981,76 @@ export async function downloadSong(
     }
   }
 
-  return { filePath, hitQuality, lyricsSaved, metadataEmbedded };
+  return { filePath, hitQuality, lyricsSaved, coverSaved, metadataEmbedded };
+}
+
+export interface DownloadExtrasOptions {
+  downloadDir: string;
+  fileNameStyle: DownloadFileNameStyle;
+  downloadLyrics: boolean;
+  lyricsFormat: 'lrc' | 'txt';
+  lyricsStyle: DownloadLyricsStyle;
+  downloadCover: boolean;
+}
+
+export interface DownloadExtrasResult {
+  lyricsSaved: boolean;
+  coverSaved: boolean;
+}
+
+/**
+ * 仅下载歌词和封面文件（不下载音频）。
+ *
+ * 当用户在下载弹窗中取消勾选「歌曲」但仍需歌词/封面时使用。
+ * 文件名基于 fileNameStyle 拼接，与音频文件命名规则一致。
+ */
+export async function downloadSongExtras(
+  song: Song,
+  options: DownloadExtrasOptions,
+): Promise<DownloadExtrasResult> {
+  if (!isDownloadableOnlineSong(song)) {
+    throw new Error('该歌曲不是可下载的在线歌曲');
+  }
+  if (!options.downloadDir) {
+    throw new Error('未设置下载目录');
+  }
+
+  const base = sanitizeFileName(buildFileNameBase(song, options.fileNameStyle));
+  let lyricsSaved = false;
+  let coverSaved = false;
+
+  if (options.downloadLyrics) {
+    try {
+      const lyricText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
+      if (lyricText) {
+        const lyricPath = `${options.downloadDir}/${base}.${options.lyricsFormat}`;
+        await invoke<string>('save_download_lyrics', { content: lyricText, destPath: lyricPath });
+        lyricsSaved = true;
+      }
+    } catch (e: any) {
+      console.warn('[Download] 保存歌词失败:', e?.message);
+    }
+  }
+
+  if (options.downloadCover) {
+    try {
+      const coverUrl = await resolveCoverUrl(song);
+      if (coverUrl) {
+        const result = await invoke<{ data: number[]; mime: string }>('fetch_image_bytes', { url: coverUrl });
+        if (result?.data?.length) {
+          const ext = (result.mime || '').includes('png') ? '.png' : '.jpg';
+          const coverPath = `${options.downloadDir}/${base}${ext}`;
+          await invoke<string>('save_download_bytes', {
+            data: Array.from(result.data),
+            destPath: coverPath,
+          });
+          coverSaved = true;
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Download] 保存封面失败:', e?.message);
+    }
+  }
+
+  return { lyricsSaved, coverSaved };
 }
