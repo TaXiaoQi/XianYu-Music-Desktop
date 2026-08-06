@@ -925,7 +925,8 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
           { method: 'GET' },
         );
         if (resp.status === 200 && /^http/.test(resp.body?.trim())) {
-          return resp.body.trim().replace('https://', 'http://');
+          // 确保使用 https:// 避免混合内容阻塞
+          return resp.body.trim().replace('http://', 'https://');
         }
       } catch { /* ignore */ }
       return null;

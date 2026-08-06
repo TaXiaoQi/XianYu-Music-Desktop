@@ -1178,8 +1178,26 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
   });
 }
 
-/** 封面加载失败时，清除 img 以显示占位符 */
+/** 封面加载失败时，尝试代理回退；若代理也失败则清除 img 显示占位符 */
+const lxProxyFailedUrls = new Set<string>();
 const handleImgError = (item: LxSearchResultItem) => {
+  if (item.img && !item.img.startsWith('data:') && !lxProxyFailedUrls.has(item.img)) {
+    // 尝试通过后端代理加载
+    const originalUrl = item.img;
+    lxProxyFailedUrls.add(originalUrl);
+    (async () => {
+      try {
+        const dataUrl = await pluginApi.proxyImage(originalUrl);
+        coverProxyCache.set(originalUrl, dataUrl);
+        item.img = dataUrl;
+        lxSearchResults.value = [...lxSearchResults.value];
+      } catch {
+        item.img = '';
+        lxSearchResults.value = [...lxSearchResults.value];
+      }
+    })();
+    return;
+  }
   item.img = '';
   lxSearchResults.value = [...lxSearchResults.value];
 };
@@ -1282,31 +1300,79 @@ const handlePlaySong = (item: LxSearchResultItem) => {
 
 const formatMfDuration = formatSearchDuration;
 
-// B站图片代理：hdslb.com/bilivideo.com 需要 Referer 头
-const mfCoverProxyCache = new Map<string, string>();
-const getMfCoverUrl = (item: PluginSearchResult) => {
-  if (!item.coverUrl) return '';
-  // 非 B站 URL 直接返回
-  if (!item.coverUrl.includes('hdslb.com') && !item.coverUrl.includes('bilivideo.com')) {
-    return item.coverUrl;
-  }
-  // 已缓存 data URL
-  const cached = mfCoverProxyCache.get(item.id);
+// 通用图片代理缓存：URL -> data URL
+// 用于处理需要 Referer 头或有 CORS 限制的图片（B站、酷我等）
+const coverProxyCache = new Map<string, string>();
+// 已尝试代理的 URL Set，避免无限重试
+const coverProxyAttempted = new Set<string>();
+
+/**
+ * 判断 URL 是否需要通过后端代理加载。
+ * 以下情况需要代理：
+ * - http:// 协议（混合内容会被浏览器阻止）
+ * - B站图片域名（需要 Referer 头）
+ * - 酷我图片域名（需要 Referer 头）
+ */
+const needsProxy = (url: string): boolean => {
+  if (!url) return false;
+  if (url.startsWith('data:') || url.startsWith('asset:')) return false;
+  if (url.startsWith('http://')) return true;
+  if (url.includes('hdslb.com') || url.includes('bilivideo.com')) return true;
+  if (url.includes('kuwo.cn') || url.includes('kuwo.com')) return true;
+  if (url.includes('kugou.com') || url.includes('kgmusic.com')) return true;
+  return false;
+};
+
+/**
+ * 获取需要代理的封面 URL：
+ * 如果 URL 需要代理，先返回缓存结果（如有），同时异步发起代理请求。
+ * 如果不需要代理，直接返回原始 URL。
+ */
+const getProxiedCoverUrl = (url: string, refreshTrigger?: () => void): string => {
+  if (!url) return '';
+  if (!needsProxy(url)) return url;
+
+  const cached = coverProxyCache.get(url);
   if (cached) return cached;
+
+  // 已尝试过且失败的，不再重试
+  if (coverProxyAttempted.has(url)) return '';
+  coverProxyAttempted.add(url);
+
   // 异步代理并刷新
   (async () => {
     try {
-      const dataUrl = await pluginApi.proxyImage(item.coverUrl);
-      mfCoverProxyCache.set(item.id, dataUrl);
-      // 触发响应式更新
-      pluginSearchResults.value = [...pluginSearchResults.value];
+      const dataUrl = await pluginApi.proxyImage(url);
+      coverProxyCache.set(url, dataUrl);
+      refreshTrigger?.();
     } catch { /* ignore */ }
   })();
-  return item.coverUrl; // 先显示原图（可能 403），代理完成后刷新
+
+  return ''; // 代理完成前不显示（避免闪烁的 403 图标）
+};
+
+const getMfCoverUrl = (item: PluginSearchResult) => {
+  if (!item.coverUrl) return '';
+  return getProxiedCoverUrl(item.coverUrl, () => {
+    pluginSearchResults.value = [...pluginSearchResults.value];
+  });
 };
 
 const handleMfImgError = (e: Event) => {
-  (e.target as HTMLImageElement).style.display = 'none';
+  const img = e.target as HTMLImageElement;
+  const src = img.src;
+  // 如果是原始 URL（非 data:），尝试代理回退
+  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
+    coverProxyAttempted.add(src);
+    (async () => {
+      try {
+        const dataUrl = await pluginApi.proxyImage(src);
+        coverProxyCache.set(src, dataUrl);
+        pluginSearchResults.value = [...pluginSearchResults.value];
+      } catch { /* ignore */ }
+    })();
+  }
+  img.style.display = 'none';
 };
 
 const handlePlayMfSong = async (item: PluginSearchResult) => {
@@ -1621,7 +1687,7 @@ const getVirtualTrackCoverPath = (entry: SearchTrackEntry) => {
 };
 
 const getVirtualTrackCoverUrl = (entry: SearchTrackEntry) => {
-  if (entry.kind === 'lx') return entry.item.img || '';
+  if (entry.kind === 'lx') return entry.item.img ? getProxiedCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
   if (entry.kind === 'plugin') return entry.item.coverUrl ? getMfCoverUrl(entry.item) : '';
   return entry.item.cover_thumb_path ? getLocalCoverUrl(entry.item) : '';
 };
@@ -1685,21 +1751,27 @@ const handleVirtualTrackImageError = (event: Event, entry: SearchTrackEntry) => 
 };
 
 const getCatalogEntryCover = (entry: CatalogGridEntry) => {
+  const refreshFn = () => {
+    if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
+    else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
+    else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
+  };
+
   if (entry.type === 'artist') {
     return entry.source === 'local'
       ? getLocalArtistCover(entry.item)
-      : entry.item.avatarUrl || '';
+      : entry.item.avatarUrl ? getProxiedCoverUrl(entry.item.avatarUrl, refreshFn) : '';
   }
 
   if (entry.type === 'album') {
     return entry.source === 'local'
       ? getLocalAlbumCover(entry.item)
-      : entry.item.coverUrl || '';
+      : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
   }
 
   return entry.source === 'local'
     ? getPlaylistCover(entry.item)
-    : entry.item.coverUrl || '';
+    : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
 };
 
 const getCatalogEntryTitle = (entry: CatalogGridEntry) => {
@@ -1840,7 +1912,23 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
 };
 
 const handlePluginImgError = (e: Event) => {
-  (e.target as HTMLImageElement).style.display = 'none';
+  const img = e.target as HTMLImageElement;
+  const src = img.src;
+  // 如果是原始 URL（非 data:），尝试代理回退
+  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
+    coverProxyAttempted.add(src);
+    (async () => {
+      try {
+        const dataUrl = await pluginApi.proxyImage(src);
+        coverProxyCache.set(src, dataUrl);
+        // 刷新对应的结果列表
+        if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
+        else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
+        else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
+      } catch { /* ignore */ }
+    })();
+  }
+  img.style.display = 'none';
 };
 
 const getLocalArtistCover = (artist: ArtistCatalogItem): string => {

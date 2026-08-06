@@ -14,6 +14,67 @@ import type { AppSettings } from '../types';
 import { signedRequest } from './auth/authService';
 import { getCiyuanxiId } from './playlistSync';
 
+// ==================== 设置比较 ====================
+
+/**
+ * 深拷贝并返回稳定 JSON 字符串（键排序）
+ * 用于比较两个设置对象是否一致
+ */
+function stableStringify(obj: unknown): string {
+  return JSON.stringify(obj, (_key, value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(value).sort()) {
+        sorted[k] = (value as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return value;
+  });
+}
+
+/**
+ * 归一化设置对象，用于比较时排除设备相关和运行时字段
+ *
+ * 排除的字段：
+ * - download.downloadPath：设备相关本地路径
+ * - organizeRoot：设备相关路径
+ * - upload：同步偏好（每台设备可能不同）
+ * - autoSync 运行时状态：delayedCount / lastSyncAttemptAt / lastSyncSuccessAt / nextSyncAt
+ */
+export function normalizeSettingsForComparison(settings: AppSettings): Record<string, unknown> {
+  const cloned = JSON.parse(JSON.stringify(settings)) as Record<string, unknown>;
+
+  // 排除设备相关字段
+  if (cloned.download && typeof cloned.download === 'object') {
+    (cloned.download as Record<string, unknown>).downloadPath = '';
+  }
+  (cloned as Record<string, unknown>).organizeRoot = '';
+
+  // 排除 upload 同步偏好
+  delete (cloned as Record<string, unknown>).upload;
+
+  // 排除 autoSync 运行时状态
+  if (cloned.autoSync && typeof cloned.autoSync === 'object') {
+    const autoSync = cloned.autoSync as Record<string, unknown>;
+    delete autoSync.delayedCount;
+    delete autoSync.lastSyncAttemptAt;
+    delete autoSync.lastSyncSuccessAt;
+    delete autoSync.nextSyncAt;
+  }
+
+  return cloned;
+}
+
+/**
+ * 比较本地设置与云端设置是否一致（排除设备相关和运行时字段）
+ */
+export function areSettingsEqual(local: AppSettings, cloud: AppSettings): boolean {
+  const normalizedLocal = normalizeSettingsForComparison(local);
+  const normalizedCloud = normalizeSettingsForComparison(cloud);
+  return stableStringify(normalizedLocal) === stableStringify(normalizedCloud);
+}
+
 /** 日志前缀 */
 const LOG = '[SettingsSync]';
 
@@ -97,7 +158,7 @@ export async function uploadSettings(settings: AppSettings): Promise<SettingsSyn
  * 从云端下载设置
  * 返回下载的设置数据，调用方负责合并到本地
  */
-export async function downloadSettings(): Promise<{ settings: AppSettings | null; result: SettingsSyncResult }> {
+export async function downloadSettings(): Promise<{ settings: AppSettings | null; uploadedAt: string | null; result: SettingsSyncResult }> {
   const result: SettingsSyncResult = {
     uploaded: false,
     downloaded: false,
@@ -108,7 +169,7 @@ export async function downloadSettings(): Promise<{ settings: AppSettings | null
   if (!ciyuanxiId) {
     logSyncError('downloadSettings: 未获取到弦予号');
     result.errors.push('未登录或未获取到弦予号');
-    return { settings: null, result };
+    return { settings: null, uploadedAt: null, result };
   }
 
   logSync('downloadSettings: 开始从云端下载设置');
@@ -120,16 +181,16 @@ export async function downloadSettings(): Promise<{ settings: AppSettings | null
 
     if (!downloadData || !downloadData.settings) {
       logSync('downloadSettings: 云端无设置数据');
-      return { settings: null, result };
+      return { settings: null, uploadedAt: null, result };
     }
 
     result.downloaded = true;
     logSync(`downloadSettings: 下载成功, uploaded_at=${downloadData.uploaded_at}`);
-    return { settings: downloadData.settings, result };
+    return { settings: downloadData.settings, uploadedAt: downloadData.uploaded_at ?? null, result };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logSyncError(`downloadSettings: 下载失败: ${msg}`);
     result.errors.push(`下载失败: ${msg}`);
-    return { settings: null, result };
+    return { settings: null, uploadedAt: null, result };
   }
 }

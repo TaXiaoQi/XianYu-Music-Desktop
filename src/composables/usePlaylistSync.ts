@@ -37,8 +37,13 @@ import {
 import {
   uploadSettings as uploadSettingsToCloud,
   downloadSettings as downloadSettingsFromCloud,
+  areSettingsEqual,
   type SettingsSyncResult,
 } from '../services/settingsSync';
+import {
+  showSettingsConflict,
+  type SyncCategoryChoices,
+} from './useSettingsConflict';
 import {
   getAutoSyncScheduler,
 } from '../services/autoSync';
@@ -672,7 +677,7 @@ export function usePlaylistSync() {
   }
 
   /**
-   * 双向同步设置：先上传本地设置，再下载云端设置
+   * 双向同步设置：先比较本地与云端，一致则跳过，不一致则弹窗让用户选择
    */
   async function syncSettings(): Promise<SettingsSyncResult> {
     logSync('========== syncSettings 开始 ==========');
@@ -687,50 +692,149 @@ export function usePlaylistSync() {
     lastSettingsSyncResult.value = null;
 
     try {
-      let uploadResult: SettingsSyncResult = { uploaded: false, downloaded: false, errors: [] };
+      // 第一步：下载云端设置用于比较
+      logSync('syncSettings: 步骤 1/2 - 下载云端设置进行比较');
+      settingsSyncProgress.value = '正在从云端获取设置...';
+      const { settings: cloudSettings, uploadedAt, result: downloadResult } = await downloadSettingsFromCloud();
+      logSync('syncSettings: 步骤 1/2 - 云端设置下载完成', downloadResult);
 
-      if (isSettingsUploadEnabled()) {
-        logSync('syncSettings: 步骤 1/2 - 开始上传设置');
-        settingsSyncProgress.value = '正在上传本地设置到云端...';
-        uploadResult = await uploadSettingsToCloud(settingsStore.settings);
-        logSync('syncSettings: 步骤 1/2 - 上传设置完成', uploadResult);
-      } else {
-        logSync('syncSettings: 步骤 1/2 - 设置上传未开启，跳过');
+      // 云端无数据：直接上传本地设置（首次同步）
+      if (!cloudSettings) {
+        if (isSettingsUploadEnabled()) {
+          logSync('syncSettings: 云端无数据，上传本地设置');
+          settingsSyncProgress.value = '正在上传本地设置到云端...';
+          const uploadResult = await uploadSettingsToCloud(settingsStore.settings);
+          lastSettingsSyncResult.value = uploadResult;
+          lastSettingsSyncTime.value = Date.now();
+          if (uploadResult.errors.length > 0) {
+            showToast(`设置同步完成（${uploadResult.errors.length} 个错误）`, 'error');
+          } else {
+            showToast('设置已上传到云端', 'success');
+          }
+          logSync('========== syncSettings 结束（首次上传） ==========');
+          return uploadResult;
+        }
+        logSync('syncSettings: 云端无数据且上传未开启，跳过');
+        lastSettingsSyncResult.value = downloadResult;
+        lastSettingsSyncTime.value = Date.now();
+        showToast('云端暂无设置数据', 'info');
+        return downloadResult;
       }
 
-      // 第二步：下载
-      logSync('syncSettings: 步骤 2/2 - 开始下载设置');
-      settingsSyncProgress.value = '正在从云端拉取设置...';
-      const { settings: cloudSettings, result: downloadResult } = await downloadSettingsFromCloud();
-      logSync('syncSettings: 步骤 2/2 - 下载设置完成', downloadResult);
+      // 第二步：比较本地与云端设置
+      const localSettings = settingsStore.settings;
+      const isEqual = areSettingsEqual(localSettings, cloudSettings);
 
-      if (cloudSettings) {
-        const currentSettings = settingsStore.settings;
+      if (isEqual) {
+        logSync('syncSettings: 本地与云端设置一致，跳过同步');
+        lastSettingsSyncResult.value = { uploaded: false, downloaded: false, errors: [] };
+        lastSettingsSyncTime.value = Date.now();
+        showToast('本地与云端设置一致，无需同步', 'info');
+        logSync('========== syncSettings 结束（一致跳过） ==========');
+        return { uploaded: false, downloaded: false, errors: [] };
+      }
+
+      // 设置不一致：弹窗让用户选择
+      logSync('syncSettings: 本地与云端设置不一致，等待用户选择');
+      settingsSyncProgress.value = '检测到设置不一致，等待用户选择...';
+      const choice = await showSettingsConflict(uploadedAt ?? undefined);
+
+      if (choice === 'cancel') {
+        logSync('syncSettings: 用户取消同步');
+        lastSettingsSyncResult.value = { uploaded: false, downloaded: false, errors: [] };
+        lastSettingsSyncTime.value = Date.now();
+        showToast('已取消设置同步', 'info');
+        logSync('========== syncSettings 结束（用户取消） ==========');
+        return { uploaded: false, downloaded: false, errors: [] };
+      }
+
+      // 用户按类别选择了保留本地或云端
+      const choices = choice as SyncCategoryChoices;
+      const errors: string[] = [];
+      let uploaded = false;
+      let downloaded = false;
+
+      // --- 设置 ---
+      if (choices.settings === 'local') {
+        if (isSettingsUploadEnabled()) {
+          logSync('syncSettings: 设置 → 保留本地，上传覆盖云端');
+          settingsSyncProgress.value = '正在上传本地设置到云端...';
+          const r = await uploadSettingsToCloud(localSettings);
+          uploaded = r.uploaded;
+          errors.push(...r.errors);
+        } else {
+          logSync('syncSettings: 设置 → 保留本地，但上传未开启，跳过');
+        }
+      } else {
+        logSync('syncSettings: 设置 → 保留云端，下载覆盖本地');
+        settingsSyncProgress.value = '正在从云端恢复设置...';
         const merged = mergeAppSettings(createDefaultAppSettings(), cloudSettings as any);
-        merged.download.downloadPath = currentSettings.download.downloadPath;
-        merged.upload = currentSettings.upload;
-        merged.organizeRoot = currentSettings.organizeRoot;
+        merged.download.downloadPath = localSettings.download.downloadPath;
+        merged.upload = localSettings.upload;
+        merged.organizeRoot = localSettings.organizeRoot;
         settingsStore.replaceSettings(merged);
         playerStorage.writeSettings(merged);
+        downloaded = true;
+        errors.push(...downloadResult.errors);
       }
 
-      const combined: SettingsSyncResult = {
-        uploaded: uploadResult.uploaded,
-        downloaded: downloadResult.downloaded,
-        errors: [...uploadResult.errors, ...downloadResult.errors],
-      };
+      // --- 歌单 ---
+      if (choices.playlists === 'local') {
+        if (isUploadEnabled()) {
+          logSync('syncSettings: 歌单 → 保留本地，上传到云端');
+          settingsSyncProgress.value = '正在上传本地歌单到云端...';
+          try {
+            await uploadPlaylists();
+          } catch (e) {
+            errors.push(e instanceof Error ? e.message : String(e));
+          }
+        } else {
+          logSync('syncSettings: 歌单 → 保留本地，但上传未开启，跳过');
+        }
+      } else {
+        logSync('syncSettings: 歌单 → 保留云端，下载到本地');
+        settingsSyncProgress.value = '正在从云端下载歌单...';
+        try {
+          await downloadPlaylists();
+        } catch (e) {
+          errors.push(e instanceof Error ? e.message : String(e));
+        }
+      }
 
-      lastSettingsSyncResult.value = combined;
+      // --- 插件 ---
+      if (choices.plugins === 'local') {
+        if (isPluginUploadEnabled()) {
+          logSync('syncSettings: 插件 → 保留本地，上传到云端');
+          settingsSyncProgress.value = '正在上传本地插件到云端...';
+          try {
+            await uploadPluginsToCloud();
+          } catch (e) {
+            errors.push(e instanceof Error ? e.message : String(e));
+          }
+        } else {
+          logSync('syncSettings: 插件 → 保留本地，但上传未开启，跳过');
+        }
+      } else {
+        logSync('syncSettings: 插件 → 保留云端，下载到本地');
+        settingsSyncProgress.value = '正在从云端下载插件...';
+        try {
+          await downloadPluginsFromCloud();
+        } catch (e) {
+          errors.push(e instanceof Error ? e.message : String(e));
+        }
+      }
+
+      const combinedResult: SettingsSyncResult = { uploaded, downloaded, errors };
+      lastSettingsSyncResult.value = combinedResult;
       lastSettingsSyncTime.value = Date.now();
 
-      if (combined.errors.length > 0) {
-        showToast(`设置同步完成（${combined.errors.length} 个错误）`, 'error');
+      if (errors.length > 0) {
+        showToast(`同步完成（${errors.length} 个错误）`, 'error');
       } else {
-        showToast('设置同步完成', 'success');
+        showToast('同步完成', 'success');
       }
-
-      logSync('========== syncSettings 结束 ==========');
-      return combined;
+      logSync('========== syncSettings 结束（按类别同步） ==========');
+      return combinedResult;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logSyncError(`syncSettings 异常: ${msg}`, error);

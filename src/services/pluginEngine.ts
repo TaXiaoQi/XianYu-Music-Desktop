@@ -1214,7 +1214,9 @@ export async function pluginGetCover(
         ? resetMediaItem(item.rawData, source.name)
         : resetMediaItem(item, source.name);
       const result = await inst.instance.getMusicInfo(musicItem);
-      if (result?.artwork) return result.artwork;
+      // 兼容多种封面字段名（不同插件返回的字段名可能不同）
+      const coverUrl = extractCoverUrl(result);
+      if (coverUrl) return coverUrl;
     }
     return item.coverUrl || null;
   } catch {

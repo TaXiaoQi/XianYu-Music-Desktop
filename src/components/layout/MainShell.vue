@@ -18,6 +18,7 @@ const PlayQueueSidebar = defineAsyncComponent(() => import('../player/PlayQueueS
 const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.vue'));
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
+const SettingsConflictDialog = defineAsyncComponent(() => import('../common/SettingsConflictDialog.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
@@ -284,6 +285,7 @@ onMounted(() => {
     </template>
 
     <Toast />
+    <SettingsConflictDialog />
   </div>
 </template>
 
