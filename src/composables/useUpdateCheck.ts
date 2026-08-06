@@ -82,6 +82,17 @@ export function useUpdateCheck() {
     updateVisible.value = false;
   };
 
+  /** 调试用：使用模拟数据直接弹出更新弹窗，不做真实网络请求 */
+  const simulateUpdate = () => {
+    latestUpdate.value = {
+      version: '99.9.9',
+      downloadUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop/releases',
+      updateContent: '【调试模拟】此更新提示由调试模式模拟生成，用于测试更新弹窗的显示效果。\n\n模拟版本号：99.9.9\n\n您可以在此查看更新弹窗的排版、样式和交互行为，而无需连接服务器。',
+      updatedAt: new Date().toISOString(),
+    };
+    updateVisible.value = true;
+  };
+
   /** 打开下载链接（备用：浏览器打开） */
   const openDownload = async () => {
     if (latestUpdate.value?.downloadUrl) {
@@ -147,5 +158,6 @@ export function useUpdateCheck() {
     closeUpdate,
     openDownload,
     downloadAndInstall,
+    simulateUpdate,
   };
 }

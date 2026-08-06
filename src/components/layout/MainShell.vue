@@ -8,6 +8,7 @@ import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
+import { useSettingsStore } from '../../features/settings/store';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
@@ -85,18 +86,23 @@ const {
 
 // --- 首次启动引导 ---
 const { showOnboarding, completeOnboarding } = useOnboarding();
+const settingsStore = useSettingsStore();
 
 const handleOnboardingComplete = () => {
   completeOnboarding();
   checkAnnouncement();
-  checkUpdateOnStartup();
+  if (settingsStore.settings.checkUpdateOnStartup) {
+    checkUpdateOnStartup();
+  }
 };
 
 onMounted(() => {
   if (!showOnboarding.value) {
     // 初始化流程拥有首次启动的最高展示优先级，完成后再检查其他启动弹窗。
     checkAnnouncement();
-    checkUpdateOnStartup();
+    if (settingsStore.settings.checkUpdateOnStartup) {
+      checkUpdateOnStartup();
+    }
   }
 });
 </script>

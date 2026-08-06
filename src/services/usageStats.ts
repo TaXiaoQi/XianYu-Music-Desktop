@@ -288,12 +288,19 @@ export function reportUserBehavior(report: UserBehaviorReport): void {
  * 与其他 report* 函数不同：本函数**不** fire-and-forget，而是返回 Promise，
  * 由调用方根据成功/失败给出 toast 反馈（用户主动提交需要即时反馈）。
  *
- * @param title   反馈标题（1-60 字）
- * @param content 反馈内容（1-1000 字）
+ * @param title        反馈标题（1-60 字）
+ * @param content      反馈内容（1-1000 字）
+ * @param errorLogs    可选，附带的错误日志文本
+ * @param allLogs      可选，附带的全量日志文本
  * @returns 后端返回的新反馈 ID
  * @throws 未登录时抛 Error('请先登录后再提交反馈')；后端校验失败抛 Error(msg)
  */
-export async function submitFeedback(title: string, content: string): Promise<number> {
+export async function submitFeedback(
+  title: string,
+  content: string,
+  errorLogs?: string,
+  allLogs?: string,
+): Promise<number> {
   const auth = getStoredAuth();
   const user = auth?.user;
   const ciyuanxiId = user?.ciyuanxi_id?.trim();
@@ -301,11 +308,15 @@ export async function submitFeedback(title: string, content: string): Promise<nu
     throw new Error('请先登录后再提交反馈');
   }
 
-  const data = await signedRequest<{ id: string | number }>('submit_feedback', {
+  const payload: Record<string, unknown> = {
     ciyuanxi_id: ciyuanxiId,
     nickname: user?.nickname?.trim() || '',
     title: title.trim(),
     content: content.trim(),
-  });
+  };
+  if (errorLogs) payload.error_logs = errorLogs;
+  if (allLogs) payload.all_logs = allLogs;
+
+  const data = await signedRequest<{ id: string | number }>('submit_feedback', payload);
   return Number(data.id);
 }

@@ -1606,7 +1606,7 @@ onUnmounted(() => {
   --desktop-font-trigger-shadow: none;
 
   --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.3);
-  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.18);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
   --desktop-font-trigger-active-shadow: none;
 
   --desktop-font-menu-bg: rgba(255, 255, 255, 0.88);
@@ -1635,12 +1635,12 @@ onUnmounted(() => {
   --desktop-chip-active-border: rgba(236, 65, 65, 0.35);
   --desktop-chip-active-text: #ff8b8b;
 
-  --desktop-font-trigger-bg: rgba(255, 255, 255, 0.05);
-  --desktop-font-trigger-border: rgba(255, 255, 255, 0.08);
+  --desktop-font-trigger-bg: rgba(0, 0, 0, 0.1);
+  --desktop-font-trigger-border: rgba(31, 41, 55, 0.4);
   --desktop-font-trigger-shadow: none;
 
-  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.08);
-  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.28);
+  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.1);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
   --desktop-font-trigger-active-shadow: none;
 
   --desktop-font-menu-bg: rgba(17, 17, 19, 0.88);
@@ -1871,7 +1871,7 @@ onUnmounted(() => {
 }
 
 .desktop-font-trigger--compact {
-  min-height: 36px;
+  min-height: 48px;
   padding: 7px 10px;
   border-radius: 10px;
   gap: 8px;
@@ -2775,15 +2775,15 @@ onUnmounted(() => {
   width: 100%;
 }
 
-/* 紧凑单元格：平分 50% 宽度 */
+/* 紧凑单元格：平分 50% 宽度（底色/边框/hover 与外观页底部栏布局 footer-visibility-row 一致） */
 .desktop-compact-cell {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  height: 40px;
-  padding: 0 4px 0 10px;
+  min-height: 48px;
+  padding: 7px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(229, 231, 235, 0.4);
@@ -2791,18 +2791,18 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-compact-cell {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
 .desktop-compact-cell:hover {
   background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(236, 65, 65, 0.18);
+  border-color: rgba(236, 65, 65, 0.35);
 }
 
 :global(.dark) .desktop-compact-cell:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(236, 65, 65, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(236, 65, 65, 0.35);
 }
 
 /* 精致等宽网格单元格：专门用于滑块 Cell，强制使用 Grid 布局保证 Label 56px 固定且滑块起点完美对齐 */
@@ -2813,8 +2813,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  height: 40px;
-  padding: 0 10px;
+  min-height: 48px;
+  padding: 7px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(229, 231, 235, 0.4);
@@ -2822,18 +2822,18 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-compact-slider-cell {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
 .desktop-compact-slider-cell:hover {
   background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(236, 65, 65, 0.18);
+  border-color: rgba(236, 65, 65, 0.35);
 }
 
 :global(.dark) .desktop-compact-slider-cell:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(236, 65, 65, 0.28);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(236, 65, 65, 0.35);
 }
 
 /* 紧凑标签：左侧标签，易读大气 */
@@ -2985,8 +2985,8 @@ onUnmounted(() => {
 }
 
 :global(.dark) .desktop-segmented-control {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
 /* 分段按钮 */
@@ -3181,5 +3181,187 @@ onUnmounted(() => {
 .desktop-compact-range-slider::-moz-range-thumb:active {
   transform: scale(1.05);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+}
+</style>
+
+<style>
+/* ==========================================================================
+   桌面歌词「排版与字体」控件深色模式样式
+   Vue scoped style 中 :global(.dark) .xxx 复合选择器无法正确编译，
+   深色模式样式需放在非 scoped <style> 块中，使用 html.dark .xxx 选择器。
+   底色/边框/hover 与外观页底部栏布局 footer-visibility-row 一致。
+   ========================================================================== */
+
+/* CSS 变量 - 深色模式重写（确保 font-trigger 等通过变量引用的控件也正确） */
+html.dark {
+  --desktop-font-trigger-bg: rgba(0, 0, 0, 0.1);
+  --desktop-font-trigger-border: rgba(31, 41, 55, 0.4);
+  --desktop-font-trigger-shadow: none;
+  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.1);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
+  --desktop-font-trigger-active-shadow: none;
+  --desktop-font-menu-bg: rgba(17, 17, 19, 0.88);
+  --desktop-font-menu-border: rgba(255, 255, 255, 0.08);
+  --desktop-font-menu-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), 0 10px 24px rgba(0, 0, 0, 0.24);
+  --desktop-font-menu-header-color: rgba(255, 255, 255, 0.58);
+  --desktop-font-menu-header-border: rgba(255, 255, 255, 0.06);
+  --desktop-font-option-text: rgba(255, 255, 255, 0.84);
+  --desktop-font-option-hover-bg: rgba(236, 65, 65, 0.1);
+  --desktop-font-option-hover-border: rgba(236, 65, 65, 0.22);
+  --desktop-font-option-hover-text: rgba(255, 255, 255, 0.98);
+  --desktop-font-option-active-bg: linear-gradient(180deg, rgba(236, 65, 65, 0.18), rgba(236, 65, 65, 0.08));
+  --desktop-font-option-active-border: rgba(236, 65, 65, 0.28);
+  --desktop-font-option-active-text: #ff9a9a;
+}
+
+/* 紧凑单元格（设置类：对齐、双行、翻译、罗马音、逐字效果、歌词描边等） */
+html.dark .desktop-compact-cell {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .desktop-compact-cell:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(236, 65, 65, 0.35);
+}
+
+/* 紧凑滑块单元格（字号、副词字号、行距、不透明度、描边阴影） */
+html.dark .desktop-compact-slider-cell {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .desktop-compact-slider-cell:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(236, 65, 65, 0.35);
+}
+
+/* 紧凑标签 */
+html.dark .desktop-compact-label {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+/* 配色方案下拉颜色标识 */
+html.dark .desktop-color-scheme-swatch {
+  border-color: rgba(0, 0, 0, 0.38);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+/* 阴影预设小圆点 */
+html.dark .desktop-compact-color-preset {
+  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .desktop-compact-color-preset:hover {
+  box-shadow: 0 0 0 1.5px #ff8b8b, 0 2px 6px rgba(236, 65, 65, 0.2);
+}
+
+html.dark .desktop-compact-color-preset--active {
+  box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
+}
+
+/* 自定义阴影色块 */
+html.dark .desktop-compact-color-custom-swatch {
+  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .desktop-compact-color-custom:hover {
+  box-shadow: 0 0 0 1.5px #ff8b8b, 0 2px 6px rgba(236, 65, 65, 0.2);
+}
+
+html.dark .desktop-compact-color-custom--active {
+  box-shadow: 0 0 0 2px #ff8b8b, 0 3px 8px rgba(236, 65, 65, 0.3) !important;
+}
+
+/* 分段对齐控制器 */
+html.dark .desktop-segmented-control {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .desktop-segmented-btn {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+html.dark .desktop-segmented-btn:hover {
+  color: #ff8b8b;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html.dark .desktop-segmented-btn--active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ff8b8b !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 开关（与底部栏预览 footer-visibility-switch 一致） */
+html.dark .desktop-lyrics-toggle {
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* 滑动条轨道 */
+html.dark .desktop-compact-range-slider::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html.dark .desktop-compact-range-slider:hover::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+html.dark .desktop-compact-range-slider::-moz-range-track {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html.dark .desktop-compact-range-slider:hover::-moz-range-track {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* 预览区恢复默认按钮 */
+html.dark .desktop-preview-btn--default {
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+html.dark .desktop-preview-btn--default:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 自定义配色弹窗（从「排版与字体」配色方案触发） */
+html.dark .desktop-custom-modal {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 20, 0.92);
+}
+
+html.dark .desktop-color-picker {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .desktop-custom-color-panel {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 20, 0.96);
+}
+
+html.dark .desktop-custom-color-panel-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .desktop-custom-rgb-row label {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+html.dark .desktop-custom-rgb-row input {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgb(243 244 246);
+}
+
+html.dark .desktop-custom-rgb-row input:focus {
+  background: rgba(255, 255, 255, 0.1);
 }
 </style>
