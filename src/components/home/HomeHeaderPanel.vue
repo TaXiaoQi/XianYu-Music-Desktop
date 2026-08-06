@@ -81,9 +81,9 @@ const isManagementModeModel = computed({
     :songs="localSongList"
     :selectedCount="selectedCount"
     :showRename="true"
+    :showAddToPlaylist="false"
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
-    @addToPlaylist="$emit('showAddToPlaylist')"
     @batchDelete="$emit('batchDelete')"
     @rename="$emit('renamePlaylist')"
   />
