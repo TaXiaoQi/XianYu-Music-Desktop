@@ -21,14 +21,25 @@ const foregroundOptions = [
 
 const isDarkForeground = computed(() => preview.value.foregroundStyle === 'dark');
 
+// --- 淡出动画 ---
+const isClosing = ref(false);
+
+const closeWithAnimation = () => {
+  if (isClosing.value) return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('close');
+  }, 220);
+};
+
 const handleCancel = () => {
   discardThemeDraft();
-  emit('close');
+  closeWithAnimation();
 };
 
 const handleSave = () => {
   applyThemeDraft();
-  emit('close');
+  closeWithAnimation();
 };
 
 const loadImageMetadata = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => {
@@ -366,8 +377,14 @@ const handleWallpaperSelect = async (localPath: string) => {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div class="flex max-h-[calc(100vh-2rem)] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md">
+    <div
+      class="skin-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      :class="{ 'is-closing': isClosing }"
+    >
+      <div
+        class="skin-card flex max-h-[calc(100vh-2rem)] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
+        :class="{ 'is-closing': isClosing }"
+      >
         <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <div class="flex items-center gap-3">
             <span class="text-base font-bold">自定义皮肤</span>
@@ -645,5 +662,37 @@ input[type='range']::-webkit-slider-thumb {
   -webkit-user-drag: none;
   user-select: none;
   pointer-events: none;
+}
+
+/* ==================== 弹窗动画 ==================== */
+.skin-overlay {
+  animation: skin-overlay-in 0.2s ease;
+  transition: opacity 0.2s ease;
+}
+
+.skin-card {
+  animation: skin-card-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes skin-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes skin-card-in {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 离开动画（is-closing 类驱动） */
+.skin-overlay.is-closing {
+  opacity: 0;
+}
+
+.skin-card.is-closing {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 </style>

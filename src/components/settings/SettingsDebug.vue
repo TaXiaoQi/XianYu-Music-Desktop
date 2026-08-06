@@ -83,7 +83,7 @@ function testConflictDialog() {
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
           <p class="text-sm font-medium text-gray-800 dark:text-gray-200">更新提示框</p>
-          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试更新弹窗显示</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试更新弹窗显示，点击「立即更新」可模拟下载进度动画</p>
         </div>
         <button
           type="button"
