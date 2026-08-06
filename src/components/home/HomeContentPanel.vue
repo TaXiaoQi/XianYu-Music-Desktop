@@ -165,11 +165,11 @@ const handleTableDragStart = (...args: any[]) => {
 
 .tab-slide-enter-from {
   opacity: 0;
-  transform: translateX(8px);
+  transform: translateY(8px);
 }
 
 .tab-slide-leave-to {
   opacity: 0;
-  transform: translateX(-8px);
+  transform: translateY(-8px);
 }
 </style>

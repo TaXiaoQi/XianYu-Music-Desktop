@@ -17,19 +17,23 @@ const menuRef = ref<HTMLElement | null>(null);
 const menuSize = ref({ width: 0, height: 0 });
 
 // 当菜单显示时，立即测量其尺寸
-watch(() => props.visible, async (newVal) => {
-  if (newVal) {
-    await nextTick();
-    if (menuRef.value) {
-      menuSize.value = {
-        width: menuRef.value.offsetWidth,
-        height: menuRef.value.offsetHeight
-      };
+watch(
+  () => props.visible,
+  async (newVal) => {
+    if (newVal) {
+      await nextTick();
+      if (menuRef.value) {
+        menuSize.value = {
+          width: menuRef.value.offsetWidth,
+          height: menuRef.value.offsetHeight
+        };
+      }
+    } else {
+      menuSize.value = { width: 0, height: 0 };
     }
-  } else {
-    menuSize.value = { width: 0, height: 0 };
-  }
-});
+  },
+  { immediate: true },
+);
 
 const menuStyle = computed(() => {
   if (!props.visible) return {};
