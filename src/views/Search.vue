@@ -902,6 +902,7 @@ const performSearch = async () => {
         if (searchAbortController.signal.aborted) return;
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
+        triggerMfCoverLoading(source.source);
       } else if (activeSearchType.value === 'artist') {
         // 歌手搜索
         pluginSearchResults.value = [];
@@ -998,6 +999,7 @@ const loadMore = async () => {
         currentPage.value = nextPage;
         pluginSearchResults.value = [...pluginSearchResults.value, ...results];
         hasMore.value = results.length >= 30;
+        triggerMfCoverLoading(source.source);
       } else {
         hasMore.value = false;
       }
@@ -1086,6 +1088,92 @@ function triggerCoverLoading() {
     }
     if (version === coverLoadVersion && hasUpdate) {
       lxSearchResults.value = [...lxSearchResults.value];
+    }
+  });
+}
+
+/**
+ * 已尝试过补获封面的 MusicFree 结果项。
+ *
+ * MusicFree 的 coverUrl 是 string（空串既表示"没有"也表示"取过但失败"），
+ * 无法像 LX 的 img 那样用 null/'' 区分"未尝试"和"已失败"。用 WeakSet 记录
+ * 对象身份：新搜索会重建结果对象，天然重新尝试；loadMore 追加时旧项已在集合
+ * 内，不会重复请求。
+ */
+const mfCoverAttempted = new WeakSet<PluginSearchResult>();
+
+/**
+ * 触发 MusicFree 搜索结果的封面补获（滑动窗口并发版）。
+ *
+ * 部分平台的搜索接口不返回封面 URL（如网易云 weapi/search/get 的 album 只有
+ * picId 没有 picUrl），需要调用插件的 getMusicInfo 逐条补获。与 LX 的
+ * triggerCoverLoading 共用 coverLoadVersion / coverLoadUiTimer：两条路径互斥
+ * （同一来源只会是 lx 或 musicfree 之一），共用可让切换来源时自动取消对方的
+ * 在途任务，卸载时的既有清理也一并覆盖。
+ */
+function triggerMfCoverLoading(pluginSource: PluginSource) {
+  const version = ++coverLoadVersion;
+  clearCoverLoadUiTimer();
+  // 只处理无封面且未尝试过的项，入队即标记，避免并发重入时重复请求
+  const items = pluginSearchResults.value.filter((item) => {
+    if (item.coverUrl || mfCoverAttempted.has(item)) return false;
+    mfCoverAttempted.add(item);
+    return true;
+  });
+  if (items.length === 0) return;
+
+  // 滑动窗口并发：始终保持 N 个请求在飞行中，一个完成立刻取下一个
+  const CONCURRENCY = 8;
+  let nextIdx = 0;
+  let hasUpdate = false;
+
+  const worker = async () => {
+    while (nextIdx < items.length) {
+      if (version !== coverLoadVersion) return; // 新搜索/切换来源，停止旧任务
+      const item = items[nextIdx++];
+      try {
+        // 每个请求最多等 8 秒，超时直接跳过
+        const coverUrl = await withTimeoutFallback(
+          pluginGetCover(pluginSource, item),
+          8000,
+          null,
+        );
+        if (version !== coverLoadVersion) return;
+        if (coverUrl) {
+          item.coverUrl = coverUrl;
+          hasUpdate = true;
+        }
+      } catch { /* 已在 WeakSet 中标记，不再重试 */ }
+    }
+  };
+
+  // 启动 N 个 worker 并发消费队列
+  const workers = Array.from({ length: CONCURRENCY }, () => worker());
+
+  // 定时把已更新的封面刷到视图（500ms 一次，减少不必要的渲染）
+  const uiTimer = setInterval(() => {
+    if (version !== coverLoadVersion) {
+      clearInterval(uiTimer);
+      if (coverLoadUiTimer === uiTimer) {
+        coverLoadUiTimer = null;
+      }
+      return;
+    }
+    if (hasUpdate) {
+      hasUpdate = false;
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    }
+  }, 500);
+  coverLoadUiTimer = uiTimer;
+
+  // 全部完成后做最后一次刷新并清理定时器
+  Promise.all(workers).then(() => {
+    clearInterval(uiTimer);
+    if (coverLoadUiTimer === uiTimer) {
+      coverLoadUiTimer = null;
+    }
+    if (version === coverLoadVersion && hasUpdate) {
+      pluginSearchResults.value = [...pluginSearchResults.value];
     }
   });
 }
