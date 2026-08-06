@@ -31,11 +31,11 @@ const handleClose = () => {
         @click.self="handleClose"
       >
         <div
-          class="announcement-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden"
+          class="announcement-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
           :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->
-          <div class="px-6 pt-6 pb-3 flex items-center gap-3">
+          <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
             <div
               class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
               :class="{
@@ -98,14 +98,14 @@ const handleClose = () => {
           </div>
 
           <!-- Content -->
-          <div class="px-6 pb-5">
+          <div class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto">
             <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
               {{ announcement.content }}
             </p>
           </div>
 
           <!-- Actions -->
-          <div class="flex border-t border-gray-100 dark:border-white/10">
+          <div class="flex border-t border-gray-100 dark:border-white/10 shrink-0">
             <button
               @click="handleClose"
               class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"

@@ -47,11 +47,11 @@ const formatSpeed = (speed: number) => {
         @click.self="!isDownloading && handleClose()"
       >
         <div
-          class="update-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden"
+          class="update-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
           :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->
-          <div class="px-6 pt-6 pb-3 flex items-center gap-3">
+          <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
             <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-green-100 dark:bg-green-900/30">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
                 <path
@@ -72,7 +72,7 @@ const formatSpeed = (speed: number) => {
           </div>
 
           <!-- Content -->
-          <div class="px-6 pb-5">
+          <div class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto">
             <p
               v-if="update.updateContent"
               class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line"
@@ -85,7 +85,7 @@ const formatSpeed = (speed: number) => {
           </div>
 
           <!-- Actions -->
-          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10">
+          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10 shrink-0">
             <div class="flex items-center justify-between mb-2">
               <span class="text-xs text-gray-500 dark:text-gray-400">正在下载更新…</span>
               <span class="text-xs font-medium text-gray-700 dark:text-gray-200">
@@ -105,7 +105,7 @@ const formatSpeed = (speed: number) => {
               <span class="text-xs font-medium text-[#EC4141]">{{ (progress?.progress ?? 0).toFixed(1) }}%</span>
             </div>
           </div>
-          <div v-else class="flex border-t border-gray-100 dark:border-white/10">
+          <div v-else class="flex border-t border-gray-100 dark:border-white/10 shrink-0">
             <button
               @click="handleClose"
               class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
