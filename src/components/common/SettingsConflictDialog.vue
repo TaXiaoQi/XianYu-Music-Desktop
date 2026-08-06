@@ -81,7 +81,7 @@ function cancelAll() {
 <template>
   <Teleport to="body">
     <!-- 第一弹窗：冲突选择 -->
-    <Transition name="conflict-modal">
+    <Transition name="conflict-modal" appear>
       <div
         v-if="conflictState.visible && !pendingDirection"
         class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
@@ -147,7 +147,7 @@ function cancelAll() {
     </Transition>
 
     <!-- 第二弹窗：按类别精细选择 -->
-    <Transition name="confirm-modal">
+    <Transition name="confirm-modal" appear>
       <div
         v-if="pendingDirection"
         class="fixed inset-0 z-[310] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { Announcement } from '../../utils/announcement';
 
 defineProps<{
@@ -7,18 +8,31 @@ defineProps<{
 }>();
 
 const emit = defineEmits(['close', 'action']);
+
+// --- 淡出动画 ---
+const isClosing = ref(false);
+
+const handleClose = () => {
+  if (isClosing.value) return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('close');
+  }, 220);
+};
 </script>
 
 <template>
   <Teleport to="body">
-    <transition name="announcement-modal">
+    <transition name="announcement-modal" appear>
       <div
         v-if="visible && announcement"
-        class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
-        @click.self="emit('close')"
+        class="announcement-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
+        :class="{ 'is-closing': isClosing }"
+        @click.self="handleClose"
       >
         <div
-          class="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          class="announcement-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden"
+          :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->
           <div class="px-6 pt-6 pb-3 flex items-center gap-3">
@@ -93,7 +107,7 @@ const emit = defineEmits(['close', 'action']);
           <!-- Actions -->
           <div class="flex border-t border-gray-100 dark:border-white/10">
             <button
-              @click="emit('close')"
+              @click="handleClose"
               class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
             >
               我知道了
@@ -106,26 +120,42 @@ const emit = defineEmits(['close', 'action']);
 </template>
 
 <style scoped>
-.announcement-modal-enter-active,
-.announcement-modal-leave-active {
+/* ==================== 基础过渡（供 is-closing 使用） ==================== */
+.announcement-overlay {
   transition: opacity 0.2s ease;
 }
 
-.announcement-modal-enter-active > div,
-.announcement-modal-leave-active > div {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.announcement-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.announcement-modal-enter-from,
-.announcement-modal-leave-to {
+/* ==================== 进入动画（<Transition> 驱动） ==================== */
+.announcement-modal-enter-active {
+  transition: opacity 0.2s ease;
+}
+
+.announcement-modal-enter-active .announcement-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.announcement-modal-enter-from {
   opacity: 0;
 }
 
-.announcement-modal-enter-from > div {
-  transform: scale(0.95);
+.announcement-modal-enter-from .announcement-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 
-.announcement-modal-leave-to > div {
-  transform: scale(0.95);
+/* ==================== 离开动画（is-closing 类驱动） ==================== */
+.announcement-overlay.is-closing {
+  opacity: 0;
+}
+
+.announcement-card.is-closing {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 </style>
