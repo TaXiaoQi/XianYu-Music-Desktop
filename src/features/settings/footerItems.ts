@@ -174,7 +174,7 @@ export const normalizeFooterLayout = (value: unknown): FooterLayoutSettings => {
   return { left, middleLeft, middleRight, right, hidden };
 };
 
-/** 计算未分配到任何容器的控件（即折叠收纳菜单中的项目） */
+/** 计算折叠收纳菜单中的控件：包含未分配项 + 在设置页关闭主栏显示的项 */
 export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemKey[] => {
   const assigned = new Set<FooterItemKey>([
     ...layout.left,
@@ -183,7 +183,7 @@ export const computeCollapsedItems = (layout: FooterLayoutSettings): FooterItemK
     ...layout.right,
   ]);
   const hidden = new Set(layout.hidden);
-  return FOOTER_ITEM_KEYS.filter(key => !assigned.has(key) && !hidden.has(key));
+  return FOOTER_ITEM_KEYS.filter(key => hidden.has(key) || !assigned.has(key));
 };
 
 /** 查找控件当前所在的容器（不在任何容器则返回 'collapsed'） */
