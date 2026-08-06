@@ -741,10 +741,23 @@ const authStore = useAuthStore();
     lastRawProgress = -1;
     stalledProgressTicks = 0;
 
-    // [性能优化] 延迟 addToHistory 调用，避免 recentSongs 变更触发的响应式级联
-    // （IPC 序列化所有歌单 + songCatalogVersion 递增导致 computed 重算）阻塞播放启动和飞封面动画。
-    // addToHistory 仅影响历史记录和最近播放列表，不影响当前播放，可安全延迟到空闲时执行。
-    scheduleAddToHistory(song);
+    // [最近播放] 只能在后端确认起播成功后记录。
+    // 在线歌曲可能解析失败、后端探测失败或自动换源；若在这里提前记录，会把队列里的原歌曲写入最近播放，
+    // 而不是用户实际听到的歌曲。由本地/在线成功起播分支调用该函数。
+    let historyRecordedForRequest = false;
+    const recordStartedSongToHistory = () => {
+      if (
+        historyRecordedForRequest
+        || requestId !== playRequestId
+        || currentSong.value?.path !== song.path
+        || cancelledPlayRequestId === requestId
+      ) {
+        return;
+      }
+
+      historyRecordedForRequest = true;
+      scheduleAddToHistory(currentSong.value ?? song);
+    };
 
     // [预获取优化] 音质列表获取与 URL 解析并行执行，减少起播延迟
     // 音质列表独立于播放流程，可在后台并行获取
@@ -906,6 +919,7 @@ const authStore = useAuthStore();
         sessionStartTime = Date.now();
         loadLyrics();
         startPlaybackRuntime();
+        recordStartedSongToHistory();
 
         void currentThumbnailLoad
           .then(async ([cover, coverPath]) => {
@@ -1141,6 +1155,7 @@ const authStore = useAuthStore();
         sessionStartTime = Date.now();
         loadLyrics();
         startPlaybackRuntime();
+        recordStartedSongToHistory();
 
         // [渐入渐出] 淡入或设置音量
         if (shouldFadeOnSwitch) {
