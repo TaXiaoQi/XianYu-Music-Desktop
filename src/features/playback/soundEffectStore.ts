@@ -206,8 +206,8 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   const flangerEnabled = ref(false)
   const flangerRate = ref(0.5)      // Hz: 0.1~5
   const flangerDepth = ref(2)       // ms: 0.5~5
-  const flangerFeedback = ref(50)   // %: 0~90
-  const flangerMix = ref(50)        // %: 0~100
+  const flangerFeedback = ref(30)   // %: 0~70
+  const flangerMix = ref(35)        // %: 0~75
 
   // ===== 高级音效: 相位 (Phaser) =====
   const phaserEnabled = ref(false)
@@ -225,10 +225,10 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
 
   // ===== 高级音效: 压缩器 =====
   const compressorEnabled = ref(false)
-  const compressorThreshold = ref(-24)  // dB: -60~0
-  const compressorRatio = ref(12)       // 1:1~20:1
-  const compressorAttack = ref(3)       // ms: 0~100
-  const compressorRelease = ref(250)    // ms: 10~1000
+  const compressorThreshold = ref(-18)  // dB: -60~0
+  const compressorRatio = ref(4)        // 1:1~20:1
+  const compressorAttack = ref(8)       // ms: 0~100
+  const compressorRelease = ref(400)    // ms: 10~1000
 
   // ===== 高级音效: Crossfeed 耳机互馈 =====
   const crossfeedEnabled = ref(false)

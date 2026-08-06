@@ -24,7 +24,6 @@ pub struct ModulationRack {
     drift_lfo: Lfo,
     flanger_dl: [DelayLine; 2],
     flanger_lfo: Lfo,
-    flanger_fb: [f32; 2],
     // Phaser：级联 allpass（用 biquad allpass 近似）+ LFO + 反馈
     phaser_ap: [[Biquad; 4]; 2],
     phaser_lfo: Lfo,
@@ -50,7 +49,6 @@ impl ModulationRack {
             drift_lfo: Lfo::new(0.5, 44100.0),
             flanger_dl: [DelayLine::new(4096), DelayLine::new(4096)],
             flanger_lfo: Lfo::new(0.5, 44100.0),
-            flanger_fb: [0.0; 2],
             phaser_ap: [
                 [Biquad::new(1), Biquad::new(1), Biquad::new(1), Biquad::new(1)],
                 [Biquad::new(1), Biquad::new(1), Biquad::new(1), Biquad::new(1)],
@@ -87,7 +85,6 @@ impl ModulationRack {
                 ap.reset();
             }
         }
-        self.flanger_fb = [0.0; 2];
         self.phaser_fb = [0.0; 2];
     }
 
@@ -154,17 +151,18 @@ impl ModulationRack {
         // Flanger 镶边
         let w = self.wet_flanger.tick();
         if w > 0.001 {
-            let depth_samp = (s.flanger.depth * 0.001 * sr).clamp(0.0, 20.0);
-            let fb = (s.flanger.feedback / 100.0).clamp(0.0, 0.9);
-            let mix = (s.flanger.mix / 100.0).clamp(0.0, 1.0);
+            let base_delay = (0.8 * 0.001 * sr).clamp(1.0, sr * 0.002);
+            let depth_samp = (s.flanger.depth.clamp(0.2, 5.0) * 0.001 * sr).clamp(1.0, sr * 0.005);
+            // 镶边反馈过高会快速自激；这里限制到 0.65，避免开启后只剩杂音。
+            let fb = (s.flanger.feedback / 100.0).clamp(0.0, 0.65);
+            let mix = (s.flanger.mix / 100.0).clamp(0.0, 0.75);
+            let lfo = self.flanger_lfo.tick_sine() * 0.5 + 0.5;
+            let delay = base_delay + lfo * depth_samp;
             for i in 0..2 {
-                let lfo = self.flanger_lfo.tick_sine() * 0.5 + 0.5;
-                let delay = 1.0 + lfo * depth_samp;
-                let delayed = self.flanger_dl[i].read(delay);
-                let with_fb = delayed + self.flanger_fb[i] * fb;
-                self.flanger_dl[i].write(frame[i] + with_fb * fb);
-                self.flanger_fb[i] = with_fb;
-                let wet = frame[i] * (1.0 - mix) + with_fb * mix;
+                let input = frame[i];
+                let delayed = sanitize_sample(self.flanger_dl[i].read(delay));
+                self.flanger_dl[i].write(soft_clip(input + delayed * fb));
+                let wet = input * (1.0 - mix) + delayed * mix;
                 frame[i] = lerp(frame[i], wet, w);
             }
         }
@@ -218,4 +216,13 @@ impl ModulationRack {
 #[inline]
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
+}
+
+#[inline]
+fn sanitize_sample(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(-4.0, 4.0)
+    } else {
+        0.0
+    }
 }
