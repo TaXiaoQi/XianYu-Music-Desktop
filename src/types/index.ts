@@ -626,6 +626,7 @@ export interface AppSettings {
   showTaskbarPlayer: boolean;
   taskbarPlayerCanDrag: boolean;
   gpuAcceleration: boolean;
+  checkUpdateOnStartup: boolean;
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;
   upload: UploadSettings;

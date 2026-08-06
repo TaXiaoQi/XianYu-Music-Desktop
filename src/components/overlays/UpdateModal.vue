@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { ServerUpdateInfo } from '../../utils/update';
 import type { DownloadProgressData } from '../../composables/useUpdateCheck';
 import { APP_VERSION } from '../../../version';
@@ -11,6 +12,17 @@ defineProps<{
 }>();
 
 const emit = defineEmits(['close', 'download']);
+
+// --- 淡出动画 ---
+const isClosing = ref(false);
+
+const handleClose = () => {
+  if (isClosing.value) return;
+  isClosing.value = true;
+  setTimeout(() => {
+    emit('close');
+  }, 220);
+};
 
 const formatBytes = (bytes: number) => {
   if (!bytes || bytes <= 0) return '0 MB';
@@ -27,17 +39,19 @@ const formatSpeed = (speed: number) => {
 
 <template>
   <Teleport to="body">
-    <transition name="update-modal">
+    <transition name="update-modal" appear>
       <div
         v-if="visible && update"
-        class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
-        @click.self="!isDownloading && emit('close')"
+        class="update-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
+        :class="{ 'is-closing': isClosing }"
+        @click.self="!isDownloading && handleClose()"
       >
         <div
-          class="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          class="update-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
+          :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->
-          <div class="px-6 pt-6 pb-3 flex items-center gap-3">
+          <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
             <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-green-100 dark:bg-green-900/30">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
                 <path
@@ -58,7 +72,7 @@ const formatSpeed = (speed: number) => {
           </div>
 
           <!-- Content -->
-          <div class="px-6 pb-5">
+          <div class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto">
             <p
               v-if="update.updateContent"
               class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line"
@@ -71,7 +85,7 @@ const formatSpeed = (speed: number) => {
           </div>
 
           <!-- Actions -->
-          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10">
+          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10 shrink-0">
             <div class="flex items-center justify-between mb-2">
               <span class="text-xs text-gray-500 dark:text-gray-400">正在下载更新…</span>
               <span class="text-xs font-medium text-gray-700 dark:text-gray-200">
@@ -91,9 +105,9 @@ const formatSpeed = (speed: number) => {
               <span class="text-xs font-medium text-[#EC4141]">{{ (progress?.progress ?? 0).toFixed(1) }}%</span>
             </div>
           </div>
-          <div v-else class="flex border-t border-gray-100 dark:border-white/10">
+          <div v-else class="flex border-t border-gray-100 dark:border-white/10 shrink-0">
             <button
-              @click="emit('close')"
+              @click="handleClose"
               class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
             >
               稍后
@@ -113,26 +127,42 @@ const formatSpeed = (speed: number) => {
 </template>
 
 <style scoped>
-.update-modal-enter-active,
-.update-modal-leave-active {
+/* ==================== 基础过渡（供 is-closing 使用） ==================== */
+.update-overlay {
   transition: opacity 0.2s ease;
 }
 
-.update-modal-enter-active > div,
-.update-modal-leave-active > div {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.update-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.update-modal-enter-from,
-.update-modal-leave-to {
+/* ==================== 进入动画（<Transition> 驱动） ==================== */
+.update-modal-enter-active {
+  transition: opacity 0.2s ease;
+}
+
+.update-modal-enter-active .update-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.update-modal-enter-from {
   opacity: 0;
 }
 
-.update-modal-enter-from > div {
-  transform: scale(0.95);
+.update-modal-enter-from .update-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 
-.update-modal-leave-to > div {
-  transform: scale(0.95);
+/* ==================== 离开动画（is-closing 类驱动） ==================== */
+.update-overlay.is-closing {
+  opacity: 0;
+}
+
+.update-card.is-closing {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
 }
 </style>

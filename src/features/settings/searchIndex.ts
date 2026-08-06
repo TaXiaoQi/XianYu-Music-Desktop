@@ -69,6 +69,7 @@ const makeItems = (
 const staticItems: SettingsSearchItem[] = [
   ...makeItems('general', '常规与启动', [
     { label: '开机自动运行', keywords: '启动 自启动' },
+    { label: '启动检测更新', keywords: '更新 检查 版本' },
     { label: 'GPU 加速', keywords: '硬件 图形 性能' },
     { label: '关闭时最小化至托盘', keywords: '退出 后台 托盘' },
     { label: '显示音质标识', keywords: '无损 Hi-Res 标签' },

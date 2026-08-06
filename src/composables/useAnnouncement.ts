@@ -70,6 +70,21 @@ export function useAnnouncement() {
     closeAnnouncement();
   };
 
+  /** 调试用：使用模拟数据直接弹出公告弹窗，不做真实网络请求 */
+  const simulateAnnouncement = () => {
+    currentAnnouncement.value = {
+      id: 'debug-simulated',
+      title: '【调试模拟】这是一条测试公告',
+      content: '此公告由调试模式模拟生成，用于测试公告弹窗的显示效果。\n\n您可以在此查看公告的排版、样式和交互行为，而无需连接服务器。\n\n点击下方按钮可测试动作链接的跳转效果。',
+      type: 'info',
+      date: new Date().toISOString().slice(0, 10),
+      actionUrl: 'https://xy.zh2026.cn/ciyuanxi/',
+      actionText: '访问官网',
+      updatedAt: new Date().toISOString(),
+    };
+    announcementVisible.value = true;
+  };
+
   return {
     announcementVisible,
     currentAnnouncement,
@@ -78,5 +93,6 @@ export function useAnnouncement() {
     manualCheckAnnouncement,
     closeAnnouncement,
     handleAnnouncementAction,
+    simulateAnnouncement,
   };
 }
