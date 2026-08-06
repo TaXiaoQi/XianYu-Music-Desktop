@@ -316,12 +316,11 @@ function updateAutoSyncMaxDelay(event: Event) {
         </span>
         <SettingHint text="选择需要同步到云端的数据类型，关闭后该项数据将仅保留在本地。" />
       </h2>
-      <div class="flex flex-col rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div
-          v-for="(item, idx) in uploadItems"
+          v-for="item in uploadItems"
           :key="item.key"
-          class="flex items-center justify-between gap-4 p-4"
-          :class="idx < uploadItems.length - 1 ? 'border-b border-gray-200/20 dark:border-gray-800/20' : ''"
+          class="flex items-center justify-between gap-4 p-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
         >
           <div class="upload-copy">
             <div class="upload-label text-gray-900 dark:text-white/90">{{ item.label }}</div>
@@ -353,135 +352,137 @@ function updateAutoSyncMaxDelay(event: Event) {
         <SettingHint text="手动将本地歌单、插件、设置同步到云端，或从云端拉取到本地。支持多设备间数据共享。" />
       </h2>
 
-      <!-- 歌单同步项 -->
-      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
-        <div class="manual-sync-head">
-          <div class="upload-copy min-w-0">
-            <div class="upload-label text-gray-900 dark:text-white/90">歌单</div>
-            <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
-              <span v-if="playlistSync.syncing.value">{{ playlistSync.syncProgress.value || '正在同步...' }}</span>
-              <span v-else-if="syncSummary">上次：{{ syncSummary }}<template v-if="formattedLastSync"> · {{ formattedLastSync }}</template></span>
-              <span v-else>未同步</span>
-            </div>
-            <!-- 错误详情列表 -->
-            <div v-if="syncErrors.length > 0 && !playlistSync.syncing.value" class="sync-error-list">
-              <div v-for="(err, idx) in syncErrors" :key="idx" class="sync-error-item">
-                {{ err }}
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <!-- 歌单同步项 -->
+        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="manual-sync-head">
+            <div class="upload-copy min-w-0">
+              <div class="upload-label text-gray-900 dark:text-white/90">歌单</div>
+              <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
+                <span v-if="playlistSync.syncing.value">{{ playlistSync.syncProgress.value || '正在同步...' }}</span>
+                <span v-else-if="syncSummary">上次：{{ syncSummary }}<template v-if="formattedLastSync"> · {{ formattedLastSync }}</template></span>
+                <span v-else>未同步</span>
               </div>
+              <!-- 错误详情列表 -->
+              <div v-if="syncErrors.length > 0 && !playlistSync.syncing.value" class="sync-error-list">
+                <div v-for="(err, idx) in syncErrors" :key="idx" class="sync-error-item">
+                  {{ err }}
+                </div>
+              </div>
+              <div v-if="!playlistSync.isUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端歌单</div>
             </div>
-            <div v-if="!playlistSync.isUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端歌单</div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.syncing.value"
-              @click="playlistSync.uploadOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              同步至服务器
-            </button>
-            <button
-              type="button"
-              class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.syncing.value"
-              @click="playlistSync.downloadOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              更新至本地
-            </button>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.syncing.value"
+                @click="playlistSync.uploadOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                同步至服务器
+              </button>
+              <button
+                type="button"
+                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.syncing.value"
+                @click="playlistSync.downloadOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                更新至本地
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 插件同步项 -->
-      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
-        <div class="manual-sync-head">
-          <div class="upload-copy min-w-0">
-            <div class="upload-label text-gray-900 dark:text-white/90">插件</div>
-            <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
-              <span v-if="playlistSync.pluginSyncing.value">{{ playlistSync.pluginSyncProgress.value || '正在同步...' }}</span>
-              <span v-else-if="pluginSyncSummary">上次：{{ pluginSyncSummary }}<template v-if="formattedLastPluginSync"> · {{ formattedLastPluginSync }}</template></span>
-              <span v-else>未同步</span>
-            </div>
-            <div v-if="pluginSyncErrors.length > 0 && !playlistSync.pluginSyncing.value" class="sync-error-list">
-              <div v-for="(err, idx) in pluginSyncErrors" :key="idx" class="sync-error-item">
-                {{ err }}
+        <!-- 插件同步项 -->
+        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="manual-sync-head">
+            <div class="upload-copy min-w-0">
+              <div class="upload-label text-gray-900 dark:text-white/90">插件</div>
+              <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
+                <span v-if="playlistSync.pluginSyncing.value">{{ playlistSync.pluginSyncProgress.value || '正在同步...' }}</span>
+                <span v-else-if="pluginSyncSummary">上次：{{ pluginSyncSummary }}<template v-if="formattedLastPluginSync"> · {{ formattedLastPluginSync }}</template></span>
+                <span v-else>未同步</span>
               </div>
+              <div v-if="pluginSyncErrors.length > 0 && !playlistSync.pluginSyncing.value" class="sync-error-list">
+                <div v-for="(err, idx) in pluginSyncErrors" :key="idx" class="sync-error-item">
+                  {{ err }}
+                </div>
+              </div>
+              <div v-if="!playlistSync.isPluginUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端插件</div>
             </div>
-            <div v-if="!playlistSync.isPluginUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端插件</div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.pluginSyncing.value"
-              @click="playlistSync.uploadPluginsOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              同步至服务器
-            </button>
-            <button
-              type="button"
-              class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.pluginSyncing.value"
-              @click="playlistSync.downloadPluginsOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              更新至本地
-            </button>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.pluginSyncing.value"
+                @click="playlistSync.uploadPluginsOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                同步至服务器
+              </button>
+              <button
+                type="button"
+                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.pluginSyncing.value"
+                @click="playlistSync.downloadPluginsOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                更新至本地
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 设置同步项 -->
-      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
-        <div class="manual-sync-head">
-          <div class="upload-copy min-w-0">
-            <div class="upload-label text-gray-900 dark:text-white/90">设置</div>
-            <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
-              <span v-if="playlistSync.settingsSyncing.value">{{ playlistSync.settingsSyncProgress.value || '正在同步...' }}</span>
-              <span v-else-if="settingsSyncSummary">上次：{{ settingsSyncSummary }}<template v-if="formattedLastSettingsSync"> · {{ formattedLastSettingsSync }}</template></span>
-              <span v-else>未同步</span>
-            </div>
-            <div v-if="settingsSyncErrors.length > 0 && !playlistSync.settingsSyncing.value" class="sync-error-list">
-              <div v-for="(err, idx) in settingsSyncErrors" :key="idx" class="sync-error-item">
-                {{ err }}
+        <!-- 设置同步项 -->
+        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="manual-sync-head">
+            <div class="upload-copy min-w-0">
+              <div class="upload-label text-gray-900 dark:text-white/90">设置</div>
+              <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
+                <span v-if="playlistSync.settingsSyncing.value">{{ playlistSync.settingsSyncProgress.value || '正在同步...' }}</span>
+                <span v-else-if="settingsSyncSummary">上次：{{ settingsSyncSummary }}<template v-if="formattedLastSettingsSync"> · {{ formattedLastSettingsSync }}</template></span>
+                <span v-else>未同步</span>
               </div>
+              <div v-if="settingsSyncErrors.length > 0 && !playlistSync.settingsSyncing.value" class="sync-error-list">
+                <div v-for="(err, idx) in settingsSyncErrors" :key="idx" class="sync-error-item">
+                  {{ err }}
+                </div>
+              </div>
+              <div v-if="!playlistSync.isSettingsUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端设置</div>
             </div>
-            <div v-if="!playlistSync.isSettingsUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端设置</div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.settingsSyncing.value"
-              @click="playlistSync.uploadSettingsOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              同步至服务器
-            </button>
-            <button
-              type="button"
-              class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              :disabled="playlistSync.settingsSyncing.value"
-              @click="playlistSync.downloadSettingsOnly()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              更新至本地
-            </button>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.settingsSyncing.value"
+                @click="playlistSync.uploadSettingsOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                同步至服务器
+              </button>
+              <button
+                type="button"
+                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.settingsSyncing.value"
+                @click="playlistSync.downloadSettingsOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                更新至本地
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -497,85 +498,85 @@ function updateAutoSyncMaxDelay(event: Event) {
         <SettingHint text="按设定的时间自动同步数据到云端。当服务器繁忙时会自动延后并提示，避免带宽拥塞。" />
       </h2>
 
-      <!-- 自动同步开关 -->
-      <div class="flex items-center justify-between gap-3.5 px-3.5 py-2.5 rounded-xl bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40 transition">
-        <div class="upload-copy">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
+        <!-- 启用自动同步开关行 -->
+        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
           <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
-        </div>
-        <div class="flex items-center gap-3">
-          <SettingHint text="开启后在指定时间自动执行同步" />
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="settingsStore.settings.autoSync.enabled"
-            class="upload-switch"
-            :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
-            @click="toggleAutoSync()"
-          >
-            <span class="upload-switch-thumb"></span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 自动同步配置 -->
-      <div v-if="settingsStore.settings.autoSync.enabled" class="space-y-3">
-        <!-- 同步间隔 -->
-        <div class="auto-sync-config-row">
-          <label class="auto-sync-label text-gray-900 dark:text-white/90">同步间隔</label>
-          <label class="auto-sync-input-wrap">
-            <input
-              :value="Math.round(settingsStore.settings.autoSync.syncIntervalSeconds / 3600)"
-              class="auto-sync-input"
-              type="number"
-              min="1"
-              max="168"
-              step="1"
-              inputmode="numeric"
-              @change="updateAutoSyncIntervalSeconds($event)"
-            />
-            <span>小时</span>
-          </label>
+          <div class="flex items-center gap-3">
+            <SettingHint text="开启后在指定时间自动执行同步" />
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="settingsStore.settings.autoSync.enabled"
+              class="upload-switch"
+              :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
+              @click="toggleAutoSync()"
+            >
+              <span class="upload-switch-thumb"></span>
+            </button>
+          </div>
         </div>
 
-        <!-- 最大延迟 -->
-        <div class="auto-sync-config-row">
-          <label class="auto-sync-label text-gray-900 dark:text-white/90">最大延迟</label>
-          <label class="auto-sync-input-wrap">
-            <input
-              :value="settingsStore.settings.autoSync.maxDelayMinutes"
-              class="auto-sync-input"
-              type="number"
-              min="1"
-              max="720"
-              step="1"
-              inputmode="numeric"
-              @change="updateAutoSyncMaxDelay($event)"
-            />
-            <span>分钟</span>
-          </label>
-        </div>
+        <!-- 自动同步配置（启用后展开） -->
+        <template v-if="settingsStore.settings.autoSync.enabled">
+          <!-- 同步间隔 -->
+          <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+            <div class="text-sm font-medium text-gray-900 dark:text-white/90">同步间隔</div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
+              <input
+                :value="Math.round(settingsStore.settings.autoSync.syncIntervalSeconds / 3600)"
+                class="auto-sync-input"
+                type="number"
+                min="1"
+                max="168"
+                step="1"
+                inputmode="numeric"
+                @change="updateAutoSyncIntervalSeconds($event)"
+              />
+              <span>小时</span>
+            </div>
+          </div>
 
-        <!-- 同步内容提示 -->
-        <div class="sync-notice">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>自动同步将按上方「上传」设置中开启的项目执行（歌单、插件、本地设置）。</span>
-        </div>
+          <!-- 最大延迟 -->
+          <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+            <div class="text-sm font-medium text-gray-900 dark:text-white/90">最大延迟</div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
+              <input
+                :value="settingsStore.settings.autoSync.maxDelayMinutes"
+                class="auto-sync-input"
+                type="number"
+                min="1"
+                max="720"
+                step="1"
+                inputmode="numeric"
+                @change="updateAutoSyncMaxDelay($event)"
+              />
+              <span>分钟</span>
+            </div>
+          </div>
 
-        <!-- 自动同步状态 -->
-        <div v-if="playlistSync.autoSyncStatus.value" class="sync-status" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
-          <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
-          <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
-        </div>
+          <!-- 同步内容提示 -->
+          <div class="sync-notice p-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>自动同步将按上方「上传」设置中开启的项目执行（歌单、插件、本地设置）。</span>
+          </div>
 
-        <!-- 下次同步时间 -->
-        <div v-if="nextSyncTimeDisplay" class="auto-sync-next-time text-gray-500 dark:text-white/50">
-          下次同步：{{ nextSyncTimeDisplay }}
-        </div>
+          <!-- 自动同步状态 -->
+          <div v-if="playlistSync.autoSyncStatus.value" class="sync-status p-4" :class="{ 'sync-status--active': playlistSync.autoSyncStatus.value.includes('正在'), 'sync-status--error': playlistSync.autoSyncDelayed.value }">
+            <div v-if="playlistSync.autoSyncStatus.value.includes('正在')" class="sync-spinner"></div>
+            <svg v-else-if="playlistSync.autoSyncDelayed.value" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span class="sync-status-text text-gray-900 dark:text-white/85">{{ playlistSync.autoSyncStatus.value }}</span>
+          </div>
+
+          <!-- 下次同步时间 -->
+          <div v-if="nextSyncTimeDisplay" class="p-4 text-xs text-gray-500 dark:text-white/50">
+            下次同步：{{ nextSyncTimeDisplay }}
+          </div>
+        </template>
       </div>
     </section>
 
@@ -701,25 +702,15 @@ function updateAutoSyncMaxDelay(event: Event) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .sync-status--active {
-  background: rgba(236, 65, 65, 0.06);
-  border-color: rgba(236, 65, 65, 0.2);
 }
 
 :global(.dark) .sync-status {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
 }
 
 :global(.dark) .sync-status--active {
-  background: rgba(236, 65, 65, 0.1);
-  border-color: rgba(236, 65, 65, 0.3);
 }
 
 .sync-status-text {
@@ -733,13 +724,9 @@ function updateAutoSyncMaxDelay(event: Event) {
 }
 
 .sync-status--error {
-  background: rgba(239, 68, 68, 0.06);
-  border-color: rgba(239, 68, 68, 0.2);
 }
 
 :global(.dark) .sync-status--error {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .sync-error-list {
@@ -778,18 +765,12 @@ function updateAutoSyncMaxDelay(event: Event) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.2);
   color: #92400e;
   font-size: 0.72rem;
   line-height: 1.5;
 }
 
 :global(.dark) .sync-notice {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.25);
   color: rgba(252, 211, 77, 0.9);
 }
 
@@ -921,39 +902,6 @@ function updateAutoSyncMaxDelay(event: Event) {
 }
 
 /* 自动同步配置 */
-.auto-sync-config-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-:global(.dark) .auto-sync-config-row {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.auto-sync-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.auto-sync-input-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary, rgba(55, 65, 81, 0.7));
-  font-size: 0.78rem;
-}
-
-:global(.dark) .auto-sync-input-wrap {
-  color: rgba(255, 255, 255, 0.55);
-}
-
 .auto-sync-input {
   width: 76px;
   height: 34px;
@@ -993,11 +941,5 @@ function updateAutoSyncMaxDelay(event: Event) {
 :global(.dark) .auto-sync-input:focus {
   border-color: rgba(236, 65, 65, 0.62);
   box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-.auto-sync-next-time {
-  font-size: 0.72rem;
-  padding: 4px 14px;
-  line-height: 1.5;
 }
 </style>

@@ -131,7 +131,7 @@ onMounted(() => {
         常规与启动
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">开机自动运行</div>
           </div>
@@ -140,7 +140,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">GPU 加速</div>
           </div>
@@ -149,7 +149,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">关闭时最小化至托盘</div>
           </div>
@@ -158,7 +158,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">显示音质标识</div>
           </div>
@@ -167,7 +167,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">显示歌曲注释</div>
           </div>
@@ -176,7 +176,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">打开一键回顶按钮</div>
           </div>
@@ -185,7 +185,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用任务栏快捷播控</div>
           </div>
@@ -194,7 +194,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">修改歌手头像时同步写回音频标签</div>
           </div>
@@ -206,7 +206,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌曲播放触发方式</div>
           </div>
@@ -236,7 +236,7 @@ onMounted(() => {
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 播放缓存上限 -->
-        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放缓存上限</div>
           </div>
@@ -259,7 +259,7 @@ onMounted(() => {
         </div>
 
         <!-- 清理在线播放缓存 -->
-        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
               清理在线播放缓存

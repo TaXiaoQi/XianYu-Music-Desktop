@@ -119,12 +119,12 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
       </h2>
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="flex items-center justify-between gap-4 border-b border-white/30 p-4 dark:border-white/5">
+        <div class="flex items-center justify-between gap-4 p-4">
           <div class="text-sm font-medium text-gray-800 dark:text-gray-200">窗口内快捷键</div>
           <SettingHint text="软件打开且窗口处于焦点时生效。默认支持按下 Space 播放/暂停。点击快捷键按钮后直接按键录入，按 Esc 取消，按 Backspace 或 Delete 清空当前绑定。" />
         </div>
 
-        <div class="px-4 py-3 grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45 border-b border-white/30 dark:border-white/5">
+        <div class="px-4 py-4 grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45">
           <div class="truncate">功能说明</div>
           <div class="truncate">快捷键</div>
           <div class="truncate">全局快捷键</div>
@@ -133,7 +133,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
         <div
           v-for="row in shortcutRows"
           :key="row.actionId"
-          class="px-4 py-3 border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center"
+          class="px-4 py-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center"
         >
           <div class="min-w-0">
             <div class="truncate text-sm font-medium text-gray-800 dark:text-gray-200" :title="row.label">
@@ -176,7 +176,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
 
         <div
           v-if="settings.shortcuts.globalEnabled && hasOccupiedGlobalShortcuts"
-          class="px-4 py-3 border-t border-white/30 dark:border-white/5 bg-[#fff5f5] text-[#c65a5a] text-xs dark:bg-[#3b2020]/70 dark:text-[#f0abab]"
+          class="px-4 py-4 bg-[#fff5f5] text-[#c65a5a] text-xs dark:bg-[#3b2020]/70 dark:text-[#f0abab]"
         >
           淡红色背景代表热键被其他软件占用，暂时无法启用。
         </div>
@@ -190,7 +190,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
       </h2>
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用窗口内快捷键</div>
           </div>
@@ -209,7 +209,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
           </div>
         </div>
 
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用全局快捷键</div>
           </div>

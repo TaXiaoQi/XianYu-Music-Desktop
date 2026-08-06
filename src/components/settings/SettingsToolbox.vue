@@ -331,7 +331,7 @@ const restart = () => {
         </h2>
 
         <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
-          <div class="border-b border-white/30 p-5 transition-colors dark:border-white/5">
+          <div class="p-5 transition-colors">
             <div class="mb-3 flex items-center justify-between gap-4">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
               <div class="flex items-center gap-3">
