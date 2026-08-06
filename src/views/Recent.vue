@@ -1,12 +1,7 @@
 <template>
   <div class="flex flex-col h-full">
     <RecentHeader
-      v-model:isBatchMode="isBatchMode"
-      :selectedCount="selectedPaths.size"
       @playAll="handlePlayAll"
-      @batchPlay="handleBatchPlay"
-      @addToPlaylist="openAddToPlaylistSelection"
-      @batchDelete="requestBatchDelete"
       @clearHistory="handleClearHistory"
       @addAllToQueue="handleAddAllToQueue"
     />
@@ -23,7 +18,6 @@
           memoryScopeKey="recent-view"
           @play="handlePlaySong"
           @contextmenu="handleContextMenu"
-          @update:selectedPaths="selectedPaths = $event"
           @drag-start="handleTableDragStart"
         />
         <RecentCollectionGrid
@@ -67,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
@@ -101,7 +95,6 @@ const { openHomeAlbum, openHomePlaylist } = useHomeNavigation(router);
 const { playSong, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const {
-  removeFromHistory,
   clearHistory,
 } = useLibraryCollections();
 
@@ -160,13 +153,6 @@ const {
   handleOnlineViewAlbum,
 } = useSongContextActions({ isBatchMode });
 
-// 监听批量模式变化，清空选择
-watch(isBatchMode, (val) => { if (!val) selectedPaths.value.clear(); });
-watch(recentTab, () => {
-  isBatchMode.value = false;
-  selectedPaths.value.clear();
-});
-
 // ========== 业务逻辑处理 ==========
 
 // 播放全部
@@ -195,31 +181,6 @@ const handleOpenRecentCollection = (id: string) => {
   void openHomePlaylist(id);
 };
 
-// 批量播放
-const handleBatchPlay = () => {
-  const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
-  if (selected.length > 0) {
-    const firstSong = selected[0];
-    void launchFlyingCover(firstSong.path, '');
-    void playSong(firstSong);
-  }
-};
-
-// 批量删除（从最近播放移除）
-const executeBatchDelete = async () => {
-  const newPathSet = new Set(selectedPaths.value);
-  await removeFromHistory(Array.from(newPathSet));
-  selectedPaths.value.clear();
-  showConfirm.value = false;
-};
-
-const requestBatchDelete = () => {
-  if (selectedPaths.value.size === 0) return;
-  confirmMessage.value = `确定要删除选中的 ${selectedPaths.value.size} 条播放记录吗？`;
-  confirmAction.value = executeBatchDelete;
-  showConfirm.value = true;
-};
-
 const executeConfirmAction = async () => {
   await confirmAction.value();
   showConfirm.value = false;
@@ -236,9 +197,7 @@ const handleClearHistory = () => {
 };
 
 const openAddToPlaylistSelection = () => {
-  const songPaths = isBatchMode.value
-    ? Array.from(selectedPaths.value)
-    : (contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : []);
+  const songPaths = contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : [];
   openAddToPlaylistDialog(songPaths);
 };
 

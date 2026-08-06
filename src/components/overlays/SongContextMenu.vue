@@ -224,8 +224,8 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
     entries.push({ type: 'action', key: 'downloadToLocal', label: '下载至本地' });
   }
 
-  // 在线搜索模式不显示"整张专辑添加到队尾"
-  if (!online && props.song && hasSongAlbumMetadata(props.song)) {
+  // 在线搜索模式和歌单视图不显示"整张专辑添加到队尾"
+  if (!online && !props.isPlaylistView && props.song && hasSongAlbumMetadata(props.song)) {
     entries.push({ type: 'action', key: 'addAlbumToQueueTail', label: '整张专辑添加到队尾' });
   }
 
@@ -257,14 +257,20 @@ const menuEntries = computed<SongMenuEntry[]>(() => {
     entries.push(
       { type: 'divider', key: 'divider-primary' },
       { type: 'action', key: 'favorite', label: favoriteLabel },
-      { type: 'action', key: 'addToPlaylist', label: '添加到歌单' },
+    );
+
+    if (!props.isPlaylistView) {
+      entries.push({ type: 'action', key: 'addToPlaylist', label: '添加到歌单' });
+    }
+
+    entries.push(
       { type: 'action', key: 'viewArtist', label: '查看歌手' },
       { type: 'action', key: 'viewAlbum', label: '查看专辑' },
       { type: 'divider', key: 'divider-secondary' },
       { type: 'action', key: 'openFolder', label: '打开文件所在目录' },
       { type: 'action', key: 'viewSongInfo', label: '查看歌曲信息' },
       { type: 'divider', key: 'divider-danger' },
-      { type: 'action', key: 'removeFromList', label: '从列表移除' },
+      { type: 'action', key: 'removeFromList', label: props.isPlaylistView ? '从歌单中移除' : '从列表移除' },
     );
 
     if (showDeleteFromDisk.value) {
