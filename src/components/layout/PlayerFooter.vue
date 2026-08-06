@@ -434,6 +434,8 @@ const songTitleTextRef = ref<HTMLElement | null>(null);
 const shouldMarquee = ref(false);
 const marqueeDuration = ref(12);
 const isMarqueePaused = ref(false);
+let marqueeResizeObserver: ResizeObserver | null = null;
+let marqueeCheckFrame: number | null = null;
 
 const songTitleText = computed(() => {
   if (!currentSong.value) return '听我想听的音乐';
@@ -442,26 +444,54 @@ const songTitleText = computed(() => {
 
 const checkMarquee = () => {
   nextTick(() => {
-    const wrapper = songTitleWrapperRef.value;
-    const span = songTitleTextRef.value;
-    if (!wrapper || !span) {
-      shouldMarquee.value = false;
-      return;
+    if (marqueeCheckFrame !== null) {
+      cancelAnimationFrame(marqueeCheckFrame);
     }
-    const overflow = span.scrollWidth - wrapper.clientWidth;
-    if (overflow > 0) {
-      shouldMarquee.value = true;
-      // 基础 6 秒 + 每 25px 多出 1 秒，范围 8-30 秒，长歌名滚动更慢便于阅读
-      marqueeDuration.value = Math.max(8, Math.min(30, 6 + overflow / 25));
-    } else {
-      shouldMarquee.value = false;
-      isMarqueePaused.value = false;
-    }
+
+    marqueeCheckFrame = requestAnimationFrame(() => {
+      marqueeCheckFrame = null;
+      const wrapper = songTitleWrapperRef.value;
+      const span = songTitleTextRef.value;
+      if (!wrapper || !span) {
+        shouldMarquee.value = false;
+        return;
+      }
+
+      const wrapperWidth = wrapper.getBoundingClientRect().width;
+      const textWidth = span.getBoundingClientRect().width;
+      const overflow = textWidth - wrapperWidth;
+      if (overflow > 0) {
+        shouldMarquee.value = true;
+        // 基础 6 秒 + 每 25px 多出 1 秒，范围 8-30 秒，长歌名滚动更慢便于阅读
+        marqueeDuration.value = Math.max(8, Math.min(30, 6 + overflow / 25));
+      } else {
+        shouldMarquee.value = false;
+        isMarqueePaused.value = false;
+      }
+    });
   });
+};
+
+const setupMarqueeObserver = () => {
+  marqueeResizeObserver?.disconnect();
+  if (typeof ResizeObserver === 'undefined') {
+    checkMarquee();
+    return;
+  }
+
+  marqueeResizeObserver = new ResizeObserver(() => checkMarquee());
+  if (songTitleWrapperRef.value) {
+    marqueeResizeObserver.observe(songTitleWrapperRef.value);
+  }
+  if (songTitleTextRef.value) {
+    marqueeResizeObserver.observe(songTitleTextRef.value);
+  }
+  checkMarquee();
 };
 
 watch(songTitleText, () => checkMarquee());
 watch(showPlayerDetail, () => checkMarquee());
+watch(footerLayout, () => checkMarquee(), { deep: true });
 // 封面加载完成后容器宽度可能变化，重新检测滚动
 watch(currentSong, () => nextTick(() => checkMarquee()), { deep: false });
 
@@ -697,7 +727,8 @@ onMounted(async () => {
   window.addEventListener('pointercancel', onGlobalPointerCancel);
   window.addEventListener('click', handleWindowClick);
   window.addEventListener('resize', checkMarquee);
-  checkMarquee();
+  await nextTick();
+  setupMarqueeObserver();
   startIdleTimer(); // Start initial idle timer
   unlistenRemoteDownload = await listen<RemoteDownloadProgress>('remote-download-progress', event => {
     remoteDownloadProgress.value = event.payload;
@@ -709,6 +740,12 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', onGlobalPointerCancel);
   window.removeEventListener('click', handleWindowClick);
   window.removeEventListener('resize', checkMarquee);
+  marqueeResizeObserver?.disconnect();
+  marqueeResizeObserver = null;
+  if (marqueeCheckFrame !== null) {
+    cancelAnimationFrame(marqueeCheckFrame);
+    marqueeCheckFrame = null;
+  }
   if (idleTimer) clearTimeout(idleTimer);
   unlistenRemoteDownload?.();
   unlistenRemoteDownload = null;
