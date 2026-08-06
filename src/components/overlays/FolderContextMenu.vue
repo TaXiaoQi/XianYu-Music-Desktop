@@ -49,6 +49,7 @@ watch(
 
     menuSize.value = { width: 0, height: 0 };
   },
+  { immediate: true },
 );
 
 const menuStyle = computed<CSSProperties>(() => {

@@ -70,17 +70,21 @@ const menuEntries = computed<FooterMenuEntry[]>(() => {
 });
 
 // 当菜单显示时，立即测量其尺寸
-watch(() => props.visible, async (newVal) => {
-  if (newVal) {
-    await nextTick();
-    if (menuRef.value) {
-      menuSize.value = {
-        width: menuRef.value.offsetWidth,
-        height: menuRef.value.offsetHeight
-      };
+watch(
+  () => props.visible,
+  async (newVal) => {
+    if (newVal) {
+      await nextTick();
+      if (menuRef.value) {
+        menuSize.value = {
+          width: menuRef.value.offsetWidth,
+          height: menuRef.value.offsetHeight
+        };
+      }
     }
-  }
-});
+  },
+  { immediate: true },
+);
 
 const menuStyle = computed(() => {
   if (!props.visible) return {};

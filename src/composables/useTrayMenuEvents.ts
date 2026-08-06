@@ -209,6 +209,7 @@ export function useTrayMenuEvents(router: Router) {
   let unlistenTrayMenuOpen: UnlistenFn | null = null;
   let unlistenTrayMenuReady: UnlistenFn | null = null;
   let stopTrayMenuStateWatch: (() => void) | null = null;
+  let stopCustomTrayMenuWatch: (() => void) | null = null;
   let trayMenuPrewarmTimer: number | null = null;
 
   const createTrayMenuState = (): TrayMenuStatePayload => ({
@@ -349,6 +350,25 @@ export function useTrayMenuEvents(router: Router) {
       { deep: true, flush: 'post' },
     );
 
+    stopCustomTrayMenuWatch = watch(
+      () => theme.value.useCustomTrayMenu,
+      (useCustomTrayMenu) => {
+        void updateNativeTrayMenu();
+
+        if (useCustomTrayMenu) {
+          scheduleTrayMenuPrewarm();
+          return;
+        }
+
+        if (trayMenuPrewarmTimer !== null) {
+          window.clearTimeout(trayMenuPrewarmTimer);
+          trayMenuPrewarmTimer = null;
+        }
+        void destroyTrayMenuWindow();
+      },
+      { flush: 'sync' },
+    );
+
     unlistenTrayMenu = await listen<TrayMenuAction>(APP_TRAY_MENU_EVENT, (event) => {
       void (async () => {
         await handleTrayMenuAction(event.payload, {
@@ -389,10 +409,12 @@ export function useTrayMenuEvents(router: Router) {
     }
 
     stopTrayMenuStateWatch?.();
+    stopCustomTrayMenuWatch?.();
     unlistenTrayMenu?.();
     unlistenTrayMenuOpen?.();
     unlistenTrayMenuReady?.();
     stopTrayMenuStateWatch = null;
+    stopCustomTrayMenuWatch = null;
     unlistenTrayMenu = null;
     unlistenTrayMenuOpen = null;
     unlistenTrayMenuReady = null;

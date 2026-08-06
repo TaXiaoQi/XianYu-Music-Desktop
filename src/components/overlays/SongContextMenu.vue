@@ -297,6 +297,7 @@ watch(
     artistSubmenuSize.value = { width: 0, height: 0 };
     showArtistSubmenu.value = false;
   },
+  { immediate: true },
 );
 
 watch(showArtistSubmenu, async (visible) => {
