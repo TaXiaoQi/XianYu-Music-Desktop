@@ -695,7 +695,7 @@ onScopeDispose(() => {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         播放设置
       </h2>
-      <div class="settings-playback-group flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
+      <div class="settings-playback-group flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <div class="flex items-center justify-between border-b border-gray-200/20 p-4 transition-colors last:border-0 hover:bg-white/30 dark:border-gray-800/20 dark:hover:bg-white/10">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">自动播放</div>

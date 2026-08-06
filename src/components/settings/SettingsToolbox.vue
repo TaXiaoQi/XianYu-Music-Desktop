@@ -338,7 +338,7 @@ const restart = () => {
                 <SettingHint text="用于歌曲标签写入和人工校对。" />
                 <button
                   @click="selectExecutable"
-                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 shadow-sm backdrop-blur-md transition hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
+                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                 >
                   选择路径
                 </button>
@@ -357,7 +357,7 @@ const restart = () => {
                 <SettingHint severity="warning" text="这里决定本次要处理的整批歌曲文件。" />
                 <button
                   @click="selectTargetFolder"
-                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 shadow-sm backdrop-blur-md transition hover:border-[#EC4141]/35 hover:bg-white/30 hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300 dark:hover:bg-white/10"
+                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                 >
                   选择文件夹
                 </button>
@@ -387,7 +387,7 @@ const restart = () => {
             <div>
               <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
             </div>
-            <div class="rounded-full border border-gray-200/40 bg-white/20 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300">
+            <div class="rounded-full border border-gray-200/40 bg-white/20 px-3 py-1 text-xs font-medium text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300">
               {{ setupReadyCount }}/2
             </div>
           </div>
@@ -531,7 +531,7 @@ const restart = () => {
                   <div
                     v-for="item in preprocessDisplayItems"
                     :key="`${item.originalName}-${item.newName}`"
-                    class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-transparent px-3 py-4 text-sm transition odd:border-gray-200/40 odd:bg-white/20 odd:shadow-sm odd:backdrop-blur-md dark:odd:border-gray-800/40 dark:odd:bg-black/10"
+                    class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-transparent px-3 py-4 text-sm transition odd:border-gray-200/40 odd:bg-white/20 dark:odd:border-gray-800/40 dark:odd:bg-black/10"
                   >
                     <div class="flex items-center justify-center">
                       <span
@@ -612,7 +612,7 @@ const restart = () => {
                   :class="
                     refreshPreview.refreshed
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                      : 'border border-gray-200/40 bg-white/20 text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
+                      : 'border border-gray-200/40 bg-white/20 text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
                   "
                 >
                   {{ refreshPreview.refreshed ? '已完成' : '待刷新' }}
@@ -630,7 +630,7 @@ const restart = () => {
                 class="rounded-3xl border p-5 text-sm"
                 :class="
                   refreshPreview.isRefreshing
-                    ? 'border-gray-200/40 bg-white/20 text-slate-600 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
+                    ? 'border-gray-200/40 bg-white/20 text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
                     : refreshPreview.refreshed
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
                     : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300'
