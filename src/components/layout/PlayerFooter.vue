@@ -11,6 +11,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
+import { useRenderingPower } from '../../composables/renderingPower';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
@@ -45,6 +46,7 @@ const handleOpenDetail = () => {
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
 const { settings, footerLayout } = useSettings();
 const { showToast } = useToast();
+const { isMainWindowLowPower } = useRenderingPower();
 const downloadStore = useDownloadStore();
 
 // --- 底部栏容器化布局 ---
@@ -598,6 +600,9 @@ const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : 
 const isIdleFooter = ref(false);
 const isIdleDetail = ref(false);
 const isIdle = computed(() => showPlayerDetail.value ? isIdleDetail.value : isIdleFooter.value);
+const isMarqueeAnimationPaused = computed(() =>
+  isMarqueePaused.value || isIdle.value || isMainWindowLowPower.value
+);
 let idleTimer: any = null;
 
 const clearIdle = () => {
@@ -845,7 +850,7 @@ onUnmounted(() => {
               :class="{ 'animate-marquee': shouldMarquee }"
               :style="shouldMarquee ? {
                 '--marquee-duration': marqueeDuration + 's',
-                animationPlayState: isMarqueePaused ? 'paused' : 'running'
+                animationPlayState: isMarqueeAnimationPaused ? 'paused' : 'running'
               } : {}"
               @mouseenter="isMarqueePaused = shouldMarquee"
               @mouseleave="isMarqueePaused = false"

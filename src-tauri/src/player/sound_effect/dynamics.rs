@@ -65,13 +65,14 @@ pub struct DynamicsRack {
     exp_env: EnvelopeFollower,
     comp_env: EnvelopeFollower,
     agc_env: EnvelopeFollower,
+    comp_rms: f32,
     // 当前增益（线性）
     gate_gain: f32,
     exp_gain: f32,
     comp_gain: f32,
     limiter_gain: f32,
     agc_gain: f32,
-    // 压缩器 makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
+    // 压缩器补偿增益（温和补偿，避免固定大补偿导致泵吸）
     comp_makeup_gain: f32,
     // 去齿音：带通检测 + 高shelf 动态衰减
     deess_detect: [Biquad; 2],
@@ -100,8 +101,9 @@ impl DynamicsRack {
             wet_agc: SmoothedValue::new(0.0),
             gate_env: EnvelopeFollower::new(5.0, 50.0, 44100.0),
             exp_env: EnvelopeFollower::new(5.0, 100.0, 44100.0),
-            comp_env: EnvelopeFollower::new(3.0, 250.0, 44100.0),
+            comp_env: EnvelopeFollower::new(8.0, 400.0, 44100.0),
             agc_env: EnvelopeFollower::new(10.0, 500.0, 44100.0),
+            comp_rms: 0.0,
             gate_gain: 1.0,
             exp_gain: 1.0,
             comp_gain: 1.0,
@@ -141,8 +143,9 @@ impl DynamicsRack {
         }
         self.gate_env.set_times(5.0, 50.0, sample_rate);
         self.exp_env.set_times(5.0, 100.0, sample_rate);
-        // 压缩器包络默认 3ms/250ms，update_params 会按用户参数覆盖
-        self.comp_env.set_times(3.0, 250.0, sample_rate);
+        // 压缩器包络默认 8ms/400ms，update_params 会按用户参数覆盖。
+        // 纯峰值 + 过快释放容易造成“忽高忽低”的泵吸感，这里默认更偏音乐响度稳定。
+        self.comp_env.set_times(8.0, 400.0, sample_rate);
         self.agc_env.set_times(10.0, 500.0, sample_rate);
         self.deess_env.set_times(2.0, 80.0, sample_rate);
         for e in &mut self.mb_env {
@@ -162,6 +165,7 @@ impl DynamicsRack {
         self.gate_env.reset();
         self.exp_env.reset();
         self.comp_env.reset();
+        self.comp_rms = 0.0;
         self.agc_env.reset();
         self.deess_env.reset();
         for e in &mut self.mb_env {
@@ -186,11 +190,11 @@ impl DynamicsRack {
         self.wet_agc.set_target(if s.agc.enabled { 1.0 } else { 0.0 });
 
         let sr = self.sample_rate;
-        // 压缩器：按用户参数更新 attack/release（对齐 YinDongMusic DynamicsCompressorNode）
-        // YinDongMusic V4A: attack=0.003s=3ms, release=0.1s=100ms
+        // 压缩器：按用户参数更新 attack/release。
+        // 为降低音乐播放中的泵吸感，释放时间下限保持在 120ms；更快的瞬态保护交给 limiter。
         self.comp_env.set_times(
-            sane_ms(s.compressor.attack, 3.0, 0.1, 100.0),
-            sane_ms(s.compressor.release, 250.0, 1.0, 1000.0),
+            sane_ms(s.compressor.attack, 8.0, 1.0, 100.0),
+            sane_ms(s.compressor.release, 400.0, 120.0, 1000.0),
             sr,
         );
         self.gate_env.set_times(
@@ -203,8 +207,13 @@ impl DynamicsRack {
         for e in &mut self.mb_env {
             e.set_times(8.0, 180.0, sr);
         }
-        // makeup gain（对齐 YinDongMusic: makeupGain.gain.value = 1.2）
-        self.comp_makeup_gain = if s.compressor.enabled { 1.2 } else { 1.0 };
+        // 温和补偿增益：旧版固定 1.2 会无差别抬高安静段，在高压缩比下容易听成忽高忽低。
+        // 这里按阈值/压缩比估算，并限制到最多 +2.4dB，只补回一部分响度。
+        self.comp_makeup_gain = if s.compressor.enabled {
+            compressor_makeup_gain(s.compressor.threshold, s.compressor.ratio)
+        } else {
+            1.0
+        };
         for i in 0..2 {
             // 去齿音：带通检测 ~ 频率，高 shelf 衰减
             self.deess_detect[i].set_highpass(s.de_esser.frequency.clamp(3000.0, 10000.0), sr, 0.707);
@@ -272,12 +281,19 @@ impl DynamicsRack {
 
         let det = frame[0].abs().max(frame[1].abs());
 
-        // 压缩器（对齐 YinDongMusic DynamicsCompressorNode）
-        // YinDongMusic: comp(threshold, knee=30, ratio, attack, release) + makeupGain(1.2)
-        // WebAudio DynamicsCompressorNode 使用软 knee（平滑过渡）+ 峰值检测
+        // 压缩器
+        // 使用 RMS/峰值混合检测：RMS 负责稳定响度，峰值只参与瞬态保护。
+        // 旧版纯峰值检测 + 固定 1.2 补偿在鼓点密集或动态大的歌曲中容易产生泵吸。
         let w = self.wet_comp.tick();
         if w > 0.001 {
-            let env = self.comp_env.process(det);
+            let attack_ms = sane_ms(s.compressor.attack, 8.0, 1.0, 100.0);
+            let release_ms = sane_ms(s.compressor.release, 400.0, 120.0, 1000.0);
+            let rms_ms = (release_ms * 0.5).clamp(80.0, 500.0);
+            let rms_coeff = (-1.0 / (rms_ms * 0.001 * sr.max(1.0))).exp();
+            self.comp_rms = self.comp_rms * rms_coeff + det * det * (1.0 - rms_coeff);
+            let rms = self.comp_rms.sqrt();
+            let peak = self.comp_env.process(det);
+            let env = (rms * 0.75 + peak * 0.25).max(peak * 0.65);
             let thr_db = s.compressor.threshold.clamp(-60.0, 0.0);
             let ratio = s.compressor.ratio.clamp(1.0, 20.0);
             let knee = 30.0; // dB，对齐 YinDongMusic DynamicsCompressorNode knee.value = 30
@@ -302,12 +318,12 @@ impl DynamicsRack {
             self.comp_gain = smooth_gain(
                 self.comp_gain,
                 target,
-                sane_ms(s.compressor.attack, 3.0, 0.1, 100.0),
-                sane_ms(s.compressor.release, 250.0, 1.0, 1000.0),
+                attack_ms,
+                release_ms,
                 sr,
             );
             let g = lerp(1.0, self.comp_gain, w);
-            // makeup gain（对齐 YinDongMusic makeupGain.gain.value = 1.2）
+            // 温和补偿增益，随湿度淡入，避免开启瞬间音量跳变。
             let makeup = 1.0 + (self.comp_makeup_gain - 1.0) * w;
             frame[0] *= g * makeup;
             frame[1] *= g * makeup;
@@ -410,6 +426,18 @@ fn sane_ms(value: f32, fallback: f32, min: f32, max: f32) -> f32 {
     } else {
         fallback.clamp(min, max)
     }
+}
+
+#[inline]
+fn compressor_makeup_gain(threshold_db: f32, ratio: f32) -> f32 {
+    let threshold = threshold_db.clamp(-60.0, 0.0);
+    let ratio = ratio.clamp(1.0, 20.0);
+    if ratio <= 1.01 {
+        return 1.0;
+    }
+    let slope = 1.0 - 1.0 / ratio;
+    let makeup_db = ((-threshold) * slope * 0.12).clamp(0.0, 2.4);
+    db_to_gain(makeup_db)
 }
 
 #[inline]
