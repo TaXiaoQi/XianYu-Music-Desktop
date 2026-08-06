@@ -557,155 +557,162 @@ function cancelAll() {
   transform: scale(0.92) translateY(8px);
 }
 
+</style>
+
+<!-- 深色模式使用非 scoped style 块 -->
+<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
+     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
+     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
+<style>
 /* ==================== 深色模式 - 主弹窗 ==================== */
-:global(.dark) .conflict-card {
+html.dark .conflict-card {
   background: #1f1f23;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .conflict-icon {
+html.dark .conflict-icon {
   background: rgba(245, 158, 11, 0.2);
   color: #fbbf24;
 }
 
-:global(.dark) .conflict-title {
+html.dark .conflict-title {
   color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .conflict-desc {
+html.dark .conflict-desc {
   color: rgba(255, 255, 255, 0.6);
 }
 
-:global(.dark) .conflict-info {
+html.dark .conflict-info {
   background: rgba(255, 255, 255, 0.04);
 }
 
-:global(.dark) .conflict-info-label {
+html.dark .conflict-info-label {
   color: rgba(255, 255, 255, 0.8);
 }
 
-:global(.dark) .conflict-info-time {
+html.dark .conflict-info-time {
   color: rgba(255, 255, 255, 0.45);
 }
 
-:global(.dark) .conflict-btn--local {
+html.dark .conflict-btn--local {
   border-color: rgba(236, 65, 65, 0.35);
   background: rgba(236, 65, 65, 0.1);
   color: #ff8b8b;
 }
 
-:global(.dark) .conflict-btn--local:hover {
+html.dark .conflict-btn--local:hover {
   background: #EC4141;
   color: #ffffff;
 }
 
-:global(.dark) .conflict-btn--cloud {
+html.dark .conflict-btn--cloud {
   border-color: rgba(96, 165, 250, 0.35);
   background: rgba(96, 165, 250, 0.1);
   color: #93c5fd;
 }
 
-:global(.dark) .conflict-btn--cloud:hover {
+html.dark .conflict-btn--cloud:hover {
   background: #3b82f6;
   color: #ffffff;
 }
 
-:global(.dark) .conflict-cancel {
+html.dark .conflict-cancel {
   color: rgba(255, 255, 255, 0.5);
 }
 
-:global(.dark) .conflict-cancel:hover {
+html.dark .conflict-cancel:hover {
   color: rgba(255, 255, 255, 0.9);
 }
 
 /* ==================== 深色模式 - 二级确认弹窗 ==================== */
-:global(.dark) .confirm-card {
+html.dark .confirm-card {
   background: #1f1f23;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .confirm-icon--local {
+html.dark .confirm-icon--local {
   background: rgba(236, 65, 65, 0.18);
   color: #ff8b8b;
 }
 
-:global(.dark) .confirm-icon--cloud {
+html.dark .confirm-icon--cloud {
   background: rgba(96, 165, 250, 0.18);
   color: #93c5fd;
 }
 
-:global(.dark) .confirm-title {
+html.dark .confirm-title {
   color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .confirm-desc {
+html.dark .confirm-desc {
   color: rgba(255, 255, 255, 0.6);
 }
 
 /* ==================== 深色模式 - 类别选择 ==================== */
-:global(.dark) .category-row {
+html.dark .category-row {
   background: rgba(255, 255, 255, 0.04);
 }
 
-:global(.dark) .category-label {
+html.dark .category-label {
   color: rgba(255, 255, 255, 0.9);
 }
 
-:global(.dark) .category-desc {
+html.dark .category-desc {
   color: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .toggle-btn {
+html.dark .toggle-btn {
   border-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.5);
 }
 
-:global(.dark) .toggle-btn:hover {
+html.dark .toggle-btn:hover {
   border-color: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.8);
 }
 
-:global(.dark) .toggle-btn--active-local {
+html.dark .toggle-btn--active-local {
   background: #EC4141;
   border-color: #EC4141;
   color: #ffffff;
 }
 
-:global(.dark) .toggle-btn--active-local:hover {
+html.dark .toggle-btn--active-local:hover {
   background: #d13b3b;
   border-color: #d13b3b;
 }
 
-:global(.dark) .toggle-btn--active-cloud {
+html.dark .toggle-btn--active-cloud {
   background: #3b82f6;
   border-color: #3b82f6;
   color: #ffffff;
 }
 
-:global(.dark) .toggle-btn--active-cloud:hover {
+html.dark .toggle-btn--active-cloud:hover {
   background: #2563eb;
   border-color: #2563eb;
 }
 
 /* ==================== 深色模式 - 确认按钮 ==================== */
-:global(.dark) .confirm-btn--ghost {
+html.dark .confirm-btn--ghost {
   border-color: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.7);
 }
 
-:global(.dark) .confirm-btn--ghost:hover {
+html.dark .confirm-btn--ghost:hover {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .confirm-btn--primary {
+html.dark .confirm-btn--primary {
   background: rgba(255, 255, 255, 0.9);
   color: #1f1f23;
 }
 
-:global(.dark) .confirm-btn--primary:hover {
+html.dark .confirm-btn--primary:hover {
   background: rgba(255, 255, 255, 1);
 }
 </style>

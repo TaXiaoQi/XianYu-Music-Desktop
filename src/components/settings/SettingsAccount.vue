@@ -641,10 +641,6 @@ function updateAutoSyncMaxDelay(event: Event) {
   margin-top: 4px;
 }
 
-:global(.dark) .manual-sync-tip {
-  color: rgba(248, 139, 139, 0.8);
-}
-
 .upload-copy {
   min-width: 0;
 }
@@ -671,10 +667,6 @@ function updateAutoSyncMaxDelay(event: Event) {
   flex-shrink: 0;
   padding: 0;
   transition: background 0.25s ease;
-}
-
-:global(.dark) .upload-switch {
-  background: rgba(255, 255, 255, 0.18);
 }
 
 .upload-switch.is-on {
@@ -707,12 +699,6 @@ function updateAutoSyncMaxDelay(event: Event) {
 .sync-status--active {
 }
 
-:global(.dark) .sync-status {
-}
-
-:global(.dark) .sync-status--active {
-}
-
 .sync-status-text {
   font-size: 0.78rem;
   line-height: 1.4;
@@ -724,9 +710,6 @@ function updateAutoSyncMaxDelay(event: Event) {
 }
 
 .sync-status--error {
-}
-
-:global(.dark) .sync-status--error {
 }
 
 .sync-error-list {
@@ -741,10 +724,6 @@ function updateAutoSyncMaxDelay(event: Event) {
   color: #dc2626;
   line-height: 1.4;
   word-break: break-all;
-}
-
-:global(.dark) .sync-error-item {
-  color: rgba(248, 113, 113, 0.9);
 }
 
 .sync-spinner {
@@ -768,10 +747,6 @@ function updateAutoSyncMaxDelay(event: Event) {
   color: #92400e;
   font-size: 0.72rem;
   line-height: 1.5;
-}
-
-:global(.dark) .sync-notice {
-  color: rgba(252, 211, 77, 0.9);
 }
 
 /* 退出登录确认弹窗 */
@@ -871,35 +846,57 @@ function updateAutoSyncMaxDelay(event: Event) {
   transform: scale(0.92) translateY(8px);
 }
 
-/* 深色模式 */
-:global(.dark) .logout-confirm-card {
+/* 自动同步配置 */
+</style>
+
+<!-- 深色模式使用非 scoped style 块 -->
+<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
+     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
+     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
+<style>
+/* ==================== 深色模式 ==================== */
+html.dark .manual-sync-tip {
+  color: rgba(248, 139, 139, 0.8);
+}
+
+html.dark .upload-switch {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .sync-error-item {
+  color: rgba(248, 113, 113, 0.9);
+}
+
+html.dark .sync-notice {
+  color: rgba(252, 211, 77, 0.9);
+}
+
+html.dark .logout-confirm-card {
   background: #1f1f23;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .logout-confirm-icon {
+html.dark .logout-confirm-icon {
   background: rgba(236, 65, 65, 0.18);
   color: #ff8b8b;
 }
 
-:global(.dark) .logout-confirm-title {
+html.dark .logout-confirm-title {
   color: rgba(255, 255, 255, 0.96);
 }
 
-:global(.dark) .logout-confirm-desc {
+html.dark .logout-confirm-desc {
   color: rgba(255, 255, 255, 0.6);
 }
 
-:global(.dark) .logout-btn--ghost {
+html.dark .logout-btn--ghost {
   border-color: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.7);
 }
 
-:global(.dark) .logout-btn--ghost:hover {
+html.dark .logout-btn--ghost:hover {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.96);
 }
-
-/* 自动同步配置 */
 </style>

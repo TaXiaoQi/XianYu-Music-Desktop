@@ -47,6 +47,7 @@ const getDefaultTab = (): TabType => {
 
 const activeTab = ref<TabType>(getDefaultTab());
 const isClosing = ref(false);
+const isOpening = ref(true);
 
 // 新建歌单
 const createName = ref('');
@@ -522,7 +523,14 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 };
 
-onMounted(() => window.addEventListener('keydown', handleKeydown));
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      isOpening.value = false;
+    });
+  });
+});
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </script>
 
@@ -536,7 +544,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
       <!-- Backdrop -->
       <div
         class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ease-out"
-        :class="isClosing ? 'opacity-0' : 'opacity-100'"
+        :class="isClosing ? 'opacity-0' : (isOpening ? 'opacity-0' : 'opacity-100')"
         @click="handleClose"
       ></div>
 
@@ -545,7 +553,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         class="relative bg-white/80 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all duration-300"
         style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1)"
         :class="[
-          isClosing ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0',
+          isClosing ? 'scale-95 opacity-0 translate-y-4' : (isOpening ? 'scale-95 opacity-0 translate-y-4' : 'scale-100 opacity-100 translate-y-0'),
           'border border-white/20 ring-1 ring-black/5'
         ]"
       >
@@ -927,7 +935,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   padding: 20px;
   border: none;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.04);
+  background: #f9fafb;
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -935,7 +943,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 }
 
 .drop-zone:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.07);
+  background: #f3f4f6;
   transform: translateY(-1px);
 }
 
@@ -945,11 +953,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 }
 
 .drop-zone--filled {
-  background: rgba(0, 0, 0, 0.06);
+  background: #f3f4f6;
 }
 
 .drop-zone--filled:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.09);
+  background: #e5e7eb;
 }
 
 .drop-zone:disabled {
@@ -1002,35 +1010,42 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   word-break: break-all;
 }
 
-/* 暗色模式 */
-:global(.dark) .drop-zone {
-  background: rgba(255, 255, 255, 0.04);
+</style>
+
+<!-- 深色模式使用非 scoped style 块 -->
+<!-- 原因：Vue scoped 的 :global(.dark) .xxx 复合选择器在构建时会被错误编译，
+     .xxx 部分被丢弃，导致深色样式直接应用到 html.dark 元素而非目标元素。
+     改用非 scoped 块 + html.dark .xxx 选择器可正确适配深色模式。 -->
+<style>
+/* ==================== 深色模式 - 拖放区域 ==================== */
+html.dark .drop-zone {
+  background: rgba(0, 0, 0, 0.2);
   border: 1.5px dashed rgba(255, 255, 255, 0.2);
 }
 
-:global(.dark) .drop-zone:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
+html.dark .drop-zone:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.25);
   border-color: rgba(255, 255, 255, 0.35);
   border-style: solid;
 }
 
-:global(.dark) .drop-zone--filled {
-  background: rgba(255, 255, 255, 0.06);
+html.dark .drop-zone--filled {
+  background: rgba(0, 0, 0, 0.25);
 }
 
-:global(.dark) .drop-zone--filled:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.09);
+html.dark .drop-zone--filled:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.3);
 }
 
-:global(.dark) .drop-zone-icon {
+html.dark .drop-zone-icon {
   color: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .drop-zone-text {
+html.dark .drop-zone-text {
   color: rgba(255, 255, 255, 0.5);
 }
 
-:global(.dark) .drop-zone-text.filled-text {
+html.dark .drop-zone-text.filled-text {
   color: rgb(229 231 235);
 }
 </style>
