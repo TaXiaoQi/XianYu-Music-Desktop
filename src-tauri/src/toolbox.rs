@@ -415,14 +415,21 @@ pub async fn download_update_file(
     let total_size = response.content_length().unwrap_or(0);
     let download_dir = app_handle.path().download_dir().map_err(|e| e.to_string())?;
 
-    let filename = if url.ends_with(".exe") {
-        if url.contains("portable") {
+    let url_lower = url.to_lowercase();
+    let filename = if url_lower.contains(".msi") {
+        if url_lower.contains("portable") {
+            "XianYu.Player_Setup_Portable.msi"
+        } else {
+            "XianYu.Player_Setup_Standard.msi"
+        }
+    } else if url_lower.contains(".exe") {
+        if url_lower.contains("portable") {
             "XianYu.Player_Setup_Portable.exe"
         } else {
             "XianYu.Player_Setup_Standard.exe"
         }
     } else {
-        "XianYu.Player_Setup.exe"
+        "XianYu.Player_Setup.msi"
     };
     let dest_path = download_dir.join(filename);
 
@@ -913,10 +920,17 @@ pub fn run_installer(path: String) -> Result<(), String> {
     
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(&["/C", "start", "", &path])
-            .spawn()
-            .map_err(|e| format!("启动安装程序失败: {e}"))?;
+        if path.to_lowercase().ends_with(".msi") {
+            Command::new("msiexec")
+                .args(["/i", &path])
+                .spawn()
+                .map_err(|e| format!("启动 MSI 安装程序失败: {e}"))?;
+        } else {
+            Command::new("cmd")
+                .args(["/C", "start", "", &path])
+                .spawn()
+                .map_err(|e| format!("启动安装程序失败: {e}"))?;
+        }
     }
     
     #[cfg(not(target_os = "windows"))]
@@ -1035,4 +1049,3 @@ pub async fn download_wallpaper(
 
     Ok(dest_path.to_string_lossy().to_string())
 }
-

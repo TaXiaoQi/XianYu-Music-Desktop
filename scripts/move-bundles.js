@@ -79,7 +79,7 @@ for (const file of files) {
   console.log(`[move-bundles] 已移动: ${fileName}`);
 }
 
-// 清理 bundle 目录下剩余的空文件夹（nsis/msi 等）
+// 清理 bundle 目录下剩余的空文件夹（msi/wix 等）
 function cleanupEmptyDirs(dir) {
   let entries = [];
   try {

@@ -10,6 +10,7 @@ import { checkDownloadExists, type DownloadRecord } from '../../services/downloa
 import { useSettings } from '../../features/settings/useSettings';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
+import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
@@ -141,28 +142,26 @@ const selectedDownloadQuality = computed<DownloadQuality>(
   () => (settings.value.download.quality as DownloadQuality) ?? '320k',
 );
 
+const { openDownloadDialog } = useDownloadDialog();
+
 const handleDownloadClick = () => {
   if (!isOnlineSong.value || isDownloading.value) return;
-  // 已下载过：先弹确认，让用户决定是否重新下载
-  if (downloadedRecord.value) {
-    showRedownloadConfirm.value = true;
-    return;
-  }
-  // 关闭播放音质菜单，避免两个下拉同时打开
-  showQualityMenu.value = false;
-  showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
+  if (!currentSong.value) return;
+  // 打开下载弹窗，让用户选择音质/目录/下载内容
+  openDownloadDialog(currentSong.value);
 };
 
-/** 确认重新下载：确认后展开音质下拉选择档位 */
+/** 确认重新下载：直接打开下载弹窗 */
 const handleConfirmRedownload = () => {
-  showDownloadQualityMenu.value = true;
+  if (!currentSong.value) return;
+  openDownloadDialog(currentSong.value);
 };
 
 /** 选择下载音质并立即开始下载（复用共享下载逻辑，状态写入 download store 驱动底栏动画） */
 const startDownload = async (qualityKey: DownloadQuality) => {
   showDownloadQualityMenu.value = false;
   if (!currentSong.value) return;
-  await downloadToLocal(currentSong.value, qualityKey);
+  await downloadToLocal(currentSong.value, { quality: qualityKey });
 };
 
 const downloadButtonTitle = computed(() => {
