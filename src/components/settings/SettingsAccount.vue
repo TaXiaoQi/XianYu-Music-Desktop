@@ -287,7 +287,7 @@ function updateAutoSyncMaxDelay(event: Event) {
           type="text"
           placeholder="https://example.com/api"
           spellcheck="false"
-          class="flex-1 min-w-[240px] h-10 px-3 bg-transparent border-b border-black/15 dark:border-white/15 text-sm font-mono text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+          class="flex-1 min-w-[240px] h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
         />
         <button
           type="button"
@@ -525,7 +525,7 @@ function updateAutoSyncMaxDelay(event: Event) {
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
               <input
                 :value="Math.round(settingsStore.settings.autoSync.syncIntervalSeconds / 3600)"
-                class="auto-sync-input"
+                class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                 type="number"
                 min="1"
                 max="168"
@@ -543,7 +543,7 @@ function updateAutoSyncMaxDelay(event: Event) {
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
               <input
                 :value="settingsStore.settings.autoSync.maxDelayMinutes"
-                class="auto-sync-input"
+                class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                 type="number"
                 min="1"
                 max="720"
@@ -902,44 +902,4 @@ function updateAutoSyncMaxDelay(event: Event) {
 }
 
 /* 自动同步配置 */
-.auto-sync-input {
-  width: 76px;
-  height: 34px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  color: #1f2937;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: right;
-  padding: 0 10px;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.auto-sync-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-.auto-sync-input::-webkit-outer-spin-button,
-.auto-sync-input::-webkit-inner-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
-.auto-sync-input[type="number"] {
-  appearance: textfield;
-}
-
-:global(.dark) .auto-sync-input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-:global(.dark) .auto-sync-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
 </style>

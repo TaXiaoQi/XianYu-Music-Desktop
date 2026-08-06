@@ -466,7 +466,7 @@ onBeforeUnmount(() => {
           <div class="max-h-[70vh] overflow-y-auto p-5">
             <div class="mb-3">
               <label class="mb-1 block text-xs text-white/60">标题 <span class="text-[#EC4141]">*</span></label>
-              <input v-model="uploadForm.title" maxlength="60" placeholder="给壁纸起个名字" class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-[#EC4141]/60" />
+              <input v-model="uploadForm.title" maxlength="60" placeholder="给壁纸起个名字" class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10" />
             </div>
             <div class="mb-3">
               <label class="mb-1 block text-xs text-white/60">描述</label>
@@ -474,7 +474,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="mb-3">
               <label class="mb-1 block text-xs text-white/60">分类</label>
-              <input v-model="uploadForm.category" placeholder="留空默认为「用户上传」" class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-[#EC4141]/60" />
+              <input v-model="uploadForm.category" placeholder="留空默认为「用户上传」" class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10" />
             </div>
             <div class="mb-2">
               <label class="mb-1 block text-xs text-white/60">图片 <span class="text-[#EC4141]">*</span></label>

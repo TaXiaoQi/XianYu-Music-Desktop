@@ -450,20 +450,26 @@ onScopeDispose(() => {
 }
 
 .remote-input {
-  min-height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.36);
-  padding: 9px 12px;
+  height: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+  padding: 0 12px;
   color: rgb(31 41 55);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   outline: none;
+  transition: all 150ms;
+}
+
+.remote-input::placeholder {
+  color: rgb(156, 163, 175);
 }
 
 .remote-input:focus {
-  border-color: rgba(236, 65, 65, 0.34);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.08);
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(236, 65, 65, 0.1);
 }
 
 .remote-action,
@@ -603,8 +609,16 @@ onScopeDispose(() => {
 
 :global(.dark) .remote-input {
   border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgb(243 244 246);
+}
+
+:global(.dark) .remote-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+:global(.dark) .remote-input:focus {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 :global(.dark) .remote-source-row {

@@ -351,7 +351,7 @@ const handleImportAppBackup = async () => {
             type="text"
             maxlength="60"
             placeholder="一句话描述问题或建议"
-            class="mt-2 h-9 w-full rounded-lg border border-gray-200/40 bg-white/20 px-3 text-sm text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100"
+            class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
             {{ feedbackTitle.length }} / 60
@@ -365,7 +365,7 @@ const handleImportAppBackup = async () => {
             rows="5"
             maxlength="1000"
             placeholder="请详细描述问题现象、复现步骤或建议内容"
-            class="mt-2 w-full resize-y rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100"
+            class="mt-2 w-full resize-y rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/40 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:placeholder:text-white/35"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
             {{ feedbackContent.length }} / 1000

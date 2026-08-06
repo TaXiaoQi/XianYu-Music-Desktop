@@ -36,7 +36,7 @@
         <label class="short-audio-input-wrap">
           <input
             :value="libraryMinDurationSeconds"
-            class="short-audio-input"
+            class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
             type="number"
             min="0"
             step="1"
@@ -300,34 +300,6 @@ const confirmRemove = async () => {
   flex-shrink: 0;
   color: var(--text-secondary);
   font-size: 0.85rem;
-}
-
-.short-audio-input {
-  width: 76px;
-  height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-  color: var(--text-primary);
-  font: inherit;
-  text-align: right;
-  padding: 0 10px;
-  outline: none;
-}
-
-.short-audio-input:focus {
-  border-color: rgba(236, 65, 65, 0.62);
-  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.14);
-}
-
-.short-audio-input::-webkit-outer-spin-button,
-.short-audio-input::-webkit-inner-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
-.short-audio-input[type="number"] {
-  appearance: textfield;
 }
 
 .library-item {

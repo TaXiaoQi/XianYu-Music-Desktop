@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { emit } from '@tauri-apps/api/event';
-import { Check, ChevronDown, Minus, Moon, Plus, Sun } from 'lucide-vue-next';
+import { Check, ChevronDown, Minus, Plus, RotateCcw } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, toRaw } from 'vue';
 
 import {
@@ -76,7 +76,8 @@ const SHADOW_COLOR_PRESETS = [
 const { settings } = useSettings();
 const { lyricsSettings, desktopLyricsSettings } = useLyrics();
 
-const previewBgMode = ref<'dark' | 'light'>('dark');
+const isDarkTheme = ref(document.documentElement.classList.contains('dark'));
+const previewBgMode = computed<'dark' | 'light'>(() => isDarkTheme.value ? 'dark' : 'light');
 
 const localSettings = ref({
   playerFontScale: desktopLyricsSettings.playerFontScale,
@@ -761,9 +762,15 @@ function handleViewportChange() {
   }
 }
 
+let themeObserver: MutationObserver | null = null;
+
 onMounted(() => {
   if (typeof document !== 'undefined') {
-    previewBgMode.value = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    isDarkTheme.value = document.documentElement.classList.contains('dark');
+    themeObserver = new MutationObserver(() => {
+      isDarkTheme.value = document.documentElement.classList.contains('dark');
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
   }
   window.addEventListener('mousedown', handlePointerDownOutside);
   window.addEventListener('keydown', handleWindowEscape);
@@ -773,6 +780,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  themeObserver?.disconnect();
+  themeObserver = null;
   window.removeEventListener('mousedown', handlePointerDownOutside);
   window.removeEventListener('keydown', handleWindowEscape);
   window.removeEventListener('resize', handleViewportChange);
@@ -797,7 +806,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">窗口置顶</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.isAlwaysOnTop ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.isAlwaysOnTop ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -815,7 +824,6 @@ onUnmounted(() => {
           >
             <span
               class="desktop-switch-thumb"
-              :class="desktopLyricsSettings.alwaysShowShadowBackground ? 'translate-x-5' : ''"
             />
           </span>
         </button>
@@ -829,7 +837,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">全屏时自动隐藏</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.autoHideWhenFullscreen ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.autoHideWhenFullscreen ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -842,7 +850,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">暂停时自动隐藏</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.autoHideWhenPaused ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.autoHideWhenPaused ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -855,7 +863,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">锁定位置并启用鼠标穿透</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.isLocked ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.isLocked ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -868,7 +876,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">记住锁定状态</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.persistLock ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.persistLock ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -881,7 +889,7 @@ onUnmounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">桌面歌词自动居中</div>
           </div>
           <span class="desktop-switch" :class="desktopLyricsSettings.centerHorizontally ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" :class="desktopLyricsSettings.centerHorizontally ? 'translate-x-5' : ''" />
+            <span class="desktop-switch-thumb" />
           </span>
         </button>
 
@@ -972,7 +980,7 @@ onUnmounted(() => {
                     :min="LYRICS_SYNC_OFFSET_MIN_MS"
                     :max="LYRICS_SYNC_OFFSET_MAX_MS"
                     :step="LYRICS_SYNC_OFFSET_STEP_MS"
-                    class="w-28 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
+                    class="h-8 w-28 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                     @change="handleLyricsSyncOffsetChange"
                   />
                   <button
@@ -1000,26 +1008,14 @@ onUnmounted(() => {
       <div class="desktop-lyrics-preview-container select-none">
         <div class="desktop-lyrics-preview-header">
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
-          <div class="flex items-center gap-2">
-            <!-- 深浅色预览背景切换按钮 -->
-            <button
-              type="button"
-              class="desktop-preview-btn desktop-preview-btn--theme flex items-center gap-1.5 whitespace-nowrap"
-              :title="previewBgMode === 'dark' ? '切换至浅色预览背景' : '切换至深色预览背景'"
-              @click="previewBgMode = previewBgMode === 'dark' ? 'light' : 'dark'"
-            >
-              <Sun v-if="previewBgMode === 'dark'" :size="14" />
-              <Moon v-else :size="14" />
-              <span>{{ previewBgMode === 'dark' ? '浅色背景' : '深色背景' }}</span>
-            </button>
-            <button
-              type="button"
-              class="desktop-preview-btn desktop-preview-btn--default whitespace-nowrap"
-              @click="resetToDefault"
-            >
-              恢复默认
-            </button>
-          </div>
+          <button
+            type="button"
+            class="desktop-preview-btn desktop-preview-btn--default flex items-center gap-1.5 whitespace-nowrap"
+            @click="resetToDefault"
+          >
+            <RotateCcw class="h-3.5 w-3.5" />
+            恢复默认
+          </button>
         </div>
 
         <div
@@ -1213,24 +1209,14 @@ onUnmounted(() => {
 
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">双行显示</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-              <button
-                v-if="desktopLyricsSettings.showDoubleLine"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.showDoubleLine = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.showDoubleLine = true"
-              >
-                关
-              </button>
-            </div>
+            <button
+              type="button"
+              class="desktop-lyrics-toggle"
+              :class="desktopLyricsSettings.showDoubleLine ? 'desktop-lyrics-toggle--on' : ''"
+              @click="desktopLyricsSettings.showDoubleLine = !desktopLyricsSettings.showDoubleLine"
+            >
+              <span class="desktop-lyrics-toggle-thumb"></span>
+            </button>
           </div>
         </div>
 
@@ -1238,45 +1224,25 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示翻译</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-              <button
-                v-if="lyricsSettings.showTranslation"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="lyricsSettings.showTranslation = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="lyricsSettings.showTranslation = true"
-              >
-                关
-              </button>
-            </div>
+            <button
+              type="button"
+              class="desktop-lyrics-toggle"
+              :class="lyricsSettings.showTranslation ? 'desktop-lyrics-toggle--on' : ''"
+              @click="lyricsSettings.showTranslation = !lyricsSettings.showTranslation"
+            >
+              <span class="desktop-lyrics-toggle-thumb"></span>
+            </button>
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示罗马音</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-              <button
-                v-if="lyricsSettings.showRomaji"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="lyricsSettings.showRomaji = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="lyricsSettings.showRomaji = true"
-              >
-                关
-              </button>
-            </div>
+            <button
+              type="button"
+              class="desktop-lyrics-toggle"
+              :class="lyricsSettings.showRomaji ? 'desktop-lyrics-toggle--on' : ''"
+              @click="lyricsSettings.showRomaji = !lyricsSettings.showRomaji"
+            >
+              <span class="desktop-lyrics-toggle-thumb"></span>
+            </button>
           </div>
         </div>
 
@@ -1422,45 +1388,25 @@ onUnmounted(() => {
         <div class="desktop-compact-row">
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">逐字效果</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-              <button
-                v-if="desktopLyricsSettings.enableWordEffect"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableWordEffect = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableWordEffect = true"
-              >
-                关
-              </button>
-            </div>
+            <button
+              type="button"
+              class="desktop-lyrics-toggle"
+              :class="desktopLyricsSettings.enableWordEffect ? 'desktop-lyrics-toggle--on' : ''"
+              @click="desktopLyricsSettings.enableWordEffect = !desktopLyricsSettings.enableWordEffect"
+            >
+              <span class="desktop-lyrics-toggle-thumb"></span>
+            </button>
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">歌词描边</div>
-            <div class="desktop-segmented-control flex overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-              <button
-                v-if="desktopLyricsSettings.enableTextOutline"
-                type="button"
-                class="desktop-segmented-btn desktop-segmented-btn--active text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableTextOutline = false"
-              >
-                开
-              </button>
-              <button
-                v-else
-                type="button"
-                class="desktop-segmented-btn text-center text-xs font-semibold py-1.5 px-3 transition-all animate-fade-in"
-                @click="desktopLyricsSettings.enableTextOutline = true"
-              >
-                关
-              </button>
-            </div>
+            <button
+              type="button"
+              class="desktop-lyrics-toggle"
+              :class="desktopLyricsSettings.enableTextOutline ? 'desktop-lyrics-toggle--on' : ''"
+              @click="desktopLyricsSettings.enableTextOutline = !desktopLyricsSettings.enableTextOutline"
+            >
+              <span class="desktop-lyrics-toggle-thumb"></span>
+            </button>
           </div>
         </div>
 
@@ -1655,13 +1601,13 @@ onUnmounted(() => {
   --desktop-chip-active-border: rgba(236, 65, 65, 0.28);
   --desktop-chip-active-text: #ec4141;
 
-  --desktop-font-trigger-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.68));
-  --desktop-font-trigger-border: rgba(148, 163, 184, 0.2);
-  --desktop-font-trigger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 10px 26px rgba(15, 23, 42, 0.05);
+  --desktop-font-trigger-bg: rgba(255, 255, 255, 0.2);
+  --desktop-font-trigger-border: rgba(229, 231, 235, 0.4);
+  --desktop-font-trigger-shadow: none;
 
-  --desktop-font-trigger-active-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 244, 244, 0.78));
-  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.32);
-  --desktop-font-trigger-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 14px 30px rgba(236, 65, 65, 0.08);
+  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.3);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.18);
+  --desktop-font-trigger-active-shadow: none;
 
   --desktop-font-menu-bg: rgba(255, 255, 255, 0.88);
   --desktop-font-menu-border: rgba(255, 255, 255, 0.5);
@@ -1689,13 +1635,13 @@ onUnmounted(() => {
   --desktop-chip-active-border: rgba(236, 65, 65, 0.35);
   --desktop-chip-active-text: #ff8b8b;
 
-  --desktop-font-trigger-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.04));
+  --desktop-font-trigger-bg: rgba(255, 255, 255, 0.05);
   --desktop-font-trigger-border: rgba(255, 255, 255, 0.08);
-  --desktop-font-trigger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 28px rgba(0, 0, 0, 0.18);
+  --desktop-font-trigger-shadow: none;
 
-  --desktop-font-trigger-active-bg: linear-gradient(180deg, rgba(236, 65, 65, 0.16), rgba(255, 255, 255, 0.05));
-  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.34);
-  --desktop-font-trigger-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 16px 36px rgba(0, 0, 0, 0.24);
+  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.08);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.28);
+  --desktop-font-trigger-active-shadow: none;
 
   --desktop-font-menu-bg: rgba(17, 17, 19, 0.88);
   --desktop-font-menu-border: rgba(255, 255, 255, 0.08);
@@ -1826,38 +1772,48 @@ onUnmounted(() => {
 }
 
 .desktop-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  width: 44px;
-  height: 24px;
   padding: 2px;
   border-radius: 999px;
-  background: rgb(209 213 219);
-  transition: background-color 160ms ease;
-  flex-shrink: 0;
+  border: 1px solid rgba(229, 231, 235, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: 180ms ease;
 }
 
 .desktop-switch--on {
-  background: #ec4141;
+  background: #ec4141 !important;
+  border-color: transparent;
 }
 
 :global(.dark) .desktop-switch {
-  background: rgb(55 65 81);
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 :global(.dark) .desktop-switch--on {
-  background: #ec4141;
+  background: #ec4141 !important;
 }
 
 .desktop-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
-  transition: transform 160ms ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 180ms ease;
 }
+
+.desktop-switch--on .desktop-switch-thumb { transform: translateX(16px); }
 
 .desktop-card {
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -2310,20 +2266,33 @@ onUnmounted(() => {
 .desktop-custom-rgb-row input {
   width: 100%;
   min-width: 0;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  height: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 8px 6px;
+  background: rgba(255, 255, 255, 0.45);
+  padding: 0 6px;
   text-align: center;
-  color: rgb(17 24 39);
-  font-size: 15px;
+  color: rgb(31 41 55);
+  font-size: 12px;
   font-weight: 700;
+  outline: none;
+  transition: all 150ms;
+}
+
+.desktop-custom-rgb-row input:focus {
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(236, 65, 65, 0.1);
 }
 
 :global(.dark) .desktop-custom-rgb-row input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgb(243 244 246);
+}
+
+:global(.dark) .desktop-custom-rgb-row input:focus {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .desktop-shadow-custom-chip {
@@ -2571,13 +2540,22 @@ onUnmounted(() => {
 }
 
 .desktop-preview-btn--default {
-  border: 1px solid rgba(236, 65, 65, 0.16);
-  background: rgba(236, 65, 65, 0.06);
-  color: #ec4141;
+  border: 1px solid rgba(229, 231, 235, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+  color: rgb(75 85 99);
 }
 .desktop-preview-btn--default:hover {
-  border-color: rgba(236, 65, 65, 0.42);
-  background: rgba(236, 65, 65, 0.12);
+  border-color: rgba(236, 65, 65, 0.35);
+  background: rgba(255, 255, 255, 0.3);
+  color: #ec4141;
+}
+:global(.dark) .desktop-preview-btn--default {
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+:global(.dark) .desktop-preview-btn--default:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* 高拟真预览背景：采用中灰色/暗色/浅色磨砂渐变模拟桌面壁纸，但不影响判断透明度、阴影 */
@@ -2780,23 +2758,12 @@ onUnmounted(() => {
    网易云式极致紧凑排版仪表盘样式 (Compact Panel)
    ========================================================================== */
 
-/* 紧凑容器：使用极具现代感和高级感的磨砂边框与圆角 */
+/* 紧凑容器：去掉大底，控件本身保留各自的底色 */
 .desktop-typography-panel--compact {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  border-radius: 20px;
-  padding: 14px;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6), 0 8px 24px rgba(15, 23, 42, 0.03);
-  transition: all 250ms ease;
-}
-
-:global(.dark) .desktop-typography-panel--compact {
-  background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.02), 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 0;
 }
 
 /* 紧凑控制行：横向二等分 */
@@ -2818,26 +2785,23 @@ onUnmounted(() => {
   height: 40px;
   padding: 0 4px 0 10px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(15, 23, 42, 0.04);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   transition: all 180ms ease;
 }
 
 :global(.dark) .desktop-compact-cell {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.03);
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .desktop-compact-cell:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.3);
   border-color: rgba(236, 65, 65, 0.18);
-  box-shadow: 0 4px 12px rgba(236, 65, 65, 0.03);
 }
 
 :global(.dark) .desktop-compact-cell:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   border-color: rgba(236, 65, 65, 0.28);
 }
 
@@ -2852,26 +2816,23 @@ onUnmounted(() => {
   height: 40px;
   padding: 0 10px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(15, 23, 42, 0.04);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   transition: all 180ms ease;
 }
 
 :global(.dark) .desktop-compact-slider-cell {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.03);
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .desktop-compact-slider-cell:hover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.3);
   border-color: rgba(236, 65, 65, 0.18);
-  box-shadow: 0 4px 12px rgba(236, 65, 65, 0.03);
 }
 
 :global(.dark) .desktop-compact-slider-cell:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   border-color: rgba(236, 65, 65, 0.28);
 }
 
@@ -3071,6 +3032,48 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.12) !important;
   color: #ff8b8b !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ==========================================================================
+   开关样式 (与底部栏预览 footer-visibility-switch 完全一致)
+   ========================================================================== */
+
+.desktop-lyrics-toggle {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid rgba(229, 231, 235, 0.4);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: 180ms ease;
+  cursor: pointer;
+}
+
+:global(.dark) .desktop-lyrics-toggle {
+  border-color: rgba(31, 41, 55, 0.4);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.desktop-lyrics-toggle--on {
+  background: #ec4141 !important;
+}
+
+.desktop-lyrics-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 180ms ease;
+}
+
+.desktop-lyrics-toggle--on .desktop-lyrics-toggle-thumb {
+  transform: translateX(16px);
 }
 
 /* ==========================================================================

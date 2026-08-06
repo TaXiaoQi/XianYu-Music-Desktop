@@ -187,7 +187,7 @@ const handleApply = async () => {
           v-model="customTemplate"
           type="text"
           placeholder="输入自定义模板..."
-          class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#EC4141] dark:border-white/10 dark:bg-black/20 dark:text-slate-100"
+          class="flex-1 h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
         />
         <button
           @click="setAsDefault"
