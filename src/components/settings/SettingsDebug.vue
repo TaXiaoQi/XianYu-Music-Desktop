@@ -39,7 +39,7 @@ const confirmClearLogs = () => {
       <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">调试</h2>
     </div>
 
-    <section class="overflow-hidden rounded-xl border border-black/10 bg-white/35 dark:border-white/10 dark:bg-white/[0.03]">
+    <section class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
       <div class="flex items-center justify-between gap-6 px-5 py-4">
         <div class="min-w-0">
           <p class="text-sm font-medium text-gray-800 dark:text-gray-200">开发者模式</p>
@@ -61,7 +61,7 @@ const confirmClearLogs = () => {
         </div>
         <button
           type="button"
-          class="shrink-0 rounded-lg border border-black/10 bg-white/60 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white active:scale-95 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
           @click="triggerOnboarding"
         >
           播放
@@ -69,7 +69,7 @@ const confirmClearLogs = () => {
       </div>
     </section>
 
-    <section class="space-y-3 rounded-xl border border-black/10 bg-white/35 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+    <section class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 dark:border-gray-800/40 dark:bg-black/10">
       <div>
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">导出日志</h3>
         <p class="mt-1 text-xs text-gray-500 dark:text-white/45">导出本机保留的应用日志，便于反馈问题或自行排查。</p>
@@ -77,7 +77,7 @@ const confirmClearLogs = () => {
       <LogExportActions />
     </section>
 
-    <section class="space-y-3 rounded-xl border border-black/10 bg-white/35 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+    <section class="space-y-3 rounded-xl border border-gray-200/40 bg-white/20 p-5 dark:border-gray-800/40 dark:bg-black/10">
       <div>
         <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">日志管理</h3>
         <p class="mt-1 text-xs text-gray-500 dark:text-white/45">当前共有 {{ entryCount }} 条日志，删除后无法恢复。</p>

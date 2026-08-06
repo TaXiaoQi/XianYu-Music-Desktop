@@ -130,7 +130,7 @@ onMounted(() => {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         常规与启动
       </h2>
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">开机自动运行</div>
@@ -234,7 +234,7 @@ onMounted(() => {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         存储空间
       </h2>
-      <div class="flex flex-col rounded-xl overflow-hidden">
+      <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 播放缓存上限 -->
         <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">

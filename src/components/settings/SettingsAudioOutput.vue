@@ -294,7 +294,7 @@ onScopeDispose(() => {
         <!-- 渐入渐出时长设置子区域 -->
         <div
           v-if="settings.audio.fadeInOutEnabled"
-          class="flex flex-col border-b border-gray-200/20 dark:border-gray-800/20 bg-gray-50/10 dark:bg-gray-900/10 transition-all duration-300 animate-in fade-in"
+          class="flex flex-col border-b border-gray-200/20 bg-white/20 transition-all duration-300 animate-in fade-in dark:border-gray-800/20 dark:bg-black/10"
         >
           <div class="desktop-setting-row pl-8">
             <div class="flex-1 space-y-1">
@@ -354,7 +354,7 @@ onScopeDispose(() => {
         <!-- 高级音量平衡配置子区域 -->
         <div
           v-if="settings.audio.volumeBalance.enabled"
-          class="flex flex-col border-t border-gray-200/20 dark:border-gray-800/20 bg-gray-50/10 dark:bg-gray-900/10 transition-all duration-300 animate-in fade-in rounded-b-xl"
+          class="flex flex-col border-t border-gray-200/20 bg-white/20 transition-all duration-300 animate-in fade-in rounded-b-xl dark:border-gray-800/20 dark:bg-black/10"
         >
           <!-- 整体增益偏移设置 -->
           <div class="desktop-setting-row border-b border-gray-200/20 dark:border-gray-800/20 pl-8">
@@ -424,7 +424,7 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showQualityModal = true"
           >
             <span>{{ QUALITY_META[settings.audio.onlineDefaultQuality].label }}</span>
@@ -440,7 +440,7 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showFallbackBehaviorModal = true"
           >
             <span>{{ QUALITY_FALLBACK_OPTIONS.find(o => o.value === settings.audio.onlineQualityFallbackBehavior)?.label }}</span>
@@ -479,7 +479,7 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showFailureBehaviorModal = true"
           >
             <span>{{ FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.audio.onlineFailureBehavior)?.label }}</span>
@@ -551,11 +551,11 @@ onScopeDispose(() => {
         <!-- 均衡器调节板高级配置子区域 -->
         <div
           v-if="settings.audio.equalizer.enabled"
-          class="flex flex-col border-t border-gray-200/20 dark:border-gray-800/20 bg-gray-50/10 dark:bg-gray-900/10 transition-all duration-300 animate-in fade-in rounded-b-xl p-6"
+          class="flex flex-col border-t border-gray-200/20 bg-white/20 transition-all duration-300 animate-in fade-in rounded-b-xl p-6 dark:border-gray-800/20 dark:bg-black/10"
         >
           <button
             type="button"
-            class="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            class="w-full rounded-lg border border-gray-200/40 bg-white/20 px-4 py-3 text-sm text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showEqPanel = true"
           >
             打开音效面板
@@ -695,8 +695,8 @@ onScopeDispose(() => {
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
         播放设置
       </h2>
-      <div class="settings-playback-group flex flex-col rounded-xl">
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+      <div class="settings-playback-group flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
+        <div class="flex items-center justify-between border-b border-gray-200/20 p-4 transition-colors last:border-0 hover:bg-white/30 dark:border-gray-800/20 dark:hover:bg-white/10">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">自动播放</div>
           </div>
@@ -704,21 +704,21 @@ onScopeDispose(() => {
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="autoPlay ? 'translate-x-6' : 'translate-x-1'" />
           </button>
         </div>
-        <div class="p-4 flex items-center justify-between gap-4 border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="flex items-center justify-between gap-4 border-b border-gray-200/20 p-4 transition-colors last:border-0 hover:bg-white/30 dark:border-gray-800/20 dark:hover:bg-white/10">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
           <button
             type="button"
             :disabled="isChangingOutputDevice"
-            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed max-w-[260px]"
+            class="flex max-w-[260px] shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showOutputDeviceModal = true"
           >
             <span class="truncate">{{ selectedOutputDeviceLabel }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400 shrink-0" aria-hidden="true" />
           </button>
         </div>
-        <div class="p-4 flex items-center justify-between border-b border-white/30 dark:border-white/5 last:border-0 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+        <div class="flex items-center justify-between border-b border-gray-200/20 p-4 transition-colors last:border-0 hover:bg-white/30 dark:border-gray-800/20 dark:hover:bg-white/10">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
           </div>
@@ -729,11 +729,11 @@ onScopeDispose(() => {
             </button>
           </div>
         </div>
-        <div class="border-t border-white/30 dark:border-white/5">
+        <div class="border-t border-gray-200/20 dark:border-gray-800/20">
           <button
             type="button"
             @click="showLyricsSyncOffsetPanel = !showLyricsSyncOffsetPanel"
-            class="w-full p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors text-left"
+            class="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-white/30 dark:hover:bg-white/10"
           >
             <div class="min-w-0">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词同步补偿</div>
@@ -764,7 +764,7 @@ onScopeDispose(() => {
                   <div class="flex min-w-[240px] flex-1 items-center gap-2">
                     <button
                       type="button"
-                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                       :disabled="lyricsSyncOffsetMs <= LYRICS_SYNC_OFFSET_MIN_MS"
                       aria-label="歌词偏移减少 5 毫秒"
                       @click="adjustLyricsSyncOffset(-LYRICS_SYNC_OFFSET_STEP_MS)"
@@ -781,7 +781,7 @@ onScopeDispose(() => {
                     />
                     <button
                       type="button"
-                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200 bg-white/70 text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
+                      class="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gray-200/40 bg-white/20 text-gray-600 transition hover:border-[#EC4141] hover:bg-white/30 hover:text-[#EC4141] disabled:cursor-not-allowed disabled:opacity-35 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                       :disabled="lyricsSyncOffsetMs >= LYRICS_SYNC_OFFSET_MAX_MS"
                       aria-label="歌词偏移增加 5 毫秒"
                       @click="adjustLyricsSyncOffset(LYRICS_SYNC_OFFSET_STEP_MS)"
@@ -874,7 +874,7 @@ onScopeDispose(() => {
 }
 
 .desktop-setting-row:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 :global(.dark) .desktop-setting-row {
@@ -882,7 +882,7 @@ onScopeDispose(() => {
 }
 
 :global(.dark) .desktop-setting-row:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .audio-tip {

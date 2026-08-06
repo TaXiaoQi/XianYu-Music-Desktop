@@ -625,23 +625,23 @@ function updateAutoSyncMaxDelay(event: Event) {
   gap: 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .upload-item:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.3);
   border-color: rgba(236, 65, 65, 0.18);
 }
 
 :global(.dark) .upload-item {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
 :global(.dark) .upload-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.1);
   border-color: rgba(236, 65, 65, 0.3);
 }
 
@@ -653,23 +653,23 @@ function updateAutoSyncMaxDelay(event: Event) {
   gap: 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .manual-sync-item:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.3);
   border-color: rgba(236, 65, 65, 0.18);
 }
 
 :global(.dark) .manual-sync-item {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
 }
 
 :global(.dark) .manual-sync-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.1);
   border-color: rgba(236, 65, 65, 0.3);
 }
 
