@@ -94,7 +94,7 @@ use toolbox::{append_webview2_browser_arg, should_disable_gpu_for_startup};
 use window_boundary::set_mini_boundary_enabled;
 use window_fullscreen::{
     refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen,
-    set_taskbar_fullscreen_flag,
+    set_taskbar_fullscreen_flag, smart_toggle_maximize,
 };
 use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
@@ -257,6 +257,7 @@ pub fn run() {
             refresh_immersive_fullscreen,
             save_window_placement,
             set_taskbar_fullscreen_flag,
+            smart_toggle_maximize,
             get_window_material_capabilities,
             refresh_window_material_active_state,
             get_foreground_fullscreen_state,

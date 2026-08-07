@@ -73,6 +73,7 @@ export function useHomePageModel() {
     removeFromHistory,
     playlists,
     setPlaylistCover,
+    toggleFavorite,
   } = useLibraryCollections();
   const { coverCache, loadingSet, preloadCovers } = useCoverCache();
 
@@ -276,6 +277,39 @@ export function useHomePageModel() {
     });
   };
 
+  const handleSelectAll = () => {
+    const allPaths = currentViewSongPaths.value;
+    if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
+      selectedPaths.value = new Set();
+    } else {
+      selectedPaths.value = new Set(allPaths);
+    }
+  };
+
+  const handleBatchAddToFavorites = () => {
+    const paths = Array.from(selectedPaths.value);
+    if (paths.length === 0) return;
+
+    const favoriteSet = new Set(favoritePaths.value);
+    let addedCount = 0;
+
+    for (const path of paths) {
+      if (!favoriteSet.has(path)) {
+        const song = resolveSongByPath(path);
+        toggleFavorite(song ?? path);
+        addedCount++;
+      }
+    }
+
+    showToast(
+      addedCount > 0
+        ? `已添加 ${addedCount} 首歌曲到我喜欢`
+        : '所选歌曲已在我喜欢中',
+      'success',
+    );
+    isBatchMode.value = false;
+  };
+
   const handleRefreshAll = async () => {
     try {
       const summary = await refreshAllFolders();
@@ -335,6 +369,8 @@ export function useHomePageModel() {
     handlePlayAll,
     handleBatchPlay,
     handleAddToPlaylistRequest,
+    handleSelectAll,
+    handleBatchAddToFavorites,
     requestBatchDelete,
     handleFolderBatchDelete,
     handleBatchMove,

@@ -169,11 +169,10 @@ const toggleMaximize = async () => {
     return;
   }
 
-  if (await appWindow.isMaximized()) {
-    await appWindow.unmaximize();
-  } else {
-    await appWindow.maximize();
-  }
+  // 使用 smart_toggle_maximize 命令：用 Win32 IsZoomed 判断窗口状态（不依赖 tao 内部缓存），
+  // 还原时若 SAVED_NORMAL_RECT 有值则用 SetWindowPlacement 一步恢复正确小窗尺寸，
+  // 避免沉浸式全屏后 tao 内部还原尺寸被污染导致还原到全屏大小。
+  await tauriInvoke('smart_toggle_maximize');
 };
 
 const closeApp = async () => {

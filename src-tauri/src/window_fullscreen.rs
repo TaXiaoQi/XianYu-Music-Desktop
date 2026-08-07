@@ -13,6 +13,11 @@
 //!
 //! 退出时总是先恢复到最大化（SW_MAXIMIZE），再修正 rcNormalPosition 为保存的原始值，
 //! 确保后续 unmaximize 能还原到正确的窗口位置。任务栏隐藏用 ITaskbarList2::MarkFullscreenWindow。
+//!
+//! 最大化/还原切换使用 `smart_toggle_maximize` 命令：
+//! - 用 Win32 `IsZoomed` 判断窗口状态（不依赖 tao 内部 `is_maximized` 缓存）
+//! - 还原时若 `SAVED_NORMAL_RECT` 有值（全屏期间保存的正确小窗尺寸），
+//!   用 `SetWindowPlacement(SW_SHOWNORMAL)` 一步恢复正确几何，绕过 tao 被污染的还原尺寸缓存
 
 #[cfg(target_os = "windows")]
 use std::sync::Mutex;
@@ -24,8 +29,8 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::{
         GetWindowLongW, GetWindowPlacement, IsZoomed, SetWindowLongW, SetWindowPlacement,
         SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
-        WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWNORMAL, SW_SHOWMAXIMIZED,
+        WINDOWPLACEMENT, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
     },
 };
 
@@ -47,6 +52,15 @@ static SAVED_EXSTYLE: Mutex<Option<i32>> = Mutex::new(None);
 /// 保存进入全屏前的窗口样式（GWL_STYLE），退出时恢复。
 #[cfg(target_os = "windows")]
 static SAVED_STYLE: Mutex<Option<i32>> = Mutex::new(None);
+
+/// 保存进入全屏前小窗的正常位置尺寸（placement.rcNormalPosition）。
+///
+/// 全屏期间 SetWindowPos 会触发 WM_SIZE(SIZE_RESTORED)，tao 据此将全屏矩形缓存为
+/// 内部"还原尺寸"。退出全屏后 tao 的 unmaximize 会使用这个错误缓存，导致窗口还原到
+/// 全屏大小（看起来没有缩小）。此变量保存正确的小窗尺寸，供 smart_toggle_maximize
+/// 命令在还原时使用 SetWindowPlacement 一步到位地恢复正确几何，绕过 tao 的缓存。
+#[cfg(target_os = "windows")]
+static SAVED_NORMAL_RECT: Mutex<Option<RECT>> = Mutex::new(None);
 
 /// 从 tauri 窗口取原生 HWND。
 #[cfg(target_os = "windows")]
@@ -182,6 +196,12 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 *SAVED_PLACEMENT.lock().map_err(|e| e.to_string())? =
                     Some(SavedPlacement(placement));
 
+                // 单独保存小窗的正常位置尺寸（rcNormalPosition）。
+                // 无论当前窗口是否最大化，rcNormalPosition 始终保存还原时的位置/尺寸。
+                // 退出全屏后 tao 的内部还原尺寸缓存已被全屏矩形污染，smart_toggle_maximize
+                // 会使用此保存值通过 SetWindowPlacement 一步恢复正确几何。
+                *SAVED_NORMAL_RECT.lock().map_err(|e| e.to_string())? = Some(placement.rcNormalPosition);
+
                 // 小窗进全屏：先走 SW_MAXIMIZE 的系统丝滑放大动画（放大观感来源）。
                 if IsZoomed(hwnd) == 0 {
                     ShowWindow(hwnd, SW_MAXIMIZE);
@@ -261,6 +281,15 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     if placement.showCmd == SW_SHOWMAXIMIZED as u32 {
                         // 进全屏前是最大化：直接 SW_MAXIMIZE 一步回最大化，无小窗中间帧。
                         ShowWindow(hwnd, SW_MAXIMIZE);
+                        // 修正 rcNormalPosition 为保存的原始值。
+                        // 全屏期间 SetWindowPos 将窗口铺满整屏，Windows 据此更新了
+                        // rcNormalPosition（还原尺寸）为全屏矩形。若不修正，后续 unmaximize
+                        // 时窗口会"还原"到全屏大小，看起来还是最大化。
+                        // SetWindowPlacement 会用保存的 placement.rcNormalPosition 更新
+                        // 窗口的正常位置，showCmd 仍为 SW_SHOWMAXIMIZED 故窗口保持最大化态。
+                        if SetWindowPlacement(hwnd, &placement) == 0 {
+                            return Err("SetWindowPlacement 失败".to_string());
+                        }
                     } else {
                         // 进全屏前是小窗：一步还原到原始位置尺寸（硬跳），缩小观感由前端 CSS 承担。
                         if SetWindowPlacement(hwnd, &placement) == 0 {
@@ -283,8 +312,15 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 // 同步 tao 内部最大化状态：上面用 ShowWindow(SW_MAXIMIZE) 恢复最大化时，
                 // tao 的 is_maximized 状态不会自动更新，导致前端 appWindow.isMaximized() 返回错误值。
                 // 仅在 was_maximized 时显式同步；小窗状态由 SetWindowPlacement 已恢复，无需额外调用。
+                //
+                // tao 内部还原尺寸缓存已污染的问题由 smart_toggle_maximize 命令处理：
+                // 该命令使用 SAVED_NORMAL_RECT 保存的正确小窗尺寸，通过 SetWindowPlacement
+                // 一步恢复正确几何，绕过 tao 的缓存，无需 unmaximize+maximize 造成闪烁。
                 if was_maximized {
                     let _ = window.maximize();
+                } else {
+                    // 退出到小窗状态：清除保存的小窗尺寸（窗口已在正确位置，后续不需要）
+                    *SAVED_NORMAL_RECT.lock().map_err(|e| e.to_string())? = None;
                 }
                 Ok(false)
             }
@@ -296,5 +332,61 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
         // 非 Windows：暂不支持沉浸式全屏
         let _ = (window, enter);
         Err("当前平台不支持沉浸式全屏".to_string())
+    }
+}
+
+/// 智能最大化/还原切换。
+///
+/// 使用 Win32 原生 `IsZoomed` 判断窗口是否最大化（不依赖 tao 内部状态），
+/// 避免沉浸式全屏后 tao 的 `is_maximized` 未同步导致判断错误。
+///
+/// 还原时若 `SAVED_NORMAL_RECT` 有值（退出沉浸式全屏后保留的正确小窗尺寸），
+/// 则用 `SetWindowPlacement(SW_SHOWNORMAL)` 一步恢复到正确几何——这是单个 Win32
+/// API 调用，同时设置 showCmd 和 rcNormalPosition，不会产生中间帧闪烁。
+/// 同时触发 `WM_SIZE(SIZE_RESTORED)` 更新 tao 内部缓存，后续还原不再需要特殊处理。
+///
+/// 无保存值时（正常使用，未经历全屏）退化为 `window.unmaximize()`。
+#[tauri::command]
+pub fn smart_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
+
+        unsafe {
+            if IsZoomed(hwnd) != 0 {
+                // 当前最大化 → 需要还原
+                let saved = SAVED_NORMAL_RECT.lock().map_err(|e| e.to_string())?.take();
+                if let Some(normal_rect) = saved {
+                    // 沉浸式全屏后首次还原：tao 内部缓存已被全屏矩形污染，
+                    // 用 SetWindowPlacement 一步恢复到保存的正确小窗尺寸。
+                    // SW_SHOWNORMAL 同时去除 WS_MAXIMIZE 样式并设置 rcNormalPosition，
+                    // WM_SIZE(SIZE_RESTORED) 会更新 tao 内部缓存为正确值。
+                    let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
+                    placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                    if GetWindowPlacement(hwnd, &mut placement) == 0 {
+                        return Err("GetWindowPlacement 失败".to_string());
+                    }
+                    placement.showCmd = SW_SHOWNORMAL as u32;
+                    placement.rcNormalPosition = normal_rect;
+                    if SetWindowPlacement(hwnd, &placement) == 0 {
+                        return Err("SetWindowPlacement 失败".to_string());
+                    }
+                } else {
+                    // 正常还原（未经历全屏，tao 缓存正确）
+                    let _ = window.unmaximize();
+                }
+                Ok(false) // 返回还原后的状态
+            } else {
+                // 当前非最大化 → 最大化
+                let _ = window.maximize();
+                Ok(true)
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        Err("当前平台不支持".to_string())
     }
 }

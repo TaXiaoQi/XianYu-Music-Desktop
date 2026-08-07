@@ -66,6 +66,8 @@ const emit = defineEmits<{
   (event: 'contextMenuSong', nativeEvent: MouseEvent, song: Song): void;
   (event: 'tableDragStart', ...args: any[]): void;
   (event: 'artistAlbumClick', albumKey: string): void;
+  (event: 'selectAll'): void;
+  (event: 'batchAddToFavorites'): void;
 }>();
 
 const handleContentContextMenu = (nativeEvent: MouseEvent, song: Song) => {
@@ -144,6 +146,8 @@ const viewInstanceKey = computed(() =>
         @activeRootChange="$emit('activeRootChange', $event)"
         @renamePlaylist="$emit('renamePlaylist')"
         @refreshAll="$emit('refreshAll')"
+        @selectAll="$emit('selectAll')"
+        @batchAddToFavorites="$emit('batchAddToFavorites')"
       />
 
       <HomeContentPanel
