@@ -8,7 +8,8 @@ import {
   pluginGetSupportedQualities,
 } from '../../services/pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../../services/lxPluginEngine';
-import { lxGetMusicUrl } from '../../services/lxMusicSdk';
+import { toUrlSongInfo } from '../../services/lxMusicSdk';
+import { tauriInvoke } from '../../services/tauri/invoke';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -146,23 +147,27 @@ const resolveLxAudioUrl = async ({
     if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
 
     if (!matchedPlugin) {
-      // 无 LX 插件时，直接通过 Rust 后端 API 解析
-      console.warn(`[Audio] No LX plugin, using Rust direct API for lx://${lxSource}/${songmid}`);
+      // 无 LX 插件时，通过 Rust 后端批量音质解析（带缓存）
+      // 单次 IPC 调用完成多音质回退，避免循环调用
       if (cachedInfo) {
-        for (const quality of tryQualities) {
-          try {
-            const urlResult = await lxGetMusicUrl(cachedInfo, quality);
-            if (urlResult?.url && /^https?:/.test(urlResult.url)) {
-              return {
-                audioFilePath: urlResult.url,
-                pluginHeaders: null,
-                currentPlayingQuality: quality,
-                currentPlayingAudioUrl: urlResult.url,
-              };
-            }
-          } catch (e: any) {
-            console.warn(`[Audio] Rust direct API failed for quality=${quality}: ${e?.message}`);
+        try {
+          const urlResult = await tauriInvoke(
+            'resolve_lx_with_quality_fallback',
+            {
+              songInfo: toUrlSongInfo(cachedInfo),
+              qualities: tryQualities,
+            },
+          );
+          if (urlResult?.url && /^https?:/.test(urlResult.url)) {
+            return {
+              audioFilePath: urlResult.url,
+              pluginHeaders: null,
+              currentPlayingQuality: urlResult.quality as QualityKey,
+              currentPlayingAudioUrl: urlResult.url,
+            };
           }
+        } catch (e: any) {
+          console.warn(`[Audio] Rust batch quality fallback failed: ${e?.message}`);
         }
       }
       return {
@@ -212,24 +217,28 @@ const resolveLxAudioUrl = async ({
 
     console.warn(`[Audio] lxPluginGetMusicUrl returned empty/invalid URL for lx://${lxSource}/${songmid}, tried=${JSON.stringify(tryQualities)}`);
 
-    // [后备] LX 插件解析失败时，通过 Rust 后端直接 API 解析
-    // Rust 后端自带 10 分钟 URL 缓存 + 主备 API 自动切换
+    // [后备] LX 插件解析失败时，通过 Rust 后端批量音质解析（带缓存）
+    // 单次 IPC 调用完成多音质回退，避免循环调用
     if (cachedInfo) {
-      for (const quality of tryQualities) {
-        try {
-          const urlResult = await lxGetMusicUrl(cachedInfo, quality);
-          if (urlResult?.url && /^https?:/.test(urlResult.url)) {
-            console.log(`[Audio] Rust direct API fallback resolved URL for lx://${lxSource}/${songmid} quality=${quality}`);
-            return {
-              audioFilePath: urlResult.url,
-              pluginHeaders: null,
-              currentPlayingQuality: quality,
-              currentPlayingAudioUrl: urlResult.url,
-            };
-          }
-        } catch (e: any) {
-          console.warn(`[Audio] Rust direct API fallback failed for quality=${quality}: ${e?.message}`);
+      try {
+        const urlResult = await tauriInvoke(
+          'resolve_lx_with_quality_fallback',
+          {
+            songInfo: toUrlSongInfo(cachedInfo),
+            qualities: tryQualities,
+          },
+        );
+        if (urlResult?.url && /^https?:/.test(urlResult.url)) {
+          console.log(`[Audio] Rust batch fallback resolved URL for lx://${lxSource}/${songmid} quality=${urlResult.quality}`);
+          return {
+            audioFilePath: urlResult.url,
+            pluginHeaders: null,
+            currentPlayingQuality: urlResult.quality as QualityKey,
+            currentPlayingAudioUrl: urlResult.url,
+          };
         }
+      } catch (e: any) {
+        console.warn(`[Audio] Rust batch fallback failed: ${e?.message}`);
       }
     }
   } catch (error: any) {

@@ -9,7 +9,7 @@
  *
  * 记录以歌曲 path（`lx://source/songmid`）为 key，重复下载同一首歌会覆盖旧记录。
  */
-import { invoke } from '@tauri-apps/api/core';
+import { downloadApi } from './tauri/downloadApi';
 
 export interface DownloadRecord {
   /** 歌曲标识，形如 `lx://kg/song123` */
@@ -80,7 +80,7 @@ export async function loadDownloadHistory(): Promise<HistoryMap> {
 
   _loadingPromise = (async () => {
     try {
-      const text = await invoke<string>('read_download_history');
+      const text = await downloadApi.readDownloadHistory();
       const parsed = JSON.parse(text || '{}');
       _cache = sanitizeHistory(parsed);
     } catch (e) {
@@ -98,9 +98,7 @@ export async function loadDownloadHistory(): Promise<HistoryMap> {
 async function persist(): Promise<void> {
   if (!_cache) return;
   try {
-    await invoke('write_download_history', {
-      content: JSON.stringify(_cache, null, 2),
-    });
+    await downloadApi.writeDownloadHistory(JSON.stringify(_cache, null, 2));
   } catch (e) {
     console.warn('[DownloadHistory] 写入下载记录失败:', e);
   }
@@ -147,7 +145,7 @@ export async function checkDownloadExists(songPath: string): Promise<DownloadRec
 
   let exists = false;
   try {
-    exists = await invoke<boolean>('file_exists', { path: record.filePath });
+    exists = await downloadApi.fileExists(record.filePath);
   } catch (e) {
     // 检查失败时保守视为不存在，但保留记录（可能只是一次 IPC 抖动）
     console.warn('[DownloadHistory] 检查文件存在性失败:', e);

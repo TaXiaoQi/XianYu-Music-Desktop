@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { qualityToLxCandidates, sanitizeFileName } from './downloadService';
+import { qualityToLxCandidates } from './downloadService';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -60,6 +60,38 @@ const baseOptions = {
   lyricsFormat: 'lrc' as const,
 };
 
+/**
+ * 模拟 Rust resolve_download_full_path 命令的文件名构建逻辑。
+ * 与 Rust 侧 build_download_filename 行为一致：按 style 拼接 + 推断扩展名 + 清洗。
+ */
+function mockResolveDownloadFullPath(args: any): string {
+  const { directory, title, artist, url, fileNameStyle } = args;
+  const t = title || '未知歌曲';
+  let base: string;
+  switch (fileNameStyle) {
+    case 'title-artist':
+      base = [t, artist].filter(Boolean).join(' - ');
+      break;
+    case 'title-artist-album':
+      base = [t, artist, args.album].filter(Boolean).join(' - ');
+      break;
+    default:
+      base = [artist, t].filter(Boolean).join(' - ');
+  }
+  if (!base) base = t;
+  // 从 URL 推断扩展名
+  let ext = '.mp3';
+  try {
+    const u = new URL(url);
+    const dot = u.pathname.lastIndexOf('.');
+    if (dot !== -1) {
+      const e = u.pathname.slice(dot).toLowerCase();
+      if (/^\.(mp3|flac|wav|m4a|aac|ape|ogg|wma)$/.test(e)) ext = e;
+    }
+  } catch { /* ignore */ }
+  return `${directory}\\${base}${ext}`;
+}
+
 describe('downloadService: quality candidates', () => {
   it('maps UI quality to ordered lx candidates with fallback (12档从高到低)', () => {
     // 'master'（最高）→ 全部12档
@@ -75,10 +107,6 @@ describe('downloadService: quality candidates', () => {
     ]);
     // '128k' → 128k及以下
     expect(qualityToLxCandidates('128k')).toEqual(['128k', 'mgg']);
-  });
-
-  it('sanitizes illegal filename characters', () => {
-    expect(sanitizeFileName('a/b:c*d?')).toBe('a b c d');
   });
 });
 
@@ -106,6 +134,7 @@ describe('downloadService: download fallback across qualities', () => {
         }
         return args.destPath;
       }
+      if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
       if (cmd === 'file_exists') return false;
       return null;
     });
@@ -136,6 +165,7 @@ describe('downloadService: download fallback across qualities', () => {
       if (cmd === 'download_online_song') {
         throw new Error('下载服务器返回错误状态: 502 Bad Gateway');
       }
+      if (cmd === 'resolve_download_full_path') return 'D:\\Music\\test.mp3';
       if (cmd === 'file_exists') return false;
       return null;
     });
@@ -154,6 +184,7 @@ describe('downloadService: download fallback across qualities', () => {
 
     (invoke as any).mockImplementation(async (cmd: string, args: any) => {
       if (cmd === 'download_online_song') return args.destPath;
+      if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
       if (cmd === 'file_exists') return false;
       return null;
     });

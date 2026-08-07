@@ -29,35 +29,37 @@ use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
 use music::{
     add_library_folder, add_sidebar_folder, authed_request, batch_move_music_files,
-    clear_auth_credentials, clear_cover_cache, clear_lx_url_cache, create_folder, delete_folder,
-    delete_music_file, extract_palette, fetch_lyric_from_source, get_auth_base_url,
-    get_auth_credentials, get_folder_children, get_folder_first_song, get_library_album_catalog,
-    get_library_artist_catalog, get_library_folders, get_library_hierarchy,
-    get_library_song_paths_by_album, get_library_song_paths_by_artist,
-    get_library_song_paths_for_all_view, get_library_song_paths_for_folder_view,
-    get_library_songs_by_paths, get_library_songs_cached, get_lx_cover, get_sidebar_folders,
-    get_sidebar_hierarchy, get_song_cover, get_song_cover_thumbnail, get_song_detail,
-    get_song_lyrics, get_song_lyrics_for_edit, get_song_lyrics_payload, is_directory,
-    move_file_to_folder, move_music_file, parse_audio_files, parse_lyrics_text, parse_music_folder,
-    read_lyrics_file, remove_library_folder, remove_sidebar_folder, resolve_lx_music_url,
+    clear_auth_credentials, clear_cover_cache, clear_lx_all_cache, clear_lx_url_cache,
+    create_folder, delete_folder, delete_music_file, extract_palette, fetch_lyric_from_source,
+    find_alternative_lx_source, get_auth_base_url, get_auth_credentials, get_folder_children,
+    get_folder_first_song, get_library_album_catalog, get_library_artist_catalog,
+    get_library_folders, get_library_hierarchy, get_library_song_paths_by_album,
+    get_library_song_paths_by_artist, get_library_song_paths_for_all_view,
+    get_library_song_paths_for_folder_view, get_library_songs_by_paths, get_library_songs_cached,
+    get_lx_cover, get_sidebar_folders, get_sidebar_hierarchy, get_song_cover,
+    get_song_cover_thumbnail, get_song_detail, get_song_lyrics, get_song_lyrics_for_edit,
+    get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_files,
+    parse_lyrics_text, parse_music_folder, read_lyrics_file, remove_library_folder,
+    remove_sidebar_folder, resolve_lx_music_url, resolve_lx_with_quality_fallback,
     save_artist_avatar, save_auth_credentials, save_song_info, save_song_lyrics,
     scan_folder_as_playlists, scan_library, scan_music_folder, search_library_songs,
     set_auth_base_url, show_in_folder, signed_post_json,
 };
 use player::{
-    clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_current_output_device,
-    get_output_devices, get_playback_duration, get_playback_progress, get_playback_ready,
-    get_playback_start_failed, get_stream_cache_info, get_track_loudness_info, is_stream_cached,
-    pause_audio, play_audio, resume_audio, seek_audio, set_audio_output_mode,
+    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_visualizer_samples,
+    get_current_output_device, get_output_devices, get_playback_duration, get_playback_progress,
+    get_playback_ready, get_playback_session, get_playback_start_failed, get_stream_cache_info,
+    get_track_loudness_info, is_stream_cached, load_playback_session, pause_audio, play_audio,
+    resume_audio, save_playback_session, seek_audio, set_audio_output_mode,
     set_equalizer_settings, set_output_device, set_playback_speed, set_sound_effect_settings,
     set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata, wait_stream_complete,
+    update_playback_metadata, update_playback_position, wait_stream_complete,
 };
 use plugins::{
     download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
     read_plugin_file,
 };
-use recognize::{recognize_audio, recognize_system_audio};
+use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
 use remote::{
     add_remote_source, clear_remote_cache, get_remote_cache_usage, get_remote_sources,
     list_remote_directory, precache_remote_song, remove_remote_source, sync_remote_source,
@@ -78,10 +80,11 @@ use taskbar::{
 };
 use tauri::Manager;
 use toolbox::{
-    apply_rename, check_update_by_rust, download_online_song, download_update_file,
+    apply_rename, build_download_basename, check_update_by_rust, download_online_song, download_update_file,
     download_wallpaper, embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists,
     finalize_download_extras, open_external_program, preview_rename, probe_url_size,
-    read_download_history, read_state_json, refresh_folder_songs, resolve_download_path,
+    read_download_history, read_state_json, refresh_folder_songs, resolve_download_full_path,
+    resolve_download_path,
     run_installer, save_download_bytes, save_download_lyrics, set_gpu_acceleration,
     write_download_history, write_state_json,
 };
@@ -267,8 +270,9 @@ pub fn run() {
             read_plugin_file,
             proxy_image,
             download_audio_to_temp,
-            recognize_audio,
             recognize_system_audio,
+            cancel_recognize_system_audio,
+            recognize_with_pcm,
             consume_pending_open_paths,
             get_system_fonts,
             import_lyrics_font,
@@ -293,6 +297,8 @@ pub fn run() {
             embed_audio_metadata,
             fetch_image_bytes,
             resolve_download_path,
+            resolve_download_full_path,
+            build_download_basename,
             finalize_download_extras,
             run_installer,
             fetch_announcement,
@@ -303,6 +309,14 @@ pub fn run() {
             resolve_lx_music_url,
             get_lx_cover,
             clear_lx_url_cache,
+            find_alternative_lx_source,
+            resolve_lx_with_quality_fallback,
+            clear_lx_all_cache,
+            save_playback_session,
+            load_playback_session,
+            get_playback_session,
+            update_playback_position,
+            flush_playback_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

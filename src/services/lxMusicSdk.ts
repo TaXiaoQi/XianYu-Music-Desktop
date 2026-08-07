@@ -11,7 +11,7 @@ import type { LxUrlSongInfoContract } from './tauri/contracts';
 /**
  * 将 LxSearchResultItem 转换为 Rust URL 解析器所需的合约类型
  */
-function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
+export function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
   return {
     songmid: item.songmid,
     source: item.source,

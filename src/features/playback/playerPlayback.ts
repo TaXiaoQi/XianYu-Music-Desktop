@@ -3,6 +3,7 @@ import {watch} from 'vue';
 import {listen} from '@tauri-apps/api/event';
 import type {QualityKey, Song} from '../../types';
 import {playbackApi} from '../../services/tauri/playbackApi';
+import {pluginApi} from '../../services/tauri/pluginApi';
 import {usePlaybackStore} from './store';
 import {useSettingsStore} from '../settings/store';
 import {useLibraryStore} from '../library/store';
@@ -917,11 +918,7 @@ const authStore = useAuthStore();
       let actualAudioPath = audioFilePath;
       if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com'))) {
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const tempPath = await invoke<string>('download_audio_to_temp', {
-            url: audioFilePath,
-            headers: { 'Referer': 'https://www.bilibili.com' },
-          });
+          const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, { 'Referer': 'https://www.bilibili.com' });
           if (tempPath) {
             actualAudioPath = tempPath;
           }

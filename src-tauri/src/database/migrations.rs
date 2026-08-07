@@ -349,6 +349,20 @@ fn migrate_artists_columns(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_playback_session(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS playback_session (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            data TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 pub(crate) fn run_migrations(conn: &Connection) -> Result<(), String> {
     migrate_library_folders(conn)?;
     merge_legacy_sidebar_roots(conn);
@@ -358,6 +372,7 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), String> {
     migrate_play_history(conn)?;
     migrate_song_loudness(conn)?;
     migrate_artists_columns(conn)?;
+    migrate_playback_session(conn)?;
     Ok(())
 }
 

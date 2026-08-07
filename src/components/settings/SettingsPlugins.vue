@@ -2,7 +2,6 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
@@ -282,7 +281,7 @@ async function setupDragDropListeners() {
 async function installFromFilePath(filePath: string) {
   try {
     isPluginBusy.value = true;
-    const script = await invoke<string>('read_plugin_file', { path: filePath });
+    const script = await pluginApi.readPluginFile(filePath);
     if (!script || script.trim().length === 0) {
       showToast('插件文件为空', 'error');
       return;

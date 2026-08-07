@@ -5,6 +5,7 @@ pub mod covers;
 pub mod cue;
 pub mod files;
 pub mod library;
+pub mod lx_search;
 pub mod lyric_fetcher;
 pub mod lyrics;
 pub mod palette;
@@ -43,7 +44,11 @@ pub use scanner::{
     get_folder_first_song, parse_audio_files, parse_music_folder, scan_folder_as_playlists,
     scan_music_folder,
 };
-pub use url_resolver::{clear_lx_url_cache, get_lx_cover, resolve_lx_music_url};
+pub use url_resolver::{
+    clear_lx_url_cache, find_alternative_lx_source, get_lx_cover, resolve_lx_music_url,
+    resolve_lx_with_quality_fallback,
+};
+pub use lx_search::clear_lx_all_cache;
 // Deprecated compatibility exports. Keep registered for legacy data/tools only.
 pub use sidebar::{
     add_sidebar_folder, get_sidebar_folders, get_sidebar_hierarchy, remove_sidebar_folder,

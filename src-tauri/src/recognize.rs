@@ -1,7 +1,7 @@
 //! 听歌识曲模块
 //!
 //! 复现 KuGouMusicApi（qwemusic/server）中 audio_match 模块的调用逻辑：
-//! 1. 接收前端重采样后的 PCM（8000Hz / 16bit / 单声道 / s16le）二进制数据
+//! 1. WASAPI Loopback 捕获系统音频输出（10 秒），降采样为 8000Hz / 16bit / 单声道 PCM
 //! 2. 构建酷狗 Android 客户端请求参数并生成 signature 签名
 //! 3. POST 到 gateway.kugou.com 的指纹识别接口
 //! 4. 返回 JSON 响应体，由前端映射为可播放的 Song 列表
@@ -14,9 +14,15 @@
 //! 请求头（util/request.js::createRequest）：
 //!   dfid / clienttime / mid / kg-rc / kg-thash / kg-rec / kg-rf / User-Agent
 
-use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// ==================== 取消标志 ====================
+
+/// 全局取消标志：前端调用 cancel_recognize_system_audio 时置为 true，
+/// 音频捕获循环和 HTTP 请求发送前会检查此标志，实现中途取消。
+static RECOGNIZE_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 // ==================== MD5 实现 ====================
 // 标准的 MD5 算法（RFC 1321），用于生成酷狗 android 签名。
@@ -154,26 +160,14 @@ pub struct RecognizeResponse {
     pub body: String,
 }
 
-/// 听歌识曲命令（前端 PCM 上传模式）
+/// 取消正在进行的音频识别
 ///
-/// 接收前端重采样后的 PCM 二进制数据（base64 编码传输），
-/// 调用酷狗指纹识别接口 `/fingerprint.service/v1/music_trackid_mulit`，
-/// 返回 JSON 响应体字符串。
-///
-/// 前端需保证 PCM 格式为 8000Hz / 16bit / 单声道 / s16le，
-/// 与 KuGouMusicApi audio_match 模块及 qwemusic Recognize.vue 的实现保持一致。
+/// 前端在用户主动停止识别时调用此命令。后端会将全局取消标志置为 true，
+/// 正在进行的 WASAPI 捕获循环会在下一次迭代时退出并返回错误。
 #[tauri::command]
-pub async fn recognize_audio(pcm_base64: String) -> Result<RecognizeResponse, String> {
-    // 解码 base64 得到原始 PCM 字节
-    let pcm = general_purpose::STANDARD
-        .decode(pcm_base64.trim())
-        .map_err(|e| format!("PCM base64 解码失败: {}", e))?;
-
-    if pcm.is_empty() {
-        return Err("PCM 数据为空".to_string());
-    }
-
-    recognize_with_pcm(&pcm).await
+pub async fn cancel_recognize_system_audio() -> Result<(), String> {
+    RECOGNIZE_CANCELLED.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 /// 一键无感识别：直接捕获系统音频并识别（无需用户选屏幕或勾选分享音频）
@@ -181,27 +175,51 @@ pub async fn recognize_audio(pcm_base64: String) -> Result<RecognizeResponse, St
 /// 在 Rust 后端用 WASAPI Loopback 捕获系统音频输出（10 秒），
 /// 重采样为 8000Hz / 16bit / 单声道 PCM 后直接调用酷狗指纹识别接口。
 /// 整个过程对用户完全透明，前端只需调用此命令即可。
+///
+/// 调用 cancel_recognize_system_audio 可中途取消捕获。
 #[tauri::command]
 pub async fn recognize_system_audio() -> Result<RecognizeResponse, String> {
+    // 重置取消标志
+    RECOGNIZE_CANCELLED.store(false, Ordering::SeqCst);
+
     // 在阻塞线程池中捕获系统音频（WASAPI loopback 是同步阻塞 API），
     // 避免 std::thread::sleep 阻塞 tokio 异步运行时
-    let pcm = tokio::task::spawn_blocking(|| crate::system_audio::capture_system_audio_pcm(10))
-        .await
-        .map_err(|e| format!("音频捕获线程失败: {}", e))??;
+    let cancel_flag = &RECOGNIZE_CANCELLED;
+    let pcm = tokio::task::spawn_blocking(move || {
+        crate::system_audio::capture_system_audio_pcm(10, cancel_flag)
+    })
+    .await
+    .map_err(|e| format!("音频捕获线程失败: {}", e))??;
+
+    // 捕获结束后检查是否被取消
+    if RECOGNIZE_CANCELLED.load(Ordering::SeqCst) {
+        return Err("识别已取消".to_string());
+    }
 
     if pcm.is_empty() {
         return Err("未捕获到系统音频，请确认系统正在播放音乐".to_string());
     }
 
-    recognize_with_pcm(&pcm).await
+    recognize_with_pcm_internal(&pcm).await
+}
+
+/// 使用自定义 PCM 数据识别歌曲
+///
+/// 接收 8000Hz / 16bit / 单声道 PCM 字节流，直接调用酷狗指纹识别接口。
+/// 可用于从文件或其他来源提取的音频识别，不依赖 WASAPI 系统音频捕获。
+#[tauri::command]
+pub async fn recognize_with_pcm(pcm: Vec<u8>) -> Result<RecognizeResponse, String> {
+    if pcm.is_empty() {
+        return Err("PCM 数据为空".to_string());
+    }
+    recognize_with_pcm_internal(&pcm).await
 }
 
 /// 内部核心逻辑：用 PCM 数据调用酷狗指纹识别接口
 ///
 /// 构建酷狗 Android 客户端请求参数并生成 signature 签名，
 /// POST 到 gateway.kugou.com 的指纹识别接口。
-/// `recognize_audio`（前端 PCM 上传）和 `recognize_system_audio`（后端直接捕获）共享此逻辑。
-async fn recognize_with_pcm(pcm: &[u8]) -> Result<RecognizeResponse, String> {
+async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, String> {
     // 1. 构建请求参数（audio_match 模块自定义参数 + createRequest 默认参数）
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -264,6 +282,11 @@ async fn recognize_with_pcm(pcm: &[u8]) -> Result<RecognizeResponse, String> {
     insert(&mut headers, "content-type", "application/octet-stream")?;
 
     // 5. 发送 POST 请求（PCM 二进制作为 body）
+    // 检查是否已被取消（捕获阶段或手动取消）
+    if RECOGNIZE_CANCELLED.load(Ordering::SeqCst) {
+        return Err("识别已取消".to_string());
+    }
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(10))

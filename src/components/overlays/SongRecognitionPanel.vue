@@ -7,8 +7,10 @@ import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylist
 import { cacheLxSong } from '../../services/lxSongCache';
 import {
   recognizeSystemAudio,
+  cancelRecognizeSystemAudio,
   buildRecognizeSong,
   RECOGNIZE_MAX_SECONDS,
+  RECOGNIZE_CANCELLED,
   type RecognizeMatch,
 } from '../../services/recognize';
 
@@ -108,6 +110,10 @@ async function startRecognition() {
       errorMsg.value = '未识别到歌曲，请确认系统正在播放音乐';
     }
   } catch (err) {
+    // 用户主动取消时不显示错误
+    if (err instanceof Error && err.message === RECOGNIZE_CANCELLED) {
+      return;
+    }
     status.value = 'failed';
     errorMsg.value = err instanceof Error ? err.message : '识别过程出错';
     console.error('[Recognize] 识别失败:', err);
@@ -124,7 +130,9 @@ function stopRecording() {
     clearInterval(recordingTimer);
     recordingTimer = null;
   }
-  // 用户主动停止时回到 idle（后端命令仍在运行，结果会被忽略）
+  // 通知 Rust 后端取消正在进行的音频捕获
+  void cancelRecognizeSystemAudio().catch(() => { /* 忽略取消命令失败 */ });
+  // 用户主动停止时回到 idle（后端命令被取消后 Promise 会 reject）
   if (status.value === 'recording') {
     status.value = 'idle';
     recordingSeconds.value = 0;
