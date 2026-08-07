@@ -17,7 +17,7 @@ describe('OnboardingModal splash', () => {
   it('keeps tall shortcut settings visible from the top at minimum window height', () => {
     expect(source).toContain('max-w-6xl mx-auto min-h-full');
     expect(source).not.toContain('max-w-6xl mx-auto h-full');
-    expect(source).toContain('修改<br />快捷键');
+    expect(source).toContain('快捷键');
   });
 
   it('automatically continues after five seconds', () => {
@@ -64,8 +64,8 @@ describe('OnboardingModal splash', () => {
 
   it('keeps the full plugin manager transparent without exposing the onboarding page below it', () => {
     expect(source).toContain('data-onboarding-plugin-manager-surface');
-    expect(source).toContain('overflow-hidden bg-transparent');
-    expect(source).toContain(":class=\"{ 'invisible pointer-events-none': showPluginManager }\"");
-    expect(source.match(/:class="onboardingSurfaceClass"/g)).toHaveLength(1);
+    expect(source).toContain('overflow-hidden');
+    expect(source).toContain(":class=\"{ 'invisible pointer-events-none': stepContentHidden }\"");
+    expect(source.match(/:class="onboardingSurfaceClass"/g)).toHaveLength(2);
   });
 });

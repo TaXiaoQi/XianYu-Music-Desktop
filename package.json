@@ -21,8 +21,7 @@
     "release:minor": "npm version minor --no-git-tag-version --force",
     "release:major": "npm version major --no-git-tag-version --force",
     "release:set": "npm version",
-    "version:check": "node scripts/check-version.js",
-    "build:releases": "node scripts/build-releases.js"
+    "version:check": "node scripts/check-version.js"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.2.0",

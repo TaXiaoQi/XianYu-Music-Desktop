@@ -1643,7 +1643,7 @@ onUnmounted(() => {
   --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
   --desktop-font-trigger-active-shadow: none;
 
-  --desktop-font-menu-bg: rgba(17, 17, 19, 0.88);
+  --desktop-font-menu-bg: rgba(43, 43, 43, 0.88);
   --desktop-font-menu-border: rgba(255, 255, 255, 0.08);
   --desktop-font-menu-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), 0 10px 24px rgba(0, 0, 0, 0.24);
   --desktop-font-menu-header-color: rgba(255, 255, 255, 0.58);
@@ -3188,7 +3188,7 @@ html.dark {
   --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.1);
   --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
   --desktop-font-trigger-active-shadow: none;
-  --desktop-font-menu-bg: rgba(17, 17, 19, 0.88);
+  --desktop-font-menu-bg: rgba(43, 43, 43, 0.88);
   --desktop-font-menu-border: rgba(255, 255, 255, 0.08);
   --desktop-font-menu-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), 0 10px 24px rgba(0, 0, 0, 0.24);
   --desktop-font-menu-header-color: rgba(255, 255, 255, 0.58);

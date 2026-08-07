@@ -72,8 +72,8 @@ describe('startup theme bootstrap', () => {
     applyPersistedStartupTheme();
 
     expect(document.documentElement.classList.contains('dark')).toBe(true);
-    expect(document.documentElement.style.backgroundColor).toBe('#121212');
-    expect(document.body.style.backgroundColor).toBe('#121212');
+    expect(document.documentElement.style.backgroundColor).toBe('#262626');
+    expect(document.body.style.backgroundColor).toBe('#262626');
   });
 
   it('keeps light startup paint for persisted light theme', () => {
@@ -112,7 +112,7 @@ describe('startup theme bootstrap', () => {
 
     expect(matchMediaSpy).toHaveBeenCalledWith('(prefers-color-scheme: dark)');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
-    expect(document.documentElement.style.backgroundColor).toBe('#121212');
+    expect(document.documentElement.style.backgroundColor).toBe('#262626');
 
     Object.defineProperty(globalThis, 'window', {
       value: undefined,

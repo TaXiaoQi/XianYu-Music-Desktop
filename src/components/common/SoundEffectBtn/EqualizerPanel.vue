@@ -105,7 +105,7 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
   <Teleport to="body">
     <Transition name="modal-pop">
       <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" @click.self="handleClose">
-        <div class="modal-content flex h-[70vh] w-[920px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#1e1e1e]/95 dark:ring-white/10">
+        <div class="modal-content flex h-[70vh] w-[920px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#262626]/95 dark:ring-white/10">
 
           <!-- 标题栏 -->
           <div class="flex h-12 shrink-0 items-center justify-between border-b border-gray-200/70 px-5 dark:border-white/10">

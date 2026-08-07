@@ -34,6 +34,14 @@ function ensureSystemThemeListener() {
   systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
 }
 
+function refreshSystemThemeDetection() {
+  if (!systemThemeMediaQuery) {
+    ensureSystemThemeListener();
+    return;
+  }
+  systemPrefersDark.value = systemThemeMediaQuery.matches;
+}
+
 ensureSystemThemeListener();
 
 if (import.meta.hot) {
@@ -64,6 +72,9 @@ export function useThemeSettings() {
   const isDarkTheme = computed(() => resolveThemeDarkMode(theme.value));
 
   const replaceTheme = (nextTheme: ThemeSettings) => {
+    if (nextTheme.mode === 'system') {
+      refreshSystemThemeDetection();
+    }
     settingsStore.replaceTheme(nextTheme);
   };
 
@@ -72,6 +83,10 @@ export function useThemeSettings() {
   };
 
   const setThemeMode = (mode: ThemeSettings['mode']) => {
+    if (mode === 'system') {
+      refreshSystemThemeDetection();
+    }
+
     if (mode === 'custom') {
       patchTheme({
         mode,

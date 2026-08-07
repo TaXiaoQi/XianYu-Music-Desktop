@@ -1,9 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Capability for the main window — full permissions including all app commands",
+  "identifier": "auxiliary",
+  "description": "Capability for auxiliary windows (desktop-lyrics, mini-player, tray-menu, taskbar-player, volume-popover) — reduced permissions, no dangerous app commands",
   "windows": [
-    "main"
+    "desktop-lyrics",
+    "mini-player",
+    "tray-menu",
+    "taskbar-player",
+    "volume-popover"
   ],
   "permissions": [
     "core:default",
@@ -43,15 +47,8 @@
     "core:window:allow-set-theme",
     "core:window:allow-start-resize-dragging",
     "core:window:allow-outer-size",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-register-all",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all",
-    "opener:default",
-    "dialog:default",
-    "dialog:allow-confirm",
     "window-state:default",
-    "allow-app-commands",
+    "allow-aux-commands",
     {
       "identifier": "http:default",
       "allow": [

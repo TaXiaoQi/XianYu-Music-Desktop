@@ -105,7 +105,7 @@ const isAscending = () => localSortMode.value === 'added_at_asc'
   <Teleport to="body">
     <div
       v-if="showSortMenu"
-      class="fixed z-[9999] bg-white dark:bg-[#2b2b2b] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
+      class="fixed z-[9999] bg-white dark:bg-[#262626] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
       :style="sortMenuIsRightAligned
         ? { right: sortMenuX + 'px', top: sortMenuY + 'px' }
         : { left: sortMenuX + 'px', top: sortMenuY + 'px' }"

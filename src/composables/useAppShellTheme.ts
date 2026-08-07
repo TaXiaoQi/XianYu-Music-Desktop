@@ -51,7 +51,7 @@ export function useAppShellTheme({
   const mainContainerClass = computed(() => (
     theme.value.mode === 'custom' || hasWindowMaterial.value
       ? 'bg-transparent'
-      : 'bg-white/30 dark:bg-black/60'
+      : 'bg-white/30 dark:bg-[#262626]/60'
   ));
 
   const footerBlurStyle = computed(() => mainBlurStyle.value);

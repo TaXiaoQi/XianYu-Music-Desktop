@@ -53,7 +53,7 @@ const formatName = computed(() => props.result?.format === 'bakamusic' ? 'BakaMu
         class="fixed inset-0 z-[10020] flex items-center justify-center bg-black/45 p-5 backdrop-blur-[3px]"
         @click.self="emit('close')"
       >
-        <div class="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#202023]">
+        <div class="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#262626]">
           <header class="flex shrink-0 items-start justify-between border-b border-black/8 px-6 py-5 dark:border-white/8">
             <div>
               <div class="flex items-center gap-2">

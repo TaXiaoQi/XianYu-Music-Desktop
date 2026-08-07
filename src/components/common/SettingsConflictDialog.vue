@@ -566,7 +566,7 @@ function cancelAll() {
 <style>
 /* ==================== 深色模式 - 主弹窗 ==================== */
 html.dark .conflict-card {
-  background: #1f1f23;
+  background: #262626;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -628,7 +628,7 @@ html.dark .conflict-cancel:hover {
 
 /* ==================== 深色模式 - 二级确认弹窗 ==================== */
 html.dark .confirm-card {
-  background: #1f1f23;
+  background: #262626;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -709,7 +709,7 @@ html.dark .confirm-btn--ghost:hover {
 
 html.dark .confirm-btn--primary {
   background: rgba(255, 255, 255, 0.9);
-  color: #1f1f23;
+  color: #262626;
 }
 
 html.dark .confirm-btn--primary:hover {

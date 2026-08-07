@@ -464,7 +464,7 @@ onUnmounted(() => {
     @mouseleave="onMouseLeave"
   >
     <!-- 全局背景：暗色遮罩 + 模糊封面 -->
-    <div class="absolute inset-0 -z-10" style="background-color: #1a1a1a;"></div>
+    <div class="absolute inset-0 -z-10" style="background-color: #262626;"></div>
     <div
       v-if="localCoverUrl"
       class="absolute inset-0 -z-10 bg-cover bg-center opacity-60 transition-all duration-300"

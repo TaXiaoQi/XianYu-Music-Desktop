@@ -240,7 +240,7 @@ const {
   background:
     radial-gradient(circle at top center, color-mix(in srgb, var(--desktop-accent-a) 24%, transparent), transparent 42%),
     radial-gradient(circle at bottom right, color-mix(in srgb, var(--desktop-accent-c) 16%, transparent), transparent 38%),
-    linear-gradient(180deg, rgba(20, 20, 24, 0.68), rgba(12, 12, 16, 0.54));
+    linear-gradient(180deg, rgba(38, 38, 38, 0.68), rgba(31, 31, 31, 0.54));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--desktop-accent-d) 18%, transparent),
     0 22px 56px rgba(0, 0, 0, 0.18),

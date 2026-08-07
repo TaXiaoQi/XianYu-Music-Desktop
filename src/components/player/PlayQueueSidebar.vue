@@ -107,7 +107,7 @@ watch(
     <transition name="slide-right">
       <div
         v-if="showPlaylist"
-        class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#101827]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
+        class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#262626]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
         :class="[
           (theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-2xl',
           displayQueue.length > 0 ? 'bottom-24 w-[340px]' : 'bottom-5 w-[340px]'
@@ -116,7 +116,7 @@ watch(
         @click.stop
       >
         <div
-          class="px-5 py-4 border-b border-[#d9e0ea] dark:border-white/10 flex justify-between items-center bg-[#f8fafc]/95 dark:bg-[#0c1320]/95 z-10 shadow-sm"
+          class="px-5 py-4 border-b border-[#d9e0ea] dark:border-white/10 flex justify-between items-center bg-[#f8fafc]/95 dark:bg-[#262626]/95 z-10 shadow-sm"
           :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-sm']"
         >
           <div class="flex items-center gap-3">
@@ -133,7 +133,7 @@ watch(
           </button>
         </div>
 
-        <div ref="scrollContainerRef" class="flex-1 overflow-y-auto custom-scrollbar p-3 bg-[#eef3f8]/45 dark:bg-[#0b1220]/35">
+        <div ref="scrollContainerRef" class="flex-1 overflow-y-auto custom-scrollbar p-3 bg-[#eef3f8]/45 dark:bg-[#262626]/35">
           <div v-if="displayQueue.length === 0" class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20">
             <div class="w-20 h-20 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-inner">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-[#42526a] dark:text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
