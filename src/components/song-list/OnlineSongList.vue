@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
@@ -90,12 +90,14 @@ watch(sentinelRef, (el, _oldEl, onCleanup) => {
   });
 });
 
-// songs 变化时重置渲染上限（切换专辑/歌手时）
+// songs 变化时重置渲染上限（切换专辑/歌手/tab 时）
+// immediate: true 确保组件创建时立即设置正确的 renderLimit，避免首次渲染空白
 watch(() => props.songs, () => {
   renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
-});
+}, { immediate: true });
 
-onMounted(() => {
+// 额外安全网：当 songs 数组长度变化但引用未变时（原地修改），也重置渲染上限
+watch(() => props.songs.length, () => {
   renderLimit.value = Math.min(props.songs.length, getInitialRenderLimit());
 });
 
