@@ -1062,7 +1062,7 @@ async function saveUserVariables() {
       </h2>
       <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
         <!-- 启动时自动更新插件 -->
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <RefreshCw class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">启动时自动更新插件</p>
@@ -1080,7 +1080,7 @@ async function saveUserVariables() {
           </div>
         </div>
         <!-- 插件懒加载 -->
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <Puzzle class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">插件懒加载</p>
@@ -1098,7 +1098,7 @@ async function saveUserVariables() {
           </div>
         </div>
         <!-- 安装时不校验版本 -->
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/30 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="flex items-center gap-3 min-w-0">
             <FileCode2 class="h-4 w-4 text-gray-400 shrink-0" />
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-200">安装时不校验版本</p>

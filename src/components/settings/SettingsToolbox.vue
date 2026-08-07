@@ -276,7 +276,7 @@ const restart = () => {
                   ? 'border-[#EC4141] bg-[#EC4141] text-white shadow-[0_10px_24px_-16px_rgba(236,65,65,0.9)]'
                   : index === currentProgressIndex
                   ? 'border-[#EC4141]/30 bg-[#EC4141]/10 text-[#EC4141]'
-                  : 'border-gray-200/40 bg-white/20 text-slate-400 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-500'
+                  : 'border-white/10 bg-white/5 text-gray-500'
               "
             >
               <span v-if="index < currentProgressIndex">✓</span>
@@ -287,8 +287,8 @@ const restart = () => {
               class="text-center text-xs font-medium transition"
               :class="
                 index <= currentProgressIndex
-                  ? 'text-slate-800 dark:text-white'
-                  : 'text-slate-500 dark:text-white/50'
+                  ? 'text-gray-800 dark:text-white'
+                  : 'text-gray-500 dark:text-white/50'
               "
             >
               {{ step.label }}
@@ -301,7 +301,7 @@ const restart = () => {
             :class="
               index < currentProgressIndex
                 ? 'bg-[#EC4141]'
-                : 'bg-white/20 dark:bg-black/10'
+                : 'bg-white/10'
             "
           ></div>
         </template>
@@ -312,9 +312,9 @@ const restart = () => {
       v-if="currentView !== 'setup' && targetPath"
       class="px-6"
     >
-      <div class="rounded-[28px] border border-gray-200/40 bg-white/20 px-6 py-2 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
-        <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600 dark:text-white/70">
-          <span class="text-[15px] font-semibold text-slate-900 dark:text-white">当前文件夹路径</span>
+      <div class="toolbox-item px-5 py-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-white/70">
+          <span class="text-[15px] font-semibold text-gray-900 dark:text-white">当前文件夹路径</span>
           <span class="break-all">{{ targetPath }}</span>
         </div>
       </div>
@@ -324,57 +324,60 @@ const restart = () => {
       v-if="currentView === 'setup'"
       class="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(520px,3fr)]"
     >
-      <section class="space-y-4 rounded-xl border border-gray-200/40 bg-white/20 p-7 dark:border-gray-800/40 dark:bg-black/10">
-        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+      <section class="toolbox-section space-y-3">
+        <h2 class="toolbox-section-title">
+          <span class="toolbox-section-bar"></span>
           基础配置
         </h2>
 
-        <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
-          <div class="p-5 transition-colors">
+        <div class="toolbox-stack">
+          <div class="toolbox-item">
             <div class="mb-3 flex items-center justify-between gap-4">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MusicTag 路径</div>
               <div class="flex items-center gap-3">
                 <SettingHint text="用于歌曲标签写入和人工校对。" />
                 <button
+                  type="button"
+                  class="toolbox-ghost-btn"
                   @click="selectExecutable"
-                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                 >
                   选择路径
                 </button>
               </div>
             </div>
-            <div class="rounded-lg border border-dashed border-gray-200/60 bg-white/20 px-4 py-3 text-xs text-slate-500 dark:border-gray-800/40 dark:bg-black/10 dark:text-white/60">
-              <span v-if="musicTagPath" class="break-all text-slate-700 dark:text-slate-200">{{ musicTagPath }}</span>
-              <span v-else>请选择 MusicTag.exe</span>
+            <div class="toolbox-path-field">
+              <span v-if="musicTagPath" class="break-all text-gray-700 dark:text-gray-200">{{ musicTagPath }}</span>
+              <span v-else class="text-gray-500 dark:text-white/45">请选择 MusicTag.exe</span>
             </div>
           </div>
 
-          <div class="p-5 transition-colors">
+          <div class="toolbox-item">
             <div class="mb-3 flex items-center justify-between gap-4">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">目标文件夹</div>
               <div class="flex items-center gap-3">
                 <SettingHint severity="warning" text="这里决定本次要处理的整批歌曲文件。" />
                 <button
+                  type="button"
+                  class="toolbox-ghost-btn"
                   @click="selectTargetFolder"
-                  class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-xs text-gray-600 transition hover:border-[#EC4141] hover:text-[#EC4141] dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-300"
                 >
                   选择文件夹
                 </button>
               </div>
             </div>
-            <div class="rounded-lg border border-dashed border-gray-200/60 bg-white/20 px-4 py-3 text-xs text-slate-500 dark:border-gray-800/40 dark:bg-black/10 dark:text-white/60">
-              <span v-if="targetPath" class="break-all text-slate-700 dark:text-slate-200">{{ targetPath }}</span>
-              <span v-else>请选择要整理的歌曲目录</span>
+            <div class="toolbox-path-field">
+              <span v-if="targetPath" class="break-all text-gray-700 dark:text-gray-200">{{ targetPath }}</span>
+              <span v-else class="text-gray-500 dark:text-white/45">请选择要整理的歌曲目录</span>
             </div>
           </div>
         </div>
 
-        <div class="pt-4">
+        <div class="pt-2">
           <button
-            @click="startFlow"
-            :disabled="!canStart"
+            type="button"
             class="rounded-xl bg-[#EC4141] px-8 py-3 text-sm font-medium text-white shadow-[0_12px_24px_-12px_rgba(236,65,65,0.6)] transition hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="!canStart"
+            @click="startFlow"
           >
             开始流程
           </button>
@@ -382,58 +385,54 @@ const restart = () => {
       </section>
 
       <aside class="xl:sticky xl:top-6 xl:self-start">
-        <section class="rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
-            </div>
-            <div class="rounded-full border border-gray-200/40 bg-white/20 px-3 py-1 text-xs font-medium text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300">
+        <section class="toolbox-section space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="toolbox-section-title">
+              <span class="toolbox-section-bar"></span>
+              实时预览
+            </h2>
+            <div class="toolbox-chip">
               {{ setupReadyCount }}/2
             </div>
           </div>
 
-          <div class="mt-5 space-y-4">
-            <div
-              v-if="!targetPath"
-              class="rounded-2xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
-            >
-              请先在左侧选择目标文件夹，这里会显示该文件夹下所有支持的音频文件。
-            </div>
+          <div
+            v-if="!targetPath"
+            class="toolbox-panel toolbox-panel--muted text-sm text-gray-500 dark:text-white/45"
+          >
+            请先在左侧选择目标文件夹，这里会显示该文件夹下所有支持的音频文件。
+          </div>
 
-            <div
-              v-else-if="isLoadingSongs"
-              class="flex items-center justify-center gap-3 rounded-2xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
-            >
-              <svg class="h-5 w-5 animate-spin text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span>正在扫描文件夹...</span>
-            </div>
+          <div
+            v-else-if="isLoadingSongs"
+            class="toolbox-panel toolbox-panel--muted flex items-center justify-center gap-3 text-sm text-gray-500 dark:text-white/45"
+          >
+            <svg class="h-5 w-5 animate-spin text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>正在扫描文件夹...</span>
+          </div>
 
-            <div
-              v-else-if="targetFolderSongs.length === 0"
-              class="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-6 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
-            >
-              该文件夹下没有找到支持的音频文件。
-            </div>
+          <div
+            v-else-if="targetFolderSongs.length === 0"
+            class="toolbox-panel border border-amber-200/70 bg-amber-50/80 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            该文件夹下没有找到支持的音频文件。
+          </div>
 
-            <div
-              v-else
-              class="overflow-hidden rounded-2xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10"
-            >
-              <div class="flex justify-between border-b border-white/30 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/5 dark:text-white">
-                <span>歌曲预览</span>
-                <span class="text-xs font-normal text-slate-500 dark:text-slate-400">共 {{ targetFolderSongs.length }} 首</span>
-              </div>
-              <div class="max-h-[420px] overflow-y-auto">
-                <div
-                  v-for="song in targetFolderSongs"
-                  :key="song.path"
-                  class="flex items-center gap-3 border-b border-slate-100/50 px-4 py-3 text-sm last:border-b-0 dark:border-white/5"
-                >
-                  <div class="truncate text-slate-700 dark:text-slate-300">{{ getPathLeaf(song.path) }}</div>
-                </div>
+          <div v-else class="toolbox-list">
+            <div class="toolbox-list-header">
+              <span>歌曲预览</span>
+              <span class="text-xs font-normal text-gray-500 dark:text-white/45">共 {{ targetFolderSongs.length }} 首</span>
+            </div>
+            <div class="max-h-[420px] overflow-y-auto">
+              <div
+                v-for="song in targetFolderSongs"
+                :key="song.path"
+                class="toolbox-list-row"
+              >
+                <div class="truncate text-sm text-gray-700 dark:text-gray-200">{{ getPathLeaf(song.path) }}</div>
               </div>
             </div>
           </div>
@@ -451,8 +450,8 @@ const restart = () => {
     >
       <section
         :class="currentView === 'tagging'
-          ? 'max-w-[520px] rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10'
-          : 'rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10'"
+          ? 'toolbox-panel max-w-[520px] p-6'
+          : 'toolbox-panel p-6'"
       >
         <ToolboxStep1
           v-if="currentView === 'preprocess'"
@@ -493,118 +492,113 @@ const restart = () => {
         v-if="currentView !== 'tagging'"
         class="xl:sticky xl:top-6 xl:self-start"
       >
-        <section class="rounded-xl border border-gray-200/40 bg-white/20 p-6 dark:border-gray-800/40 dark:bg-black/10">
+        <section class="toolbox-section space-y-3">
           <template v-if="currentView === 'preprocess'">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
-              </div>
-              <div class="text-sm font-medium text-slate-600 dark:text-white/60">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="toolbox-section-title">
+                <span class="toolbox-section-bar"></span>
+                实时预览
+              </h2>
+              <div class="text-sm font-medium text-gray-600 dark:text-white/55">
                 已扫描 {{ preprocessDisplayItems.length }} 首歌曲，发生变化 {{ preprocessChangedCount }} 首。
               </div>
             </div>
 
-            <div class="mt-5">
-              <div class="overflow-hidden rounded-[32px] border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
-                <div class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center border-b border-gray-200/20 bg-white/20 px-6 py-4 text-sm font-semibold text-slate-900 dark:border-gray-800/20 dark:bg-black/10 dark:text-white">
-                  <span>标记</span>
-                  <span>原先的歌曲</span>
-                  <span></span>
-                  <span>修改后的歌曲</span>
-                </div>
-
-                <div
-                  v-if="preprocessPreview.isScanning || (!preprocessPreview.hasScanned && isLoadingSongs)"
-                  class="flex min-h-[360px] items-center justify-center px-6 py-8 text-sm text-slate-500 dark:text-white/60"
-                >
-                  正在自动扫描当前文件夹...
-                </div>
-
-                <div
-                  v-else-if="preprocessDisplayItems.length === 0"
-                  class="flex min-h-[360px] items-center justify-center px-6 py-8 text-sm text-slate-500 dark:text-white/60"
-                >
-                  当前文件夹中没有可显示的歌曲。
-                </div>
-
-                <div v-else class="max-h-[520px] overflow-y-auto px-3 py-3">
-                  <div
-                    v-for="item in preprocessDisplayItems"
-                    :key="`${item.originalName}-${item.newName}`"
-                    class="grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-transparent px-3 py-4 text-sm transition odd:border-gray-200/40 odd:bg-white/20 dark:odd:border-gray-800/40 dark:odd:bg-black/10"
-                  >
-                    <div class="flex items-center justify-center">
-                      <span
-                        class="text-lg leading-none"
-                        :class="item.changed ? 'text-amber-400' : 'text-slate-400 dark:text-slate-500'"
-                      >
-                        ★
-                      </span>
-                    </div>
-                    <div class="truncate font-medium text-slate-600 dark:text-white/65">{{ item.originalName }}</div>
-                    <div class="flex items-center justify-center text-sky-500 dark:text-sky-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12h14m-5-5 5 5-5 5" />
-                      </svg>
-                    </div>
-                    <div class="truncate font-semibold text-slate-900 dark:text-white">{{ item.newName }}</div>
-                  </div>
-                </div>
+            <div class="toolbox-list overflow-hidden">
+              <div class="toolbox-list-header grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3">
+                <span>标记</span>
+                <span>原先的歌曲</span>
+                <span></span>
+                <span>修改后的歌曲</span>
               </div>
 
+              <div
+                v-if="preprocessPreview.isScanning || (!preprocessPreview.hasScanned && isLoadingSongs)"
+                class="flex min-h-[360px] items-center justify-center px-6 py-8 text-sm text-gray-500 dark:text-white/45"
+              >
+                正在自动扫描当前文件夹...
+              </div>
+
+              <div
+                v-else-if="preprocessDisplayItems.length === 0"
+                class="flex min-h-[360px] items-center justify-center px-6 py-8 text-sm text-gray-500 dark:text-white/45"
+              >
+                当前文件夹中没有可显示的歌曲。
+              </div>
+
+              <div v-else class="max-h-[520px] space-y-2 overflow-y-auto p-3">
+                <div
+                  v-for="item in preprocessDisplayItems"
+                  :key="`${item.originalName}-${item.newName}`"
+                  class="toolbox-item grid grid-cols-[42px_minmax(0,1fr)_72px_minmax(0,1fr)] items-center gap-3 px-3 py-3 text-sm"
+                >
+                  <div class="flex items-center justify-center">
+                    <span
+                      class="text-lg leading-none"
+                      :class="item.changed ? 'text-amber-400' : 'text-gray-400 dark:text-white/30'"
+                    >
+                      ★
+                    </span>
+                  </div>
+                  <div class="truncate font-medium text-gray-600 dark:text-white/65">{{ item.originalName }}</div>
+                  <div class="flex items-center justify-center text-sky-500 dark:text-sky-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12h14m-5-5 5 5-5 5" />
+                    </svg>
+                  </div>
+                  <div class="truncate font-semibold text-gray-900 dark:text-white">{{ item.newName }}</div>
+                </div>
+              </div>
             </div>
           </template>
 
           <template v-else-if="currentView === 'rename'">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
-              </div>
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="toolbox-section-title">
+                <span class="toolbox-section-bar"></span>
+                实时预览
+              </h2>
               <div class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                 {{ renamePreview.items.length }} 项
               </div>
             </div>
 
-            <div class="mt-5 space-y-4">
-              <div
-                v-if="renamePreview.isScanning"
-                class="rounded-3xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
-              >
-                正在生成重命名预览，请稍候...
-              </div>
+            <div
+              v-if="renamePreview.isScanning"
+              class="toolbox-panel toolbox-panel--muted text-sm text-gray-500 dark:text-white/45"
+            >
+              正在生成重命名预览，请稍候...
+            </div>
 
-              <div
-                v-else-if="renamePreview.items.length === 0"
-                class="rounded-3xl border border-gray-200/40 bg-white/20 p-6 text-sm text-slate-500 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-400"
-              >
-                暂无可显示的重命名结果。
-              </div>
+            <div
+              v-else-if="renamePreview.items.length === 0"
+              class="toolbox-panel toolbox-panel--muted text-sm text-gray-500 dark:text-white/45"
+            >
+              暂无可显示的重命名结果。
+            </div>
 
-              <div
-                v-else
-                class="overflow-hidden rounded-3xl border border-gray-200/40 bg-white/20 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10"
-              >
-                <div class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-white/5 dark:text-white">
-                  重命名预览
-                </div>
-                <div class="max-h-[420px] overflow-y-auto">
-                  <div
-                    v-for="item in renamePreview.items"
-                    :key="`${item.originalName}-${item.newName}`"
-                    class="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm last:border-b-0 dark:border-white/5"
-                  >
-                    <div class="truncate text-slate-600 dark:text-white/60">{{ item.originalName }}</div>
-                    <div class="text-center text-slate-300">→</div>
-                    <div class="truncate font-medium text-slate-900 dark:text-white">{{ item.newName }}</div>
-                  </div>
+            <div v-else class="toolbox-list">
+              <div class="toolbox-list-header">重命名预览</div>
+              <div class="max-h-[420px] overflow-y-auto">
+                <div
+                  v-for="item in renamePreview.items"
+                  :key="`${item.originalName}-${item.newName}`"
+                  class="toolbox-list-row grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)] items-center gap-2"
+                >
+                  <div class="truncate text-sm text-gray-600 dark:text-white/60">{{ item.originalName }}</div>
+                  <div class="text-center text-gray-300 dark:text-white/30">→</div>
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ item.newName }}</div>
                 </div>
               </div>
             </div>
           </template>
 
           <template v-else-if="currentView === 'refresh'">
-            <div class="flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-slate-900 dark:text-white">实时预览</h3>
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="toolbox-section-title">
+                <span class="toolbox-section-bar"></span>
+                实时预览
+              </h2>
               <div class="flex items-center gap-3">
                 <SettingHint text="这里显示刷新进度和最终完成状态。" />
                 <div
@@ -612,7 +606,7 @@ const restart = () => {
                   :class="
                     refreshPreview.refreshed
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                      : 'border border-gray-200/40 bg-white/20 text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
+                      : 'toolbox-chip'
                   "
                 >
                   {{ refreshPreview.refreshed ? '已完成' : '待刷新' }}
@@ -620,20 +614,20 @@ const restart = () => {
               </div>
             </div>
 
-            <div class="mt-5 space-y-4">
-              <div class="rounded-3xl border border-gray-200/40 bg-white/20 p-4 shadow-sm backdrop-blur-md dark:border-gray-800/40 dark:bg-black/10">
-                <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Folder</div>
-                <div class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-white">{{ refreshPreview.targetPath || targetPath }}</div>
+            <div class="space-y-3">
+              <div class="toolbox-item p-4">
+                <div class="text-xs uppercase tracking-[0.18em] text-gray-400 dark:text-white/35">Folder</div>
+                <div class="mt-2 break-all text-sm font-medium text-gray-900 dark:text-white">{{ refreshPreview.targetPath || targetPath }}</div>
               </div>
 
               <div
-                class="rounded-3xl border p-5 text-sm"
+                class="toolbox-panel p-5 text-sm"
                 :class="
                   refreshPreview.isRefreshing
-                    ? 'border-gray-200/40 bg-white/20 text-slate-600 dark:border-gray-800/40 dark:bg-black/10 dark:text-slate-300'
+                    ? 'toolbox-panel--muted text-gray-600 dark:text-white/65'
                     : refreshPreview.refreshed
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
-                    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300'
+                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+                    : 'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300'
                 "
               >
                 <div class="font-semibold">
@@ -660,3 +654,146 @@ const restart = () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ---------- Section (顶层区块) ---------- */
+.toolbox-section {
+  padding: 16px 20px;
+}
+
+.toolbox-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary, #1f2937);
+}
+
+:root.dark .toolbox-section-title {
+  color: var(--text-primary, #e5e7eb);
+}
+
+.toolbox-section-bar {
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #ec4141;
+}
+
+/* ---------- Panel (通用面板/卡片) ---------- */
+.toolbox-panel {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toolbox-panel--muted {
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Stack (基础配置的两个输入块) ---------- */
+.toolbox-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- Item (行级条目) ---------- */
+.toolbox-item {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toolbox-item:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------- Ghost button (选择路径/文件夹) ---------- */
+.toolbox-ghost-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9ca3af);
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.toolbox-ghost-btn:hover {
+  border-color: #ec4141;
+  color: #ec4141;
+}
+
+/* ---------- Path field (路径展示) ---------- */
+.toolbox-path-field {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+}
+
+/* ---------- Chip (badge) ---------- */
+.toolbox-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary, #9ca3af);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ---------- List (歌曲预览/重命名列表) ---------- */
+.toolbox-list {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.toolbox-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary, #1f2937);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+:root.dark .toolbox-list-header {
+  color: var(--text-primary, #ffffff);
+}
+
+.toolbox-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 160ms ease;
+}
+
+.toolbox-list-row:last-child {
+  border-bottom: none;
+}
+
+.toolbox-list-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+</style>

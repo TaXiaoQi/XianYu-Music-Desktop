@@ -539,17 +539,15 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
+  text-align: left;
+  transition: background-color 160ms ease;
 }
 
 .desktop-setting-row:hover {
   background: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .desktop-setting-row {
-  border-bottom-color: rgba(255, 255, 255, 0.05);
-}
-
 :global(.dark) .desktop-setting-row:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 </style>

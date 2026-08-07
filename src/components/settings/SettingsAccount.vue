@@ -354,7 +354,7 @@ function updateAutoSyncMaxDelay(event: Event) {
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 歌单同步项 -->
-        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
             <div class="upload-copy min-w-0">
               <div class="upload-label text-gray-900 dark:text-white/90">歌单</div>
@@ -399,7 +399,7 @@ function updateAutoSyncMaxDelay(event: Event) {
         </div>
 
         <!-- 插件同步项 -->
-        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
             <div class="upload-copy min-w-0">
               <div class="upload-label text-gray-900 dark:text-white/90">插件</div>
@@ -443,7 +443,7 @@ function updateAutoSyncMaxDelay(event: Event) {
         </div>
 
         <!-- 设置同步项 -->
-        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="manual-sync-head">
             <div class="upload-copy min-w-0">
               <div class="upload-label text-gray-900 dark:text-white/90">设置</div>
@@ -500,7 +500,7 @@ function updateAutoSyncMaxDelay(event: Event) {
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 启用自动同步开关行 -->
-        <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
           <div class="upload-label text-gray-900 dark:text-white/90">启用自动同步</div>
           <div class="flex items-center gap-3">
             <SettingHint text="开启后在指定时间自动执行同步" />
@@ -520,7 +520,7 @@ function updateAutoSyncMaxDelay(event: Event) {
         <!-- 自动同步配置（启用后展开） -->
         <template v-if="settingsStore.settings.autoSync.enabled">
           <!-- 同步间隔 -->
-          <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
             <div class="text-sm font-medium text-gray-900 dark:text-white/90">同步间隔</div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
               <input
@@ -538,7 +538,7 @@ function updateAutoSyncMaxDelay(event: Event) {
           </div>
 
           <!-- 最大延迟 -->
-          <div class="flex items-center justify-between gap-4 p-4 transition hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
             <div class="text-sm font-medium text-gray-900 dark:text-white/90">最大延迟</div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/50">
               <input
