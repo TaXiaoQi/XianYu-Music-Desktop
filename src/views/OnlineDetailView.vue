@@ -480,7 +480,7 @@ async function handlePlayMfSong(song: Song) {
     if (!playableSong.cover_thumb_path) {
       void pluginGetCover(ctx.value.pluginSource, mfItem).then((cover) => {
         if (cover) playableSong.cover_thumb_path = cover;
-      }).catch(() => {});
+      }).catch(() => { /* 封面加载失败，忽略 */ });
     }
   } catch (e: any) {
     showToast(`播放失败: ${e?.message || e}`, 'error');

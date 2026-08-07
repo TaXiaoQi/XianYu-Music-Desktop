@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
 
 import { getNextWheelVolume } from '../../features/playback';
+import { clamp } from '../../utils/math';
 import {
   VOLUME_POPOVER_ACTION_EVENT,
   VOLUME_POPOVER_STATE_EVENT,
@@ -28,7 +29,7 @@ const sendAction = (action: VolumePopoverAction) => {
 };
 
 const setVolume = (nextVolume: number) => {
-  const normalizedVolume = Math.max(0, Math.min(100, Math.round(nextVolume)));
+  const normalizedVolume = clamp(Math.round(nextVolume), 0, 100);
   volume.value = normalizedVolume;
   sendAction({ type: 'set-volume', volume: normalizedVolume });
 };
@@ -40,7 +41,7 @@ const handleVolumeWheel = (event: WheelEvent) => {
 const updateVolume = (clientX: number) => {
   if (!volumeBarRef.value) return;
   const rect = volumeBarRef.value.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const percent = clamp((clientX - rect.left) / rect.width, 0, 1);
   setVolume(percent * 100);
 };
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Moon, Sun, Bell, X, Clock, Trash2, Mic } from 'lucide-vue-next';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -63,9 +63,11 @@ const handleSearchFocus = () => {
   showHistory.value = true;
 };
 
+let searchBlurTimer: ReturnType<typeof setTimeout> | null = null;
+
 const handleSearchBlur = () => {
   // 延迟关闭，以便点击历史项时能先触发
-  setTimeout(() => { showHistory.value = false; }, 200);
+  searchBlurTimer = setTimeout(() => { showHistory.value = false; searchBlurTimer = null; }, 200);
 };
 
 const handleSelectHistory = (item: string) => {
@@ -121,6 +123,13 @@ onMounted(() => {
   // 启动时尝试恢复登录态（非阻塞）
   if (!authStore.initialized) {
     void authStore.restoreSession();
+  }
+});
+
+onUnmounted(() => {
+  if (searchBlurTimer) {
+    clearTimeout(searchBlurTimer);
+    searchBlurTimer = null;
   }
 });
 </script>

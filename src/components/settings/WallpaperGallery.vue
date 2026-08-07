@@ -35,12 +35,15 @@ const downloadError = ref('');
 
 // --- 淡出动画 ---
 const isClosing = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+let uploadCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleClose = () => {
   if (isClosing.value) return;
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('close');
+    closeTimer = null;
   }, 220);
 };
 
@@ -142,11 +145,12 @@ const openUploadModal = () => {
 const closeUploadModal = () => {
   if (uploading.value || isUploadClosing.value) return;
   isUploadClosing.value = true;
-  setTimeout(() => {
+  uploadCloseTimer = setTimeout(() => {
     showUploadModal.value = false;
     isUploadClosing.value = false;
     uploadFile.value = null;
     clearUploadPreview();
+    uploadCloseTimer = null;
   }, 150);
 };
 
@@ -250,11 +254,12 @@ const doUpload = async () => {
       { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
     );
     isUploadClosing.value = true;
-    setTimeout(() => {
+    uploadCloseTimer = setTimeout(() => {
       showUploadModal.value = false;
       isUploadClosing.value = false;
       uploadFile.value = null;
       clearUploadPreview();
+      uploadCloseTimer = null;
     }, 150);
     // 切到「我的上传」并刷新
     activeTab.value = 'mine';
@@ -301,6 +306,14 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearUploadPreview();
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  if (uploadCloseTimer) {
+    clearTimeout(uploadCloseTimer);
+    uploadCloseTimer = null;
+  }
 });
 </script>
 

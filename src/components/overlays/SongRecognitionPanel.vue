@@ -51,13 +51,16 @@ const statusText = computed(() => {
 });
 
 // ==================== 关闭逻辑（带退出动画） ====================
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
 function handleClose() {
   if (isClosing.value) return;
   // 录音/识别中不允许关闭
   if (status.value === 'recording' || status.value === 'recognizing') return;
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('close');
+    closeTimer = null;
   }, ANIM_DURATION);
 }
 
@@ -203,6 +206,10 @@ onMounted(() => {
 onUnmounted(() => {
   stopRecording();
   document.removeEventListener('keydown', handleKeydown);
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
 });
 </script>
 

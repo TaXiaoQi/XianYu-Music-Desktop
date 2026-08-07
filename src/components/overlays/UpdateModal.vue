@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import type { ServerUpdateInfo } from '../../utils/update';
 import type { DownloadProgressData } from '../../composables/useUpdateCheck';
 import { APP_VERSION } from '../../../version';
@@ -15,14 +15,23 @@ const emit = defineEmits(['close', 'download']);
 
 // --- 淡出动画 ---
 const isClosing = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleClose = () => {
   if (isClosing.value) return;
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('close');
+    closeTimer = null;
   }, 220);
 };
+
+onUnmounted(() => {
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+});
 
 const formatBytes = (bytes: number) => {
   if (!bytes || bytes <= 0) return '0 MB';

@@ -24,12 +24,13 @@ use lofty::tag::{ItemKey, ItemValue, Tag, TagItem};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{Emitter, State};
 use uuid::Uuid;
 
 use super::utils::normalize_path;
+use crate::security::path_validator;
 
 #[derive(Serialize)]
 pub struct MovedMusicFilePath {
@@ -635,16 +636,20 @@ pub fn batch_move_music_files(
     target_folder: String,
     db_state: State<'_, DbState>,
 ) -> Result<BatchMoveMusicFilesResult, CommandError> {
-    let target = Path::new(&target_folder);
-    let mut moved_paths: Vec<(String, String)> = Vec::new();
-    if !target.exists() || !target.is_dir() {
+    let validated_target = path_validator::validate_path(&target_folder, None)
+        .map_err(|e| CommandError::new("INVALID_PATH", &e))?;
+    if !validated_target.exists() || !validated_target.is_dir() {
         return Err(CommandError::new("TARGET_NOT_FOUND", "目标文件夹不存在"));
     }
+    let mut moved_paths: Vec<(String, String)> = Vec::new();
     for path_str in paths {
-        let src = Path::new(&path_str);
-        if let Some(file_name) = src.file_name() {
-            let dest = target.join(file_name);
-            if fs::rename(src, &dest).is_ok() {
+        let validated_src = match path_validator::validate_path(&path_str, None) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if let Some(file_name) = validated_src.file_name() {
+            let dest = validated_target.join(file_name);
+            if fs::rename(&validated_src, &dest).is_ok() {
                 moved_paths.push((
                     normalize_path(&path_str),
                     normalize_path(&dest.to_string_lossy()),
@@ -675,88 +680,75 @@ pub fn move_music_file(
     new_path: String,
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let src = Path::new(&old_path);
-    let dest = Path::new(&new_path);
-    if !src.exists() {
+    let validated_src = path_validator::validate_path(&old_path, None)?;
+    let validated_dest = path_validator::validate_path(&new_path, None)?;
+    if !validated_src.exists() {
         return Err("源文件不存在".to_string());
     }
-    if let Some(parent) = dest.parent() {
+    if let Some(parent) = validated_dest.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
     }
-    fs::rename(src, dest).map_err(|e| e.to_string())?;
+    fs::rename(&validated_src, &validated_dest).map_err(|e| e.to_string())?;
     let normalized_old_path = normalize_path(&old_path);
-    let normalized_new_path = normalize_path(&dest.to_string_lossy());
+    let normalized_new_path = normalize_path(&validated_dest.to_string_lossy());
     let mut conn = db_state.conn.lock().map_err(|e| e.to_string())?;
     sync_moved_song_paths(&mut conn, &[(normalized_old_path, normalized_new_path)])?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn show_in_folder(path: String) {
+pub fn show_in_folder(path: String) -> Result<(), String> {
+    let validated = path_validator::validate_path(&path, None)?;
+    let path_str = validated.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]
     {
         Command::new("explorer")
-            .args(["/select,", &path])
+            .args(["/select,", &path_str])
             .spawn()
-            .unwrap_or_else(|_| {
-                println!("Failed");
-                child_dummy()
-            });
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
-            .args(["-R", &path])
+            .args(["-R", &path_str])
             .spawn()
-            .unwrap_or_else(|_| {
-                println!("Failed");
-                child_dummy()
-            });
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
     #[cfg(target_os = "linux")]
     {
-        if let Some(parent) = std::path::Path::new(&path).parent() {
-            Command::new("xdg-open").arg(parent).spawn().ok();
+        if let Some(parent) = validated.parent() {
+            Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
         }
     }
-}
-
-#[cfg(any(target_os = "windows", target_os = "macos"))]
-fn child_dummy() -> std::process::Child {
-    Command::new("true").spawn().unwrap()
+    Ok(())
 }
 
 #[tauri::command]
 pub fn delete_music_file(path: String) -> Result<(), String> {
-    fs::remove_file(path).map_err(|e| e.to_string())
+    let validated_path = path_validator::validate_path(&path, None)?;
+    fs::remove_file(validated_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_folder(path: String) -> Result<(), String> {
-    fs::remove_dir_all(path).map_err(|e| e.to_string())
+    let validated_path = path_validator::validate_path(&path, None)?;
+    fs::remove_dir_all(validated_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn create_folder(parent_path: String, folder_name: String) -> Result<String, String> {
-    let trimmed_name = folder_name.trim();
-    if trimmed_name.is_empty() {
-        return Err("Folder name cannot be empty".to_string());
-    }
-
-    let mut components = Path::new(trimmed_name).components();
-    match (components.next(), components.next()) {
-        (Some(Component::Normal(_)), None) => {}
-        _ => return Err("Folder name contains invalid path characters".to_string()),
-    }
-
-    let parent = Path::new(&parent_path);
-    if !parent.exists() || !parent.is_dir() {
+    let sanitized_name = path_validator::sanitize_filename_component(folder_name.trim())?;
+    let validated_parent = path_validator::validate_path(&parent_path, None)?;
+    if !validated_parent.exists() || !validated_parent.is_dir() {
         return Err("Parent folder does not exist".to_string());
     }
 
-    let new_folder_path = parent.join(trimmed_name);
+    let new_folder_path = validated_parent.join(&sanitized_name);
     if new_folder_path.exists() {
         return Err("Folder already exists".to_string());
     }

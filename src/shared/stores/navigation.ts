@@ -66,7 +66,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     try {
       localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(val));
     } catch { /* ignore */ }
-  }, { deep: true });
+  });
 
   return {
     currentViewMode,

@@ -367,7 +367,7 @@ onMounted(() => {
 :global(.dark) .startup-composition-mask {
   background:
     radial-gradient(circle at 18% 14%, rgba(236, 65, 65, 0.10), transparent 30%),
-    linear-gradient(135deg, #262626 0%, #2b2b2b 54%, #232323 100%);
+    linear-gradient(135deg, #262626 0%, #2b2b2b 54%, #262626 100%);
 }
 
 .startup-composition-mask__grain {

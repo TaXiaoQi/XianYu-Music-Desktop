@@ -6,8 +6,21 @@ use regex::Regex;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 const MAX_GROUP_TOLERANCE_MS: u32 = 50;
+
+// ==================== Regex caches (module-level, compiled once) ====================
+static XML_TAG_RE: OnceLock<Regex> = OnceLock::new();
+static TTML_PARAGRAPH_RE: OnceLock<Regex> = OnceLock::new();
+static TTML_BEGIN_RE: OnceLock<Regex> = OnceLock::new();
+static TTML_END_RE: OnceLock<Regex> = OnceLock::new();
+static TTML_SPAN_RE: OnceLock<Regex> = OnceLock::new();
+static TTML_ROLE_RE: OnceLock<Regex> = OnceLock::new();
+static CONTRACTION_RE: OnceLock<Regex> = OnceLock::new();
+static ENGLISH_DIGRAPH_RE: OnceLock<Regex> = OnceLock::new();
+static ENGLISH_CONSONANT_RE: OnceLock<Regex> = OnceLock::new();
+static ROMANIZATION_RE: OnceLock<Regex> = OnceLock::new();
 const MAX_GROUP_SIZE: usize = 3;
 const ALIGNMENT_HIGH_WINDOW_MS: u32 = 300;
 const ALIGNMENT_MEDIUM_WINDOW_MS: u32 = 800;
@@ -993,16 +1006,16 @@ fn parse_plain_lrc_line(line: &str, source_index: usize) -> Vec<ParsedLine> {
 }
 
 fn strip_xml_tags(raw: &str) -> String {
-    let re = Regex::new(r"(?s)<[^>]+>").expect("valid tag regex");
+    let re = XML_TAG_RE.get_or_init(|| Regex::new(r"(?s)<[^>]+>").unwrap());
     sanitize_line_text(&re.replace_all(raw, "").to_string())
 }
 
 fn parse_ttml(raw: &str) -> Vec<ParsedLine> {
-    let paragraph_re = Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).expect("valid paragraph regex");
-    let begin_re = Regex::new(r#"(?i)\bbegin="([^"]+)""#).expect("valid begin regex");
-    let end_re = Regex::new(r#"(?i)\bend="([^"]+)""#).expect("valid end regex");
-    let span_re = Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).expect("valid span regex");
-    let role_re = Regex::new(r#"(?i)\bttm:role="([^"]+)""#).expect("valid role regex");
+    let paragraph_re = TTML_PARAGRAPH_RE.get_or_init(|| Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).unwrap());
+    let begin_re = TTML_BEGIN_RE.get_or_init(|| Regex::new(r#"(?i)\bbegin="([^"]+)""#).unwrap());
+    let end_re = TTML_END_RE.get_or_init(|| Regex::new(r#"(?i)\bend="([^"]+)""#).unwrap());
+    let span_re = TTML_SPAN_RE.get_or_init(|| Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).unwrap());
+    let role_re = TTML_ROLE_RE.get_or_init(|| Regex::new(r#"(?i)\bttm:role="([^"]+)""#).unwrap());
 
     let mut lines = Vec::new();
 
@@ -1462,7 +1475,14 @@ fn group_candidate_lines(lines: &[LyricTrackLine]) -> Vec<Vec<LyricTrackLine>> {
             continue;
         }
 
-        let current_group = groups.last_mut().expect("group exists");
+        let current_group = match groups.last_mut() {
+            Some(g) => g,
+            None => {
+                groups.push(vec![line.clone()]);
+                group_start_index = index;
+                continue;
+            }
+        };
         if current_group.len() >= MAX_GROUP_SIZE {
             groups.push(vec![line.clone()]);
             group_start_index = index;
@@ -1659,9 +1679,10 @@ fn build_tracks(groups: Vec<Vec<LyricTrackLine>>) -> Vec<LyricTrack> {
                 continue;
             }
 
-            let track = tracks
-                .get_mut(best_track_index.expect("track index exists"))
-                .expect("track exists");
+            let track = match best_track_index.and_then(|idx| tracks.get_mut(idx)) {
+                Some(t) => t,
+                None => continue,
+            };
             let mut line = candidate.clone();
             line.cluster_index = Some(cluster_index);
             line.slot_index = Some(slot_index);
@@ -1812,8 +1833,8 @@ fn looks_like_non_romaji_english_latin_text(text: &str) -> bool {
         .filter(|token| english_hint_words.contains(&token.as_str()))
         .count();
 
-    if Regex::new(r"(?i)\b(i'm|you're|we're|it's|i'll|don't|can't)\b")
-        .expect("valid contraction regex")
+    if CONTRACTION_RE
+        .get_or_init(|| Regex::new(r"(?i)\b(i'm|you're|we're|it's|i'll|don't|can't)\b").unwrap())
         .is_match(text)
     {
         return true;
@@ -1823,15 +1844,15 @@ fn looks_like_non_romaji_english_latin_text(text: &str) -> bool {
         return true;
     }
 
-    if Regex::new(r"(th|gh|ph|wh|ck|ee|oo)")
-        .expect("valid english digraph regex")
+    if ENGLISH_DIGRAPH_RE
+        .get_or_init(|| Regex::new(r"(th|gh|ph|wh|ck|ee|oo)").unwrap())
         .is_match(&lower)
     {
         return romanization < 0.52 || hint_matches > 0;
     }
 
-    if Regex::new(r"(str|scr|dr|st|mp?t)")
-        .expect("valid english consonant cluster regex")
+    if ENGLISH_CONSONANT_RE
+        .get_or_init(|| Regex::new(r"(str|scr|dr|st|mp?t)").unwrap())
         .is_match(&lower)
     {
         return romanization < 0.52 || hint_matches > 0;
@@ -1869,8 +1890,8 @@ fn score_englishness(text: &str) -> f64 {
         .iter()
         .filter(|token| english_hint_words.contains(&token.as_str()))
         .count() as f64;
-    let contraction_bonus = if Regex::new(r"(?i)\b(i'm|you're|we're|it's|i'll|don't|can't)\b")
-        .expect("valid contraction regex")
+    let contraction_bonus = if CONTRACTION_RE
+        .get_or_init(|| Regex::new(r"(?i)\b(i'm|you're|we're|it's|i'll|don't|can't)\b").unwrap())
         .is_match(text)
     {
         0.15
@@ -1892,10 +1913,9 @@ fn score_romanized_latin_text(text: &str) -> f64 {
         return 0.0;
     }
 
-    let roman_re = Regex::new(
+    let roman_re = ROMANIZATION_RE.get_or_init(|| Regex::new(
         r"(?i)(shi|chi|tsu?|kyo|ryo|ryu|nya|hya|gya|sha|sya|jya|ja|yeo|gye|sarang|geudae|uri|nani|kimo|kimi|watashi|boku|anata|kara|made|desu|xiang|zh|ch|sh|ang|eng|ing|ong|iao|ian|uan|uang|yuan|yin|ying|xin|meng)",
-    )
-    .expect("valid romanization regex");
+    ).unwrap());
     let roman_pattern_ratio = tokens
         .iter()
         .filter(|token| roman_re.is_match(token))
@@ -2745,7 +2765,7 @@ fn build_semantic_line_from_orphan_group(
     main_track: &LyricTrack,
     group: &[(usize, usize, LyricTrackLine)],
 ) -> SemanticLine {
-    let (main_track_index, _main_line_index, main_line) = group
+    let main_candidate = group
         .iter()
         .max_by(|left, right| {
             score_cluster_main_candidate(
@@ -2764,8 +2784,24 @@ fn build_semantic_line_from_orphan_group(
             ))
             .unwrap_or(Ordering::Equal)
         })
-        .cloned()
-        .expect("orphan group is non-empty");
+        .cloned();
+
+    let (main_track_index, _main_line_index, main_line) = match main_candidate {
+        Some(v) => v,
+        None => {
+            return SemanticLine {
+                start_ms: 0,
+                end_ms: 0,
+                main_text: String::new(),
+                main_words: None,
+                translation_text: None,
+                roman_text: None,
+                roman_words: None,
+                secondary_texts: None,
+                confidence: ClassificationConfidence::Heuristic,
+            }
+        }
+    };
 
     let mut semantic_line = SemanticLine {
         start_ms: main_line.start_ms,

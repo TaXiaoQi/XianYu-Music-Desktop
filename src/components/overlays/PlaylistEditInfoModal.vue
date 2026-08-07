@@ -180,12 +180,15 @@ const handleRemoveCover = () => {
   coverPreviewUrl.value = '';
 };
 
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
 const handleClose = () => {
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('cancel');
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
@@ -196,13 +199,14 @@ const canConfirm = computed(() => nameInput.value.trim().length > 0 && (hasNameC
 const handleConfirm = () => {
   if (!nameInput.value.trim() || !canConfirm.value) return;
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('confirm', {
       name: nameInput.value.trim(),
       coverPath: coverPath.value,
     });
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
@@ -220,7 +224,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 };
 
 onMounted(() => window.addEventListener('keydown', handleKeydown));
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+});
 </script>
 
 <template>

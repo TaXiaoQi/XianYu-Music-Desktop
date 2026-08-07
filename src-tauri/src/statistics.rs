@@ -2376,13 +2376,14 @@ pub fn clear_recent_history(db: State<DbState>) -> Result<(), String> {
 /// 记录一次播放事件（通过 song_path 查找 song_id）
 #[tauri::command]
 pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(), String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let mut conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // 规范化路径，确保与数据库中的路径格式一致
     let normalized_path = normalize_path(&payload.song_path);
 
     // 通过 path 查找 song_id（本地歌曲在 songs 表中可找到，在线歌曲找不到）
-    let song_id: Option<i64> = conn
+    let song_id: Option<i64> = tx
         .query_row(
             "SELECT id FROM songs WHERE path = ?1",
             [&normalized_path],
@@ -2400,7 +2401,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
     // 定时刷写只累计时长；同一次实际播放仅保留一条 event='play' 记录。
     let count_as_play = payload.count_as_play.unwrap_or(true);
     let history_event = if count_as_play { "play" } else { "play_time" };
-    conn.execute(
+    tx.execute(
         "INSERT INTO play_history (song_path, song_id, played_at, played_seconds, event) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![&normalized_path, song_id, now, played_seconds, history_event],
     )
@@ -2417,7 +2418,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
     );
     let (is_full_play, is_skip) = derive_play_flags(payload.listened_ms, payload.duration_ms);
     record_aggregate_play(
-        &conn,
+        &tx,
         &identity,
         now,
         payload.listened_ms,
@@ -2426,7 +2427,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
         count_as_play,
     )?;
 
-    Ok(())
+    tx.commit().map_err(|e| e.to_string())
 }
 
 /// 行为统计结果

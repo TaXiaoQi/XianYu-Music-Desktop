@@ -23,6 +23,7 @@ import {
   type SettingsSearchItem,
   type SettingsTabId,
 } from '../features/settings/searchIndex';
+import { clamp } from '../utils/math';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
@@ -61,7 +62,7 @@ const loadInitialSidebarWidth = (): number => {
     if (saved) {
       const parsed = Number.parseInt(saved, 10);
       if (!Number.isNaN(parsed)) {
-        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
+        return clamp(parsed, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
       }
     }
   } catch {}
@@ -87,7 +88,7 @@ const startSidebarResize = (e: PointerEvent) => {
 const handleSidebarResizeMove = (e: PointerEvent) => {
   if (!isResizingSidebar.value) return;
   const deltaX = e.clientX - dragStartX;
-  const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, dragStartWidth + deltaX));
+  const nextWidth = clamp(dragStartWidth + deltaX, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
   sidebarWidth.value = nextWidth;
 };
 

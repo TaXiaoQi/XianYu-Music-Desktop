@@ -495,11 +495,16 @@ watch(
   { immediate: true },
 );
 
+let miniModeResizeTimer: ReturnType<typeof setTimeout> | null = null;
+
 watch(isMiniMode, async (mini, prevMini) => {
   if (prevMini && !mini) {
     await nextTick();
     updateContainerSize();
-    setTimeout(updateContainerSize, 100);
+    miniModeResizeTimer = setTimeout(() => {
+      updateContainerSize();
+      miniModeResizeTimer = null;
+    }, 100);
   }
 });
 
@@ -514,6 +519,10 @@ onBeforeUnmount(() => {
   clearFlowEnterAnimationFrame();
   fullCoverRequestId += 1;
   preblurRequestId += 1;
+  if (miniModeResizeTimer) {
+    clearTimeout(miniModeResizeTimer);
+    miniModeResizeTimer = null;
+  }
 });
 
 const staticMaskClass = computed(() => {
