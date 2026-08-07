@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, type PluginUserVariable } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable } from '../../services/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -32,8 +32,15 @@ function togglePluginSetting(key: 'autoUpdateOnStartup' | 'lazyLoad' | 'skipVers
 onMounted(async () => {
   await loadPlugins(pluginSettings.value.lazyLoad);
   plugins.value = getStoredPlugins();
+  // 异步加载用户变量徽标（不阻塞页面渲染）
+  void refreshUserVarBadges();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
+});
+
+// 插件列表变更时刷新用户变量徽标
+watch(pluginsVersion, () => {
+  void refreshUserVarBadges();
 });
 
 onUnmounted(() => {
@@ -88,15 +95,19 @@ const filteredPlugins = computed(() => {
 });
 
 // 缓存有用户变量定义的插件 ID 集合（用于卡片上显示徽标）
-const pluginsWithUserVars = computed(() => {
-  const set = new Set<string>();
-  for (const p of plugins.value) {
-    if (getPluginUserVariables(p.id).length > 0) {
-      set.add(p.id);
-    }
+// 异步加载：懒加载模式下插件未初始化时需要触发加载才能获取 userVariables 定义
+const pluginsWithUserVars = ref<Set<string>>(new Set());
+let badgeRefreshInProgress = false;
+
+async function refreshUserVarBadges() {
+  if (badgeRefreshInProgress) return;
+  badgeRefreshInProgress = true;
+  try {
+    pluginsWithUserVars.value = await refreshUserVariableBadges();
+  } finally {
+    badgeRefreshInProgress = false;
   }
-  return set;
-});
+}
 
 // ==================== 拖拽排序（基于 pointer 事件）====================
 // 不用 HTML5 drag & drop：Tauri 的 WebView2 默认接管拖放（dragDropEnabled），
@@ -756,10 +767,11 @@ const detailPlugin = ref<PluginSource | null>(null);
 const detailUserVariables = ref<PluginUserVariable[]>([]);
 const detailUserVarValues = ref<Record<string, string>>({});
 const savingUserVars = ref(false);
+const loadingUserVars = ref(false);
 
-function openPluginDetail(plugin: PluginSource) {
+async function openPluginDetail(plugin: PluginSource) {
   detailPlugin.value = plugin;
-  // 加载用户变量定义和已存储的值
+  // 先用已缓存的定义快速渲染（可能为空，懒加载模式下尚未加载）
   detailUserVariables.value = getPluginUserVariables(plugin.id);
   detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
   // 对未设置值的变量填充默认值
@@ -768,12 +780,35 @@ function openPluginDetail(plugin: PluginSource) {
       detailUserVarValues.value[v.name] = v.defaultValue;
     }
   }
+
+  // 缓存未命中时异步加载插件以获取完整 userVariables 定义
+  // 典型场景：QQ音乐L2 等插件首次打开详情时需触发加载才能显示密钥输入框
+  if (detailUserVariables.value.length === 0 && plugin.format === 'musicfree') {
+    loadingUserVars.value = true;
+    try {
+      const vars = await ensurePluginUserVariables(plugin);
+      if (vars.length > 0) {
+        detailUserVariables.value = vars;
+        detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
+        for (const v of vars) {
+          if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
+            detailUserVarValues.value[v.name] = v.defaultValue;
+          }
+        }
+      }
+    } catch {
+      // 加载失败不阻塞详情面板
+    } finally {
+      loadingUserVars.value = false;
+    }
+  }
 }
 
 function closePluginDetail() {
   detailPlugin.value = null;
   detailUserVariables.value = [];
   detailUserVarValues.value = {};
+  loadingUserVars.value = false;
 }
 
 async function copyPluginLink() {
@@ -1535,12 +1570,18 @@ async function saveUserVariables() {
             </div>
 
             <!-- 用户变量区域 -->
-            <div v-if="detailUserVariables.length > 0" class="plugin-detail-user-vars">
+            <div v-if="detailUserVariables.length > 0 || loadingUserVars" class="plugin-detail-user-vars">
               <div class="plugin-detail-user-vars-header">
                 <KeyRound class="h-4 w-4 text-[#EC4141] shrink-0" />
                 <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">用户变量</span>
                 <span class="text-xs text-gray-400 dark:text-white/40">插件运行所需的自定义参数</span>
               </div>
+              <!-- 加载中提示（懒加载模式下首次打开详情时触发插件加载） -->
+              <div v-if="loadingUserVars" class="flex items-center gap-2 py-3 px-1">
+                <RefreshCw class="h-3.5 w-3.5 animate-spin text-gray-400" />
+                <span class="text-xs text-gray-400 dark:text-white/40">正在加载插件用户变量...</span>
+              </div>
+              <template v-else>
               <div class="plugin-detail-user-vars-body">
                 <div
                   v-for="v in detailUserVariables"
@@ -1592,6 +1633,7 @@ async function saveUserVariables() {
                   {{ savingUserVars ? '保存中...' : '保存并重载插件' }}
                 </button>
               </div>
+              </template>
             </div>
           </div>
         </div>

@@ -1,15 +1,27 @@
 //! 播放会话状态管理
 //!
-//! 将播放队列、当前歌曲、进度、播放模式等权威状态从 Pinia/localStorage 迁移到 Rust。
-//! Rust 作为单一事实源（single source of truth），通过 SQLite 持久化 + 内存缓存 +
-//! `playback:session-changed` 事件广播，实现多窗口一致性和状态安全。
+//! 将播放队列、当前歌曲、进度、播放模式等状态持久化到 Rust + SQLite，
+//! 实现跨重启恢复和多窗口共享。
 //!
-//! 架构：
-//! - 主窗口通过 `save_playback_session` 写入完整会话状态（切歌/队列变更时调用）
-//! - 主窗口通过 `update_playback_position` 高频更新进度（仅内存，不写 SQLite）
-//! - 主窗口通过 `flush_playback_session` 定时/退出时强制持久化
-//! - 副窗口（迷你播放器/桌面歌词/任务栏）通过 `get_playback_session` 读取当前状态
-//! - 所有窗口监听 `playback:session-changed` 事件获取实时更新
+//! 架构定位（务实组合，非纯单一事实源）：
+//! - **运行时播放编排权威**在前端（playerPlayback.ts / playbackCore）：
+//!   音频解码、进度推进、切歌逻辑、UI 响应均由 JS 侧驱动。
+//! - **持久化与多窗口共享权威**在 Rust（本模块）：
+//!   会话状态写入 SQLite，副窗口通过 `get_playback_session` / 事件获取。
+//! - 两者通过 `save_playback_session`（前端 → Rust）和
+//!   `playback:session-changed` 事件（Rust → 所有窗口）保持同步。
+//! - ⚠️ 不要在 Rust 侧修改会话的播放逻辑（如切歌、进度跳转），
+//!   Rust 仅负责存储和分发，不做播放决策。
+//!
+//! 广播分频道策略：
+//! - `playback:session-changed`：轻量载荷（不含 queueSongMeta），切歌/模式变更时广播
+//! - `playback:queue-meta-changed`：重量载荷（仅 queueSongMeta），仅在元数据变化时广播
+//! - 避免每次切歌都序列化/传输可能很大的 queueSongMeta（在线歌多时可达数百 KB）
+//!
+//! 锁顺序约定：**inner → DB**
+//! `update_playback_position` 和 `flush_playback_session` 在持有 `inner` 锁时
+//! 调用 `persist_to_db_internal`（获取 DB 锁）。当前无反向调用链（持 DB 锁时回调
+//! session），但若未来新增此类路径将导致死锁。新增 DB 操作时勿在持锁期间回调 session。
 
 use crate::database::DbState;
 use serde::{Deserialize, Serialize};
@@ -19,6 +31,8 @@ use std::time::{Instant, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
 const SESSION_CHANGED_EVENT: &str = "playback:session-changed";
+/// queueSongMeta 变更时独立广播（仅在元数据实际变化时发射）
+const QUEUE_META_CHANGED_EVENT: &str = "playback:queue-meta-changed";
 /// 进度持久化防抖间隔：避免每秒写 SQLite
 const POSITION_PERSIST_INTERVAL_MS: u128 = 5000;
 
@@ -102,6 +116,9 @@ impl PlaybackSessionState {
     }
 
     /// 将当前内存状态持久化到 SQLite
+    ///
+    /// ⚠️ 锁顺序约定：调用方若持有 `inner` 锁，则在此处获取 DB 锁（inner → DB）。
+    /// 切勿在持有 DB 锁时回调 session（获取 inner 锁），否则将死锁。
     fn persist_to_db_internal(
         data: &PlaybackSessionData,
         db_state: &DbState,
@@ -131,7 +148,9 @@ impl Default for PlaybackSessionState {
 
 /// 保存完整播放会话状态（主窗口切歌/队列变更时调用）
 ///
-/// 写入内存 + SQLite + 广播事件给所有窗口
+/// 写入内存 + SQLite + 分频道广播：
+/// - `playback:session-changed`：轻量载荷（不含 queueSongMeta），每次都广播
+/// - `playback:queue-meta-changed`：仅 queueSongMeta，仅在元数据变化时广播
 #[tauri::command]
 pub async fn save_playback_session(
     session: PlaybackSessionData,
@@ -146,13 +165,15 @@ pub async fn save_playback_session(
     let mut session = session;
     session.updated_at = now;
 
-    // 更新内存状态
-    {
+    // 更新内存状态，同时检测 queueSongMeta 是否变化
+    let meta_changed = {
         let mut inner = state.inner.lock().map_err(|e| e.to_string())?;
+        let changed = inner.queue_song_meta != session.queue_song_meta;
         *inner = session.clone();
-    }
+        changed
+    };
 
-    // 持久化到 SQLite
+    // 持久化到 SQLite（inner 锁已释放，不违反锁顺序）
     PlaybackSessionState::persist_to_db_internal(&session, &db_state)?;
 
     // 重置进度持久化防抖计时器
@@ -161,8 +182,15 @@ pub async fn save_playback_session(
         *last = Instant::now();
     }
 
-    // 广播事件给所有窗口
-    let _ = app.emit(SESSION_CHANGED_EVENT, &session);
+    // 分频道广播：轻量 session-changed（不含 queueSongMeta）
+    let mut lightweight = session.clone();
+    lightweight.queue_song_meta = HashMap::new();
+    let _ = app.emit(SESSION_CHANGED_EVENT, &lightweight);
+
+    // 重量 queue-meta-changed（仅元数据变化时发射）
+    if meta_changed {
+        let _ = app.emit(QUEUE_META_CHANGED_EVENT, &session.queue_song_meta);
+    }
 
     Ok(())
 }
@@ -195,6 +223,7 @@ pub async fn update_playback_position(
     };
 
     if should_persist {
+        // ⚠️ 持有 inner 锁时获取 DB 锁（锁顺序: inner → DB）
         let inner = state.inner.lock().map_err(|e| e.to_string())?;
         PlaybackSessionState::persist_to_db_internal(&inner, &db_state)?;
     }
@@ -203,6 +232,8 @@ pub async fn update_playback_position(
 }
 
 /// 强制将内存状态持久化到 SQLite（定时刷新或应用退出时调用）
+///
+/// ⚠️ 持有 inner 锁时获取 DB 锁（锁顺序: inner → DB）
 #[tauri::command]
 pub async fn flush_playback_session(
     db_state: tauri::State<'_, DbState>,
@@ -229,7 +260,7 @@ pub fn get_playback_session(
 
 /// 从 SQLite 加载播放会话状态（主窗口启动恢复时调用）
 ///
-/// 加载到内存并返回数据，同时广播事件
+/// 加载到内存并返回数据，同时分频道广播给所有窗口
 #[tauri::command]
 pub async fn load_playback_session(
     app: AppHandle,
@@ -239,7 +270,183 @@ pub async fn load_playback_session(
     state.load_from_db(&db_state)?;
     let inner = state.inner.lock().map_err(|e| e.to_string())?;
     let data = inner.clone();
-    // 广播给所有窗口（包括主窗口的其他 webview）
-    let _ = app.emit(SESSION_CHANGED_EVENT, &data);
+
+    // 分频道广播：轻量 session-changed（不含 queueSongMeta）
+    let mut lightweight = data.clone();
+    lightweight.queue_song_meta = HashMap::new();
+    let _ = app.emit(SESSION_CHANGED_EVENT, &lightweight);
+
+    // 重量 queue-meta-changed（有元数据时发射）
+    if !data.queue_song_meta.is_empty() {
+        let _ = app.emit(QUEUE_META_CHANGED_EVENT, &data.queue_song_meta);
+    }
+
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_values() {
+        let data = PlaybackSessionData::default();
+        assert!(data.current_song_path.is_none());
+        assert!(data.play_queue_paths.is_empty());
+        assert!(data.source_song_paths.is_empty());
+        assert_eq!(data.play_mode, 0);
+        assert_eq!(data.volume, 0.0);
+        assert_eq!(data.current_position_secs, 0.0);
+        assert!(!data.is_playing);
+        assert!(data.session_quality_override.is_none());
+        assert!(data.queue_song_meta.is_empty());
+        assert_eq!(data.updated_at, 0);
+    }
+
+    #[test]
+    fn test_camel_case_serialization() {
+        let mut data = PlaybackSessionData::default();
+        data.current_song_path = Some("/music/song.flac".into());
+        data.play_queue_paths = vec!["/music/song.flac".into()];
+        data.source_song_paths = vec!["/music/song.flac".into()];
+        data.play_mode = 2;
+        data.volume = 75.0;
+        data.current_position_secs = 42.5;
+        data.is_playing = true;
+        data.session_quality_override = Some("flac".into());
+        data.updated_at = 1700000000000;
+
+        let json = serde_json::to_string(&data).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // 验证 camelCase 映射
+        assert_eq!(v["currentSongPath"], "/music/song.flac");
+        assert_eq!(v["playQueuePaths"][0], "/music/song.flac");
+        assert_eq!(v["sourceSongPaths"][0], "/music/song.flac");
+        assert_eq!(v["playMode"], 2);
+        assert_eq!(v["volume"], 75.0);
+        assert_eq!(v["currentPositionSecs"], 42.5);
+        assert_eq!(v["isPlaying"], true);
+        assert_eq!(v["sessionQualityOverride"], "flac");
+        assert_eq!(v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+        assert_eq!(v["updatedAt"], 1700000000000_i64);
+
+        // 确认 snake_case 字段名不出现在 JSON 中
+        assert!(v.get("current_song_path").is_none());
+        assert!(v.get("play_queue_paths").is_none());
+        assert!(v.get("current_position_secs").is_none());
+    }
+
+    #[test]
+    fn test_round_trip_serialization() {
+        let mut data = PlaybackSessionData::default();
+        data.current_song_path = Some("remote://song1".into());
+        data.play_queue_paths = vec!["remote://song1".into(), "remote://song2".into()];
+        data.play_mode = 3;
+        data.volume = 50.0;
+        data.current_position_secs = 120.0;
+        data.is_playing = true;
+        data.session_quality_override = Some("320k".into());
+
+        // 填充 queueSongMeta
+        let song_meta = serde_json::json!({
+            "title": "Test Song",
+            "artist": "Test Artist",
+            "duration": 180
+        });
+        data.queue_song_meta.insert("remote://song1".into(), song_meta.clone());
+
+        // 序列化 → 反序列化
+        let json = serde_json::to_string(&data).unwrap();
+        let restored: PlaybackSessionData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.current_song_path, data.current_song_path);
+        assert_eq!(restored.play_queue_paths, data.play_queue_paths);
+        assert_eq!(restored.play_mode, data.play_mode);
+        assert_eq!(restored.volume, data.volume);
+        assert_eq!(restored.current_position_secs, data.current_position_secs);
+        assert_eq!(restored.is_playing, data.is_playing);
+        assert_eq!(restored.session_quality_override, data.session_quality_override);
+        assert_eq!(restored.queue_song_meta.len(), 1);
+        assert_eq!(restored.queue_song_meta["remote://song1"], song_meta);
+    }
+
+    #[test]
+    fn test_queue_song_meta_empty_serialization() {
+        let data = PlaybackSessionData::default();
+        let json = serde_json::to_string(&data).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // 空 HashMap 序列化为空对象
+        assert_eq!(v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+
+        let restored: PlaybackSessionData = serde_json::from_str(&json).unwrap();
+        assert!(restored.queue_song_meta.is_empty());
+    }
+
+    #[test]
+    fn test_queue_song_meta_multiple_entries() {
+        let mut data = PlaybackSessionData::default();
+        for i in 0..5 {
+            let path = format!("remote://song{}", i);
+            let meta = serde_json::json!({
+                "title": format!("Song {}", i),
+                "artist": "Artist",
+                "duration": i * 60
+            });
+            data.queue_song_meta.insert(path, meta);
+        }
+
+        let json = serde_json::to_string(&data).unwrap();
+        let restored: PlaybackSessionData = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.queue_song_meta.len(), 5);
+        assert_eq!(restored.queue_song_meta["remote://song3"]["title"], "Song 3");
+    }
+
+    #[test]
+    fn test_playback_session_state_new() {
+        let state = PlaybackSessionState::new();
+        let inner = state.inner.lock().unwrap();
+        assert!(inner.current_song_path.is_none());
+        assert!(inner.play_queue_paths.is_empty());
+    }
+
+    #[test]
+    fn test_lightweight_clone_omits_meta() {
+        // 模拟 save_playback_session 中的轻量广播逻辑
+        let mut data = PlaybackSessionData::default();
+        data.queue_song_meta.insert("path1".into(), serde_json::json!({"title": "A"}));
+
+        let mut lightweight = data.clone();
+        lightweight.queue_song_meta = HashMap::new();
+
+        let full_json = serde_json::to_string(&data).unwrap();
+        let light_json = serde_json::to_string(&lightweight).unwrap();
+
+        let full_size = full_json.len();
+        let light_size = light_json.len();
+
+        // 轻量版本应该更小（不含元数据）
+        assert!(light_size < full_size);
+        // 轻量版本的 queueSongMeta 应为空
+        let light_v: serde_json::Value = serde_json::from_str(&light_json).unwrap();
+        assert_eq!(light_v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+    }
+
+    #[test]
+    fn test_meta_change_detection() {
+        // 验证 HashMap 比较能正确检测 queueSongMeta 变化
+        let mut meta1: HashMap<String, serde_json::Value> = HashMap::new();
+        meta1.insert("path1".into(), serde_json::json!({"title": "A"}));
+
+        let mut meta2 = meta1.clone();
+        assert!(!(meta1 != meta2)); // 相同 → 不应触发广播
+
+        meta2.insert("path2".into(), serde_json::json!({"title": "B"}));
+        assert!(meta1 != meta2); // 不同 → 应触发广播
+
+        // 修改已有 key 的值也应检测到变化
+        let mut meta3 = meta1.clone();
+        meta3.insert("path1".into(), serde_json::json!({"title": "Changed"}));
+        assert!(meta1 != meta3);
+    }
 }

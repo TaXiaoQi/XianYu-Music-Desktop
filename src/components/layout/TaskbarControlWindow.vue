@@ -21,7 +21,7 @@ import { writeSavedPositionX, type TaskbarTrayGeometry } from '../../composables
 import { windowApi } from '../../services/tauri/windowApi';
 import type { Song } from '../../types';
 import { clamp } from '../../utils/math';
-import { sessionApi, type PlaybackSessionChangedPayload } from '../../services/tauri/sessionApi';
+import { sessionApi, type PlaybackSessionChangedPayload, type PlaybackQueueMetaChangedPayload } from '../../services/tauri/sessionApi';
 
 const appWindow = getCurrentWindow();
 
@@ -167,6 +167,8 @@ let unlistenState: (() => void) | null = null;
 let unlistenVisibility: (() => void) | null = null;
 let unlistenMoved: (() => void) | null = null;
 let unlistenSessionChanged: (() => void) | null = null;
+let unlistenQueueMetaChanged: (() => void) | null = null;
+let cachedQueueMeta: Record<string, Song> = {};
 
 const sendAction = (actionType: 'prev-song' | 'next-song' | 'toggle-play' | 'close') => {
   void emitTo<TaskbarPlayerAction>('main', TASKBAR_PLAYER_ACTION_EVENT, { type: actionType });
@@ -238,6 +240,8 @@ onMounted(async () => {
       if (songMeta) {
         currentSong.value = songMeta;
       }
+      // 缓存 queueSongMeta 供后续 session-changed 事件使用
+      cachedQueueMeta = session.queueSongMeta ?? {};
     }
   } catch { /* ignore - emitTo will provide full state */ }
 
@@ -248,11 +252,19 @@ onMounted(async () => {
       const data = event.payload;
       isPlaying.value = data.isPlaying;
       if (!currentSong.value && data.currentSongPath) {
-        const songMeta = data.queueSongMeta?.[data.currentSongPath];
+        const songMeta = cachedQueueMeta[data.currentSongPath];
         if (songMeta) {
           currentSong.value = songMeta;
         }
       }
+    },
+  );
+
+  // 监听 queueSongMeta 变更（仅在元数据变化时发射）
+  unlistenQueueMetaChanged = await listen<PlaybackQueueMetaChangedPayload>(
+    'playback:queue-meta-changed',
+    (event) => {
+      cachedQueueMeta = event.payload;
     },
   );
 
@@ -266,6 +278,7 @@ onUnmounted(() => {
   unlistenVisibility?.();
   unlistenMoved?.();
   unlistenSessionChanged?.();
+  unlistenQueueMetaChanged?.();
   if (dragSafetyTimer) clearTimeout(dragSafetyTimer);
   cleanupDragListeners?.();
   if (dragFrame !== 0) {

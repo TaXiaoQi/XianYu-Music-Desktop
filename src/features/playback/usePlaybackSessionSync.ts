@@ -2,14 +2,25 @@
  * 播放会话同步 composable
  *
  * 将播放状态（队列、当前歌曲、进度、模式、音量）同步到 Rust 后端，
- * 使 Rust 成为播放会话的单一事实源（single source of truth）。
+ * 由 Rust 负责持久化（SQLite）和多窗口共享。
+ *
+ * 架构定位（务实组合，非纯单一事实源）：
+ * - 运行时播放编排权威在前端（playerPlayback.ts / playbackCore）
+ * - 持久化与多窗口共享权威在 Rust（session.rs）
+ * - 前端通过 savePlaybackSession 写入，副窗口通过事件 + getPlaybackSession 读取
+ *
+ * 广播分频道：
+ * - `playback:session-changed`：轻量载荷（不含 queueSongMeta），每次切歌/模式变更广播
+ * - `playback:queue-meta-changed`：仅 queueSongMeta，仅在元数据变化时广播
+ * - 副窗口若需要 queueSongMeta，需额外监听 `playback:queue-meta-changed` 事件
  *
  * 主窗口：watch 状态变化 → 调用 sessionApi.savePlaybackSession（防抖）
  *         进度变化 → 调用 sessionApi.updatePlaybackPosition（节流）
  *         退出/定时 → 调用 sessionApi.flushPlaybackSession
  *
- * 副窗口：启动时调用 sessionApi.getPlaybackSession 获取初始状态
- *         监听 playback:session-changed 事件获取实时更新
+ * 副窗口：启动时调用 sessionApi.getPlaybackSession 获取初始状态（含完整 queueSongMeta）
+ *         监听 playback:session-changed 事件获取轻量实时更新
+ *         监听 playback:queue-meta-changed 事件获取 queueSongMeta 变更
  */
 
 import { listen } from '@tauri-apps/api/event';

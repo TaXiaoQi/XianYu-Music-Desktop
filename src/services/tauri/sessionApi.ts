@@ -1,11 +1,20 @@
 /**
  * 播放会话 API — 与 Rust `src-tauri/src/player/session.rs` 一一对应
  *
- * Rust 作为播放会话的单一事实源（single source of truth），前端通过此服务
- * 读写会话状态，替代原先的 Pinia + localStorage 方案。
+ * 架构定位（务实组合，非纯单一事实源）：
+ * - 运行时播放编排权威在前端（playerPlayback.ts / playbackCore）：
+ *   音频解码、进度推进、切歌逻辑、UI 响应均由 JS 侧驱动。
+ * - 持久化与多窗口共享权威在 Rust（session.rs）：
+ *   会话状态写入 SQLite，副窗口通过 getPlaybackSession / 事件获取。
+ * - 不要在 Rust 侧修改播放逻辑，Rust 仅负责存储和分发。
+ *
+ * 广播分频道：
+ * - `playback:session-changed`：轻量载荷（不含 queueSongMeta），每次切歌/模式变更广播
+ * - `playback:queue-meta-changed`：仅 queueSongMeta，仅在元数据变化时广播
  *
  * - 主窗口：切歌/队列变更时调用 `savePlaybackSession`，进度变化时调用 `updatePlaybackPosition`
- * - 副窗口：启动时调用 `getPlaybackSession` 获取当前状态，监听 `playback:session-changed` 事件获取更新
+ * - 副窗口：启动时调用 `getPlaybackSession` 获取当前状态（含完整 queueSongMeta），
+ *   运行时监听 `playback:session-changed` + `playback:queue-meta-changed` 获取更新
  * - 应用退出/定时：调用 `flushPlaybackSession` 强制持久化
  */
 
@@ -27,8 +36,11 @@ export interface PlaybackSessionData {
   updatedAt: number;
 }
 
-/** `playback:session-changed` 事件载荷类型 */
+/** `playback:session-changed` 事件载荷类型（轻量，不含 queueSongMeta） */
 export type PlaybackSessionChangedPayload = PlaybackSessionData;
+
+/** `playback:queue-meta-changed` 事件载荷类型（仅 queueSongMeta） */
+export type PlaybackQueueMetaChangedPayload = Record<string, Song>;
 
 /** 构建 PlaybackSessionData（从 Pinia store 状态提取） */
 export function buildSessionData(params: {

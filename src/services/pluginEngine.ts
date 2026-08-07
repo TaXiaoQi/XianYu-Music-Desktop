@@ -459,6 +459,14 @@ if (!_globalThis.__pluginInstanceErrors) {
 }
 const pluginInstanceErrors: Map<string, string> = _globalThis.__pluginInstanceErrors;
 
+// [用户变量定义缓存] 独立于完整插件实例缓存，用于在懒加载模式下
+// 不初始化完整插件即可获取 userVariables 定义（如 QQ音乐L2 的密钥配置）。
+// key = pluginId (SHA-256 hash), value = userVariables 数组
+if (!_globalThis.__userVarDefsCache) {
+  _globalThis.__userVarDefsCache = new Map<string, PluginUserVariable[]>();
+}
+const userVarDefsCache: Map<string, PluginUserVariable[]> = _globalThis.__userVarDefsCache;
+
 // ==================== 插件加载（与 MusicFree Plugin.mountPlugin() 完全一致）====================
 
 export async function loadPluginFromScript(
@@ -610,6 +618,11 @@ export async function loadPluginFromScript(
 
 // 缓存实例
 pluginInstances.set(hash, { source, instance: _instance, script });
+
+// 同步缓存用户变量定义（独立于完整实例缓存，供懒加载模式下 UI 读取）
+if (_instance.userVariables) {
+  userVarDefsCache.set(hash, _instance.userVariables);
+}
 
     log(`=== 插件加载成功: "${platform}" (version=${version}) ===`);
     return source;
@@ -1585,11 +1598,88 @@ export function removePluginUserVariableValues(pluginId: string) {
 
 /**
  * 获取插件实例定义的用户变量列表（用于 UI 渲染输入表单）。
- * 需要插件已加载到实例缓存中，否则返回空数组。
+ * 优先从完整实例缓存读取，其次从轻量 userVarDefsCache 读取，
+ * 两者均未命中时返回空数组（需调用 ensurePluginUserVariables 异步加载）。
  */
 export function getPluginUserVariables(pluginId: string): PluginUserVariable[] {
   const inst = pluginInstances.get(pluginId);
-  return inst?.instance?.userVariables ?? [];
+  if (inst?.instance?.userVariables) return inst.instance.userVariables;
+  return userVarDefsCache.get(pluginId) ?? [];
+}
+
+/**
+ * 异步确保插件用户变量定义已加载。
+ * 懒加载模式下插件可能尚未初始化，此函数会触发 ensurePluginInstance 完成加载，
+ * 然后从实例中提取 userVariables 并缓存到 userVarDefsCache。
+ * 
+ * 典型场景：QQ音乐L2 等插件需要用户配置密钥（cookie/token）才能播放，
+ * 用户在设置页打开插件详情时调用此函数获取变量定义以渲染输入表单。
+ */
+export async function ensurePluginUserVariables(source: PluginSource): Promise<PluginUserVariable[]> {
+  // 1. 优先从已有缓存读取（无需加载插件）
+  const cached = userVarDefsCache.get(source.id);
+  if (cached) return cached;
+
+  const inst = pluginInstances.get(source.id);
+  if (inst?.instance?.userVariables) {
+    userVarDefsCache.set(source.id, inst.instance.userVariables);
+    return inst.instance.userVariables;
+  }
+
+  // 2. 缓存未命中，触发完整加载
+  const loaded = await ensurePluginInstance(source);
+  if (loaded?.instance?.userVariables) {
+    userVarDefsCache.set(source.id, loaded.instance.userVariables);
+    return loaded.instance.userVariables;
+  }
+
+  return [];
+}
+
+/**
+ * 异步刷新所有已存储插件的 userVariables 定义缓存。
+ * 用于设置页初始化时显示"变量"徽标——仅加载尚未缓存的插件，已缓存则跳过。
+ * 返回有用户变量定义的插件 ID 集合。
+ */
+export async function refreshUserVariableBadges(): Promise<Set<string>> {
+  const allPlugins = getStoredPlugins();
+  const result = new Set<string>();
+
+  await Promise.allSettled(allPlugins.map(async (source) => {
+    // 跳过 LX 插件（LX 协议无 userVariables 概念）
+    if (source.format === 'lx') return;
+
+    // 优先读缓存
+    const cached = userVarDefsCache.get(source.id);
+    if (cached && cached.length > 0) {
+      result.add(source.id);
+      return;
+    }
+
+    // 已在实例缓存中
+    const inst = pluginInstances.get(source.id);
+    if (inst?.instance?.userVariables && inst.instance.userVariables.length > 0) {
+      userVarDefsCache.set(source.id, inst.instance.userVariables);
+      result.add(source.id);
+      return;
+    }
+
+    // 未缓存：异步加载（仅 MusicFree 格式，不限制 enabled 状态——
+    // 禁用的插件也应能检测到用户变量定义，供用户在详情面板中配置）
+    if (source.format === 'musicfree') {
+      try {
+        const loaded = await ensurePluginInstance(source);
+        if (loaded?.instance?.userVariables && loaded.instance.userVariables.length > 0) {
+          userVarDefsCache.set(source.id, loaded.instance.userVariables);
+          result.add(source.id);
+        }
+      } catch {
+        // 加载失败不阻塞其他插件
+      }
+    }
+  }));
+
+  return result;
 }
 
 /**
@@ -1598,6 +1688,8 @@ export function getPluginUserVariables(pluginId: string): PluginUserVariable[] {
  */
 export function reloadPluginInstance(pluginId: string) {
   pluginInstances.delete(pluginId);
+  // 不清除 userVarDefsCache：用户变量定义不因值变更而改变，
+  // 重新加载后 ensurePluginInstance 会自动刷新缓存
   bumpPluginsVersion();
 }
 
@@ -1662,6 +1754,7 @@ export function removePluginSource(id: string) {
   const stored = readPluginsFromLocalStorage().filter(p => p.id !== id);
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
   pluginInstances.delete(id);
+  userVarDefsCache.delete(id);
   removePluginUserVariableValues(id);
   // [修复防御]: LX 插件删除时也要销毁 iframe
   destroyLxPlugin(id);
