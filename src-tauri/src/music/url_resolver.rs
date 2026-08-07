@@ -116,7 +116,6 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn http_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
             .build()
             .expect("failed to build url_resolver reqwest client")
     })

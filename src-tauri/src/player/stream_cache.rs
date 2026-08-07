@@ -436,7 +436,6 @@ fn download_thread(
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
-        .danger_accept_invalid_certs(true)
         .gzip(true)
         .brotli(true)
         .deflate(true)

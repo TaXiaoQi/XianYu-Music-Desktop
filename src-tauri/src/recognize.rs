@@ -288,7 +288,6 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
     }
 
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()

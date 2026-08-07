@@ -689,7 +689,6 @@ async fn http_fetch_text(
     body: Option<&str>,
 ) -> Result<HttpResponse, String> {
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| e.to_string())?;
 

@@ -35,10 +35,9 @@ fn canonicalize_path_or_parent(path: &Path) -> Result<PathBuf, String> {
 
 fn contains_symlink_component(path: &Path) -> bool {
     for ancestor in path.ancestors() {
-        if ancestor.exists()
-            && std::fs::symlink_metadata(ancestor)
-                .map(|metadata| metadata_is_symlink_or_reparse_point(&metadata))
-                .unwrap_or(false)
+        if std::fs::symlink_metadata(ancestor)
+            .map(|metadata| metadata_is_symlink_or_reparse_point(&metadata))
+            .unwrap_or(false)
         {
             return true;
         }
@@ -52,11 +51,11 @@ fn contains_symlink_component(path: &Path) -> bool {
 /// - Rejects paths containing `..` components
 /// - Canonicalizes the path (resolves symlinks) when possible
 /// - Checks the canonical path starts with one of the allowed roots
-/// - If no allowed_roots provided, falls back to checking it doesn't escape via `..`
+/// - If no allowed_roots provided, rejects symlink/reparse-point components after basic traversal checks
 ///
 /// # Arguments
 /// * `input` - The raw path string from IPC
-/// * `allowed_roots` - Optional list of allowed root directories. If None, only basic traversal checks are done.
+/// * `allowed_roots` - Optional list of allowed root directories. If None, symlink components are still rejected.
 ///
 /// # Returns
 /// * `Ok(PathBuf)` - The validated, canonicalized path
@@ -87,11 +86,7 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
         // Check the canonical path starts with one of the allowed roots
         let mut found = false;
         for root in roots {
-            let canonical_root = if root.exists() {
-                root.canonicalize().unwrap_or_else(|_| root.clone())
-            } else {
-                root.clone()
-            };
+            let canonical_root = canonicalize_path_or_parent(root)?;
             if canonical.starts_with(&canonical_root) {
                 found = true;
                 break;
@@ -138,6 +133,11 @@ pub fn sanitize_filename_component(name: &str) -> Result<String, String> {
         return Err("文件名不能为空".to_string());
     }
 
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("文件名不能为空".to_string());
+    }
+
     // Reject any path separators
     if name.contains('/') || name.contains('\\') {
         return Err(format!("文件名不能包含路径分隔符: {}", name));
@@ -151,6 +151,48 @@ pub fn sanitize_filename_component(name: &str) -> Result<String, String> {
     // Check for null bytes
     if name.contains('\0') {
         return Err("文件名包含非法字符".to_string());
+    }
+
+    if name
+        .chars()
+        .any(|ch| matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+    {
+        return Err(format!("文件名包含 Windows 不支持的字符: {}", name));
+    }
+
+    let stem_upper = trimmed
+        .trim_end_matches(|ch| ch == ' ' || ch == '.')
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved = matches!(
+        stem_upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    );
+    if reserved {
+        return Err(format!("文件名为 Windows 保留名称: {}", name));
     }
 
     // Check length
@@ -274,15 +316,35 @@ mod tests {
     }
 
     #[test]
+    fn test_sanitize_filename_rejects_windows_reserved_names() {
+        assert!(sanitize_filename_component("CON").is_err());
+        assert!(sanitize_filename_component("aux.txt").is_err());
+        assert!(sanitize_filename_component("LPT1.log").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_filename_rejects_windows_invalid_chars() {
+        assert!(sanitize_filename_component("foo:bar").is_err());
+        assert!(sanitize_filename_component("foo*bar").is_err());
+    }
+
+    #[test]
     fn test_validate_path_in_dir_rejects_outside() {
-        // Use temp dir as allowed root
-        let temp = env::temp_dir();
-        let outside = temp.parent().unwrap_or(&temp);
-        let _result = validate_path_in_dir(&outside.join("secret.txt").to_string_lossy(), &temp);
-        // This might fail because canonical path of parent might still be under temp's parent
-        // The key test is that a path clearly outside temp is rejected
-        // Since temp's parent contains temp, this specific test might pass or fail depending on setup
-        // Let's test with a path that's definitely outside
+        let base =
+            env::temp_dir().join(format!("xy_path_validator_outside_{}", std::process::id()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        fs::remove_dir_all(&base).ok();
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let outside_file = outside.join("secret.txt");
+        fs::write(&outside_file, "secret").unwrap();
+
+        let result = validate_path_in_dir(&outside_file.to_string_lossy(), &allowed);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("不在允许的目录范围内"));
+
+        fs::remove_dir_all(&base).ok();
     }
 
     #[test]

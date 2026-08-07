@@ -41,8 +41,6 @@
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-opener": "^2.5.4",
-    "@types/crypto-js": "^4.2.2",
-    "@types/he": "^1.2.3",
     "axios": "^1.18.1",
     "big-integer": "^1.6.52",
     "blueimp-md5": "^2.19.0",
@@ -67,6 +65,8 @@
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.11.4",
     "@types/blueimp-md5": "^2.18.2",
+    "@types/crypto-js": "^4.2.2",
+    "@types/he": "^1.2.3",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.4.23",
@@ -83,5 +83,8 @@
     "vite-plugin-wasm": "^3.5.0",
     "vitest": "^4.1.0",
     "vue-tsc": "^2.1.10"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

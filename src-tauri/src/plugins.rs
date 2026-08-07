@@ -36,7 +36,6 @@ pub async fn plugin_http_request(
     let redirect_limit = follow.unwrap_or(10);
     let timeout_secs = timeout.unwrap_or(30);
     let client_builder = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
         .gzip(true)
         .brotli(true)
@@ -118,7 +117,6 @@ pub async fn plugin_http_request_binary(
     let redirect_limit = follow.unwrap_or(10);
     let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
         .timeout(request_timeout)
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -212,7 +210,6 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(15))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
@@ -274,7 +271,6 @@ pub async fn download_audio_to_temp(
     headers: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(60))
         .gzip(true)
         .brotli(true)
