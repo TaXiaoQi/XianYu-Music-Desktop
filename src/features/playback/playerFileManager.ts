@@ -270,10 +270,28 @@ export const createPlayerFileManager = ({
       folderPath,
       settingsStore.settings.libraryMinDurationSeconds,
     );
-    const removedPaths = canonicalSongs.value
-      .filter(song => isSongInFolderScope(folderPath, song.path))
+    const oldSongsInScope = canonicalSongs.value.filter(song =>
+      isSongInFolderScope(folderPath, song.path),
+    );
+    const removedPaths = oldSongsInScope
       .map(song => song.path)
       .filter(path => !newSongs.some(song => song.path === path));
+
+    // Detect if anything actually changed to skip expensive state mutations
+    const oldPathSet = new Set(oldSongsInScope.map(song => song.path));
+    const hasChanges =
+      removedPaths.length > 0 ||
+      newSongs.length !== oldSongsInScope.length ||
+      newSongs.some(song => !oldPathSet.has(song.path));
+
+    if (!hasChanges) {
+      return {
+        removedCount: 0,
+        removedPaths: [],
+        hasChanges: false,
+      };
+    }
+
     const keepSong = (song: Song) => !isSongInFolderScope(folderPath, song.path);
 
     sourceSongs.value = [...sourceSongs.value.filter(keepSong), ...newSongs];
@@ -300,6 +318,7 @@ export const createPlayerFileManager = ({
     return {
       removedCount: removedPaths.length,
       removedPaths,
+      hasChanges: true,
     };
   };
 

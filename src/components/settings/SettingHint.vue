@@ -1,5 +1,16 @@
+<script lang="ts">
+import type { InjectionKey } from 'vue';
+
+/**
+ * Injection key for overriding the tooltip z-index.
+ * Used by parent containers (e.g. onboarding modal) that create high-z-index
+ * stacking contexts, so the teleported tooltip isn't hidden behind them.
+ */
+export const SETTING_HINT_Z_INDEX: InjectionKey<number | undefined> = Symbol('setting-hint-z-index');
+</script>
+
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue';
 import { CircleAlert } from 'lucide-vue-next';
 
 defineOptions({ inheritAttrs: false });
@@ -13,11 +24,21 @@ const props = withDefaults(defineProps<{
   severity: 'info',
 });
 
+const injectedZIndex = inject(SETTING_HINT_Z_INDEX, undefined);
+
 const tooltipId = `setting-hint-${useId()}`;
 const triggerRef = ref<HTMLElement | null>(null);
 const tooltipRef = ref<HTMLElement | null>(null);
 const isVisible = ref(false);
 const tooltipStyle = ref<Record<string, string>>({});
+
+const mergedTooltipStyle = computed<Record<string, string>>(() => {
+  const style: Record<string, string> = { ...tooltipStyle.value };
+  if (injectedZIndex !== undefined) {
+    style.zIndex = String(injectedZIndex);
+  }
+  return style;
+});
 
 function updatePosition() {
   const trigger = triggerRef.value;
@@ -26,12 +47,13 @@ function updatePosition() {
   const viewportPadding = 12;
   const gap = 8;
   const rect = trigger.getBoundingClientRect();
-  const tooltipWidth = Math.min(300, window.innerWidth - viewportPadding * 2);
   const tooltipHeight = tooltipRef.value?.offsetHeight ?? 0;
+  // Read actual rendered width (content-based via width: fit-content + max-width in CSS)
+  const tooltipWidth = tooltipRef.value?.offsetWidth ?? 0;
   const centeredLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
   const left = Math.min(
     Math.max(centeredLeft, viewportPadding),
-    window.innerWidth - tooltipWidth - viewportPadding,
+    Math.max(viewportPadding, window.innerWidth - tooltipWidth - viewportPadding),
   );
   const fitsBelow = rect.bottom + gap + tooltipHeight <= window.innerHeight - viewportPadding;
   const top = fitsBelow || tooltipHeight === 0
@@ -41,7 +63,6 @@ function updatePosition() {
   tooltipStyle.value = {
     left: `${left}px`,
     top: `${top}px`,
-    width: `${tooltipWidth}px`,
   };
 }
 
@@ -101,7 +122,7 @@ onBeforeUnmount(() => {
         ref="tooltipRef"
         class="setting-hint-popover"
         role="tooltip"
-        :style="tooltipStyle"
+        :style="mergedTooltipStyle"
       >
         {{ props.text }}
       </span>
@@ -127,10 +148,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.22);
 }
 
-:global(.dark) .setting-hint {
-  color: #9ca3af;
-}
-
 .setting-hint--warning {
   color: #f59e0b;
 }
@@ -139,31 +156,23 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
 }
 
-:global(.dark) .setting-hint--warning {
-  color: #fcd34d;
-}
-
 .setting-hint-popover {
   position: fixed;
   z-index: 300;
   pointer-events: none;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  width: fit-content;
+  max-width: min(300px, calc(100vw - 24px));
+  border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+  background: rgb(255, 255, 255);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.24);
   color: rgb(31 41 55);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.55;
   padding: 10px 12px;
   white-space: normal;
-}
-
-:global(.dark) .setting-hint-popover {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(31, 31, 31, 0.96);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-  color: rgba(255, 255, 255, 0.92);
 }
 
 .setting-hint-popover-enter-active,
@@ -175,5 +184,18 @@ onBeforeUnmount(() => {
 .setting-hint-popover-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+</style>
+
+<style>
+html.dark .setting-hint--warning {
+  color: #fcd34d;
+}
+
+html.dark .setting-hint-popover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgb(31, 31, 31);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.48);
+  color: rgba(255, 255, 255, 0.92);
 }
 </style>

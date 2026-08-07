@@ -104,13 +104,21 @@ const stopCapture = () => {
   capturingTarget.value = null;
 };
 
+const stepContentHidden = ref(false);
+
 const openPluginManager = () => {
   pluginManagerVisited.value = true;
+  stepContentHidden.value = true;
   showPluginManager.value = true;
 };
 
 const closePluginManager = () => {
   showPluginManager.value = false;
+  // stepContentHidden is reset in @after-leave to keep step content hidden during the leave transition
+};
+
+const onPluginManagerClosed = () => {
+  stepContentHidden.value = false;
 };
 
 const restoreDefaultShortcuts = () => {
@@ -264,7 +272,7 @@ const handleCustomThemeClick = () => {
 
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
 const authMode = ref<AuthMode>('login');
-const authForm = ref({ username: '', email: '', password: '', code: '' });
+const authForm = ref({ username: '', email: '', password: '', confirmPassword: '', code: '' });
 const authLoading = ref(false);
 const codeLoading = ref(false);
 const authMessage = ref('');
@@ -279,12 +287,13 @@ const authSubtitle = computed(() =>
     : '注册需要邮箱验证码，之后即可登录使用。',
 );
 const authHeaderLabel = computed(() =>
-  authMode.value === 'login' ? '登录账号' : '注册账号',
+  authMode.value === 'login' ? '账号' : '注册账号',
 );
 
 const switchAuthMode = (m: AuthMode) => {
   authMode.value = m;
   authMessage.value = '';
+  authForm.value.confirmPassword = '';
 };
 
 const showAuthMessage = (text: string, tone: 'error' | 'success' = 'error') => {
@@ -315,6 +324,10 @@ const handleSendCode = async () => {
 };
 
 const handleAuthSubmit = async () => {
+  if (authMode.value === 'register' && authForm.value.password !== authForm.value.confirmPassword) {
+    showAuthMessage('两次输入的密码不一致');
+    return;
+  }
   authLoading.value = true;
   authMessage.value = '';
   try {
@@ -329,7 +342,7 @@ const handleAuthSubmit = async () => {
           );
 
     authStore.setAuth(result);
-    authForm.value = { username: '', email: '', password: '', code: '' };
+    authForm.value = { username: '', email: '', password: '', confirmPassword: '', code: '' };
     showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     // 登录成功后稍作停留再完成
@@ -389,6 +402,7 @@ watch(
       step.value = 'splash';
       showPluginManager.value = false;
       pluginManagerVisited.value = false;
+      stepContentHidden.value = false;
       splashVisible.value = true;
       splashHintVisible.value = false;
       startSplashTimers();
@@ -477,7 +491,7 @@ onUnmounted(() => {
             v-if="step !== 'splash'"
             :key="step"
             class="relative w-full h-full flex flex-col"
-            :class="{ 'invisible pointer-events-none': showPluginManager }"
+            :class="{ 'invisible pointer-events-none': stepContentHidden }"
           >
             <!-- 顶部栏：左上角品牌 + 右上角进度 -->
             <header
@@ -520,13 +534,13 @@ onUnmounted(() => {
             </header>
 
             <!-- 主内容区：垂直居中 -->
-            <main class="flex-1 overflow-y-auto custom-scrollbar">
-              <div class="max-w-6xl mx-auto min-h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center">
+            <main class="flex-1 overflow-y-auto lg:overflow-hidden custom-scrollbar">
+              <div class="max-w-6xl mx-auto min-h-full lg:h-full px-[clamp(2rem,5vw,5rem)] py-[clamp(1rem,3vh,3rem)] flex flex-col justify-center lg:block">
 
                 <!-- 步骤 1: 主题 -->
                 <transition name="step-content" mode="out-in">
-                  <div v-if="step === 'theme'" key="theme" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center">
-                    <header>
+                  <div v-if="step === 'theme'" key="theme" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
+                    <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
@@ -537,21 +551,22 @@ onUnmounted(() => {
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(48px, 7vw, 96px);"
                       >
-                        选择<br />主题
+                        主题
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-md"
                         style="font-size: clamp(14px, 1.1vw, 17px);"
                       >
-                        可在设置中随时更改。浅色模式明亮清新，深色模式护眼沉浸，自定义支持个性化皮肤。
+                        可在设置中随时更改。浅色模式明亮清新，深色模式护眼沉浸，跟随系统自动适应，自定义支持个性化皮肤。
                       </p>
                     </header>
 
-                    <div class="grid grid-cols-3 gap-[clamp(0.75rem,1.5vw,1.5rem)]">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-[clamp(0.75rem,1.5vw,1.5rem)] lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:content-center">
                       <button
                         v-for="opt in [
                           { value: 'light', label: '浅色模式', desc: '明亮清新' },
                           { value: 'dark', label: '深色模式', desc: '护眼沉浸' },
+                          { value: 'system', label: '跟随系统', desc: '自动适应' },
                           { value: 'custom', label: '自定义', desc: '个性化皮肤' },
                         ]"
                         :key="opt.value"
@@ -560,7 +575,7 @@ onUnmounted(() => {
                         :class="colorScheme === opt.value
                           ? 'border-b-2 border-[#EC4141]'
                           : 'border-b border-black/10 dark:border-white/10 hover:border-[#EC4141]/50'"
-                        @click="opt.value === 'custom' ? handleCustomThemeClick() : setColorScheme(opt.value as 'dark' | 'light')"
+                        @click="opt.value === 'custom' ? handleCustomThemeClick() : setColorScheme(opt.value as 'dark' | 'light' | 'system')"
                       >
                         <div
                           class="w-[clamp(56px,7vw,84px)] h-[clamp(56px,7vw,84px)] rounded-2xl flex items-center justify-center transition-transform group-hover:scale-105 border border-black/10 dark:border-white/10"
@@ -568,7 +583,9 @@ onUnmounted(() => {
                             ? 'bg-black dark:bg-white'
                             : opt.value === 'light'
                               ? 'bg-white dark:bg-black'
-                              : 'bg-black dark:bg-white'"
+                              : opt.value === 'system'
+                                ? 'bg-gray-100 dark:bg-gray-800'
+                                : 'bg-black dark:bg-white'"
                         >
                           <svg
                             v-if="opt.value === 'dark'"
@@ -576,6 +593,12 @@ onUnmounted(() => {
                             class="h-[clamp(28px,3.5vw,42px)] w-[clamp(28px,3.5vw,42px)] text-white dark:text-black"
                             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
                           ><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                          <svg
+                            v-else-if="opt.value === 'system'"
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-[clamp(28px,3.5vw,42px)] w-[clamp(28px,3.5vw,42px)] text-black/70 dark:text-white/70"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                          ><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                           <svg
                             v-else-if="opt.value === 'light'"
                             xmlns="http://www.w3.org/2000/svg"
@@ -609,8 +632,8 @@ onUnmounted(() => {
                   </div>
 
                   <!-- 步骤 2: 窗口材质 -->
-                  <div v-else-if="step === 'material'" key="material" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center">
-                    <header>
+                  <div v-else-if="step === 'material'" key="material" class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
+                    <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
@@ -621,7 +644,7 @@ onUnmounted(() => {
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(48px, 7vw, 96px);"
                       >
-                        选择<br />材质
+                        材质
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-md"
@@ -631,7 +654,7 @@ onUnmounted(() => {
                       </p>
                     </header>
 
-                    <div class="grid grid-cols-2 gap-[clamp(1rem,2vw,2rem)]">
+                    <div class="grid grid-cols-2 gap-[clamp(1rem,2vw,2rem)] lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:content-center">
                       <button
                         type="button"
                         class="group relative flex cursor-pointer items-center gap-[clamp(1.25rem,2vw,1.75rem)] pb-[clamp(1.25rem,2vh,1.75rem)] transition-all text-left"
@@ -767,8 +790,8 @@ onUnmounted(() => {
                   </div>
 
                   <!-- 步骤 3: 快捷键 -->
-                  <div v-else-if="step === 'shortcuts'" key="shortcuts" class="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[clamp(2rem,5vw,5rem)] items-start">
-                    <header>
+                  <div v-else-if="step === 'shortcuts'" key="shortcuts" class="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-[clamp(2rem,5vw,5rem)] items-start lg:items-stretch lg:h-full lg:overflow-hidden">
+                    <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
@@ -779,7 +802,7 @@ onUnmounted(() => {
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(40px, 6vw, 80px);"
                       >
-                        修改<br />快捷键
+                        快捷键
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
@@ -797,7 +820,7 @@ onUnmounted(() => {
                       </button>
                     </header>
 
-                    <div class="border-t border-black/10 dark:border-white/10">
+                    <div class="border-t border-black/10 dark:border-white/10 lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:flex lg:flex-col lg:justify-center">
                       <div
                         class="py-3 grid grid-cols-[minmax(0,1.2fr)_minmax(120px,1fr)_minmax(120px,1fr)] gap-4 text-black/40 dark:text-white/40 font-light uppercase tracking-wider border-b border-black/10 dark:border-white/10"
                         style="font-size: clamp(10px, 0.85vw, 12px);"
@@ -849,8 +872,8 @@ onUnmounted(() => {
                   </div>
 
                   <!-- 步骤 4: 插件管理 -->
-                  <div v-else-if="step === 'plugins'" key="plugins" class="grid grid-cols-1 lg:grid-cols-[1fr_1.45fr] gap-[clamp(2rem,5vw,5rem)] items-center">
-                    <header>
+                  <div v-else-if="step === 'plugins'" key="plugins" class="grid grid-cols-1 lg:grid-cols-[1fr_1.45fr] gap-[clamp(2rem,5vw,5rem)] items-center lg:items-stretch lg:h-full lg:overflow-hidden">
+                    <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
@@ -861,7 +884,7 @@ onUnmounted(() => {
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(40px, 6vw, 80px);"
                       >
-                        扩展<br />音乐来源
+                        音乐来源
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
@@ -871,7 +894,7 @@ onUnmounted(() => {
                       </p>
                     </header>
 
-                    <div class="border-t border-black/10 dark:border-white/10">
+                    <div class="border-t border-black/10 dark:border-white/10 lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:flex lg:flex-col lg:justify-center">
                       <div class="grid grid-cols-1 sm:grid-cols-3 border-b border-black/10 dark:border-white/10">
                         <div class="py-5 sm:pr-5">
                           <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EC4141]/10 text-[#EC4141]">
@@ -914,8 +937,8 @@ onUnmounted(() => {
                   </div>
 
                   <!-- 步骤 5: 账号（搬自 Auth.vue 登录注册 UI）-->
-                  <div v-else-if="step === 'account'" key="account" class="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-[clamp(2rem,5vw,5rem)] items-start">
-                    <header>
+                  <div v-else-if="step === 'account'" key="account" class="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr] gap-[clamp(2rem,5vw,5rem)] items-start lg:items-stretch lg:h-full lg:overflow-hidden">
+                    <header class="lg:flex lg:flex-col lg:justify-center">
                       <p
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
@@ -927,7 +950,7 @@ onUnmounted(() => {
                         style="font-size: clamp(40px, 6vw, 80px);"
                       >
                         <template v-if="authStore.isLoggedIn">我的<br />账号</template>
-                        <template v-else>登录<br />账号</template>
+                        <template v-else>账号</template>
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"
@@ -939,7 +962,7 @@ onUnmounted(() => {
                       </p>
                     </header>
 
-                    <div class="w-full">
+                    <div class="w-full lg:overflow-y-auto lg:custom-scrollbar lg:min-h-0 lg:flex lg:flex-col lg:justify-center">
                       <!-- 已登录：直接展示当前账号信息，不再显示登录/注册表单 -->
                       <div v-if="authStore.isLoggedIn" class="w-full">
                         <div class="mb-6">
@@ -1147,6 +1170,22 @@ onUnmounted(() => {
                             />
                           </label>
 
+                          <label v-if="authMode === 'register'" class="grid gap-3">
+                            <span
+                              class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                              style="font-size: clamp(13px, 1.1vw, 16px);"
+                            >确认密码</span>
+                            <input
+                              v-model="authForm.confirmPassword"
+                              type="password"
+                              placeholder="再次输入密码"
+                              autocomplete="new-password"
+                              required
+                              class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                              style="font-size: clamp(15px, 1.3vw, 18px);"
+                            />
+                          </label>
+
                           <!-- 消息条 -->
                           <div
                             v-if="authMessage"
@@ -1284,11 +1323,12 @@ onUnmounted(() => {
         </transition>
 
         <!-- 初始化期间的插件管理层：按需加载并复用设置中的完整插件管理能力 -->
-        <transition name="step-fade">
+        <transition name="step-fade" @after-leave="onPluginManagerClosed">
           <div
             v-if="showPluginManager"
             data-onboarding-plugin-manager-surface
-            class="absolute inset-0 z-[60] flex flex-col overflow-hidden bg-transparent"
+            class="absolute inset-0 z-[60] flex flex-col overflow-hidden"
+            :class="onboardingSurfaceClass"
           >
             <header class="flex items-center justify-between border-b border-black/10 dark:border-white/10 px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)]">
               <div>

@@ -111,14 +111,19 @@ pub fn scan_single_directory_internal(
 
     #[cfg(debug_assertions)]
     {
-        let duration = start_time.elapsed();
-        println!(
-            "[Profiling] scan_single_directory_internal took {:?} (to_add: {}, to_update: {}, to_delete: {})",
-            duration,
-            scan_diff.to_add.len(),
-            scan_diff.to_update.len(),
-            scan_diff.to_delete.len()
-        );
+        let has_changes = !scan_diff.to_add.is_empty()
+            || !scan_diff.to_update.is_empty()
+            || !scan_diff.to_delete.is_empty();
+        if has_changes {
+            let duration = start_time.elapsed();
+            println!(
+                "[Profiling] scan_single_directory_internal took {:?} (to_add: {}, to_update: {}, to_delete: {})",
+                duration,
+                scan_diff.to_add.len(),
+                scan_diff.to_update.len(),
+                scan_diff.to_delete.len()
+            );
+        }
     }
 
     Ok(scan_diff.songs)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, provide, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -9,13 +9,21 @@ import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, lo
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
-import SettingHint from './SettingHint.vue';
+import SettingHint, { SETTING_HINT_Z_INDEX } from './SettingHint.vue';
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   overlayZClass?: string;
 }>(), {
   overlayZClass: 'z-[200]',
 });
+
+// Propagate overlay z-index to SettingHint tooltips so they appear above
+// high-z-index containers like the onboarding modal (z-[9998]).
+// overlayZClass format: "z-[200]" → hint z-index = 300; "z-[10000]" → 10100
+const overlayZMatch = props.overlayZClass.match(/z-\[(\d+)\]/);
+if (overlayZMatch) {
+  provide(SETTING_HINT_Z_INDEX, parseInt(overlayZMatch[1], 10) + 100);
+}
 
 const { showToast } = useToast();
 const { settings, patchSettings } = useSettings();

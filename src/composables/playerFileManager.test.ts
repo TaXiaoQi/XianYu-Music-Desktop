@@ -109,6 +109,7 @@ describe('playerFileManager.refreshFolder', () => {
     expect(summary).toEqual({
       removedCount: 1,
       removedPaths: [removedSong.path],
+      hasChanges: true,
     });
     expect(libraryStore.librarySongs.map(song => song.path)).toEqual([
       outsideSong.path,
