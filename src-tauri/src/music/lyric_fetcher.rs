@@ -1033,7 +1033,7 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
             if lrc.len() < 2 {
                 continue;
             }
-            let t_item = lrc.pop().unwrap();
+            let t_item = lrc.pop().ok_or("lrc pop failed".to_string())?;
             let t_time = if lrc.is_empty() {
                 t_item.0.clone()
             } else {
@@ -1597,7 +1597,11 @@ fn parse_yrc(yrc_text: &str) -> String {
                 .map(|c| {
                     let s: u64 = c[1].parse().unwrap_or(0);
                     let d: u64 = c[2].parse().unwrap_or(0);
-                    (s, d, c.get(0).unwrap().start(), c.get(0).unwrap().end())
+                    let (start, end) = c
+                        .get(0)
+                        .map(|m| (m.start(), m.end()))
+                        .unwrap_or((0, 0));
+                    (s, d, start, end)
                 })
                 .collect();
 

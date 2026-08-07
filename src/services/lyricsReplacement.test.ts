@@ -172,6 +172,7 @@ describe('lyrics replacement service', () => {
       '自定义搜索内容',
       1,
       30,
+      true,
     );
     expect(mocks.lxSearch).toHaveBeenCalledTimes(2);
   });

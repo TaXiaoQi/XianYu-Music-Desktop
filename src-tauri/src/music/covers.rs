@@ -33,7 +33,11 @@ mod tests {
 }
 
 pub fn get_cover_cache_dir(app: &AppHandle) -> PathBuf {
-    let dir = app.path().app_data_dir().unwrap().join("covers");
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("covers"))
+        .join("covers");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }

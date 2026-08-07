@@ -318,7 +318,7 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
                                 }
                                 _ => {}
                             });
-                            *controls.lock().unwrap() = Some(mc);
+                            *controls.lock().unwrap_or_else(|e| e.into_inner()) = Some(mc);
                         }
                         Err(error) => println!("Error initializing MediaControls: {:?}", error),
                     }
@@ -536,7 +536,7 @@ impl RemoteRangeReader {
             }
         }
         // 清除旧结果，标记新预读进行中
-        *self.prefetch_state.lock().unwrap() = None;
+        *self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.prefetch_in_flight.store(true, Ordering::Relaxed);
         self.prefetch_start = start;
 
@@ -586,7 +586,7 @@ impl RemoteRangeReader {
                     message: e.to_string(),
                 },
             };
-            *state.lock().unwrap() = Some(result);
+            *state.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
             in_flight.store(false, Ordering::Relaxed);
         });
     }
@@ -597,7 +597,7 @@ impl RemoteRangeReader {
         if self.prefetch_in_flight.load(Ordering::Relaxed) {
             return None;
         }
-        self.prefetch_state.lock().unwrap().take()
+        self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()).take()
     }
 
     /// 是否有预读正在进行
@@ -608,7 +608,7 @@ impl RemoteRangeReader {
     /// 取消未完成的预读（seek 后旧结果不再有用）
     fn cancel_prefetch(&mut self) {
         self.prefetch_in_flight.store(false, Ordering::Relaxed);
-        *self.prefetch_state.lock().unwrap() = None;
+        *self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     fn fetch_at(&mut self, start: u64) -> std::io::Result<()> {
@@ -720,7 +720,10 @@ impl Read for RemoteRangeReader {
             if self.full_body.is_none() {
                 self.download_full()?;
             }
-            let body = self.full_body.as_ref().unwrap();
+            let body = self
+                .full_body
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("full_body not initialized"))?;
             let pos = self.pos as usize;
             if pos >= body.len() {
                 return Ok(0);

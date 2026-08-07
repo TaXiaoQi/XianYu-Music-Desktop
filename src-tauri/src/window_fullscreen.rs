@@ -94,13 +94,13 @@ pub fn save_window_placement(window: tauri::Window) -> Result<bool, String> {
             if GetWindowPlacement(hwnd, &mut placement) == 0 {
                 return Err("GetWindowPlacement 失败".to_string());
             }
-            *SAVED_PLACEMENT.lock().unwrap() = Some(SavedPlacement(placement));
+            *SAVED_PLACEMENT.lock().map_err(|e| e.to_string())? = Some(SavedPlacement(placement));
 
             let style = GetWindowLongW(hwnd, GWL_STYLE);
-            *SAVED_STYLE.lock().unwrap() = Some(style);
+            *SAVED_STYLE.lock().map_err(|e| e.to_string())? = Some(style);
 
             let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-            *SAVED_EXSTYLE.lock().unwrap() = Some(ex_style);
+            *SAVED_EXSTYLE.lock().map_err(|e| e.to_string())? = Some(ex_style);
         }
         Ok(true)
     }
@@ -179,7 +179,7 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 if GetWindowPlacement(hwnd, &mut placement) == 0 {
                     return Err("GetWindowPlacement 失败".to_string());
                 }
-                *SAVED_PLACEMENT.lock().unwrap() = Some(SavedPlacement(placement));
+                *SAVED_PLACEMENT.lock().map_err(|e| e.to_string())? = Some(SavedPlacement(placement));
 
                 // 小窗进全屏：先走 SW_MAXIMIZE 的系统丝滑放大动画（放大观感来源）。
                 if IsZoomed(hwnd) == 0 {
@@ -190,7 +190,7 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 // 清除 WS_MAXIMIZE 样式位，否则窗口被约束在工作区内，SetWindowPos 无法铺满整屏。
                 // placement 已保存（showCmd 仍为 SW_SHOWMAXIMIZED），退出恢复不受影响。
                 let style = GetWindowLongW(hwnd, GWL_STYLE);
-                *SAVED_STYLE.lock().unwrap() = Some(style);
+                *SAVED_STYLE.lock().map_err(|e| e.to_string())? = Some(style);
                 // WS_CAPTION(0xC00000) = WS_BORDER | WS_DLGFRAME，WS_THICKFRAME(0x40000) 用于调整大小
                 // 这两个样式位是非客户区（边框+标题栏）的主要来源，清除后窗口将没有非客户区
                 const STYLE_BORDER_MASK: i32 =
@@ -204,7 +204,7 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 // 0x1C0 = WS_EX_WINDOWEDGE(0x100) | WS_EX_CLIENTEDGE(0x40) | WS_EX_DLGMODALFRAME(0x80) 等
                 const EX_BORDER_MASK: i32 = 0x1C0;
                 let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-                *SAVED_EXSTYLE.lock().unwrap() = Some(ex_style);
+                *SAVED_EXSTYLE.lock().map_err(|e| e.to_string())? = Some(ex_style);
                 if ex_style & EX_BORDER_MASK != 0 {
                     SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
                 }
@@ -245,13 +245,13 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 Ok(true)
             } else {
                 // 先恢复扩展样式和窗口样式（边框位），再恢复窗口 placement
-                if let Some(saved_ex) = SAVED_EXSTYLE.lock().unwrap().take() {
+                if let Some(saved_ex) = SAVED_EXSTYLE.lock().map_err(|e| e.to_string())?.take() {
                     SetWindowLongW(hwnd, GWL_EXSTYLE, saved_ex);
                 }
-                if let Some(saved_style) = SAVED_STYLE.lock().unwrap().take() {
+                if let Some(saved_style) = SAVED_STYLE.lock().map_err(|e| e.to_string())?.take() {
                     SetWindowLongW(hwnd, GWL_STYLE, saved_style);
                 }
-                let saved = SAVED_PLACEMENT.lock().unwrap().take();
+                let saved = SAVED_PLACEMENT.lock().map_err(|e| e.to_string())?.take();
                 let was_maximized = saved
                     .as_ref()
                     .map(|SavedPlacement(p)| p.showCmd == SW_SHOWMAXIMIZED as u32)

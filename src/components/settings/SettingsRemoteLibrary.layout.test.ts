@@ -6,7 +6,7 @@ const source = readFileSync(new URL('./SettingsRemoteLibrary.vue', import.meta.u
 const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? '';
 const remoteFormGridRule = styleBlock.match(/\.remote-form-grid\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 const remoteInputRule = styleBlock.match(/\.remote-input\s*\{([\s\S]*?)\}/)?.[1] ?? '';
-const darkRemoteInputRule = styleBlock.match(/:global\(\.dark\) \.remote-input\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+const darkRemoteInputRule = styleBlock.match(/html\.dark \.remote-input\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 
 describe('SettingsRemoteLibrary layout', () => {
   it('keeps the remote source fields in a single column', () => {
@@ -22,9 +22,9 @@ describe('SettingsRemoteLibrary layout', () => {
   });
 
   it('uses translucent input surfaces instead of solid white fields', () => {
-    expect(remoteInputRule).toContain('background: rgba(255, 255, 255, 0.36);');
-    expect(remoteInputRule).toContain('border: 1px solid rgba(255, 255, 255, 0.34);');
+    expect(remoteInputRule).toContain('background: rgba(255, 255, 255, 0.45);');
+    expect(remoteInputRule).toContain('border: 1px solid rgba(15, 23, 42, 0.1);');
     expect(remoteInputRule).not.toContain('background: rgba(255, 255, 255, 0.72);');
-    expect(darkRemoteInputRule).toContain('background: rgba(255, 255, 255, 0.08);');
+    expect(darkRemoteInputRule).toContain('background: rgba(255, 255, 255, 0.05);');
   });
 });

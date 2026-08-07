@@ -63,7 +63,7 @@ pub async fn add_sidebar_folder(path: String, db_state: State<'_, DbState>) -> R
                 &normalized,
                 &SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
+                    .unwrap_or_default()
                     .as_secs()
                     .to_string(),
             ],

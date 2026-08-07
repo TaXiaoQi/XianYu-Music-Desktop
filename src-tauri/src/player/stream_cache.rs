@@ -247,19 +247,19 @@ fn cache() -> &'static Mutex<StreamCacheManager> {
 
 /// 设置缓存上限（用户可配置）
 pub fn set_max_cache_size(bytes: u64) {
-    let mut mgr = cache().lock().unwrap();
+    let mut mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
     mgr.max_size_bytes = bytes;
     mgr.evict_if_needed();
 }
 
 /// 获取当前缓存大小
 pub fn current_cache_size() -> u64 {
-    cache().lock().unwrap().current_size
+    cache().lock().unwrap_or_else(|e| e.into_inner()).current_size
 }
 
 /// 获取缓存上限
 pub fn max_cache_size() -> u64 {
-    cache().lock().unwrap().max_size_bytes
+    cache().lock().unwrap_or_else(|e| e.into_inner()).max_size_bytes
 }
 
 /// 持久化缓存目录：
@@ -296,7 +296,7 @@ pub fn start_streaming_download(
     user_agent: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
     let hash = url_hash(url);
-    let mut mgr = cache().lock().unwrap();
+    let mut mgr = cache().lock().map_err(|e| e.to_string())?;
 
     // 已有缓存：检查是否下载完成
     if let Some(entry) = mgr.entries.get_mut(&hash) {
@@ -512,7 +512,7 @@ pub fn is_buffer_ready(state: &StreamingTempFileState) -> bool {
 /// 用于播放前探测：若已缓存则直接复用，跳过插件重复请求（Baka 等前置请求易失败的音源）。
 pub fn is_url_cached(url: &str) -> bool {
     let hash = url_hash(url);
-    let mgr = cache().lock().unwrap();
+    let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(entry) = mgr.entries.get(&hash) {
         return entry.download_complete.load(Ordering::Relaxed) && entry.size > 0;
     }
@@ -525,7 +525,7 @@ pub fn is_url_cached(url: &str) -> bool {
 pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
     let hash = url_hash(url);
     let src_path = {
-        let mut mgr = cache().lock().unwrap();
+        let mut mgr = cache().lock().map_err(|e| e.to_string())?;
         let entry = mgr
             .entries
             .get_mut(&hash)
@@ -547,7 +547,7 @@ pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
     let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
     loop {
         let complete = {
-            let mgr = cache().lock().unwrap();
+            let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
             if let Some(entry) = mgr.entries.get(&hash) {
                 entry.download_complete.load(Ordering::Relaxed)
             } else {
@@ -556,7 +556,7 @@ pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
             }
         };
         if complete {
-            let mgr = cache().lock().unwrap();
+            let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
             if let Some(entry) = mgr.entries.get(&hash) {
                 return entry.size > 0;
             }
