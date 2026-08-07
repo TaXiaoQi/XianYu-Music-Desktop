@@ -23,12 +23,16 @@ export interface OnlineDetailContext {
   subtitle: string;
   /** 封面 URL */
   coverUrl: string;
-  /** 插件来源 */
+  /** 插件来源（musicfree/baka 系使用） */
   pluginSource: PluginSource;
   /** 插件搜索结果的 rawData（用于调用 getArtistWorks/getAlbumInfo/getMusicSheetInfo） */
   rawData: any;
   /** 搜索页来源类型，返回搜索时恢复对应 tab */
   sourceSearchType?: SourceSearchType;
+  /** 引擎类型：'musicfree'（MF/baka 系）或 'lx'（落雪系） */
+  engineType?: 'musicfree' | 'lx';
+  /** 落雪系音源 ID（engineType='lx' 时使用，如 'kw'/'kg'/'tx'/'wy'/'mg'） */
+  lxSourceId?: string;
 }
 
 export const useOnlineDetailStore = defineStore('onlineDetail', () => {

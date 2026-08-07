@@ -1841,14 +1841,21 @@ function findPluginSource(pluginId: string): PluginSource | undefined {
   return item?.source;
 }
 
-function openLxCatalogTracks(query: string) {
-  searchQuery.value = query;
-  activeSearchType.value = 'track';
-}
-
 const handlePluginArtistClick = (artist: PluginArtistResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
-    openLxCatalogTracks(artist.name);
+    const lxSourceId = selectedSourceItem.value.lxSourceId!;
+    onlineDetailStore.setContext({
+      type: 'artist',
+      title: artist.name,
+      subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+      coverUrl: artist.avatarUrl,
+      pluginSource: selectedSourceItem.value.source!,
+      rawData: artist.rawData,
+      sourceSearchType: 'artist' as SourceSearchType,
+      engineType: 'lx',
+      lxSourceId,
+    });
+    void router.push({ path: '/online-detail', query: { type: 'artist' } });
     return;
   }
   const pluginSource = findPluginSource(artist.pluginId);
@@ -1864,13 +1871,26 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     pluginSource,
     rawData: artist.rawData,
     sourceSearchType: 'artist' as SourceSearchType,
+    engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'artist' } });
 };
 
 const handlePluginAlbumClick = (album: PluginAlbumResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
-    openLxCatalogTracks(album.name);
+    const lxSourceId = selectedSourceItem.value.lxSourceId!;
+    onlineDetailStore.setContext({
+      type: 'album',
+      title: album.name,
+      subtitle: album.artist,
+      coverUrl: album.coverUrl,
+      pluginSource: selectedSourceItem.value.source!,
+      rawData: album.rawData,
+      sourceSearchType: 'album' as SourceSearchType,
+      engineType: 'lx',
+      lxSourceId,
+    });
+    void router.push({ path: '/online-detail', query: { type: 'album' } });
     return;
   }
   const pluginSource = findPluginSource(album.pluginId);
@@ -1886,13 +1906,26 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
     pluginSource,
     rawData: album.rawData,
     sourceSearchType: 'album' as SourceSearchType,
+    engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'album' } });
 };
 
 const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
-    openLxCatalogTracks(playlist.title);
+    const lxSourceId = selectedSourceItem.value.lxSourceId!;
+    onlineDetailStore.setContext({
+      type: 'playlist',
+      title: playlist.title,
+      subtitle: playlist.trackCount ? `${playlist.trackCount} 首` : (playlist.artist || ''),
+      coverUrl: playlist.coverUrl,
+      pluginSource: selectedSourceItem.value.source!,
+      rawData: playlist.rawData,
+      sourceSearchType: 'playlist' as SourceSearchType,
+      engineType: 'lx',
+      lxSourceId,
+    });
+    void router.push({ path: '/online-detail', query: { type: 'playlist' } });
     return;
   }
   const pluginSource = findPluginSource(playlist.pluginId);
@@ -1908,6 +1941,7 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
     pluginSource,
     rawData: playlist.rawData,
     sourceSearchType: 'playlist' as SourceSearchType,
+    engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 };

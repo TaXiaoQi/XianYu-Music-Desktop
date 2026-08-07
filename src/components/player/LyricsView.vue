@@ -879,10 +879,11 @@ watch(() => props.coverHidden, async () => {
               </div>
             </transition>
           </div>
-            </Transition>
           </div>
-        </div>
-      </transition>
+        </Transition>
+      </div>
+    </div>
+  </transition>
     </div>
 
     <div

@@ -19,8 +19,22 @@ import {
   pluginGetCover,
   pluginArtistSearch,
   pluginAlbumSearch,
+  type PluginAlbumResult,
 } from '../services/pluginEngine';
-import type { PluginAlbumResult } from '../services/pluginEngine';
+import {
+  lxSearch,
+  lxGetAlbumSongs,
+  lxGetPlaylistTracks,
+  lxCatalogSearch,
+  lxGetPic,
+  type LxSourceId,
+  type LxSearchResultItem,
+  type LxAlbumSearchResult,
+  type LxArtistSearchResult,
+} from '../services/lxMusicSdk';
+import { cacheLxSong } from '../services/lxSongCache';
+import { cacheLxSongInfo } from '../services/lxLyricFetcher';
+import { parseIntervalToSeconds } from '../utils/remoteSong';
 
 import ArtistDetailHeader from '../components/headers/ArtistDetailHeader.vue';
 import AlbumDetailHeader from '../components/headers/AlbumDetailHeader.vue';
@@ -43,11 +57,16 @@ const ctx = computed(() => onlineDetailStore.context);
 const loading = ref(false);
 /** 初始加载是否完成：完成后 Transition 始终留在 DOM 中，保证切换有动画 */
 const hasInitialLoad = ref(false);
-const songs = ref<PluginSearchResult[]>([]);
-const albums = ref<PluginAlbumResult[]>([]);
+/** 歌曲列表：MF 引擎存 PluginSearchResult，LX 引擎存 LxSearchResultItem */
+const songs = ref<any[]>([]);
+/** 专辑列表：MF 引擎存 PluginAlbumResult，LX 引擎存 LxAlbumSearchResult */
+const albums = ref<any[]>([]);
 const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const artistActiveTab = ref<ArtistTabId>('songs');
+
+/** 竞态条件防护：每次 loadData 递增，异步回调中检查版本号防止旧数据覆盖新数据 */
+let loadVersion = 0;
 
 // 右键菜单状态
 const showContextMenu = ref(false);
@@ -58,6 +77,7 @@ const contextMenuTargetSong = ref<Song | null>(null);
 const title = computed(() => ctx.value?.title || '');
 const subtitle = computed(() => ctx.value?.subtitle || '');
 const coverUrl = computed(() => ctx.value?.coverUrl || '');
+const isLxEngine = computed(() => ctx.value?.engineType === 'lx');
 
 // 将 PluginSearchResult 转换为 Song 用于展示和播放
 function mfResultToSong(item: PluginSearchResult): Song {
@@ -114,7 +134,41 @@ function mfResultToSong(item: PluginSearchResult): Song {
   } as any;
 }
 
-const songList = computed<Song[]>(() => songs.value.map(mfResultToSong));
+/** 将 LxSearchResultItem 转换为 Song 用于展示和播放（与 Search.vue 中逻辑一致） */
+function lxResultToSong(item: LxSearchResultItem): Song {
+  const artistNames = item.singer ? item.singer.split('、').filter(Boolean) : ['未知歌手'];
+  const songDuration = parseIntervalToSeconds(item.interval);
+  const album = item.albumName || (detailType.value === 'album' ? title.value : '') || '未知专辑';
+  return {
+    name: item.name,
+    title: item.name,
+    path: `lx://${item.source}/${item.songmid}`,
+    artist: item.singer || '未知歌手',
+    artist_names: artistNames,
+    effective_artist_names: artistNames,
+    album,
+    album_artist: item.singer || '未知歌手',
+    album_key: `${album}-${item.singer || '未知歌手'}`,
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: songDuration,
+    cover_thumb_path: item.img || '',
+    source_type: 'remote',
+    remote_source_id: `lx://${item.source}/${item.songmid}`,
+    _hash: item.hash,
+    _types: item._types,
+    _copyrightId: item.copyrightId,
+    _songmid: item.songmid,
+    _source: item.source,
+    rawData: item,
+  } as any;
+}
+
+const songList = computed<Song[]>(() =>
+  isLxEngine.value
+    ? songs.value.map((item: LxSearchResultItem) => lxResultToSong(item))
+    : songs.value.map((item: PluginSearchResult) => mfResultToSong(item)),
+);
 
 // MF 插件（如网易云）的 search/getAlbumInfo/getArtistWorks 可能不返回封面 URL，
 // 只在 getMusicInfo 时才有。此处异步补获列表中缺失封面的歌曲，不阻塞页面渲染。
@@ -156,46 +210,244 @@ async function fetchMissingMfCovers() {
   void Promise.all(workers);
 }
 
+/** LX 引擎：异步补获列表中缺失封面的歌曲（kw/kg 源搜索结果 img 可能为 null） */
+let lxCoverFetchVersion = 0;
+const LX_COVER_CONCURRENCY = 3;
+
+async function fetchMissingLxCovers() {
+  if (!ctx.value) return;
+  const version = ++lxCoverFetchVersion;
+
+  const pending: { index: number; item: LxSearchResultItem }[] = [];
+  songs.value.forEach((item: LxSearchResultItem, index: number) => {
+    if (!item.img) pending.push({ index, item });
+  });
+  if (pending.length === 0) return;
+
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pending.length) {
+      const { index, item } = pending[cursor++];
+      if (version !== lxCoverFetchVersion) return;
+      try {
+        const cover = await lxGetPic(item);
+        if (version !== lxCoverFetchVersion) return;
+        if (cover && songs.value[index]) {
+          songs.value[index] = { ...songs.value[index], img: cover };
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(LX_COVER_CONCURRENCY, pending.length) }, () => worker());
+  void Promise.all(workers);
+}
+
+/**
+ * MF 插件回退：从歌曲列表中提取去重专辑（当 getArtistWorks('album') 不支持时）
+ */
+function deriveAlbumsFromMfSongs(songResults: PluginSearchResult[]): PluginAlbumResult[] {
+  const albumMap = new Map<string, PluginAlbumResult>();
+  for (const song of songResults) {
+    const albumName = song.album || '';
+    if (!albumName) continue;
+    const key = albumName.toLowerCase();
+    const existing = albumMap.get(key);
+    if (existing) {
+      existing.songCount = (existing.songCount ?? 0) + 1;
+      if (!existing.coverUrl && song.coverUrl) existing.coverUrl = song.coverUrl;
+      continue;
+    }
+    albumMap.set(key, {
+      id: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+      name: albumName,
+      artist: song.artist || '',
+      coverUrl: song.coverUrl || '',
+      platform: song.platform || '',
+      platformId: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+      pluginId: '',
+      rawData: song.rawData,
+    });
+  }
+  return [...albumMap.values()];
+}
+
 async function loadData(page = 1) {
   if (!ctx.value) return;
+  const version = ++loadVersion;
   loading.value = true;
   try {
-    const { pluginSource, rawData, type } = ctx.value;
-
-    if (type === 'artist') {
-      // 歌手详情：同时加载歌曲和专辑
-      if (artistActiveTab.value === 'songs') {
-        const results = await pluginGetArtistWorks(pluginSource, rawData, page);
-        if (page === 1) songs.value = results;
-        else songs.value = [...songs.value, ...results];
-      } else if (artistActiveTab.value === 'albums') {
-        const albumResults = await pluginGetArtistAlbums(pluginSource, rawData, page);
-        if (page === 1) albums.value = albumResults;
-        else albums.value = [...albums.value, ...albumResults];
-      }
-    } else if (type === 'album') {
-      const results = await pluginGetAlbumSongs(pluginSource, rawData, page);
-      if (page === 1) songs.value = results;
-      else songs.value = [...songs.value, ...results];
-    } else if (type === 'playlist') {
-      const results = await pluginGetPlaylistDetail(pluginSource, rawData, page);
-      if (page === 1) songs.value = results;
-      else songs.value = [...songs.value, ...results];
+    if (isLxEngine.value && ctx.value.lxSourceId) {
+      await loadLxData(page, version);
+    } else {
+      await loadMfData(page, version);
     }
   } catch (e: any) {
     showToast(`加载失败: ${e?.message || e}`, 'error');
   } finally {
-    loading.value = false;
+    // 仅当前版本的加载才能重置 loading，防止旧异步任务提前关闭 loading 指示器
+    if (version === loadVersion) {
+      loading.value = false;
+    }
     hasInitialLoad.value = true;
   }
 
   // 歌曲列表加载完成后，异步补获缺失的封面（不阻塞渲染）
-  if (songs.value.some(s => !s.coverUrl)) {
-    void fetchMissingMfCovers();
+  // 版本不匹配时跳过，避免为已过期的数据触发封面拉取
+  if (version !== loadVersion) return;
+  if (isLxEngine.value) {
+    if (songs.value.some((s: LxSearchResultItem) => !s.img)) {
+      void fetchMissingLxCovers();
+    }
+  } else {
+    if (songs.value.some((s: PluginSearchResult) => !s.coverUrl)) {
+      void fetchMissingMfCovers();
+    }
+  }
+}
+
+// ==================== LX (落雪) 引擎数据加载 ====================
+
+async function loadLxData(page: number, version: number) {
+  if (!ctx.value?.lxSourceId) return;
+  const source = ctx.value.lxSourceId as LxSourceId;
+  const { type, rawData } = ctx.value;
+
+  if (type === 'artist') {
+    if (artistActiveTab.value === 'songs') {
+      // 歌手详情歌曲：用歌手名搜索
+      const result = await lxSearch(source, title.value, page);
+      if (version !== loadVersion) return;
+      if (page === 1) songs.value = result.list;
+      else songs.value = [...songs.value, ...result.list];
+    } else if (artistActiveTab.value === 'albums') {
+      // 歌手详情专辑：搜索后从结果中提取专辑
+      const albumResults = await lxCatalogSearch(source, title.value, 'album', page) as LxAlbumSearchResult[];
+      if (version !== loadVersion) return;
+      if (page === 1) albums.value = albumResults;
+      else albums.value = [...albums.value, ...albumResults];
+    }
+  } else if (type === 'album') {
+    // 优先用专辑 ID 直接调 API 获取曲目
+    let results = await lxGetAlbumSongs(source, rawData, page);
+    // 回退：专辑 API 返回空（ID 无效或 API 失败），用专辑名搜索并按专辑名过滤
+    if (results.length === 0 && page === 1) {
+      console.warn(`[OnlineDetail] LX album direct API empty, falling back to search for "${title.value}"`);
+      const albumNameNorm = title.value.trim().toLowerCase();
+      const searchResult = await lxSearch(source, title.value, page);
+      results = searchResult.list.filter((s: LxSearchResultItem) => {
+        const songAlbumNorm = (s.albumName || '').trim().toLowerCase();
+        return songAlbumNorm === albumNameNorm || songAlbumNorm.includes(albumNameNorm) || albumNameNorm.includes(songAlbumNorm);
+      });
+      // 搜索回退后不再支持分页（搜索结果分页与专辑曲目不一致）
+      if (results.length === 0) {
+        // 如果精确过滤后仍为空，放宽过滤条件，直接用搜索结果
+        results = searchResult.list;
+      }
+    }
+    if (version !== loadVersion) return;
+    if (page === 1) songs.value = results;
+    else songs.value = [...songs.value, ...results];
+  } else if (type === 'playlist') {
+    // 优先用歌单 ID 直接调 API 获取曲目
+    let results = await lxGetPlaylistTracks(source, rawData, page);
+    // 回退：歌单 API 返回空，用歌单名搜索（无法精确过滤，直接展示搜索结果）
+    if (results.length === 0 && page === 1) {
+      console.warn(`[OnlineDetail] LX playlist direct API empty, falling back to search for "${title.value}"`);
+      const searchResult = await lxSearch(source, title.value, page);
+      results = searchResult.list;
+    }
+    if (version !== loadVersion) return;
+    if (page === 1) songs.value = results;
+    else songs.value = [...songs.value, ...results];
+  }
+}
+
+// ==================== MusicFree 引擎数据加载 ====================
+
+async function loadMfData(page: number, version: number) {
+  if (!ctx.value) return;
+  const { type, rawData, pluginSource } = ctx.value;
+
+  if (type === 'artist') {
+    if (artistActiveTab.value === 'songs') {
+      const results = await pluginGetArtistWorks(pluginSource, rawData, page);
+      if (version !== loadVersion) return;
+      if (page === 1) songs.value = results;
+      else songs.value = [...songs.value, ...results];
+    } else if (artistActiveTab.value === 'albums') {
+      // 优先用 getArtistWorks('album') 获取专辑
+      let albumResults = await pluginGetArtistAlbums(pluginSource, rawData, page);
+      // 回退 1：插件不支持 album 类型，用专辑搜索
+      if (albumResults.length === 0 && page === 1) {
+        console.warn(`[OnlineDetail] MF getArtistWorks('album') empty, trying pluginAlbumSearch for "${title.value}"`);
+        albumResults = await pluginAlbumSearch(pluginSource, title.value, page);
+      }
+      // 回退 2：专辑搜索也为空，从歌曲列表中推导专辑
+      if (albumResults.length === 0 && page === 1) {
+        console.warn(`[OnlineDetail] MF pluginAlbumSearch empty, deriving albums from songs for "${title.value}"`);
+        const songResults = await pluginGetArtistWorks(pluginSource, rawData, page);
+        albumResults = deriveAlbumsFromMfSongs(songResults);
+      }
+      if (version !== loadVersion) return;
+      if (page === 1) albums.value = albumResults;
+      else albums.value = [...albums.value, ...albumResults];
+    }
+  } else if (type === 'album') {
+    const results = await pluginGetAlbumSongs(pluginSource, rawData, page);
+    if (version !== loadVersion) return;
+    if (page === 1) songs.value = results;
+    else songs.value = [...songs.value, ...results];
+  } else if (type === 'playlist') {
+    const results = await pluginGetPlaylistDetail(pluginSource, rawData, page);
+    if (version !== loadVersion) return;
+    if (page === 1) songs.value = results;
+    else songs.value = [...songs.value, ...results];
   }
 }
 
 async function handlePlaySong(song: Song) {
+  if (!ctx.value) return;
+  if (isLxEngine.value) {
+    await handlePlayLxSong(song);
+  } else {
+    await handlePlayMfSong(song);
+  }
+}
+
+// ==================== LX (落雪) 引擎播放 ====================
+
+async function handlePlayLxSong(song: Song) {
+  const lxItem = (song as any).rawData as LxSearchResultItem | undefined;
+  if (!lxItem) return;
+  // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
+  cacheLxSong(lxItem);
+  // 同时缓存到 lxLyricFetcher（供歌词获取使用）
+  const songDuration = parseIntervalToSeconds(lxItem.interval);
+  cacheLxSongInfo(lxItem.source, lxItem.songmid, {
+    songmid: lxItem.songmid,
+    hash: lxItem.hash,
+    name: lxItem.name,
+    singer: lxItem.singer,
+    albumName: lxItem.albumName,
+    interval: lxItem.interval,
+    _interval: songDuration > 0 ? Math.round(songDuration) : undefined,
+    songId: lxItem.songId,
+    strMediaMid: lxItem.strMediaMid,
+    albumMid: lxItem.albumMid,
+    albumId: lxItem.albumId,
+    copyrightId: lxItem.copyrightId,
+    source: lxItem.source,
+  });
+  // 飞入封面动画
+  launchFlyingCover(song.path, song.cover_thumb_path || '');
+  // 立即播放：playSong 内部会解析 lx:// 协议并拉取直链、歌词、封面
+  void playSong(song, { insertAfterCurrent: true });
+}
+
+// ==================== MusicFree 引擎播放 ====================
+
+async function handlePlayMfSong(song: Song) {
   if (!ctx.value) return;
   const mfItem = (song as any).rawData as PluginSearchResult | undefined;
   if (!mfItem) return;
@@ -244,14 +496,40 @@ async function handlePlayAll() {
 
   try {
     const firstSong = songList.value[0];
+
+    // LX 引擎：全部歌曲预先缓存元信息，确保队列中后续歌曲也能正确解析 URL/歌词
+    if (isLxEngine.value) {
+      for (const song of songList.value) {
+        const lxItem = (song as any).rawData as LxSearchResultItem | undefined;
+        if (!lxItem) continue;
+        cacheLxSong(lxItem);
+        const dur = parseIntervalToSeconds(lxItem.interval);
+        cacheLxSongInfo(lxItem.source, lxItem.songmid, {
+          songmid: lxItem.songmid,
+          hash: lxItem.hash,
+          name: lxItem.name,
+          singer: lxItem.singer,
+          albumName: lxItem.albumName,
+          interval: lxItem.interval,
+          _interval: dur > 0 ? Math.round(dur) : undefined,
+          songId: lxItem.songId,
+          strMediaMid: lxItem.strMediaMid,
+          albumMid: lxItem.albumMid,
+          albumId: lxItem.albumId,
+          copyrightId: lxItem.copyrightId,
+          source: lxItem.source,
+        });
+      }
+    }
+
     // 在线歌曲不 await，保持边飞边加载的并行行为（与 OnlineSongList 一致）
     launchFlyingCover(firstSong.path, firstSong.cover_thumb_path || '');
 
-    // 清空当前播放队列，加入全部歌曲（保留 rawData，播放时由 playSong 解析 plugin:// URL）
+    // 清空当前播放队列，加入全部歌曲（保留 rawData，播放时由 playSong 解析协议 URL）
     await clearQueue();
     addSongsToQueue(songList.value);
 
-    // 播放第一首：playSong 内部会解析 plugin:// 协议并拉取直链、歌词、封面
+    // 播放第一首：playSong 内部会解析 plugin:// 或 lx:// 协议并拉取直链、歌词、封面
     await playSong(firstSong, { preserveQueue: true });
   } catch (e: any) {
     showToast(`播放失败: ${e?.message || e}`, 'error');
@@ -303,21 +581,45 @@ async function handleOnlineViewArtist(song: Song) {
   }
 
   try {
-    const results = await pluginArtistSearch(ctx.value.pluginSource, artistName, 1);
-    if (results.length === 0) {
-      showToast('未找到该歌手', 'info');
-      return;
+    if (isLxEngine.value && ctx.value.lxSourceId) {
+      // LX 引擎：用 lxCatalogSearch 搜索歌手
+      const source = ctx.value.lxSourceId as LxSourceId;
+      const results = await lxCatalogSearch(source, artistName, 'artist', 1) as LxArtistSearchResult[];
+      if (results.length === 0) {
+        showToast('未找到该歌手', 'info');
+        return;
+      }
+      const artist = results[0];
+      onlineDetailStore.setContextWithHistory({
+        type: 'artist',
+        title: artist.name,
+        subtitle: artist.songCount ? `${artist.songCount} 首歌曲` : '',
+        coverUrl: artist.avatarUrl,
+        pluginSource: ctx.value.pluginSource,
+        rawData: artist.rawData,
+        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+        engineType: 'lx',
+        lxSourceId: ctx.value.lxSourceId,
+      });
+    } else {
+      // MF 引擎：用 pluginArtistSearch 搜索歌手
+      const results = await pluginArtistSearch(ctx.value.pluginSource, artistName, 1);
+      if (results.length === 0) {
+        showToast('未找到该歌手', 'info');
+        return;
+      }
+      const artist = results[0];
+      onlineDetailStore.setContextWithHistory({
+        type: 'artist',
+        title: artist.name,
+        subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+        coverUrl: artist.avatarUrl,
+        pluginSource: ctx.value.pluginSource,
+        rawData: artist.rawData,
+        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+        engineType: 'musicfree',
+      });
     }
-    const artist = results[0];
-    onlineDetailStore.setContextWithHistory({
-      type: 'artist',
-      title: artist.name,
-      subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
-      coverUrl: artist.avatarUrl,
-      pluginSource: ctx.value.pluginSource,
-      rawData: artist.rawData,
-      sourceSearchType: ctx.value.sourceSearchType || 'playlist',
-    });
     void router.push({ path: '/online-detail', query: { type: 'artist' } });
   } catch (e: any) {
     showToast(`查看歌手失败: ${e?.message || e}`, 'error');
@@ -334,21 +636,45 @@ async function handleOnlineViewAlbum(song: Song) {
   }
 
   try {
-    const results = await pluginAlbumSearch(ctx.value.pluginSource, albumName, 1);
-    if (results.length === 0) {
-      showToast('未找到该专辑', 'info');
-      return;
+    if (isLxEngine.value && ctx.value.lxSourceId) {
+      // LX 引擎：用 lxCatalogSearch 搜索专辑
+      const source = ctx.value.lxSourceId as LxSourceId;
+      const results = await lxCatalogSearch(source, albumName, 'album', 1) as LxAlbumSearchResult[];
+      if (results.length === 0) {
+        showToast('未找到该专辑', 'info');
+        return;
+      }
+      const album = results[0];
+      onlineDetailStore.setContextWithHistory({
+        type: 'album',
+        title: album.name,
+        subtitle: album.artist,
+        coverUrl: album.coverUrl,
+        pluginSource: ctx.value.pluginSource,
+        rawData: album.rawData,
+        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+        engineType: 'lx',
+        lxSourceId: ctx.value.lxSourceId,
+      });
+    } else {
+      // MF 引擎：用 pluginAlbumSearch 搜索专辑
+      const results = await pluginAlbumSearch(ctx.value.pluginSource, albumName, 1);
+      if (results.length === 0) {
+        showToast('未找到该专辑', 'info');
+        return;
+      }
+      const album = results[0];
+      onlineDetailStore.setContextWithHistory({
+        type: 'album',
+        title: album.name,
+        subtitle: album.artist,
+        coverUrl: album.coverUrl,
+        pluginSource: ctx.value.pluginSource,
+        rawData: album.rawData,
+        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
+        engineType: 'musicfree',
+      });
     }
-    const album = results[0];
-    onlineDetailStore.setContextWithHistory({
-      type: 'album',
-      title: album.name,
-      subtitle: album.artist,
-      coverUrl: album.coverUrl,
-      pluginSource: ctx.value.pluginSource,
-      rawData: album.rawData,
-      sourceSearchType: ctx.value.sourceSearchType || 'playlist',
-    });
     void router.push({ path: '/online-detail', query: { type: 'album' } });
   } catch (e: any) {
     showToast(`查看专辑失败: ${e?.message || e}`, 'error');
@@ -356,8 +682,9 @@ async function handleOnlineViewAlbum(song: Song) {
 }
 
 /** 点击歌手详情中的专辑，导航到在线专辑详情 */
-function handleAlbumClick(album: PluginAlbumResult) {
+function handleAlbumClick(album: any) {
   if (!ctx.value) return;
+  const isLx = isLxEngine.value && ctx.value.lxSourceId;
   // 使用带历史的上下文设置，保存当前歌手上下文
   onlineDetailStore.setContextWithHistory({
     type: 'album',
@@ -367,6 +694,7 @@ function handleAlbumClick(album: PluginAlbumResult) {
     pluginSource: ctx.value.pluginSource,
     rawData: album.rawData,
     sourceSearchType: 'artist', // 标记来源为歌手详情
+    ...(isLx ? { engineType: 'lx' as const, lxSourceId: ctx.value.lxSourceId } : { engineType: 'musicfree' as const }),
   });
   artistActiveTab.value = 'songs'; // 重置 tab
   void router.push({ path: '/online-detail', query: { type: 'album' } });
@@ -394,7 +722,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  mfCoverFetchVersion += 1; // 取消 pending 的封面拉取
+  mfCoverFetchVersion += 1; // 取消 pending 的 MF 封面拉取
+  lxCoverFetchVersion += 1; // 取消 pending 的 LX 封面拉取
 });
 
 // 路由 type 变化时：尝试恢复上下文并重新加载
@@ -413,6 +742,9 @@ watch(detailType, (newType, oldType) => {
 // 歌手 tab 切换时重新加载对应数据
 watch(artistActiveTab, () => {
   if (detailType.value === 'artist' && ctx.value) {
+    // 清空上一个 tab 的数据，避免转场期间显示旧数据或加载失败时残留
+    songs.value = [];
+    albums.value = [];
     void loadData(1);
   }
 });
