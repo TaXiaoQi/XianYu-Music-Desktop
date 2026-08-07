@@ -280,6 +280,8 @@ import {
   pluginsVersion,
   pluginSearch,
   pluginGetMusicInfo,
+  pluginGetBakaMusicInfo,
+  isBakaPlugin,
   pluginGetLyric,
   pluginGetCover,
   pluginArtistSearch,
@@ -1393,7 +1395,10 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     // 2. 并行获取播放 URL（阻塞）和歌词（getMediaSource 可能不返回歌词，用 pluginGetLyric 补获）
     //    URL 必须等待，歌词不阻塞播放但尽量在 playSong 前就绪
     const lyricPromise = pluginGetLyric(pluginSrc, item).catch(() => null);
-    const musicInfo = await pluginGetMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior);
+    // Baka 插件使用独立的 12 档音质方法，原版 MF 使用三档映射
+    const musicInfo = await isBakaPlugin(pluginSrc)
+      ? await pluginGetBakaMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior)
+      : await pluginGetMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior);
     if (!musicInfo?.url) {
       console.warn('[MusicFree] 无法获取播放URL:', item.title);
       return;

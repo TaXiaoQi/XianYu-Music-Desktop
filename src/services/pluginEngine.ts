@@ -91,12 +91,19 @@ const _sandboxedPlugins = new Set<string>();
  * 代理对象的接口与 IPluginInstance 完全一致，现有代码无需修改。
  */
 function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
-  const methodNames = [
+  const allMethodNames = [
     'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
     'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
     'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
     'getRecommendSheetTags', 'getRecommendSheetsByTag',
   ];
+
+  // Worker 返回的 _availableMethods 包含插件实例实际实现的方法名列表
+  // 只为这些方法创建代理函数，未实现的方法不创建函数桩
+  // 这样 typeof proxy.someMethod === 'function' 能正确反映插件是否实现了该方法
+  const availableMethods: string[] = Array.isArray(metadata._availableMethods)
+    ? metadata._availableMethods
+    : allMethodNames; // 回退：元数据无 _availableMethods 时全部代理（向后兼容）
 
   const proxy: any = {
     platform: metadata.platform,
@@ -106,9 +113,10 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
     supportedSearchType: metadata.supportedSearchType,
     defaultSearchType: metadata.defaultSearchType,
     userVariables: metadata.userVariables,
+    supportedQualities: metadata.supportedQualities,
   };
 
-  for (const method of methodNames) {
+  for (const method of availableMethods) {
     proxy[method] = async (...args: any[]) => {
       return callSandboxMethod(pluginId, method, args);
     };
@@ -1135,84 +1143,49 @@ export async function pluginGetMusicInfo(
     : resetMediaItem(item, source.name);
 
   // 构建音质尝试列表（含自动降级/升级）
-  // 先检测插件是否声明了 supportedQualities（Toskysun 系列插件特有字段）
-  const supportedNewQualities = (inst.instance as any).supportedQualities;
-  const supportsNewKeys = Array.isArray(supportedNewQualities) && supportedNewQualities.length > 0;
-
+  // 本函数仅处理原版 MusicFree 插件（standard/high/lossless 三档）
+  // Baka/Toskysun 系列插件请使用 pluginGetBakaMusicInfo
   const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
 
   // [音质解析] 当有可用音质列表时，使用 resolveOnlinePlayQuality 统一解析
-  // 返回有序 (pluginString, QualityKey) 对，确保能追踪实际播放音质
+  // 原版 MF 插件：多 QualityKey 映射到同一三档，需去重
   const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
 
   if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
-    // 使用统一解析函数：首选 → 回退行为 → 最高可用兜底
     const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
-    if (supportsNewKeys) {
-      for (const q of resolvedKeys) {
-        tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
-      }
-    } else {
-      // 原版 MF 插件：多 QualityKey 映射到同一三档，需去重
-      const seen = new Set<string>();
-      for (const q of resolvedKeys) {
-        const mfQ = qualityKeyToMfQuality(q);
-        if (!seen.has(mfQ)) {
-          seen.add(mfQ);
-          tryPairs.push({ pluginQ: mfQ, qualityKey: q });
-        }
+    const seen = new Set<string>();
+    for (const q of resolvedKeys) {
+      const mfQ = qualityKeyToMfQuality(q);
+      if (!seen.has(mfQ)) {
+        seen.add(mfQ);
+        tryPairs.push({ pluginQ: mfQ, qualityKey: q });
       }
     }
   } else if (isQualityKey(quality)) {
-    // 无可用音质列表时，回退到原始行为（不按可用列表过滤）
-    if (supportsNewKeys) {
-      if (fallbackBehavior === 'pause') {
-        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-      } else if (fallbackBehavior === 'higher') {
-        const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
-        if (startIdx !== -1) {
-          for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
-            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS[i]), qualityKey: ALL_QUALITY_KEYS[i] });
-          }
-        } else {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-        }
+    const mfQ = qualityKeyToMfQuality(quality);
+    if (fallbackBehavior === 'pause') {
+      tryPairs.push({ pluginQ: mfQ, qualityKey: quality });
+    } else if (fallbackBehavior === 'higher') {
+      if (mfQ === 'standard') {
+        tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
+        tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
+        tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
+      } else if (mfQ === 'high') {
+        tryPairs.push({ pluginQ: 'high', qualityKey: quality });
+        tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
       } else {
-        const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
-        if (startIdx !== -1) {
-          for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
-            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]), qualityKey: ALL_QUALITY_KEYS_DESC[i] });
-          }
-        } else {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-        }
+        tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
       }
     } else {
-      const mfQ = qualityKeyToMfQuality(quality);
-      if (fallbackBehavior === 'pause') {
-        tryPairs.push({ pluginQ: mfQ, qualityKey: quality });
-      } else if (fallbackBehavior === 'higher') {
-        if (mfQ === 'standard') {
-          tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
-          tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
-          tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
-        } else if (mfQ === 'high') {
-          tryPairs.push({ pluginQ: 'high', qualityKey: quality });
-          tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
-        } else {
-          tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
-        }
+      if (mfQ === 'lossless') {
+        tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
+        tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
+        tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
+      } else if (mfQ === 'high') {
+        tryPairs.push({ pluginQ: 'high', qualityKey: quality });
+        tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
       } else {
-        if (mfQ === 'lossless') {
-          tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
-          tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
-          tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
-        } else if (mfQ === 'high') {
-          tryPairs.push({ pluginQ: 'high', qualityKey: quality });
-          tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
-        } else {
-          tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
-        }
+        tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
       }
     }
   } else {
@@ -1297,6 +1270,153 @@ export async function pluginGetMusicInfo(
 
   const headerKeys = Object.keys(headers);
   log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, actualQuality=${actualQuality}`);
+  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
+}
+
+// ==================== Baka 插件播放 URL（独立方法，不与 MusicFree 共用）====================
+
+/**
+ * 检测插件是否为 Baka/Toskysun 系列。
+ *
+ * Baka 插件在实例上声明 `supportedQualities` 数组字段（12 档音质），
+ * 原版 MusicFree 插件无此字段。
+ *
+ * 异步确保插件实例已加载到内存中后再检测。
+ */
+export async function isBakaPlugin(source: PluginSource): Promise<boolean> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return false;
+  const sq = (inst.instance as any).supportedQualities;
+  return Array.isArray(sq) && sq.length > 0;
+}
+
+/**
+ * Baka/Toskysun 系列插件专用播放 URL 获取方法。
+ *
+ * 与 MusicFree 插件完全分离，使用 12 档原生音质键值（如 '320k'、'flac'、'master'），
+ * 不经过 standard/high/lossless 三档映射。
+ */
+export async function pluginGetBakaMusicInfo(
+  source: PluginSource,
+  item: PluginSearchResult,
+  quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
+  fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
+  availableQualities: QualityKey[] | null = null,
+): Promise<PluginMusicInfo | null> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return null;
+
+  if (typeof inst.instance.getMediaSource !== 'function') {
+    log(`[${source.name}] 无 getMediaSource 函数`);
+    return null;
+  }
+
+  const musicItem = item.rawData
+    ? resetMediaItem(item.rawData, source.name)
+    : resetMediaItem(item, source.name);
+
+  const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
+
+  // 构建音质尝试列表：始终使用 12 档原生键值
+  const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
+
+  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
+    const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
+    for (const q of resolvedKeys) {
+      tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
+    }
+  } else if (isQualityKey(quality)) {
+    if (fallbackBehavior === 'pause') {
+      tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
+    } else if (fallbackBehavior === 'higher') {
+      const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
+      if (startIdx !== -1) {
+        for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
+          tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS[i]), qualityKey: ALL_QUALITY_KEYS[i] });
+        }
+      } else {
+        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
+      }
+    } else {
+      const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
+      if (startIdx !== -1) {
+        for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
+          tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]), qualityKey: ALL_QUALITY_KEYS_DESC[i] });
+        }
+      } else {
+        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
+      }
+    }
+  } else {
+    // 旧版 standard/high/lossless 直接使用（极少到达此分支）
+    tryPairs.push({ pluginQ: quality, qualityKey: '320k' });
+  }
+
+  const tryQualities = tryPairs.map(p => p.pluginQ);
+  log(`[Baka getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
+
+  let result: any = null;
+  let lastError: any = null;
+  let successPairIdx = -1;
+  let songLevelErrorDetected = false;
+
+  for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
+    const q = tryQualities[pairIdx];
+    for (let retry = 0; retry <= 1; retry++) {
+      try {
+        result = await inst.instance.getMediaSource(musicItem, q);
+        if (result?.url) break;
+      } catch (e: any) {
+        lastError = e;
+        const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
+        log(`[Baka getMediaSource] quality=${q} 第${retry + 1}次异常: ${errMsg}`);
+        if (isSongLevelError(errMsg)) {
+          log(`[Baka getMediaSource] 歌曲级错误，跳过剩余音质: ${errMsg}`);
+          songLevelErrorDetected = true;
+          break;
+        }
+        if (retry < 1) {
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+    }
+    if (songLevelErrorDetected) break;
+    if (result?.url) {
+      successPairIdx = pairIdx;
+      break;
+    }
+    log(`[Baka getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
+    result = null;
+  }
+
+  if (!result || typeof result !== 'object') {
+    const errMsg = lastError ? `异常: ${lastError.message}` : (result === null ? '返回null' : `非对象(${typeof result})`);
+    log(`[Baka getMediaSource] ${source.name} 失败: ${errMsg}`);
+    (globalThis as any).__lastPluginError = `[${source.name}] ${errMsg}`;
+    return null;
+  }
+
+  const url = result.url || '';
+  const headers = result.headers || {};
+  const lyric = result.lyric || result.rawLrc || result.lrc || '';
+  const tlyric = result.tlyric || result.translation || '';
+  const lxlyric = result.lxlyric || '';
+  const yrc = result.yrc || '';
+  const qrc = result.qrc || '';
+  const coverUrl = result.coverUrl || result.artwork || '';
+  if (!url) {
+    log(`[Baka getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
+    (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
+    return null;
+  }
+
+  const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
+  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
+    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
+    : '';
+
+  const headerKeys = Object.keys(headers);
+  log(`[Baka getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
   return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
 }
 
