@@ -685,15 +685,15 @@ const restart = () => {
 /* ---------- Panel (通用面板/卡片) ---------- */
 .toolbox-panel {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
 }
 
 .toolbox-panel--muted {
   padding: 20px 24px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
 }
 
 /* ---------- Stack (基础配置的两个输入块) ---------- */
@@ -707,14 +707,14 @@ const restart = () => {
 .toolbox-item {
   padding: 14px 16px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   transition: background 0.2s, border-color 0.2s;
 }
 
 .toolbox-item:hover {
-  background: rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(229, 231, 235, 0.4);
+  border-color: rgba(229, 231, 235, 0.5);
 }
 
 /* ---------- Ghost button (选择路径/文件夹) ---------- */
@@ -722,25 +722,25 @@ const restart = () => {
   flex-shrink: 0;
   padding: 6px 14px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: transparent;
+  border: none;
+  background: #ec4141;
   font-size: 0.75rem;
-  color: var(--text-secondary, #9ca3af);
+  font-weight: 600;
+  color: #ffffff;
   cursor: pointer;
-  transition: border-color 160ms ease, color 160ms ease;
+  transition: background 160ms ease;
 }
 
 .toolbox-ghost-btn:hover {
-  border-color: #ec4141;
-  color: #ec4141;
+  background: #d13b3b;
 }
 
 /* ---------- Path field (路径展示) ---------- */
 .toolbox-path-field {
   padding: 10px 14px;
   border-radius: 8px;
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.15);
+  border: 1px dashed rgba(229, 231, 235, 0.5);
+  background: rgba(243, 244, 246, 1);
   font-size: 0.75rem;
 }
 
@@ -753,15 +753,15 @@ const restart = () => {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-secondary, #9ca3af);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(229, 231, 235, 0.4);
+  background: rgba(243, 244, 246, 0.6);
 }
 
 /* ---------- List (歌曲预览/重命名列表) ---------- */
 .toolbox-list {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.4);
   overflow: hidden;
 }
 
@@ -773,7 +773,7 @@ const restart = () => {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary, #1f2937);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
 }
 
 :root.dark .toolbox-list-header {
@@ -785,7 +785,7 @@ const restart = () => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.2);
   transition: background 160ms ease;
 }
 
@@ -794,6 +794,58 @@ const restart = () => {
 }
 
 .toolbox-list-row:hover {
+  background: rgba(243, 244, 246, 0.5);
+}
+</style>
+
+<style>
+/* ==========================================================================
+   桌面歌词工具箱深色模式样式覆盖
+   Vue scoped style 中 :global(.dark) .xxx 复合选择器无法正确编译，
+   深色模式样式需放在非 scoped <style> 块中，使用 html.dark .xxx 选择器。
+   底色/边框/hover 与下载页 UI 一致。
+   ========================================================================== */
+
+html.dark .toolbox-panel,
+html.dark .toolbox-panel--muted {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .toolbox-item {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .toolbox-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+html.dark .toolbox-path-field {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html.dark .toolbox-chip {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .toolbox-list {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(31, 41, 55, 0.4);
+}
+
+html.dark .toolbox-list-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .toolbox-list-row {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .toolbox-list-row:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 </style>
