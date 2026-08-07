@@ -74,6 +74,9 @@ const isFullscreen = isImmersiveFullscreen;
 // fullscreenAnimState 同样为全局共享状态，主页据此同步播放 scale 动画
 const FS_ANIM_DURATION = 320;
 
+// 记录进入全屏前窗口是否处于最大化状态，退出全屏后据此恢复
+let wasMaximizedBeforeFullscreen = false;
+
 // 沉浸模式下鼠标 2 秒无操作隐藏指针，移动/点击恢复
 const CURSOR_IDLE_HIDE_DELAY = 2000;
 const isCursorHidden = ref(false);
@@ -115,6 +118,15 @@ const disableCursorAutoHide = () => {
 };
 
 const applyImmersiveFullscreen = async (enter: boolean) => {
+  if (enter) {
+    // 最大化状态下 Tauri 的 setFullscreen 无法正确覆盖任务栏区域（WS_MAXIMIZE 样式
+    // 约束窗口到工作区），需要先取消最大化再进入全屏。
+    wasMaximizedBeforeFullscreen = await appWindow.isMaximized();
+    if (wasMaximizedBeforeFullscreen) {
+      await appWindow.unmaximize();
+    }
+  }
+
   await appWindow.setFullscreen(enter);
 
   try {
@@ -125,6 +137,12 @@ const applyImmersiveFullscreen = async (enter: boolean) => {
   }
 
   isFullscreen.value = enter;
+
+  if (!enter && wasMaximizedBeforeFullscreen) {
+    // 退出全屏后恢复之前的最大化状态
+    wasMaximizedBeforeFullscreen = false;
+    await appWindow.maximize();
+  }
 };
 
 const toggleFullscreen = async () => {
@@ -141,6 +159,11 @@ const toggleFullscreen = async () => {
       disableCursorAutoHide();
       isFullscreen.value = false;
       fullscreenAnimState.value = null;
+      // 进入全屏失败但已取消最大化时，恢复原始最大化状态
+      if (wasMaximizedBeforeFullscreen) {
+        wasMaximizedBeforeFullscreen = false;
+        try { await appWindow.maximize(); } catch { /* ignore */ }
+      }
       return;
     }
     // 原生铺满完成后，触发前端放大过渡动画盖住瞬间的尺寸跳变
