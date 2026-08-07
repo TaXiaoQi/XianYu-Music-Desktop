@@ -1008,6 +1008,29 @@ export function getLxPluginStatus(sourceId: string): LxPluginState | null {
   return lxPlugins.get(sourceId) ?? null;
 }
 
+/**
+ * 获取 LX 插件的脚本内容（用于云端同步上传）
+ * 优先从 scriptCache 读取，没有则通过 fetchLxPluginScript 重新获取。
+ * @param sourceId 插件 ID
+ * @param fallbackFilePath 当插件未加载到 lxPlugins 时，使用此 filePath 作为回退
+ */
+export async function getLxPluginScript(sourceId: string, fallbackFilePath?: string): Promise<string | null> {
+  const state = lxPlugins.get(sourceId);
+  const filePath = state?.source?.filePath ?? fallbackFilePath;
+  if (!filePath) return null;
+
+  // 1. 优先从脚本缓存读取
+  const cached = scriptCache.get(filePath);
+  if (cached) return cached;
+
+  // 2. 缓存未命中，重新获取脚本
+  try {
+    return await fetchLxPluginScript(filePath);
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureLxPluginInstance(source: PluginSource): Promise<LxPluginState | null> {
   // [修复防御]: 禁用的插件不自动初始化
   if (!source.enabled) {

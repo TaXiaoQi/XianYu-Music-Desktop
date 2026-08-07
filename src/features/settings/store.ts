@@ -181,7 +181,7 @@ export const defaultUploadSettings: UploadSettings = {
   history: true,
   favorites: true,
   plugins: true,
-  settings: false,
+  settings: true,
 };
 
 export const defaultPluginSettings: PluginSettings = {

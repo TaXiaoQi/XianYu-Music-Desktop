@@ -626,7 +626,12 @@ function updateAutoSyncMaxDelay(event: Event) {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  flex-wrap: wrap;
+}
+
+/* 左侧信息区占据剩余空间，防止同步进度文本变化导致按钮位移 */
+.manual-sync-head > .upload-copy {
+  flex: 1 1 0%;
+  min-width: 0;
 }
 
 .manual-sync-sub {

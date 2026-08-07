@@ -33,7 +33,7 @@ import type {
 import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
-import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError } from './lxPluginEngine';
+import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
 import {
   loadMusicFreeInSandbox,
@@ -2111,6 +2111,12 @@ export async function getPluginScript(id: string): Promise<string | null> {
   // 2. 从 localStorage 读取元数据，尝试重新加载脚本
   const source = getStoredPlugins().find(p => p.id === id);
   if (!source) return null;
+
+  // 3. LX 格式插件：从 lxPluginEngine 的脚本缓存获取（使用 Tauri 代理避免 CORS）
+  if (source.format === 'lx') {
+    const lxScript = await getLxPluginScript(id, source.filePath);
+    if (lxScript) return lxScript;
+  }
 
   try {
     if (source.filePath.startsWith('builtin://')) {
