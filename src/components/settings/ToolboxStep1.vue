@@ -152,36 +152,36 @@ const handleApply = async () => {
 <template>
   <div class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <section class="space-y-4">
-      <h3 class="text-2xl font-semibold text-slate-900 dark:text-white">预处理选项</h3>
+      <h3 class="text-base font-bold text-gray-800 dark:text-gray-200">预处理选项</h3>
 
-      <label class="flex cursor-pointer items-start gap-4 rounded-[28px] border border-slate-200/80 bg-white/70 px-5 py-5 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition hover:border-sky-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-sky-400/40">
+      <label class="toolbox-option-card">
         <input
           v-model="removeTrackPrefix"
           type="checkbox"
-          class="mt-1 h-5 w-5 rounded border-slate-300 text-[#EC4141] focus:ring-[#EC4141]"
+          class="mt-0.5 h-5 w-5 rounded border-white/20 text-[#EC4141] focus:ring-[#EC4141]"
         />
         <div class="min-w-0">
-          <div class="text-lg font-semibold text-slate-900 dark:text-white">去除序号前缀</div>
-          <p class="mt-2 text-sm leading-7 text-slate-600 dark:text-white/60">
-            <span class="font-medium text-sky-700 dark:text-sky-300">01.song.flac → song.flac</span>
+          <div class="text-sm font-semibold text-gray-800 dark:text-white">去除序号前缀</div>
+          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/50">
+            <span class="font-medium text-[#EC4141]/80 dark:text-[#EC4141]">01.song.flac → song.flac</span>
           </p>
         </div>
       </label>
-
-
     </section>
 
-    <div class="flex gap-3 border-t border-slate-100 pt-4 dark:border-white/5">
+    <div class="flex gap-3 border-t border-white/6 pt-4">
       <button
+        type="button"
+        class="flex-1 rounded-xl border border-white/10 bg-transparent px-6 py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 dark:text-gray-200"
         @click="emit('skip')"
-        class="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-transparent dark:text-slate-200 dark:hover:bg-white/5"
       >
         跳过此步骤
       </button>
       <button
-        @click="handleApply"
+        type="button"
+        class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="isApplying || isScanning"
-        class="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a] disabled:cursor-not-allowed disabled:opacity-50"
+        @click="handleApply"
       >
         <svg v-if="isApplying" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -198,3 +198,22 @@ const handleApply = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.toolbox-option-card {
+  display: flex;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toolbox-option-card:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+</style>

@@ -1669,18 +1669,12 @@ onUnmounted(() => {
   transition: background-color 160ms ease;
 }
 
-.desktop-setting-row:last-child {
-}
-
 .desktop-setting-row:hover {
   background: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .desktop-setting-row {
-}
-
 :global(.dark) .desktop-setting-row:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .desktop-typography-panel {
@@ -1706,18 +1700,12 @@ onUnmounted(() => {
   transition: background-color 160ms ease;
 }
 
-.desktop-typography-row:last-child {
-}
-
 .desktop-typography-row:hover {
   background: rgba(255, 255, 255, 0.4);
 }
 
-:global(.dark) .desktop-typography-row {
-}
-
 :global(.dark) .desktop-typography-row:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .desktop-typography-row--inline {

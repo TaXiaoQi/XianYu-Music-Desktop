@@ -65,23 +65,25 @@ const handleRefresh = async () => {
   <div class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <div v-if="refreshed" class="space-y-6">
       <div class="text-center py-6">
-        <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-4xl dark:bg-emerald-500/20">
+        <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/15 text-4xl text-emerald-400">
           ✓
         </div>
-        <h3 class="text-2xl font-bold text-slate-900 dark:text-white">流程已完成</h3>
-        <p class="mt-2 text-sm text-slate-600 dark:text-white/60">当前目标文件夹已经完成刷新，可以直接开始下一轮整理。</p>
+        <h3 class="text-xl font-bold text-gray-800 dark:text-white">流程已完成</h3>
+        <p class="mt-2 text-sm text-gray-500 dark:text-white/50">当前目标文件夹已经完成刷新，可以直接开始下一轮整理。</p>
       </div>
 
-      <div class="flex gap-3 border-t border-slate-100 pt-4 dark:border-white/5">
+      <div class="flex gap-3 border-t border-white/6 pt-4">
         <button
+          type="button"
+          class="flex-1 rounded-xl border border-white/10 bg-transparent px-6 py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5"
           @click="emit('restart')"
-          class="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-transparent dark:text-slate-200 dark:hover:bg-white/5"
         >
           处理另一个文件夹
         </button>
         <button
+          type="button"
+          class="flex-1 rounded-xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a]"
           @click="emit('close')"
-          class="flex-1 rounded-2xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a]"
         >
           完成
         </button>
@@ -89,29 +91,30 @@ const handleRefresh = async () => {
     </div>
 
     <div v-else class="space-y-6">
-      <section class="rounded-3xl border border-amber-200/80 bg-amber-50/80 p-5 dark:border-amber-500/20 dark:bg-amber-500/10">
+      <section class="toolbox-notice-card toolbox-notice-card--amber">
         <div class="flex items-start gap-4">
-          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500 text-xl text-white shadow-sm">4</div>
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-base font-bold text-white">4</div>
           <div>
-            <h3 class="text-lg font-semibold text-amber-950 dark:text-amber-200">完成前刷新音乐库</h3>
-            <p class="mt-2 text-sm leading-7 text-amber-800/80 dark:text-amber-300">
+            <h3 class="text-sm font-semibold text-amber-200">完成前刷新音乐库</h3>
+            <p class="mt-1 text-xs leading-5 text-amber-300/80">
               这一步会重新扫描目标文件夹，让工具箱刚刚处理过的结果立即反映到软件音乐库中。
             </p>
           </div>
         </div>
       </section>
 
-      <section class="rounded-3xl border border-slate-200/70 bg-slate-50/75 p-5 dark:border-white/10 dark:bg-white/5">
-        <div class="text-sm font-semibold text-slate-900 dark:text-white">当前目标文件夹</div>
-        <div class="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/85 px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-slate-300">
+      <section class="toolbox-field-card">
+        <div class="text-sm font-semibold text-gray-800 dark:text-white">当前目标文件夹</div>
+        <div class="mt-3 rounded-lg border border-dashed border-white/12 bg-black/15 px-4 py-3 text-sm text-gray-300">
           <span class="break-all">{{ targetPath }}</span>
         </div>
       </section>
 
       <button
-        @click="handleRefresh"
+        type="button"
+        class="flex w-full items-center justify-center gap-3 rounded-xl bg-white/6 border border-white/8 px-6 py-4 text-base font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="!targetPath || isRefreshing"
-        class="flex w-full items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/10 dark:hover:bg-white/20"
+        @click="handleRefresh"
       >
         <svg v-if="isRefreshing" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -123,10 +126,11 @@ const handleRefresh = async () => {
         {{ isRefreshing ? '刷新中...' : '刷新歌曲信息' }}
       </button>
 
-      <div class="flex gap-3 border-t border-slate-100 pt-4 dark:border-white/5">
+      <div class="flex gap-3 border-t border-white/6 pt-4">
         <button
+          type="button"
+          class="flex-1 rounded-xl border border-white/10 bg-transparent px-6 py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5"
           @click="emit('back')"
-          class="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-transparent dark:text-slate-200 dark:hover:bg-white/5"
         >
           返回上一步
         </button>
@@ -134,3 +138,24 @@ const handleRefresh = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.toolbox-notice-card {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.toolbox-notice-card--amber {
+  border-color: rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.toolbox-field-card {
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+</style>

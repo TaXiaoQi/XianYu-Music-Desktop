@@ -64,9 +64,10 @@ const launchMusicTag = async () => {
 <template>
   <div class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
     <button
-      @click="launchMusicTag"
+      type="button"
+      class="flex w-full items-center justify-center gap-3 rounded-xl bg-white/6 px-6 py-4 text-base font-semibold text-white border border-white/8 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
       :disabled="!props.musicTagPath || isLaunching"
-      class="flex w-full items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
+      @click="launchMusicTag"
     >
       <svg v-if="isLaunching" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -78,16 +79,18 @@ const launchMusicTag = async () => {
       {{ isLaunching ? '正在启动...' : '启动 MusicTag' }}
     </button>
 
-    <div class="flex gap-3 border-t border-slate-100 pt-4 dark:border-white/5">
+    <div class="flex gap-3 border-t border-white/6 pt-4">
       <button
+        type="button"
+        class="flex-1 rounded-xl border border-white/10 bg-transparent px-6 py-3 text-sm font-medium text-gray-300 transition-colors hover:bg-white/5"
         @click="emit('back')"
-        class="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-transparent dark:text-slate-200 dark:hover:bg-white/5"
       >
         返回上一步
       </button>
       <button
+        type="button"
+        class="flex-1 rounded-xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a]"
         @click="emit('next')"
-        class="flex-1 rounded-2xl bg-[#EC4141] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#d63a3a]"
       >
         标签编辑完成，继续下一步
       </button>

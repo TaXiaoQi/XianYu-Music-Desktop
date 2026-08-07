@@ -596,7 +596,7 @@ onScopeDispose(() => {
         播放设置
       </h2>
       <div class="settings-playback-group flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="desktop-setting-row">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">自动播放</div>
           </div>
@@ -604,7 +604,7 @@ onScopeDispose(() => {
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="autoPlay ? 'translate-x-6' : 'translate-x-1'" />
           </button>
         </div>
-        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="desktop-setting-row">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
@@ -618,7 +618,7 @@ onScopeDispose(() => {
             <ChevronDown class="h-4 w-4 text-gray-400 shrink-0" aria-hidden="true" />
           </button>
         </div>
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+        <div class="desktop-setting-row">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
           </div>
@@ -633,7 +633,7 @@ onScopeDispose(() => {
           <button
             type="button"
             @click="showLyricsSyncOffsetPanel = !showLyricsSyncOffsetPanel"
-            class="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-white/40 dark:hover:bg-white/10"
+            class="desktop-setting-row w-full"
           >
             <div class="min-w-0">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词同步补偿</div>
@@ -768,14 +768,8 @@ onScopeDispose(() => {
   transition: background-color 160ms ease;
 }
 
-.desktop-setting-row:last-child {
-}
-
 .desktop-setting-row:hover {
   background: rgba(255, 255, 255, 0.4);
-}
-
-:global(.dark) .desktop-setting-row {
 }
 
 :global(.dark) .desktop-setting-row:hover {
