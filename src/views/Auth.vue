@@ -1283,7 +1283,7 @@ onMounted(async () => {
 
 /* 深色模式 */
 :global(.dark) .logout-confirm-card {
-  background: #1f1f23;
+  background: #262626;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -1385,7 +1385,7 @@ onMounted(async () => {
 }
 
 :global(.dark) .avatar-menu-card {
-  background: #1f1f1f;
+  background: #262626;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }

@@ -164,7 +164,6 @@ commands.allow = [
   "recognize_with_pcm",
   "write_state_json",
   "read_state_json",
-  "open_devtools",
   "fetch_lyric_from_source",
   "resolve_lx_music_url",
   "get_lx_cover",
@@ -181,4 +180,28 @@ commands.allow = [
   "get_playback_session",
   "update_playback_position",
   "flush_playback_session",
+]
+
+# 辅助窗口（桌面歌词、迷你播放器、托盘菜单、任务栏播控、音量弹窗）专用命令集。
+# 仅包含副窗口运行所需的最小命令子集，排除 run_installer、open_external_program、
+# clear_all_app_data、exit_app、delete_music_file 等高危命令。
+[[permission]]
+identifier = "allow-aux-commands"
+description = "Allows only the subset of XY-Music application commands needed by auxiliary windows."
+commands.allow = [
+  "get_playback_session",
+  "set_mini_boundary_enabled",
+  "set_dark_mode_for_window",
+  "get_window_material_capabilities",
+  "refresh_window_material_active_state",
+  "get_foreground_fullscreen_state",
+  "refresh_current_window_topmost",
+  "start_topmost_guard",
+  "stop_topmost_guard",
+  "refresh_immersive_fullscreen",
+  "refresh_taskbar_window_topmost",
+  "get_taskbar_tray_geometry",
+  "setup_taskbar_window",
+  "install_taskbar_zorder_guard",
+  "uninstall_taskbar_zorder_guard",
 ]

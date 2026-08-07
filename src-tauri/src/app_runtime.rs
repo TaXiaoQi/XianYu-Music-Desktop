@@ -495,6 +495,7 @@ pub(crate) fn update_native_tray_menu(
     apply_tray_menu(&app, &state).map_err(|error| error.to_string())
 }
 
+#[cfg(feature = "devtools")]
 #[tauri::command]
 pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
@@ -502,4 +503,10 @@ pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or("main window not found")?;
     let _: () = window.open_devtools();
     Ok(())
+}
+
+#[cfg(not(feature = "devtools"))]
+#[tauri::command]
+pub(crate) fn open_devtools(_app: tauri::AppHandle) -> Result<(), String> {
+    Err("DevTools 在生产构建中不可用".to_string())
 }

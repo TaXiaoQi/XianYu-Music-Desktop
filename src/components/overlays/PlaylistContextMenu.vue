@@ -80,7 +80,7 @@ const itemClass = "px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-white/10 cursor-p
     <div 
       v-if="visible"
       ref="menuRef"
-      class="fixed z-[9999] bg-white/80 dark:bg-[#2b2b2b]/90 backdrop-blur-2xl rounded-lg shadow-xl border border-gray-100/50 dark:border-white/10 py-1.5 text-sm text-gray-700 dark:text-white/90 min-w-[180px] animate-in fade-in zoom-in-95 duration-75 select-none"
+      class="fixed z-[9999] bg-white/80 dark:bg-[#262626]/90 backdrop-blur-2xl rounded-lg shadow-xl border border-gray-100/50 dark:border-white/10 py-1.5 text-sm text-gray-700 dark:text-white/90 min-w-[180px] animate-in fade-in zoom-in-95 duration-75 select-none"
       :style="menuStyle"
       @contextmenu.prevent
     >

@@ -114,7 +114,7 @@ onUnmounted(() => {
       class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
       @click.self="emit('close')"
     >
-      <div class="bg-white rounded-xl shadow-2xl w-80 overflow-hidden animate-in fade-in zoom-in duration-200 dark:bg-[#202020]">
+      <div class="bg-white rounded-xl shadow-2xl w-80 overflow-hidden animate-in fade-in zoom-in duration-200 dark:bg-[#262626]">
         <div class="px-4 py-3 border-b border-gray-100 dark:border-white/10 flex justify-between items-center">
           <h3 class="font-bold text-gray-800 dark:text-white text-sm">移动 {{ selectedCount }} 首歌曲到文件夹</h3>
           <button @click="emit('close')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">×</button>

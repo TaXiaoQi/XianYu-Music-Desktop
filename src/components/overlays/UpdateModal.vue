@@ -47,7 +47,7 @@ const formatSpeed = (speed: number) => {
         @click.self="!isDownloading && handleClose()"
       >
         <div
-          class="update-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
+          class="update-card bg-white dark:bg-[#262626] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
           :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->

@@ -198,7 +198,7 @@ const bgImageSrc = computed(() => {
 const dynamicShellClass = computed(() => {
   if (isMicaWindowMaterial.value) return 'bg-white/40 dark:bg-black/8';
   if (hasWindowMaterial.value) return 'bg-white/60 dark:bg-black/25';
-  return 'bg-white dark:bg-[#1a1a1a]';
+  return 'bg-white dark:bg-[#262626]';
 });
 
 const flowColorBoostFactor = computed(() => theme.value.flowColorBoost / 100);
@@ -530,7 +530,7 @@ const materialScrimStyle = computed(() => {
 
   if (isDarkTheme.value) {
     return {
-      backgroundColor: isMicaWindowMaterial.value ? 'rgba(14, 16, 18, 0.42)' : 'rgba(12, 14, 16, 0.34)',
+      backgroundColor: isMicaWindowMaterial.value ? 'rgba(32, 32, 32, 0.42)' : 'rgba(28, 28, 28, 0.34)',
     };
   }
 
@@ -577,7 +577,7 @@ const customBgTransform = computed(() => {
         ? 'bg-black'
         : hasWindowMaterial
           ? 'bg-transparent'
-          : 'bg-[#fafafa] dark:bg-[#121212]',
+          : 'bg-[#fafafa] dark:bg-[#262626]',
       isMainWindowLowPower ? 'global-background--low-power' : '',
     ]"
   >
@@ -707,7 +707,7 @@ const customBgTransform = computed(() => {
     <div
       v-if="!activeBackgroundInfo"
       class="absolute inset-0 transition-colors duration-300"
-      :class="hasWindowMaterial ? 'bg-transparent' : 'bg-white dark:bg-[#121212]'"
+      :class="hasWindowMaterial ? 'bg-transparent' : 'bg-white dark:bg-[#262626]'"
     ></div>
   </div>
 </template>

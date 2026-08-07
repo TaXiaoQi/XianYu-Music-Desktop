@@ -170,7 +170,7 @@ const {
       >
         <div
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-          :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+          :class="showPlayerDetail ? 'bg-[#262626]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
         >
           <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
           <button
@@ -243,7 +243,7 @@ const {
       >
         <div
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
-          :class="showPlayerDetail ? 'bg-[#1c1c1c]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
+          :class="showPlayerDetail ? 'bg-[#262626]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
         >
           <button
             v-for="opt in QUALITY_OPTIONS"
@@ -277,7 +277,7 @@ const {
     >
       <div class="absolute top-full left-0 w-full h-4"></div>
       <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
-        :class="showPlayerDetail ? 'bg-[#1c1c1c]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+        :class="showPlayerDetail ? 'bg-[#262626]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
       >
         <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
           :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"

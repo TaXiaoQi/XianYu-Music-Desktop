@@ -74,7 +74,7 @@ const badgeCount = computed(() => {
     <transition name="fade">
       <div 
         v-if="dragSession.showGhost"
-        class="fixed z-[9999] pointer-events-none p-3 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md rounded-lg shadow-2xl border border-white/20 dark:border-white/10 flex items-center gap-3 select-none transition-transform"
+        class="fixed z-[9999] pointer-events-none p-3 bg-white/90 dark:bg-[#262626]/90 backdrop-blur-md rounded-lg shadow-2xl border border-white/20 dark:border-white/10 flex items-center gap-3 select-none transition-transform"
         :style="ghostStyle"
       >
         <!-- Icon / Cover Area -->

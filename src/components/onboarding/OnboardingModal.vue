@@ -145,12 +145,12 @@ const updateShortcut = (
 
 const onboardingSurfaceClass = computed(() => {
   if (materialMode.value === 'none') {
-    return 'bg-white dark:bg-[#0a0a0a]';
+    return 'bg-white dark:bg-[#262626]';
   }
 
   return materialMode.value === 'mica'
-    ? 'bg-white/62 dark:bg-[#0a0a0a]/58'
-    : 'bg-white/50 dark:bg-[#0a0a0a]/48';
+    ? 'bg-white/62 dark:bg-[#262626]/58'
+    : 'bg-white/50 dark:bg-[#262626]/48';
 });
 
 const handleShortcutCapture = (
@@ -1227,7 +1227,7 @@ onUnmounted(() => {
 
             <!-- 底部操作栏 -->
             <footer
-              class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)] border-t border-black/10 dark:border-white/10"
+              class="flex items-center justify-between px-[clamp(2rem,4vw,4rem)] py-[clamp(1.25rem,2.5vh,2rem)]"
             >
               <!-- 左下角：始终是"暂不进行初始化设置" -->
               <button
@@ -1279,7 +1279,7 @@ onUnmounted(() => {
                 @click.self="cancelSkipLogin"
               >
                 <div
-                  class="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+                  class="bg-white dark:bg-[#262626] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
                 >
                   <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -1365,7 +1365,7 @@ onUnmounted(() => {
             @click.self="showCustomUnsupported = false"
           >
             <div
-              class="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+              class="bg-white dark:bg-[#262626] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
             >
               <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

@@ -151,7 +151,7 @@ onUnmounted(() => {
         <Teleport to="body">
           <div
             v-if="showSortMenu"
-            class="fixed z-[9999] bg-white dark:bg-[#2b2b2b] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
+            class="fixed z-[9999] bg-white dark:bg-[#262626] rounded-lg shadow-xl border border-gray-100 dark:border-white/10 py-1 min-w-[120px] isolate animate-in fade-in zoom-in-95 duration-100"
             :style="sortMenuIsRightAligned
               ? { right: sortMenuX + 'px', top: sortMenuY + 'px' }
               : { left: sortMenuX + 'px', top: sortMenuY + 'px' }"
@@ -192,7 +192,7 @@ onUnmounted(() => {
           class="fixed inset-x-0 bottom-6 z-[9998] flex justify-center px-4 pointer-events-none"
         >
           <div
-            class="pointer-events-auto flex items-center gap-2 rounded-full border border-white/40 bg-white/70 px-3 py-2 shadow-[0_18px_48px_rgba(0,0,0,0.16)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#1f1f1f]/80"
+            class="pointer-events-auto flex items-center gap-2 rounded-full border border-white/40 bg-white/70 px-3 py-2 shadow-[0_18px_48px_rgba(0,0,0,0.16)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#262626]/80"
           >
             <div class="px-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
               已选 {{ selectedCount }} 首

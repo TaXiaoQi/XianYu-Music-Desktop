@@ -50,6 +50,10 @@ image.png
 scripts/bump-version.js
 src-tauri/examples/*_probe.rs
 
+# --- 🧪 本地测试输出日志（cargo test 重定向产物）---
+/test*.txt
+/test_*.txt
+
 .codex/
 
 tool/

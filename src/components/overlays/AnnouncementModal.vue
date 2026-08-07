@@ -31,7 +31,7 @@ const handleClose = () => {
         @click.self="handleClose"
       >
         <div
-          class="announcement-card bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
+          class="announcement-card bg-white dark:bg-[#262626] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
           :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->

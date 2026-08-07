@@ -872,7 +872,7 @@ html.dark .sync-notice {
 }
 
 html.dark .logout-confirm-card {
-  background: #1f1f23;
+  background: #262626;
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }

@@ -231,9 +231,41 @@ pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
 pub fn open_external_program(path: String, args: Vec<String>) -> Result<(), String> {
     use std::process::Command;
 
-    path_validator::validate_path(&path, None)?;
-    let mut cmd = Command::new(&path);
-    for arg in args {
+    let validated = path_validator::validate_path(&path, None)?;
+
+    // 确保路径指向一个实际存在的文件
+    if !validated.is_file() {
+        return Err(format!("目标程序文件不存在: {}", validated.display()));
+    }
+
+    // 扩展名白名单：Windows 仅允许 .exe，其他平台允许常见可执行扩展名
+    #[cfg(target_os = "windows")]
+    {
+        let ext = validated
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if ext != "exe" {
+            return Err(format!(
+                "仅允许启动 .exe 程序，当前扩展名: .{ext}"
+            ));
+        }
+    }
+
+    // 清理参数：拒绝包含空字节或其他控制字符的参数
+    let safe_args: Vec<String> = args
+        .into_iter()
+        .map(|arg| {
+            if arg.contains('\0') {
+                return Err("参数包含非法空字节".to_string());
+            }
+            Ok(arg)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut cmd = Command::new(&validated);
+    for arg in safe_args {
         cmd.arg(arg);
     }
 
@@ -1318,19 +1350,47 @@ pub async fn fetch_announcement() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn run_installer(path: String) -> Result<(), String> {
+pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
     use std::process::Command;
+
+    // 安全限制：仅允许执行系统下载目录中的 .msi / .exe 安装包
+    let download_dir = app_handle
+        .path()
+        .download_dir()
+        .map_err(|e| format!("获取下载目录失败: {e}"))?;
+
+    let validated = path_validator::validate_path_in_dir(&path, &download_dir)?;
+
+    // 扩展名白名单：仅允许 .msi 和 .exe
+    let ext = validated
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    if ext != "msi" && ext != "exe" {
+        return Err(format!(
+            "仅允许运行 .msi 或 .exe 安装程序，当前扩展名: .{ext}"
+        ));
+    }
+
+    // 确保文件实际存在
+    if !validated.is_file() {
+        return Err(format!("安装程序文件不存在: {}", validated.display()));
+    }
+
+    let path_str = validated.to_string_lossy().to_string();
 
     #[cfg(target_os = "windows")]
     {
-        if path.to_lowercase().ends_with(".msi") {
+        if ext == "msi" {
             Command::new("msiexec")
-                .args(["/i", &path])
+                .args(["/i", &path_str])
                 .spawn()
                 .map_err(|e| format!("启动 MSI 安装程序失败: {e}"))?;
         } else {
-            Command::new("cmd")
-                .args(["/C", "start", "", &path])
+            // 直接启动 .exe，避免使用 cmd /C start 造成命令注入风险
+            Command::new(&path_str)
                 .spawn()
                 .map_err(|e| format!("启动安装程序失败: {e}"))?;
         }
@@ -1338,7 +1398,8 @@ pub fn run_installer(path: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        Command::new(&path)
+        let _ = &ext; // 非 Windows 平台不检查扩展名
+        Command::new(&path_str)
             .spawn()
             .map_err(|e| format!("启动安装程序失败: {e}"))?;
     }

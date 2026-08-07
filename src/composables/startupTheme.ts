@@ -1,5 +1,5 @@
 const SETTINGS_KEY = 'player_settings';
-const DARK_STARTUP_COLOR = '#121212';
+const DARK_STARTUP_COLOR = '#262626';
 const LIGHT_STARTUP_COLOR = '#fafafa';
 const STARTUP_PAINT_ATTRIBUTE = 'data-xianyu-startup-paint';
 const MAIN_WINDOW_LABEL = 'main';

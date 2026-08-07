@@ -679,7 +679,7 @@ onUnmounted(() => {
               <div
                 class="relative w-12 h-12 md:w-14 md:h-14 shrink-0"
                 :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
-                :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#222222] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
+                :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
               >
                 <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
                   <img v-if="getArtistAvatarUrl(item.artist)" :src="getArtistAvatarUrl(item.artist)" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="item.artist.name">
@@ -719,7 +719,7 @@ onUnmounted(() => {
           <div
             class="relative w-12 h-12 md:w-14 md:h-14 shrink-0"
             :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
-            :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#222222] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
+            :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
           >
             <div class="w-full h-full rounded-full overflow-hidden shadow-sm group-hover:shadow transition-shadow duration-300 relative bg-gray-100 dark:bg-white/5 flex items-center justify-center">
               <img v-if="getArtistAvatarUrl(item.artist)" :src="getArtistAvatarUrl(item.artist)" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="item.artist.name">

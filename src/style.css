@@ -3,6 +3,13 @@
 /* 🟢 Force class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* 🎨 Win11 风格深色模式：覆盖 Tailwind 900 色阶，将偏黑的纯黑替换为带灰的深色 */
+.dark {
+  --color-gray-900: #262626;
+  --color-neutral-900: #262626;
+  --color-zinc-900: #262626;
+}
+
 :root {
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;

@@ -187,10 +187,11 @@ if (currentWindowLabel === 'main') {
     });
 
     // F12 打开 DevTools（WebView2 已禁用浏览器快捷键，需通过自定义命令恢复）
+    // 生产构建中 open_devtools 命令返回错误，invoke 被 catch 静默处理
     handleDevtoolsKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F12') {
         event.preventDefault();
-        void invoke('open_devtools');
+        void invoke('open_devtools').catch(() => { /* 生产环境无 DevTools */ });
       }
     };
     window.addEventListener('keydown', handleDevtoolsKeyDown);
