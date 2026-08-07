@@ -377,7 +377,7 @@ onUnmounted(cancelDragging);
           v-for="item in FOOTER_ITEMS"
           :key="item.key"
           type="button"
-          class="footer-visibility-row rounded-xl border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10"
+          class="footer-visibility-row rounded-xl border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
           @click="toggleItemVisibility(item.key)"
         >
           <span class="flex min-w-0 items-center gap-2.5">
@@ -561,21 +561,21 @@ onUnmounted(cancelDragging);
   flex: 0 0 auto;
   border-radius: 999px;
   border: 1px solid rgba(229, 231, 235, 0.4);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.08);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   transition: 180ms ease;
 }
 
 :global(.dark) .footer-visibility-switch {
-  border-color: rgba(31, 41, 55, 0.4);
-  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
 }
 .footer-visibility-switch--on { background: #ec4141 !important; }
 
 .footer-visibility-switch-thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
   border-radius: 999px;
@@ -584,7 +584,7 @@ onUnmounted(cancelDragging);
   transition: transform 180ms ease;
 }
 
-.footer-visibility-switch--on .footer-visibility-switch-thumb { transform: translateX(16px); }
+.footer-visibility-switch--on .footer-visibility-switch-thumb { transform: translateX(17px); }
 
 @media (max-width: 720px) {
   .footer-player-preview {
