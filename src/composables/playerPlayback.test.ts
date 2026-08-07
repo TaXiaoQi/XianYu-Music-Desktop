@@ -78,6 +78,14 @@ vi.mock('./useCoverCache', () => ({
   }),
 }));
 
+// playerPlayback.ts 内 startPlaybackRuntime 会调用 listen('playback:progress', …)。
+// Node 环境下 @tauri-apps/api/event 的 transformCallback 引用 window → ReferenceError。
+// mock listen 使其返回一个 no-op unlisten，消除 unhandled rejection。
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+  emitTo: vi.fn(),
+}));
+
 import type { Song } from '../types';
 import { usePlaybackStore } from '../features/playback';
 import { playbackApi } from '../services/tauri/playbackApi';
