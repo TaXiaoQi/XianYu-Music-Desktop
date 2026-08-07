@@ -444,6 +444,15 @@ async function loadMusicFreePlugin(
     _musicfreeInstances.set(pluginId, _instance);
 
     // 返回可序列化的元数据（函数不能跨 Worker 边界传递）
+    // _availableMethods: 插件实例实际实现的方法名列表，供主线程代理精确创建函数桩
+    // supportedQualities: Baka/Toskysun 系列插件声明的 12 档音质列表
+    const allMethodNames = [
+      'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
+      'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
+      'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
+      'getRecommendSheetTags', 'getRecommendSheetsByTag',
+    ];
+    const _availableMethods = allMethodNames.filter(m => typeof (_instance as any)[m] === 'function');
     return {
       success: true,
       instance: {
@@ -454,6 +463,8 @@ async function loadMusicFreePlugin(
         supportedSearchType: _instance.supportedSearchType,
         defaultSearchType: _instance.defaultSearchType,
         userVariables: _instance.userVariables,
+        supportedQualities: (_instance as any).supportedQualities,
+        _availableMethods,
       },
     };
   } catch (e: any) {

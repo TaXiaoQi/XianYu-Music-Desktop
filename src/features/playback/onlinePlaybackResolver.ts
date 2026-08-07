@@ -5,6 +5,8 @@ import {
   getStoredPlugins,
   pluginGetCover,
   pluginGetMusicInfo,
+  pluginGetBakaMusicInfo,
+  isBakaPlugin,
   pluginGetSupportedQualities,
 } from '../../services/pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../../services/lxPluginEngine';
@@ -298,13 +300,24 @@ const resolvePluginAudioUrl = async ({
       };
     }
 
-    const musicInfo = await pluginGetMusicInfo(
-      pluginSource,
-      pluginSearchResult,
-      requestedQuality,
-      fallbackBehavior,
-      availableQualities,
-    );
+    // Baka/Toskysun 系列插件使用独立的播放方法（12 档原生音质），
+    // 原版 MusicFree 插件使用 pluginGetMusicInfo（standard/high/lossless 三档）
+    const useBaka = await isBakaPlugin(pluginSource);
+    const musicInfo = useBaka
+      ? await pluginGetBakaMusicInfo(
+          pluginSource,
+          pluginSearchResult,
+          requestedQuality,
+          fallbackBehavior,
+          availableQualities,
+        )
+      : await pluginGetMusicInfo(
+          pluginSource,
+          pluginSearchResult,
+          requestedQuality,
+          fallbackBehavior,
+          availableQualities,
+        );
     if (!musicInfo?.url || !/^https?:/.test(musicInfo.url)) {
       console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
       return {

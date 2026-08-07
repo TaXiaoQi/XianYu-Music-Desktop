@@ -16,6 +16,8 @@ import {
   pluginGetAlbumSongs,
   pluginGetPlaylistDetail,
   pluginGetMusicInfo,
+  pluginGetBakaMusicInfo,
+  isBakaPlugin,
   pluginGetCover,
   pluginArtistSearch,
   pluginAlbumSearch,
@@ -454,7 +456,10 @@ async function handlePlayMfSong(song: Song) {
 
   try {
     // 通过插件获取播放 URL（必须，阻塞播放）
-    const musicInfo = await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, '320k');
+    // Baka 插件使用独立的 12 档音质方法
+    const musicInfo = await isBakaPlugin(ctx.value.pluginSource)
+      ? await pluginGetBakaMusicInfo(ctx.value.pluginSource, mfItem, '320k')
+      : await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, '320k');
     if (!musicInfo?.url) {
       showToast('无法获取播放URL', 'error');
       return;

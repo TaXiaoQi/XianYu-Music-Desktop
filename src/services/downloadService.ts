@@ -18,6 +18,8 @@ import {
   pluginGetCover,
   pluginGetLyric,
   pluginGetMusicInfo,
+  pluginGetBakaMusicInfo,
+  isBakaPlugin,
   pluginGetSupportedQualities,
 } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl } from './lxPluginEngine';
@@ -312,7 +314,10 @@ async function resolvePluginUrlForQuality(
   }
 
   // 2) 回退到插件 getMediaSource（传入 QualityKey，内部自动适配）
-  const musicInfo = await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
+  //    Baka 插件使用独立的 12 档音质方法，原版 MF 使用三档映射
+  const musicInfo = await isBakaPlugin(ctx.pluginSource)
+    ? await pluginGetBakaMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q)
+    : await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
   const url = musicInfo?.url;
   if (!url || !/^https?:/.test(url)) return null;
 
