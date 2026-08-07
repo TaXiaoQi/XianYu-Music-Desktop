@@ -22,11 +22,26 @@ import {Buffer} from 'buffer';
 import type {PluginSource} from '../types';
 import {pluginApi} from './tauri/pluginApi';
 import {fetchWithTimeout} from './pluginFetch';
+import {
+  loadLxInSandbox,
+  callSandboxMethod,
+  isSandboxReady,
+  destroySandbox,
+} from './pluginSandboxManager';
 
 // ==================== 常量 ====================
 
 const INIT_TIMEOUT = 15000;
 const REQUEST_TIMEOUT = 30000;
+
+// ==================== 沙箱隔离配置 ====================
+
+// 沙箱模式开关：启用后插件代码在 Web Worker 中隔离执行
+// 默认关闭，确保向后兼容；启用后可逐步验证各插件在沙箱中的表现
+const USE_SANDBOX = true;
+
+// 记录在沙箱中运行的插件 ID 集合
+const _sandboxedPlugins = new Set<string>();
 
 // ==================== 日志 ====================
 
@@ -293,6 +308,68 @@ export async function loadLxPluginFromScript(
   if (existingState) {
     log(`[loadLxPluginFromScript] 销毁残留实例(非就绪): ${hash}`);
     destroyLxPlugin(hash);
+  }
+
+  // ===== 沙箱模式：在 Web Worker 中隔离执行插件脚本 =====
+  if (USE_SANDBOX) {
+    log(`[loadLxPluginFromScript] 沙箱模式加载: ${scriptInfo.name}`);
+    try {
+      const initInfo = await loadLxInSandbox(hash, script, {
+        name: scriptInfo.name,
+        version: scriptInfo.version,
+        author: scriptInfo.author,
+        description: scriptInfo.description,
+        homepage: scriptInfo.homepage,
+      });
+
+      if (!initInfo?.sources || Object.keys(initInfo.sources).length === 0) {
+        log('沙箱: 插件未声明任何源 (sources 为空)');
+        return {
+          id: hash,
+          name: scriptInfo.name || '未知插件',
+          format: 'lx',
+          version: scriptInfo.version || '',
+          author: scriptInfo.author || '',
+          description: scriptInfo.description || '插件未声明任何音源',
+          filePath: uri,
+          importedAt: Date.now(),
+          enabled: false,
+          sources: [],
+        };
+      }
+
+      // 创建 LxPluginState 用于沙箱模式（requestHandler 和 lxApi 为 null，由 Worker 管理）
+      const sandboxState: LxPluginState = {
+        source: null as any,
+        initInfo,
+        status: 'ready',
+        requestHandler: null,
+        lxApi: null,
+        pendingRequests: new Map(),
+      };
+
+      const source: PluginSource = {
+        id: hash,
+        name: scriptInfo.name || '未知插件',
+        format: 'lx',
+        version: scriptInfo.version || '',
+        author: scriptInfo.author || '',
+        description: scriptInfo.description || '',
+        filePath: uri,
+        importedAt: Date.now(),
+        enabled: true,
+        sources: Object.keys(initInfo.sources),
+      };
+      sandboxState.source = source;
+      lxPlugins.set(hash, sandboxState);
+      _sandboxedPlugins.add(hash);
+
+      log(`=== 落雪插件沙箱加载成功: "${source.name}" (sources: ${Object.keys(initInfo.sources).join(',')}) ===`);
+      return source;
+    } catch (e: any) {
+      log(`[loadLxPluginFromScript] 沙箱加载失败，回退到直接执行: ${e?.message}`);
+      // 沙箱失败时回退到直接执行路径（下方代码）
+    }
   }
 
   // ----- 创建 init Promise -----
@@ -720,6 +797,67 @@ export async function lxPluginRequest(
   action: 'musicUrl' | 'lyric' | 'pic',
   data: { source: string; type?: string; musicInfo: any },
 ): Promise<any> {
+  // ===== 沙箱模式路由：插件在 Web Worker 中隔离执行 =====
+  if (_sandboxedPlugins.has(source.id) && isSandboxReady(source.id)) {
+    log(`[lxPluginRequest] 沙箱模式调用 ${source.name} ${action} source=${data.source} type=${data.type || '-'}`);
+    try {
+      const response = await Promise.race([
+        callSandboxMethod(source.id, 'request', [{
+          source: data.source,
+          action,
+          info: { type: data.type, musicInfo: data.musicInfo },
+        }], REQUEST_TIMEOUT),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`请求超时(${REQUEST_TIMEOUT / 1000}s)`)), REQUEST_TIMEOUT),
+        ),
+      ]);
+
+      // 响应格式验证（与直接调用路径一致）
+      switch (action) {
+        case 'musicUrl':
+          if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
+            throw new Error('Invalid musicUrl response');
+          }
+          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 成功: ${response.substring(0, 80)}...`);
+          return { source: data.source, action, data: { type: data.type, url: response } };
+        case 'lyric':
+          if (typeof response !== 'object' || response === null) {
+            throw new Error('lyric response is not an object');
+          }
+          if (typeof response.lyric !== 'string' || response.lyric.length === 0) {
+            throw new Error(`lyric response missing or empty: ${JSON.stringify(response).substring(0, 100)}`);
+          }
+          if (response.lyric.length > 51200) {
+            throw new Error('lyric response too large');
+          }
+          return {
+            source: data.source, action,
+            data: {
+              lyric: response.lyric,
+              tlyric: (typeof response.tlyric === 'string' && response.tlyric.length < 5120) ? response.tlyric : null,
+              rlyric: (typeof response.rlyric === 'string' && response.rlyric.length < 5120) ? response.rlyric : null,
+              lxlyric: (typeof response.lxlyric === 'string' && response.lxlyric.length < 51200) ? response.lxlyric : null,
+            },
+          };
+        case 'pic':
+          if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
+            throw new Error('Invalid pic response');
+          }
+          return { source: data.source, action, data: response };
+        default:
+          return response;
+      }
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
+      log(`[lxPluginRequest] 沙箱模式 ${source.name} ${action} 失败: ${errMsg}`);
+      if (action === 'musicUrl' && isSongLevelError(errMsg)) {
+        throw new LxSongLevelError(errMsg);
+      }
+      return null;
+    }
+  }
+
+  // ===== 直接调用路径（现有逻辑）=====
   const state = lxPlugins.get(source.id);
   if (!state || state.status !== 'ready') {
     log(`[lxPluginRequest] 插件未就绪: ${source.name}`);
@@ -920,6 +1058,12 @@ export async function ensureLxPluginInstance(source: PluginSource): Promise<LxPl
 
 /** 销毁落雪插件实例 */
 export function destroyLxPlugin(sourceId: string) {
+  // 沙箱模式清理：销毁 Worker
+  if (_sandboxedPlugins.has(sourceId)) {
+    _sandboxedPlugins.delete(sourceId);
+    destroySandbox(sourceId).catch(() => {});
+  }
+
   const state = lxPlugins.get(sourceId);
   if (!state) return;
   // [修复防御]: 清理所有待处理请求，避免 resolve/reject 泄漏

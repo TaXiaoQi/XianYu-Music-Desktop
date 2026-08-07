@@ -45,40 +45,7 @@
 
 ## 📸 界面截图
 
-### 核心界面
-
-| 🎵 首页概览 | 💿 沉浸式播放页 |
-| --- | --- |
-| ![](./screenshots/首页.png) | ![](./screenshots/播放页.png) |
-
-<details>
-<summary>📂 点击展开查看更多功能截图</summary>
-
-### 媒体库与文件管理
-
-| 📂 文件夹视图 | ⚙️ 文件夹管理模式 |
-| --- | --- |
-| ![](./screenshots/文件夹.png) | ![](./screenshots/文件夹-管理模式.png) |
-
-### 歌单、统计与辅助功能
-
-| 🎶 歌单页面 | 📊 听歌历史统计 |
-| --- | --- |
-| ![](./screenshots/歌单页面.png) | ![](./screenshots/统计.png) |
-
-### 设置与个性化
-
-| 🔧 常规设置 | 📦 音乐库设置 |
-| --- | --- |
-| ![](./screenshots/设置-常规.png) | ![](./screenshots/设置-音乐库.png) |
-
-### 外置功能集成
-
-| 🔗 支持 Lyricify 歌词集成 |
-| --- |
-| ![](./screenshots/支持Lyricify.png) |
-
-</details>
+当前仓库未包含 `screenshots/` 截图资源目录，避免 README 中保留失效图片链接。后续补充截图资源后，可在此处恢复截图展示。
 
 ---
 
@@ -146,7 +113,7 @@ graph TD
 
     subgraph IPC [Tauri IPC 跨进程通信]
         direction LR
-        G[命令式 invoke<br/>147 个自定义命令] <--> H[Rust invoke_handler]
+        G[命令式 invoke<br/>180+ 个自定义命令] <--> H[Rust invoke_handler]
         I[事件式 emit / listen<br/>多窗口状态同步] <--> J[Tauri Event Bus]
     end
 
@@ -160,12 +127,13 @@ graph TD
         H --> K & L & M & N & O
     end
 
-    subgraph Windows [多窗口架构 · 5 窗口]
+    subgraph Windows [多窗口架构 · 6 窗口]
         direction LR
         P[main 主窗口] <-.-> Q[desktop-lyrics 桌面歌词]
         P <-.-> R[mini-player 迷你播放器]
         P <-.-> S[taskbar-player 任务栏]
         P <-.-> T[tray-menu 托盘菜单]
+        R <-.-> U[volume-popover 音量浮窗]
     end
 
     F --> G
@@ -184,7 +152,7 @@ graph TD
 
 | 层级 | 说明 |
 | --- | --- |
-| **入口 `main.ts`** | 创建 Vue 应用，安装 Pinia + Router；通过 `getCurrentWindow().label` 分发到 5 个窗口的独立渲染逻辑；三重错误捕获 + 动态导入失败自动刷新恢复 |
+| **入口 `main.ts`** | 创建 Vue 应用，安装 Pinia + Router；通过 `getCurrentWindow().label` 分发到 6 个窗口的独立渲染逻辑；三重错误捕获 + 动态导入失败自动刷新恢复 |
 | **路由 `router/`** | 11 条懒加载路由（首页 / 收藏 / 最近 / 歌手 / 专辑 / 插件 / 设置 / 认证 / 搜索 / 在线详情 / 引导），含 onboarding 路由守卫 |
 | **功能模块 `features/`** | 13 个自包含模块：`playback`（播放+音效双 Store）、`library`（音乐库 songPool + intern pool 高性能设计）、`settings`（全局设置中心）、`collections`（收藏歌单）、`desktopLyrics` / `miniPlayer` / `taskbarPlayer` / `tray`（窗口纯逻辑模块）、`download` / `auth` / `onlineDetail` / `lyricsSettings` / `statistics` |
 | **共享 Store `shared/stores/`** | 跨功能状态：`ui`（面板可见性）、`navigation`（导航/搜索历史）、`audioExport`（导出进度） |
@@ -194,7 +162,7 @@ graph TD
 
 ### 后端架构
 
-Rust 后端由 6 大模块组成，通过 `lib.rs` 注册约 140 个 `#[tauri::command]`：
+Rust 后端由多个业务模块组成，通过 `lib.rs` 注册 180+ 个 `#[tauri::command]`：
 
 | 模块 | 职责 | 关键技术 |
 | --- | --- | --- |
@@ -207,13 +175,13 @@ Rust 后端由 6 大模块组成，通过 `lib.rs` 注册约 140 个 `#[tauri::c
 
 ### IPC 通信与插件系统
 
-**双通道 IPC**：命令式 `invoke()`（147 个自定义命令，覆盖播放/库/统计/窗口/插件/下载全场景）+ 事件式 `emit/listen`（多窗口实时状态同步，含 Ready 握手 → State 推送 → State Applied 确认 → Action 回传完整协议）。
+**双通道 IPC**：命令式 `invoke()`（180+ 个自定义命令，覆盖播放/库/统计/窗口/插件/下载全场景）+ 事件式 `emit/listen`（多窗口实时状态同步，含 Ready 握手 → State 推送 → State Applied 确认 → Action 回传完整协议）。
 
 **双格式插件引擎**：同时兼容 MusicFree 与 LX 落雪两种插件格式，所有插件 HTTP 请求通过 Rust 后端 `plugin_http_request` 代理（绕过 WebView CORS），自动处理 Cookie 注入、图片代理（Referer 伪装）、插件云端同步。
 
 ### 多窗口架构
 
-5 个窗口共享同一前端应用，通过 `window.label` 路由到不同组件：
+6 个窗口共享同一前端应用，通过 `window.label` 路由到不同组件：
 
 | 窗口 | 用途 | 特性 |
 | --- | --- | --- |
@@ -222,6 +190,7 @@ Rust 后端由 6 大模块组成，通过 `lib.rs` 注册约 140 个 `#[tauri::c
 | `mini-player` | 迷你播放器 | 置顶 + 启动预热 |
 | `taskbar-player` | 任务栏播放控制条 | Win32 `WS_EX_NOACTIVATE` 不抢焦点 + Z 序守护 |
 | `tray-menu` | 系统托盘菜单 | 智能定位 + 子菜单展开方向检测 |
+| `volume-popover` | 迷你播放器音量浮窗 | 独立浮窗 + 与迷你播放器联动 |
 
 ### 技术栈
 
@@ -230,7 +199,7 @@ Rust 后端由 6 大模块组成，通过 `lib.rs` 注册约 140 个 `#[tauri::c
 | **前端** | Vue 3.5 (Composition API)、Vite 6、TypeScript 5.6、Tailwind CSS 4.0、Pinia 3、Vue Router 4、AMLL（Apple Music 风格歌词）、PixiJS（流光背景）、TanStack Virtual（虚拟列表） |
 | **后端** | Rust (edition 2021)、Tauri 2.x、rodio 0.20（vendored 定制）、cpal 0.15、symphonia 0.5、lofty 0.21、rusqlite 0.38（bundled SQLite）、souvlaki 0.7（SMTC 系统媒体控制）、rustfft 6.4、reqwest 0.12、wasapi 0.23（独占模式） |
 | **数据库** | SQLite（WAL 模式，14 张表，增量迁移） |
-| **构建工具** | Vite 6 + WASM 插件、vitest（前端测试）、cargo test（Rust 测试）、MSI/WiX（Win11 原生安装包） |
+| **构建工具** | Vite 6 + WASM 插件、vitest（前端测试）、cargo test（Rust 测试）、NSIS（Windows 安装包） |
 
 ---
 

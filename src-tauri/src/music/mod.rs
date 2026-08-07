@@ -38,6 +38,7 @@ pub use library::{
     get_library_song_paths_for_folder_view, get_library_songs_by_paths, get_library_songs_cached,
     remove_library_folder, scan_library, search_library_songs,
 };
+pub use lx_search::clear_lx_all_cache;
 pub use lyric_fetcher::fetch_lyric_from_source;
 pub use palette::extract_palette;
 pub use scanner::{
@@ -48,7 +49,6 @@ pub use url_resolver::{
     clear_lx_url_cache, find_alternative_lx_source, get_lx_cover, resolve_lx_music_url,
     resolve_lx_with_quality_fallback,
 };
-pub use lx_search::clear_lx_all_cache;
 // Deprecated compatibility exports. Keep registered for legacy data/tools only.
 pub use sidebar::{
     add_sidebar_folder, get_sidebar_folders, get_sidebar_hierarchy, remove_sidebar_folder,

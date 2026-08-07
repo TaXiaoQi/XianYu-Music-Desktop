@@ -26,6 +26,8 @@ interface PlaySongOptions {
   insertAfterCurrent?: boolean;
   startTime?: number;
   continueStatisticsSession?: boolean;
+  /** [内部] 强制重播同一首歌，用于单曲循环自然结束后绕过重复播放去重 */
+  forceReplay?: boolean;
   /** [内部] 自动换源上下文，递归 playSong 时传递已失败源集合防死循环 */
   _sourceSwitchCtx?: {
     originKey: string;
@@ -87,9 +89,13 @@ let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
 let stalledProgressTicks = 0;
+let volumeRestoreTimerId: ReturnType<typeof setTimeout> | null = null;
+let volumeRestoreToken = 0;
+const shortTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
+const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -134,22 +140,58 @@ const authStore = useAuthStore();
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
 
+  const setManagedTimeout = (callback: () => void, delay: number) => {
+    const timerId = setTimeout(() => {
+      shortTimerIds.delete(timerId);
+      callback();
+    }, delay);
+    shortTimerIds.add(timerId);
+    return timerId;
+  };
+
+  const clearManagedShortTimers = () => {
+    shortTimerIds.forEach(timerId => clearTimeout(timerId));
+    shortTimerIds.clear();
+  };
+
+  const clearVolumeRestoreTimer = () => {
+    volumeRestoreToken += 1;
+    if (volumeRestoreTimerId !== null) {
+      clearTimeout(volumeRestoreTimerId);
+      shortTimerIds.delete(volumeRestoreTimerId);
+      volumeRestoreTimerId = null;
+    }
+  };
+
+  const scheduleBackendVolumeRestore = (restoreVol: number, shouldRestore?: () => boolean) => {
+    clearVolumeRestoreTimer();
+    const token = ++volumeRestoreToken;
+    volumeRestoreTimerId = setManagedTimeout(() => {
+      volumeRestoreTimerId = null;
+      if (token !== volumeRestoreToken || (shouldRestore && !shouldRestore())) {
+        return;
+      }
+      currentBackendVolume = restoreVol;
+      void playbackApi.setVolume(restoreVol).catch(() => {});
+    }, 200);
+  };
+
   // [性能优化] 将 addToHistory 延迟到空闲时执行，避免其触发的响应式级联阻塞播放启动。
   // addToHistory 会修改 recentSongs（触发 IPC 序列化所有歌单）和 songCatalogVersion
   // （触发 canonicalSongs/playQueue/currentViewSongs 等 computed 级联重算），
   // 歌单和歌曲数量越多，级联开销越大，导致飞封面动画和起播卡顿。
   // addToHistory 仅影响历史记录和最近播放列表，不影响当前播放，可安全延迟。
   const scheduleAddToHistory = (song: Song) => {
-    const idle = typeof window !== 'undefined'
-      ? (window as any).requestIdleCallback as
-        | ((callback: () => void, options?: { timeout?: number }) => number)
-        | undefined
+    const idle = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? window.requestIdleCallback.bind(window)
       : undefined;
 
     if (idle) {
       idle(() => addToHistory(song), { timeout: 2000 });
     } else {
-      setTimeout(() => addToHistory(song), 500);
+      setManagedTimeout(() => {
+        void addToHistory(song);
+      }, 500);
     }
   };
 
@@ -212,16 +254,14 @@ const authStore = useAuthStore();
       }
     };
 
-    const requestIdle = typeof window !== 'undefined'
-      ? (window as any).requestIdleCallback as
-        | ((callback: () => void, options?: { timeout?: number }) => number)
-        | undefined
+    const requestIdle = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? window.requestIdleCallback.bind(window)
       : undefined;
 
     if (requestIdle) {
       requestIdle(preload, { timeout: 1500 });
     } else {
-      setTimeout(preload, 0);
+      setManagedTimeout(preload, 0);
     }
   };
 
@@ -553,8 +593,8 @@ const authStore = useAuthStore();
       try {
         const { findAlternativeLxSource } = await import('../../services/lxSourceFallback');
         alternativeSong = await findAlternativeLxSource(song, switchCtx.failedSources);
-      } catch (e: any) {
-        console.warn(`[Audio] 自动换源查找异常: ${e?.message || e}`);
+      } catch (error) {
+        console.warn(`[Audio] 自动换源查找异常: ${getErrorMessage(error)}`);
       }
 
       // [竞态检查] 搜索期间用户可能已切歌
@@ -583,7 +623,7 @@ const authStore = useAuthStore();
 
     const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
     if (failureBehavior === 'skip') {
-      setTimeout(() => {
+      setManagedTimeout(() => {
         if (currentSong.value?.path === song.path) handleAutoNext();
       }, 400);
     }
@@ -597,6 +637,7 @@ const authStore = useAuthStore();
       && isPlaying.value
       && !options.continueStatisticsSession
       && options.startTime === undefined
+      && !options.forceReplay
       && !options._sourceSwitchCtx;
 
     // 重复点击正在播放的同一首歌时不重新加载，避免进度被重置、音频重建和封面动画重复触发。
@@ -606,6 +647,7 @@ const authStore = useAuthStore();
     }
 
     const requestId = ++playRequestId;
+    clearVolumeRestoreTimer();
 
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
@@ -802,31 +844,32 @@ const authStore = useAuthStore();
     // [可打断] 音质列表获取期间用户可能切歌，需检查是否仍是当前请求
     if (requestId !== playRequestId) return;
 
-    const requestedQuality = (playbackStore.sessionQualityOverride
-      || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
-    const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-    const resolvedOnlineAudio = await resolveOnlineAudio({
-      audioFilePath,
-      song,
-      requestedQuality,
-      fallbackBehavior,
-      availableQualities: playbackStore.currentAvailableQualities,
-      preFetchedUrl: song.remote_source_id,
-    });
-    audioFilePath = resolvedOnlineAudio.audioFilePath;
-    pluginHeaders = resolvedOnlineAudio.pluginHeaders;
-    if (resolvedOnlineAudio.currentPlayingQuality) {
-      playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
-    }
-    if (resolvedOnlineAudio.currentPlayingAudioUrl) {
-      playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
-    }
-    if (!song.lyrics_raw?.trim() && resolvedOnlineAudio.lyricsRaw) {
-      song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
-    }
-    if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
-      song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
-    }
+    try {
+      const requestedQuality = (playbackStore.sessionQualityOverride
+        || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
+      const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+      const resolvedOnlineAudio = await resolveOnlineAudio({
+        audioFilePath,
+        song,
+        requestedQuality,
+        fallbackBehavior,
+        availableQualities: playbackStore.currentAvailableQualities,
+        preFetchedUrl: song.remote_source_id,
+      });
+      audioFilePath = resolvedOnlineAudio.audioFilePath;
+      pluginHeaders = resolvedOnlineAudio.pluginHeaders;
+      if (resolvedOnlineAudio.currentPlayingQuality) {
+        playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
+      }
+      if (resolvedOnlineAudio.currentPlayingAudioUrl) {
+        playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
+      }
+      if (!song.lyrics_raw?.trim() && resolvedOnlineAudio.lyricsRaw) {
+        song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
+      }
+      if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
+        song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
+      }
 
     // [可打断] lx:///plugin:// URL 解析期间用户可能切歌，需检查是否仍是当前请求
     if (requestId !== playRequestId) return;
@@ -896,8 +939,6 @@ const authStore = useAuthStore();
         })();
       }
     }
-
-    try {
       // [飞封面同步] consumeFlyCoverPromise 取出飞封面 Promise（取出后立即清除，避免后续误等）。
       // - 在线歌曲：在 playAudio 前等待飞封面（URL 解析已在上游并行完成）
       // - 本地歌曲（开启渐入渐出）：先 playAudio（fade-out 已将音量降为0，加载不发声），
@@ -922,8 +963,8 @@ const authStore = useAuthStore();
           if (tempPath) {
             actualAudioPath = tempPath;
           }
-        } catch (e: any) {
-          console.warn('[Audio] m4s 下载到临时文件失败:', e?.message);
+        } catch (error) {
+          console.warn('[Audio] m4s 下载到临时文件失败:', getErrorMessage(error));
         }
       }
 
@@ -983,8 +1024,8 @@ const authStore = useAuthStore();
             preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
             headers: pluginHeaders,
           });
-        } catch (e: any) {
-          console.warn('[Audio] 在线直链 playAudio 调用失败:', e?.message || e);
+        } catch (error) {
+          console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));
           return false;
         }
 
@@ -1262,10 +1303,7 @@ const authStore = useAuthStore();
     // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
     if (fadeEnabled) {
       const restoreVol = playbackStore.volume / 100;
-      setTimeout(() => {
-        currentBackendVolume = restoreVol;
-        void playbackApi.setVolume(restoreVol).catch(() => {});
-      }, 200);
+      scheduleBackendVolumeRestore(restoreVol);
     }
   };
 
@@ -1313,11 +1351,7 @@ const authStore = useAuthStore();
       // 会让残余缓冲区以原音量突然发声，造成破音。等待 200ms 确保缓冲区播完后再恢复。
       if (fadeEnabled) {
         const restoreVol = playbackStore.volume / 100;
-        setTimeout(() => {
-          if (myToken !== togglePlayToken) return;
-          currentBackendVolume = restoreVol;
-          void playbackApi.setVolume(restoreVol).catch(() => {});
-        }, 200);
+        scheduleBackendVolumeRestore(restoreVol, () => myToken === togglePlayToken);
       }
       return;
     }
@@ -1325,6 +1359,7 @@ const authStore = useAuthStore();
     // === 播放分支 ===
     // 用户重新点了播放，撤销之前的取消标记，并取消可能正在进行的淡出
     cancelFade();
+    clearVolumeRestoreTimer();
     cancelledPlayRequestId = -1;
 
     if (!isSongLoaded.value) {
@@ -1402,9 +1437,9 @@ const authStore = useAuthStore();
   const playAt = async (time: number) => {
     await seekTo(time);
     if (!isPlaying.value) {
-      setTimeout(async () => {
+      setManagedTimeout(() => {
         if (!isPlaying.value) {
-          await togglePlay();
+          void togglePlay().catch(error => console.warn('[Audio] playAt togglePlay failed:', error));
         }
       }, 150);
     }
@@ -1435,6 +1470,24 @@ const authStore = useAuthStore();
 
   const dispose = () => {
     stopPlaybackRuntime();
+    cancelFade();
+    clearVolumeRestoreTimer();
+    clearManagedShortTimers();
+    progressUnlisten = null;
+    progressListeningActive = false;
+    currentBackendVolume = playbackStore.volume / 100;
+    togglePlayToken += 1;
+    playRequestId += 1;
+    cancelledPlayRequestId = -1;
+    latestSeekRequestId += 1;
+    playbackAnchorTime = 0;
+    playbackStartOffset = 0;
+    sessionStartTime = null;
+    accumulatedTime = 0;
+    currentPlayCountRecorded = false;
+    isSeeking = false;
+    lastRawProgress = -1;
+    stalledProgressTicks = 0;
     stopPowerModeWatcher();
   };
 

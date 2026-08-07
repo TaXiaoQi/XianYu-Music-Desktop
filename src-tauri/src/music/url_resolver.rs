@@ -111,14 +111,21 @@ async fn set_cached_url(source: &str, id: &str, quality: &str, url: String) {
 
 // ==================== HTTP ====================
 
-async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-    let mut req = client.get(url);
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .expect("failed to build url_resolver reqwest client")
+    })
+}
+
+async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+    let client = http_client();
+
+    let mut req = client.get(url).timeout(Duration::from_secs(15));
     for (key, value) in headers {
         req = req.header(*key, *value);
     }
@@ -197,7 +204,10 @@ pub async fn resolve_lx_music_url_inner(
     match resolve_url_via_api(&source, &id, quality).await {
         Ok(url) => {
             set_cached_url(&source, &id, quality, url.clone()).await;
-            Some(ResolvedUrl { url, quality: quality.to_string() })
+            Some(ResolvedUrl {
+                url,
+                quality: quality.to_string(),
+            })
         }
         Err(e) => {
             eprintln!(
@@ -267,13 +277,9 @@ async fn resolve_url_via_api(source: &str, id: &str, quality: &str) -> Result<St
 
 /// 通过 HTTP 请求获取文本响应（用于 KW 封面 URL）
 async fn http_get_text(url: &str, headers: &[(&str, &str)]) -> Result<(u16, String), String> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_client();
 
-    let mut req = client.get(url);
+    let mut req = client.get(url).timeout(Duration::from_secs(10));
     for (key, value) in headers {
         req = req.header(*key, *value);
     }
@@ -289,13 +295,12 @@ async fn http_post_json(
     body: &str,
     headers: &[(&str, &str)],
 ) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = http_client();
 
-    let mut req = client.post(url).body(body.to_string());
+    let mut req = client
+        .post(url)
+        .timeout(Duration::from_secs(10))
+        .body(body.to_string());
     for (key, value) in headers {
         req = req.header(*key, *value);
     }
@@ -761,7 +766,10 @@ fn extract_primary_artist(artist: &str) -> String {
         return String::new();
     }
     // 取第一个歌手
-    let first = artist.split(|c| matches!(c, '、' | ',' | '/' | '&')).next().unwrap_or("");
+    let first = artist
+        .split(|c| matches!(c, '、' | ',' | '/' | '&'))
+        .next()
+        .unwrap_or("");
     let trimmed = first.trim();
     if trimmed.is_empty() || trimmed == "未知歌手" {
         return String::new();

@@ -12,6 +12,7 @@ interface PlayerPlaybackApi {
     insertAfterCurrent?: boolean;
     startTime?: number;
     continueStatisticsSession?: boolean;
+    forceReplay?: boolean;
   }) => Promise<unknown>;
   pauseSong: () => Promise<unknown>;
   togglePlay: () => Promise<unknown>;
@@ -60,7 +61,9 @@ export function usePlaybackActions({
 }: UsePlaybackActionsOptions) {
   const handleAutoNext = () => {
     if (playMode.value === 1 && currentSong.value) {
-      void getPlayerPlayback().playSong(currentSong.value);
+      void getPlayerPlayback()
+        .playSong(currentSong.value, { forceReplay: true })
+        .catch(error => console.warn('[Audio] 单曲循环重播失败:', error));
       return;
     }
 
@@ -84,6 +87,7 @@ export function usePlaybackActions({
     insertAfterCurrent?: boolean;
     startTime?: number;
     continueStatisticsSession?: boolean;
+    forceReplay?: boolean;
   }) =>
     getPlayerPlayback().playSong(song, options);
   const pauseSong = () => getPlayerPlayback().pauseSong();

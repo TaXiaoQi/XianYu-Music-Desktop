@@ -11,6 +11,8 @@ export interface PlaySongOptions {
   startTime?: number;
   /** 后端重启音频但仍属于同一次用户播放（例如切换音质） */
   continueStatisticsSession?: boolean;
+  /** 强制重播同一首歌（例如单曲循环自然结束），但不延续上一轮统计会话 */
+  forceReplay?: boolean;
 }
 
 interface CreatePlaybackDomainDeps<

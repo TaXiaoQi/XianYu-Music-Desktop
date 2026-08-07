@@ -239,7 +239,9 @@ fn timestamp_from_path(path: &str) -> Option<i64> {
 
 fn normalize_song_added_at(conn: &Connection) -> Result<(), String> {
     let mut select_stmt = conn
-        .prepare("SELECT path FROM songs")
+        .prepare(
+            "SELECT path FROM songs WHERE added_at IS NULL OR TRIM(CAST(added_at AS TEXT)) = ''",
+        )
         .map_err(|error| error.to_string())?;
     let rows = select_stmt
         .query_map([], |row| row.get::<_, String>(0))
@@ -248,7 +250,11 @@ fn normalize_song_added_at(conn: &Connection) -> Result<(), String> {
     drop(select_stmt);
 
     let mut update_stmt = conn
-        .prepare("UPDATE songs SET added_at = ?1 WHERE path = ?2")
+        .prepare(
+            "UPDATE songs
+             SET added_at = ?1
+             WHERE path = ?2 AND (added_at IS NULL OR TRIM(CAST(added_at AS TEXT)) = '')",
+        )
         .map_err(|error| error.to_string())?;
 
     for path in song_paths {

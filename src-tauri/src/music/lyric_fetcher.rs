@@ -1597,10 +1597,7 @@ fn parse_yrc(yrc_text: &str) -> String {
                 .map(|c| {
                     let s: u64 = c[1].parse().unwrap_or(0);
                     let d: u64 = c[2].parse().unwrap_or(0);
-                    let (start, end) = c
-                        .get(0)
-                        .map(|m| (m.start(), m.end()))
-                        .unwrap_or((0, 0));
+                    let (start, end) = c.get(0).map(|m| (m.start(), m.end())).unwrap_or((0, 0));
                     (s, d, start, end)
                 })
                 .collect();

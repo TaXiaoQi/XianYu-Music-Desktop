@@ -24,6 +24,6 @@ pub use device::{
 };
 pub use runtime::init_player;
 pub use session::{
-    flush_playback_session, get_playback_session, load_playback_session,
-    save_playback_session, update_playback_position, PlaybackSessionState,
+    flush_playback_session, get_playback_session, load_playback_session, save_playback_session,
+    update_playback_position, PlaybackSessionState,
 };

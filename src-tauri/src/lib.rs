@@ -8,6 +8,7 @@ mod player;
 mod plugins;
 mod recognize;
 mod remote;
+mod security;
 mod statistics;
 mod system_audio;
 mod system_fonts;
@@ -50,10 +51,10 @@ use player::{
     get_current_output_device, get_output_devices, get_playback_duration, get_playback_progress,
     get_playback_ready, get_playback_session, get_playback_start_failed, get_stream_cache_info,
     get_track_loudness_info, is_stream_cached, load_playback_session, pause_audio, play_audio,
-    resume_audio, save_playback_session, seek_audio, set_audio_output_mode,
-    set_equalizer_settings, set_output_device, set_playback_speed, set_sound_effect_settings,
-    set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata, update_playback_position, wait_stream_complete,
+    resume_audio, save_playback_session, seek_audio, set_audio_output_mode, set_equalizer_settings,
+    set_output_device, set_playback_speed, set_sound_effect_settings, set_stream_cache_max_size,
+    set_volume, stop_audio, update_loudness_settings, update_playback_metadata,
+    update_playback_position, wait_stream_complete,
 };
 use plugins::{
     download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
@@ -80,13 +81,12 @@ use taskbar::{
 };
 use tauri::Manager;
 use toolbox::{
-    apply_rename, build_download_basename, check_update_by_rust, download_online_song, download_update_file,
-    download_wallpaper, embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists,
-    finalize_download_extras, open_external_program, preview_rename, probe_url_size,
-    read_download_history, read_state_json, refresh_folder_songs, resolve_download_full_path,
-    resolve_download_path,
-    run_installer, save_download_bytes, save_download_lyrics, set_gpu_acceleration,
-    write_download_history, write_state_json,
+    apply_rename, build_download_basename, check_update_by_rust, download_online_song,
+    download_update_file, download_wallpaper, embed_audio_metadata, fetch_announcement,
+    fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
+    preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
+    resolve_download_full_path, resolve_download_path, run_installer, save_download_bytes,
+    save_download_lyrics, set_gpu_acceleration, write_download_history, write_state_json,
 };
 
 #[cfg(target_os = "windows")]
@@ -266,7 +266,6 @@ pub fn run() {
             stop_topmost_guard,
             plugin_http_request,
             plugin_http_request_binary,
-            parse_lyrics_text,
             read_plugin_file,
             proxy_image,
             download_audio_to_temp,
