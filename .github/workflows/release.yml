@@ -1,16 +1,13 @@
 name: Release
 
-permissions: {}
+permissions:
+  contents: write
 
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: "Release tag (e.g. v1.0.0)"
-        required: true
-        type: string
-      run_id:
-        description: "Build workflow run ID to download artifacts from"
         required: true
         type: string
       prerelease:
@@ -21,49 +18,76 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
-      actions: read
       contents: write
-      id-token: write
-      attestations: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag }}
           persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
       - name: Validate release inputs
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-          BUILD_RUN_ID: ${{ inputs.run_id }}
+        shell: pwsh
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
-          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
-          git fetch --force --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
-          git rev-parse "refs/tags/$RELEASE_TAG"
-      - name: Download all build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.run_id }}
-          path: ./release-assets
-          merge-multiple: true
-      - name: Generate aggregate checksums
-        run: node scripts/generate-release-metadata.cjs ./release-assets
-      - name: Attest release bundle
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
-        with:
-          subject-path: ./release-assets/*
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release tag: $env:RELEASE_TAG"
+          }
+          git rev-parse "refs/tags/$env:RELEASE_TAG"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri release
+        run: npm run tauri build
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File |
+            Where-Object { $_.Extension -in ".exe", ".msi", ".zip" } |
+            Copy-Item -Destination release-assets -Force
+          if (-not (Get-ChildItem -Path release-assets -File)) {
+            throw "No Tauri bundle artifacts were produced."
+          }
+          Get-ChildItem -Path release-assets -File |
+            ForEach-Object {
+              $hash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
+              "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), $_.Name
+            } | Set-Content -Path "release-assets\SHA256SUMS.txt" -Encoding UTF8
+
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           PRERELEASE: ${{ inputs.prerelease }}
+        shell: pwsh
         run: |
-          PRERELEASE_FLAG=""
-          if [[ "$PRERELEASE" == "true" ]]; then PRERELEASE_FLAG="--prerelease"; fi
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" ./release-assets/* --clobber
-          else
-            gh release create "$RELEASE_TAG" ./release-assets/* --title "$RELEASE_TAG" --generate-notes --verify-tag $PRERELEASE_FLAG
-          fi
+          $prereleaseFlag = @()
+          if ($env:PRERELEASE -eq "true") {
+            $prereleaseFlag = @("--prerelease")
+          }
+          if (gh release view "$env:RELEASE_TAG" 2>$null) {
+            gh release upload "$env:RELEASE_TAG" ./release-assets/* --clobber
+          } else {
+            gh release create "$env:RELEASE_TAG" ./release-assets/* --title "$env:RELEASE_TAG" --generate-notes --verify-tag $prereleaseFlag
+          }

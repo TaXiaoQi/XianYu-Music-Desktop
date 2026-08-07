@@ -15,6 +15,10 @@ export default defineConfig(async () => ({
       path: fileURLToPath(new URL('./src/shims/pathBrowser.ts', import.meta.url)),
     },
   },
+  // Web Worker 配置：插件沙箱使用 ES 模块格式的 Worker
+  worker: {
+    format: 'es',
+  },
   build: {
     target: 'esnext',
     // 桌面端 Tauri 包本地加载资源，当前主包约 1.6 MB；使用显式预算替代 Web 默认阈值。

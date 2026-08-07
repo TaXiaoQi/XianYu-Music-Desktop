@@ -536,7 +536,10 @@ impl RemoteRangeReader {
             }
         }
         // 清除旧结果，标记新预读进行中
-        *self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .prefetch_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         self.prefetch_in_flight.store(true, Ordering::Relaxed);
         self.prefetch_start = start;
 
@@ -597,7 +600,10 @@ impl RemoteRangeReader {
         if self.prefetch_in_flight.load(Ordering::Relaxed) {
             return None;
         }
-        self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()).take()
+        self.prefetch_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
     }
 
     /// 是否有预读正在进行
@@ -608,7 +614,10 @@ impl RemoteRangeReader {
     /// 取消未完成的预读（seek 后旧结果不再有用）
     fn cancel_prefetch(&mut self) {
         self.prefetch_in_flight.store(false, Ordering::Relaxed);
-        *self.prefetch_state.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self
+            .prefetch_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     fn fetch_at(&mut self, start: u64) -> std::io::Result<()> {

@@ -35,6 +35,12 @@ export const createPlayerQueue = ({
     shuffleFuture.length = 0;
   };
 
+  const runPlaySong = (song: Song, options?: QueuePlaySongOptions) => {
+    void Promise.resolve(playSong(song, options)).catch(error => {
+      console.warn('[Audio] queue playSong failed:', error);
+    });
+  };
+
   const pushBounded = (target: string[], path: string) => {
     target.push(path);
     if (target.length > SHUFFLE_HISTORY_LIMIT) {
@@ -98,7 +104,7 @@ export const createPlayerQueue = ({
       const [next, ...remainingQueue] = tempQueue.value;
       tempQueue.value = remainingQueue;
       if (next) {
-        playSong(next);
+        runPlaySong(next);
         return;
       }
     }
@@ -107,22 +113,24 @@ export const createPlayerQueue = ({
     if (!navigationList.length) return;
 
     if (playMode.value === 2) {
-      const futureSong = findSongByPath(shuffleFuture.pop(), navigationList);
+      const futurePath = shuffleFuture[shuffleFuture.length - 1];
+      const futureSong = findSongByPath(futurePath, navigationList);
       if (futureSong) {
-        playSong(futureSong, { updateShuffleHistory: false, clearShuffleFuture: false });
+        shuffleFuture.pop();
+        runPlaySong(futureSong, { updateShuffleHistory: false, clearShuffleFuture: false });
         return;
       }
 
       const randomSong = pickRandomSong(navigationList);
       if (randomSong) {
-        playSong(randomSong);
+        runPlaySong(randomSong);
       }
       return;
     }
 
     let index = navigationList.findIndex(song => song.path === currentSong.value?.path);
     index = (index + 1) % navigationList.length;
-    playSong(navigationList[index]);
+    runPlaySong(navigationList[index]);
   };
 
   const prevSong = () => {
@@ -136,20 +144,20 @@ export const createPlayerQueue = ({
         if (currentSong.value) {
           pushBounded(shuffleFuture, currentSong.value.path);
         }
-        playSong(previousSong, { updateShuffleHistory: false, clearShuffleFuture: false });
+        runPlaySong(previousSong, { updateShuffleHistory: false, clearShuffleFuture: false });
         return;
       }
 
       const randomSong = pickRandomSong(navigationList);
       if (randomSong) {
-        playSong(randomSong);
+        runPlaySong(randomSong);
       }
       return;
     }
 
     let index = navigationList.findIndex(song => song.path === currentSong.value?.path);
     index = (index - 1 + navigationList.length) % navigationList.length;
-    playSong(navigationList[index]);
+    runPlaySong(navigationList[index]);
   };
 
   const clearQueue = async () => {

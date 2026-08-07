@@ -179,7 +179,8 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 if GetWindowPlacement(hwnd, &mut placement) == 0 {
                     return Err("GetWindowPlacement 失败".to_string());
                 }
-                *SAVED_PLACEMENT.lock().map_err(|e| e.to_string())? = Some(SavedPlacement(placement));
+                *SAVED_PLACEMENT.lock().map_err(|e| e.to_string())? =
+                    Some(SavedPlacement(placement));
 
                 // 小窗进全屏：先走 SW_MAXIMIZE 的系统丝滑放大动画（放大观感来源）。
                 if IsZoomed(hwnd) == 0 {

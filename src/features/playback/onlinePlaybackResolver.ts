@@ -33,6 +33,11 @@ const sortQualities = (qualities: QualityKey[]) => (
   qualities.sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
 );
 
+const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const isNamedError = (error: unknown, name: string): error is Error =>
+  error instanceof Error && error.name === name;
+
 export const getOnlineAvailableQualities = async (
   songPath: string,
   song: Song,
@@ -166,8 +171,8 @@ const resolveLxAudioUrl = async ({
               currentPlayingAudioUrl: urlResult.url,
             };
           }
-        } catch (e: any) {
-          console.warn(`[Audio] Rust batch quality fallback failed: ${e?.message}`);
+        } catch (error) {
+          console.warn(`[Audio] Rust batch quality fallback failed: ${getErrorMessage(error)}`);
         }
       }
       return {
@@ -197,7 +202,7 @@ const resolveLxAudioUrl = async ({
           interval: cachedInfo?.interval,
           _types: cachedInfo?._types,
           types: cachedInfo?.types,
-        } as any, quality);
+        }, quality);
         const musicUrl = urlResult?.url;
         if (musicUrl && /^https?:/.test(musicUrl)) {
           return {
@@ -207,8 +212,8 @@ const resolveLxAudioUrl = async ({
             currentPlayingAudioUrl: musicUrl,
           };
         }
-      } catch (urlErr: any) {
-        if (urlErr?.name === 'LxSongLevelError') {
+      } catch (urlErr) {
+        if (isNamedError(urlErr, 'LxSongLevelError')) {
           console.warn(`[Audio] Song-level error, skipping remaining qualities: ${urlErr.message}`);
           break;
         }
@@ -237,12 +242,12 @@ const resolveLxAudioUrl = async ({
             currentPlayingAudioUrl: urlResult.url,
           };
         }
-      } catch (e: any) {
-        console.warn(`[Audio] Rust batch fallback failed: ${e?.message}`);
+      } catch (error) {
+        console.warn(`[Audio] Rust batch fallback failed: ${getErrorMessage(error)}`);
       }
     }
-  } catch (error: any) {
-    console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${error?.message}`);
+  } catch (error) {
+    console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${getErrorMessage(error)}`);
   }
 
   return {
@@ -327,8 +332,8 @@ const resolvePluginAudioUrl = async ({
       lyricsRaw: musicInfo.lyricsRaw,
       coverThumbPath,
     };
-  } catch (error: any) {
-    console.warn(`[Audio] Failed to resolve plugin:// URL: ${error?.message}`);
+  } catch (error) {
+    console.warn(`[Audio] Failed to resolve plugin:// URL: ${getErrorMessage(error)}`);
     return {
       audioFilePath,
       pluginHeaders: null,

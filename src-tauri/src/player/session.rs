@@ -20,8 +20,8 @@
 //!
 //! 锁顺序约定：**inner → DB**
 //! `update_playback_position` 和 `flush_playback_session` 在持有 `inner` 锁时
-//! 调用 `persist_to_db_internal`（获取 DB 锁）。当前无反向调用链（持 DB 锁时回调
-//! session），但若未来新增此类路径将导致死锁。新增 DB 操作时勿在持锁期间回调 session。
+//! 调用 `persist_to_db_internal`（获取 DB 锁）。`load_from_db` 先读取 DB 后释放 DB
+//! 锁，再获取 `inner` 锁，避免形成 DB → inner 与 inner → DB 的反向等待。
 
 use crate::database::DbState;
 use serde::{Deserialize, Serialize};
@@ -81,9 +81,9 @@ impl PlaybackSessionState {
 
     /// 从 SQLite 加载持久化的会话状态（启动时调用）
     pub fn load_from_db(&self, db_state: &DbState) -> Result<(), String> {
-        let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
-        let result: Result<Option<String>, rusqlite::Error> = conn
-            .query_row(
+        let result: Result<Option<String>, rusqlite::Error> = {
+            let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
+            conn.query_row(
                 "SELECT data FROM playback_session WHERE id = 1",
                 [],
                 |row| row.get(0),
@@ -95,12 +95,14 @@ impl PlaybackSessionState {
                 } else {
                     Err(e)
                 }
-            });
+            })
+        };
 
         match result {
             Ok(Some(json_str)) => {
                 let data: PlaybackSessionData = serde_json::from_str(&json_str)
                     .map_err(|e| format!("反序列化播放会话失败: {}", e))?;
+                // DB 锁已在上方作用域释放，此处只获取 inner，避免 DB → inner 锁顺序。
                 let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
                 *inner = data;
                 eprintln!("[Session] 从 SQLite 恢复播放会话成功");
@@ -123,8 +125,8 @@ impl PlaybackSessionState {
         data: &PlaybackSessionData,
         db_state: &DbState,
     ) -> Result<(), String> {
-        let json_str = serde_json::to_string(data)
-            .map_err(|e| format!("序列化播放会话失败: {}", e))?;
+        let json_str =
+            serde_json::to_string(data).map_err(|e| format!("序列化播放会话失败: {}", e))?;
         let now = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -178,7 +180,10 @@ pub async fn save_playback_session(
 
     // 重置进度持久化防抖计时器
     {
-        let mut last = state.last_position_persist.lock().map_err(|e| e.to_string())?;
+        let mut last = state
+            .last_position_persist
+            .lock()
+            .map_err(|e| e.to_string())?;
         *last = Instant::now();
     }
 
@@ -212,7 +217,10 @@ pub async fn update_playback_position(
         inner.current_position_secs = position_secs;
         inner.is_playing = is_playing;
 
-        let mut last = state.last_position_persist.lock().map_err(|e| e.to_string())?;
+        let mut last = state
+            .last_position_persist
+            .lock()
+            .map_err(|e| e.to_string())?;
         let elapsed = last.elapsed().as_millis();
         if elapsed >= POSITION_PERSIST_INTERVAL_MS {
             *last = Instant::now();
@@ -251,9 +259,7 @@ pub async fn flush_playback_session(
 ///
 /// 从内存读取权威状态，无需访问 SQLite
 #[tauri::command]
-pub fn get_playback_session(
-    state: tauri::State<'_, PlaybackSessionState>,
-) -> PlaybackSessionData {
+pub fn get_playback_session(state: tauri::State<'_, PlaybackSessionState>) -> PlaybackSessionData {
     let inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
     inner.clone()
 }
@@ -328,7 +334,10 @@ mod tests {
         assert_eq!(v["currentPositionSecs"], 42.5);
         assert_eq!(v["isPlaying"], true);
         assert_eq!(v["sessionQualityOverride"], "flac");
-        assert_eq!(v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+        assert_eq!(
+            v["queueSongMeta"],
+            serde_json::Value::Object(serde_json::Map::new())
+        );
         assert_eq!(v["updatedAt"], 1700000000000_i64);
 
         // 确认 snake_case 字段名不出现在 JSON 中
@@ -354,7 +363,8 @@ mod tests {
             "artist": "Test Artist",
             "duration": 180
         });
-        data.queue_song_meta.insert("remote://song1".into(), song_meta.clone());
+        data.queue_song_meta
+            .insert("remote://song1".into(), song_meta.clone());
 
         // 序列化 → 反序列化
         let json = serde_json::to_string(&data).unwrap();
@@ -366,7 +376,10 @@ mod tests {
         assert_eq!(restored.volume, data.volume);
         assert_eq!(restored.current_position_secs, data.current_position_secs);
         assert_eq!(restored.is_playing, data.is_playing);
-        assert_eq!(restored.session_quality_override, data.session_quality_override);
+        assert_eq!(
+            restored.session_quality_override,
+            data.session_quality_override
+        );
         assert_eq!(restored.queue_song_meta.len(), 1);
         assert_eq!(restored.queue_song_meta["remote://song1"], song_meta);
     }
@@ -377,7 +390,10 @@ mod tests {
         let json = serde_json::to_string(&data).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         // 空 HashMap 序列化为空对象
-        assert_eq!(v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+        assert_eq!(
+            v["queueSongMeta"],
+            serde_json::Value::Object(serde_json::Map::new())
+        );
 
         let restored: PlaybackSessionData = serde_json::from_str(&json).unwrap();
         assert!(restored.queue_song_meta.is_empty());
@@ -399,7 +415,10 @@ mod tests {
         let json = serde_json::to_string(&data).unwrap();
         let restored: PlaybackSessionData = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.queue_song_meta.len(), 5);
-        assert_eq!(restored.queue_song_meta["remote://song3"]["title"], "Song 3");
+        assert_eq!(
+            restored.queue_song_meta["remote://song3"]["title"],
+            "Song 3"
+        );
     }
 
     #[test]
@@ -414,7 +433,8 @@ mod tests {
     fn test_lightweight_clone_omits_meta() {
         // 模拟 save_playback_session 中的轻量广播逻辑
         let mut data = PlaybackSessionData::default();
-        data.queue_song_meta.insert("path1".into(), serde_json::json!({"title": "A"}));
+        data.queue_song_meta
+            .insert("path1".into(), serde_json::json!({"title": "A"}));
 
         let mut lightweight = data.clone();
         lightweight.queue_song_meta = HashMap::new();
@@ -429,7 +449,10 @@ mod tests {
         assert!(light_size < full_size);
         // 轻量版本的 queueSongMeta 应为空
         let light_v: serde_json::Value = serde_json::from_str(&light_json).unwrap();
-        assert_eq!(light_v["queueSongMeta"], serde_json::Value::Object(serde_json::Map::new()));
+        assert_eq!(
+            light_v["queueSongMeta"],
+            serde_json::Value::Object(serde_json::Map::new())
+        );
     }
 
     #[test]

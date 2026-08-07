@@ -1,7 +1,7 @@
+use crate::security::path_validator;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use std::time::Duration;
 
 #[derive(Serialize)]
@@ -177,7 +177,9 @@ pub async fn plugin_http_request_binary(
 /// 支持 .js / .json / .txt / .m3u / .m3u8 格式
 #[tauri::command]
 pub fn read_plugin_file(path: String) -> Result<String, String> {
-    let path_obj = Path::new(&path);
+    // 路径安全校验：拒绝目录遍历攻击
+    let validated = path_validator::validate_path(&path, None)?;
+    let path_obj = validated.as_path();
     if !path_obj.is_file() {
         return Err("Plugin file does not exist".to_string());
     }

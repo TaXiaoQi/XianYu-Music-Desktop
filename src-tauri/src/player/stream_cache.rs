@@ -32,6 +32,7 @@ pub struct StreamingTempFileReader {
     file: File,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
+    download_failed: Arc<AtomicBool>,
     pos: u64,
     total_bytes: Option<u64>,
 }
@@ -46,7 +47,9 @@ impl Read for StreamingTempFileReader {
                 self.pos += n as u64;
                 return Ok(n);
             }
-            if self.download_complete.load(Ordering::Relaxed) {
+            if self.download_complete.load(Ordering::Relaxed)
+                || self.download_failed.load(Ordering::Relaxed)
+            {
                 return Ok(0);
             }
             // 注意：此 read() 在音频回调线程调用（经 rodio Decoder → Source::next()）。
@@ -79,7 +82,10 @@ impl Seek for StreamingTempFileReader {
 
         loop {
             let downloaded = self.downloaded_bytes.load(Ordering::Relaxed);
-            if target < downloaded || self.download_complete.load(Ordering::Relaxed) {
+            if target < downloaded
+                || self.download_complete.load(Ordering::Relaxed)
+                || self.download_failed.load(Ordering::Relaxed)
+            {
                 self.pos = target;
                 return self.file.seek(SeekFrom::Start(target)).map(|_| target);
             }
@@ -95,6 +101,7 @@ pub struct StreamingTempFileState {
     pub path: String,
     pub downloaded_bytes: Arc<AtomicU64>,
     pub download_complete: Arc<AtomicBool>,
+    pub download_failed: Arc<AtomicBool>,
     pub total_bytes: Option<u64>,
 }
 
@@ -110,6 +117,10 @@ impl std::fmt::Debug for StreamingTempFileState {
                 "download_complete",
                 &self.download_complete.load(Ordering::Relaxed),
             )
+            .field(
+                "download_failed",
+                &self.download_failed.load(Ordering::Relaxed),
+            )
             .field("total_bytes", &self.total_bytes)
             .finish()
     }
@@ -122,13 +133,15 @@ impl StreamingTempFileState {
             file,
             downloaded_bytes: self.downloaded_bytes.clone(),
             download_complete: self.download_complete.clone(),
+            download_failed: self.download_failed.clone(),
             pos: 0,
             total_bytes: self.total_bytes,
         })
     }
 
-    pub fn is_download_complete(&self) -> bool {
+    pub fn is_download_finished(&self) -> bool {
         self.download_complete.load(Ordering::Relaxed)
+            || self.download_failed.load(Ordering::Relaxed)
     }
 
     pub fn downloaded_bytes(&self) -> u64 {
@@ -142,6 +155,7 @@ struct CacheEntry {
     last_accessed: SystemTime,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
+    download_failed: Arc<AtomicBool>,
     /// 下载线程句柄（detach，不阻塞；线程结束后自然回收）
     _download_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -221,6 +235,7 @@ impl StreamCacheManager {
                     last_accessed: last_modified,
                     downloaded_bytes: Arc::new(AtomicU64::new(size)),
                     download_complete: Arc::new(AtomicBool::new(true)),
+                    download_failed: Arc::new(AtomicBool::new(false)),
                     _download_handle: None,
                 },
             );
@@ -254,12 +269,18 @@ pub fn set_max_cache_size(bytes: u64) {
 
 /// 获取当前缓存大小
 pub fn current_cache_size() -> u64 {
-    cache().lock().unwrap_or_else(|e| e.into_inner()).current_size
+    cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .current_size
 }
 
 /// 获取缓存上限
 pub fn max_cache_size() -> u64 {
-    cache().lock().unwrap_or_else(|e| e.into_inner()).max_size_bytes
+    cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .max_size_bytes
 }
 
 /// 持久化缓存目录：
@@ -299,14 +320,26 @@ pub fn start_streaming_download(
     let mut mgr = cache().lock().map_err(|e| e.to_string())?;
 
     // 已有缓存：检查是否下载完成
+    if let Some(entry) = mgr.entries.get(&hash) {
+        if entry.download_failed.load(Ordering::Relaxed) {
+            if let Some(failed) = mgr.entries.remove(&hash) {
+                let _ = std::fs::remove_file(&failed.path);
+                mgr.current_size = mgr.current_size.saturating_sub(failed.size);
+            }
+        }
+    }
+
     if let Some(entry) = mgr.entries.get_mut(&hash) {
         entry.last_accessed = SystemTime::now();
-        if entry.download_complete.load(Ordering::Relaxed) {
+        if entry.download_complete.load(Ordering::Relaxed)
+            && !entry.download_failed.load(Ordering::Relaxed)
+        {
             let downloaded = entry.size;
             return Ok(StreamingTempFileState {
                 path: entry.path.to_string_lossy().to_string(),
                 downloaded_bytes: Arc::new(AtomicU64::new(downloaded)),
                 download_complete: Arc::new(AtomicBool::new(true)),
+                download_failed: Arc::new(AtomicBool::new(false)),
                 total_bytes: Some(downloaded),
             });
         }
@@ -315,6 +348,7 @@ pub fn start_streaming_download(
             path: entry.path.to_string_lossy().to_string(),
             downloaded_bytes: entry.downloaded_bytes.clone(),
             download_complete: entry.download_complete.clone(),
+            download_failed: entry.download_failed.clone(),
             total_bytes: None,
         });
     }
@@ -332,6 +366,7 @@ pub fn start_streaming_download(
 
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let download_complete = Arc::new(AtomicBool::new(false));
+    let download_failed = Arc::new(AtomicBool::new(false));
 
     // 启动后台下载线程
     let url_clone = url.to_string();
@@ -341,6 +376,7 @@ pub fn start_streaming_download(
     let path_clone = temp_path.clone();
     let dl_bytes = downloaded_bytes.clone();
     let dl_complete = download_complete.clone();
+    let dl_failed = download_failed.clone();
 
     let handle = std::thread::spawn(move || {
         download_thread(
@@ -351,6 +387,7 @@ pub fn start_streaming_download(
             path_clone,
             dl_bytes,
             dl_complete,
+            dl_failed,
         );
     });
 
@@ -362,6 +399,7 @@ pub fn start_streaming_download(
             last_accessed: SystemTime::now(),
             downloaded_bytes: downloaded_bytes.clone(),
             download_complete: download_complete.clone(),
+            download_failed: download_failed.clone(),
             _download_handle: Some(handle),
         },
     );
@@ -371,6 +409,7 @@ pub fn start_streaming_download(
         path: temp_path.to_string_lossy().to_string(),
         downloaded_bytes,
         download_complete,
+        download_failed,
         total_bytes: None,
     })
 }
@@ -383,7 +422,17 @@ fn download_thread(
     path: PathBuf,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
+    download_failed: Arc<AtomicBool>,
 ) {
+    let fail_download = |reason: &str, bytes_written: u64| {
+        eprintln!("[StreamCache] 下载失败: {} url={}", reason, url);
+        downloaded_bytes.store(bytes_written, Ordering::Relaxed);
+        download_failed.store(true, Ordering::Relaxed);
+        if let Ok(mut mgr) = cache().lock() {
+            mgr.update_size(hash, bytes_written);
+        }
+    };
+
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(10))
@@ -395,8 +444,7 @@ fn download_thread(
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[StreamCache] 创建 HTTP 客户端失败: {}", e);
-            download_complete.store(true, Ordering::Relaxed);
+            fail_download(&format!("创建 HTTP 客户端失败: {}", e), 0);
             return;
         }
     };
@@ -421,15 +469,13 @@ fn download_thread(
     let response = match req.send() {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("[StreamCache] 下载请求失败: {}", e);
-            download_complete.store(true, Ordering::Relaxed);
+            fail_download(&format!("下载请求失败: {}", e), 0);
             return;
         }
     };
 
     if !response.status().is_success() {
-        eprintln!("[StreamCache] 下载失败: HTTP {}", response.status());
-        download_complete.store(true, Ordering::Relaxed);
+        fail_download(&format!("HTTP {}", response.status()), 0);
         return;
     }
 
@@ -448,7 +494,10 @@ fn download_thread(
             "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
             content_type, url
         );
-        download_complete.store(true, Ordering::Relaxed);
+        fail_download(
+            &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
+            0,
+        );
         return;
     }
 
@@ -461,8 +510,7 @@ fn download_thread(
     let mut file = match OpenOptions::new().write(true).open(&path) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("[StreamCache] 打开缓存文件写入失败: {}", e);
-            download_complete.store(true, Ordering::Relaxed);
+            fail_download(&format!("打开缓存文件写入失败: {}", e), 0);
             return;
         }
     };
@@ -470,26 +518,43 @@ fn download_thread(
     let mut response = response;
     let mut buf = [0u8; 64 * 1024];
     let mut bytes_written = 0u64;
+    let mut error: Option<String> = None;
 
     loop {
         match response.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 if let Err(e) = file.write_all(&buf[..n]) {
-                    eprintln!("[StreamCache] 写入缓存文件失败: {}", e);
+                    error = Some(format!("写入缓存文件失败: {}", e));
                     break;
                 }
                 bytes_written += n as u64;
                 downloaded_bytes.store(bytes_written, Ordering::Relaxed);
             }
             Err(e) => {
-                eprintln!("[StreamCache] 下载流读取错误: {}", e);
+                error = Some(format!("下载流读取错误: {}", e));
                 break;
             }
         }
     }
 
     let _ = file.flush();
+
+    if let Some(error) = error {
+        fail_download(&error, bytes_written);
+        return;
+    }
+
+    if let Some(total) = total_bytes {
+        if bytes_written != total {
+            fail_download(
+                &format!("下载字节数不完整: {} / {}", bytes_written, total),
+                bytes_written,
+            );
+            return;
+        }
+    }
+
     download_complete.store(true, Ordering::Relaxed);
 
     // 更新缓存大小
@@ -505,7 +570,7 @@ fn download_thread(
 
 /// 等待最小缓冲就绪（在 commands.rs 的 async 上下文中用 tokio::time::sleep 轮询）
 pub fn is_buffer_ready(state: &StreamingTempFileState) -> bool {
-    state.downloaded_bytes() >= MIN_BUFFER_BYTES || state.is_download_complete()
+    state.downloaded_bytes() >= MIN_BUFFER_BYTES || state.is_download_finished()
 }
 
 /// 检查指定 URL 是否已缓存且下载完成。
@@ -514,13 +579,15 @@ pub fn is_url_cached(url: &str) -> bool {
     let hash = url_hash(url);
     let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(entry) = mgr.entries.get(&hash) {
-        return entry.download_complete.load(Ordering::Relaxed) && entry.size > 0;
+        return entry.download_complete.load(Ordering::Relaxed)
+            && !entry.download_failed.load(Ordering::Relaxed)
+            && entry.size > 0;
     }
     false
 }
 
 /// 将指定 URL 的播放缓存复制为目标下载文件。
-/// 仅当该 URL 已完整缓存（download_complete && size > 0）时执行复制，
+/// 仅当该 URL 已完整缓存且未失败（download_complete && !download_failed && size > 0）时执行复制，
 /// 避免重复下载。返回写入的字节数。
 pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
     let hash = url_hash(url);
@@ -530,7 +597,10 @@ pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
             .entries
             .get_mut(&hash)
             .ok_or_else(|| "缓存不存在".to_string())?;
-        if !entry.download_complete.load(Ordering::Relaxed) || entry.size == 0 {
+        if !entry.download_complete.load(Ordering::Relaxed)
+            || entry.download_failed.load(Ordering::Relaxed)
+            || entry.size == 0
+        {
             return Err("缓存未下载完成".to_string());
         }
         // 刷新访问时间，避免复制期间被 LRU 淘汰
@@ -541,24 +611,27 @@ pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
 }
 
 /// 等待指定 URL 缓存下载完成（轮询，供前端 'wait' 失败行为使用）。
-/// 返回最终是否完成且有效（字节数 > 0）。
+/// 返回最终是否完成且有效（未失败且字节数 > 0）。
 pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
     let hash = url_hash(url);
     let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
     loop {
-        let complete = {
+        let finished = {
             let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
             if let Some(entry) = mgr.entries.get(&hash) {
                 entry.download_complete.load(Ordering::Relaxed)
+                    || entry.download_failed.load(Ordering::Relaxed)
             } else {
                 // URL 不在缓存中（从未下载或已被淘汰），无法等待
                 return false;
             }
         };
-        if complete {
+        if finished {
             let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
             if let Some(entry) = mgr.entries.get(&hash) {
-                return entry.size > 0;
+                return entry.download_complete.load(Ordering::Relaxed)
+                    && !entry.download_failed.load(Ordering::Relaxed)
+                    && entry.size > 0;
             }
             return false;
         }

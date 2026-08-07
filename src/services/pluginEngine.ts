@@ -36,6 +36,12 @@ import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
 import {
+  loadMusicFreeInSandbox,
+  callSandboxMethod,
+  destroySandbox,
+  setUserVarsProvider,
+} from './pluginSandboxManager';
+import {
   createPluginSubscriptionService,
   type SubscriptionInstallResult,
 } from './pluginSubscriptions';
@@ -67,6 +73,49 @@ const BUILTIN_PLUGINS: Record<string, string> = {};
 
 // 不需要卡密的内置插件路径集合（已无内置插件，保留空集合兼容导出）
 export const FREE_BUILTIN_PATHS = new Set<string>();
+
+// ==================== 沙箱隔离配置 ====================
+
+// 沙箱模式开关：启用后插件代码在 Web Worker 中隔离执行
+// 默认关闭，确保向后兼容；启用后可逐步验证各插件在沙箱中的表现
+const USE_SANDBOX = true;
+
+// 记录在沙箱中运行的插件 ID 集合
+const _sandboxedPlugins = new Set<string>();
+
+/**
+ * 创建沙箱代理实例
+ *
+ * 当插件在沙箱（Web Worker）中加载时，主线程无法直接持有插件实例。
+ * 此函数创建一个代理对象，将所有方法调用通过 RPC 转发到 Worker。
+ * 代理对象的接口与 IPluginInstance 完全一致，现有代码无需修改。
+ */
+function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
+  const methodNames = [
+    'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
+    'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
+    'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
+    'getRecommendSheetTags', 'getRecommendSheetsByTag',
+  ];
+
+  const proxy: any = {
+    platform: metadata.platform,
+    version: metadata.version,
+    author: metadata.author,
+    description: metadata.description,
+    supportedSearchType: metadata.supportedSearchType,
+    defaultSearchType: metadata.defaultSearchType,
+    userVariables: metadata.userVariables,
+  };
+
+  for (const method of methodNames) {
+    proxy[method] = async (...args: any[]) => {
+      return callSandboxMethod(pluginId, method, args);
+    };
+  }
+
+  return proxy as IPluginInstance;
+}
 
 // ==================== 日志 ====================
 
@@ -496,6 +545,51 @@ export async function loadPluginFromScript(
     // 预计算 hash，用于 env.getUserVariables() 按插件 ID 索引用户变量值。
     // 提前到 Step 1 之前，确保插件脚本执行期间调用 getUserVariables() 也能拿到值。
     const hash = CryptoJs.SHA256(script).toString();
+
+    // ===== 沙箱模式：在 Web Worker 中隔离执行插件脚本 =====
+    if (USE_SANDBOX) {
+      log(`[loadPluginFromScript] 沙箱模式加载: ${uri}`);
+      try {
+        // 注册用户变量提供器（供 Worker 通过 RPC 获取用户变量）
+        setUserVarsProvider((pluginId: string) => getPluginUserVariableValues(pluginId));
+
+        const userVars = getPluginUserVariableValues(hash);
+        const metadata = await loadMusicFreeInSandbox(hash, script, userVars);
+
+        if (!metadata?.platform) {
+          throw new Error('沙箱: 插件缺少 platform 字段');
+        }
+
+        // 创建代理实例（所有方法调用通过 RPC 转发到 Worker）
+        const proxyInstance = createSandboxProxy(hash, metadata);
+
+        const source: PluginSource = {
+          id: hash,
+          name: metadata.platform,
+          format: 'musicfree',
+          version: metadata.version || '',
+          author: metadata.author || '',
+          description: metadata.description || '',
+          filePath: uri,
+          importedAt: Date.now(),
+          enabled: true,
+          sources: [metadata.platform],
+        };
+
+        pluginInstances.set(hash, { source, instance: proxyInstance, script });
+        _sandboxedPlugins.add(hash);
+
+        if (metadata.userVariables) {
+          userVarDefsCache.set(hash, metadata.userVariables);
+        }
+
+        log(`=== 插件沙箱加载成功: "${metadata.platform}" ===`);
+        return source;
+      } catch (e: any) {
+        log(`[loadPluginFromScript] 沙箱加载失败，回退到直接执行: ${e?.message}`);
+        // 沙箱失败时回退到直接执行路径（下方代码）
+      }
+    }
 
     // ===== Step 1: 执行插件脚本（与 MusicFree mountPlugin 第911~955行完全一致）=====
     const _module: any = { exports: {} };
@@ -1687,6 +1781,11 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
  * 清除缓存后下次 ensurePluginInstance 会重新执行插件脚本。
  */
 export function reloadPluginInstance(pluginId: string) {
+  // 沙箱模式清理：销毁 Worker，下次加载时重新创建
+  if (_sandboxedPlugins.has(pluginId)) {
+    _sandboxedPlugins.delete(pluginId);
+    destroySandbox(pluginId).catch(() => {});
+  }
   pluginInstances.delete(pluginId);
   // 不清除 userVarDefsCache：用户变量定义不因值变更而改变，
   // 重新加载后 ensurePluginInstance 会自动刷新缓存
@@ -1753,6 +1852,11 @@ export function reorderPlugins(orderedIds: string[]) {
 export function removePluginSource(id: string) {
   const stored = readPluginsFromLocalStorage().filter(p => p.id !== id);
   localStorage.setItem(PLUGIN_SOURCES_KEY, JSON.stringify(stored));
+  // 沙箱模式清理：销毁 Worker
+  if (_sandboxedPlugins.has(id)) {
+    _sandboxedPlugins.delete(id);
+    destroySandbox(id).catch(() => {});
+  }
   pluginInstances.delete(id);
   userVarDefsCache.delete(id);
   removePluginUserVariableValues(id);

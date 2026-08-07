@@ -14,7 +14,7 @@ use super::{
 };
 use rayon::prelude::*;
 use rusqlite::params;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -214,7 +214,7 @@ fn collect_disk_candidates(
     }
 
     // Collect CUE sheet tracks and record referenced audio paths
-    let mut cue_referenced_audio: Vec<String> = Vec::new();
+    let mut cue_referenced_audio: HashSet<String> = HashSet::new();
 
     for entry in WalkDir::new(normalized_folder)
         .into_iter()
@@ -246,7 +246,7 @@ fn collect_disk_candidates(
 
         if let Ok(sheet) = cue::parse_cue_file(path) {
             let resolved = normalize_path(&sheet.resolved_audio_path.to_string_lossy());
-            cue_referenced_audio.push(resolved);
+            cue_referenced_audio.insert(resolved);
 
             for track in &sheet.tracks {
                 let synthetic_path = format!("{}::track{:02}", cue_path_str, track.track_number);

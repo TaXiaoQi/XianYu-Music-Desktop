@@ -1,317 +1,77 @@
 name: Build
 
-permissions: {}
+permissions:
+  contents: read
 
 env:
-  NODE_VERSION: "24.15.0"
-  NODE_GYP_VERSION: "13.0.1"
-  NATIVE_SOURCE_REF: "9fde96fa09badecb8ae82d80cde258491a6b07fd"
-  WINDOWS_APP_ID: "BakaMusic"
+  NODE_VERSION: "22"
 
 on:
   push:
+    branches:
+      - main
+      - dev
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  validate-source:
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
+  build-windows:
+    name: Tauri Windows build
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Type check
-        run: npm exec tsc -- --noEmit
-      - name: Lint
-        run: npm exec eslint -- ./src
+        run: npm run typecheck
 
-  build:
-    needs: validate-source
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows
-            runner: windows-2022
-            arch: x64
-            asset_suffix: win32-x64
-          - platform: macos
-            runner: macos-15-intel
-            arch: x64
-            asset_suffix: darwin-x64
-          - platform: macos
-            runner: macos-latest
-            arch: arm64
-            asset_suffix: darwin-arm64
-          - platform: linux
-            runner: ubuntu-latest
-            arch: x64
-            asset_suffix: linux-amd64
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    env:
-      REQUIRE_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.10"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Set build version
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            VERSION="$(node -p "require('./package.json').version")"
-          fi
-          export VERSION
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          node -e "const fs=require('fs');const version=process.env.VERSION;for(const file of ['package.json','package-lock.json']){const data=JSON.parse(fs.readFileSync(file,'utf8'));data.version=version;if(data.packages?.[''])data.packages[''].version=version;fs.writeFileSync(file,JSON.stringify(data,null,2)+'\n')}"
-      - run: npm ci
-      - name: Print build environment
-        run: |
-          node -v
-          npm -v
-          node -e "const pkg=require('./package.json'); const lock=require('./package-lock.json'); console.log('electron='+pkg.devDependencies.electron); console.log('@electron/rebuild='+(lock.packages['node_modules/@electron/rebuild']?.version || 'missing')); console.log('node-gyp='+(lock.packages['node_modules/node-gyp']?.version || 'missing'));"
-      - name: Checkout pinned native sources
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          repository: Zencok/baka-native
-          ref: ${{ env.NATIVE_SOURCE_REF }}
-          ssh-key: ${{ secrets.NATIVE_REPO_DEPLOY_KEY }}
-          path: native
-          persist-credentials: false
-      - name: Verify native source revision
-        shell: bash
-        run: test "$(git -C native rev-parse HEAD)" = "$NATIVE_SOURCE_REF"
-      - name: Build and load native modules
-        run: npm run build:native
-      - name: Verify native modules in Electron ABI
-        run: npm run smoke:native
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
-      - name: Prepare Windows signing certificate
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'windows'
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          if (-not $env:CERTIFICATE_BASE64 -or -not $env:CERTIFICATE_PASSWORD) {
-            Write-Host "Windows signing secrets incomplete; packaging unsigned"
-            exit 0
-          }
-          $certificatePath = Join-Path $env:RUNNER_TEMP "bakamusic-code-signing.pfx"
-          try {
-            [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          } catch {
-            Write-Host "Invalid WINDOWS_CERTIFICATE_BASE64; packaging unsigned"
-            exit 0
-          }
-          "WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "WINDOWS_CERTIFICATE_PASSWORD=$env:CERTIFICATE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build Tauri app
+        run: npm run tauri build
 
-      - name: Prepare macOS signing and notarization
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos'
-        shell: bash
-        env:
-          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          MACOS_SIGN_IDENTITY_SECRET: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
-        run: |
-          # Best-effort: missing secrets skip signing instead of failing the matrix job.
-          if [ -z "$MACOS_CERTIFICATE_BASE64" ] || [ -z "$MACOS_CERTIFICATE_PASSWORD" ] || [ -z "$MACOS_SIGN_IDENTITY_SECRET" ]; then
-            echo "macOS signing secrets incomplete; packaging without codesign identity"
-            exit 0
-          fi
-          CERTIFICATE_PATH="$RUNNER_TEMP/bakamusic-code-signing.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/bakamusic-signing.keychain-db"
-          echo "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
-          security create-keychain -p "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$MACOS_CERTIFICATE_PASSWORD" "$KEYCHAIN_PATH"
-          echo "MACOS_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY_SECRET" >> "$GITHUB_ENV"
-          if [ -n "$APPLE_API_KEY_BASE64" ] && [ -n "$APPLE_API_KEY_ID_SECRET" ] && [ -n "$APPLE_API_ISSUER_SECRET" ]; then
-            API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID_SECRET}.p8"
-            echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$API_KEY_PATH"
-            echo "APPLE_API_KEY=$API_KEY_PATH" >> "$GITHUB_ENV"
-            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID_SECRET" >> "$GITHUB_ENV"
-            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER_SECRET" >> "$GITHUB_ENV"
-          else
-            echo "macOS notarization secrets incomplete; will skip notarytool"
-          fi
-
-      - name: Clean build output
-        run: npm run clean
-
-      - name: Package Windows application
-        if: matrix.platform == 'windows'
-        run: npm run package -- --arch="${{ matrix.arch }}"
-      - name: Verify Windows ASAR and fuses
-        if: matrix.platform == 'windows'
-        run: node scripts/package-security-smoke.cjs
-      - name: Build Windows installer and portable archive
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          choco install innosetup -y
-          iscc /DMyAppVersion=${{ env.VERSION }} /DMyAppId=${{ env.WINDOWS_APP_ID }} "./release/build-windows.iss"
-          Rename-Item "./out/BakaMusicSetup.exe" "BakaMusic-${{ env.VERSION }}-win32-x64-setup.exe"
-          Compress-Archive -Path "./out/BakaMusic-win32-x64" -DestinationPath "BakaMusic-${{ env.VERSION }}-win32-x64-portable.zip" -Force
-      - name: Sign Windows executables
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'windows'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          if (-not $env:WINDOWS_CERTIFICATE_FILE -or -not $env:WINDOWS_CERTIFICATE_PASSWORD) {
-            Write-Host "Skip Windows signing: certificate not prepared"
-            exit 0
-          }
-          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
-            Where-Object FullName -Match '\\x64\\signtool\.exe$' |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) {
-            Write-Host "signtool.exe not found; skip signing"
-            exit 0
-          }
-          $targets = @(
-            "./out/BakaMusic-win32-x64/BakaMusic.exe",
-            "./out/BakaMusic-${{ env.VERSION }}-win32-x64-setup.exe"
-          )
-          foreach ($target in $targets) {
-            if (-not (Test-Path $target)) {
-              Write-Host "Missing file to sign: $target"
-              continue
-            }
-            & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f "$env:WINDOWS_CERTIFICATE_FILE" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" $target
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "Signing failed: $target (continuing)"
-            }
-          }
-      - name: Stage Windows artifacts
-        if: matrix.platform == 'windows'
+      - name: Stage bundle artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release-assets | Out-Null
-          Copy-Item "./out/BakaMusic-${{ env.VERSION }}-win32-x64-setup.exe" release-assets/
-          Copy-Item "./BakaMusic-${{ env.VERSION }}-win32-x64-portable.zip" release-assets/
-
-      - name: Build macOS DMG
-        if: matrix.platform == 'macos'
-        run: npm run make -- --arch="${{ matrix.arch }}"
-      - name: Stage macOS artifact
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          mv "./out/make/BakaMusic-${VERSION}-${{ matrix.arch }}.dmg" "./release-assets/BakaMusic-${VERSION}-${{ matrix.asset_suffix }}.dmg"
-      - name: Sign, notarize, and staple macOS DMG
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos'
-        continue-on-error: true
-        shell: bash
-        run: |
-          DMG="./release-assets/BakaMusic-${VERSION}-${{ matrix.asset_suffix }}.dmg"
-          if [ -z "${MACOS_SIGN_IDENTITY:-}" ]; then
-            echo "Skip DMG codesign: MACOS_SIGN_IDENTITY not set"
-            exit 0
-          fi
-          # Sign only — no codesign --verify / stapler validate gates.
-          codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$DMG" || {
-            echo "DMG codesign failed; continuing without notarization"
-            exit 0
+          Get-ChildItem -Path "src-tauri\target\release\bundle" -Recurse -File |
+            Where-Object { $_.Extension -in ".exe", ".msi", ".zip" } |
+            Copy-Item -Destination release-assets -Force
+          if (-not (Get-ChildItem -Path release-assets -File)) {
+            throw "No Tauri bundle artifacts were produced."
           }
-          if [ -z "${APPLE_API_KEY:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; then
-            echo "Skip notarization: API key secrets incomplete"
-            exit 0
-          fi
-          xcrun notarytool submit "$DMG" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait || {
-            echo "notarytool failed; continuing without staple"
-            exit 0
-          }
-          xcrun stapler staple "$DMG" || echo "stapler staple failed; artifact still uploaded"
+          Get-ChildItem -Path release-assets -File |
+            ForEach-Object {
+              $hash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
+              "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), $_.Name
+            } | Set-Content -Path "release-assets\SHA256SUMS.txt" -Encoding UTF8
 
-      - name: Build Linux package
-        if: matrix.platform == 'linux'
-        run: npm run make -- --arch="${{ matrix.arch }}"
-      - name: Stage Linux artifact
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          DEB_FILE="$(find ./out/make/deb/x64 -name '*.deb' -print -quit)"
-          test -n "$DEB_FILE"
-          mv "$DEB_FILE" "./release-assets/BakaMusic-${VERSION}-${{ matrix.asset_suffix }}.deb"
-
-      - name: Generate reproducible CycloneDX SBOM
-        run: npm run sbom -- --output-file "./release-assets/BakaMusic-${{ env.VERSION }}-${{ matrix.asset_suffix }}.cdx.json"
-      - name: Generate platform checksums
-        run: node scripts/generate-release-metadata.cjs ./release-assets --output "./release-assets/BakaMusic-${{ env.VERSION }}-${{ matrix.asset_suffix }}.sha256"
-      - name: Attest build provenance
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
         with:
-          subject-path: ./release-assets/*
-      - name: Upload release bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: BakaMusic-${{ env.VERSION }}-${{ matrix.asset_suffix }}
-          path: ./release-assets/*
+          name: xianyu-music-windows
+          path: release-assets/*
           if-no-files-found: error
-
-  publish-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: write
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Download release bundles
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          path: ./release-assets
-          merge-multiple: true
-      - name: Generate aggregate checksums
-        run: node scripts/generate-release-metadata.cjs ./release-assets
-      - name: Attest aggregate release bundle
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
-        with:
-          subject-path: ./release-assets/*
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" ./release-assets/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" ./release-assets/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
-          fi

@@ -516,6 +516,7 @@ export const createPlayerLifecycle = ({
     const remoteAutoSyncKey = 'xianyu_remote_auto_sync_at';
     const remoteAutoSyncIntervalMs = 24 * 60 * 60 * 1000;
     let remoteAutoSyncTimer: ReturnType<typeof setInterval> | null = null;
+    let remoteAutoSyncStartupTimer: number | null = null;
     let remoteAutoSyncRunning = false;
     const runRemoteAutoSync = async () => {
       if (remoteAutoSyncRunning) return;
@@ -721,7 +722,10 @@ export const createPlayerLifecycle = ({
       disposeSessionSync = usePlaybackSessionSync().init();
 
       window.addEventListener('beforeunload', beforeUnloadHandler);
-      window.setTimeout(() => void runRemoteAutoSync(), 30_000);
+      remoteAutoSyncStartupTimer = window.setTimeout(() => {
+        remoteAutoSyncStartupTimer = null;
+        void runRemoteAutoSync();
+      }, 30_000);
       remoteAutoSyncTimer = setInterval(() => void runRemoteAutoSync(), 60 * 60 * 1000);
     });
 
@@ -731,6 +735,11 @@ export const createPlayerLifecycle = ({
       }
       if (remoteAutoSyncTimer) {
         clearInterval(remoteAutoSyncTimer);
+        remoteAutoSyncTimer = null;
+      }
+      if (remoteAutoSyncStartupTimer) {
+        clearTimeout(remoteAutoSyncStartupTimer);
+        remoteAutoSyncStartupTimer = null;
       }
       persistCurrentPlaybackTime();
       clearInterval(playbackTimePersistTimer);

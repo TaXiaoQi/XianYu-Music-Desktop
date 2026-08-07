@@ -2,6 +2,7 @@ use crate::music::tags::{
     extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file, EmbedMetadataRequest,
 };
 use crate::music::utils::is_supported_library_extension;
+use crate::security::path_validator;
 use lofty::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -167,6 +168,8 @@ pub fn preview_rename(
     root_path: String,
     config: RenameConfig,
 ) -> Result<Vec<RenamePreview>, String> {
+    let _validated_root = path_validator::validate_path(&root_path, None)?;
+    let root_path = _validated_root.to_string_lossy().to_string();
     let mut results = Vec::new();
 
     for entry in WalkDir::new(root_path)
@@ -205,7 +208,11 @@ pub fn preview_rename(
 pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
     let mut success_count = 0;
 
-    for op in operations {
+    for mut op in operations {
+        let validated_path = path_validator::validate_path(&op.original_path, None)?;
+        op.original_path = validated_path.to_string_lossy().to_string();
+        // Also sanitize new_name
+        op.new_name = path_validator::sanitize_filename_component(&op.new_name)?;
         let src = PathBuf::from(&op.original_path);
         if let Some(parent) = src.parent() {
             let dest = parent.join(&op.new_name);
@@ -224,6 +231,7 @@ pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
 pub fn open_external_program(path: String, args: Vec<String>) -> Result<(), String> {
     use std::process::Command;
 
+    path_validator::validate_path(&path, None)?;
     let mut cmd = Command::new(&path);
     for arg in args {
         cmd.arg(arg);
@@ -241,6 +249,8 @@ pub fn refresh_folder_songs(
     minimum_duration_seconds: Option<u32>,
     db_state: tauri::State<'_, crate::database::DbState>,
 ) -> Result<Vec<crate::music::types::Song>, String> {
+    let validated = path_validator::validate_path(&folder_path, None)?;
+    let folder_path = validated.to_string_lossy().to_string();
     // 复用现有的扫描逻辑
     crate::music::scanner::scan_single_directory_internal(
         folder_path,
@@ -254,6 +264,9 @@ pub fn refresh_folder_songs(
 
 #[tauri::command]
 pub fn file_exists(path: String) -> bool {
+    if path_validator::validate_path(&path, None).is_err() {
+        return false;
+    }
     std::path::Path::new(&path).is_file()
 }
 
@@ -267,7 +280,9 @@ pub fn resolve_download_path(
     file_name: String,
     overwrite_existing: bool,
 ) -> Result<String, String> {
-    let dir = PathBuf::from(&directory);
+    let validated_dir = path_validator::validate_path(&directory, None)?;
+    let dir = validated_dir;
+    let file_name = path_validator::sanitize_filename_component(&file_name)?;
     let direct = dir.join(&file_name);
 
     if overwrite_existing || !direct.exists() {
@@ -351,10 +366,7 @@ fn ext_from_url(url: &str) -> String {
 /// 无损：flac, flac24bit, hires, vinyl, master → .flac
 /// 有损：mgg, 128k, 192k, 320k, dolby, atmos, atmos_plus → .mp3
 fn is_lossless_quality(quality: &str) -> bool {
-    matches!(
-        quality,
-        "flac" | "flac24bit" | "hires" | "vinyl" | "master"
-    )
+    matches!(quality, "flac" | "flac24bit" | "hires" | "vinyl" | "master")
 }
 
 /// 根据命中的音质档位推断扩展名兜底
@@ -370,7 +382,11 @@ fn ext_from_quality(quality: &str) -> String {
 ///
 /// 缺失字段会被跳过，避免出现 "歌名 -  - " 空段
 fn build_filename_base(title: &str, artist: &str, album: &str, style: &str) -> String {
-    let title = if title.is_empty() { "未知歌曲" } else { title };
+    let title = if title.is_empty() {
+        "未知歌曲"
+    } else {
+        title
+    };
     let parts: Vec<&str> = match style {
         "title-artist" => vec![title, artist],
         "title-artist-album" => vec![title, artist, album],
@@ -458,6 +474,8 @@ pub fn resolve_download_full_path(
     file_name_style: String,
     overwrite_existing: bool,
 ) -> Result<String, String> {
+    let validated_dir = path_validator::validate_path(&directory, None)?;
+    let directory = validated_dir.to_string_lossy().to_string();
     let file_name = build_download_filename(
         &title,
         &artist,
@@ -467,6 +485,7 @@ pub fn resolve_download_full_path(
         keep_source_filename,
         &file_name_style,
     );
+    let file_name = path_validator::sanitize_filename_component(&file_name)?;
     // 复用已有的 resolve_download_path 逻辑
     resolve_download_path(directory, file_name, overwrite_existing)
 }
@@ -483,7 +502,9 @@ pub fn build_download_basename(
     file_name_style: String,
 ) -> String {
     let base = build_filename_base(&title, &artist, &album, &file_name_style);
-    sanitize_download_filename(&base)
+    let cleaned = sanitize_download_filename(&base);
+    // 路径安全校验：确保文件名组件不含路径分隔符或目录遍历引用
+    path_validator::sanitize_filename_component(&cleaned).unwrap_or_else(|_| "download".to_string())
 }
 
 const APP_IDENTIFIER: &str = "com.xymusic.desktop";
@@ -875,7 +896,8 @@ pub async fn download_online_song(
 /// 保存歌词文本到指定文件（用于下载歌曲时一并保存歌词）。
 #[tauri::command]
 pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
-    let dest = PathBuf::from(&dest_path);
+    let validated = path_validator::validate_path(&dest_path, None)?;
+    let dest = validated;
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -950,7 +972,8 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
     if data.is_empty() {
         return Err("下载数据为空".to_string());
     }
-    let dest = PathBuf::from(&dest_path);
+    let validated = path_validator::validate_path(&dest_path, None)?;
+    let dest = validated;
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await

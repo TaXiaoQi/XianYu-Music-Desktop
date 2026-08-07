@@ -37,7 +37,8 @@ mod windows_impl {
         let _ = initialize_mta();
 
         // 2. 获取默认渲染设备（扬声器/耳机）
-        let enumerator = DeviceEnumerator::new().map_err(|e| format!("创建设备枚举器失败: {}", e))?;
+        let enumerator =
+            DeviceEnumerator::new().map_err(|e| format!("创建设备枚举器失败: {}", e))?;
         let device = enumerator
             .get_default_device(&Direction::Render)
             .map_err(|e| format!("获取默认音频输出设备失败: {}", e))?;
@@ -177,8 +178,9 @@ mod windows_impl {
                         };
                         for chunk in samples.chunks(channels) {
                             if !chunk.is_empty() {
-                                let mono: f32 = chunk.iter().map(|&s| s as f32 / 32768.0).sum::<f32>()
-                                    / chunk.len() as f32;
+                                let mono: f32 =
+                                    chunk.iter().map(|&s| s as f32 / 32768.0).sum::<f32>()
+                                        / chunk.len() as f32;
                                 out.push(mono);
                             }
                         }
