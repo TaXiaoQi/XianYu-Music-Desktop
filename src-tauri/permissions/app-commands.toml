@@ -119,6 +119,7 @@ commands.allow = [
   "refresh_immersive_fullscreen",
   "save_window_placement",
   "set_taskbar_fullscreen_flag",
+  "smart_toggle_maximize",
   "get_window_material_capabilities",
   "refresh_window_material_active_state",
   "get_foreground_fullscreen_state",

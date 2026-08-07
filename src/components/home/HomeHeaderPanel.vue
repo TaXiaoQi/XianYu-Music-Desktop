@@ -44,6 +44,8 @@ const emit = defineEmits<{
   (event: 'activeRootChange', value: string): void;
   (event: 'renamePlaylist'): void;
   (event: 'refreshAll'): void;
+  (event: 'selectAll'): void;
+  (event: 'batchAddToFavorites'): void;
 }>();
 
 const isBatchModeModel = computed({
@@ -85,6 +87,7 @@ const isManagementModeModel = computed({
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
     @batchDelete="$emit('batchDelete')"
+    @batchAddToFavorites="$emit('batchAddToFavorites')"
     @rename="$emit('renamePlaylist')"
   />
 
@@ -92,8 +95,9 @@ const isManagementModeModel = computed({
     v-else-if="!['statistics', 'artist', 'album'].includes(localViewMode)"
     v-model:isBatchMode="isBatchModeModel"
     :selectedCount="selectedCount"
+    :totalSongCount="localSongList.length"
     @playAll="$emit('playAll')"
-    @batchPlay="$emit('batchPlay')"
+    @selectAll="$emit('selectAll')"
     @addToPlaylist="$emit('showAddToPlaylist')"
     @batchDelete="$emit('batchDelete')"
     @batchMove="$emit('batchMove')"

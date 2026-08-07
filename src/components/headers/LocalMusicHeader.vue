@@ -1,22 +1,28 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useSearchAwareTitle } from '../../composables/useSearchAwareTitle';
 import SortModeButton from '../common/SortModeButton.vue';
 
-defineProps<{
+const props = defineProps<{
   isBatchMode: boolean;
   selectedCount?: number;
+  totalSongCount?: number;
 }>();
 
 const emit = defineEmits([
   'update:isBatchMode',
   'playAll',
-  'batchPlay',
   'addToPlaylist',
   'batchDelete',
   'batchMove',
   'refreshAll',
   'addAllToQueue',
+  'selectAll',
 ]);
+
+const isAllSelected = computed(() =>
+  (props.totalSongCount ?? 0) > 0 && (props.selectedCount ?? 0) === props.totalSongCount,
+);
 
 const pageTitle = useSearchAwareTitle('本地音乐');
 
@@ -41,8 +47,9 @@ const handleEnterBatchMode = () => {
   <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(6px,1vh,12px)] h-auto justify-center">
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
-        <button @click="emit('batchPlay')" class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 py-1.5 rounded-full text-sm transition flex items-center gap-1 active:scale-95 shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+        <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><template v-else><circle cx="12" cy="12" r="9" stroke-width="2" /></template></svg>
+          {{ isAllSelected ? '取消全选' : '全选' }}
         </button>
         <button @click="emit('batchMove')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
