@@ -235,7 +235,10 @@ mod tests {
     #[test]
     fn strips_at_prefix() {
         // "@" 前缀用于竖排字体变体
-        assert_eq!(parse("@Microsoft YaHei (TrueType)"), vec!["Microsoft YaHei"]);
+        assert_eq!(
+            parse("@Microsoft YaHei (TrueType)"),
+            vec!["Microsoft YaHei"]
+        );
     }
 
     #[test]

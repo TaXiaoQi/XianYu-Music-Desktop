@@ -964,7 +964,10 @@ mod tests {
         let mut s = SoundEffectSettings::default();
         s.audio_boost = 50.0;
         h.set_settings(s);
-        assert!(h.dirty.load(Ordering::Acquire), "set_settings 后 dirty 应为 true");
+        assert!(
+            h.dirty.load(Ordering::Acquire),
+            "set_settings 后 dirty 应为 true"
+        );
         assert_eq!(h.settings.lock().unwrap().audio_boost, 50.0);
     }
 
@@ -991,14 +994,28 @@ mod tests {
             }
         }
         impl Source for TestSource {
-            fn channels(&self) -> u16 { self.channels }
-            fn sample_rate(&self) -> u32 { self.sample_rate }
-            fn current_frame_len(&self) -> Option<usize> { None }
-            fn total_duration(&self) -> Option<Duration> { None }
-            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> { Ok(()) }
+            fn channels(&self) -> u16 {
+                self.channels
+            }
+            fn sample_rate(&self) -> u32 {
+                self.sample_rate
+            }
+            fn current_frame_len(&self) -> Option<usize> {
+                None
+            }
+            fn total_duration(&self) -> Option<Duration> {
+                None
+            }
+            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> {
+                Ok(())
+            }
         }
 
-        let inner = TestSource { pos: 0, channels: 2, sample_rate: 44100 };
+        let inner = TestSource {
+            pos: 0,
+            channels: 2,
+            sample_rate: 44100,
+        };
         let handle = Arc::new(SoundEffectHandle::new(SoundEffectSettings::default()));
         let mut src = SoundEffectSource::new(inner, handle);
 
@@ -1019,7 +1036,10 @@ mod tests {
             }
         }
         assert!(total > 100, "应产出样本，实际 {total}");
-        assert!(nonzero > 100, "默认直通不应静音，非零样本 {nonzero}/{total}");
+        assert!(
+            nonzero > 100,
+            "默认直通不应静音，非零样本 {nonzero}/{total}"
+        );
     }
 
     #[test]
@@ -1040,11 +1060,21 @@ mod tests {
             }
         }
         impl Source for TestSource {
-            fn channels(&self) -> u16 { 2 }
-            fn sample_rate(&self) -> u32 { 44100 }
-            fn current_frame_len(&self) -> Option<usize> { None }
-            fn total_duration(&self) -> Option<Duration> { None }
-            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> { Ok(()) }
+            fn channels(&self) -> u16 {
+                2
+            }
+            fn sample_rate(&self) -> u32 {
+                44100
+            }
+            fn current_frame_len(&self) -> Option<usize> {
+                None
+            }
+            fn total_duration(&self) -> Option<Duration> {
+                None
+            }
+            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> {
+                Ok(())
+            }
         }
 
         let mut settings = SoundEffectSettings::default();

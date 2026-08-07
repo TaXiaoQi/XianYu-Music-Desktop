@@ -3,7 +3,7 @@
 //! 噪声门 / 扩展器 / 压缩器 / 多段压缩 / 去齿音 / 限制器 / 自动增益(AGC)。
 //! 全部采用立体声联动检测（取 L/R 最大值驱动增益），增益用包络平滑。
 
-use super::dsp::{Biquad, EnvelopeFollower, SmoothedValue, db_to_gain, gain_to_db, soft_clip};
+use super::dsp::{db_to_gain, gain_to_db, soft_clip, Biquad, EnvelopeFollower, SmoothedValue};
 use super::SoundEffectSettings;
 
 /// 4 阶 Linkwitz-Riley 分频器（2 个级联 biquad），2 通道
@@ -136,8 +136,13 @@ impl DynamicsRack {
         }
         let tc = 0.05;
         for w in [
-            &mut self.wet_gate, &mut self.wet_expander, &mut self.wet_comp,
-            &mut self.wet_multi, &mut self.wet_deesser, &mut self.wet_limiter, &mut self.wet_agc,
+            &mut self.wet_gate,
+            &mut self.wet_expander,
+            &mut self.wet_comp,
+            &mut self.wet_multi,
+            &mut self.wet_deesser,
+            &mut self.wet_limiter,
+            &mut self.wet_agc,
         ] {
             w.set_time_constant(tc, sample_rate);
         }
@@ -181,13 +186,20 @@ impl DynamicsRack {
     }
 
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
-        self.wet_gate.set_target(if s.noise_gate.enabled { 1.0 } else { 0.0 });
-        self.wet_expander.set_target(if s.expander.enabled { 1.0 } else { 0.0 });
-        self.wet_comp.set_target(if s.compressor.enabled { 1.0 } else { 0.0 });
-        self.wet_multi.set_target(if s.multiband.enabled { 1.0 } else { 0.0 });
-        self.wet_deesser.set_target(if s.de_esser.enabled { 1.0 } else { 0.0 });
-        self.wet_limiter.set_target(if s.limiter.enabled { 1.0 } else { 0.0 });
-        self.wet_agc.set_target(if s.agc.enabled { 1.0 } else { 0.0 });
+        self.wet_gate
+            .set_target(if s.noise_gate.enabled { 1.0 } else { 0.0 });
+        self.wet_expander
+            .set_target(if s.expander.enabled { 1.0 } else { 0.0 });
+        self.wet_comp
+            .set_target(if s.compressor.enabled { 1.0 } else { 0.0 });
+        self.wet_multi
+            .set_target(if s.multiband.enabled { 1.0 } else { 0.0 });
+        self.wet_deesser
+            .set_target(if s.de_esser.enabled { 1.0 } else { 0.0 });
+        self.wet_limiter
+            .set_target(if s.limiter.enabled { 1.0 } else { 0.0 });
+        self.wet_agc
+            .set_target(if s.agc.enabled { 1.0 } else { 0.0 });
 
         let sr = self.sample_rate;
         // 压缩器：按用户参数更新 attack/release。
@@ -216,14 +228,27 @@ impl DynamicsRack {
         };
         for i in 0..2 {
             // 去齿音：带通检测 ~ 频率，高 shelf 衰减
-            self.deess_detect[i].set_highpass(s.de_esser.frequency.clamp(3000.0, 10000.0), sr, 0.707);
-            self.deess_shelf[i].set_highshelf(s.de_esser.frequency.clamp(3000.0, 10000.0), sr, 0.0, 0.707);
+            self.deess_detect[i].set_highpass(
+                s.de_esser.frequency.clamp(3000.0, 10000.0),
+                sr,
+                0.707,
+            );
+            self.deess_shelf[i].set_highshelf(
+                s.de_esser.frequency.clamp(3000.0, 10000.0),
+                sr,
+                0.0,
+                0.707,
+            );
         }
         // 多段分频
-        self.mb_low_lp.set_lp(s.multiband.low_freq.clamp(50.0, 1000.0), sr);
-        self.mb_mid_hp.set_hp(s.multiband.low_freq.clamp(50.0, 1000.0), sr);
-        self.mb_mid_lp.set_lp(s.multiband.mid_freq.clamp(1000.0, 8000.0), sr);
-        self.mb_high_hp.set_hp(s.multiband.mid_freq.clamp(1000.0, 8000.0), sr);
+        self.mb_low_lp
+            .set_lp(s.multiband.low_freq.clamp(50.0, 1000.0), sr);
+        self.mb_mid_hp
+            .set_hp(s.multiband.low_freq.clamp(50.0, 1000.0), sr);
+        self.mb_mid_lp
+            .set_lp(s.multiband.mid_freq.clamp(1000.0, 8000.0), sr);
+        self.mb_high_hp
+            .set_hp(s.multiband.mid_freq.clamp(1000.0, 8000.0), sr);
     }
 
     pub fn process(&mut self, frame: &mut [f32], channels: u16, s: &SoundEffectSettings) {
@@ -315,13 +340,7 @@ impl DynamicsRack {
                 db_to_gain(gain_db)
             };
             // gain 平滑按 attack/release 跟随，避免固定步进在不同采样率/参数下产生泵吸。
-            self.comp_gain = smooth_gain(
-                self.comp_gain,
-                target,
-                attack_ms,
-                release_ms,
-                sr,
-            );
+            self.comp_gain = smooth_gain(self.comp_gain, target, attack_ms, release_ms, sr);
             let g = lerp(1.0, self.comp_gain, w);
             // 温和补偿增益，随湿度淡入，避免开启瞬间音量跳变。
             let makeup = 1.0 + (self.comp_makeup_gain - 1.0) * w;
@@ -339,8 +358,12 @@ impl DynamicsRack {
             // 三段分解
             let low_l = self.mb_low_lp.process_lp(in_l, 0);
             let low_r = self.mb_low_lp.process_lp(in_r, 1);
-            let mid_l = self.mb_mid_lp.process_lp(self.mb_mid_hp.process_hp(in_l, 0), 0);
-            let mid_r = self.mb_mid_lp.process_lp(self.mb_mid_hp.process_hp(in_r, 1), 1);
+            let mid_l = self
+                .mb_mid_lp
+                .process_lp(self.mb_mid_hp.process_hp(in_l, 0), 0);
+            let mid_r = self
+                .mb_mid_lp
+                .process_lp(self.mb_mid_hp.process_hp(in_r, 1), 1);
             let high_l = self.mb_high_hp.process_hp(in_l, 0);
             let high_r = self.mb_high_hp.process_hp(in_r, 1);
             // 各段压缩
@@ -376,9 +399,15 @@ impl DynamicsRack {
             } else {
                 0.0
             };
-            self.deess_reduction = smooth_db_reduction(self.deess_reduction, target_red, 2.0, 80.0, sr);
+            self.deess_reduction =
+                smooth_db_reduction(self.deess_reduction, target_red, 2.0, 80.0, sr);
             for i in 0..2 {
-                self.deess_shelf[i].set_highshelf(s.de_esser.frequency, sr, self.deess_reduction, 0.707);
+                self.deess_shelf[i].set_highshelf(
+                    s.de_esser.frequency,
+                    sr,
+                    self.deess_reduction,
+                    0.707,
+                );
             }
             let nl = self.deess_shelf[0].process(frame[0], 0);
             let nr = self.deess_shelf[1].process(frame[1], 1);
@@ -391,7 +420,11 @@ impl DynamicsRack {
         if w > 0.001 {
             let thr = db_to_gain(s.limiter.threshold.clamp(-10.0, 0.0));
             let peak = frame[0].abs().max(frame[1].abs());
-            let target = if peak > thr && peak > 1e-6 { (thr / peak).clamp(0.05, 1.0) } else { 1.0 };
+            let target = if peak > thr && peak > 1e-6 {
+                (thr / peak).clamp(0.05, 1.0)
+            } else {
+                1.0
+            };
             self.limiter_gain = smooth_gain(self.limiter_gain, target, 0.5, 60.0, sr);
             let g = lerp(1.0, self.limiter_gain, w);
             frame[0] = soft_clip(frame[0] * g);
@@ -402,7 +435,8 @@ impl DynamicsRack {
         let w = self.wet_agc.tick();
         if w > 0.001 {
             let env = self.agc_env.process(frame[0].abs().max(frame[1].abs()));
-            let target_level = db_to_gain((s.agc.target_level / 100.0).clamp(0.0, 1.0) * -6.0 + 6.0); // 映射到 -6..6dB
+            let target_level =
+                db_to_gain((s.agc.target_level / 100.0).clamp(0.0, 1.0) * -6.0 + 6.0); // 映射到 -6..6dB
             let target_gain = if env > 1e-5 { target_level / env } else { 1.0 };
             let clamped = target_gain.clamp(0.1, 10.0);
             self.agc_gain = smooth_gain(self.agc_gain, clamped, 60.0, 600.0, sr);
@@ -451,7 +485,11 @@ fn smoothing_amount(ms: f32, sr: f32) -> f32 {
 /// target 变小表示进入衰减，用 attack；target 变大表示恢复，用 release。
 #[inline]
 fn smooth_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
-    let t = if target.is_finite() { target.clamp(0.0, 32.0) } else { 1.0 };
+    let t = if target.is_finite() {
+        target.clamp(0.0, 32.0)
+    } else {
+        1.0
+    };
     let c = if t < current {
         smoothing_amount(attack_ms, sr)
     } else {
@@ -463,7 +501,11 @@ fn smooth_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f
 /// 噪声门：target 变大为开门 attack，target 变小为关门 release。
 #[inline]
 fn smooth_gate_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
-    let t = if target.is_finite() { target.clamp(0.0, 1.0) } else { 1.0 };
+    let t = if target.is_finite() {
+        target.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
     let c = if t > current {
         smoothing_amount(attack_ms, sr)
     } else {
@@ -475,7 +517,11 @@ fn smooth_gate_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, 
 /// dB 衰减平滑：更负表示增加衰减，用 attack；回到 0 用 release。
 #[inline]
 fn smooth_db_reduction(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
-    let t = if target.is_finite() { target.clamp(-48.0, 0.0) } else { 0.0 };
+    let t = if target.is_finite() {
+        target.clamp(-48.0, 0.0)
+    } else {
+        0.0
+    };
     let c = if t < current {
         smoothing_amount(attack_ms, sr)
     } else {

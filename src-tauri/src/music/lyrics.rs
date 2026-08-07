@@ -2947,13 +2947,19 @@ fn build_hard_role_semantic_line_from_cluster(
         }
         [roman_line, main_line, translation_line] => {
             // [修复] 同理：若主词与翻译文本完全相同，则丢弃重复翻译，仅保留主词+罗马音
-            let translation = if sanitize_line_text(&main_line.text) == sanitize_line_text(&translation_line.text) {
+            let translation = if sanitize_line_text(&main_line.text)
+                == sanitize_line_text(&translation_line.text)
+            {
                 None
             } else {
                 Some(*translation_line)
             };
-            Some(build_hard_role_semantic_line(main_line, translation, Some(roman_line)))
-        },
+            Some(build_hard_role_semantic_line(
+                main_line,
+                translation,
+                Some(roman_line),
+            ))
+        }
         _ => None,
     }
 }
@@ -3694,9 +3700,8 @@ mod tests {
     #[test]
     fn hard_role_rules_keep_different_main_and_translation() {
         // 真实翻译场景：lyric 与 tlyric 不同，应保留翻译
-        let payload = build_structured_lyrics_payload(
-            ["[00:01.000]Hello", "[00:01.000]你好"].join("\n"),
-        );
+        let payload =
+            build_structured_lyrics_payload(["[00:01.000]Hello", "[00:01.000]你好"].join("\n"));
 
         assert_eq!(payload.display_lines.len(), 1);
         assert_eq!(payload.display_lines[0].text, "Hello");

@@ -654,26 +654,25 @@ function joinPath(dir: string, fileName: string): string {
 }
 
 /** 在目标路径已存在时追加 (1)/(2)… 直到不冲突 */
-async function resolveNonConflictingPath(fullPath: string): Promise<string> {
-  const exists = async (p: string) => {
-    try {
-      return await invoke<boolean>('file_exists', { path: p });
-    } catch {
-      return false;
-    }
-  };
-
-  if (!(await exists(fullPath))) return fullPath;
-
-  const dot = fullPath.lastIndexOf('.');
-  const base = dot === -1 ? fullPath : fullPath.slice(0, dot);
-  const ext = dot === -1 ? '' : fullPath.slice(dot);
-
-  for (let i = 1; i < 1000; i++) {
-    const candidate = `${base} (${i})${ext}`;
-    if (!(await exists(candidate))) return candidate;
+async function resolveNonConflictingPath(fullPath: string, overwriteExisting: boolean = false): Promise<string> {
+  // [项4 下载编排] 单次 IPC 调用 Rust 后端完成路径冲突检测与解析，
+  // 替代原先逐次调用 file_exists 的 N 次 IPC 往返
+  try {
+    const dir = fullPath.includes('\\')
+      ? fullPath.slice(0, fullPath.lastIndexOf('\\'))
+      : fullPath.slice(0, fullPath.lastIndexOf('/'));
+    const fileName = fullPath.includes('\\')
+      ? fullPath.slice(fullPath.lastIndexOf('\\') + 1)
+      : fullPath.slice(fullPath.lastIndexOf('/') + 1);
+    return await invoke<string>('resolve_download_path', {
+      directory: dir,
+      fileName,
+      overwriteExisting,
+    });
+  } catch {
+    // 后端调用失败时回退到原始路径
+    return fullPath;
   }
-  return fullPath;
 }
 
 export interface DownloadSongOptions {
@@ -829,9 +828,7 @@ export async function downloadSong(
             options.fileNameStyle ?? 'artist-title',
           );
           let destPath = joinPath(options.downloadDir, fileName);
-          if (!options.overwriteExisting) {
-            destPath = await resolveNonConflictingPath(destPath);
-          }
+          destPath = await resolveNonConflictingPath(destPath, options.overwriteExisting);
           try {
             await invoke<number>('copy_stream_cache', { url: playingUrl, destPath });
             options.onProgress?.(100);
@@ -872,9 +869,7 @@ export async function downloadSong(
       options.fileNameStyle ?? 'artist-title',
     );
     let destPath = joinPath(options.downloadDir, fileName);
-    if (!options.overwriteExisting) {
-      destPath = await resolveNonConflictingPath(destPath);
-    }
+    destPath = await resolveNonConflictingPath(destPath, options.overwriteExisting);
 
     try {
       filePath = await downloadFromUrl(url, destPath, options.onProgress);
@@ -897,87 +892,83 @@ export async function downloadSong(
     );
   }
 
-  // 歌词：独立文件保存 + 嵌入 tag 复用同一份文本
-  let lyricsSaved = false;
+  // [项4 下载编排] 收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入
+  // 原先分 3-4 次独立 IPC 调用，现合并为单次 finalize_download_extras 调用。
+  // 歌词文本和封面 URL 仍在前端解析（依赖 JS 插件引擎），文件 I/O 全部交给 Rust。
+
+  // 1. 获取歌词文本（前端 JS 插件引擎）
   let savedLyricText: string | null = null;
   if (options.downloadLyrics || options.embedLyrics) {
-    const lyricText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
-    if (lyricText) {
-      savedLyricText = lyricText;
-      if (options.downloadLyrics) {
-        const dot = filePath.lastIndexOf('.');
-        const lyricBase = dot === -1 ? filePath : filePath.slice(0, dot);
-        const lyricPath = `${lyricBase}.${options.lyricsFormat}`;
-        try {
-          await invoke<string>('save_download_lyrics', {
-            content: lyricText,
-            destPath: lyricPath,
-          });
-          lyricsSaved = true;
-        } catch (e: any) {
-          console.warn('[Download] 保存歌词失败:', e?.message);
-        }
-      }
-    }
+    savedLyricText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
   }
 
-  // 封面：独立文件保存 + 嵌入 tag 复用同一份数据
-  // 使用 Rust 后端下载（绕过 WebView 的 CORS 限制），前端 fetch 会因跨域策略静默失败
-  let savedCoverData: Uint8Array | null = null;
-  let savedCoverMime = 'image/jpeg';
-  let coverSaved = false;
+  // 2. 获取封面 URL（前端 JS 插件引擎）
+  let coverUrl: string | null = null;
   if (options.downloadCover || options.embedCover) {
-    try {
-      const coverUrl = await resolveCoverUrl(song);
-      if (coverUrl) {
-        const result = await invoke<{ data: number[]; mime: string }>('fetch_image_bytes', { url: coverUrl });
-        if (result?.data?.length) {
-          savedCoverData = new Uint8Array(result.data);
-          savedCoverMime = result.mime || 'image/jpeg';
-          if (options.downloadCover) {
-            const dot = filePath.lastIndexOf('.');
-            const coverBase = dot === -1 ? filePath : filePath.slice(0, dot);
-            const coverExt = savedCoverMime.includes('png') ? '.png' : '.jpg';
-            const coverPath = `${coverBase}${coverExt}`;
-            try {
-              await invoke<string>('save_download_bytes', {
-                data: Array.from(savedCoverData),
-                destPath: coverPath,
-              });
-              coverSaved = true;
-            } catch (e: any) {
-              console.warn('[Download] 保存封面文件失败:', e?.message);
-            }
-          }
-        }
-      }
-    } catch (e: any) {
-      console.warn('[Download] 获取封面失败:', e?.message);
-    }
+    coverUrl = await resolveCoverUrl(song);
   }
 
-  // 元数据嵌入：将标题/艺术家/专辑/歌词/封面写入音频文件 tag
+  // 3. 计算歌词/封面保存路径
+  const dot = filePath.lastIndexOf('.');
+  const fileBase = dot === -1 ? filePath : filePath.slice(0, dot);
+
+  const lyricsPath = (options.downloadLyrics && savedLyricText)
+    ? `${fileBase}.${options.lyricsFormat}`
+    : null;
+
+  let coverPath: string | null = null;
+  if (options.downloadCover && coverUrl) {
+    // 扩展名由 Rust 下载后根据 MIME 确定，这里先用 .jpg 占位
+    // Rust 的 finalize_download_extras 会用实际 MIME 覆盖
+    coverPath = `${fileBase}.jpg`;
+  }
+
+  // 4. 构造元数据嵌入请求
+  const needMetadata = options.embedMetadata || options.embedLyrics || options.embedCover;
+  const metadataRequest = needMetadata ? {
+    filePath,
+    title: options.embedMetadata ? (song.title || song.name || undefined) : undefined,
+    artist: options.embedMetadata ? (song.artist || undefined) : undefined,
+    album: options.embedMetadata ? (song.album || undefined) : undefined,
+    albumArtist: options.embedMetadata ? (song.album_artist || undefined) : undefined,
+    year: options.embedMetadata ? (song.year?.toString() || undefined) : undefined,
+    trackNumber: options.embedMetadata ? (song.track_number?.toString() || undefined) : undefined,
+    discNumber: options.embedMetadata ? (song.disc_number?.toString() || undefined) : undefined,
+    lyrics: options.embedLyrics ? (savedLyricText || undefined) : undefined,
+    // 封面数据由 Rust 在 finalize_download_extras 中根据 embed_cover 标志自动填充
+    coverData: undefined as Uint8Array | undefined,
+    coverMime: undefined as string | undefined,
+  } : null;
+
+  // 5. 单次 IPC 调用完成所有收尾工作
+  let lyricsSaved = false;
+  let coverSaved = false;
   let metadataEmbedded = false;
-  if (options.embedMetadata || options.embedLyrics || options.embedCover) {
+
+  if (lyricsPath || coverUrl || metadataRequest) {
     try {
-      await invoke('embed_audio_metadata', {
+      const result = await invoke<{
+        lyrics_saved: boolean;
+        cover_saved: boolean;
+        metadata_embedded: boolean;
+        cover_data: number[] | null;
+        cover_mime: string;
+      }>('finalize_download_extras', {
         request: {
-          filePath,
-          title: options.embedMetadata ? (song.title || song.name || undefined) : undefined,
-          artist: options.embedMetadata ? (song.artist || undefined) : undefined,
-          album: options.embedMetadata ? (song.album || undefined) : undefined,
-          albumArtist: options.embedMetadata ? (song.album_artist || undefined) : undefined,
-          year: options.embedMetadata ? (song.year?.toString() || undefined) : undefined,
-          trackNumber: options.embedMetadata ? (song.track_number?.toString() || undefined) : undefined,
-          discNumber: options.embedMetadata ? (song.disc_number?.toString() || undefined) : undefined,
-          lyrics: options.embedLyrics ? (savedLyricText || undefined) : undefined,
-          coverData: options.embedCover && savedCoverData ? Array.from(savedCoverData) : undefined,
-          coverMime: savedCoverMime,
+          lyricsText: lyricsPath ? savedLyricText : null,
+          lyricsPath,
+          // 只要需要封面（独立保存或嵌入元数据）就传 URL，Rust 会下载并按需使用
+          coverUrl,
+          coverPath,
+          metadata: metadataRequest,
+          embedCover: options.embedCover,
         },
       });
-      metadataEmbedded = true;
+      lyricsSaved = result.lyrics_saved;
+      coverSaved = result.cover_saved;
+      metadataEmbedded = result.metadata_embedded;
     } catch (e: any) {
-      console.warn('[Download] 元数据嵌入失败:', e?.message);
+      console.warn('[Download] 收尾编排失败:', e?.message);
     }
   }
 
@@ -1003,6 +994,7 @@ export interface DownloadExtrasResult {
  *
  * 当用户在下载弹窗中取消勾选「歌曲」但仍需歌词/封面时使用。
  * 文件名基于 fileNameStyle 拼接，与音频文件命名规则一致。
+ * [项4 下载编排] 歌词+封面合并为单次 finalize_download_extras IPC 调用。
  */
 export async function downloadSongExtras(
   song: Song,
@@ -1016,41 +1008,47 @@ export async function downloadSongExtras(
   }
 
   const base = sanitizeFileName(buildFileNameBase(song, options.fileNameStyle));
-  let lyricsSaved = false;
-  let coverSaved = false;
 
+  // 前端解析歌词文本和封面 URL（依赖 JS 插件引擎）
+  let lyricsText: string | null = null;
   if (options.downloadLyrics) {
-    try {
-      const lyricText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
-      if (lyricText) {
-        const lyricPath = `${options.downloadDir}/${base}.${options.lyricsFormat}`;
-        await invoke<string>('save_download_lyrics', { content: lyricText, destPath: lyricPath });
-        lyricsSaved = true;
-      }
-    } catch (e: any) {
-      console.warn('[Download] 保存歌词失败:', e?.message);
-    }
+    lyricsText = await fetchLyricText(song, options.lyricsFormat, options.lyricsStyle);
   }
 
+  let coverUrl: string | null = null;
   if (options.downloadCover) {
-    try {
-      const coverUrl = await resolveCoverUrl(song);
-      if (coverUrl) {
-        const result = await invoke<{ data: number[]; mime: string }>('fetch_image_bytes', { url: coverUrl });
-        if (result?.data?.length) {
-          const ext = (result.mime || '').includes('png') ? '.png' : '.jpg';
-          const coverPath = `${options.downloadDir}/${base}${ext}`;
-          await invoke<string>('save_download_bytes', {
-            data: Array.from(result.data),
-            destPath: coverPath,
-          });
-          coverSaved = true;
-        }
-      }
-    } catch (e: any) {
-      console.warn('[Download] 保存封面失败:', e?.message);
-    }
+    coverUrl = await resolveCoverUrl(song);
   }
 
-  return { lyricsSaved, coverSaved };
+  const lyricsPath = (options.downloadLyrics && lyricsText)
+    ? `${options.downloadDir}/${base}.${options.lyricsFormat}`
+    : null;
+  const coverPath = (options.downloadCover && coverUrl)
+    ? `${options.downloadDir}/${base}.jpg`
+    : null;
+
+  if (!lyricsPath && !coverPath) {
+    return { lyricsSaved: false, coverSaved: false };
+  }
+
+  try {
+    const result = await invoke<{
+      lyrics_saved: boolean;
+      cover_saved: boolean;
+      metadata_embedded: boolean;
+    }>('finalize_download_extras', {
+      request: {
+        lyricsText: lyricsPath ? lyricsText : null,
+        lyricsPath,
+        coverUrl,
+        coverPath,
+        metadata: null,
+        embedCover: false,
+      },
+    });
+    return { lyricsSaved: result.lyrics_saved, coverSaved: result.cover_saved };
+  } catch (e: any) {
+    console.warn('[Download] 收尾编排失败:', e?.message);
+    return { lyricsSaved: false, coverSaved: false };
+  }
 }

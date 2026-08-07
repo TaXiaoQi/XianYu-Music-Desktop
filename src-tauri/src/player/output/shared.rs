@@ -167,8 +167,7 @@ pub(crate) fn restore_current_playback(
                 let skipped = source.convert_samples::<f32>().skip_duration(jump_target);
 
                 // 0. BufferedSource 预读取缓冲（与 runtime.rs 的 append_decoded_source 保持一致）
-                let buffered =
-                    crate::player::buffered_source::BufferedSource::new(skipped);
+                let buffered = crate::player::buffered_source::BufferedSource::new(skipped);
 
                 // 1. Equalizer
                 let eq_source =

@@ -80,18 +80,20 @@ fn platform_is_foreground_fullscreen() -> bool {
         let monitor_height = monitor_rect.bottom - monitor_rect.top;
 
         // 只有窗口真正覆盖了整个显示器（包括任务栏）才算全屏
-        let covers_full_monitor =
-            (win_width - monitor_width).abs() <= tolerance
+        let covers_full_monitor = (win_width - monitor_width).abs() <= tolerance
             && (win_height - monitor_height).abs() <= tolerance
             && (rect.left - monitor_rect.left).abs() <= tolerance
             && (rect.top - monitor_rect.top).abs() <= tolerance;
 
         // 如果显示器和工作区大小相同（任务栏自动隐藏），则需要额外检查窗口样式
-        if covers_full_monitor && (monitor_width - work_width).abs() <= tolerance && (monitor_height - work_height).abs() <= tolerance {
+        if covers_full_monitor
+            && (monitor_width - work_width).abs() <= tolerance
+            && (monitor_height - work_height).abs() <= tolerance
+        {
             // 任务栏隐藏时，最大化窗口也覆盖整个显示器
             // 用窗口样式区分：有 WS_THICKFRAME（可调整大小边框）的是最大化窗口
             use windows_sys::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongW, GWL_STYLE, WS_THICKFRAME, WS_MAXIMIZE,
+                GetWindowLongW, GWL_STYLE, WS_MAXIMIZE, WS_THICKFRAME,
             };
             let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
             if (style & WS_THICKFRAME) != 0 && (style & WS_MAXIMIZE) != 0 {

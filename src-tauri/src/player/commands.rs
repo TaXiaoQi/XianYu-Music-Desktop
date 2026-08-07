@@ -2,10 +2,10 @@ use crate::database::DbState;
 use crate::music::scanner::apply_scan_changes;
 use crate::music::types::Song;
 use crate::player::equalizer::EqualizerSettings;
-use crate::player::sound_effect::SoundEffectSettings;
 use crate::player::loudness::{
     calculate_playback_gain, get_song_loudness_record, process_song_on_play, LoudnessRecord,
 };
+use crate::player::sound_effect::SoundEffectSettings;
 use crate::player::spectrum::build_frequency_bands;
 use crate::player::types::{
     AudioCommand, AudioOutputMode, AudioSource, PlayerState, VISUALIZER_BAND_COUNT,
@@ -66,7 +66,7 @@ pub async fn play_audio(
     song_id: Option<i64>,
     volume_balance_enabled: Option<bool>,
     gain_offset_db: Option<f32>,
-    prevent_clipping: Option<bool>,// 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效
+    prevent_clipping: Option<bool>, // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效
     headers: Option<std::collections::HashMap<String, String>>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
@@ -456,7 +456,6 @@ pub fn get_playback_duration(state: tauri::State<PlayerState>) -> f64 {
 // 避免不支持 Range 的直链整曲下载耗时被误判为失败而回退 H5。
 #[tauri::command]
 pub fn get_playback_ready(state: tauri::State<PlayerState>) -> bool {
-
     state.progress.sample_rate.load(Ordering::Relaxed) > 0
 }
 

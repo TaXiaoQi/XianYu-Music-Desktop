@@ -5,6 +5,7 @@ import {
   clearAuth,
   getAuthBaseUrl,
   getStoredAuth,
+  initAuthFromKeyring,
   refreshSession,
   setAuthBaseUrl,
   type AuthPayload,
@@ -61,6 +62,8 @@ export const useAuthStore = defineStore('auth', () => {
     if (initialized.value || initializing.value) return;
     initializing.value = true;
     try {
+      // 从 keyring 加载凭证到内存缓存（含 localStorage 迁移）
+      await initAuthFromKeyring();
       const session = await refreshSession();
       setAuth(session);
       initialized.value = true;

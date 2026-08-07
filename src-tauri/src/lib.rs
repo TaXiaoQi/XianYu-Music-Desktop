@@ -8,37 +8,41 @@ mod player;
 mod plugins;
 mod recognize;
 mod remote;
-mod system_audio;
 mod statistics;
+mod system_audio;
 mod system_fonts;
 mod taskbar;
 mod toolbox;
+mod webview_settings;
 mod window_boundary;
 mod window_fullscreen;
 mod window_material;
 mod window_theme;
 mod window_z_order;
-mod webview_settings;
 
-use tauri::Manager;
-use app_runtime::{consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app, update_native_tray_menu};
+use app_runtime::{
+    consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app,
+    update_native_tray_menu,
+};
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
-use plugins::{plugin_http_request, plugin_http_request_binary, read_plugin_file, proxy_image, download_audio_to_temp};
-use recognize::{recognize_audio, recognize_system_audio};
 use music::{
-    add_library_folder, add_sidebar_folder, batch_move_music_files, clear_cover_cache,
-    create_folder, delete_folder, delete_music_file, get_folder_children, get_folder_first_song,
-    get_library_album_catalog, get_library_artist_catalog, get_library_folders,
-    get_library_hierarchy, get_library_song_paths_by_album, get_library_song_paths_by_artist,
+    add_library_folder, add_sidebar_folder, authed_request, batch_move_music_files,
+    clear_auth_credentials, clear_cover_cache, clear_lx_url_cache, create_folder, delete_folder,
+    delete_music_file, extract_palette, fetch_lyric_from_source, get_auth_base_url,
+    get_auth_credentials, get_folder_children, get_folder_first_song, get_library_album_catalog,
+    get_library_artist_catalog, get_library_folders, get_library_hierarchy,
+    get_library_song_paths_by_album, get_library_song_paths_by_artist,
     get_library_song_paths_for_all_view, get_library_song_paths_for_folder_view,
-    get_library_songs_cached, get_sidebar_folders, get_sidebar_hierarchy, get_song_cover,
-    get_song_cover_thumbnail, get_song_detail, get_song_lyrics, get_song_lyrics_for_edit,
-    get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_files,
-    parse_lyrics_text, parse_music_folder, remove_library_folder, remove_sidebar_folder,
-    read_lyrics_file, save_artist_avatar, save_song_info, save_song_lyrics, scan_folder_as_playlists,
-    scan_library, scan_music_folder, show_in_folder,
+    get_library_songs_by_paths, get_library_songs_cached, get_lx_cover, get_sidebar_folders,
+    get_sidebar_hierarchy, get_song_cover, get_song_cover_thumbnail, get_song_detail,
+    get_song_lyrics, get_song_lyrics_for_edit, get_song_lyrics_payload, is_directory,
+    move_file_to_folder, move_music_file, parse_audio_files, parse_lyrics_text, parse_music_folder,
+    read_lyrics_file, remove_library_folder, remove_sidebar_folder, resolve_lx_music_url,
+    save_artist_avatar, save_auth_credentials, save_song_info, save_song_lyrics,
+    scan_folder_as_playlists, scan_library, scan_music_folder, search_library_songs,
+    set_auth_base_url, show_in_folder, signed_post_json,
 };
 use player::{
     clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_current_output_device,
@@ -49,6 +53,11 @@ use player::{
     set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
     update_playback_metadata, wait_stream_complete,
 };
+use plugins::{
+    download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
+    read_plugin_file,
+};
+use recognize::{recognize_audio, recognize_system_audio};
 use remote::{
     add_remote_source, clear_remote_cache, get_remote_cache_usage, get_remote_sources,
     list_remote_directory, precache_remote_song, remove_remote_source, sync_remote_source,
@@ -67,18 +76,23 @@ use taskbar::{
     get_taskbar_tray_geometry, install_taskbar_zorder_guard, refresh_taskbar_window_topmost,
     setup_taskbar_window, uninstall_taskbar_zorder_guard,
 };
+use tauri::Manager;
 use toolbox::{
     apply_rename, check_update_by_rust, download_online_song, download_update_file,
-    download_wallpaper, embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists, open_external_program, preview_rename,
-    read_download_history, refresh_folder_songs, probe_url_size, run_installer,
-    save_download_bytes, save_download_lyrics, set_gpu_acceleration, write_download_history,
-    write_state_json, read_state_json,
+    download_wallpaper, embed_audio_metadata, fetch_announcement, fetch_image_bytes, file_exists,
+    finalize_download_extras, open_external_program, preview_rename, probe_url_size,
+    read_download_history, read_state_json, refresh_folder_songs, resolve_download_path,
+    run_installer, save_download_bytes, save_download_lyrics, set_gpu_acceleration,
+    write_download_history, write_state_json,
 };
 
 #[cfg(target_os = "windows")]
 use toolbox::{append_webview2_browser_arg, should_disable_gpu_for_startup};
 use window_boundary::set_mini_boundary_enabled;
-use window_fullscreen::{refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen, set_taskbar_fullscreen_flag};
+use window_fullscreen::{
+    refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen,
+    set_taskbar_fullscreen_flag,
+};
 use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
 use window_z_order::{refresh_current_window_topmost, start_topmost_guard, stop_topmost_guard};
@@ -105,7 +119,12 @@ pub fn run() {
         })
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_denylist(&["desktop-lyrics", "mini-player", "taskbar-player", "tray-menu"])
+                .with_denylist(&[
+                    "desktop-lyrics",
+                    "mini-player",
+                    "taskbar-player",
+                    "tray-menu",
+                ])
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
@@ -120,6 +139,14 @@ pub fn run() {
             scan_folder_as_playlists,
             get_song_cover_thumbnail,
             get_song_cover,
+            extract_palette,
+            authed_request,
+            signed_post_json,
+            save_auth_credentials,
+            get_auth_credentials,
+            clear_auth_credentials,
+            set_auth_base_url,
+            get_auth_base_url,
             clear_cover_cache,
             get_song_lyrics,
             read_lyrics_file,
@@ -168,6 +195,8 @@ pub fn run() {
             add_library_folder,
             remove_library_folder,
             get_library_songs_cached,
+            get_library_songs_by_paths,
+            search_library_songs,
             get_library_artist_catalog,
             get_library_album_catalog,
             get_library_song_paths_by_artist,
@@ -232,14 +261,14 @@ pub fn run() {
             refresh_current_window_topmost,
             start_topmost_guard,
             stop_topmost_guard,
-plugin_http_request,
-plugin_http_request_binary,
-parse_lyrics_text,
-read_plugin_file,
-proxy_image,
-download_audio_to_temp,
-recognize_audio,
-recognize_system_audio,
+            plugin_http_request,
+            plugin_http_request_binary,
+            parse_lyrics_text,
+            read_plugin_file,
+            proxy_image,
+            download_audio_to_temp,
+            recognize_audio,
+            recognize_system_audio,
             consume_pending_open_paths,
             get_system_fonts,
             import_lyrics_font,
@@ -263,11 +292,17 @@ recognize_system_audio,
             save_download_lyrics,
             embed_audio_metadata,
             fetch_image_bytes,
+            resolve_download_path,
+            finalize_download_extras,
             run_installer,
             fetch_announcement,
             write_state_json,
             read_state_json,
             open_devtools,
+            fetch_lyric_from_source,
+            resolve_lx_music_url,
+            get_lx_cover,
+            clear_lx_url_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

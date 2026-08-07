@@ -243,3 +243,18 @@ pub(crate) struct SeekCompletedPayload {
     pub request_id: u64,
     pub time: f64,
 }
+
+/// 播放进度事件载荷。
+///
+/// Rust 播放线程在播放中每 ~500ms 发射一次 `playback:progress` 事件，
+/// 前端通过 `listen('playback:progress', ...)` 订阅，替代原先每秒轮询
+/// `get_playback_progress` / `get_playback_duration` 的 IPC 调用。
+#[derive(Serialize, Clone)]
+pub(crate) struct PlaybackProgressPayload {
+    /// 当前播放位置（秒）
+    pub position: f64,
+    /// 音频总时长（秒），0 表示未知
+    pub duration: f64,
+    /// 是否正在播放
+    pub is_playing: bool,
+}

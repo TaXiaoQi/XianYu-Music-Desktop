@@ -4,7 +4,7 @@
 //! 相位(Phaser) / 延迟回声(Delay, 单次/乒乓)。
 //! 调制类依赖延迟线与 LFO，按帧处理，立体声独立延迟。
 
-use super::dsp::{Biquad, DelayLine, Lfo, SmoothedValue, soft_clip};
+use super::dsp::{soft_clip, Biquad, DelayLine, Lfo, SmoothedValue};
 use super::SoundEffectSettings;
 
 pub struct ModulationRack {
@@ -50,8 +50,18 @@ impl ModulationRack {
             flanger_dl: [DelayLine::new(4096), DelayLine::new(4096)],
             flanger_lfo: Lfo::new(0.5, 44100.0),
             phaser_ap: [
-                [Biquad::new(1), Biquad::new(1), Biquad::new(1), Biquad::new(1)],
-                [Biquad::new(1), Biquad::new(1), Biquad::new(1), Biquad::new(1)],
+                [
+                    Biquad::new(1),
+                    Biquad::new(1),
+                    Biquad::new(1),
+                    Biquad::new(1),
+                ],
+                [
+                    Biquad::new(1),
+                    Biquad::new(1),
+                    Biquad::new(1),
+                    Biquad::new(1),
+                ],
             ],
             phaser_lfo: Lfo::new(0.5, 44100.0),
             phaser_fb: [0.0; 2],
@@ -63,8 +73,12 @@ impl ModulationRack {
         self.sample_rate = sample_rate;
         let tc = 0.05;
         for w in [
-            &mut self.wet_tremolo, &mut self.wet_vibrato, &mut self.wet_pitch_drift,
-            &mut self.wet_flanger, &mut self.wet_phaser, &mut self.wet_delay,
+            &mut self.wet_tremolo,
+            &mut self.wet_vibrato,
+            &mut self.wet_pitch_drift,
+            &mut self.wet_flanger,
+            &mut self.wet_phaser,
+            &mut self.wet_delay,
         ] {
             w.set_time_constant(tc, sample_rate);
         }
@@ -76,10 +90,18 @@ impl ModulationRack {
     }
 
     pub fn reset(&mut self) {
-        for d in &mut self.vib_dl { d.clear(); }
-        for d in &mut self.drift_dl { d.clear(); }
-        for d in &mut self.flanger_dl { d.clear(); }
-        for d in &mut self.delay_dl { d.clear(); }
+        for d in &mut self.vib_dl {
+            d.clear();
+        }
+        for d in &mut self.drift_dl {
+            d.clear();
+        }
+        for d in &mut self.flanger_dl {
+            d.clear();
+        }
+        for d in &mut self.delay_dl {
+            d.clear();
+        }
         for ch in 0..2 {
             for ap in &mut self.phaser_ap[ch] {
                 ap.reset();
@@ -90,18 +112,26 @@ impl ModulationRack {
 
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
         let sr = self.sample_rate;
-        self.wet_tremolo.set_target(if s.tremolo.enabled { 1.0 } else { 0.0 });
-        self.wet_vibrato.set_target(if s.vibrato.enabled { 1.0 } else { 0.0 });
-        self.wet_pitch_drift.set_target(if s.pitch_drift.enabled { 1.0 } else { 0.0 });
-        self.wet_flanger.set_target(if s.flanger.enabled { 1.0 } else { 0.0 });
-        self.wet_phaser.set_target(if s.phaser.enabled { 1.0 } else { 0.0 });
-        self.wet_delay.set_target(if s.delay.enabled { 1.0 } else { 0.0 });
+        self.wet_tremolo
+            .set_target(if s.tremolo.enabled { 1.0 } else { 0.0 });
+        self.wet_vibrato
+            .set_target(if s.vibrato.enabled { 1.0 } else { 0.0 });
+        self.wet_pitch_drift
+            .set_target(if s.pitch_drift.enabled { 1.0 } else { 0.0 });
+        self.wet_flanger
+            .set_target(if s.flanger.enabled { 1.0 } else { 0.0 });
+        self.wet_phaser
+            .set_target(if s.phaser.enabled { 1.0 } else { 0.0 });
+        self.wet_delay
+            .set_target(if s.delay.enabled { 1.0 } else { 0.0 });
 
         self.trem_lfo.set_freq(s.tremolo.rate.clamp(0.1, 20.0), sr);
         self.vib_lfo.set_freq(s.vibrato.rate.clamp(0.1, 20.0), sr);
         // 音调漂移：0.1~5 → 0.01~0.5Hz
-        self.drift_lfo.set_freq((s.pitch_drift.speed * 0.1).clamp(0.01, 0.5), sr);
-        self.flanger_lfo.set_freq(s.flanger.rate.clamp(0.05, 5.0), sr);
+        self.drift_lfo
+            .set_freq((s.pitch_drift.speed * 0.1).clamp(0.01, 0.5), sr);
+        self.flanger_lfo
+            .set_freq(s.flanger.rate.clamp(0.05, 5.0), sr);
         self.phaser_lfo.set_freq(s.phaser.rate.clamp(0.05, 5.0), sr);
     }
 

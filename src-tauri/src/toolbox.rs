@@ -1,6 +1,5 @@
 use crate::music::tags::{
-    extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file,
-    EmbedMetadataRequest,
+    extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file, EmbedMetadataRequest,
 };
 use crate::music::utils::is_supported_library_extension;
 use lofty::prelude::*;
@@ -258,6 +257,44 @@ pub fn file_exists(path: String) -> bool {
     std::path::Path::new(&path).is_file()
 }
 
+/// [项4 下载编排] 在目标目录中解析非冲突文件路径。
+///
+/// 替代前端 `resolveNonConflictingPath` 逐次调用 `file_exists` 的 N 次 IPC 往返。
+/// 若文件已存在且 `overwrite_existing` 为 false，自动追加 ` (1)`/` (2)`… 直到不冲突。
+#[tauri::command]
+pub fn resolve_download_path(
+    directory: String,
+    file_name: String,
+    overwrite_existing: bool,
+) -> Result<String, String> {
+    let dir = PathBuf::from(&directory);
+    let direct = dir.join(&file_name);
+
+    if overwrite_existing || !direct.exists() {
+        // 确保目录存在
+        std::fs::create_dir_all(&dir).map_err(|e| format!("创建下载目录失败: {e}"))?;
+        return Ok(direct.to_string_lossy().to_string());
+    }
+
+    // 分离扩展名
+    let dot = file_name.rfind('.');
+    let (stem, ext) = match dot {
+        Some(idx) => (&file_name[..idx], &file_name[idx..]),
+        None => (file_name.as_str(), ""),
+    };
+
+    for i in 1..1000 {
+        let candidate_name = format!("{stem} ({i}){ext}");
+        let candidate = dir.join(&candidate_name);
+        if !candidate.exists() {
+            return Ok(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    // 兜底：返回原始路径（极不可能走到这里）
+    Ok(direct.to_string_lossy().to_string())
+}
+
 const APP_IDENTIFIER: &str = "com.xymusic.desktop";
 const GPU_CONFIG_FILE: &str = "gpu_config.json";
 const DOWNLOAD_HISTORY_FILE: &str = "download_history.json";
@@ -315,10 +352,7 @@ pub fn append_webview2_browser_arg(arg: &str) {
 }
 
 #[tauri::command]
-pub fn set_gpu_acceleration(
-    app_handle: tauri::AppHandle,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn set_gpu_acceleration(app_handle: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     use tauri::Manager;
 
@@ -327,7 +361,7 @@ pub fn set_gpu_acceleration(
         let _ = app_handle;
         gpu_config_path()?
     };
-    
+
     #[cfg(not(target_os = "windows"))]
     let path = app_handle
         .path()
@@ -353,10 +387,7 @@ pub fn set_gpu_acceleration(
 use std::time::Duration;
 
 #[tauri::command]
-pub async fn check_update_by_rust(
-    owner: String,
-    repo: String,
-) -> Result<String, String> {
+pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String, String> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
 
     let client = reqwest::Client::builder()
@@ -391,10 +422,10 @@ pub async fn download_update_file(
     app_handle: tauri::AppHandle,
     url: String,
 ) -> Result<String, String> {
+    use std::time::Instant;
     use tauri::{Emitter, Manager};
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
-    use std::time::Instant;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
@@ -407,13 +438,20 @@ pub async fn download_update_file(
         download_url = format!("https://gh-proxy.com/{}", download_url);
     }
 
-    let response = client.get(&download_url).send().await.map_err(|e| format!("发送下载请求失败: {e}"))?;
+    let response = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| format!("发送下载请求失败: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("下载服务器返回错误状态: {}", response.status()));
     }
 
     let total_size = response.content_length().unwrap_or(0);
-    let download_dir = app_handle.path().download_dir().map_err(|e| e.to_string())?;
+    let download_dir = app_handle
+        .path()
+        .download_dir()
+        .map_err(|e| e.to_string())?;
 
     let url_lower = url.to_lowercase();
     let filename = if url_lower.contains(".msi") {
@@ -433,21 +471,37 @@ pub async fn download_update_file(
     };
     let dest_path = download_dir.join(filename);
 
-    let mut file = File::create(&dest_path).await.map_err(|e| format!("创建目标文件失败: {e}"))?;
+    let mut file = File::create(&dest_path)
+        .await
+        .map_err(|e| format!("创建目标文件失败: {e}"))?;
     let mut downloaded: u64 = 0;
     let start_time = Instant::now();
     let mut last_emit = Instant::now();
 
     let mut response = response;
-    while let Some(chunk) = response.chunk().await.map_err(|e| format!("下载数据分块失败: {e}"))? {
-        file.write_all(&chunk).await.map_err(|e| format!("写入文件失败: {e}"))?;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("下载数据分块失败: {e}"))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("写入文件失败: {e}"))?;
         downloaded += chunk.len() as u64;
 
         let now = Instant::now();
         if now.duration_since(last_emit).as_millis() >= 100 || downloaded == total_size {
             let elapsed = start_time.elapsed().as_secs_f64();
-            let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
-            let progress = if total_size > 0 { (downloaded as f64 / total_size as f64) * 100.0 } else { 0.0 };
+            let speed = if elapsed > 0.0 {
+                downloaded as f64 / elapsed
+            } else {
+                0.0
+            };
+            let progress = if total_size > 0 {
+                (downloaded as f64 / total_size as f64) * 100.0
+            } else {
+                0.0
+            };
 
             let payload = DownloadProgress {
                 progress,
@@ -460,7 +514,9 @@ pub async fn download_update_file(
         }
     }
 
-    file.flush().await.map_err(|e| format!("刷新文件缓存失败: {e}"))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("刷新文件缓存失败: {e}"))?;
 
     Ok(dest_path.to_string_lossy().to_string())
 }
@@ -484,10 +540,10 @@ pub async fn download_online_song(
     url: String,
     dest_path: String,
 ) -> Result<String, String> {
+    use std::time::Instant;
     use tauri::Emitter;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
-    use std::time::Instant;
 
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("无效的下载链接".to_string());
@@ -556,7 +612,11 @@ pub async fn download_online_song(
                 let now = Instant::now();
                 if now.duration_since(last_emit).as_millis() >= 100 || downloaded == total_size {
                     let elapsed = start_time.elapsed().as_secs_f64();
-                    let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
+                    let speed = if elapsed > 0.0 {
+                        downloaded as f64 / elapsed
+                    } else {
+                        0.0
+                    };
                     let progress = if total_size > 0 {
                         (downloaded as f64 / total_size as f64) * 100.0
                     } else {
@@ -582,7 +642,9 @@ pub async fn download_online_song(
         }
     }
 
-    file.flush().await.map_err(|e| format!("刷新文件缓存失败: {e}"))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("刷新文件缓存失败: {e}"))?;
     drop(file);
 
     // 完整性校验：若服务器声明了文件大小但实际下载字节数不足，说明下载被中途干扰
@@ -597,13 +659,21 @@ pub async fn download_online_song(
 
     // 发送最终 100% 进度，确保前端收到完成状态
     let elapsed = start_time.elapsed().as_secs_f64();
-    let speed = if elapsed > 0.0 { downloaded as f64 / elapsed } else { 0.0 };
+    let speed = if elapsed > 0.0 {
+        downloaded as f64 / elapsed
+    } else {
+        0.0
+    };
     let _ = app_handle.emit(
         "song-download-progress",
         SongDownloadProgress {
             progress: 100.0,
             downloaded,
-            total: if total_size > 0 { total_size } else { downloaded },
+            total: if total_size > 0 {
+                total_size
+            } else {
+                downloaded
+            },
             speed,
         },
     );
@@ -711,6 +781,117 @@ pub async fn embed_audio_metadata(request: EmbedMetadataRequest) -> Result<(), S
     tokio::task::spawn_blocking(move || write_metadata_to_file(&request))
         .await
         .map_err(|e| format!("元数据嵌入任务失败: {e}"))?
+}
+
+/// [项4 下载编排] 下载后收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入，单次 IPC 完成。
+///
+/// 替代前端 `downloadSong` 在音频下载完成后发起的 3-4 次独立 IPC 调用
+/// (`save_download_lyrics` + `fetch_image_bytes` + `save_download_bytes` + `embed_audio_metadata`)。
+/// 所有子步骤独立执行，单步失败不影响其他步骤，最终统一返回各步骤结果。
+#[derive(Debug, serde::Deserialize, Default)]
+pub struct FinalizeDownloadExtrasRequest {
+    /// 歌词：文本内容 + 保存路径；为 None 则不保存歌词文件
+    pub lyrics_text: Option<String>,
+    pub lyrics_path: Option<String>,
+    /// 封面：远程 URL + 保存路径；URL 为 None 则不下载封面
+    /// cover_path 为 None 时仅下载字节供元数据嵌入，不保存独立文件
+    pub cover_url: Option<String>,
+    pub cover_path: Option<String>,
+    /// 元数据嵌入请求；为 None 则不嵌入
+    pub metadata: Option<EmbedMetadataRequest>,
+    /// 是否将下载的封面自动填充到元数据请求中
+    pub embed_cover: bool,
+}
+
+#[derive(Debug, Serialize, Default)]
+pub struct FinalizeDownloadExtrasResult {
+    pub lyrics_saved: bool,
+    pub cover_saved: bool,
+    pub metadata_embedded: bool,
+    /// 下载到的封面二进制数据（供前端后续使用，如嵌入已有数据的场景）
+    pub cover_data: Option<Vec<u8>>,
+    /// 封面 MIME 类型
+    pub cover_mime: String,
+}
+
+#[tauri::command]
+pub async fn finalize_download_extras(
+    request: FinalizeDownloadExtrasRequest,
+) -> Result<FinalizeDownloadExtrasResult, String> {
+    let mut result = FinalizeDownloadExtrasResult::default();
+
+    // 1. 保存歌词文件
+    if let (Some(text), Some(path)) = (&request.lyrics_text, &request.lyrics_path) {
+        if !text.is_empty() {
+            let dest = PathBuf::from(path);
+            if let Some(parent) = dest.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            match tokio::fs::write(&dest, text).await {
+                Ok(_) => result.lyrics_saved = true,
+                Err(e) => eprintln!("[finalize_download_extras] 保存歌词失败: {e}"),
+            }
+        }
+    }
+
+    // 2. 下载封面（用于独立文件保存和/或元数据嵌入）
+    if let Some(url) = &request.cover_url {
+        if !url.is_empty() && (url.starts_with("http://") || url.starts_with("https://")) {
+            match fetch_image_bytes(url.clone()).await {
+                Ok(img) => {
+                    // 保存封面文件（若请求了独立文件保存）
+                    if let Some(path) = &request.cover_path {
+                        // 根据 MIME 类型确定正确的扩展名
+                        let actual_ext = if img.mime.contains("png") {
+                            ".png"
+                        } else {
+                            ".jpg"
+                        };
+                        // 若前端传入的路径扩展名与实际 MIME 不符，替换之
+                        let final_path = if path.ends_with(".jpg") && actual_ext == ".png" {
+                            format!("{}.png", &path[..path.len() - 4])
+                        } else if path.ends_with(".png") && actual_ext == ".jpg" {
+                            format!("{}.jpg", &path[..path.len() - 4])
+                        } else {
+                            path.clone()
+                        };
+                        let dest = PathBuf::from(&final_path);
+                        if let Some(parent) = dest.parent() {
+                            let _ = tokio::fs::create_dir_all(parent).await;
+                        }
+                        match tokio::fs::write(&dest, &img.data).await {
+                            Ok(_) => {
+                                result.cover_saved = true;
+                            }
+                            Err(e) => eprintln!("[finalize_download_extras] 保存封面失败: {e}"),
+                        }
+                    }
+                    result.cover_data = Some(img.data);
+                    result.cover_mime = img.mime;
+                }
+                Err(e) => eprintln!("[finalize_download_extras] 下载封面失败: {e}"),
+            }
+        }
+    }
+
+    // 3. 嵌入元数据
+    if let Some(mut meta) = request.metadata {
+        // 若请求了封面嵌入但未单独提供封面数据，使用步骤 2 下载的封面数据
+        if request.embed_cover && meta.cover_data.is_none() {
+            if let Some(data) = &result.cover_data {
+                meta.cover_data = Some(data.clone());
+                meta.cover_mime = Some(result.cover_mime.clone());
+            }
+        }
+        let meta = meta.clone();
+        match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
+            Ok(Ok(())) => result.metadata_embedded = true,
+            Ok(Err(e)) => eprintln!("[finalize_download_extras] 元数据嵌入失败: {e}"),
+            Err(e) => eprintln!("[finalize_download_extras] 元数据嵌入任务失败: {e}"),
+        }
+    }
+
+    Ok(result)
 }
 
 /// 下载记录文件路径：`%APPDATA%\com.xymusic.desktop\download_history.json`。
@@ -831,7 +1012,11 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
             .and_then(|v| v.rsplit('/').next())
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(0);
-        return Ok(ProbeUrlInfo { url: final_url, size, error: None });
+        return Ok(ProbeUrlInfo {
+            url: final_url,
+            size,
+            error: None,
+        });
     }
     if status.is_success() {
         let size = resp
@@ -840,7 +1025,11 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.trim().parse::<u64>().ok())
             .unwrap_or(0);
-        return Ok(ProbeUrlInfo { url: final_url, size, error: None });
+        return Ok(ProbeUrlInfo {
+            url: final_url,
+            size,
+            error: None,
+        });
     }
 
     Ok(ProbeUrlInfo {
@@ -917,7 +1106,7 @@ pub async fn fetch_announcement() -> Result<String, String> {
 #[tauri::command]
 pub fn run_installer(path: String) -> Result<(), String> {
     use std::process::Command;
-    
+
     #[cfg(target_os = "windows")]
     {
         if path.to_lowercase().ends_with(".msi") {
@@ -932,20 +1121,24 @@ pub fn run_installer(path: String) -> Result<(), String> {
                 .map_err(|e| format!("启动安装程序失败: {e}"))?;
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         Command::new(&path)
             .spawn()
             .map_err(|e| format!("启动安装程序失败: {e}"))?;
     }
-    
+
     Ok(())
 }
 
 /// 将 JSON 字符串写入 app_data_dir/state/{key}.json，用于持久化超过 localStorage 配额的大数据（如含 9000+ 歌曲的歌单）。
 #[tauri::command]
-pub async fn write_state_json(app_handle: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
+pub async fn write_state_json(
+    app_handle: tauri::AppHandle,
+    key: String,
+    value: String,
+) -> Result<(), String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -963,7 +1156,10 @@ pub async fn write_state_json(app_handle: tauri::AppHandle, key: String, value: 
 
 /// 从 app_data_dir/state/{key}.json 读取 JSON 字符串。文件不存在时返回 null。
 #[tauri::command]
-pub async fn read_state_json(app_handle: tauri::AppHandle, key: String) -> Result<Option<String>, String> {
+pub async fn read_state_json(
+    app_handle: tauri::AppHandle,
+    key: String,
+) -> Result<Option<String>, String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -1000,10 +1196,7 @@ pub async fn download_wallpaper(
         .unwrap_or("wallpaper.jpg")
         .to_string();
     // 确保有图片扩展名，默认补 .jpg
-    let safe_name = if std::path::Path::new(&safe_name)
-        .extension()
-        .is_none()
-    {
+    let safe_name = if std::path::Path::new(&safe_name).extension().is_none() {
         format!("{safe_name}.jpg")
     } else {
         safe_name

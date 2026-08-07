@@ -8,6 +8,7 @@ import {
   pluginGetSupportedQualities,
 } from '../../services/pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../../services/lxPluginEngine';
+import { lxGetMusicUrl } from '../../services/lxMusicSdk';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -132,11 +133,38 @@ const resolveLxAudioUrl = async ({
   }
 
   try {
+    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
+    const tryQualities = resolveOnlinePlayQuality(
+      requestedQuality,
+      availableQualities,
+      fallbackBehavior,
+    );
+
     const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
     let matchedPlugin = lxPlugins.find(p => p.sources.includes(lxSource));
     if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+
     if (!matchedPlugin) {
-      console.warn(`[Audio] No LX plugin available for lx://${lxSource}/${songmid}`);
+      // 无 LX 插件时，直接通过 Rust 后端 API 解析
+      console.warn(`[Audio] No LX plugin, using Rust direct API for lx://${lxSource}/${songmid}`);
+      if (cachedInfo) {
+        for (const quality of tryQualities) {
+          try {
+            const urlResult = await lxGetMusicUrl(cachedInfo, quality);
+            if (urlResult?.url && /^https?:/.test(urlResult.url)) {
+              return {
+                audioFilePath: urlResult.url,
+                pluginHeaders: null,
+                currentPlayingQuality: quality,
+                currentPlayingAudioUrl: urlResult.url,
+              };
+            }
+          } catch (e: any) {
+            console.warn(`[Audio] Rust direct API failed for quality=${quality}: ${e?.message}`);
+          }
+        }
+      }
       return {
         audioFilePath,
         pluginHeaders: null,
@@ -146,13 +174,6 @@ const resolveLxAudioUrl = async ({
     }
 
     await ensureLxPluginInstance(matchedPlugin);
-    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-    const tryQualities = resolveOnlinePlayQuality(
-      requestedQuality,
-      availableQualities,
-      fallbackBehavior,
-    );
 
     for (const quality of tryQualities) {
       try {
@@ -190,6 +211,27 @@ const resolveLxAudioUrl = async ({
     }
 
     console.warn(`[Audio] lxPluginGetMusicUrl returned empty/invalid URL for lx://${lxSource}/${songmid}, tried=${JSON.stringify(tryQualities)}`);
+
+    // [后备] LX 插件解析失败时，通过 Rust 后端直接 API 解析
+    // Rust 后端自带 10 分钟 URL 缓存 + 主备 API 自动切换
+    if (cachedInfo) {
+      for (const quality of tryQualities) {
+        try {
+          const urlResult = await lxGetMusicUrl(cachedInfo, quality);
+          if (urlResult?.url && /^https?:/.test(urlResult.url)) {
+            console.log(`[Audio] Rust direct API fallback resolved URL for lx://${lxSource}/${songmid} quality=${quality}`);
+            return {
+              audioFilePath: urlResult.url,
+              pluginHeaders: null,
+              currentPlayingQuality: quality,
+              currentPlayingAudioUrl: urlResult.url,
+            };
+          }
+        } catch (e: any) {
+          console.warn(`[Audio] Rust direct API fallback failed for quality=${quality}: ${e?.message}`);
+        }
+      }
+    }
   } catch (error: any) {
     console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${error?.message}`);
   }

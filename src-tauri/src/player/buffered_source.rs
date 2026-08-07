@@ -25,8 +25,8 @@ use rodio::source::SeekError;
 use rodio::Source;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -131,13 +131,7 @@ where
         let thread_handle = thread::Builder::new()
             .name("xy-buffered-source".to_string())
             .spawn(move || {
-                producer_loop(
-                    inner,
-                    cmd_rx,
-                    sample_tx,
-                    ack_tx,
-                    stop_flag_clone,
-                );
+                producer_loop(inner, cmd_rx, sample_tx, ack_tx, stop_flag_clone);
             })
             .ok();
 
@@ -211,7 +205,11 @@ fn producer_loop(
             Ok(Command::Seek(pos)) => {
                 // 执行内部源 seek。失败不致命——音频侧会按失败处理（排空 + 重建）。
                 let result = inner.try_seek(pos);
-                let ack = if result.is_ok() { SeekAck::Ok } else { SeekAck::Failed };
+                let ack = if result.is_ok() {
+                    SeekAck::Ok
+                } else {
+                    SeekAck::Failed
+                };
                 let _ = ack_tx.send(ack);
                 // seek 后重置 EOF，恢复生产
                 eof = false;
@@ -227,7 +225,11 @@ fn producer_loop(
                 Ok(Command::Stop) => return,
                 Ok(Command::Seek(pos)) => {
                     let result = inner.try_seek(pos);
-                    let _ = ack_tx.send(if result.is_ok() { SeekAck::Ok } else { SeekAck::Failed });
+                    let _ = ack_tx.send(if result.is_ok() {
+                        SeekAck::Ok
+                    } else {
+                        SeekAck::Failed
+                    });
                     eof = false;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -263,7 +265,11 @@ fn producer_loop(
                     Ok(Command::Stop) => return,
                     Ok(Command::Seek(pos)) => {
                         let result = inner.try_seek(pos);
-                        let _ = ack_tx.send(if result.is_ok() { SeekAck::Ok } else { SeekAck::Failed });
+                        let _ = ack_tx.send(if result.is_ok() {
+                            SeekAck::Ok
+                        } else {
+                            SeekAck::Failed
+                        });
                         eof = false;
                         // 丢弃当前块（seek 前的陈旧数据）
                         break;
@@ -428,7 +434,12 @@ mod tests {
                     (t * 440.0 * std::f32::consts::TAU).sin() * 0.5
                 })
                 .collect();
-            Self { samples, idx: 0, rate, ch }
+            Self {
+                samples,
+                idx: 0,
+                rate,
+                ch,
+            }
         }
     }
 
@@ -446,14 +457,23 @@ mod tests {
     }
 
     impl Source for SineSource {
-        fn channels(&self) -> u16 { self.ch }
-        fn sample_rate(&self) -> u32 { self.rate }
-        fn current_frame_len(&self) -> Option<usize> { None }
+        fn channels(&self) -> u16 {
+            self.ch
+        }
+        fn sample_rate(&self) -> u32 {
+            self.rate
+        }
+        fn current_frame_len(&self) -> Option<usize> {
+            None
+        }
         fn total_duration(&self) -> Option<Duration> {
-            Some(Duration::from_secs_f64(self.samples.len() as f64 / (self.rate * self.ch as u32) as f64))
+            Some(Duration::from_secs_f64(
+                self.samples.len() as f64 / (self.rate * self.ch as u32) as f64,
+            ))
         }
         fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-            let sample_idx = (pos.as_secs_f64() * self.rate as f64 * self.ch as f64).round() as usize;
+            let sample_idx =
+                (pos.as_secs_f64() * self.rate as f64 * self.ch as f64).round() as usize;
             self.idx = sample_idx.min(self.samples.len());
             Ok(())
         }
@@ -463,10 +483,12 @@ mod tests {
     fn passthrough_preserves_samples() {
         // 1 秒立体声正弦波，验证 BufferedSource 无损透传所有样本
         let inner = SineSource::new(44100, 2, 1.0);
-        let expected: Vec<f32> = (0..44100 * 2).map(|i| {
-            let t = i as f32 / (44100 * 2) as f32;
-            (t * 440.0 * std::f32::consts::TAU).sin() * 0.5
-        }).collect();
+        let expected: Vec<f32> = (0..44100 * 2)
+            .map(|i| {
+                let t = i as f32 / (44100 * 2) as f32;
+                (t * 440.0 * std::f32::consts::TAU).sin() * 0.5
+            })
+            .collect();
 
         let mut buf = BufferedSource::new(inner);
         let mut out = Vec::with_capacity(expected.len());
@@ -536,14 +558,26 @@ mod tests {
         struct Empty;
         impl Iterator for Empty {
             type Item = f32;
-            fn next(&mut self) -> Option<f32> { None }
+            fn next(&mut self) -> Option<f32> {
+                None
+            }
         }
         impl Source for Empty {
-            fn channels(&self) -> u16 { 2 }
-            fn sample_rate(&self) -> u32 { 44100 }
-            fn current_frame_len(&self) -> Option<usize> { None }
-            fn total_duration(&self) -> Option<Duration> { Some(Duration::ZERO) }
-            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> { Ok(()) }
+            fn channels(&self) -> u16 {
+                2
+            }
+            fn sample_rate(&self) -> u32 {
+                44100
+            }
+            fn current_frame_len(&self) -> Option<usize> {
+                None
+            }
+            fn total_duration(&self) -> Option<Duration> {
+                Some(Duration::ZERO)
+            }
+            fn try_seek(&mut self, _pos: Duration) -> Result<(), SeekError> {
+                Ok(())
+            }
         }
 
         let mut buf = BufferedSource::new(Empty);

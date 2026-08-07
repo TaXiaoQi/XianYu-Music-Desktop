@@ -30,7 +30,7 @@
 //! - 8D/36D 忽略 `spatial_intensity`（该字段是 3D 专用），始终全强度
 
 use super::dsp::{Biquad, DelayLine, SmoothedValue};
-use super::{SpatialMode, SoundEffectSettings, VirtualSurroundMode};
+use super::{SoundEffectSettings, SpatialMode, VirtualSurroundMode};
 use std::f32::consts::PI;
 
 /// √2，用于等功率 pan 归一化（中心方位补 +3dB，使中心输出 = 输入）
@@ -168,7 +168,8 @@ impl SpatialRack {
     #[inline]
     fn set_shadow_cutoff(&mut self, cutoff: f32) {
         let cutoff = cutoff.clamp(SHADOW_CUTOFF_MIN, SHADOW_CUTOFF_MAX);
-        if !self.last_shadow_cutoff.is_finite() || (cutoff - self.last_shadow_cutoff).abs() > 100.0 {
+        if !self.last_shadow_cutoff.is_finite() || (cutoff - self.last_shadow_cutoff).abs() > 100.0
+        {
             self.last_shadow_cutoff = cutoff;
             self.head_shadow_lp[0].set_lowpass(cutoff, self.sample_rate, 0.707);
             self.head_shadow_lp[1].set_lowpass(cutoff, self.sample_rate, 0.707);
@@ -375,15 +376,7 @@ impl SpatialRack {
     ///
     /// 音量保持：中心方位（azimuth=0）时两耳均获全量信号，输出 = 输入（零损耗）。
     #[inline]
-    fn binaural(
-        &mut self,
-        in_l: f32,
-        in_r: f32,
-        x: f32,
-        _y: f32,
-        z: f32,
-        dist: f32,
-    ) -> (f32, f32) {
+    fn binaural(&mut self, in_l: f32, in_r: f32, x: f32, _y: f32, z: f32, dist: f32) -> (f32, f32) {
         // 单声道折叠（等功率 mono）
         let src = (in_l + in_r) * 0.5;
         // 距离衰减（inverse, refDistance=1）
@@ -627,8 +620,16 @@ mod tests {
         }
         let mut frame = [0.42_f32, -0.17];
         rack.process(&mut frame, 2, &s);
-        assert!((frame[0] - 0.42).abs() < 1e-6, "bypass 后 L 不等于输入: {}", frame[0]);
-        assert!((frame[1] + 0.17).abs() < 1e-6, "bypass 后 R 不等于输入: {}", frame[1]);
+        assert!(
+            (frame[0] - 0.42).abs() < 1e-6,
+            "bypass 后 L 不等于输入: {}",
+            frame[0]
+        );
+        assert!(
+            (frame[1] + 0.17).abs() < 1e-6,
+            "bypass 后 R 不等于输入: {}",
+            frame[1]
+        );
     }
 
     #[test]
@@ -647,7 +648,11 @@ mod tests {
             max_diff = max_diff.max((frame[0] - frame[1]).abs());
         }
         // 旋转半圈应经过 90° 方位（L≠R 最大差异），max_diff 应 > 0.05
-        assert!(max_diff > 0.05, "8D 旋转未产生 L/R 差异（max_diff={}）", max_diff);
+        assert!(
+            max_diff > 0.05,
+            "8D 旋转未产生 L/R 差异（max_diff={}）",
+            max_diff
+        );
     }
 
     #[test]

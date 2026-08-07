@@ -17,7 +17,7 @@ import { configureApplicationLogger } from './services/applicationLogger';
 import { reportAppOpen } from './services/usageStats';
 import { useUiStore } from './shared/stores/ui';
 import { clearHeavyImageCaches } from './caches/imageCaches';
-import { releaseColorExtractionWorker } from './composables/colorExtraction';
+import { clearPaletteCache } from './composables/colorExtraction';
 import { clearPreblurredBackgroundCache } from './composables/preblurredBackgroundCache';
 import { useCoverCache } from './composables/useCoverCache';
 import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
@@ -75,7 +75,7 @@ if (currentWindowLabel === 'main') {
     clearPreblurredBackgroundCache();
     clearCoverCaches();
     clearHeavyImageCaches();
-    releaseColorExtractionWorker();
+    clearPaletteCache();
   };
 
   const enterTraySleep = async () => {
