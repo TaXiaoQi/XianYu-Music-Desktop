@@ -3180,6 +3180,40 @@ onUnmounted(() => {
    底色/边框/hover 与外观页底部栏布局 footer-visibility-row 一致。
    ========================================================================== */
 
+/* CSS 变量 - 浅色模式默认值（确保 Teleport 弹窗等脱离组件 DOM 的元素也能获取变量） */
+:root {
+  --desktop-chip-bg: rgba(255, 255, 255, 0.72);
+  --desktop-chip-border: rgba(15, 23, 42, 0.08);
+  --desktop-chip-text: rgb(55 65 81);
+
+  --desktop-chip-active-bg: rgba(236, 65, 65, 0.12);
+  --desktop-chip-active-border: rgba(236, 65, 65, 0.28);
+  --desktop-chip-active-text: #ec4141;
+
+  --desktop-font-trigger-bg: rgba(255, 255, 255, 0.2);
+  --desktop-font-trigger-border: rgba(229, 231, 235, 0.4);
+  --desktop-font-trigger-shadow: none;
+
+  --desktop-font-trigger-active-bg: rgba(255, 255, 255, 0.3);
+  --desktop-font-trigger-active-border: rgba(236, 65, 65, 0.35);
+  --desktop-font-trigger-active-shadow: none;
+
+  --desktop-font-menu-bg: rgba(255, 255, 255, 0.88);
+  --desktop-font-menu-border: rgba(255, 255, 255, 0.5);
+  --desktop-font-menu-shadow: 0 24px 60px rgba(15, 23, 42, 0.16), 0 10px 24px rgba(15, 23, 42, 0.08);
+  --desktop-font-menu-header-color: rgba(71, 85, 105, 0.92);
+  --desktop-font-menu-header-border: rgba(148, 163, 184, 0.12);
+
+  --desktop-font-option-text: rgb(55 65 81);
+  --desktop-font-option-hover-bg: rgba(236, 65, 65, 0.06);
+  --desktop-font-option-hover-border: rgba(236, 65, 65, 0.16);
+  --desktop-font-option-hover-text: rgb(17 24 39);
+
+  --desktop-font-option-active-bg: linear-gradient(180deg, rgba(236, 65, 65, 0.12), rgba(236, 65, 65, 0.06));
+  --desktop-font-option-active-border: rgba(236, 65, 65, 0.2);
+  --desktop-font-option-active-text: #ec4141;
+}
+
 /* CSS 变量 - 深色模式重写（确保 font-trigger 等通过变量引用的控件也正确） */
 html.dark {
   --desktop-font-trigger-bg: rgba(0, 0, 0, 0.1);
