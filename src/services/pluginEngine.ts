@@ -702,27 +702,26 @@ export async function pluginMusicSearchWithDiagnostics(
   }
 
   try {
-    // 与 MusicFree useSearch.ts 第52~53行一致
-    // 歌词候选必须搜索歌曲；若插件明确声明 music，则不能沿用 album/sheet 等默认类型。
-    const supportedSearchTypes = inst.instance.supportedSearchType ?? [];
-    const searchType = supportedSearchTypes.includes('music')
-      ? 'music'
-      : (inst.instance.defaultSearchType ?? supportedSearchTypes[0] ?? 'music');
+    // 音乐搜索始终使用 'music' 类型；Baka 插件可能未在 supportedSearchType 中声明 'music'
+    // 但实际支持音乐搜索。若插件确实不支持则会返回空，由调用方处理。
+    const searchType = 'music';
     log(`[pluginSearch] ${source.name} searchType=${searchType}, 开始调用 search()`);
 
     // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
     const result = (await inst.instance.search(keyword, page, searchType)) ?? {};
     log(`[pluginSearch] ${source.name} search 返回: type=${typeof result}, keys=${result ? Object.keys(result).join(',') : 'null'}, dataIsArray=${Array.isArray(result?.data)}, dataLen=${result?.data?.length ?? 0}`);
 
-    // 与 MusicFree PluginMethodsWrapper.search() 第177~189行一致
-    if (Array.isArray(result.data)) {
+    // 使用 extractResultList 统一提取结果，兼容 data/musicList/list/songs 等多种格式
+    // （Baka 系插件可能返回非 { data: [...] } 格式）
+    const list = extractResultList(result);
+    if (list.length > 0) {
       // 关键：每个 item 都调用 resetMediaItem，与 MusicFree 完全一致
-      result.data.forEach((_: any) => {
+      list.forEach((_: any) => {
         resetMediaItem(_, source.name);
       });
 
       // 将 resetMediaItem 后的对象转为 PluginSearchResult
-      const results = result.data.map((item: any) => toPluginSearchResult(item, source));
+      const results = list.map((item: any) => toPluginSearchResult(item, source));
       return {
         results,
         status: results.length > 0 ? 'success' : 'empty',
@@ -736,7 +735,7 @@ export async function pluginMusicSearchWithDiagnostics(
     return {
       results: [],
       status: 'invalid_response',
-      reason: `插件 search 返回格式无效：期望 data 数组，实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
+      reason: `插件 search 返回格式无效或为空：实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
       searchType,
       supportsLyrics: true,
     };
@@ -1374,28 +1373,63 @@ export async function pluginAlbumSearch(
     // 直接尝试搜索；Baka 插件可能未声明 album 但实际支持
     const result = (await inst.instance.search(keyword, page, 'album')) ?? {};
     const list = extractResultList(result);
-    if (list.length === 0) return [];
+    if (list.length > 0) {
+      return list.map((item: any) => {
+        resetMediaItem(item, source.name);
+        const id = item.id || item.albumId || '';
+        const name = stripHtmlTags(item.title || item.name || item.album || '');
+        const artist = extractArtist(item);
+        const coverUrl = extractCoverUrl(item);
+        return {
+          id,
+          name,
+          artist,
+          coverUrl,
+          description: item.description || item.desc || '',
+          year: item.year || item.publishTime || undefined,
+          songCount: item.songCount || item.musicCount || undefined,
+          platform: item.platform || source.name,
+          platformId: id,
+          pluginId: source.id,
+          rawData: item,
+        };
+      });
+    }
 
-    return list.map((item: any) => {
-      resetMediaItem(item, source.name);
-      const id = item.id || item.albumId || '';
-      const name = stripHtmlTags(item.title || item.name || item.album || '');
-      const artist = extractArtist(item);
-      const coverUrl = extractCoverUrl(item);
-      return {
-        id,
-        name,
-        artist,
-        coverUrl,
-        description: item.description || item.desc || '',
-        year: item.year || item.publishTime || undefined,
-        songCount: item.songCount || item.musicCount || undefined,
-        platform: item.platform || source.name,
-        platformId: id,
-        pluginId: source.id,
-        rawData: item,
-      };
-    });
+    // 回退：直接专辑搜索返回空时，从音乐搜索结果中提取去重专辑
+    // （Baka QQ 音乐等插件的 search('album') 可能不支持，但 search('music') 可返回带专辑信息的歌曲）
+    if (page === 1) {
+      log(`[pluginAlbumSearch] ${source.name} 直接专辑搜索为空，回退到音乐搜索提取专辑`);
+      const songResults = await pluginSearch(source, keyword, 1, 30);
+      if (songResults.length === 0) return [];
+
+      const albumMap = new Map<string, PluginAlbumResult>();
+      for (const song of songResults) {
+        const albumName = song.album || '';
+        if (!albumName) continue;
+        const key = albumName.toLowerCase();
+        const existing = albumMap.get(key);
+        if (existing) {
+          // 合并：保留第一个封面，累计歌曲数
+          if (!existing.coverUrl && song.coverUrl) existing.coverUrl = song.coverUrl;
+          existing.songCount = (existing.songCount ?? 0) + 1;
+          continue;
+        }
+        albumMap.set(key, {
+          id: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+          name: albumName,
+          artist: song.artist || '',
+          coverUrl: song.coverUrl || '',
+          platform: song.platform || source.name,
+          platformId: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+          pluginId: source.id,
+          rawData: { albumName, artist: song.artist, albumId: song.rawData?.albumId || song.rawData?.al?.id },
+        });
+      }
+      return [...albumMap.values()];
+    }
+
+    return [];
   } catch (e: any) {
     log(`[pluginAlbumSearch] ${source.name} 失败: ${e?.message || e}`);
     return [];
