@@ -808,8 +808,9 @@ watch(artistActiveTab, () => {
             @playAll="handlePlayAll"
           />
 
-          <!-- 歌曲列表 tab -->
-          <Transition name="tab-fade" mode="out-in">
+          <!-- 歌曲列表 / 专辑列表 tab（不使用 mode="out-in"，避免切换 tab 时内容空白） -->
+          <div class="relative">
+          <Transition name="tab-fade">
             <OnlineSongList
               v-if="artistActiveTab === 'songs'"
               key="songs"
@@ -863,6 +864,7 @@ watch(artistActiveTab, () => {
               </div>
             </div>
           </Transition>
+          </div>
         </div>
 
         <!-- 专辑详情 -->
@@ -950,11 +952,15 @@ watch(artistActiveTab, () => {
   transform: translateX(-32px);
 }
 
-/* 歌手页歌曲/专辑 tab 切换动画 */
+/* 歌手页歌曲/专辑 tab 切换动画（不使用 mode="out-in"，离场元素绝对定位避免布局偏移） */
 .tab-fade-enter-active {
   transition: opacity 240ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .tab-fade-leave-active {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 .tab-fade-enter-from {
