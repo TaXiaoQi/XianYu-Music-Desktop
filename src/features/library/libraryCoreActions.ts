@@ -55,6 +55,11 @@ export const createLibraryCoreActions = ({
 
   const refreshFolder = async (folderPath: string) => {
     const summary = await playerFileManager.refreshFolder(folderPath);
+    // Only re-fetch folder tree and expand path when something actually changed,
+    // otherwise this triggers folderTree watcher → refreshFolder infinite loop.
+    if (summary && typeof summary === 'object' && 'hasChanges' in summary && !summary.hasChanges) {
+      return summary;
+    }
     await libraryFolderTree.fetchFolderTree();
     await libraryFolderTree.expandFolderPath(folderPath);
     return summary;
