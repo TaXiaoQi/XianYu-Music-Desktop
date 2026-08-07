@@ -217,15 +217,12 @@ fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
 
 /// 全局 HTTP 客户端单例：复用连接池 / TLS 会话，避免每次请求重建 Client。
 ///
-/// ⚠️ 这里对`音乐源搜索端点`关闭了 TLS 证书校验（`danger_accept_invalid_certs`），
-/// 因历史源部分 CDN 证书链不完整。该放宽仅适用于公开的搜索接口，不应用于鉴权/下载链路。
-/// 若将来这些端点修复证书，应移除此开关。
+/// 保持默认 TLS 证书校验，避免搜索和解析链路被中间人篡改。
 static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
 fn http_client() -> &'static Result<reqwest::Client, String> {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| e.to_string())
