@@ -1,17 +1,18 @@
 /**
  * 听歌识曲服务
  *
- * 复现 qwemusic（Recognize.vue + api/recognize.ts + mappers/recognize.ts）的实现：
- * 1. 前端录制音频并通过 OfflineAudioContext 重采样为 8000Hz / 16bit / 单声道 PCM
- * 2. PCM 经 base64 编码后通过 Tauri 命令 `recognize_audio` 发送到酷狗指纹识别接口
- * 3. 后端（recognize.rs）负责构建酷狗 Android 签名并发送 POST 请求
+ * 音频采集与重采样已完全下沉到 Rust 后端（system_audio.rs + recognize.rs）：
+ * 1. Rust 用 WASAPI Loopback 捕获系统音频输出（10 秒）
+ * 2. 在 Rust 中线性插值降采样为 8000Hz / 16bit / 单声道 PCM
+ * 3. Rust 构建酷狗 Android 签名并 POST 到指纹识别接口
  * 4. 响应体在此模块映射为带置信度的匹配结果，并转换为项目可播放的 Song
  *
  * 识别接口：gateway.kugou.com/fingerprint.service/v1/music_trackid_mulit
  * 加密方式：encryptType 'android'（见 KuGouMusicApi util/helper.js）
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './tauri/invoke';
+import type { RecognizeResponseContract } from './tauri/contracts';
 import type { LxSearchResultItem } from './lxMusicSdk';
 import type { Song } from '../types';
 
@@ -72,50 +73,11 @@ interface RecognizeResponseBody {
   [key: string]: unknown;
 }
 
-/** PCM 重采样目标参数（与 qwemusic Recognize.vue 一致） */
-export const RECOGNIZE_SAMPLE_RATE = 8000;
+/** 识别音频最大时长（秒），与 Rust 后端 capture_system_audio_pcm 参数一致 */
 export const RECOGNIZE_MAX_SECONDS = 10;
 
-/**
- * 将录制的音频 Blob 重采样为 8000Hz / 16bit / 单声道 PCM
- *
- * 复现 qwemusic Recognize.vue::decodeToPCM：
- * 1. 用 OfflineAudioContext（1 声道、8000Hz）解码原始音频
- * 2. 取第一声道 Float32 样本，转换为 Int16（s16le）
- * 3. 返回 Int16Array.buffer（ArrayBuffer）
- */
-export async function decodeToPCM(blob: Blob): Promise<ArrayBuffer> {
-  const offlineCtx = new OfflineAudioContext(
-    1,
-    RECOGNIZE_SAMPLE_RATE * RECOGNIZE_MAX_SECONDS,
-    RECOGNIZE_SAMPLE_RATE,
-  );
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-  const float32 = audioBuffer.getChannelData(0);
-  const int16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return int16.buffer;
-}
-
-/**
- * 调用听歌识曲接口
- *
- * @param pcm 8000Hz / 16bit / 单声道 PCM 二进制数据
- * @returns 按置信度降序排列的匹配结果
- */
-export async function recognizeAudio(pcm: ArrayBuffer): Promise<RecognizeMatch[]> {
-  // base64 编码 PCM，供 Tauri 命令跨进程传输
-  const pcmBase64 = arrayBufferToBase64(pcm);
-  const response = await invoke<{ status: number; body: string }>('recognize_audio', {
-    pcmBase64,
-  });
-
-  return parseRecognizeResponse(response);
-}
+/** 识别被取消时抛出的错误标识 */
+export const RECOGNIZE_CANCELLED = '识别已取消';
 
 /**
  * 一键无感识别：直接捕获系统音频并识别
@@ -124,15 +86,42 @@ export async function recognizeAudio(pcm: ArrayBuffer): Promise<RecognizeMatch[]
  * 重采样为 8000Hz/16bit/单声道 PCM 后直接调用酷狗指纹识别接口。
  * 无需用户选屏幕或勾选"分享音频"，整个过程对用户完全透明。
  *
+ * 调用 cancelRecognizeSystemAudio() 可中途取消识别。
+ *
  * @returns 按置信度降序排列的匹配结果
+ * @throws {Error} 当识别被取消时，error.message === RECOGNIZE_CANCELLED
  */
 export async function recognizeSystemAudio(): Promise<RecognizeMatch[]> {
-  const response = await invoke<{ status: number; body: string }>('recognize_system_audio');
+  const response = await tauriInvoke('recognize_system_audio');
+  return parseRecognizeResponse(response);
+}
+
+/**
+ * 取消正在进行的音频识别
+ *
+ * 通知 Rust 后端将全局取消标志置为 true，
+ * 正在进行的 WASAPI 捕获循环会在下一次迭代时退出。
+ */
+export async function cancelRecognizeSystemAudio(): Promise<void> {
+  await tauriInvoke('cancel_recognize_system_audio');
+}
+
+/**
+ * 使用自定义 PCM 数据识别歌曲
+ *
+ * 接收 8000Hz / 16bit / 单声道 PCM 字节数组，直接调用酷狗指纹识别接口。
+ * 可用于从文件或其他来源提取的音频识别，不依赖 WASAPI 系统音频捕获。
+ *
+ * @param pcm 8000Hz / 16bit / 单声道 PCM 字节数组
+ * @returns 按置信度降序排列的匹配结果
+ */
+export async function recognizeWithPcm(pcm: number[]): Promise<RecognizeMatch[]> {
+  const response = await tauriInvoke('recognize_with_pcm', { pcm });
   return parseRecognizeResponse(response);
 }
 
 /** 解析酷狗识别接口的响应 */
-function parseRecognizeResponse(response: { status: number; body: string }): Promise<RecognizeMatch[]> {
+function parseRecognizeResponse(response: RecognizeResponseContract): Promise<RecognizeMatch[]> {
   if (response.status !== 200) {
     return Promise.reject(new Error(`识别请求失败 (HTTP ${response.status})`));
   }
@@ -349,16 +338,4 @@ export function buildRecognizeSong(match: RecognizeMatch): Song {
   (song as any)._songmid = item.songmid;
   (song as any)._source = item.source;
   return song;
-}
-
-/** ArrayBuffer → base64 字符串（分块处理避免栈溢出） */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000; // 32KB 分块，避免 String.fromCharCode.apply 栈溢出
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode.apply(null, Array.from(chunk));
-  }
-  return btoa(binary);
 }

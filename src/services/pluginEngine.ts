@@ -23,7 +23,6 @@ import qs from 'qs';
 import bigInt from 'big-integer';
 import { Buffer } from 'buffer';
 import { ref } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import type {
   PluginSource,
   PluginSearchResult,
@@ -75,8 +74,6 @@ let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
   console.log(`[PluginEngine] ${msg}`);
-  // [DEBUG]: 把日志发送到 Rust 后端，输出到终端
-  try { if (typeof (window as any).__TAURI_INTERNALS__ !== 'undefined') invoke('debug_log', { message: `[PluginEngine] ${msg}` }).catch(() => {}); } catch { /* ignore */ }
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 

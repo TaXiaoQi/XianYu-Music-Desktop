@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { invoke } from '@tauri-apps/api/core';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 import { useAuthStore } from '../features/auth/store';
+import { downloadApi } from '../services/tauri/downloadApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useToast } from '../composables/toast';
 import { useUiStore } from '../shared/stores/ui';
@@ -426,10 +426,7 @@ async function saveAvatarToLocal() {
       filters: [{ name: '图片', extensions: [ext] }],
     });
     if (!destPath) return; // 用户取消
-    await invoke<string>('save_download_bytes', {
-      data: Array.from(bytes),
-      destPath,
-    });
+    await downloadApi.saveDownloadBytes(Array.from(bytes), destPath);
     showToast('头像已保存到本地', 'success');
   } catch (error) {
     const tip = error instanceof Error ? error.message : '保存失败';

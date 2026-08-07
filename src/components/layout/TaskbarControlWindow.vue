@@ -21,6 +21,7 @@ import { writeSavedPositionX, type TaskbarTrayGeometry } from '../../composables
 import { windowApi } from '../../services/tauri/windowApi';
 import type { Song } from '../../types';
 import { clamp } from '../../utils/math';
+import { sessionApi, type PlaybackSessionChangedPayload } from '../../services/tauri/sessionApi';
 
 const appWindow = getCurrentWindow();
 
@@ -165,6 +166,7 @@ const shouldScroll = ref(false);
 let unlistenState: (() => void) | null = null;
 let unlistenVisibility: (() => void) | null = null;
 let unlistenMoved: (() => void) | null = null;
+let unlistenSessionChanged: (() => void) | null = null;
 
 const sendAction = (actionType: 'prev-song' | 'next-song' | 'toggle-play' | 'close') => {
   void emitTo<TaskbarPlayerAction>('main', TASKBAR_PLAYER_ACTION_EVENT, { type: actionType });
@@ -227,6 +229,33 @@ onMounted(async () => {
   // 3. 监听位置移动：拖动结束时由 pointerup 保存位置，这里只保留窗口生命周期清理句柄
   unlistenMoved = await appWindow.onMoved(() => {});
 
+  // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
+  try {
+    const session = await sessionApi.getPlaybackSession();
+    if (session && session.currentSongPath) {
+      isPlaying.value = session.isPlaying;
+      const songMeta = session.queueSongMeta?.[session.currentSongPath];
+      if (songMeta) {
+        currentSong.value = songMeta;
+      }
+    }
+  } catch { /* ignore - emitTo will provide full state */ }
+
+  // 监听 Rust 会话变更（主窗口不可用时的后备同步路径）
+  unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
+    'playback:session-changed',
+    (event) => {
+      const data = event.payload;
+      isPlaying.value = data.isPlaying;
+      if (!currentSong.value && data.currentSongPath) {
+        const songMeta = data.queueSongMeta?.[data.currentSongPath];
+        if (songMeta) {
+          currentSong.value = songMeta;
+        }
+      }
+    },
+  );
+
   // 4. 发送 Ready 握手并请求一次最新状态
   void emitTo('main', 'taskbar-player:ready');
   void emitTo('main', 'taskbar-player:request-state');
@@ -236,6 +265,7 @@ onUnmounted(() => {
   unlistenState?.();
   unlistenVisibility?.();
   unlistenMoved?.();
+  unlistenSessionChanged?.();
   if (dragSafetyTimer) clearTimeout(dragSafetyTimer);
   cleanupDragListeners?.();
   if (dragFrame !== 0) {

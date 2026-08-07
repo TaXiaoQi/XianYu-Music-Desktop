@@ -5,6 +5,7 @@ pub mod equalizer;
 pub mod loudness;
 mod output;
 mod runtime;
+mod session;
 pub mod sound_effect;
 mod spectrum;
 mod stream_cache;
@@ -22,3 +23,7 @@ pub use device::{
     get_current_output_device, get_output_devices, set_audio_output_mode, set_output_device,
 };
 pub use runtime::init_player;
+pub use session::{
+    flush_playback_session, get_playback_session, load_playback_session,
+    save_playback_session, update_playback_position, PlaybackSessionState,
+};

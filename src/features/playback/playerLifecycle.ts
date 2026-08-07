@@ -15,10 +15,12 @@ import {
   type PlaylistSortMode,
 } from '../../services/storage/playerStorage';
 import { playbackApi, createEqualizerSignature } from '../../services/tauri/playbackApi';
+import { sessionApi } from '../../services/tauri/sessionApi';
 import { remoteLibraryApi } from '../../services/tauri/remoteLibraryApi';
 import { useCollectionsStore } from '../collections/store';
 import { useLibraryStore } from '../library/store';
 import { usePlaybackStore } from './store';
+import { usePlaybackSessionSync } from './usePlaybackSessionSync';
 import { useSoundEffectStore } from './soundEffectStore';
 import { useSettingsStore } from '../settings/store';
 import { defaultDominantColors, useUiStore } from '../../shared/stores/ui';
@@ -54,7 +56,7 @@ interface CreatePlayerLifecycleDeps {
   handleSeekCompleted: (payload: SeekCompletedPayload) => void;
   schedulePersistedState: () => void;
   flushPersistedState: () => Promise<void>;
-  restorePathBackedState: () => Promise<void>;
+  restorePathBackedState: (rustSession?: import('../../services/tauri/sessionApi').PlaybackSessionData | null) => Promise<void>;
   restoreRecentHistory: () => Promise<void>;
   refreshStateSongReferences: () => void;
   loadLyrics: () => void | Promise<void>;
@@ -187,6 +189,7 @@ export const createPlayerLifecycle = ({
   legacyLastSongKey,
 }: CreatePlayerLifecycleDeps) => {
   let lifecycleInitDone = false;
+  let disposeSessionSync: (() => void) | null = null;
   const collectionsStore = useCollectionsStore();
   const libraryStore = useLibraryStore();
   const playbackStore = usePlaybackStore();
@@ -587,6 +590,8 @@ export const createPlayerLifecycle = ({
     const beforeUnloadHandler = () => {
       flushPersistedState().catch(() => {});
       persistCurrentPlaybackTime();
+      // 强制将播放会话状态持久化到 Rust/SQLite
+      sessionApi.flushPlaybackSession().catch(() => {});
     };
 
     onMounted(async () => {
@@ -629,9 +634,22 @@ export const createPlayerLifecycle = ({
       const queueSongMeta = playerStorage.readQueueSongMeta();
       const queueExtraSongs = Object.values(queueSongMeta);
 
+      // 从 Rust 加载播放会话（单一事实源），并注入其中的 queueSongMeta
+      let rustSession: Awaited<ReturnType<typeof sessionApi.loadPlaybackSession>> | null = null;
+      try {
+        rustSession = await sessionApi.loadPlaybackSession();
+      } catch (err) {
+        console.warn('[restore] loadPlaybackSession failed, falling back to localStorage:', err);
+      }
+
+      // 合并 Rust 会话中的在线歌曲元数据（优先于 localStorage）
+      const rustQueueExtraSongs = rustSession?.queueSongMeta
+        ? Object.values(rustSession.queueSongMeta)
+        : [];
+
       // 批量写入所有在线歌曲元信息，仅递增一次 songCatalogVersion，
       // 避免 songLookup/canonicalSongs/currentViewSongs 级联重算 3+ 次
-      const extraSongGroups = [extraSongs, recentExtraSongs, queueExtraSongs].filter(g => g.length > 0);
+      const extraSongGroups = [extraSongs, recentExtraSongs, queueExtraSongs, rustQueueExtraSongs].filter(g => g.length > 0);
       if (extraSongGroups.length > 0) {
         libraryStore.setExtraSongsBatch(extraSongGroups);
       }
@@ -679,20 +697,28 @@ export const createPlayerLifecycle = ({
       }
       await syncEqualizerSettings();
 
-      await restorePathBackedState();
+      await restorePathBackedState(rustSession);
       await restoreRecentHistory();
       refreshStateSongReferences();
 
-      // 恢复记忆播放的歌曲后，主动加载其歌词。否则重启后直接进入详情页会显示“无歌词”，
+      // 恢复记忆播放的歌曲后，主动加载其歌词。否则重启后直接进入详情页会显示"无歌词"，
       // 因为恢复流程只还原了 currentSong/封面，没有像正常播放那样触发 loadLyrics。
       if (currentSong.value) {
         void loadLyrics();
       }
 
-      const storedLastTime = playerStorage.readNumber(playerStorageKeys.lastTime);
-      if (storedLastTime !== null) {
-        currentTime.value = storedLastTime;
+      // 恢复播放进度：优先使用 Rust 会话中的进度，回退到 localStorage
+      if (rustSession?.currentPositionSecs && rustSession.currentPositionSecs > 0) {
+        currentTime.value = rustSession.currentPositionSecs;
+      } else {
+        const storedLastTime = playerStorage.readNumber(playerStorageKeys.lastTime);
+        if (storedLastTime !== null) {
+          currentTime.value = storedLastTime;
+        }
       }
+
+      // 初始化播放会话同步（将后续状态变更同步到 Rust）
+      disposeSessionSync = usePlaybackSessionSync().init();
 
       window.addEventListener('beforeunload', beforeUnloadHandler);
       window.setTimeout(() => void runRemoteAutoSync(), 30_000);
@@ -710,6 +736,7 @@ export const createPlayerLifecycle = ({
       clearInterval(playbackTimePersistTimer);
       dominantColorTaskId += 1;
       dominantColorSignature = '';
+      disposeSessionSync?.();
       void Promise.all(listenerRegistrations).then(unlisteners => {
         unlisteners.forEach(unlisten => unlisten());
       });

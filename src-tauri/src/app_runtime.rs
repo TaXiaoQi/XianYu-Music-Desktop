@@ -4,6 +4,7 @@ use crate::music::{
     FULL_COVER_IMAGE_CONCURRENCY_LIMIT, THUMBNAIL_IMAGE_CONCURRENCY_LIMIT,
 };
 use crate::player::init_player;
+use crate::player::PlaybackSessionState;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -429,6 +430,16 @@ pub(crate) fn setup_app(
     app.manage(TrayMenuRuntimeState::default());
 
     let db_state = DbState::new(app.handle())?;
+
+    // 播放会话状态：启动时立即从 SQLite 预加载到内存，
+    // 确保副窗口（mini/taskbar/desktop-lyrics）在主窗口恢复前
+    // 调用 getPlaybackSession 也能拿到正确数据
+    let playback_session = PlaybackSessionState::new();
+    if let Err(e) = playback_session.load_from_db(&db_state) {
+        eprintln!("[Session] 启动预加载播放会话失败: {}", e);
+    }
+    app.manage(playback_session);
+
     app.manage(db_state);
 
     let player_state = init_player(app.handle());

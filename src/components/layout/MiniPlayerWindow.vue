@@ -30,6 +30,7 @@ import {
 } from '../../features/miniPlayer/shared';
 import type { Song } from '../../types';
 import { formatDuration } from '../../utils/format';
+import { sessionApi, type PlaybackSessionChangedPayload } from '../../services/tauri/sessionApi';
 
 const appWindow = getCurrentWindow();
 const currentSong = ref<Song | null>(null);
@@ -61,6 +62,7 @@ let unlistenState: (() => void) | null = null;
 let unlistenVisibility: (() => void) | null = null;
 let unlistenVolumeAction: (() => void) | null = null;
 let unlistenVolumeVisibility: (() => void) | null = null;
+let unlistenSessionChanged: (() => void) | null = null;
 
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0;
@@ -379,6 +381,48 @@ onMounted(async () => {
     sendAction({ type: 'close' });
   });
 
+  // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
+  // 解决副窗口启动时主窗口未及时推送状态的空白期
+  try {
+    const session = await sessionApi.getPlaybackSession();
+    if (session && session.currentSongPath) {
+      isPlaying.value = session.isPlaying;
+      volume.value = session.volume;
+      playMode.value = session.playMode;
+      if (!isDraggingProgress.value) {
+        currentTime.value = session.currentPositionSecs;
+      }
+      // 尝试从 queueSongMeta 恢复歌曲对象
+      const songMeta = session.queueSongMeta?.[session.currentSongPath];
+      if (songMeta) {
+        currentSong.value = songMeta;
+        duration.value = songMeta.duration ?? 0;
+      }
+    }
+  } catch { /* ignore - emitTo will provide full state */ }
+
+  // 监听 Rust 会话变更（主窗口隐藏/休眠时的后备同步路径）
+  unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
+    'playback:session-changed',
+    (event) => {
+      const data = event.payload;
+      isPlaying.value = data.isPlaying;
+      volume.value = data.volume;
+      playMode.value = data.playMode;
+      if (!isDraggingProgress.value) {
+        currentTime.value = data.currentPositionSecs;
+      }
+      // 若 emitTo 尚未提供歌曲对象，尝试从会话元数据恢复
+      if (!currentSong.value && data.currentSongPath) {
+        const songMeta = data.queueSongMeta?.[data.currentSongPath];
+        if (songMeta) {
+          currentSong.value = songMeta;
+          duration.value = songMeta.duration ?? 0;
+        }
+      }
+    },
+  );
+
   await emitTo('main', MINI_PLAYER_READY_EVENT);
   await emitTo('main', MINI_PLAYER_REQUEST_STATE_EVENT);
 });
@@ -394,6 +438,7 @@ onUnmounted(() => {
   unlistenVisibility?.();
   unlistenVolumeAction?.();
   unlistenVolumeVisibility?.();
+  unlistenSessionChanged?.();
   volumePopoverWindow?.close().catch(() => {});
 });
 </script>

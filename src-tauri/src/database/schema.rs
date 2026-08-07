@@ -346,5 +346,17 @@ pub(crate) fn ensure_base_schema(conn: &Connection) -> Result<(), String> {
     )
     .ok();
 
+    // 播放会话状态表（单行，id=1）
+    // Rust 作为播放会话的单一事实源，将队列/当前歌曲/进度/模式等状态持久化到 SQLite
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS playback_session (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            data TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
     Ok(())
 }

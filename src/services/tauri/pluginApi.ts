@@ -9,6 +9,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './invoke';
+import type { PluginHttpResponseContract, PluginHttpBinaryResponseContract } from './contracts';
 import type {
   PluginInfo,
   PluginSearchRequest,
@@ -183,8 +185,15 @@ export async function pluginHttpRequest(
   body?: string,
   timeout?: number,
   follow?: number,
-): Promise<{ status: number; url: string; headers: Record<string, string>; body: string }> {
-  return invoke('plugin_http_request', { method, url, headers: headers ?? null, body: body ?? null, timeout: timeout ?? null, follow: follow ?? null });
+): Promise<PluginHttpResponseContract> {
+  return tauriInvoke('plugin_http_request', {
+    method,
+    url,
+    headers: headers ?? null,
+    body: body ?? null,
+    timeout: timeout ?? null,
+    follow: follow ?? null,
+  });
 }
 
 /**
@@ -192,7 +201,7 @@ export async function pluginHttpRequest(
  * 后端 command: read_plugin_file
  */
 export async function readPluginFile(path: string): Promise<string> {
-  return invoke<string>('read_plugin_file', { path });
+  return tauriInvoke('read_plugin_file', { path });
 }
 
 /**
@@ -200,11 +209,7 @@ export async function readPluginFile(path: string): Promise<string> {
  * 用于 ensurePluginInstance 加载远程 URL 插件
  */
 export async function fetchPluginUrl(url: string): Promise<string> {
-  // 完全对齐 YinDongMusic: 只传 method 和 url
-  const resp = await invoke<{ status: number; body: string }>('plugin_http_request', {
-    method: 'GET',
-    url,
-  });
+  const resp = await tauriInvoke('plugin_http_request', { method: 'GET', url });
   if (resp.status < 200 || resp.status >= 300) {
     throw new Error(`HTTP ${resp.status}`);
   }
@@ -212,7 +217,7 @@ export async function fetchPluginUrl(url: string): Promise<string> {
 }
 
 export async function proxyImage(url: string, referer?: string): Promise<string> {
-  return invoke<string>('proxy_image', { url, referer: referer ?? null });
+  return tauriInvoke('proxy_image', { url, referer: referer ?? null });
 }
 
 export async function pluginHttpRequestBinary(
@@ -222,8 +227,26 @@ export async function pluginHttpRequestBinary(
   body?: string,
   timeout?: number,
   follow?: number,
-): Promise<{ status: number; url: string; headers: Record<string, string>; body_base64: string }> {
-  return invoke('plugin_http_request_binary', { method, url, headers, body, timeout, follow });
+): Promise<PluginHttpBinaryResponseContract> {
+  return tauriInvoke('plugin_http_request_binary', {
+    method,
+    url,
+    headers: headers ?? null,
+    body: body ?? null,
+    timeout: timeout ?? null,
+    follow: follow ?? null,
+  });
+}
+
+/**
+ * 下载网络音频到临时文件（用于 B站 m4s 等需要 Referer 头的直链）
+ * 后端 command: download_audio_to_temp
+ */
+export async function downloadAudioToTemp(
+  url: string,
+  headers?: Record<string, string>,
+): Promise<string> {
+  return tauriInvoke('download_audio_to_temp', { url, headers: headers ?? null });
 }
 
 export const pluginApi = {
@@ -236,4 +259,5 @@ export const pluginApi = {
   readPluginFile,
   fetchPluginUrl,
   proxyImage,
+  downloadAudioToTemp,
 };

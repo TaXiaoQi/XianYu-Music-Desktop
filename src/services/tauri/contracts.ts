@@ -639,6 +639,95 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: boolean;
   };
+  resolve_download_path: {
+    payload: { directory: string; fileName: string; overwriteExisting: boolean };
+    response: string;
+  };
+  resolve_download_full_path: {
+    payload: {
+      directory: string;
+      title: string;
+      artist: string;
+      album: string;
+      url: string;
+      quality: string;
+      keepSourceFilename: boolean;
+      fileNameStyle: string;
+      overwriteExisting: boolean;
+    };
+    response: string;
+  };
+  build_download_basename: {
+    payload: { title: string; artist: string; album: string; fileNameStyle: string };
+    response: string;
+  };
+  download_online_song: {
+    payload: { url: string; destPath: string };
+    response: string;
+  };
+  finalize_download_extras: {
+    payload: { request: FinalizeDownloadExtrasRequestContract };
+    response: FinalizeDownloadExtrasResultContract;
+  };
+  probe_url_size: {
+    payload: { url: string };
+    response: ProbeUrlInfoContract;
+  };
+  read_download_history: {
+    payload: undefined;
+    response: string;
+  };
+  write_download_history: {
+    payload: { content: string };
+    response: void;
+  };
+  is_stream_cached: {
+    payload: { url: string };
+    response: boolean;
+  };
+  copy_stream_cache: {
+    payload: { url: string; destPath: string };
+    response: number;
+  };
+  save_download_bytes: {
+    payload: { data: number[]; destPath: string };
+    response: string;
+  };
+  // ===== 插件基础设施命令 =====
+  plugin_http_request: {
+    payload: {
+      method: string;
+      url: string;
+      headers?: Record<string, string> | null;
+      body?: string | null;
+      timeout?: number | null;
+      follow?: number | null;
+    };
+    response: PluginHttpResponseContract;
+  };
+  plugin_http_request_binary: {
+    payload: {
+      method: string;
+      url: string;
+      headers?: Record<string, string> | null;
+      body?: string | null;
+      timeout?: number | null;
+      follow?: number | null;
+    };
+    response: PluginHttpBinaryResponseContract;
+  };
+  read_plugin_file: {
+    payload: { path: string };
+    response: string;
+  };
+  proxy_image: {
+    payload: { url: string; referer?: string | null };
+    response: string;
+  };
+  download_audio_to_temp: {
+    payload: { url: string; headers?: Record<string, string> | null };
+    response: string;
+  };
   write_state_json: {
     payload: { key: string; value: string };
     response: void;
@@ -660,6 +749,47 @@ export interface TauriCommandMap {
     response: string | null;
   };
   clear_lx_url_cache: { payload: undefined; response: void };
+  find_alternative_lx_source: {
+    payload: {
+      songName: string;
+      songArtist: string;
+      songDuration: number;
+      failedSources: string[];
+      qualities: string[];
+    };
+    response: AlternativeSourceResultContract | null;
+  };
+  resolve_lx_with_quality_fallback: {
+    payload: { songInfo: LxUrlSongInfoContract; qualities: string[] };
+    response: ResolvedUrlContract | null;
+  };
+  clear_lx_all_cache: { payload: undefined; response: void };
+  save_playback_session: {
+    payload: { session: PlaybackSessionDataContract };
+    response: void;
+  };
+  load_playback_session: {
+    payload: undefined;
+    response: PlaybackSessionDataContract;
+  };
+  get_playback_session: {
+    payload: undefined;
+    response: PlaybackSessionDataContract;
+  };
+  update_playback_position: {
+    payload: { positionSecs: number; isPlaying: boolean };
+    response: void;
+  };
+  flush_playback_session: { payload: undefined; response: void };
+  recognize_system_audio: { payload: undefined; response: RecognizeResponseContract };
+  recognize_with_pcm: { payload: { pcm: number[] }; response: RecognizeResponseContract };
+  cancel_recognize_system_audio: { payload: undefined; response: void };
+}
+
+/** 听歌识曲接口响应 */
+export interface RecognizeResponseContract {
+  status: number;
+  body: string;
 }
 
 export interface LxUrlSongInfoContract {
@@ -680,6 +810,25 @@ export interface LxUrlSongInfoContract {
 export interface ResolvedUrlContract {
   url: string;
   quality: string;
+}
+
+export interface AlternativeSourceResultContract {
+  source: string;
+  songmid: string;
+  name: string;
+  singer: string;
+  albumName: string;
+  albumId: string | number;
+  albumMid?: string;
+  img?: string | null;
+  interval: string;
+  hash?: string | null;
+  copyrightId?: string | null;
+  strMediaMid?: string | null;
+  songId?: string | number;
+  lxTypes?: Record<string, { size?: string | null; hash?: string }>;
+  resolvedUrl?: string | null;
+  resolvedQuality?: string | null;
 }
 
 export interface LyricSongInfoContract {
@@ -703,4 +852,78 @@ export interface LyricResultContract {
   tlyric: string;
   rlyric: string;
   lxlyric: string;
+}
+
+export interface PlaybackSessionDataContract {
+  currentSongPath: string | null;
+  playQueuePaths: string[];
+  sourceSongPaths: string[];
+  playMode: number;
+  volume: number;
+  currentPositionSecs: number;
+  isPlaying: boolean;
+  sessionQualityOverride: string | null;
+  queueSongMeta: Record<string, Song>;
+  updatedAt: number;
+}
+
+// ===== 下载服务类型契约 =====
+
+/** URL 大小探测结果（与 Rust ProbeUrlInfo 对应，response 使用 Rust 序列化字段名） */
+export interface ProbeUrlInfoContract {
+  url: string;
+  size: number;
+  error?: string;
+}
+
+/** 元数据嵌入请求（与 Rust EmbedMetadataRequest 对应，payload 使用 camelCase） */
+export interface EmbedMetadataRequestContract {
+  filePath: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  year?: string;
+  trackNumber?: string;
+  discNumber?: string;
+  lyrics?: string;
+  coverData?: number[] | Uint8Array;
+  coverMime?: string;
+}
+
+/** 下载收尾请求（与 Rust FinalizeDownloadExtrasRequest 对应，payload 使用 camelCase） */
+export interface FinalizeDownloadExtrasRequestContract {
+  lyricsText?: string | null;
+  lyricsPath?: string | null;
+  coverUrl?: string | null;
+  coverPath?: string | null;
+  metadata?: EmbedMetadataRequestContract | null;
+  embedCover: boolean;
+}
+
+/** 下载收尾结果（与 Rust FinalizeDownloadExtrasResult 对应，response 使用 Rust 序列化字段名） */
+export interface FinalizeDownloadExtrasResultContract {
+  lyrics_saved: boolean;
+  cover_saved: boolean;
+  metadata_embedded: boolean;
+  cover_data: number[] | null;
+  cover_mime: string;
+}
+
+// ===== 插件基础设施类型契约 =====
+
+/** 插件 HTTP 代理响应（与 Rust PluginHttpResponse 对应） */
+export interface PluginHttpResponseContract {
+  status: number;
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/** 插件 HTTP 二进制代理响应（与 Rust PluginHttpBinaryResponse 对应） */
+export interface PluginHttpBinaryResponseContract {
+  status: number;
+  url: string;
+  headers: Record<string, string>;
+  body_base64: string;
 }

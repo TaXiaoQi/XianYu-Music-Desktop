@@ -1,4 +1,4 @@
-import { emitTo } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, availableMonitors, currentMonitor, cursorPosition } from '@tauri-apps/api/window';
 import { PhysicalPosition } from '@tauri-apps/api/dpi';
 import { computed, onMounted, onUnmounted, ref, watch, type CSSProperties, type Ref } from 'vue';
@@ -18,6 +18,7 @@ import {
   type DesktopLyricsWindowSettings,
 } from '../features/desktopLyrics/shared';
 import { windowApi } from '../services/tauri/windowApi';
+import { sessionApi, type PlaybackSessionChangedPayload } from '../services/tauri/sessionApi';
 
 const FULLSCREEN_POLL_INTERVAL_MS = 300;
 const RESIZE_VISIBILITY_HOLD_MS = 1200;
@@ -172,6 +173,7 @@ export function useDesktopLyricsWindowController(options: {
   let unlistenCloseRequested: (() => void) | null = null;
   let unlistenMoved: (() => void) | null = null;
   let unlistenResized: (() => void) | null = null;
+  let unlistenSessionChanged: (() => void) | null = null;
 
   function startPlaybackClock() {
     stopPlaybackClock();
@@ -544,6 +546,25 @@ export function useDesktopLyricsWindowController(options: {
       });
     });
 
+    // 从 Rust 会话获取初始核心播放状态（主窗口 emitTo 到达前的即时数据）
+    try {
+      const session = await sessionApi.getPlaybackSession();
+      if (session && session.currentSongPath) {
+        isPlaying.value = session.isPlaying;
+        playbackTime.value = session.currentPositionSecs;
+      }
+    } catch { /* ignore - emitTo will provide full state */ }
+
+    // 监听 Rust 会话变更（主窗口不可用时的后备同步路径）
+    unlistenSessionChanged = await listen<PlaybackSessionChangedPayload>(
+      'playback:session-changed',
+      (event) => {
+        const data = event.payload;
+        isPlaying.value = data.isPlaying;
+        playbackTime.value = data.currentPositionSecs;
+      },
+    );
+
     try {
       await emitTo('main', DESKTOP_LYRICS_READY_EVENT);
       await emitTo('main', DESKTOP_LYRICS_REQUEST_STATE_EVENT);
@@ -566,6 +587,7 @@ export function useDesktopLyricsWindowController(options: {
     unlistenCloseRequested?.();
     unlistenMoved?.();
     unlistenResized?.();
+    unlistenSessionChanged?.();
     void windowApi.stopTopmostGuard();
 
     if (centerPositionFallbackTimer) {

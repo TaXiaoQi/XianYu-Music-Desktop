@@ -295,6 +295,197 @@ pub fn resolve_download_path(
     Ok(direct.to_string_lossy().to_string())
 }
 
+// ==================== 下载文件名统一计算 ====================
+//
+// 前端原先自带 sanitizeFileName / buildFileNameBase / buildDownloadFileName / extFromUrl /
+// extFromQuality 等纯计算函数，与 Rust 侧 toolbox 的 sanitize_filename 规则不一致
+//（前者替换非法字符为空格、限长 180；后者替换为下划线、不限长）。
+// 现将下载专用的文件名计算统一下沉到 Rust，前端只传参数，避免两份命名规则漂移。
+
+/// 下载文件名清洗：非法字符替换为空格、折叠连续空白、限长 180 字符
+///
+/// 与前端旧 sanitizeFileName 行为完全一致：
+/// `<>:"/\\|?*` 及控制字符 \x00-\x1f → 空格 → 折叠连续空格 → trim → 截断 180 → 空则 "download"
+fn sanitize_download_filename(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let collapsed: String = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
+    if trimmed.is_empty() {
+        return "download".to_string();
+    }
+    // 按 char 截断到 180 字符（与前端 .slice(0, 180) 一致）
+    trimmed.chars().take(180).collect()
+}
+
+/// 从 URL 路径推断音频文件扩展名（含点，如 ".flac"）；无法识别返回空串
+///
+/// 仅接受常见音频扩展名，避免把 query 参数误判为扩展名
+fn ext_from_url(url: &str) -> String {
+    // 使用 reqwest 重导出的 url::Url 解析 URL，提取 pathname
+    let path = match reqwest::Url::parse(url) {
+        Ok(u) => u.path().to_string(),
+        Err(_) => return String::new(),
+    };
+    let dot = match path.rfind('.') {
+        Some(idx) => idx,
+        None => return String::new(),
+    };
+    let ext = path[dot..].to_lowercase();
+    match ext.as_str() {
+        ".mp3" | ".flac" | ".wav" | ".m4a" | ".aac" | ".ape" | ".ogg" | ".wma" => ext,
+        _ => String::new(),
+    }
+}
+
+/// 判断音质档位是否属于无损类（用于推断扩展名）
+///
+/// 无损：flac, flac24bit, hires, vinyl, master → .flac
+/// 有损：mgg, 128k, 192k, 320k, dolby, atmos, atmos_plus → .mp3
+fn is_lossless_quality(quality: &str) -> bool {
+    matches!(
+        quality,
+        "flac" | "flac24bit" | "hires" | "vinyl" | "master"
+    )
+}
+
+/// 根据命中的音质档位推断扩展名兜底
+fn ext_from_quality(quality: &str) -> String {
+    if is_lossless_quality(quality) {
+        ".flac".to_string()
+    } else {
+        ".mp3".to_string()
+    }
+}
+
+/// 按样式拼接文件名主体（不含扩展名）
+///
+/// 缺失字段会被跳过，避免出现 "歌名 -  - " 空段
+fn build_filename_base(title: &str, artist: &str, album: &str, style: &str) -> String {
+    let title = if title.is_empty() { "未知歌曲" } else { title };
+    let parts: Vec<&str> = match style {
+        "title-artist" => vec![title, artist],
+        "title-artist-album" => vec![title, artist, album],
+        _ => vec![artist, title], // "artist-title" 为默认
+    };
+    let joined: String = parts
+        .iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" - ");
+    if joined.is_empty() {
+        title.to_string()
+    } else {
+        joined
+    }
+}
+
+/// 构造下载文件名（含扩展名，不含目录）
+///
+/// keep_source_filename 为真时使用 URL 原始文件名（去扩展名后清洗 + 追加推断的扩展名），
+/// 否则按 style 拼接歌名/歌手/专辑后清洗 + 追加扩展名。
+fn build_download_filename(
+    title: &str,
+    artist: &str,
+    album: &str,
+    url: &str,
+    quality: &str,
+    keep_source_filename: bool,
+    style: &str,
+) -> String {
+    let ext = {
+        let e = ext_from_url(url);
+        if e.is_empty() {
+            ext_from_quality(quality)
+        } else {
+            e
+        }
+    };
+
+    if keep_source_filename {
+        if let Ok(u) = reqwest::Url::parse(url) {
+            let path = u.path();
+            if let Some(base) = path.rsplit('/').next() {
+                if let Some(dot_idx) = base.rfind('.') {
+                    let stem = &base[..dot_idx];
+                    // 使用 urlencoding crate 做 percent-decode（与前端 decodeURIComponent 一致）
+                    let decoded = urlencoding::decode(stem)
+                        .map(|cow| cow.into_owned())
+                        .unwrap_or_else(|_| stem.to_string());
+                    if !decoded.is_empty() {
+                        return format!("{}{}", sanitize_download_filename(&decoded), ext);
+                    }
+                }
+            }
+        }
+    }
+
+    let base = build_filename_base(title, artist, album, style);
+    format!("{}{}", sanitize_download_filename(&base), ext)
+}
+
+/// [项3 下载命名统一] 构建下载文件名并解析非冲突完整路径（单次 IPC）
+///
+/// 将前端原先的 buildDownloadFileName + joinPath + resolveNonConflictingPath 三步
+/// 合并为一次 Rust 调用，确保文件名清洗规则在 Rust 侧统一实现。
+///
+/// 参数：
+/// - `directory`: 下载目录
+/// - `title`, `artist`, `album`: 歌曲元信息
+/// - `url`: 音源直链（用于推断扩展名和原始文件名）
+/// - `quality`: 命中的音质档位（如 "320k", "flac" 等，用于扩展名兜底）
+/// - `keep_source_filename`: 是否保留 URL 原始文件名
+/// - `file_name_style`: 命名样式 ("artist-title" | "title-artist" | "title-artist-album")
+/// - `overwrite_existing`: 是否覆盖已存在文件
+#[tauri::command]
+pub fn resolve_download_full_path(
+    directory: String,
+    title: String,
+    artist: String,
+    album: String,
+    url: String,
+    quality: String,
+    keep_source_filename: bool,
+    file_name_style: String,
+    overwrite_existing: bool,
+) -> Result<String, String> {
+    let file_name = build_download_filename(
+        &title,
+        &artist,
+        &album,
+        &url,
+        &quality,
+        keep_source_filename,
+        &file_name_style,
+    );
+    // 复用已有的 resolve_download_path 逻辑
+    resolve_download_path(directory, file_name, overwrite_existing)
+}
+
+/// [项3 下载命名统一] 构建下载附件（歌词/封面）的清洗后文件名基名（不含扩展名）
+///
+/// 供 downloadSongExtras 使用：歌词/封面文件命名需与音频文件名保持一致的前缀，
+/// 但不需要扩展名（由调用方追加 .lrc / .jpg 等）。
+#[tauri::command]
+pub fn build_download_basename(
+    title: String,
+    artist: String,
+    album: String,
+    file_name_style: String,
+) -> String {
+    let base = build_filename_base(&title, &artist, &album, &file_name_style);
+    sanitize_download_filename(&base)
+}
+
 const APP_IDENTIFIER: &str = "com.xymusic.desktop";
 const GPU_CONFIG_FILE: &str = "gpu_config.json";
 const DOWNLOAD_HISTORY_FILE: &str = "download_history.json";

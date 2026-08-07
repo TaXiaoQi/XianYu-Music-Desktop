@@ -5,10 +5,11 @@
  * 计算目标文件路径（扩展名以真实音源为准、命名冲突处理）、
  * 调用 Rust 命令流式下载，并可选下载歌词。
  */
-import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
+import { downloadApi } from './tauri/downloadApi';
+import type { EmbedMetadataRequestContract } from './tauri/contracts';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
 import { usePlaybackStore } from '../features/playback';
 import { getCachedLxSong } from './lxSongCache';
@@ -57,8 +58,8 @@ function isPluginSong(song: { cue_source_path?: string; path?: string }): boolea
   return path.startsWith('plugin://');
 }
 
-/** 清洗文件名中的非法字符（Windows 与跨平台通用） */
-export function sanitizeFileName(name: string): string {
+/** 清洗文件名中的非法字符（Windows 与跨平台通用）——前端回退实现，权威实现在 Rust */
+function sanitizeFileName(name: string): string {
   return name
     // eslint-disable-next-line no-control-regex -- 控制字符在文件名中非法，需主动剔除
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
@@ -88,11 +89,8 @@ function extFromQuality(quality: LxQuality): string {
   return QUALITY_META[quality]?.isLossless ? '.flac' : '.mp3';
 }
 
-/**
- * 按样式拼接文件名主体（不含扩展名）。
- * 缺失的字段（如无专辑信息）会被跳过，避免出现 "歌名 -  - " 这种空段。
- */
-export function buildFileNameBase(song: Song, style: DownloadFileNameStyle): string {
+/** 按样式拼接文件名主体（不含扩展名）——前端回退实现，权威实现在 Rust */
+function buildFileNameBase(song: Song, style: DownloadFileNameStyle): string {
   const title = song.title || song.name || '未知歌曲';
   const artist = song.artist || '';
   const album = song.album || '';
@@ -115,11 +113,8 @@ export function buildFileNameBase(song: Song, style: DownloadFileNameStyle): str
   return joined || title;
 }
 
-/**
- * 构造下载文件名（不含目录）。
- * keepSourceFilename 为真时使用 URL 原始文件名，否则按 style 拼接歌名/歌手/专辑。
- */
-export function buildDownloadFileName(
+/** 构造下载文件名（不含目录）——前端回退实现，权威实现在 Rust */
+function buildDownloadFileName(
   song: Song,
   url: string,
   hitQuality: LxQuality,
@@ -417,10 +412,7 @@ export async function probeAvailableQualities(song: Song): Promise<ProbedQuality
 
       if (!sizeText) {
         try {
-          const info = await invoke<{ url: string; size: number; error?: string }>(
-            'probe_url_size',
-            { url },
-          );
+          const info = await downloadApi.probeUrlSize(url);
           if (info?.size > 0) sizeText = formatBytes(Number(info.size));
         } catch (e) {
           console.warn(`[Download] 探测 ${q} 大小失败:`, e);
@@ -482,10 +474,7 @@ async function probePluginAvailableQualities(song: Song): Promise<ProbedQuality[
 
     if (!sizeText) {
       try {
-        const info = await invoke<{ url: string; size: number; error?: string }>(
-          'probe_url_size',
-          { url },
-        );
+        const info = await downloadApi.probeUrlSize(url);
         if (info?.size > 0) sizeText = formatBytes(Number(info.size));
       } catch (e) {
         console.warn(`[Download][plugin] 探测 ${q} 大小失败:`, e);
@@ -653,6 +642,60 @@ function joinPath(dir: string, fileName: string): string {
   return `${trimmed}${sep}${fileName}`;
 }
 
+/**
+ * [项3 下载命名统一] 构建下载文件名并解析非冲突完整路径（单次 IPC）
+ *
+ * 将文件名计算（清洗 + 扩展名推断 + 命名样式拼接）与路径冲突检测合并到 Rust 侧，
+ * 确保命名规则在 Rust 统一实现，前端只传原始参数。
+ * IPC 失败时回退到前端本地计算（保持向后兼容）。
+ */
+async function resolveDownloadFullPath(
+  song: Song,
+  url: string,
+  quality: LxQuality,
+  options: Pick<DownloadSongOptions, 'downloadDir' | 'keepSourceFilename' | 'fileNameStyle' | 'overwriteExisting'>,
+): Promise<string> {
+  try {
+    const result = await downloadApi.resolveDownloadFullPath(
+      options.downloadDir,
+      song.title || song.name || '',
+      song.artist || '',
+      song.album || '',
+      url,
+      quality,
+      options.keepSourceFilename,
+      options.fileNameStyle ?? 'artist-title',
+      options.overwriteExisting,
+    );
+    if (result) return result;
+  } catch {
+    // IPC 失败，回退到本地计算
+  }
+  const fileName = buildDownloadFileName(song, url, quality, options.keepSourceFilename, options.fileNameStyle ?? 'artist-title');
+  const fullPath = joinPath(options.downloadDir, fileName);
+  return resolveNonConflictingPath(fullPath, options.overwriteExisting);
+}
+
+/**
+ * [项3 下载命名统一] 构建下载附件（歌词/封面）的清洗后基名（单次 IPC）
+ *
+ * IPC 失败时回退到前端本地计算。
+ */
+async function resolveDownloadBasename(song: Song, style: DownloadFileNameStyle): Promise<string> {
+  try {
+    const result = await downloadApi.buildDownloadBasename(
+      song.title || song.name || '',
+      song.artist || '',
+      song.album || '',
+      style,
+    );
+    if (result) return result;
+  } catch {
+    // IPC 失败，回退到本地计算
+  }
+  return sanitizeFileName(buildFileNameBase(song, style));
+}
+
 /** 在目标路径已存在时追加 (1)/(2)… 直到不冲突 */
 async function resolveNonConflictingPath(fullPath: string, overwriteExisting: boolean = false): Promise<string> {
   // [项4 下载编排] 单次 IPC 调用 Rust 后端完成路径冲突检测与解析，
@@ -664,11 +707,7 @@ async function resolveNonConflictingPath(fullPath: string, overwriteExisting: bo
     const fileName = fullPath.includes('\\')
       ? fullPath.slice(fullPath.lastIndexOf('\\') + 1)
       : fullPath.slice(fullPath.lastIndexOf('/') + 1);
-    return await invoke<string>('resolve_download_path', {
-      directory: dir,
-      fileName,
-      overwriteExisting,
-    });
+    return await downloadApi.resolveDownloadPath(dir, fileName, overwriteExisting);
   } catch {
     // 后端调用失败时回退到原始路径
     return fullPath;
@@ -729,7 +768,7 @@ async function downloadFromUrl(
   }
 
   try {
-    const filePath = await invoke<string>('download_online_song', { url, destPath });
+    const filePath = await downloadApi.downloadOnlineSong(url, destPath);
     onProgress?.(100);
     return filePath;
   } finally {
@@ -818,19 +857,11 @@ export async function downloadSong(
       && currentSongPath === song.path
     ) {
       try {
-        const cached = await invoke<boolean>('is_stream_cached', { url: playingUrl });
+        const cached = await downloadApi.isStreamCached(playingUrl);
         if (cached) {
-          const fileName = buildDownloadFileName(
-            song,
-            playingUrl,
-            q,
-            options.keepSourceFilename,
-            options.fileNameStyle ?? 'artist-title',
-          );
-          let destPath = joinPath(options.downloadDir, fileName);
-          destPath = await resolveNonConflictingPath(destPath, options.overwriteExisting);
+          const destPath = await resolveDownloadFullPath(song, playingUrl, q, options);
           try {
-            await invoke<number>('copy_stream_cache', { url: playingUrl, destPath });
+            await downloadApi.copyStreamCache(playingUrl, destPath);
             options.onProgress?.(100);
             filePath = destPath;
             hitQuality = q;
@@ -861,15 +892,7 @@ export async function downloadSong(
       continue;
     }
 
-    const fileName = buildDownloadFileName(
-      song,
-      url,
-      q,
-      options.keepSourceFilename,
-      options.fileNameStyle ?? 'artist-title',
-    );
-    let destPath = joinPath(options.downloadDir, fileName);
-    destPath = await resolveNonConflictingPath(destPath, options.overwriteExisting);
+    const destPath = await resolveDownloadFullPath(song, url, q, options);
 
     try {
       filePath = await downloadFromUrl(url, destPath, options.onProgress);
@@ -925,7 +948,7 @@ export async function downloadSong(
 
   // 4. 构造元数据嵌入请求
   const needMetadata = options.embedMetadata || options.embedLyrics || options.embedCover;
-  const metadataRequest = needMetadata ? {
+  const metadataRequest: EmbedMetadataRequestContract | null = needMetadata ? {
     filePath,
     title: options.embedMetadata ? (song.title || song.name || undefined) : undefined,
     artist: options.embedMetadata ? (song.artist || undefined) : undefined,
@@ -936,8 +959,8 @@ export async function downloadSong(
     discNumber: options.embedMetadata ? (song.disc_number?.toString() || undefined) : undefined,
     lyrics: options.embedLyrics ? (savedLyricText || undefined) : undefined,
     // 封面数据由 Rust 在 finalize_download_extras 中根据 embed_cover 标志自动填充
-    coverData: undefined as Uint8Array | undefined,
-    coverMime: undefined as string | undefined,
+    coverData: undefined,
+    coverMime: undefined,
   } : null;
 
   // 5. 单次 IPC 调用完成所有收尾工作
@@ -947,22 +970,14 @@ export async function downloadSong(
 
   if (lyricsPath || coverUrl || metadataRequest) {
     try {
-      const result = await invoke<{
-        lyrics_saved: boolean;
-        cover_saved: boolean;
-        metadata_embedded: boolean;
-        cover_data: number[] | null;
-        cover_mime: string;
-      }>('finalize_download_extras', {
-        request: {
-          lyricsText: lyricsPath ? savedLyricText : null,
-          lyricsPath,
-          // 只要需要封面（独立保存或嵌入元数据）就传 URL，Rust 会下载并按需使用
-          coverUrl,
-          coverPath,
-          metadata: metadataRequest,
-          embedCover: options.embedCover,
-        },
+      const result = await downloadApi.finalizeDownloadExtras({
+        lyricsText: lyricsPath ? savedLyricText : null,
+        lyricsPath,
+        // 只要需要封面（独立保存或嵌入元数据）就传 URL，Rust 会下载并按需使用
+        coverUrl,
+        coverPath,
+        metadata: metadataRequest,
+        embedCover: options.embedCover,
       });
       lyricsSaved = result.lyrics_saved;
       coverSaved = result.cover_saved;
@@ -1007,7 +1022,7 @@ export async function downloadSongExtras(
     throw new Error('未设置下载目录');
   }
 
-  const base = sanitizeFileName(buildFileNameBase(song, options.fileNameStyle));
+  const base = await resolveDownloadBasename(song, options.fileNameStyle);
 
   // 前端解析歌词文本和封面 URL（依赖 JS 插件引擎）
   let lyricsText: string | null = null;
@@ -1032,19 +1047,13 @@ export async function downloadSongExtras(
   }
 
   try {
-    const result = await invoke<{
-      lyrics_saved: boolean;
-      cover_saved: boolean;
-      metadata_embedded: boolean;
-    }>('finalize_download_extras', {
-      request: {
-        lyricsText: lyricsPath ? lyricsText : null,
-        lyricsPath,
-        coverUrl,
-        coverPath,
-        metadata: null,
-        embedCover: false,
-      },
+    const result = await downloadApi.finalizeDownloadExtras({
+      lyricsText: lyricsPath ? lyricsText : null,
+      lyricsPath,
+      coverUrl,
+      coverPath,
+      metadata: null,
+      embedCover: false,
     });
     return { lyricsSaved: result.lyrics_saved, coverSaved: result.cover_saved };
   } catch (e: any) {

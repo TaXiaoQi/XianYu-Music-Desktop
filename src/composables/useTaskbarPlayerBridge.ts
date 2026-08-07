@@ -577,7 +577,6 @@ export function useTaskbarPlayerBridge() {
         if (!isTaskbarPlayerVisible.value) return;
         void emitStateToTaskbarPlayer();
       },
-      { deep: true }
     );
   });
 

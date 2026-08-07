@@ -20,7 +20,6 @@
 import CryptoJs from 'crypto-js';
 import {Buffer} from 'buffer';
 import type {PluginSource} from '../types';
-import {invoke} from '@tauri-apps/api/core';
 import {pluginApi} from './tauri/pluginApi';
 import {fetchWithTimeout} from './pluginFetch';
 
@@ -51,8 +50,6 @@ function log(msg: string) {
   // [DEBUG]: 记录到全局数组，供应用内调试面板显示
   debugLogs.push({ time, msg: `[LxPluginEngine] ${msg}` });
   if (debugLogs.length > 500) debugLogs.shift(); // 限制最多 500 条
-  // [DEBUG]: 把日志发送到 Rust 后端，输出到终端（仅开发模式有效）
-  try { if (typeof (window as any).__TAURI_INTERNALS__ !== 'undefined') invoke('debug_log', { message: `[LxPluginEngine] ${msg}` }).catch(() => {}); } catch { /* ignore */ }
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 

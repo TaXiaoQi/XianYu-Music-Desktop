@@ -1,5 +1,6 @@
 import type { Song } from '../../types';
 import { playerStorage } from '../../services/storage/playerStorage';
+import type { PlaybackSessionData } from '../../services/tauri/sessionApi';
 import { useLibraryStore } from '../library/store';
 import { usePlaybackStore } from './store';
 import { useCoverCache } from '../../composables/useCoverCache';
@@ -36,7 +37,14 @@ export const createPlayerRestore = ({
   const playbackStore = usePlaybackStore();
   const { loadCover, retainFullCoverPaths, primeCoverPath } = useCoverCache();
 
-  const restorePathBackedState = async () => {
+  /**
+   * 恢复播放状态
+   *
+   * 优先从 Rust 会话恢复（单一事实源），无数据时回退到 localStorage。
+   *
+   * @param rustSession 从 Rust 加载的播放会话数据（可选）
+   */
+  const restorePathBackedState = async (rustSession?: PlaybackSessionData | null) => {
     await playbackStore.startupPathsPromise;
 
     if (
@@ -47,39 +55,83 @@ export const createPlayerRestore = ({
       return;
     }
 
-    const legacySongList = readStoredSongArray(keys.legacyPlayerPlaylist);
-    const legacyQueue = readStoredSongArray(keys.legacyPlayerQueue);
-    const legacyLastSong = readStoredSong(keys.legacyPlayerLastSong);
-    const fallbackSongs = [
-      ...legacySongList,
-      ...legacyQueue,
-      ...(legacyLastSong ? [legacyLastSong] : []),
-    ];
+    // 优先使用 Rust 会话数据（单一事实源）
+    const hasRustData = rustSession
+      && (rustSession.playQueuePaths.length > 0
+          || rustSession.currentSongPath
+          || rustSession.sourceSongPaths.length > 0);
 
-    if (libraryStore.canonicalSongs.length === 0) {
-      await loadLibrarySongsFromCache();
-      if (
-        playbackStore.hasExternalStartupFile
-        || playbackStore.playQueue.length > 0
-        || playbackStore.currentSong !== null
-      ) {
-        return;
+    if (hasRustData && rustSession) {
+      const storedSongListPaths = rustSession.sourceSongPaths;
+      const storedQueuePaths = rustSession.playQueuePaths;
+      const storedLastSongPath = rustSession.currentSongPath;
+
+      if (libraryStore.canonicalSongs.length === 0) {
+        await loadLibrarySongsFromCache();
       }
-    }
 
-    const storedSongListPaths = readStoredStringArray(keys.playerPlaylistPaths)
-      ?? legacySongList.map(song => song.path);
-    const storedQueuePaths = readStoredStringArray(keys.playerQueuePaths)
-      ?? legacyQueue.map(song => song.path);
-    const storedLastSongPath = playerStorage.getString(keys.playerLastSongPath)
-      ?? legacyLastSong?.path
-      ?? null;
+      // queueSongMeta 中的在线歌曲已由 lifecycle 注入 libraryStore，
+      // resolveSongsFromPaths 可直接查到
+      libraryStore.setSourceSongs(resolveSongsFromPaths(storedSongListPaths));
+      playbackStore.playQueue = resolveSongsFromPaths(storedQueuePaths);
 
-    libraryStore.setSourceSongs(resolveSongsFromPaths(storedSongListPaths, fallbackSongs));
-    playbackStore.playQueue = resolveSongsFromPaths(storedQueuePaths, fallbackSongs);
+      if (storedLastSongPath) {
+        playbackStore.currentSong = createSongLookup().get(storedLastSongPath) ?? null;
+      }
 
-    if (storedLastSongPath) {
-      playbackStore.currentSong = createSongLookup(fallbackSongs).get(storedLastSongPath) ?? legacyLastSong;
+      // 恢复播放模式和音量
+      if (rustSession.playMode !== undefined) {
+        playbackStore.playMode = rustSession.playMode;
+      }
+      if (rustSession.volume !== undefined) {
+        playbackStore.volume = rustSession.volume;
+      }
+
+      // 恢复播放进度
+      if (rustSession.currentPositionSecs > 0) {
+        playbackStore.currentTime = rustSession.currentPositionSecs;
+      }
+
+      // 恢复会话级音质覆盖
+      if (rustSession.sessionQualityOverride) {
+        playbackStore.setSessionQualityOverride(rustSession.sessionQualityOverride as any);
+      }
+    } else {
+      // 回退到 localStorage 恢复（兼容旧版本或 Rust 无数据的情况）
+      const legacySongList = readStoredSongArray(keys.legacyPlayerPlaylist);
+      const legacyQueue = readStoredSongArray(keys.legacyPlayerQueue);
+      const legacyLastSong = readStoredSong(keys.legacyPlayerLastSong);
+      const fallbackSongs = [
+        ...legacySongList,
+        ...legacyQueue,
+        ...(legacyLastSong ? [legacyLastSong] : []),
+      ];
+
+      if (libraryStore.canonicalSongs.length === 0) {
+        await loadLibrarySongsFromCache();
+        if (
+          playbackStore.hasExternalStartupFile
+          || playbackStore.playQueue.length > 0
+          || playbackStore.currentSong !== null
+        ) {
+          return;
+        }
+      }
+
+      const storedSongListPaths = readStoredStringArray(keys.playerPlaylistPaths)
+        ?? legacySongList.map(song => song.path);
+      const storedQueuePaths = readStoredStringArray(keys.playerQueuePaths)
+        ?? legacyQueue.map(song => song.path);
+      const storedLastSongPath = playerStorage.getString(keys.playerLastSongPath)
+        ?? legacyLastSong?.path
+        ?? null;
+
+      libraryStore.setSourceSongs(resolveSongsFromPaths(storedSongListPaths, fallbackSongs));
+      playbackStore.playQueue = resolveSongsFromPaths(storedQueuePaths, fallbackSongs);
+
+      if (storedLastSongPath) {
+        playbackStore.currentSong = createSongLookup(fallbackSongs).get(storedLastSongPath) ?? legacyLastSong;
+      }
     }
 
     if (playbackStore.currentSong?.path) {
