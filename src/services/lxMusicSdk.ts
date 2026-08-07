@@ -1321,7 +1321,7 @@ export async function lxGetMusicUrl(
     }
     throw new Error('获取播放链接失败: 后端返回空结果');
   } catch (e: any) {
-    throw new Error(`获取播放链接失败: ${e?.message || e}`);
+    throw new Error(`获取播放链接失败: ${e?.message || e}`, { cause: e });
   }
 }
 

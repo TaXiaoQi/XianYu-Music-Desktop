@@ -365,7 +365,11 @@ fn install_window_boundary<R: tauri::Runtime>(app: &tauri::App<R>) {
 
 fn build_tray<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     let _tray = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(
+            app.default_window_icon()
+                .ok_or_else(|| std::io::Error::other("no default window icon"))?
+                .clone(),
+        )
         .tooltip("弦予音乐")
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {

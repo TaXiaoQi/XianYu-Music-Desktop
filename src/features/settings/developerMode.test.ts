@@ -31,18 +31,18 @@ describe('developer mode settings entry', () => {
     expect(debugSource).toContain('退出开发者模式');
     expect(debugSource).toContain('播放初始化动画');
     expect(debugSource).toContain('@click="triggerOnboarding"');
-    expect(debugSource).toContain('showClearConfirmation');
-    expect(debugSource).toContain('确认清空全部日志');
-    expect(debugSource).toContain('const entryCount = computed');
-    expect(debugSource).toContain("{ flush: 'post' }");
-    expect(debugSource).not.toContain('{ deep: true }');
+    expect(advancedSource).toContain('showDeleteConfirmation');
+    expect(advancedSource).toContain('确认删除全部日志');
+    expect(advancedSource).toContain('const entryCount = ref');
+    expect(advancedSource).toContain("{ flush: 'post' }");
+    expect(advancedSource).not.toContain('{ deep: true }');
   });
 
   it('shows advanced settings to regular users and keeps log export there', () => {
     expect(settingsSource).toContain("{ id: 'advanced', name: '高级设置' }");
     expect(settingsSource).toContain("activeTab === 'advanced'");
     expect(advancedSource).toContain('<LogExportActions />');
-    expect(debugSource).toContain('<LogExportActions />');
+    expect(debugSource).not.toContain('<LogExportActions />');
     expect(logExportSource).toContain('导出全部日志');
     expect(logExportSource).toContain('导出错误日志');
     expect(advancedSource).toContain('删除全部日志');

@@ -346,15 +346,15 @@ fn kw_handle_result(raw_data: &serde_json::Value) -> Option<Vec<LxSearchItem>> {
     for info in arr {
         let musicrid = info.get("MUSICRID").and_then(|v| v.as_str()).unwrap_or("");
         let song_id = musicrid.replace("MUSIC_", "");
-        let n_minfo = info.get("N_MINFO").and_then(|v| v.as_str());
-        if n_minfo.is_none() {
-            return None; // 与前端一致：N_MINFO 为空时返回 null 触发重试
-        }
+        let n_minfo = match info.get("N_MINFO").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return None, // 与前端一致：N_MINFO 为空时返回 null 触发重试
+        };
 
         let mut types = Vec::new();
         let mut lx_types = HashMap::new();
 
-        for item_str in n_minfo.unwrap().split(';') {
+        for item_str in n_minfo.split(';') {
             if let Some(caps) = re.captures(item_str) {
                 let bitrate = caps.get(2).map(|m| m.as_str()).unwrap_or("");
                 let size = caps.get(4).map(|m| m.as_str()).unwrap_or("").to_uppercase();

@@ -19,13 +19,14 @@ import type {
   UploadSettings,
 } from '../../types';
 import { ALL_QUALITY_KEYS } from '../../types';
+// 直接从 constants.ts 叶子模块导入，避免经由 index → state → settings/store 形成循环依赖
 import {
   createDefaultDesktopLyricsSettings,
   createDefaultLyricsSettings,
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics';
+} from '../../composables/lyrics/constants';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,

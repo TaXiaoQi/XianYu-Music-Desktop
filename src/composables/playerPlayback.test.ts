@@ -224,7 +224,10 @@ describe('player playback domain', () => {
       periodicFlush?.();
     }
 
+    // playSong now short-circuits when the same song is already playing, so end
+    // the first session before starting the second one to get two real plays.
     dateNow.mockReturnValue(295_000);
+    await playerPlayback.pauseSong();
     await playerPlayback.playSong(song);
 
     for (let index = 1; index <= 6; index += 1) {

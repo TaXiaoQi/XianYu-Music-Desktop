@@ -871,7 +871,7 @@ pub fn get_library_stats(db: State<DbState>) -> Result<LibraryStats, String> {
     let this_month_added: i64 = {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as i64;
         // 简化：30天内入库
         let month_start = now - 30 * 24 * 60 * 60;
@@ -913,7 +913,7 @@ impl TimeRange {
     fn to_timestamp_from(&self) -> Option<i64> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as i64;
 
         match self {
@@ -1719,7 +1719,7 @@ pub fn add_to_history(db: State<DbState>, song_path: String) -> Result<(), Strin
     let normalized_path = normalize_path(&song_path);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs() as i64;
 
     insert_history_event(&conn, &normalized_path, now, 0, "recent")
@@ -2392,7 +2392,7 @@ pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(),
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs() as i64;
 
     let played_seconds = (payload.listened_ms.max(0) / 1000).max(0);
@@ -2643,7 +2643,7 @@ pub fn get_behavior_stats(
         // 算出 7 天前的零点时间戳 (简化处理，按 24h 倒推)
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs() as i64;
         let day_seconds = 24 * 60 * 60;
         let start_time = now - 7 * day_seconds;

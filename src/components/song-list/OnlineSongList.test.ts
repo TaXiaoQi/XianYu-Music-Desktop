@@ -10,7 +10,8 @@ describe('online song list header', () => {
   });
 
   it('shows the search result heading row only for the local source', () => {
-    expect(searchSource).toContain('<thead v-if="isLocalSource"');
+    expect(searchSource).toContain('v-if="isLocalSource"');
+    expect(searchSource).not.toContain('<thead');
     expect(searchSource).not.toContain('<th v-if="isLocalSource"');
     expect(searchSource).not.toContain('<td v-if="isLocalSource"');
   });
