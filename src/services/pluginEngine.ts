@@ -41,6 +41,7 @@ import {
   type SubscriptionInstallResult,
 } from './pluginSubscriptions';
 import {
+  extractAlbum,
   extractArtist,
   extractCoverUrl,
   qualityKeyToPluginString,
@@ -664,6 +665,7 @@ export async function pluginMusicSearchWithDiagnostics(
   keyword: string,
   page: number,
   _limit: number,
+  requireLyricSupport = false,
 ): Promise<PluginMusicSearchDiagnostics> {
   log(`[pluginSearch] 开始: ${source.name}, keyword="${keyword}", page=${page}`);
   const inst = await ensurePluginInstance(source);
@@ -688,8 +690,9 @@ export async function pluginMusicSearchWithDiagnostics(
     };
   }
 
-  if (typeof inst.instance.getLyric !== 'function') {
-    log(`[${source.name}] 无 getLyric 函数`);
+  // 仅在歌词替换场景下要求 getLyric；普通搜索（如 bilibili 插件）不要求歌词支持
+  if (requireLyricSupport && typeof inst.instance.getLyric !== 'function') {
+    log(`[${source.name}] 无 getLyric 函数（歌词替换场景需要）`);
     return {
       results: [],
       status: 'lyrics_unsupported',
@@ -727,7 +730,7 @@ export async function pluginMusicSearchWithDiagnostics(
           ? `插件返回 ${results.length} 首歌曲，可逐项获取歌词`
           : `插件搜索成功，但没有找到与“${keyword}”匹配的歌曲`,
         searchType,
-        supportsLyrics: true,
+        supportsLyrics: typeof inst.instance.getLyric === 'function',
       };
     }
     return {
@@ -772,14 +775,12 @@ export async function pluginPlaylistSearch(
   try {
     if (typeof inst.instance.search !== 'function') return [];
 
-    // 检查插件是否支持歌单搜索
-    const supported = inst.instance.supportedSearchType ?? [];
-    if (!supported.includes('sheet')) return [];
-
+    // 直接尝试搜索；Baka 插件可能未声明 sheet 但实际支持
     const result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
-    if (!Array.isArray(result.data)) return [];
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
 
-    return result.data.map((item: any) => {
+    return list.map((item: any) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.songId || item.musicId || '';
       const title = stripHtmlTags(item.title || item.name || '');
@@ -812,6 +813,19 @@ function extractResultList(result: any): any[] {
   if (Array.isArray(result.data)) return result.data;
   // MusicFree 部分插件格式: { musicList: [...] }
   if (Array.isArray(result.musicList)) return result.musicList;
+  // Baka 插件可能使用 list/albumList/songList 等字段
+  if (Array.isArray(result.list)) return result.list;
+  if (Array.isArray(result.albumList)) return result.albumList;
+  if (Array.isArray(result.songList)) return result.songList;
+  if (Array.isArray(result.songs)) return result.songs;
+  if (Array.isArray(result.tracks)) return result.tracks;
+  // 嵌套格式: { data: { list/songs/... } }
+  if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+    if (Array.isArray(result.data.list)) return result.data.list;
+    if (Array.isArray(result.data.songs)) return result.data.songs;
+    if (Array.isArray(result.data.musicList)) return result.data.musicList;
+    if (Array.isArray(result.data.albumList)) return result.data.albumList;
+  }
   // 直接返回数组
   if (Array.isArray(result)) return result;
   return [];
@@ -826,14 +840,29 @@ export async function pluginGetPlaylistDetail(
   if (!inst) return [];
 
   try {
-    if (typeof inst.instance.getMusicSheetInfo !== 'function') return [];
+    // 优先用 getMusicSheetInfo 获取歌单曲目
+    if (typeof inst.instance.getMusicSheetInfo === 'function') {
+      const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
+      const list = extractResultList(result);
+      if (list.length > 0) {
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
-    const list = extractResultList(result);
-    if (list.length === 0) return [];
+    // 回退：getMusicSheetInfo 不可用或返回空，用歌单名搜索
+    if (page === 1 && typeof inst.instance.search === 'function') {
+      const sheetTitle = stripHtmlTags(sheetItem?.title || sheetItem?.name || '');
+      if (sheetTitle) {
+        log(`[${source.name}] getMusicSheetInfo 不可用或为空，回退到搜索 "${sheetTitle}"`);
+        const result = (await inst.instance.search(sheetTitle, 1, 'music')) ?? {};
+        const list = extractResultList(result);
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    list.forEach((_: any) => { resetMediaItem(_, source.name); });
-    return list.map((item: any) => toPluginSearchResult(item, source));
+    return [];
   } catch (e: any) {
     log(`[${source.name}] 获取歌单详情失败: ${e?.message}`);
     return [];
@@ -851,14 +880,29 @@ export async function pluginGetArtistWorks(
   if (!inst) return [];
 
   try {
-    if (typeof inst.instance.getArtistWorks !== 'function') return [];
+    // 优先用 getArtistWorks 获取歌手作品
+    if (typeof inst.instance.getArtistWorks === 'function') {
+      const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
+      const list = extractResultList(result);
+      if (list.length > 0) {
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
-    const list = extractResultList(result);
-    if (list.length === 0) return [];
+    // 回退：getArtistWorks 不可用或返回空，用歌手名搜索
+    if (page === 1 && typeof inst.instance.search === 'function') {
+      const artistName = stripHtmlTags(artistItem?.name || artistItem?.title || artistItem?.artist || '');
+      if (artistName) {
+        log(`[${source.name}] getArtistWorks 不可用或为空，回退到搜索 "${artistName}"`);
+        const result = (await inst.instance.search(artistName, 1, 'music')) ?? {};
+        const list = extractResultList(result);
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    list.forEach((_: any) => { resetMediaItem(_, source.name); });
-    return list.map((item: any) => toPluginSearchResult(item, source));
+    return [];
   } catch (e: any) {
     log(`[${source.name}] 获取歌手作品失败: ${e?.message}`);
     return [];
@@ -916,14 +960,35 @@ export async function pluginGetAlbumSongs(
   if (!inst) return [];
 
   try {
-    if (typeof inst.instance.getAlbumInfo !== 'function') return [];
+    // 优先用 getAlbumInfo 获取专辑曲目
+    if (typeof inst.instance.getAlbumInfo === 'function') {
+      const result = await inst.instance.getAlbumInfo(albumItem, page);
+      const list = extractResultList(result);
+      if (list.length > 0) {
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    const result = await inst.instance.getAlbumInfo(albumItem, page);
-    const list = extractResultList(result);
-    if (list.length === 0) return [];
+    // 回退：getAlbumInfo 不可用或返回空，用专辑名搜索并按专辑名过滤
+    if (page === 1 && typeof inst.instance.search === 'function') {
+      const albumName = stripHtmlTags(albumItem?.title || albumItem?.name || albumItem?.album || '');
+      if (albumName) {
+        log(`[${source.name}] getAlbumInfo 不可用或为空，回退到搜索 "${albumName}"`);
+        const result = (await inst.instance.search(albumName, 1, 'music')) ?? {};
+        const list = extractResultList(result);
+        const albumNameLower = albumName.toLowerCase();
+        const filtered = list.filter((item: any) => {
+          const itemAlbum = stripHtmlTags(extractAlbum(item)).toLowerCase();
+          return itemAlbum === albumNameLower || itemAlbum.includes(albumNameLower);
+        });
+        const songs = (filtered.length > 0 ? filtered : list);
+        songs.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return songs.map((item: any) => toPluginSearchResult(item, source));
+      }
+    }
 
-    list.forEach((_: any) => { resetMediaItem(_, source.name); });
-    return list.map((item: any) => toPluginSearchResult(item, source));
+    return [];
   } catch (e: any) {
     log(`[${source.name}] 获取专辑详情失败: ${e?.message}`);
     return [];
@@ -1250,14 +1315,12 @@ export async function pluginArtistSearch(
   try {
     if (typeof inst.instance.search !== 'function') return [];
 
-    // 检查插件是否支持歌手搜索
-    const supported = inst.instance.supportedSearchType ?? [];
-    if (!supported.includes('artist')) return [];
-
+    // 直接尝试搜索；Baka 插件可能未声明 artist 但实际支持
     const result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
-    if (!Array.isArray(result.data)) return [];
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
 
-    return result.data.map((item: any) => {
+    return list.map((item: any) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.artistId || item.singerId || '';
       const name = stripHtmlTags(item.name || item.title || item.artist || '');
@@ -1308,14 +1371,12 @@ export async function pluginAlbumSearch(
   try {
     if (typeof inst.instance.search !== 'function') return [];
 
-    // 检查插件是否支持专辑搜索
-    const supported = inst.instance.supportedSearchType ?? [];
-    if (!supported.includes('album')) return [];
-
+    // 直接尝试搜索；Baka 插件可能未声明 album 但实际支持
     const result = (await inst.instance.search(keyword, page, 'album')) ?? {};
-    if (!Array.isArray(result.data)) return [];
+    const list = extractResultList(result);
+    if (list.length === 0) return [];
 
-    return result.data.map((item: any) => {
+    return list.map((item: any) => {
       resetMediaItem(item, source.name);
       const id = item.id || item.albumId || '';
       const name = stripHtmlTags(item.title || item.name || item.album || '');
@@ -1354,11 +1415,11 @@ export function getPluginSupportedSearchTypes(source: PluginSource): string[] {
 
 /**
  * 检查插件是否支持指定搜索类型
+ * 始终返回 true：实际搜索函数内部已做 supportedSearchType 检查，
+ * Baka 插件可能未完整声明但实际支持 album/sheet/artist 搜索。
  */
-export function pluginSupportsSearchType(source: PluginSource, type: 'music' | 'sheet' | 'artist' | 'album'): boolean {
-  const supported = getPluginSupportedSearchTypes(source);
-  if (supported.length === 0) return type === 'music'; // 无声明默认支持音乐搜索
-  return supported.includes(type);
+export function pluginSupportsSearchType(_source: PluginSource, _type: 'music' | 'sheet' | 'artist' | 'album'): boolean {
+  return true;
 }
 
 /**
