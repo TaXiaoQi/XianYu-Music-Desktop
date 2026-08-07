@@ -78,145 +78,178 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
     // 若调用方未提供封面 URL（本地歌曲封面可能尚未异步加载完成），
     // 回退到源元素内 <img> 的 src，确保动画仍能触发
-    const resolvedCoverUrl = coverUrl
+    const resolveCoverUrl = (): string =>
+      coverUrl
       || (sourceEl.querySelector('img') as HTMLImageElement | null)?.src
       || '';
-    if (!resolvedCoverUrl) { resolve(); return; }
 
-    const fromRect = sourceEl.getBoundingClientRect();
-    const toRect = targetEl.getBoundingClientRect();
-    if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) {
-      resolve();
+    const resolvedCoverUrl = resolveCoverUrl();
+
+    // 封面可能尚未加载完成（如播放队列为空时首次播放，封面异步提取中）。
+    // 短暂轮询源元素内 <img> 的出现，最多等待 300ms，避免动画因封面未就绪而跳过。
+    if (!resolvedCoverUrl) {
+      let elapsed = 0;
+      const POLL_MS = 50;
+      const MAX_WAIT_MS = 300;
+      const pollCover = setInterval(() => {
+        if (flyId !== currentFlyId) {
+          clearInterval(pollCover);
+          resolve();
+          return;
+        }
+        elapsed += POLL_MS;
+        const url = resolveCoverUrl();
+        if (url) {
+          clearInterval(pollCover);
+          beginFlight(url);
+        } else if (elapsed >= MAX_WAIT_MS) {
+          clearInterval(pollCover);
+          resolve();
+        }
+      }, POLL_MS);
       return;
     }
 
-    const img = document.createElement('img');
-    img.src = resolvedCoverUrl;
-    img.alt = '';
-    img.decoding = 'async';
-    img.setAttribute('aria-hidden', 'true');
-    img.style.cssText =
-      `position:fixed;left:0;top:0;width:${fromRect.width}px;height:${fromRect.height}px;` +
-      `border-radius:8px;object-fit:cover;pointer-events:none;will-change:transform,opacity;` +
-      `box-shadow:0 6px 20px rgba(0,0,0,0.25);z-index:9999;` +
-      `transform:translate(${fromRect.left}px, ${fromRect.top}px);opacity:1;`;
-    document.body.appendChild(img);
+    beginFlight(resolvedCoverUrl);
 
-    const remove = () => {
-      if (flyId === currentFlyId) img.remove();
-    };
+    function beginFlight(url: string) {
+      if (flyId !== currentFlyId) { resolve(); return; }
 
-    const startFlight = () => {
-      if (flyId !== currentFlyId) {
-        img.remove();
+      const fromRect = sourceEl!.getBoundingClientRect();
+      const toRect = targetEl!.getBoundingClientRect();
+      if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) {
         resolve();
         return;
       }
 
-      const dx = toRect.left - fromRect.left;
-      const dy = toRect.top - fromRect.top;
-      const sx = toRect.width / fromRect.width;
-      const sy = toRect.height / fromRect.height;
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.decoding = 'async';
+      img.setAttribute('aria-hidden', 'true');
+      img.style.cssText =
+        `position:fixed;left:0;top:0;width:${fromRect.width}px;height:${fromRect.height}px;` +
+        `border-radius:8px;object-fit:cover;pointer-events:none;will-change:transform,opacity;` +
+        `box-shadow:0 6px 20px rgba(0,0,0,0.25);z-index:9999;` +
+        `transform:translate(${fromRect.left}px, ${fromRect.top}px);opacity:1;`;
+      document.body.appendChild(img);
 
-      // 中段略微抬升 + 放大，营造「飞」的弧线感
-      const midX = dx * 0.5;
-      const midY = dy * 0.5 - Math.min(60, Math.abs(dy) * 0.25 + 24);
-      const midScale = 1.12;
-
-      const flight = img.animate(
-        [
-          {
-            transform: `translate(${fromRect.left}px, ${fromRect.top}px) scale(1, 1)`,
-            opacity: 1,
-            offset: 0,
-          },
-          {
-            transform: `translate(${fromRect.left + midX}px, ${fromRect.top + midY}px) scale(${midScale}, ${midScale})`,
-            opacity: 1,
-            offset: 0.5,
-          },
-          {
-            transform: `translate(${toRect.left}px, ${toRect.top}px) scale(${sx}, ${sy})`,
-            opacity: 0.92,
-            offset: 1,
-          },
-        ],
-        { duration: FLY_DURATION, easing: FLY_EASING, fill: 'forwards' },
-      );
-
-      // 飞行动画结束：resolve Promise（调用方通常不 await），然后进入悬停阶段
-      flight.onfinish = () => {
-        resolve();
-        parkAtTarget();
-      };
-      flight.oncancel = () => {
-        remove();
-        resolve();
-      };
-    };
-
-    /** 飞抵底栏后悬停，等底栏 currentCover 更新为新封面后再淡出 */
-    const parkAtTarget = () => {
-      if (flyId !== currentFlyId) {
-        img.remove();
-        return;
-      }
-
-      const store = usePlaybackStore();
-      const startCover = store.currentCover;
-      let resolved = false;
-
-      const finish = () => {
-        if (resolved) return;
-        resolved = true;
-        clearInterval(poll);
-        clearTimeout(timer);
-        const fade = img.animate(
-          [{ opacity: 0.92, offset: 0 }, { opacity: 0, offset: 1 }],
-          { duration: FADE_DURATION, fill: 'forwards' },
-        );
-        fade.onfinish = remove;
-        fade.oncancel = remove;
+      const remove = () => {
+        if (flyId === currentFlyId) img.remove();
       };
 
-      // 轮询底栏封面：一旦更新（且非初始值）即淡出
-      const poll = setInterval(() => {
+      const startFlight = () => {
         if (flyId !== currentFlyId) {
-          clearInterval(poll);
-          clearTimeout(timer);
-          remove();
+          img.remove();
+          resolve();
           return;
         }
-        const cur = store.currentCover;
-        if (cur && cur !== startCover) finish();
-      }, 40);
 
-      // 超时兜底：避免异常情况下永久悬停
-      const timer = setTimeout(finish, PARK_TIMEOUT);
+        const dx = toRect.left - fromRect.left;
+        const dy = toRect.top - fromRect.top;
+        const sx = toRect.width / fromRect.width;
+        const sy = toRect.height / fromRect.height;
 
-      // 本地歌曲通常 currentCover 已同步更新：稍等即淡出
-      if (store.currentCover && store.currentCover === resolvedCoverUrl) {
-        setTimeout(finish, 80);
-      }
-    };
+        // 中段略微抬升 + 放大，营造「飞」的弧线感
+        const midX = dx * 0.5;
+        const midY = dy * 0.5 - Math.min(60, Math.abs(dy) * 0.25 + 24);
+        const midScale = 1.12;
 
-    if (img.complete && img.naturalWidth > 0) {
-      startFlight();
-    } else {
-      img.onload = startFlight;
-      img.onerror = () => {
-        remove();
-        resolve();
-      };
-      // 加载稍慢也强制起跳，避免空图久等
-      setTimeout(() => {
-        if (flyId === currentFlyId && img.isConnected) {
-          startFlight();
-        } else if (flyId === currentFlyId) {
-          // 图片已断开（可能被取消），确保 resolve
+        const flight = img.animate(
+          [
+            {
+              transform: `translate(${fromRect.left}px, ${fromRect.top}px) scale(1, 1)`,
+              opacity: 1,
+              offset: 0,
+            },
+            {
+              transform: `translate(${fromRect.left + midX}px, ${fromRect.top + midY}px) scale(${midScale}, ${midScale})`,
+              opacity: 1,
+              offset: 0.5,
+            },
+            {
+              transform: `translate(${toRect.left}px, ${toRect.top}px) scale(${sx}, ${sy})`,
+              opacity: 0.92,
+              offset: 1,
+            },
+          ],
+          { duration: FLY_DURATION, easing: FLY_EASING, fill: 'forwards' },
+        );
+
+        // 飞行动画结束：resolve Promise（调用方通常不 await），然后进入悬停阶段
+        flight.onfinish = () => {
           resolve();
+          parkAtTarget();
+        };
+        flight.oncancel = () => {
+          remove();
+          resolve();
+        };
+      };
+
+      /** 飞抵底栏后悬停，等底栏 currentCover 更新为新封面后再淡出 */
+      const parkAtTarget = () => {
+        if (flyId !== currentFlyId) {
+          img.remove();
+          return;
         }
-      }, 60);
+
+        const store = usePlaybackStore();
+        const startCover = store.currentCover;
+        let resolved = false;
+
+        const finish = () => {
+          if (resolved) return;
+          resolved = true;
+          clearInterval(poll);
+          clearTimeout(timer);
+          const fade = img.animate(
+            [{ opacity: 0.92, offset: 0 }, { opacity: 0, offset: 1 }],
+            { duration: FADE_DURATION, fill: 'forwards' },
+          );
+          fade.onfinish = remove;
+          fade.oncancel = remove;
+        };
+
+        // 轮询底栏封面：一旦更新（且非初始值）即淡出
+        const poll = setInterval(() => {
+          if (flyId !== currentFlyId) {
+            clearInterval(poll);
+            clearTimeout(timer);
+            remove();
+            return;
+          }
+          const cur = store.currentCover;
+          if (cur && cur !== startCover) finish();
+        }, 40);
+
+        // 超时兜底：避免异常情况下永久悬停
+        const timer = setTimeout(finish, PARK_TIMEOUT);
+
+        // 本地歌曲通常 currentCover 已同步更新：稍等即淡出
+        if (store.currentCover && store.currentCover === url) {
+          setTimeout(finish, 80);
+        }
+      };
+
+      if (img.complete && img.naturalWidth > 0) {
+        startFlight();
+      } else {
+        img.onload = startFlight;
+        img.onerror = () => {
+          remove();
+          resolve();
+        };
+        // 加载稍慢也强制起跳，避免空图久等
+        setTimeout(() => {
+          if (flyId === currentFlyId && img.isConnected) {
+            startFlight();
+          } else if (flyId === currentFlyId) {
+            // 图片已断开（可能被取消），确保 resolve
+            resolve();
+          }
+        }, 60);
+      }
     }
   });
 
