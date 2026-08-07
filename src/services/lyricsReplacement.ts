@@ -89,7 +89,7 @@ const createMusicFreeGroup = async (
   plugin: PluginSource,
   query: string,
 ): Promise<LyricsPluginGroup> => {
-  const diagnostics = await pluginMusicSearchWithDiagnostics(plugin, query, 1, 30);
+  const diagnostics = await pluginMusicSearchWithDiagnostics(plugin, query, 1, 30, true);
   const status: LyricsSearchSourceStatus = diagnostics.status === 'success'
     ? 'success'
     : diagnostics.status === 'empty'

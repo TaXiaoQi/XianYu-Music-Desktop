@@ -790,7 +790,7 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
 
   for (const raw of rawItems.flat(2)) {
     if (!raw || typeof raw !== 'object') continue;
-    const idValue = firstValue(raw, ['id', 'ID', 'playlistId', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']);
+    const idValue = firstValue(raw, ['id', 'ID', 'playlistId', 'playlistid', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']);
     const titleValue = firstValue(raw, ['title', 'name', 'playlistName', 'specialname', 'dissname', 'songListName', 'songlistName', 'NAME']);
     if (idValue === undefined || !titleValue) continue;
     const id = String(idValue);
@@ -818,6 +818,18 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
 
 async function searchLxPlaylists(source: LxSourceId, keyword: string, page: number, limit: number): Promise<LxPlaylistSearchResult[]> {
   if (source === 'kw') {
+    // 优先用新 API，回退到旧 API
+    try {
+      const data = await httpGetJson(`http://www.kuwo.cn/api/www/search/searchPlayListBykeyWord?key=${encodeURIComponent(keyword)}&pn=${page}&rn=${limit}`, {
+        csrf: 'ABCDEF',
+        Cookie: 'kw_token=ABCDEF',
+        Referer: 'http://www.kuwo.cn/',
+      });
+      const list = data?.data?.list || data?.data || [];
+      if (Array.isArray(list) && list.length > 0) {
+        return normalizeLxPlaylistResults(source, list);
+      }
+    } catch { /* 回退到旧 API */ }
     const data = await httpGetJson(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(keyword)}&pn=${page - 1}&rn=${limit}&ft=playlist&encoding=utf8&rformat=json`);
     return normalizeLxPlaylistResults(source, data?.abslist || data?.data || []);
   }
@@ -866,7 +878,7 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
       { 'User-Agent': 'QQMusic 14090508(android 12)', 'Content-Type': 'application/json' },
     );
     const body = data?.req?.data?.body;
-    return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || []);
+    return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || body?.songlist || []);
   }
 
   const time = Date.now().toString();
@@ -1144,7 +1156,7 @@ export async function lxGetPlaylistTracks(
   limit = 30,
 ): Promise<LxSearchResultItem[]> {
   const playlistId = String(
-    firstValue(playlistRawData, ['id', 'ID', 'playlistId', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']) ?? ''
+    firstValue(playlistRawData, ['id', 'ID', 'playlistId', 'playlistid', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']) ?? ''
   );
 
   if (!playlistId) {

@@ -79,7 +79,15 @@ export function useExternalPathBridge({
       isExternalDragActive.value = false;
       // 弹窗拦截拖放时，跳过全局处理
       if (modalDragInterceptActive.value) return;
-      await enqueueExternalPaths(event.payload?.paths ?? [], 'drop');
+      const paths = event.payload?.paths ?? [];
+      // 跳过纯插件文件（.js/.json），避免音乐库处理报错
+      if (paths.length > 0 && paths.every(p => {
+        const lower = p.toLowerCase();
+        return lower.endsWith('.js') || lower.endsWith('.json');
+      })) {
+        return;
+      }
+      await enqueueExternalPaths(paths, 'drop');
     });
 
     unlistenDragOver = await listen('tauri://drag-over', () => {
