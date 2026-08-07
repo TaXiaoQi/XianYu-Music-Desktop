@@ -66,17 +66,30 @@ impl ShaperRack {
     }
 
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
-        self.wet_distortion.set_target(if s.distortion.enabled { 1.0 } else { 0.0 });
-        self.wet_exciter.set_target(if s.exciter.enabled { 1.0 } else { 0.0 });
-        self.wet_subbass.set_target(if s.sub_bass.enabled { 1.0 } else { 0.0 });
-        self.wet_bitcrush.set_target(if s.bitcrush.enabled { 1.0 } else { 0.0 });
-        self.wet_lofi.set_target(if s.lo_fi.enabled { 1.0 } else { 0.0 });
+        self.wet_distortion
+            .set_target(if s.distortion.enabled { 1.0 } else { 0.0 });
+        self.wet_exciter
+            .set_target(if s.exciter.enabled { 1.0 } else { 0.0 });
+        self.wet_subbass
+            .set_target(if s.sub_bass.enabled { 1.0 } else { 0.0 });
+        self.wet_bitcrush
+            .set_target(if s.bitcrush.enabled { 1.0 } else { 0.0 });
+        self.wet_lofi
+            .set_target(if s.lo_fi.enabled { 1.0 } else { 0.0 });
 
         for f in &mut self.exc_hp {
-            f.set_highpass(s.exciter.frequency.clamp(1000.0, 8000.0), self.sample_rate, 0.707);
+            f.set_highpass(
+                s.exciter.frequency.clamp(1000.0, 8000.0),
+                self.sample_rate,
+                0.707,
+            );
         }
         for f in &mut self.sub_lp {
-            f.set_lowpass(s.sub_bass.frequency.clamp(50.0, 250.0), self.sample_rate, 0.707);
+            f.set_lowpass(
+                s.sub_bass.frequency.clamp(50.0, 250.0),
+                self.sample_rate,
+                0.707,
+            );
         }
         let target_sr = s.lo_fi.sample_rate.clamp(2000.0, self.sample_rate);
         self.lofi_ratio = self.sample_rate / target_sr;

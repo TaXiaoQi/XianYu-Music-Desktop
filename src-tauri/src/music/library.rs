@@ -218,71 +218,135 @@ fn folder_song_matches_query(row: &FolderViewSongRow, query: &str) -> bool {
             .any(|name| name.to_lowercase().contains(&lowered_query))
 }
 
+/// 从 rusqlite::Row 解析 LibrarySong（共享行解析逻辑）
+fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
+    let path: String = row.get(1)?;
+    let duration = clamp_i64_to_u32(row.get::<_, Option<i64>>(11)?.unwrap_or(0));
+    let cover_thumb_path = row.get::<_, Option<String>>(12)?;
+    let bitrate = clamp_i64_to_u32(row.get::<_, Option<i64>>(13)?.unwrap_or(0));
+    let sample_rate = clamp_i64_to_u32(row.get::<_, Option<i64>>(14)?.unwrap_or(0));
+    let bit_depth = i64_to_u8_opt(row.get::<_, Option<i64>>(15)?);
+    let track_number = row.get::<_, Option<String>>(20)?;
+    let disc_number = row.get::<_, Option<String>>(21)?;
+    let added_at_i64 = row.get::<_, Option<i64>>(22)?;
+    let file_modified_at_i64 = row.get::<_, Option<i64>>(23)?;
+    let artist_names = deserialize_string_list(row.get::<_, Option<String>>(4)?);
+    let effective_artist_names = deserialize_string_list(row.get::<_, Option<String>>(5)?);
+
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+
+    Ok(LibrarySong {
+        id: row.get(0)?,
+        name,
+        path,
+        title: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        artist: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        artist_names,
+        effective_artist_names,
+        album: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        album_artist: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+        album_key: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+        is_various_artists_album: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
+        collapse_artist_credits: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
+        duration,
+        cover_thumb_path,
+        bitrate,
+        sample_rate,
+        bit_depth,
+        format: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
+        track_number,
+        disc_number,
+        added_at: i64_to_u64_opt(added_at_i64),
+        file_modified_at: i64_to_u64_opt(file_modified_at_i64),
+        cue_source_path: row.get::<_, Option<String>>(24)?,
+        cue_start_offset: row.get::<_, Option<i64>>(25)?.map(|v| v as u32),
+        cue_end_offset: row.get::<_, Option<i64>>(26)?.map(|v| v as u32),
+        source_type: row
+            .get::<_, Option<String>>(27)?
+            .unwrap_or_else(|| "local".to_string()),
+        remote_source_id: row.get::<_, Option<String>>(28)?,
+        comment: row.get::<_, Option<String>>(29)?,
+    })
+}
+
+/// 所有歌曲字段的 SELECT 子句（与 parse_song_from_row 的列顺序一一对应）
+const SONG_SELECT_COLUMNS: &str = "id, path, title, artist, artist_names, effective_artist_names, album, album_artist, album_key, is_various_artists_album, collapse_artist_credits, duration, cover_thumb_path, bitrate, sample_rate, bit_depth, format, container, codec, file_size, track_number, disc_number, added_at, file_modified_at, cue_source_path, cue_start_offset, cue_end_offset, source_type, remote_source_id, comment";
+
 fn load_cached_songs(conn: &rusqlite::Connection) -> Result<Vec<LibrarySong>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, path, title, artist, artist_names, effective_artist_names, album, album_artist, album_key, is_various_artists_album, collapse_artist_credits, duration, cover_thumb_path, bitrate, sample_rate, bit_depth, format, container, codec, file_size, track_number, disc_number, added_at, file_modified_at, cue_source_path, cue_start_offset, cue_end_offset, source_type, remote_source_id, comment
-             FROM songs",
-        )
-        .map_err(|e| e.to_string())?;
+    let sql = format!("SELECT {} FROM songs", SONG_SELECT_COLUMNS);
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map([], |row| {
-            let path: String = row.get(1)?;
-            let duration = clamp_i64_to_u32(row.get::<_, Option<i64>>(11)?.unwrap_or(0));
-            let cover_thumb_path = row.get::<_, Option<String>>(12)?;
-            let bitrate = clamp_i64_to_u32(row.get::<_, Option<i64>>(13)?.unwrap_or(0));
-            let sample_rate = clamp_i64_to_u32(row.get::<_, Option<i64>>(14)?.unwrap_or(0));
-            let bit_depth = i64_to_u8_opt(row.get::<_, Option<i64>>(15)?);
-            let track_number = row.get::<_, Option<String>>(20)?;
-            let disc_number = row.get::<_, Option<String>>(21)?;
-            let added_at_i64 = row.get::<_, Option<i64>>(22)?;
-            let file_modified_at_i64 = row.get::<_, Option<i64>>(23)?;
-            let artist_names = deserialize_string_list(row.get::<_, Option<String>>(4)?);
-            let effective_artist_names = deserialize_string_list(row.get::<_, Option<String>>(5)?);
-
-            let name = std::path::Path::new(&path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.clone());
-
-            Ok(LibrarySong {
-                id: row.get(0)?,
-                name,
-                path,
-                title: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                artist: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                artist_names,
-                effective_artist_names,
-                album: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                album_artist: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-                album_key: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
-                is_various_artists_album: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
-                collapse_artist_credits: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
-                duration,
-                cover_thumb_path,
-                bitrate,
-                sample_rate,
-                bit_depth,
-                format: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
-                track_number,
-                disc_number,
-                added_at: i64_to_u64_opt(added_at_i64),
-                file_modified_at: i64_to_u64_opt(file_modified_at_i64),
-                cue_source_path: row.get::<_, Option<String>>(24)?,
-                cue_start_offset: row.get::<_, Option<i64>>(25)?.map(|v| v as u32),
-                cue_end_offset: row.get::<_, Option<i64>>(26)?.map(|v| v as u32),
-                source_type: row
-                    .get::<_, Option<String>>(27)?
-                    .unwrap_or_else(|| "local".to_string()),
-                remote_source_id: row.get::<_, Option<String>>(28)?,
-                comment: row.get::<_, Option<String>>(29)?,
-            })
-        })
+        .query_map([], parse_song_from_row)
         .map_err(|e| e.to_string())?;
 
     let mut songs: Vec<LibrarySong> = rows.filter_map(|row| row.ok()).collect();
     songs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(songs)
+}
+
+/// 按路径批量查询歌曲（用于前端按需 invoke，减少 canonicalSongs 内存依赖）
+fn load_cached_songs_by_paths(
+    conn: &rusqlite::Connection,
+    paths: &[String],
+) -> Result<Vec<LibrarySong>, String> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders: Vec<&str> = paths.iter().map(|_| "?").collect();
+    let sql = format!(
+        "SELECT {} FROM songs WHERE path IN ({})",
+        SONG_SELECT_COLUMNS,
+        placeholders.join(", ")
+    );
+    let params: Vec<&dyn rusqlite::ToSql> =
+        paths.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params.as_slice(), parse_song_from_row)
+        .map_err(|e| e.to_string())?;
+    let songs: Vec<LibrarySong> = rows.filter_map(|row| row.ok()).collect();
+    Ok(songs)
+}
+
+/// 搜索本地音乐库（标题/艺术家/专辑/路径），返回 Song 对象（非仅路径）
+fn search_cached_songs(
+    conn: &rusqlite::Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<LibrarySong>, String> {
+    let lower_query = query.trim().to_lowercase();
+    if lower_query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let like = format!("%{}%", lower_query);
+    let sql = format!(
+        "SELECT {} FROM songs WHERE (
+            LOWER(COALESCE(songs.title, '')) LIKE ?
+            OR LOWER(COALESCE(songs.artist, '')) LIKE ?
+            OR LOWER(COALESCE(songs.album, '')) LIKE ?
+            OR LOWER(COALESCE(songs.album_artist, '')) LIKE ?
+            OR LOWER(COALESCE(songs.path, '')) LIKE ?
+            OR EXISTS (
+                SELECT 1 FROM song_artists
+                JOIN artists ON artists.id = song_artists.artist_id
+                WHERE song_artists.song_id = songs.id
+                  AND LOWER(artists.name) LIKE ?
+            )
+        ) LIMIT ?",
+        SONG_SELECT_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![like, like, like, like, like, like, limit as i64],
+            parse_song_from_row,
+        )
+        .map_err(|e| e.to_string())?;
+    let songs: Vec<LibrarySong> = rows.filter_map(|row| row.ok()).collect();
     Ok(songs)
 }
 
@@ -388,6 +452,44 @@ pub async fn get_library_songs_cached(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let conn = db_conn.lock().map_err(|e| e.to_string())?;
         load_cached_songs(&conn)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(result)
+}
+
+/// 按路径批量查询歌曲（用于前端按需 invoke，减少 canonicalSongs 内存依赖）
+#[tauri::command]
+pub async fn get_library_songs_by_paths(
+    paths: Vec<String>,
+    db_state: State<'_, DbState>,
+) -> Result<Vec<LibrarySong>, String> {
+    let db_conn = db_state.conn.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_conn.lock().map_err(|e| e.to_string())?;
+        load_cached_songs_by_paths(&conn, &paths)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(result)
+}
+
+/// 搜索本地音乐库（标题/艺术家/专辑/路径），返回完整 Song 对象
+#[tauri::command]
+pub async fn search_library_songs(
+    query: String,
+    limit: Option<usize>,
+    db_state: State<'_, DbState>,
+) -> Result<Vec<LibrarySong>, String> {
+    let db_conn = db_state.conn.clone();
+    let max_results = limit.unwrap_or(200);
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_conn.lock().map_err(|e| e.to_string())?;
+        search_cached_songs(&conn, &query, max_results)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -712,7 +814,8 @@ pub async fn get_library_song_paths_for_all_view(
 
 fn parse_track_or_disc_number(val: &Option<String>) -> Option<i32> {
     val.as_ref().and_then(|s| {
-        let digits: String = s.chars()
+        let digits: String = s
+            .chars()
             .skip_while(|c| !c.is_ascii_digit())
             .take_while(|c| c.is_ascii_digit())
             .collect();
@@ -812,14 +915,13 @@ pub async fn get_library_song_paths_for_folder_view(
             FolderSongSortMode::TrackNumber => {
                 let left_disc = parse_track_or_disc_number(&left.disc_number);
                 let right_disc = parse_track_or_disc_number(&right.disc_number);
-                
+
                 let disc_cmp = match (left_disc, right_disc) {
                     (None, Some(_)) => std::cmp::Ordering::Greater,
                     (Some(_), None) => std::cmp::Ordering::Less,
                     (Some(l), Some(r)) => l.cmp(&r),
                     (None, None) => std::cmp::Ordering::Equal,
                 };
-                
                 disc_cmp.then_with(|| {
                     let left_track = parse_track_or_disc_number(&left.track_number);
                     let right_track = parse_track_or_disc_number(&right.track_number);
@@ -1097,8 +1199,14 @@ mod tests {
     #[test]
     fn test_parse_track_or_disc_number() {
         assert_eq!(parse_track_or_disc_number(&Some("02".to_string())), Some(2));
-        assert_eq!(parse_track_or_disc_number(&Some("1/12".to_string())), Some(1));
-        assert_eq!(parse_track_or_disc_number(&Some("Disc 2".to_string())), Some(2));
+        assert_eq!(
+            parse_track_or_disc_number(&Some("1/12".to_string())),
+            Some(1)
+        );
+        assert_eq!(
+            parse_track_or_disc_number(&Some("Disc 2".to_string())),
+            Some(2)
+        );
         assert_eq!(parse_track_or_disc_number(&Some("A".to_string())), None);
         assert_eq!(parse_track_or_disc_number(&None), None);
     }
@@ -1159,30 +1267,31 @@ mod tests {
         songs.sort_by(|left, right| {
             let left_disc = parse_track_or_disc_number(&left.disc_number);
             let right_disc = parse_track_or_disc_number(&right.disc_number);
-            
+
             let disc_cmp = match (left_disc, right_disc) {
                 (None, Some(_)) => std::cmp::Ordering::Greater,
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (Some(l), Some(r)) => l.cmp(&r),
                 (None, None) => std::cmp::Ordering::Equal,
             };
-            
-            disc_cmp.then_with(|| {
-                let left_track = parse_track_or_disc_number(&left.track_number);
-                let right_track = parse_track_or_disc_number(&right.track_number);
-                match (left_track, right_track) {
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (Some(l), Some(r)) => l.cmp(&r),
-                    (None, None) => std::cmp::Ordering::Equal,
-                }
-            }).then_with(|| {
-                song_title_label(&left.title, &left.path)
-                    .to_lowercase()
-                    .cmp(&song_title_label(&right.title, &right.path).to_lowercase())
-            }).then_with(|| {
-                left.path.cmp(&right.path)
-            })
+
+            disc_cmp
+                .then_with(|| {
+                    let left_track = parse_track_or_disc_number(&left.track_number);
+                    let right_track = parse_track_or_disc_number(&right.track_number);
+                    match (left_track, right_track) {
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (Some(l), Some(r)) => l.cmp(&r),
+                        (None, None) => std::cmp::Ordering::Equal,
+                    }
+                })
+                .then_with(|| {
+                    song_title_label(&left.title, &left.path)
+                        .to_lowercase()
+                        .cmp(&song_title_label(&right.title, &right.path).to_lowercase())
+                })
+                .then_with(|| left.path.cmp(&right.path))
         });
 
         assert_eq!(songs[0].path, "/a/song3.flac");
@@ -1191,4 +1300,3 @@ mod tests {
         assert_eq!(songs[3].path, "/a/song1.flac");
     }
 }
-

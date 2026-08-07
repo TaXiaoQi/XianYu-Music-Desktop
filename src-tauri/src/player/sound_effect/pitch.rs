@@ -13,10 +13,10 @@
 //! 流式处理：维护跨帧的浮点读取位置 `read_pos`，保证连续性。
 //! 按帧（一个完整通道组）处理，保持立体声声道关系。
 
+use super::SoundEffectSettings;
 use rodio::source::SeekError;
 use rodio::Source;
 use std::collections::VecDeque;
-use super::SoundEffectSettings;
 
 /// 变调/变速处理器（线性插值重采样）
 pub struct PitchRateProcessor {
@@ -75,8 +75,16 @@ impl PitchRateProcessor {
     /// 同步参数（每 64 帧由音频线程调用）。
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
         // 防御：0/负/NaN 视为 100（原调原速）
-        let raw_rate = if !s.playback_rate.is_finite() || s.playback_rate <= 0.0 { 100.0 } else { s.playback_rate };
-        let raw_pitch = if !s.pitch_shift.is_finite() || s.pitch_shift <= 0.0 { 100.0 } else { s.pitch_shift };
+        let raw_rate = if !s.playback_rate.is_finite() || s.playback_rate <= 0.0 {
+            100.0
+        } else {
+            s.playback_rate
+        };
+        let raw_pitch = if !s.pitch_shift.is_finite() || s.pitch_shift <= 0.0 {
+            100.0
+        } else {
+            s.pitch_shift
+        };
         let rate = (raw_rate / 100.0).clamp(0.25, 4.0);
         let pitch = (raw_pitch / 100.0).clamp(0.25, 4.0);
 
@@ -135,10 +143,10 @@ impl PitchRateProcessor {
     /// - active + rate_multiplier≠1：inner_rate * rate_multiplier
     /// - 其余：inner_rate
     pub fn effective_sample_rate(&self, inner_rate: u32) -> u32 {
-        if self.sample_rate_mode
-            || (self.active && (self.rate_multiplier - 1.0).abs() >= 0.001)
-        {
-            ((inner_rate as f32) * self.rate_multiplier).round().max(1.0) as u32
+        if self.sample_rate_mode || (self.active && (self.rate_multiplier - 1.0).abs() >= 0.001) {
+            ((inner_rate as f32) * self.rate_multiplier)
+                .round()
+                .max(1.0) as u32
         } else {
             inner_rate
         }
@@ -146,11 +154,7 @@ impl PitchRateProcessor {
 
     /// 从 inner 读取并填充一帧（channels 个样本）到 out。
     /// 返回 false 表示 inner 已结束且缓冲已耗尽。
-    pub fn fill<I: Source<Item = f32>>(
-        &mut self,
-        inner: &mut I,
-        out: &mut [f32],
-    ) -> bool {
+    pub fn fill<I: Source<Item = f32>>(&mut self, inner: &mut I, out: &mut [f32]) -> bool {
         let ch = self.channels;
 
         if !self.active && !self.sample_rate_mode {
@@ -303,7 +307,9 @@ impl<I: Source<Item = f32>> Source for PitchRateSource<I> {
         self.inner.channels()
     }
     fn sample_rate(&self) -> u32 {
-        ((self.inner.sample_rate() as f32) * self.rate).round().max(1.0) as u32
+        ((self.inner.sample_rate() as f32) * self.rate)
+            .round()
+            .max(1.0) as u32
     }
     fn current_frame_len(&self) -> Option<usize> {
         self.inner.current_frame_len()

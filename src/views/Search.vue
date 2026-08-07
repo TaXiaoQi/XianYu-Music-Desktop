@@ -249,7 +249,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import type { Song, ArtistCatalogItem, AlbumCatalogItem, Playlist } from '../types';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useUiStore } from '../shared/stores/ui';
@@ -316,7 +316,6 @@ const playbackStore = usePlaybackStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { showToast } = useToast();
 const { searchQuery } = storeToRefs(navigationStore);
-const { canonicalSongs } = storeToRefs(libraryStore);
 const { artistList, albumList } = useLibraryBrowse();
 const { playlists } = storeToRefs(collectionsStore);
 
@@ -814,12 +813,11 @@ const performSearch = async () => {
       const lowerQuery = query.toLowerCase();
 
       if (activeSearchType.value === 'track') {
-        // 音乐：从本地音乐库过滤
-        localSearchResults.value = canonicalSongs.value.filter(song =>
-          song.name.toLowerCase().includes(lowerQuery) ||
-          song.artist.toLowerCase().includes(lowerQuery) ||
-          song.album.toLowerCase().includes(lowerQuery),
-        ).slice(0, 200);
+        // 音乐：通过 Rust 后端搜索本地音乐库（避免前端全量 canonicalSongs 内存过滤）
+        const results = await invoke<Song[]>('search_library_songs', { query, limit: 200 });
+        if (!activeController.signal.aborted) {
+          localSearchResults.value = results;
+        }
       } else if (activeSearchType.value === 'artist') {
         // 作者：从本地歌手索引过滤
         localArtistResults.value = artistList.value.filter(artist =>
@@ -1980,8 +1978,8 @@ const getLocalArtistCover = (artist: ArtistCatalogItem): string => {
 
 const getLocalAlbumCover = (album: AlbumCatalogItem): string => {
   if (!album.firstSongPath) return '';
-  // 通过 firstSongPath 查找对应歌曲的封面
-  const song = canonicalSongs.value.find(s => s.path === album.firstSongPath);
+  // 通过 songPool O(1) 查找封面，避免遍历 canonicalSongs 数组
+  const song = libraryStore.getSongByPath(album.firstSongPath);
   if (song?.cover_thumb_path) {
     if (song.cover_thumb_path.startsWith('http') || song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
       return song.cover_thumb_path;
@@ -2008,7 +2006,7 @@ const getPlaylistCover = (playlist: Playlist): string => {
   }
   // 尝试用歌单内第一首歌的封面
   if (playlist.songPaths.length > 0) {
-    const song = canonicalSongs.value.find(s => s.path === playlist.songPaths[0]);
+    const song = libraryStore.getSongByPath(playlist.songPaths[0]);
     if (song?.cover_thumb_path) {
       if (song.cover_thumb_path.startsWith('http') || song.cover_thumb_path.startsWith('asset:') || song.cover_thumb_path.startsWith('data:')) {
         return song.cover_thumb_path;

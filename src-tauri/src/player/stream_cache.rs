@@ -65,13 +65,10 @@ impl Seek for StreamingTempFileReader {
             SeekFrom::Current(n) => (self.pos as i64 + n).max(0) as u64,
             SeekFrom::End(n) => {
                 if self.total_bytes.is_some() {
-                    return self
-                        .file
-                        .seek(SeekFrom::End(n))
-                        .map(|p| {
-                            self.pos = p;
-                            p
-                        });
+                    return self.file.seek(SeekFrom::End(n)).map(|p| {
+                        self.pos = p;
+                        p
+                    });
                 }
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
@@ -214,10 +211,7 @@ impl StreamCacheManager {
             };
 
             let size = metadata.len();
-            let last_modified = metadata
-                .modified()
-                .ok()
-                .unwrap_or_else(SystemTime::now);
+            let last_modified = metadata.modified().ok().unwrap_or_else(SystemTime::now);
 
             self.entries.insert(
                 hash,
@@ -349,8 +343,15 @@ pub fn start_streaming_download(
     let dl_complete = download_complete.clone();
 
     let handle = std::thread::spawn(move || {
-        download_thread(&url_clone, &hash_clone, headers_clone.as_ref(), ua_clone.as_deref(),
-                         path_clone, dl_bytes, dl_complete);
+        download_thread(
+            &url_clone,
+            &hash_clone,
+            headers_clone.as_ref(),
+            ua_clone.as_deref(),
+            path_clone,
+            dl_bytes,
+            dl_complete,
+        );
     });
 
     mgr.entries.insert(
@@ -536,8 +537,7 @@ pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
         entry.last_accessed = SystemTime::now();
         entry.path.clone()
     };
-    std::fs::copy(&src_path, dest_path)
-        .map_err(|e| format!("复制缓存文件失败: {}", e))
+    std::fs::copy(&src_path, dest_path).map_err(|e| format!("复制缓存文件失败: {}", e))
 }
 
 /// 等待指定 URL 缓存下载完成（轮询，供前端 'wait' 失败行为使用）。

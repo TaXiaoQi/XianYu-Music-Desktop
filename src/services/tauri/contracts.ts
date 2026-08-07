@@ -3,6 +3,7 @@ import type {
   ArtistCatalogItem,
   FolderNode,
   LibraryFolder,
+  LibrarySong,
   RecentAlbumCatalogItem,
   RecentPlaylistCatalogItem,
   Playlist,
@@ -380,6 +381,8 @@ export interface TauriCommandMap {
   };
   get_folder_children: { payload: { folderPath: string }; response: FolderNode[] };
   get_library_folders: { payload: undefined; response: LibraryFolder[] };
+  get_library_songs_by_paths: { payload: { paths: string[] }; response: LibrarySong[] };
+  search_library_songs: { payload: { query: string; limit?: number }; response: LibrarySong[] };
   get_remote_sources: { payload: undefined; response: RemoteSource[] };
   test_remote_source: { payload: { source: RemoteSourceInput }; response: RemoteConnectionResult };
   add_remote_source: { payload: { source: RemoteSourceInput }; response: RemoteSource };
@@ -448,6 +451,29 @@ export interface TauriCommandMap {
   };
   get_song_cover_thumbnail: { payload: { path: string }; response: string };
   get_song_cover: { payload: { path: string }; response: string };
+  extract_palette: {
+    payload: { source: string; count: number; colorBoost: number; depth: number };
+    response: string[];
+  };
+  authed_request: {
+    payload: { action: string; body: Record<string, unknown>; fetchTimeoutMs?: number };
+    response: { code: number; msg: string; data: unknown };
+  };
+  signed_post_json: {
+    payload: { url: string; body: Record<string, unknown>; fetchTimeoutMs?: number };
+    response: { code: number; msg: string; data: unknown };
+  };
+  save_auth_credentials: {
+    payload: { token: string; user: unknown };
+    response: void;
+  };
+  get_auth_credentials: {
+    payload: undefined;
+    response: { token: string; user: unknown } | null;
+  };
+  clear_auth_credentials: { payload: undefined; response: void };
+  set_auth_base_url: { payload: { baseUrl: string }; response: void };
+  get_auth_base_url: { payload: undefined; response: string };
   clear_cover_cache: { payload: undefined; response: void };
   get_song_lyrics: { payload: { path: string }; response: string };
   read_lyrics_file: { payload: { path: string }; response: string };
@@ -621,4 +647,60 @@ export interface TauriCommandMap {
     payload: { key: string };
     response: string | null;
   };
+  fetch_lyric_from_source: {
+    payload: { source: string; songInfo: LyricSongInfoContract };
+    response: LyricResultContract | null;
+  };
+  resolve_lx_music_url: {
+    payload: { songInfo: LxUrlSongInfoContract; quality: string };
+    response: ResolvedUrlContract | null;
+  };
+  get_lx_cover: {
+    payload: { songInfo: LxUrlSongInfoContract };
+    response: string | null;
+  };
+  clear_lx_url_cache: { payload: undefined; response: void };
+}
+
+export interface LxUrlSongInfoContract {
+  songmid: string;
+  source: string;
+  hash?: string;
+  name?: string;
+  singer?: string;
+  albumName?: string;
+  albumId?: string | number;
+  albumMid?: string;
+  copyrightId?: string;
+  strMediaMid?: string;
+  songId?: string | number;
+  _types?: Record<string, { size?: string | null; hash?: string }>;
+}
+
+export interface ResolvedUrlContract {
+  url: string;
+  quality: string;
+}
+
+export interface LyricSongInfoContract {
+  songmid: string;
+  hash?: string;
+  name: string;
+  singer: string;
+  albumName?: string;
+  interval?: string;
+  _interval?: number;
+  songId?: string | number;
+  strMediaMid?: string;
+  albumMid?: string;
+  albumId?: string | number;
+  copyrightId?: string;
+  source?: string;
+}
+
+export interface LyricResultContract {
+  lyric: string;
+  tlyric: string;
+  rlyric: string;
+  lxlyric: string;
 }

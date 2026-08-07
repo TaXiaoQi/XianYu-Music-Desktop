@@ -6,8 +6,8 @@ use crate::player::output::shared::{restore_current_playback, SharedOutputBacken
 use crate::player::output::wasapi_exclusive::{ExclusivePlayRequest, WasapiExclusivePlayback};
 use crate::player::output::OutputBackend;
 use crate::player::types::{
-    AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, PlayerState,
-    SeekCompletedPayload, SharedProgress, SharedVisualizer, TimedSource,
+    AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, PlaybackProgressPayload,
+    PlayerState, SeekCompletedPayload, SharedProgress, SharedVisualizer, TimedSource,
 };
 use crate::remote::cache::RemoteStreamSource;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -23,6 +23,9 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 const PLAYER_POLL_INTERVAL: Duration = Duration::from_millis(150);
+/// 播放进度事件发射间隔。前端通过 listen('playback:progress') 订阅，
+/// 替代原先每秒轮询 get_playback_progress 的 IPC 调用。
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(500);
 
 fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
     let current_samples = progress.samples_played.load(Ordering::Relaxed);
@@ -242,7 +245,9 @@ fn recover_from_exclusive_failure(
         // 3. 立即重建共享播放链，避免进度/歌词停在已失效的独占线程状态。
         *requested_output_mode = AudioOutputMode::Shared;
         *active_output_mode = AudioOutputMode::Shared;
-        *fallback_reason = Some(format!("WASAPI 独占模式已断开，已自动切回共享模式：{error}"));
+        *fallback_reason = Some(format!(
+            "WASAPI 独占模式已断开，已自动切回共享模式：{error}"
+        ));
 
         restore_shared_output(
             selected_device_name,
@@ -445,7 +450,11 @@ impl RemoteRangeReader {
                 request
             };
         // 自定义请求头：在线直链防盗链常需要浏览器 UA / Referer
-        if let Some(ua) = source.user_agent.as_deref().filter(|value| !value.is_empty()) {
+        if let Some(ua) = source
+            .user_agent
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
             request = request.header(reqwest::header::USER_AGENT, ua);
         }
         if let Some(referer) = source.referer.as_deref().filter(|value| !value.is_empty()) {
@@ -481,7 +490,8 @@ impl RemoteRangeReader {
         let timeout_client = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(5))
             .gzip(true)
-            .build() {
+            .build()
+        {
             Ok(c) => c,
             Err(_) => return None,
         };
@@ -547,7 +557,10 @@ impl RemoteRangeReader {
                         let mut bytes = Vec::new();
                         match response.read_to_end(&mut bytes) {
                             Ok(_) => PrefetchResult::NoRange { data: bytes },
-                            Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+                            Err(e) => PrefetchResult::Error {
+                                start,
+                                message: e.to_string(),
+                            },
                         }
                     } else if response.status().is_success()
                         || response.status() == reqwest::StatusCode::PARTIAL_CONTENT
@@ -556,7 +569,10 @@ impl RemoteRangeReader {
                         let mut bytes = Vec::new();
                         match limited.read_to_end(&mut bytes) {
                             Ok(_) => PrefetchResult::Bytes { start, data: bytes },
-                            Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+                            Err(e) => PrefetchResult::Error {
+                                start,
+                                message: e.to_string(),
+                            },
                         }
                     } else {
                         PrefetchResult::Error {
@@ -565,7 +581,10 @@ impl RemoteRangeReader {
                         }
                     }
                 }
-                Err(e) => PrefetchResult::Error { start, message: e.to_string() },
+                Err(e) => PrefetchResult::Error {
+                    start,
+                    message: e.to_string(),
+                },
             };
             *state.lock().unwrap() = Some(result);
             in_flight.store(false, Ordering::Relaxed);
@@ -596,7 +615,10 @@ impl RemoteRangeReader {
         // 优先使用后台预读结果（位置匹配且已完成）
         if let Some(result) = self.try_take_prefetched() {
             match result {
-                PrefetchResult::Bytes { start: res_start, data } if res_start == start => {
+                PrefetchResult::Bytes {
+                    start: res_start,
+                    data,
+                } if res_start == start => {
                     self.buffer_start = start;
                     self.buffer = data;
                     return Ok(());
@@ -607,7 +629,10 @@ impl RemoteRangeReader {
                     self.no_range = true;
                     return Ok(());
                 }
-                PrefetchResult::Error { start: res_start, message } if res_start == start => {
+                PrefetchResult::Error {
+                    start: res_start,
+                    message,
+                } if res_start == start => {
                     eprintln!("[Audio][rust] 预读失败，回退同步下载: {}", message);
                     // 继续走同步下载
                 }
@@ -826,10 +851,8 @@ fn append_decoded_source<R>(
                 crate::player::equalizer::Equalizer::new(normalized_source, equalizer_handle);
 
             // 2.5 SoundEffectSource 音效处理源
-            let se_source = crate::player::sound_effect::SoundEffectSource::new(
-                eq_source,
-                sound_effect_handle,
-            );
+            let se_source =
+                crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
 
             // 3. UserVolumeSource 自定义主音量节点
             let vol_source =
@@ -911,7 +934,9 @@ fn handle_play(
                     user_volume,
                 ),
                 Err(e) => {
-                    eprintln!("[Audio][rust] 远程流 RemoteRangeReader 创建失败 url={stream_url}: {e}");
+                    eprintln!(
+                        "[Audio][rust] 远程流 RemoteRangeReader 创建失败 url={stream_url}: {e}"
+                    );
                     progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
@@ -1116,6 +1141,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
             .map(|output| output.active_device_name().to_string());
         let mut current_normalizer_handle: Option<VolumeNormalizerHandle> = None;
         let mut current_volume_balance_gain = 1.0;
+        // 上次发射 playback:progress 事件的时间，用于节流
+        let mut last_progress_emit = std::time::Instant::now();
         // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
         // 因为远程流的 current_path 是 URL，不能用 File::open 打开。
         let mut current_remote_stream: Option<RemoteStreamSource> = None;
@@ -1539,17 +1566,16 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             stop_exclusive_playback(&mut exclusive_playback);
 
                             #[cfg(target_os = "windows")]
-                            let force_shared_after_exclusive_device_change =
-                                active_output_mode == AudioOutputMode::WasapiExclusive
-                                    || requested_output_mode == AudioOutputMode::WasapiExclusive;
+                            let force_shared_after_exclusive_device_change = active_output_mode
+                                == AudioOutputMode::WasapiExclusive
+                                || requested_output_mode == AudioOutputMode::WasapiExclusive;
 
                             #[cfg(target_os = "windows")]
                             if force_shared_after_exclusive_device_change {
                                 requested_output_mode = AudioOutputMode::Shared;
                                 active_output_mode = AudioOutputMode::Shared;
-                                fallback_reason = Some(
-                                    "WASAPI 独占设备已变化，已自动切回共享模式".to_string(),
-                                );
+                                fallback_reason =
+                                    Some("WASAPI 独占设备已变化，已自动切回共享模式".to_string());
                                 restore_shared_output(
                                     &selected_device_name,
                                     &mut output,
@@ -1623,6 +1649,25 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             );
                         }
                     }
+
+                    // [项3 播放状态机] 播放中定期发射 playback:progress 事件，
+                    // 前端通过 listen('playback:progress') 订阅，
+                    // 替代原先每秒轮询 get_playback_progress / get_playback_duration 的 IPC 调用。
+                    if is_playing_flag && last_progress_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+                        last_progress_emit = std::time::Instant::now();
+                        let position = progress_duration(&thread_progress).as_secs_f64();
+                        let duration_bits =
+                            thread_progress.total_duration_secs.load(Ordering::Relaxed);
+                        let duration = f64::from_bits(duration_bits);
+                        let _ = thread_app_handle.emit(
+                            "playback:progress",
+                            PlaybackProgressPayload {
+                                position,
+                                duration,
+                                is_playing: true,
+                            },
+                        );
+                    }
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
             }
@@ -1647,7 +1692,10 @@ mod tests {
     /// 启动一个本地 mock HTTP 服务器，返回 (url, join_handle)。
     /// support_range=true 时按 Range 头返回 206 分片；false 时忽略 Range 直接返回 200 全量
     /// （模拟很多音乐 CDN 直链的行为，用于验证 no_range 整曲下载修复）。
-    fn spawn_mock_server(body: Vec<u8>, support_range: bool) -> (String, std::thread::JoinHandle<()>) {
+    fn spawn_mock_server(
+        body: Vec<u8>,
+        support_range: bool,
+    ) -> (String, std::thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let url = format!("http://{addr}/audio");
@@ -1655,7 +1703,9 @@ mod tests {
         let handle = std::thread::spawn(move || {
             // 处理若干次连接（HEAD 探测、content_len 的 Range:0-0、正式读取、后台预读等）
             for _ in 0..32 {
-                let Ok((mut stream, _)) = listener.accept() else { break };
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
                 let mut buf = [0u8; 2048];
                 let n = stream.read(&mut buf).unwrap_or(0);
                 if n == 0 {
@@ -1708,8 +1758,9 @@ mod tests {
                 }
 
                 // 不支持 Range（或无 Range 头）：返回 200 全量
-                let header =
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n");
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                );
                 let _ = stream.write_all(header.as_bytes());
                 let _ = stream.write_all(&body);
             }

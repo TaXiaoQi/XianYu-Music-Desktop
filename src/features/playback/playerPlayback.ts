@@ -1,5 +1,6 @@
 import {storeToRefs} from 'pinia';
 import {watch} from 'vue';
+import {listen} from '@tauri-apps/api/event';
 import type {QualityKey, Song} from '../../types';
 import {playbackApi} from '../../services/tauri/playbackApi';
 import {usePlaybackStore} from './store';
@@ -36,6 +37,16 @@ interface SeekCompletedPayload {
   time: number;
 }
 
+/** Rust 后端发射的播放进度事件载荷 */
+interface PlaybackProgressPayload {
+  /** 当前播放位置（秒） */
+  position: number;
+  /** 音频总时长（秒），0 表示未知 */
+  duration: number;
+  /** 是否正在播放 */
+  is_playing: boolean;
+}
+
 interface CreatePlayerPlaybackDeps {
   getDisplaySongList: () => Song[];
   addToHistory: (song: Song) => void | Promise<void>;
@@ -46,7 +57,10 @@ interface CreatePlayerPlaybackDeps {
 
 let progressFrameId: number | null = null;
 let progressTimerId: ReturnType<typeof setTimeout> | null = null;
-let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+// [项3 播放状态机] Rust 后端通过 playback:progress 事件推送进度，
+// 前端订阅替代原先每秒轮询 getPlaybackProgress / getPlaybackDuration 的 IPC 调用
+let progressUnlisten: (() => void) | null = null;
+let progressListeningActive = false;
 let periodicFlushTimerId: ReturnType<typeof setInterval> | null = null;
 // [渐入渐出] 淡入淡出动画帧 ID，用于取消正在进行的音量渐变
 let fadeFrameId: number | null = null;
@@ -262,9 +276,11 @@ const authStore = useAuthStore();
       clearTimeout(progressTimerId);
       progressTimerId = null;
     }
-    if (syncIntervalId !== null) {
-      clearInterval(syncIntervalId);
-      syncIntervalId = null;
+    // [项3 播放状态机] 取消 playback:progress 事件订阅
+    progressListeningActive = false;
+    if (progressUnlisten) {
+      progressUnlisten();
+      progressUnlisten = null;
     }
     if (periodicFlushTimerId !== null) {
       clearInterval(periodicFlushTimerId);
@@ -376,62 +392,67 @@ const authStore = useAuthStore();
       }
     }, 30_000);
 
-    syncIntervalId = setInterval(async () => {
-      if (!isPlaying.value || isSeeking) return;
+    // [项3 播放状态机] 订阅 Rust 后端的 playback:progress 事件，
+    // 替代原先每秒轮询 getPlaybackProgress / getPlaybackDuration 的 IPC 调用。
+    // 事件约每 500ms 发射一次，携带 position / duration / is_playing。
+    progressListeningActive = true;
+    listen<PlaybackProgressPayload>('playback:progress', (event) => {
+      if (!progressListeningActive || !isPlaying.value || isSeeking) return;
 
-      try {
-        const rawTime = await playbackApi.getPlaybackProgress();
-        const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-        const adjustedTime = Math.max(0, rawTime - offsetSec);
-        if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
-          reanchorPlaybackClock(adjustedTime);
-        }
+      const {position: rawTime, duration} = event.payload;
+      const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
+      const adjustedTime = Math.max(0, rawTime - offsetSec);
+      if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
+        reanchorPlaybackClock(adjustedTime);
+      }
 
-        // 播放结束兜底检测：后端进度连续两轮（≥2s）停滞且已播放过则视为结束
-        // - duration 未知：直接视为结束
-        // - duration 已知：仅当进度已接近 duration（相差 ≤3s）时视为结束，
-        //   避免中段缓冲（如远程流）造成误判；同时弥补 metadata 时长略大于实际
-        //   音频时长导致 currentTime 被 reanchor 拉回、永远到不了 duration 的问题
-        const song = currentSong.value;
-        if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
-          stalledProgressTicks += 1;
-          const unknownDuration = !song.duration || song.duration <= 0;
-          const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
-          // 在线歌（流式下载）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
-          // 若沿用 2 轮阈值会被误判为播放结束而自动切下一首，故对在线歌放宽阈值。
-          const isOnlineStream = !!song.path
-            && (song.path.startsWith('http://')
-              || song.path.startsWith('https://')
-              || song.path.startsWith('lx://')
-              || song.path.startsWith('plugin://')
-              || song.path.startsWith('remote://'));
-          const requiredStalledTicks = isOnlineStream ? 6 : 2;
-          if (stalledProgressTicks >= requiredStalledTicks && (unknownDuration || nearEnd)) {
-            stalledProgressTicks = 0;
-            handleAutoNext();
-            return;
-          }
-        } else {
+      // 播放结束兜底检测：后端进度连续多轮停滞且已播放过则视为结束
+      // - duration 未知：直接视为结束
+      // - duration 已知：仅当进度已接近 duration（相差 ≤3s）时视为结束，
+      //   避免中段缓冲（如远程流）造成误判；同时弥补 metadata 时长略大于实际
+      //   音频时长导致 currentTime 被 reanchor 拉回、永远到不了 duration 的问题
+      // [项3] 事件频率从 1s 提升到 ~500ms，阈值相应加倍以保持相同的实际时间窗口
+      const song = currentSong.value;
+      if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
+        stalledProgressTicks += 1;
+        const unknownDuration = !song.duration || song.duration <= 0;
+        const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
+        // 在线歌（流式下载）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
+        // 若沿用 4 轮阈值会被误判为播放结束而自动切下一首，故对在线歌放宽阈值。
+        const isOnlineStream = !!song.path
+          && (song.path.startsWith('http://')
+            || song.path.startsWith('https://')
+            || song.path.startsWith('lx://')
+            || song.path.startsWith('plugin://')
+            || song.path.startsWith('remote://'));
+        const requiredStalledTicks = isOnlineStream ? 12 : 4;
+        if (stalledProgressTicks >= requiredStalledTicks && (unknownDuration || nearEnd)) {
           stalledProgressTicks = 0;
+          handleAutoNext();
+          return;
         }
-        lastRawProgress = rawTime;
+      } else {
+        stalledProgressTicks = 0;
+      }
+      lastRawProgress = rawTime;
 
-        // [在线歌曲时长修正] Song.duration 可能为 0（插件未返回时长），
-        // 从 Rust 音频引擎获取解码后的实际时长，更新 currentSong 和 libraryStore
-        const songForDuration = currentSong.value;
-        if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0)) {
-          try {
-            const backendDuration = await playbackApi.getPlaybackDuration();
-            if (backendDuration > 0) {
-              const newDuration = Math.floor(backendDuration);
-              currentSong.value = {...songForDuration, duration: newDuration};
-              libraryStore.patchSongMeta(songForDuration.path, { duration: newDuration } as Partial<Song>);
-              playbackStore.patchQueueSongMeta(songForDuration.path, { duration: newDuration });
-            }
-          } catch {}
-        }
-      } catch {}
-    }, 1000);
+      // [在线歌曲时长修正] Song.duration 可能为 0（插件未返回时长），
+      // duration 直接从事件载荷获取，无需额外 IPC 调用
+      const songForDuration = currentSong.value;
+      if (songForDuration && (!songForDuration.duration || songForDuration.duration <= 0) && duration > 0) {
+        const newDuration = Math.floor(duration);
+        currentSong.value = {...songForDuration, duration: newDuration};
+        libraryStore.patchSongMeta(songForDuration.path, {duration: newDuration} as Partial<Song>);
+        playbackStore.patchQueueSongMeta(songForDuration.path, {duration: newDuration});
+      }
+    }).then(unlisten => {
+      // 竞态保护：如果 listen 返回前 stopPlaybackRuntime 已被调用，立即取消订阅
+      if (!progressListeningActive) {
+        unlisten();
+      } else {
+        progressUnlisten = unlisten;
+      }
+    });
   };
 
   const flushPlaySession = () => {

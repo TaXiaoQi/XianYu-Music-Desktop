@@ -1,4 +1,3 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { onMounted, onScopeDispose, watch, type Ref } from 'vue';
 import { storeToRefs } from 'pinia';
@@ -419,16 +418,6 @@ export const createPlayerLifecycle = ({
       playerStorage.remove(legacyLastSongKey);
     });
 
-    const resolveCoverUrl = (cover: string) => {
-      if (!cover) {
-        return '';
-      }
-
-      return cover.startsWith('http') || cover.startsWith('data:')
-        ? cover
-        : convertFileSrc(cover);
-    };
-
     const updateDominantColors = async (cover: string) => {
       const needsCoverPalette = settings.value.theme.dynamicBgType === 'flow'
         || settings.value.desktopLyrics.colorScheme === 'auto';
@@ -440,9 +429,10 @@ export const createPlayerLifecycle = ({
         return;
       }
 
-      const coverUrl = resolveCoverUrl(cover);
+      // 取色在 Rust 侧完成，可直接传入原始封面值（本地路径 / http 直链 / data URI），
+      // 无需再经 convertFileSrc 转成 webview 资源 URL。
       const signature = JSON.stringify({
-        coverUrl,
+        cover,
         colorBoost: settings.value.theme.flowColorBoost,
         depth: settings.value.theme.flowDepth,
       });
@@ -452,7 +442,7 @@ export const createPlayerLifecycle = ({
       }
 
       const taskId = ++dominantColorTaskId;
-      const colors = await extractDominantColors(coverUrl, 4, {
+      const colors = await extractDominantColors(cover, 4, {
         colorBoost: settings.value.theme.flowColorBoost,
         depth: settings.value.theme.flowDepth,
       });

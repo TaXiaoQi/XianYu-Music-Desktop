@@ -5,13 +5,18 @@
  * - 基地址：https://xymusic.zh2026.cn/api
  * - 端点风格：POST /api/?action=<接口名>
  * - 所有接口需 MD5 签名：sign = md5(timestamp + nonce + body + api_secret)
+ *   （签名在 Rust 侧完成，密钥不暴露给前端）
  * - 统一响应：{ code: 200, msg, data }，code === 200 视为成功
  *
  * 仅保留账号相关能力（登录/注册/验证码/找回密码/修改密码/资料/头像）。
+ *
+ * [迁移说明] 签名 + HTTP 请求已迁移到 Rust `authed_request` / `signed_post_json` 命令，
+ * token 存储迁移到 OS keyring（由 Rust `save_auth_credentials` / `get_auth_credentials` 管理）。
+ * 前端通过 `initAuthFromKeyring()` 在启动时从 keyring 加载凭证到内存缓存，
+ * `getStoredAuth()` / `getAuthToken()` 同步读取内存缓存。
  */
 
-import { md5 } from './md5';
-import { crossOriginFetch } from './httpClient';
+import { tauriInvoke } from '../tauri/invoke';
 
 export type AuthUser = {
   id: string;
@@ -46,35 +51,19 @@ export type ProfileStats = {
   updated_at?: string | null;
 };
 
-const STORAGE_TOKEN_KEY = 'xy.auth.token';
-const STORAGE_USER_KEY = 'xy.auth.user';
-const STORAGE_BASE_URL_KEY = 'xy.auth.baseUrl';
-
 /** 默认后端地址：弦予音乐 API */
 export const DEFAULT_AUTH_BASE_URL = 'https://xymusic.zh2026.cn/api';
 
-/** API 签名密钥（来自文档，编译进客户端） */
-const API_SECRET = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
+// ─── localStorage 兼容键（仅用于迁移） ──────────────────
+const LEGACY_STORAGE_TOKEN_KEY = 'xy.auth.token';
+const LEGACY_STORAGE_USER_KEY = 'xy.auth.user';
+const LEGACY_STORAGE_BASE_URL_KEY = 'xy.auth.baseUrl';
 
-let currentBaseUrl: string =
-  (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_BASE_URL_KEY)) ||
-  DEFAULT_AUTH_BASE_URL;
-
-export function getAuthBaseUrl(): string {
-  return currentBaseUrl;
-}
-
-export function setAuthBaseUrl(baseUrl: string): void {
-  const trimmed = (baseUrl || '').trim();
-  currentBaseUrl = trimmed || DEFAULT_AUTH_BASE_URL;
-  if (typeof localStorage !== 'undefined') {
-    if (trimmed && trimmed !== DEFAULT_AUTH_BASE_URL) {
-      localStorage.setItem(STORAGE_BASE_URL_KEY, currentBaseUrl);
-    } else {
-      localStorage.removeItem(STORAGE_BASE_URL_KEY);
-    }
-  }
-}
+// ─── 内存缓存（同步读取，由 initAuthFromKeyring 填充） ────
+let cachedToken: string | null = null;
+let cachedUser: AuthUser | null = null;
+let cachedBaseUrl: string = DEFAULT_AUTH_BASE_URL;
+let keyringInitialized = false;
 
 /** 后端统一响应：code 200 成功，其他为失败（HTTP 状态码同步设置） */
 type ApiEnvelope<T> = {
@@ -83,46 +72,116 @@ type ApiEnvelope<T> = {
   data: T;
 };
 
-export function getStoredAuth(): AuthPayload | null {
-  if (typeof localStorage === 'undefined') return null;
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY);
-  const userRaw = localStorage.getItem(STORAGE_USER_KEY);
-  if (!token || !userRaw) return null;
+// ═══════════════════════════════════════════════════════
+//  Base URL 管理
+// ═══════════════════════════════════════════════════════
+
+export function getAuthBaseUrl(): string {
+  return cachedBaseUrl;
+}
+
+export function setAuthBaseUrl(baseUrl: string): void {
+  const trimmed = (baseUrl || '').trim();
+  cachedBaseUrl = trimmed || DEFAULT_AUTH_BASE_URL;
+  // 持久化到 Rust（文件），fire-and-forget
+  void tauriInvoke('set_auth_base_url', { baseUrl: cachedBaseUrl }).catch(() => {
+    /* 静默失败 */
+  });
+  // 清理旧 localStorage
+  if (typeof localStorage !== 'undefined') {
+    if (trimmed && trimmed !== DEFAULT_AUTH_BASE_URL) {
+      localStorage.setItem(LEGACY_STORAGE_BASE_URL_KEY, cachedBaseUrl);
+    } else {
+      localStorage.removeItem(LEGACY_STORAGE_BASE_URL_KEY);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  凭证管理（keyring + 内存缓存）
+// ═══════════════════════════════════════════════════════
+
+/**
+ * 从 Rust keyring 加载认证凭证到内存缓存。
+ * 如果 keyring 为空但 localStorage 有旧数据，自动迁移到 keyring。
+ * 应在应用启动时调用一次（authStore.restoreSession 内）。
+ */
+export async function initAuthFromKeyring(): Promise<void> {
+  if (keyringInitialized) return;
+  keyringInitialized = true;
 
   try {
-    return { token, user: JSON.parse(userRaw) as AuthUser };
+    const result = await tauriInvoke('get_auth_credentials');
+    if (result && result.token) {
+      cachedToken = result.token;
+      cachedUser = result.user as AuthUser;
+    }
   } catch {
-    clearAuth();
-    return null;
+    /* Rust 命令不可用（非 Tauri 环境），静默 */
   }
+
+  // 加载 base_url
+  try {
+    cachedBaseUrl = await tauriInvoke('get_auth_base_url');
+  } catch {
+    // 回退到 localStorage
+    if (typeof localStorage !== 'undefined') {
+      cachedBaseUrl = localStorage.getItem(LEGACY_STORAGE_BASE_URL_KEY) || DEFAULT_AUTH_BASE_URL;
+    }
+  }
+
+  // 迁移：keyring 为空但 localStorage 有旧数据
+  if (!cachedToken && typeof localStorage !== 'undefined') {
+    const oldToken = localStorage.getItem(LEGACY_STORAGE_TOKEN_KEY);
+    const oldUserRaw = localStorage.getItem(LEGACY_STORAGE_USER_KEY);
+    if (oldToken && oldUserRaw) {
+      try {
+        const oldUser = JSON.parse(oldUserRaw) as AuthUser;
+        cachedToken = oldToken;
+        cachedUser = oldUser;
+        // 迁移到 keyring（fire-and-forget）
+        void tauriInvoke('save_auth_credentials', { token: oldToken, user: oldUser }).catch(() => {
+          /* 静默 */
+        });
+        // 清理旧 localStorage
+        localStorage.removeItem(LEGACY_STORAGE_TOKEN_KEY);
+        localStorage.removeItem(LEGACY_STORAGE_USER_KEY);
+      } catch {
+        /* 旧数据损坏，忽略 */
+      }
+    }
+  }
+}
+
+export function getStoredAuth(): AuthPayload | null {
+  if (!cachedToken || !cachedUser) return null;
+  return { token: cachedToken, user: cachedUser };
 }
 
 export function getAuthToken(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(STORAGE_TOKEN_KEY);
+  return cachedToken;
 }
 
 function getStoredUser(): AuthUser | null {
-  if (typeof localStorage === 'undefined') return null;
-  const userRaw = localStorage.getItem(STORAGE_USER_KEY);
-  if (!userRaw) return null;
-  try {
-    return JSON.parse(userRaw) as AuthUser;
-  } catch {
-    return null;
-  }
+  return cachedUser;
 }
 
 export function saveAuth(payload: AuthPayload): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(STORAGE_TOKEN_KEY, payload.token);
-  localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(payload.user));
+  cachedToken = payload.token;
+  cachedUser = payload.user;
+  // 持久化到 keyring（fire-and-forget）
+  void tauriInvoke('save_auth_credentials', { token: payload.token, user: payload.user }).catch(() => {
+    /* 静默失败 */
+  });
 }
 
 export function clearAuth(): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.removeItem(STORAGE_TOKEN_KEY);
-  localStorage.removeItem(STORAGE_USER_KEY);
+  cachedToken = null;
+  cachedUser = null;
+  // 清除 keyring（fire-and-forget）
+  void tauriInvoke('clear_auth_credentials').catch(() => {
+    /* 静默失败 */
+  });
 }
 
 function isAuthPayload(value: unknown): value is AuthPayload {
@@ -136,118 +195,36 @@ function isAuthPayload(value: unknown): value is AuthPayload {
   );
 }
 
-/** 生成随机 nonce（6-32 位十六进制字符串） */
-function generateNonce(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
-  }
-  return (Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 32);
-}
+// ═══════════════════════════════════════════════════════
+//  签名请求（Rust authed_request / signed_post_json）
+// ═══════════════════════════════════════════════════════
 
-/** 计算签名并返回带签名的请求头 */
-function buildSignedHeaders(body: string): Record<string, string> {
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const nonce = generateNonce();
-  const sign = md5(timestamp + nonce + body + API_SECRET);
-  return {
-    'Content-Type': 'application/json',
-    'X-Timestamp': timestamp,
-    'X-Nonce': nonce,
-    'X-Sign': sign,
-  };
-}
+/** signedRequest 的可选参数 */
+export type SignedRequestOptions = {
+  /** fetch 超时时间（毫秒），默认 25s。大文件上传等场景可设更长 */
+  fetchTimeoutMs?: number;
+  /** signedRequest 外层 Promise.race 超时时间（毫秒），默认 30s */
+  timeoutMs?: number;
+};
 
-/** 读取响应体的超时时间（毫秒），防止 response.json()/text() 在 Tauri 中挂起 */
-const RESPONSE_BODY_TIMEOUT_MS = 15_000;
+/** 默认外层超时（毫秒） */
+const DEFAULT_OUTER_TIMEOUT_MS = 30_000;
 
-/** 带超时的响应体读取：先用 text() 读取再手动 JSON.parse，避免 Tauri 的 response.json() 挂起 */
-async function readResponseBody(response: Response, action: string): Promise<string> {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`响应体读取超时（${RESPONSE_BODY_TIMEOUT_MS / 1000}s），action=${action}`));
-    }, RESPONSE_BODY_TIMEOUT_MS);
-  });
-
-  const text = await Promise.race([
-    response.text(),
-    timeoutPromise,
-  ]);
-  return text;
-}
-
-/** fetch 本身的超时时间（毫秒），比 signedRequest 的 30s 短，确保 fetch 被正确中止 */
-const FETCH_TIMEOUT_MS = 25_000;
-
-/** 发起带签名的 POST 请求，返回完整响应信封 */
+/**
+ * 发起带签名的 POST 请求，返回完整响应信封。
+ * 签名在 Rust 侧完成（md5(timestamp + nonce + body + api_secret)）。
+ */
 async function requestEnvelope<T>(
   action: string,
   body: Record<string, unknown>,
-  fetchTimeoutMs: number = FETCH_TIMEOUT_MS,
+  fetchTimeoutMs?: number,
 ): Promise<ApiEnvelope<T>> {
-  const raw = JSON.stringify(body);
-  const headers = buildSignedHeaders(raw);
-  const url = `${currentBaseUrl}/?action=${action}`;
-  const bodySize = raw.length;
-  console.log(`[signedRequest] → POST ${url} (action=${action}, bodyLen=${bodySize})`);
-
-  const startTime = Date.now();
-  let response: Response;
-  try {
-    // 使用 AbortController 给 fetch 本身加超时，防止 Tauri HTTP 插件的连接挂起
-    // 导致后续请求受连接池污染影响（如 404、连接复用错误等）
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
-    try {
-      response = await crossOriginFetch(url, { method: 'POST', headers, body: raw, signal: controller.signal });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  } catch (fetchError) {
-    const elapsed = Date.now() - startTime;
-    // Tauri HTTP 插件的 abort 不一定抛 DOMException，可能抛普通 Error 且 message 为 "Request canceled"
-    const fetchMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-    const isAbort = (fetchError instanceof DOMException && fetchError.name === 'AbortError')
-      || /cancel|abort/i.test(fetchMsg);
-    const errMsg = isAbort
-      ? `请求超时（${fetchTimeoutMs / 1000}s），action=${action}`
-      : `网络请求失败（action=${action}, ${elapsed}ms）: ${fetchMsg}`;
-    console.error(`[signedRequest] ✗ fetch 异常 action=${action}, elapsed=${elapsed}ms, isAbort=${isAbort}, error=`, fetchError);
-    throw new Error(errMsg, { cause: fetchError });
-  }
-
-  const fetchElapsed = Date.now() - startTime;
-  console.log(`[signedRequest] ← HTTP ${response.status} (action=${action}, fetchElapsed=${fetchElapsed}ms)`);
-
-  // 用 text() + JSON.parse 替代 response.json()，避免 Tauri HTTP 插件的流式解析挂起
-  let payload: ApiEnvelope<T> | null = null;
-  let rawText = '';
-  try {
-    rawText = await readResponseBody(response, action);
-    payload = JSON.parse(rawText) as ApiEnvelope<T>;
-  } catch (parseError) {
-    const totalElapsed = Date.now() - startTime;
-    const errStr = parseError instanceof Error ? parseError.message : String(parseError);
-    console.error(`[signedRequest] ✗ 响应体读取/解析失败, action=${action}, status=${response.status}, elapsed=${totalElapsed}ms, error=${errStr}`);
-    console.error(`[signedRequest] 响应体前500字符:`, rawText.substring(0, 500));
-    // 检测宝塔 WAF / nginx 错误页面（HTTP 200 但返回 HTML）
-    if (rawText.includes('宝塔WAF') || rawText.includes('缓冲区溢出')) {
-      throw new Error(`服务器WAF拦截（action=${action}, HTTP ${response.status}）: 请求体过大，触发Nginx缓冲区溢出`, { cause: parseError });
-    }
-    // 对非 200 HTTP 状态码返回更明确的错误，包含 HTTP 状态码信息
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}（action=${action}）: 服务器返回非 JSON 响应`, { cause: parseError });
-    }
-    throw new Error(`响应解析失败（action=${action}, HTTP ${response.status}）: ${errStr}`, { cause: parseError });
-  }
-
-  const totalElapsed = Date.now() - startTime;
-  console.log(`[signedRequest] code=${payload.code}, msg="${payload.msg ?? ''}", totalElapsed=${totalElapsed}ms, action=${action}`);
-  if (payload.code !== 200) {
-    console.warn(`[signedRequest] ⚠ 接口返回非200: action=${action}, code=${payload.code}, msg="${payload.msg}"`);
-  }
-  return payload;
+  const payload = await tauriInvoke('authed_request', {
+    action,
+    body,
+    fetchTimeoutMs,
+  });
+  return payload as unknown as ApiEnvelope<T>;
 }
 
 /** 调用接口并校验 code === 200，返回 data */
@@ -263,32 +240,23 @@ async function requestAction<T>(
   return payload.data ?? ({} as T);
 }
 
-/** signedRequest 的可选参数 */
-export type SignedRequestOptions = {
-  /** fetch 超时时间（毫秒），默认 25s。大文件上传等场景可设更长 */
-  fetchTimeoutMs?: number;
-  /** signedRequest 外层 Promise.race 超时时间（毫秒），默认 30s */
-  timeoutMs?: number;
-};
-
 /**
  * 导出带签名的 API 请求方法，供歌单同步等模块复用。
- * 与 authService 内部使用相同的签名算法和基地址。
+ * 签名在 Rust 侧完成，前端只需传 action + body。
  * 内置超时保护，避免网络挂起导致同步卡死。
- * 可通过 options 自定义超时时间（如大文件分块上传需更长超时）。
  */
 export async function signedRequest<T>(
   action: string,
   body: Record<string, unknown>,
   options?: SignedRequestOptions,
 ): Promise<T> {
-  const TIMEOUT_MS = options?.timeoutMs ?? 30_000; // 默认 30 秒超时
-  const fetchTimeoutMs = options?.fetchTimeoutMs; // 默认使用 requestEnvelope 内部的 FETCH_TIMEOUT_MS
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_OUTER_TIMEOUT_MS;
+  const fetchTimeoutMs = options?.fetchTimeoutMs;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
-      reject(new Error(`请求超时（${TIMEOUT_MS / 1000}s），action=${action}`));
-    }, TIMEOUT_MS);
+      reject(new Error(`请求超时（${timeoutMs / 1000}s），action=${action}`));
+    }, timeoutMs);
   });
 
   return Promise.race([
@@ -303,8 +271,7 @@ export async function signedRequest<T>(
  * 与 signedRequest 的区别：signedRequest 只能调用账号 API（baseUrl/?action=xxx），
  * 本函数可指定完整 URL，用于壁纸上传等非账号 API 端点（如壁纸中心接口）。
  *
- * 签名算法与账号 API 完全一致：sign = md5(timestamp + nonce + body + api_secret)，
- * 服务端用同一个 api_secret 校验。
+ * 签名在 Rust 侧完成，与账号 API 使用同一个 api_secret。
  *
  * 成功（code===200）返回 data，否则抛出包含 msg 的错误。
  */
@@ -313,42 +280,32 @@ export async function signedPostJson<T>(
   body: Record<string, unknown>,
   options?: SignedRequestOptions,
 ): Promise<T> {
-  const raw = JSON.stringify(body);
-  const headers = buildSignedHeaders(raw);
   const fetchTimeoutMs = options?.fetchTimeoutMs ?? 60_000; // 默认 60s（图片上传较慢）
-  const TIMEOUT_MS = options?.timeoutMs ?? 65_000;
+  const timeoutMs = options?.timeoutMs ?? 65_000;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`请求超时（${TIMEOUT_MS / 1000}s）`)), TIMEOUT_MS);
+    setTimeout(() => reject(new Error(`请求超时（${timeoutMs / 1000}s）`)), timeoutMs);
   });
 
   const doRequest = async (): Promise<T> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), fetchTimeoutMs);
-    let response: Response;
-    try {
-      response = await crossOriginFetch(url, { method: 'POST', headers, body: raw, signal: controller.signal });
-    } finally {
-      clearTimeout(timeoutId);
+    const payload = await tauriInvoke('signed_post_json', {
+      url,
+      body,
+      fetchTimeoutMs,
+    });
+    const envelope = payload as unknown as ApiEnvelope<T>;
+    if (Number(envelope.code) !== 200) {
+      throw new Error(envelope.msg || `请求失败（code ${envelope.code}）`);
     }
-    const text = await readResponseBody(response, 'signedPostJson');
-    let payload: ApiEnvelope<T> | null = null;
-    try {
-      payload = JSON.parse(text) as ApiEnvelope<T>;
-    } catch (parseError) {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: 服务器返回非 JSON 响应`, { cause: parseError });
-      }
-      throw new Error(`响应解析失败（HTTP ${response.status}）: ${parseError instanceof Error ? parseError.message : String(parseError)}`, { cause: parseError });
-    }
-    if (Number(payload.code) !== 200) {
-      throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
-    }
-    return payload.data ?? ({} as T);
+    return envelope.data ?? ({} as T);
   };
 
   return Promise.race([doRequest(), timeoutPromise]);
 }
+
+// ═══════════════════════════════════════════════════════
+//  账号 API 封装
+// ═══════════════════════════════════════════════════════
 
 /** 将登录接口返回的 data 映射为前端统一的 AuthUser */
 function mapUser(data: Record<string, unknown>): AuthUser {
@@ -550,7 +507,7 @@ export async function getProfile(): Promise<{
       15_000,
     );
     const user = mapUser(data);
-    // 更新 localStorage 缓存，保证后续读取一致
+    // 更新内存缓存，保证后续读取一致
     saveAuth({ token, user });
     return {
       user,
@@ -774,7 +731,7 @@ export async function logout(): Promise<void> {
 }
 
 /**
- * 恢复登录会话。token 无过期时间，直接返回本地存储的凭证；
+ * 恢复登录会话。token 无过期时间，直接返回内存缓存的凭证；
  * 若无凭证返回 null。
  */
 export async function refreshSession(): Promise<AuthPayload | null> {

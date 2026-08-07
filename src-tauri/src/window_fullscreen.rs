@@ -23,7 +23,7 @@ use windows_sys::Win32::{
     Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
     UI::WindowsAndMessaging::{
         GetWindowLongW, GetWindowPlacement, IsZoomed, SetWindowLongW, SetWindowPlacement,
-        SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE, SWP_FRAMECHANGED,
+        SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
         SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
         WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
     },
@@ -123,7 +123,9 @@ pub fn refresh_immersive_fullscreen(window: tauri::Window) -> Result<bool, Strin
     #[cfg(target_os = "windows")]
     {
         let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
-        unsafe { mark_taskbar_fullscreen(hwnd, true); }
+        unsafe {
+            mark_taskbar_fullscreen(hwnd, true);
+        }
         Ok(true)
     }
 
@@ -144,7 +146,9 @@ pub fn set_taskbar_fullscreen_flag(window: tauri::Window, enter: bool) -> Result
     #[cfg(target_os = "windows")]
     {
         let hwnd = hwnd_of(&window).ok_or_else(|| "无法获取窗口句柄".to_string())?;
-        unsafe { mark_taskbar_fullscreen(hwnd, enter); }
+        unsafe {
+            mark_taskbar_fullscreen(hwnd, enter);
+        }
         Ok(enter)
     }
 
@@ -189,7 +193,8 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 *SAVED_STYLE.lock().unwrap() = Some(style);
                 // WS_CAPTION(0xC00000) = WS_BORDER | WS_DLGFRAME，WS_THICKFRAME(0x40000) 用于调整大小
                 // 这两个样式位是非客户区（边框+标题栏）的主要来源，清除后窗口将没有非客户区
-                const STYLE_BORDER_MASK: i32 = (WS_CAPTION as i32) | (WS_THICKFRAME as i32) | (WS_MAXIMIZE as i32);
+                const STYLE_BORDER_MASK: i32 =
+                    (WS_CAPTION as i32) | (WS_THICKFRAME as i32) | (WS_MAXIMIZE as i32);
                 if style & STYLE_BORDER_MASK != 0 {
                     SetWindowLongW(hwnd, GWL_STYLE, style & !STYLE_BORDER_MASK);
                 }
@@ -211,7 +216,12 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 if GetMonitorInfoW(monitor, &mut mi) == 0 {
                     return Err("GetMonitorInfoW 失败".to_string());
                 }
-                let RECT { left, top, right, bottom } = mi.rcMonitor;
+                let RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                } = mi.rcMonitor;
 
                 // Windows 10/11 的 DWM 会为窗口保留一圈约 8px 的不可见边框（用于窗口阴影），
                 // 这个边框不会被 SetWindowPos 自动裁剪，导致窗口实际可见区域比 rcMonitor 小一圈。

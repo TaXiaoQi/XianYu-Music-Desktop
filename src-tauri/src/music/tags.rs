@@ -998,9 +998,7 @@ pub struct EmbedMetadataRequest {
 }
 
 fn parse_u32_field(value: &Option<String>) -> Option<u32> {
-    value
-        .as_deref()
-        .and_then(|s| s.trim().parse::<u32>().ok())
+    value.as_deref().and_then(|s| s.trim().parse::<u32>().ok())
 }
 
 fn guess_tag_type_from_path(path: &Path) -> TagType {
@@ -1032,8 +1030,8 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
         return Err(format!("文件不存在: {}", request.file_path));
     }
 
-    let mut tagged_file = read_tagged_file_from_path(path)
-        .map_err(|e| format!("读取音频文件失败: {e}"))?;
+    let mut tagged_file =
+        read_tagged_file_from_path(path).map_err(|e| format!("读取音频文件失败: {e}"))?;
 
     // 若文件无现有 tag，按扩展名推断 tag 类型后创建
     if tagged_file.primary_tag().is_none() {

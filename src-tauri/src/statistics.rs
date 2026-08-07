@@ -2001,10 +2001,7 @@ pub fn get_favorite_artist_catalog(
     for (name, (count, first_song_path)) in map {
         let (id, avatar_path) = stmt
             .query_row([&name], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                ))
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
             })
             .unwrap_or((0, None));
 
@@ -2704,16 +2701,8 @@ mod playback_count_tests {
             track_number: Some(1),
         };
 
-        record_aggregate_play(
-            &conn,
-            &identity,
-            1_700_000_000,
-            30_000,
-            false,
-            false,
-            true,
-        )
-        .expect("record initial play chunk");
+        record_aggregate_play(&conn, &identity, 1_700_000_000, 30_000, false, false, true)
+            .expect("record initial play chunk");
         for offset in 1..=12 {
             record_aggregate_play(
                 &conn,

@@ -5,6 +5,28 @@ import {
   normalizeKuwoCoverUrl,
 } from '../utils/coverUrl';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
+import { tauriInvoke } from './tauri/invoke';
+import type { LxUrlSongInfoContract } from './tauri/contracts';
+
+/**
+ * 将 LxSearchResultItem 转换为 Rust URL 解析器所需的合约类型
+ */
+function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
+  return {
+    songmid: item.songmid,
+    source: item.source,
+    hash: item.hash,
+    name: item.name,
+    singer: item.singer,
+    albumName: item.albumName,
+    albumId: item.albumId,
+    albumMid: item.albumMid,
+    copyrightId: item.copyrightId,
+    strMediaMid: item.strMediaMid,
+    songId: item.songId,
+    _types: item._types as Record<string, { size?: string | null; hash?: string }> | undefined,
+  };
+}
 
 // ==================== Types ====================
 export interface LxSearchResultItem {
@@ -1258,89 +1280,22 @@ export async function lxGetPlaylistTracks(
 
 /**
  * 获取落雪 LX 音源的封面图片 URL
- * kw/kg 搜索结果 img=null，需要延迟获取
+ *
+ * HTTP 请求+URL 归一化均由 Rust 后端 (url_resolver.rs) 完成。
+ * 如果搜索结果已有封面，直接返回（避免不必要的网络请求）。
  */
 export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | null> {
-  const source = songInfo.source;
-
   // 如果搜索结果已有封面，直接返回
   if (songInfo.img) return normalizeKuwoCoverUrl(songInfo.img) || songInfo.img;
 
-  switch (source) {
-    case 'kw': {
-      try {
-        const resp = await httpFetch(
-          `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${songInfo.songmid}`,
-          { method: 'GET' },
-        );
-        if (resp.status === 200 && /^http/.test(resp.body?.trim())) {
-          // img1.kwcdn 部分网络不可达，统一改写到 img3.kuwo.cn
-          return normalizeKuwoCoverUrl(resp.body.trim());
-        }
-      } catch { /* ignore */ }
-      return null;
-    }
-
-    case 'kg': {
-      try {
-        const hash = songInfo._types['128k']?.hash || songInfo.hash || '';
-        const albumId = songInfo.albumId || 0;
-        const body = JSON.stringify({
-          appid: 1001, area_code: '1', behavior: 'play', clientver: '9020',
-          need_hash_offset: 1, relate: 1,
-          resource: [{ album_audio_id: 0, album_id: albumId, hash, id: 0, name: songInfo.name, type: 'audio' }],
-          token: '', userid: 2626431536, vip: 1,
-        });
-        const resp = await httpPostJson(
-          'http://media.store.kugou.com/v1/get_res_privilege',
-          body,
-          {
-            'KG-RC': '1',
-            'KG-THash': 'expand_search_manager.cpp:852736169:451',
-            'User-Agent': 'KuGou2012-9020-ExpandSearchManager',
-            'Content-Type': 'application/json',
-          },
-        );
-        if (resp?.error_code === 0 && resp.data?.[0]?.info) {
-          const info = resp.data[0].info;
-          const img = info.imgsize
-            ? info.image.replace('{size}', info.imgsize[0])
-            : info.image;
-          return img || null;
-        }
-      } catch { /* ignore */ }
-      return null;
-    }
-
-    case 'tx': {
-      const albumId = songInfo.albumMid || songInfo.albumId;
-      if (albumId) {
-        return `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumId}.jpg`;
-      }
-      return null;
-    }
-
-    case 'wy': {
-      try {
-        const resp = await httpFetch(
-          `https://music.163.com/api/song/detail/?id=${songInfo.songmid}&ids=%5B${songInfo.songmid}%5D`,
-          { method: 'GET', headers: { 'Referer': 'https://music.163.com', 'Cookie': 'MUSIC_A=1' } },
-        );
-        if (resp.status === 200) {
-          const body = JSON.parse(resp.body);
-          const picUrl = body?.songs?.[0]?.album?.picUrl;
-          if (picUrl) return picUrl;
-        }
-      } catch { /* ignore */ }
-      return null;
-    }
-
-    case 'mg': {
-      return null;
-    }
-
-    default:
-      return null;
+  try {
+    const result = await tauriInvoke('get_lx_cover', {
+      songInfo: toUrlSongInfo(songInfo),
+    });
+    return result ?? null;
+  } catch (e: any) {
+    console.warn(`[LxMusicSdk] getLxCover failed: ${e?.message || e}`);
+    return null;
   }
 }
 
@@ -1348,66 +1303,25 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
 
 /**
  * 获取落雪 LX 音源的实际播放 URL
- * 使用公共 API 代理服务解析音频链接，与 lx-music-desktop 的 api-test.js 一致
+ *
+ * 请求构造+缓存+主备 API 切换均由 Rust 后端 (url_resolver.rs) 完成，
+ * 前端仅负责调用 Tauri 命令并返回结果。
  */
 export async function lxGetMusicUrl(
   songInfo: LxSearchResultItem,
   type: string = '320k',
 ): Promise<{ type: string; url: string }> {
-  const source = songInfo.source;
-  let id: string;
-
-  // 各音源使用不同的标识符（与 lx-music-desktop api-test.js 一致）
-  switch (source) {
-    case 'kw':
-    case 'tx':
-    case 'wy':
-      id = songInfo.songmid;
-      break;
-    case 'kg':
-      // KG 使用 hash 而非 songmid
-      id = songInfo._types[type]?.hash || songInfo.hash || songInfo.songmid;
-      break;
-    case 'mg':
-      // MG 使用 copyrightId 而非 songmid
-      id = songInfo.copyrightId || songInfo.songmid;
-      break;
-    default:
-      throw new Error(`Unsupported source: ${source}`);
-  }
-
-  const url = `https://lxmusicapi.onrender.com/url/${source}/${id}/${type}`;
-  console.log(`[LxMusicSdk] getMusicUrl: ${url}`);
-
   try {
-    const resp = await httpFetch(url, {
-      method: 'GET',
-      headers: { 'User-Agent': 'lx-music request' },
+    const result = await tauriInvoke('resolve_lx_music_url', {
+      songInfo: toUrlSongInfo(songInfo),
+      quality: type,
     });
-    if (resp.status === 429) throw new Error('请求过于频繁，请稍后再试');
-    const body = JSON.parse(resp.body);
-    if (body.code === 0 && body.data) {
-      return { type, url: body.data };
+    if (result?.url) {
+      return { type: result.quality, url: result.url };
     }
-    throw new Error(body.msg || `获取播放链接失败 (code=${body.code})`);
+    throw new Error('获取播放链接失败: 后端返回空结果');
   } catch (e: any) {
-    // 备用 API
-    console.warn(`[LxMusicSdk] 主API失败，尝试备用: ${e.message}`);
-    const fallbackUrl = `http://ts.tempmusics.tk/url/${source}/${id}/${type}`;
-    try {
-      const resp2 = await httpFetch(fallbackUrl, {
-        method: 'GET',
-        headers: { 'User-Agent': 'lx-music request' },
-      });
-      if (resp2.status === 429) throw new Error('请求过于频繁，请稍后再试', { cause: e });
-      const body2 = JSON.parse(resp2.body);
-      if (body2.code === 0 && body2.data) {
-        return { type, url: body2.data };
-      }
-      throw new Error(body2.msg || `获取播放链接失败 (code=${body2.code})`, { cause: e });
-    } catch (e2: any) {
-      throw new Error(`获取播放链接失败: ${e2.message}`, { cause: e2 });
-    }
+    throw new Error(`获取播放链接失败: ${e?.message || e}`);
   }
 }
 

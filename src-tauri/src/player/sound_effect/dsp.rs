@@ -64,7 +64,13 @@ impl Biquad {
         let b1 = -2.0 * cosw;
         let b2 = 1.0 - alpha * a;
         let a0 = 1.0 + alpha / a;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * cosw / a0, (1.0 - alpha / a) / a0);
+        self.set_coeffs(
+            b0 / a0,
+            b1 / a0,
+            b2 / a0,
+            -2.0 * cosw / a0,
+            (1.0 - alpha / a) / a0,
+        );
     }
 
     /// Lowpass
@@ -78,7 +84,13 @@ impl Biquad {
         let b1 = 1.0 - cosw;
         let b2 = (1.0 - cosw) / 2.0;
         let a0 = 1.0 + alpha;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * cosw / a0, (1.0 - alpha) / a0);
+        self.set_coeffs(
+            b0 / a0,
+            b1 / a0,
+            b2 / a0,
+            -2.0 * cosw / a0,
+            (1.0 - alpha) / a0,
+        );
     }
 
     /// Highpass
@@ -92,7 +104,13 @@ impl Biquad {
         let b1 = -(1.0 + cosw);
         let b2 = (1.0 + cosw) / 2.0;
         let a0 = 1.0 + alpha;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * cosw / a0, (1.0 - alpha) / a0);
+        self.set_coeffs(
+            b0 / a0,
+            b1 / a0,
+            b2 / a0,
+            -2.0 * cosw / a0,
+            (1.0 - alpha) / a0,
+        );
     }
 
     /// Low shelf
@@ -150,7 +168,13 @@ impl Biquad {
         let b1 = -2.0 * cosw;
         let b2 = 1.0;
         let a0 = 1.0 + alpha;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * cosw / a0, (1.0 - alpha) / a0);
+        self.set_coeffs(
+            b0 / a0,
+            b1 / a0,
+            b2 / a0,
+            -2.0 * cosw / a0,
+            (1.0 - alpha) / a0,
+        );
     }
 
     /// Allpass（用于相位器/镶边）
@@ -164,7 +188,13 @@ impl Biquad {
         let b1 = -2.0 * cosw;
         let b2 = 1.0 + alpha;
         let a0 = 1.0 + alpha;
-        self.set_coeffs(b0 / a0, b1 / a0, b2 / a0, -2.0 * cosw / a0, (1.0 - alpha) / a0);
+        self.set_coeffs(
+            b0 / a0,
+            b1 / a0,
+            b2 / a0,
+            -2.0 * cosw / a0,
+            (1.0 - alpha) / a0,
+        );
     }
 
     fn set_coeffs(&mut self, b0: f32, b1: f32, b2: f32, a1: f32, a2: f32) {
@@ -233,14 +263,24 @@ impl OnePole {
     pub fn lowpass(cutoff: f32, sample_rate: f32) -> Self {
         let cutoff = cutoff.clamp(10.0, sample_rate * 0.45);
         let b1 = (-2.0 * PI * cutoff / sample_rate).exp();
-        Self { z1: 0.0, a0: 1.0 - b1, b1, is_lowpass: true }
+        Self {
+            z1: 0.0,
+            a0: 1.0 - b1,
+            b1,
+            is_lowpass: true,
+        }
     }
 
     /// 高通，cutoff Hz
     pub fn highpass(cutoff: f32, sample_rate: f32) -> Self {
         let cutoff = cutoff.clamp(10.0, sample_rate * 0.45);
         let b1 = (-2.0 * PI * cutoff / sample_rate).exp();
-        Self { z1: 0.0, a0: (1.0 + b1) / 2.0, b1, is_lowpass: false }
+        Self {
+            z1: 0.0,
+            a0: (1.0 + b1) / 2.0,
+            b1,
+            is_lowpass: false,
+        }
     }
 
     pub fn set_lowpass(&mut self, cutoff: f32, sample_rate: f32) {
@@ -278,7 +318,11 @@ pub struct DcBlocker {
 impl DcBlocker {
     pub fn new(sample_rate: f32) -> Self {
         let r = 1.0 - (2.0 * PI * 20.0 / sample_rate).min(PI);
-        Self { r, prev_in: 0.0, prev_out: 0.0 }
+        Self {
+            r,
+            prev_in: 0.0,
+            prev_out: 0.0,
+        }
     }
 
     #[inline]
@@ -308,7 +352,11 @@ pub struct DelayLine {
 impl DelayLine {
     pub fn new(size: usize) -> Self {
         let size = size.next_power_of_two().max(2);
-        Self { buffer: vec![0.0; size], mask: size - 1, write_pos: 0 }
+        Self {
+            buffer: vec![0.0; size],
+            mask: size - 1,
+            write_pos: 0,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -357,7 +405,10 @@ pub struct AllPass {
 
 impl AllPass {
     pub fn new(size: usize, gain: f32) -> Self {
-        Self { delay: DelayLine::new(size), gain }
+        Self {
+            delay: DelayLine::new(size),
+            gain,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -391,7 +442,11 @@ pub struct SmoothedValue {
 
 impl SmoothedValue {
     pub fn new(initial: f32) -> Self {
-        Self { current: initial, target: initial, coeff: 0.99 }
+        Self {
+            current: initial,
+            target: initial,
+            coeff: 0.99,
+        }
     }
 
     /// 设置时间常数（秒）
@@ -432,7 +487,11 @@ pub struct EnvelopeFollower {
 
 impl EnvelopeFollower {
     pub fn new(attack_ms: f32, release_ms: f32, sample_rate: f32) -> Self {
-        let mut ef = Self { envelope: 0.0, attack_coeff: 0.0, release_coeff: 0.0 };
+        let mut ef = Self {
+            envelope: 0.0,
+            attack_coeff: 0.0,
+            release_coeff: 0.0,
+        };
         ef.set_times(attack_ms, release_ms, sample_rate);
         ef
     }
@@ -445,7 +504,11 @@ impl EnvelopeFollower {
     #[inline]
     pub fn process(&mut self, input: f32) -> f32 {
         let inp = input.abs();
-        let c = if inp > self.envelope { self.attack_coeff } else { self.release_coeff };
+        let c = if inp > self.envelope {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
         self.envelope = self.envelope + (inp - self.envelope) * (1.0 - c);
         self.envelope
     }
@@ -466,7 +529,10 @@ pub struct Lfo {
 
 impl Lfo {
     pub fn new(freq: f32, sample_rate: f32) -> Self {
-        Self { phase: 0.0, phase_inc: (2.0 * PI * freq / sample_rate).min(PI) }
+        Self {
+            phase: 0.0,
+            phase_inc: (2.0 * PI * freq / sample_rate).min(PI),
+        }
     }
 
     pub fn set_freq(&mut self, freq: f32, sample_rate: f32) {
@@ -487,7 +553,11 @@ impl Lfo {
     pub fn tick_tri(&mut self) -> f32 {
         // 0..2PI → -1..1 三角
         let p = self.phase / (2.0 * PI);
-        let v = if p < 0.5 { 4.0 * p - 1.0 } else { 3.0 - 4.0 * p };
+        let v = if p < 0.5 {
+            4.0 * p - 1.0
+        } else {
+            3.0 - 4.0 * p
+        };
         self.phase += self.phase_inc;
         if self.phase >= 2.0 * PI {
             self.phase -= 2.0 * PI;
@@ -524,7 +594,7 @@ pub fn soft_clip(x: f32) -> f32 {
     } else {
         let excess = ax - THRESHOLD;
         let headroom = 1.0 - THRESHOLD; // 0.05
-        // 指数饱和：excess=0 → 0，excess→∞ → headroom
+                                        // 指数饱和：excess=0 → 0，excess→∞ → headroom
         let saturation = headroom * (1.0 - (-excess / headroom).exp());
         x.signum() * (THRESHOLD + saturation).min(1.0)
     }
@@ -579,7 +649,8 @@ mod tests {
             assert!(
                 (out - x).abs() < 1e-6,
                 "soft_clip should be transparent for |x| < 0.95, got soft_clip({}) = {}",
-                x, out
+                x,
+                out
             );
         }
     }
@@ -592,7 +663,8 @@ mod tests {
             assert!(
                 out.abs() <= 1.0,
                 "soft_clip should limit to [-1, 1], got soft_clip({}) = {}",
-                x, out
+                x,
+                out
             );
         }
     }
@@ -606,12 +678,14 @@ mod tests {
         assert!(
             (below - at).abs() < 0.01,
             "soft_clip should be continuous at threshold: {} vs {}",
-            below, at
+            below,
+            at
         );
         assert!(
             (at - above).abs() < 0.01,
             "soft_clip should be continuous at threshold: {} vs {}",
-            at, above
+            at,
+            above
         );
     }
 }

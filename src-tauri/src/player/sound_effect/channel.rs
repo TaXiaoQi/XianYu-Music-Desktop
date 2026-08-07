@@ -22,7 +22,7 @@
 //!
 //! 每个效果用 SmoothedValue(50ms) 做 wet 混合，启停无 click。
 
-use super::dsp::{Biquad, EnvelopeFollower, SmoothedValue, db_to_gain, gain_to_db};
+use super::dsp::{db_to_gain, gain_to_db, Biquad, EnvelopeFollower, SmoothedValue};
 use super::SoundEffectSettings;
 
 pub struct ChannelRack {
@@ -42,18 +42,18 @@ pub struct ChannelRack {
     cross_lp: [Biquad; 2],
 
     // ---- Bass Boost（模块 5）----
-    bass_shelf: [Biquad; 2],          // lowshelf @ 120Hz, Q=0.707
-    bass_detect_lp: [Biquad; 2],     // 低通 @ 250Hz（等效 AnalyserNode 前 1/8 频段）
-    bass_env: EnvelopeFollower,       // 低频包络跟随
-    bass_dyn_gain: SmoothedValue,     // 动态增益乘法（1.0~1.5）
-    bass_last_gain: f32,              // 跟踪 gain，避免每帧重设系数
+    bass_shelf: [Biquad; 2],      // lowshelf @ 120Hz, Q=0.707
+    bass_detect_lp: [Biquad; 2],  // 低通 @ 250Hz（等效 AnalyserNode 前 1/8 频段）
+    bass_env: EnvelopeFollower,   // 低频包络跟随
+    bass_dyn_gain: SmoothedValue, // 动态增益乘法（1.0~1.5）
+    bass_last_gain: f32,          // 跟踪 gain，避免每帧重设系数
 
     // ---- 动态均衡（模块 6）----
-    dyn_low_boost: [Biquad; 2],       // lowshelf @ 80Hz, +3dB
-    dyn_split_lp: [Biquad; 2],        // lowpass @ 5kHz
-    dyn_split_hp: [Biquad; 2],        // highpass @ 5kHz
-    dyn_comp_env: EnvelopeFollower,   // 高频包络（attack=1ms, release=50ms）
-    dyn_comp_reduction: [f32; 2],     // 各声道压缩增益
+    dyn_low_boost: [Biquad; 2],     // lowshelf @ 80Hz, +3dB
+    dyn_split_lp: [Biquad; 2],      // lowpass @ 5kHz
+    dyn_split_hp: [Biquad; 2],      // highpass @ 5kHz
+    dyn_comp_env: EnvelopeFollower, // 高频包络（attack=1ms, release=50ms）
+    dyn_comp_reduction: [f32; 2],   // 各声道压缩增益
 }
 
 impl ChannelRack {
@@ -137,14 +137,25 @@ impl ChannelRack {
 
     pub fn update_params(&mut self, s: &SoundEffectSettings) {
         // wet 目标
-        self.wet_vocal.set_target(if s.vocal_removal { 1.0 } else { 0.0 });
-        self.wet_mono.set_target(if s.mono_merge { 1.0 } else { 0.0 });
-        self.wet_swap.set_target(if s.channel_swap { 1.0 } else { 0.0 });
-        self.wet_widen.set_target(if s.stereo_widen.enabled { 1.0 } else { 0.0 });
-        self.wet_sep.set_target(if s.stereo_separation.enabled { 1.0 } else { 0.0 });
-        self.wet_crossfeed.set_target(if s.crossfeed.enabled { 1.0 } else { 0.0 });
-        self.wet_bass.set_target(if s.bass_boost.enabled { 1.0 } else { 0.0 });
-        self.wet_dyn_eq.set_target(if s.dynamic_eq.enabled { 1.0 } else { 0.0 });
+        self.wet_vocal
+            .set_target(if s.vocal_removal { 1.0 } else { 0.0 });
+        self.wet_mono
+            .set_target(if s.mono_merge { 1.0 } else { 0.0 });
+        self.wet_swap
+            .set_target(if s.channel_swap { 1.0 } else { 0.0 });
+        self.wet_widen
+            .set_target(if s.stereo_widen.enabled { 1.0 } else { 0.0 });
+        self.wet_sep.set_target(if s.stereo_separation.enabled {
+            1.0
+        } else {
+            0.0
+        });
+        self.wet_crossfeed
+            .set_target(if s.crossfeed.enabled { 1.0 } else { 0.0 });
+        self.wet_bass
+            .set_target(if s.bass_boost.enabled { 1.0 } else { 0.0 });
+        self.wet_dyn_eq
+            .set_target(if s.dynamic_eq.enabled { 1.0 } else { 0.0 });
 
         // Bass boost: lowshelf @ 120Hz, Q=0.707（仅 gain 变化时重设）
         let bg = s.bass_boost.gain.clamp(0.0, 15.0);
@@ -284,7 +295,13 @@ impl ChannelRack {
                 } else {
                     1.0
                 };
-                self.dyn_comp_reduction[i] = smooth_gain(self.dyn_comp_reduction[i], target, 1.0, 50.0, self.sample_rate);
+                self.dyn_comp_reduction[i] = smooth_gain(
+                    self.dyn_comp_reduction[i],
+                    target,
+                    1.0,
+                    50.0,
+                    self.sample_rate,
+                );
                 let merged = low + high * self.dyn_comp_reduction[i];
                 frame[i] = in_s * (1.0 - w) + merged * w;
             }
@@ -301,7 +318,11 @@ fn smoothing_amount(ms: f32, sr: f32) -> f32 {
 
 #[inline]
 fn smooth_gain(current: f32, target: f32, attack_ms: f32, release_ms: f32, sr: f32) -> f32 {
-    let t = if target.is_finite() { target.clamp(0.0, 32.0) } else { 1.0 };
+    let t = if target.is_finite() {
+        target.clamp(0.0, 32.0)
+    } else {
+        1.0
+    };
     let c = if t < current {
         smoothing_amount(attack_ms, sr)
     } else {

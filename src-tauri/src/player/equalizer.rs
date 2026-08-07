@@ -585,7 +585,12 @@ pub struct ClipGuardSource<I> {
 
 impl<I> ClipGuardSource<I> {
     pub fn new(inner: I) -> Self {
-        Self { inner, clip_count: 0, total_count: 0, max_seen: 0.0 }
+        Self {
+            inner,
+            clip_count: 0,
+            total_count: 0,
+            max_seen: 0.0,
+        }
     }
 }
 
@@ -781,15 +786,15 @@ mod tests {
         let mut clip_guard = ClipGuardSource::new(source);
 
         // ±1.0 以内完全透传，超出时 clamp 到 ±1.0
-        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 2.5 → clamp 到 1.0
-        assert_eq!(clip_guard.next().unwrap(), -1.0);  // -3.0 → clamp 到 -1.0
-        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 1.2 → clamp 到 1.0
+        assert_eq!(clip_guard.next().unwrap(), 1.0); // 2.5 → clamp 到 1.0
+        assert_eq!(clip_guard.next().unwrap(), -1.0); // -3.0 → clamp 到 -1.0
+        assert_eq!(clip_guard.next().unwrap(), 1.0); // 1.2 → clamp 到 1.0
         assert_eq!(clip_guard.next().unwrap(), -0.99); // -0.99 透传
-        assert_eq!(clip_guard.next().unwrap(), 0.98);  // 0.98 透传
-        assert_eq!(clip_guard.next().unwrap(), 0.0);   // 0.0 透传
-        assert_eq!(clip_guard.next().unwrap(), 0.5);   // 0.5 透传
-        assert_eq!(clip_guard.next().unwrap(), 1.0);   // 1.0 透传（边界值）
-        assert_eq!(clip_guard.next().unwrap(), -1.0);  // -1.0 透传（边界值）
+        assert_eq!(clip_guard.next().unwrap(), 0.98); // 0.98 透传
+        assert_eq!(clip_guard.next().unwrap(), 0.0); // 0.0 透传
+        assert_eq!(clip_guard.next().unwrap(), 0.5); // 0.5 透传
+        assert_eq!(clip_guard.next().unwrap(), 1.0); // 1.0 透传（边界值）
+        assert_eq!(clip_guard.next().unwrap(), -1.0); // -1.0 透传（边界值）
     }
 
     #[test]

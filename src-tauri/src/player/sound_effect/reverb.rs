@@ -261,10 +261,10 @@ impl EchoReverb {
         let base_len = ((interval_ms * sample_rate / 1000.0).round() as usize).max(1);
         let len_l = base_len;
         let len_r = base_len + 23; // 立体声扩散
-        // 扩散低通系数：0→不滤(清晰回声), 1→全滤(模糊)
+                                   // 扩散低通系数：0→不滤(清晰回声), 1→全滤(模糊)
         let diff_coeff = diffusion * 0.6; // 0.5 → 0.3
-        // 低频调制：对齐 YinDongMusic tunnel IR 的 sin(i*0.01+ch*2.1)*0.3 分量
-        // 0.01 rad/sample @ 44100Hz ≈ 70Hz 低频调制，增强隧道壁扩散感
+                                          // 低频调制：对齐 YinDongMusic tunnel IR 的 sin(i*0.01+ch*2.1)*0.3 分量
+                                          // 0.01 rad/sample @ 44100Hz ≈ 70Hz 低频调制，增强隧道壁扩散感
         let lfo_inc = 0.01;
         Self {
             delay_l: vec![0.0; len_l],
@@ -364,13 +364,7 @@ impl Resonator {
     /// - `decay_rate`: 衰减速率（每秒衰减 e^(-decay_rate)）
     /// - `sensitivity`: 输入激励系数
     /// - `gain`: 输出增益
-    fn new(
-        freq: f32,
-        sample_rate: f32,
-        decay_rate: f32,
-        sensitivity: f32,
-        gain: f32,
-    ) -> Self {
+    fn new(freq: f32, sample_rate: f32, decay_rate: f32, sensitivity: f32, gain: f32) -> Self {
         Self {
             phase: 0.0,
             phase_inc: 2.0 * PI * freq / sample_rate,
@@ -537,10 +531,18 @@ impl ReverbRack {
     }
 
     pub fn reset(&mut self) {
-        for c in &mut self.combs_l { c.clear(); }
-        for c in &mut self.combs_r { c.clear(); }
-        for a in &mut self.allpass_l { a.clear(); }
-        for a in &mut self.allpass_r { a.clear(); }
+        for c in &mut self.combs_l {
+            c.clear();
+        }
+        for c in &mut self.combs_r {
+            c.clear();
+        }
+        for a in &mut self.allpass_l {
+            a.clear();
+        }
+        for a in &mut self.allpass_r {
+            a.clear();
+        }
         self.early_l.clear();
         self.early_r.clear();
         self.tunnel_echo.clear();
@@ -691,10 +693,7 @@ impl ReverbRack {
             out_r = a.process(out_r);
         }
 
-        (
-            out_l * WET_BOOST + er_l,
-            out_r * WET_BOOST + er_r,
-        )
+        (out_l * WET_BOOST + er_l, out_r * WET_BOOST + er_r)
     }
 
     // --- Tunnel 特征叠加（非主体，仅叠加到 Freeverb 上）---
@@ -857,19 +856,53 @@ mod tests {
     #[test]
     fn test_preset_mapping_all_22() {
         let presets = [
-            "phone", "church", "hall", "cinema", "restaurant", "bathroom", "room", "stereo",
-            "matrixReverb1", "matrixReverb2", "cardioidSpread", "magneticStereo",
-            "feedbackSuppressor", "algoStudio", "algoHall", "algoBathroom", "algoTunnel",
-            "algoValley", "algoMetal", "algoPlate", "algoSpring", "algoPreDelay",
+            "phone",
+            "church",
+            "hall",
+            "cinema",
+            "restaurant",
+            "bathroom",
+            "room",
+            "stereo",
+            "matrixReverb1",
+            "matrixReverb2",
+            "cardioidSpread",
+            "magneticStereo",
+            "feedbackSuppressor",
+            "algoStudio",
+            "algoHall",
+            "algoBathroom",
+            "algoTunnel",
+            "algoValley",
+            "algoMetal",
+            "algoPlate",
+            "algoSpring",
+            "algoPreDelay",
         ];
         for p in &presets {
             let (algo, room, damp, width, gain) = preset_params(p);
             assert!(room >= 0.0, "preset {} room {} 为负", p, room);
-            assert!(damp >= 0.0 && damp <= 1.0, "preset {} damp {} 越界", p, damp);
-            assert!(width >= 0.0 && width <= 1.0, "preset {} width {} 越界", p, width);
+            assert!(
+                damp >= 0.0 && damp <= 1.0,
+                "preset {} damp {} 越界",
+                p,
+                damp
+            );
+            assert!(
+                width >= 0.0 && width <= 1.0,
+                "preset {} width {} 越界",
+                p,
+                width
+            );
             assert!(gain > 0.0, "preset {} gain {} 非正", p, gain);
             // 全部预设统一使用 Freeverb
-            assert_eq!(algo, ReverbAlgorithm::Freeverb, "preset {} 应为 Freeverb, 实际 {:?}", p, algo);
+            assert_eq!(
+                algo,
+                ReverbAlgorithm::Freeverb,
+                "preset {} 应为 Freeverb, 实际 {:?}",
+                p,
+                algo
+            );
         }
     }
 
@@ -907,7 +940,12 @@ mod tests {
         rack48.prepare(48000.0, 2);
         let len48 = rack48.combs_l[0].buffer.len();
 
-        assert!(len48 > len44, "48000Hz 梳状长度({})应 > 44100Hz({})", len48, len44);
+        assert!(
+            len48 > len44,
+            "48000Hz 梳状长度({})应 > 44100Hz({})",
+            len48,
+            len44
+        );
         assert_eq!(len44, 1116);
         assert_eq!(len48, 1215);
     }
@@ -928,8 +966,16 @@ mod tests {
         }
         let mut frame = [0.42_f32, -0.17];
         rack.process(&mut frame, 2, &s);
-        assert!((frame[0] - 0.42).abs() < 1e-6, "bypass 后 L 不等于输入: {}", frame[0]);
-        assert!((frame[1] + 0.17).abs() < 1e-6, "bypass 后 R 不等于输入: {}", frame[1]);
+        assert!(
+            (frame[0] - 0.42).abs() < 1e-6,
+            "bypass 后 L 不等于输入: {}",
+            frame[0]
+        );
+        assert!(
+            (frame[1] + 0.17).abs() < 1e-6,
+            "bypass 后 R 不等于输入: {}",
+            frame[1]
+        );
     }
 
     #[test]
@@ -938,11 +984,25 @@ mod tests {
         let fb_small = feedback_from_room(0.2);
         let fb_mid = feedback_from_room(0.5);
         let fb_large = feedback_from_room(0.8);
-        assert!(fb_mid > fb_small, "room=0.5 feedback({})应 > room=0.2({})", fb_mid, fb_small);
-        assert!(fb_large > fb_mid, "room=0.8 feedback({})应 > room=0.5({})", fb_large, fb_mid);
+        assert!(
+            fb_mid > fb_small,
+            "room=0.5 feedback({})应 > room=0.2({})",
+            fb_mid,
+            fb_small
+        );
+        assert!(
+            fb_large > fb_mid,
+            "room=0.8 feedback({})应 > room=0.5({})",
+            fb_large,
+            fb_mid
+        );
         // 极端值被钳位到 FEEDBACK_MAX
         let fb_clamped = feedback_from_room(2.0);
-        assert!(fb_clamped <= FEEDBACK_MAX, "feedback 超过上限 {}", fb_clamped);
+        assert!(
+            fb_clamped <= FEEDBACK_MAX,
+            "feedback 超过上限 {}",
+            fb_clamped
+        );
     }
 
     #[test]
@@ -1079,8 +1139,14 @@ mod tests {
         let mut rack = ReverbRack::new();
         rack.prepare(44100.0, 2);
         for p in [
-            "church", "algoTunnel", "algoValley", "algoMetal",
-            "algoSpring", "algoPlate", "hall", "algoHall",
+            "church",
+            "algoTunnel",
+            "algoValley",
+            "algoMetal",
+            "algoSpring",
+            "algoPlate",
+            "hall",
+            "algoHall",
         ] {
             let s = settings_for(p);
             rack.update_params(&s);
@@ -1105,7 +1171,12 @@ mod tests {
             res.process(0.0);
         }
         let final_amp = res.process(0.0).abs();
-        assert!(final_amp < initial * 0.1, "共振器未衰减: initial={}, final={}", initial, final_amp);
+        assert!(
+            final_amp < initial * 0.1,
+            "共振器未衰减: initial={}, final={}",
+            initial,
+            final_amp
+        );
         assert!(final_amp < 0.001, "共振器最终幅度过大: {}", final_amp);
     }
 
@@ -1116,7 +1187,8 @@ mod tests {
         // 灌入一个脉冲然后静音，应在 120ms (~5292 样本) 后看到回声
         echo.process(1.0, 1.0);
         let mut max_echo = 0.0_f32;
-        for _ in 0..12000 { // ~272ms
+        for _ in 0..12000 {
+            // ~272ms
             let (l, r) = echo.process(0.0, 0.0);
             max_echo = max_echo.max(l.abs()).max(r.abs());
         }

@@ -30,8 +30,8 @@ pub async fn plugin_http_request(
     timeout: Option<u64>,
     follow: Option<u32>,
 ) -> Result<PluginHttpResponse, String> {
-    let method = reqwest::Method::from_bytes(method.trim().as_bytes())
-        .map_err(|error| error.to_string())?;
+    let method =
+        reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
 
     let redirect_limit = follow.unwrap_or(10);
     let timeout_secs = timeout.unwrap_or(30);
@@ -45,8 +45,11 @@ pub async fn plugin_http_request(
     let client = if timeout_secs == 0 {
         client_builder.build()
     } else {
-        client_builder.timeout(Duration::from_secs(timeout_secs)).build()
-    }.map_err(|error| error.to_string())?;
+        client_builder
+            .timeout(Duration::from_secs(timeout_secs))
+            .build()
+    }
+    .map_err(|error| error.to_string())?;
 
     let mut request = client.request(method, &url);
     if let Some(headers) = headers {
@@ -109,8 +112,8 @@ pub async fn plugin_http_request_binary(
 ) -> Result<PluginHttpBinaryResponse, String> {
     use base64::{engine::general_purpose, Engine as _};
 
-    let method = reqwest::Method::from_bytes(method.trim().as_bytes())
-        .map_err(|error| error.to_string())?;
+    let method =
+        reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
 
     let redirect_limit = follow.unwrap_or(10);
     let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
@@ -191,7 +194,11 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
     // JSON 备份文件可能包含封面 data URI 和歌词，允许更大体积（50MB）；
     // 其他文本文件（JS/TXT/M3U）保持 5MB 上限
-    let max_size = if ext == "json" { 50 * 1024 * 1024 } else { 5 * 1024 * 1024 };
+    let max_size = if ext == "json" {
+        50 * 1024 * 1024
+    } else {
+        5 * 1024 * 1024
+    };
     if metadata.len() > max_size {
         return Err(format!("File is larger than {} MB", max_size / 1024 / 1024));
     }
@@ -295,10 +302,13 @@ pub async fn download_audio_to_temp(
 
     // 写入临时文件
     let temp_dir = std::env::temp_dir();
-    let file_name = format!("xy_music_{}.m4s", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
+    let file_name = format!(
+        "xy_music_{}.m4s",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
     let temp_path = temp_dir.join(&file_name);
     std::fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
 
