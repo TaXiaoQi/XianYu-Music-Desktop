@@ -152,10 +152,11 @@ const meterItems: Array<{ key: keyof ProfileStats; label: string }> = [
 ];
 
 const displayStats = computed((): ProfileStats => ({
-  favorite_count: stats.value?.favorite_count ?? collectionsStore.favoritePaths.length,
-  playlist_count: stats.value?.playlist_count ?? collectionsStore.playlists.length,
+  // 收藏、歌单、播放历史均为本地管理的数据，直接使用本地统计
+  favorite_count: collectionsStore.favoritePaths.length,
+  playlist_count: collectionsStore.playlists.length,
   starred_count: stats.value?.starred_count ?? 0,
-  history_count: stats.value?.history_count ?? collectionsStore.recentSongs.length,
+  history_count: collectionsStore.recentSongs.length,
   listening_count: stats.value?.listening_count ?? 0,
   revision: stats.value?.revision ?? 0,
   updated_at: stats.value?.updated_at ?? null,

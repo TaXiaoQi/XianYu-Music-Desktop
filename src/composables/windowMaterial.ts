@@ -187,8 +187,9 @@ export async function applyWindowMaterial(
       });
       await trySetWindowShadow(false);
     } else {
-      await appWindow.clearEffects();
+      // 先设置不透明背景色，再清除材质效果，避免清除效果后窗口背景仍为透明导致闪烁
       await trySetWindowBackgroundColor(getBaseWindowColor(isDark));
+      await appWindow.clearEffects();
       await trySetWindowShadow(true);
     }
 
