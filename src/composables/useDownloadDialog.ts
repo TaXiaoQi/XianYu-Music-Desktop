@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import type { Song } from '../types';
 import { useSettings } from '../features/settings/useSettings';
 
@@ -22,6 +22,7 @@ const downloadCover = ref(readBool(SK_COVER, true));
 
 let selectionInitialized = localStorage.getItem(SK_INIT) === 'true';
 let watchRegistered = false;
+let closeDialogTimer: ReturnType<typeof setTimeout> | null = null;
 
 function initSelectionIfNeeded() {
   if (selectionInitialized) return;
@@ -44,6 +45,13 @@ function registerPersistenceWatchers() {
 export function useDownloadDialog() {
   registerPersistenceWatchers();
 
+  onUnmounted(() => {
+    if (closeDialogTimer) {
+      clearTimeout(closeDialogTimer);
+      closeDialogTimer = null;
+    }
+  });
+
   const openDownloadDialog = (song: Song) => {
     currentDownloadSong.value = song;
     initSelectionIfNeeded();
@@ -53,8 +61,12 @@ export function useDownloadDialog() {
   const closeDownloadDialog = () => {
     isDownloadDialogVisible.value = false;
     // 延迟清理对象以保持关闭动画过渡的平滑性
-    setTimeout(() => {
+    if (closeDialogTimer) {
+      clearTimeout(closeDialogTimer);
+    }
+    closeDialogTimer = setTimeout(() => {
       currentDownloadSong.value = null;
+      closeDialogTimer = null;
     }, 300);
   };
 

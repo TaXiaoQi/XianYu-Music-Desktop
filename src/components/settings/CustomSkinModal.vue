@@ -23,12 +23,14 @@ const isDarkForeground = computed(() => preview.value.foregroundStyle === 'dark'
 
 // --- 淡出动画 ---
 const isClosing = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const closeWithAnimation = () => {
   if (isClosing.value) return;
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('close');
+    closeTimer = null;
   }, 220);
 };
 
@@ -316,6 +318,10 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;
+  }
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
   }
 });
 

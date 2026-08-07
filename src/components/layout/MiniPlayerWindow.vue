@@ -6,6 +6,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { getNextWheelVolume } from '../../features/playback';
+import { clamp } from '../../utils/math';
 import { applyWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
 import {
   MINI_PLAYER_ACTION_EVENT,
@@ -68,7 +69,7 @@ let cachedQueueMeta: Record<string, Song> = {};
 
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0;
-  return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100));
+  return clamp((currentTime.value / duration.value) * 100, 0, 100);
 });
 
 // 0=顺序播放, 1=单曲循环, 2=随机
@@ -100,7 +101,7 @@ const applyWindowHeight = async () => {
 };
 
 const setVolume = (nextVolume: number) => {
-  const normalizedVolume = Math.max(0, Math.min(100, Math.round(nextVolume)));
+  const normalizedVolume = clamp(Math.round(nextVolume), 0, 100);
   volume.value = normalizedVolume;
   sendAction({ type: 'set-volume', volume: normalizedVolume });
   void emitVolumeState();
@@ -232,7 +233,7 @@ const toggleMiniPlaylist = () => {
 const updateProgress = (clientX: number) => {
   if (!progressBarRef.value || !duration.value) return;
   const rect = progressBarRef.value.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const percent = clamp((clientX - rect.left) / rect.width, 0, 1);
   currentTime.value = percent * duration.value;
 };
 

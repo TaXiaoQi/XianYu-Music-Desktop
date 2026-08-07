@@ -1468,7 +1468,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
     if (!song.cover_thumb_path) {
       void pluginGetCover(pluginSrc, item).then((coverUrl) => {
         if (coverUrl) song.cover_thumb_path = coverUrl;
-      }).catch(() => {});
+      }).catch(() => { /* 封面加载失败，忽略 */ });
     }
   } catch (e: any) {
     console.warn('[MusicFree] 播放失败:', e?.message);

@@ -12,7 +12,7 @@
  * - 歌曲以 song_hash 去重，云端已存在则跳过。
  */
 
-import { ref } from 'vue';
+import { ref, onUnmounted } from 'vue';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useAuthStore } from '../features/auth/store';
@@ -92,6 +92,7 @@ export function usePlaylistSync() {
   const autoSyncStatus = ref('');
   const autoSyncDelayed = ref(false);
   let autoSyncInitialized = false;
+  let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** 检查是否可以同步（已登录 + 开启了歌单上传） */
   function canSync(): boolean {
@@ -997,8 +998,12 @@ export function usePlaylistSync() {
       },
       onSyncComplete: (success) => {
         autoSyncStatus.value = success ? '自动同步完成' : '自动同步未完成';
-        setTimeout(() => {
+        if (autoSyncStatusTimer) {
+          clearTimeout(autoSyncStatusTimer);
+        }
+        autoSyncStatusTimer = setTimeout(() => {
           autoSyncStatus.value = '';
+          autoSyncStatusTimer = null;
         }, 5000);
       },
       onDelayed: (delaySeconds, attempt) => {
@@ -1024,6 +1029,13 @@ export function usePlaylistSync() {
       scheduler.stop();
     }
   }
+
+  onUnmounted(() => {
+    if (autoSyncStatusTimer) {
+      clearTimeout(autoSyncStatusTimer);
+      autoSyncStatusTimer = null;
+    }
+  });
 
   return {
     syncing,

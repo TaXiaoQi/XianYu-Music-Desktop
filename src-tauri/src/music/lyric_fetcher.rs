@@ -10,6 +10,35 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
+use regex::Regex;
+use std::sync::OnceLock;
+
+// ==================== Regex caches (module-level, compiled once) ====================
+static KG_ID_HEADER_RE: OnceLock<Regex> = OnceLock::new();
+static KG_LANGUAGE_RE: OnceLock<Regex> = OnceLock::new();
+static KG_LX_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static KG_WORD_TAG_RE: OnceLock<Regex> = OnceLock::new();
+static KG_WORD_PLAIN_RE: OnceLock<Regex> = OnceLock::new();
+static KW_LRC_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static KW_TAG_RE: OnceLock<Regex> = OnceLock::new();
+static KW_LYRICX_TAG_RE: OnceLock<Regex> = OnceLock::new();
+static KW_WORD_TIME_ALL_RE: OnceLock<Regex> = OnceLock::new();
+static KW_LX_LINE_RE: OnceLock<Regex> = OnceLock::new();
+static KW_TIME_CHECK_RE: OnceLock<Regex> = OnceLock::new();
+static TX_LYRIC_CONTENT_OPEN_RE: OnceLock<Regex> = OnceLock::new();
+static TX_LYRIC_CONTENT_CLOSE_RE: OnceLock<Regex> = OnceLock::new();
+static TX_LINE_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static TX_LINE_TIME2_RE: OnceLock<Regex> = OnceLock::new();
+static TX_WORD_TIME_GROUP_RE: OnceLock<Regex> = OnceLock::new();
+static TX_WORD_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static TX_WORD_EXTRACT_RE: OnceLock<Regex> = OnceLock::new();
+static WY_YRC_LINE_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static WY_YRC_WORD_TAG_RE: OnceLock<Regex> = OnceLock::new();
+static WY_YRC_CHECK_RE: OnceLock<Regex> = OnceLock::new();
+static WY_FIX_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static WY_FIX_ROMA_TIME_RE: OnceLock<Regex> = OnceLock::new();
+static WY_FIX_ROMA_TRAIL_RE: OnceLock<Regex> = OnceLock::new();
+
 // ==================== Types ====================
 
 /// 歌词源返回的歌曲信息，作为纯反序列化 DTO。
@@ -734,17 +763,17 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
         str_in.strip_prefix(|c: char| c.is_ascii() && !c.is_alphanumeric())
     {
         // Remove [id:$...] header
-        let re = regex::Regex::new(r"^.*\[id:\$\w+\]\n").unwrap();
+        let re = KG_ID_HEADER_RE.get_or_init(|| Regex::new(r"^.*\[id:\$\w+\]\n").unwrap());
         re.replace(stripped, "").to_string()
     } else {
-        let re = regex::Regex::new(r"^.*\[id:\$\w+\]\n").unwrap();
+        let re = KG_ID_HEADER_RE.get_or_init(|| Regex::new(r"^.*\[id:\$\w+\]\n").unwrap());
         re.replace(&str_in, "").to_string()
     };
 
     let mut result = LyricResult::default();
 
     // Extract translation
-    let trans_re = regex::Regex::new(r"\[language:([\w=\\/+]+)\]").unwrap();
+    let trans_re = KG_LANGUAGE_RE.get_or_init(|| Regex::new(r"\[language:([\w=\\/+]+)\]").unwrap());
     let mut work_str = s.clone();
     if let Some(caps) = trans_re.captures(&s) {
         let encoded = &caps[1];
@@ -799,8 +828,8 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
     }
 
     // Parse lxlyric from [time,duration] format
-    let time_re = regex::Regex::new(r"\[(\d+),(\d+)\]").unwrap();
-    let word_tag_re = regex::Regex::new(r"<(\d+,\d+),\d+>").unwrap();
+    let time_re = KG_LX_TIME_RE.get_or_init(|| Regex::new(r"\[(\d+),(\d+)\]").unwrap());
+    let word_tag_re = KG_WORD_TAG_RE.get_or_init(|| Regex::new(r"<(\d+,\d+),\d+>").unwrap());
 
     let mut lxlyric = work_str.clone();
     let mut line_idx = 0;
@@ -847,7 +876,7 @@ fn kg_parse_lyric(str_in: &str) -> LyricResult {
     lxlyric = decode_html_entities(&lxlyric);
 
     // Generate plain lyric by removing word tags
-    let word_re = regex::Regex::new(r"<\d+,\d+>").unwrap();
+    let word_re = KG_WORD_PLAIN_RE.get_or_init(|| Regex::new(r"<\d+,\d+>").unwrap());
     result.lyric = word_re.replace_all(&lxlyric, "").to_string();
     result.lxlyric = lxlyric;
 
@@ -991,10 +1020,10 @@ fn ms_format(time_ms: u64) -> String {
 }
 
 fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
-    let time_re = regex::Regex::new(r"^\[([\d:.]*)]").unwrap();
+    let time_re = KW_LRC_TIME_RE.get_or_init(|| Regex::new(r"^\[([\d:.]*)]").unwrap());
     let tag_re =
-        regex::Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap();
-    let lyricx_tag_re = regex::Regex::new(r"^<-?\d+,-?\d+>").unwrap();
+        KW_TAG_RE.get_or_init(|| Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap());
+    let lyricx_tag_re = KW_LYRICX_TAG_RE.get_or_init(|| Regex::new(r"^<-?\d+,-?\d+>").unwrap());
 
     let mut tags: Vec<String> = Vec::new();
     let mut lrc_arr: Vec<(String, String)> = Vec::new(); // (time, text)
@@ -1082,11 +1111,11 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
 }
 
 fn kw_parse_lxlyric(lyric: &str) -> Option<String> {
-    let word_time_all_re = regex::Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap();
+    let word_time_all_re = KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
     let word_line_re =
-        regex::Regex::new(r"^(\[\d{1,2}:.*\d{1,4}])\s*(\S+(?:\s+\S+)*)?\s*").unwrap();
+        KW_LX_LINE_RE.get_or_init(|| Regex::new(r"^(\[\d{1,2}:.*\d{1,4}])\s*(\S+(?:\s+\S+)*)?\s*").unwrap());
     let tag_re =
-        regex::Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap();
+        KW_TAG_RE.get_or_init(|| Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap());
 
     let mut offset = 1i32;
     let mut offset2 = 1i32;
@@ -1212,7 +1241,7 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         Err(_) => return Ok(None),
     };
 
-    let word_time_re = regex::Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap();
+    let word_time_re = KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
     if !lrc_info.tlyric.is_empty() {
         lrc_info.tlyric = word_time_re.replace_all(&lrc_info.tlyric, "").to_string();
     }
@@ -1224,7 +1253,7 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     lrc_info.lyric = word_time_re.replace_all(&lrc_info.lyric, "").to_string();
 
     // Validate lyric has time tags
-    let time_check = regex::Regex::new(r"\[\d{1,2}:.*\d{1,4}]").unwrap();
+    let time_check = KW_TIME_CHECK_RE.get_or_init(|| Regex::new(r"\[\d{1,2}:.*\d{1,4}]").unwrap());
     if !time_check.is_match(&lrc_info.lyric) {
         return Ok(None);
     }
@@ -1235,8 +1264,8 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 // ==================== TX (QQ Music) Lyric Fetching ====================
 
 fn tx_remove_tag(s: &str) -> String {
-    let re1 = regex::Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap();
-    let re2 = regex::Regex::new(r#""/>[\S\s]*$"#).unwrap();
+    let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
+    let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
     re2.replace_all(&re1.replace_all(s, ""), "").to_string()
 }
 
@@ -1246,11 +1275,11 @@ fn tx_parse_lyric(lrc: &str) -> (String, String) {
         return (String::new(), String::new());
     }
 
-    let line_time_re = regex::Regex::new(r"^\[(\d+),\d+]").unwrap();
-    let line_time2_re = regex::Regex::new(r"^\[([\d:.]+)]").unwrap();
-    let word_time_all_re = regex::Regex::new(r"(\(\d+,\d+\))").unwrap();
-    let word_time_re = regex::Regex::new(r"\(\d+,\d+\)").unwrap();
-    let word_extract_re = regex::Regex::new(r"\((\d+),(\d+)\)").unwrap();
+    let line_time_re = TX_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),\d+]").unwrap());
+    let line_time2_re = TX_LINE_TIME2_RE.get_or_init(|| Regex::new(r"^\[([\d:.]+)]").unwrap());
+    let word_time_all_re = TX_WORD_TIME_GROUP_RE.get_or_init(|| Regex::new(r"(\(\d+,\d+\))").unwrap());
+    let word_time_re = TX_WORD_TIME_RE.get_or_init(|| Regex::new(r"\(\d+,\d+\)").unwrap());
+    let word_extract_re = TX_WORD_EXTRACT_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
 
     let mut lxlrc_lines: Vec<String> = Vec::new();
     let mut lrc_lines: Vec<String> = Vec::new();
@@ -1321,8 +1350,8 @@ fn tx_parse_rlyric(lrc: &str) -> String {
         return String::new();
     }
 
-    let line_time_re = regex::Regex::new(r"^\[(\d+),\d+]").unwrap();
-    let word_time_all_re = regex::Regex::new(r"\(\d+,\d+\)").unwrap();
+    let line_time_re = TX_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),\d+]").unwrap());
+    let word_time_all_re = TX_WORD_TIME_RE.get_or_init(|| Regex::new(r"\(\d+,\d+\)").unwrap());
     let mut lrc_lines: Vec<String> = Vec::new();
 
     for raw_line in lrc.split('\n') {
@@ -1365,7 +1394,7 @@ fn tx_get_intv(interval: &str) -> u64 {
 }
 
 fn tx_fix_rlrc_time_tag(rlrc: &str, lrc: &str) -> String {
-    let line_time2_re = regex::Regex::new(r"^\[([\d:.]+)]").unwrap();
+    let line_time2_re = TX_LINE_TIME2_RE.get_or_init(|| Regex::new(r"^\[([\d:.]+)]").unwrap());
     let rlrc_lines: Vec<&str> = rlrc.split('\n').collect();
     let mut lrc_lines: Vec<&str> = lrc.split('\n').collect();
     let mut new_lrc: Vec<String> = Vec::new();
@@ -1393,7 +1422,7 @@ fn tx_fix_rlrc_time_tag(rlrc: &str, lrc: &str) -> String {
 }
 
 fn tx_fix_tlrc_time_tag(tlrc: &str, lrc: &str) -> String {
-    let line_time2_re = regex::Regex::new(r"^\[([\d:.]+)]").unwrap();
+    let line_time2_re = TX_LINE_TIME2_RE.get_or_init(|| Regex::new(r"^\[([\d:.]+)]").unwrap());
     let tlrc_lines: Vec<&str> = tlrc.split('\n').collect();
     let mut lrc_lines: Vec<&str> = lrc.split('\n').collect();
     let mut new_lrc: Vec<String> = Vec::new();
@@ -1502,8 +1531,8 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                     }
                     if let Some(trans_hex) = data.get("trans").and_then(|v| v.as_str()) {
                         if let Ok(decrypted) = qrc_decrypt(trans_hex) {
-                            let re1 = regex::Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap();
-                            let re2 = regex::Regex::new(r#""/>[\S\s]*$"#).unwrap();
+                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
+                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
                             tlyric = re2
                                 .replace_all(&re1.replace_all(&decrypted, ""), "")
                                 .to_string();
@@ -1511,8 +1540,8 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                     }
                     if let Some(roma_hex) = data.get("roma").and_then(|v| v.as_str()) {
                         if let Ok(decrypted) = qrc_decrypt(roma_hex) {
-                            let re1 = regex::Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap();
-                            let re2 = regex::Regex::new(r#""/>[\S\s]*$"#).unwrap();
+                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
+                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
                             rlyric = re2
                                 .replace_all(&re1.replace_all(&decrypted, ""), "")
                                 .to_string();
@@ -1577,8 +1606,8 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 // ==================== WY (NetEase) Lyric Fetching ====================
 
 fn parse_yrc(yrc_text: &str) -> String {
-    let line_time_re = regex::Regex::new(r"^\[(\d+),(\d+)]").unwrap();
-    let word_tag_re = regex::Regex::new(r"\((\d+),(\d+),\d+\)").unwrap();
+    let line_time_re = WY_YRC_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)]").unwrap());
+    let word_tag_re = WY_YRC_WORD_TAG_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+),\d+\)").unwrap());
     let mut result: Vec<String> = Vec::new();
 
     for raw_line in yrc_text.split('\n') {
@@ -1784,7 +1813,7 @@ fn try_extract_yrc(body: &serde_json::Value) -> String {
     if let Some(klyric) = body.get("klyric") {
         if let Some(lyric) = klyric.get("lyric").and_then(|v| v.as_str()) {
             if lyric.len() > 50 {
-                let re = regex::Regex::new(r"^\[\d+,\d+]").unwrap();
+                let re = WY_YRC_CHECK_RE.get_or_init(|| Regex::new(r"^\[\d+,\d+]").unwrap());
                 if re.is_match(lyric) {
                     let result = parse_yrc(lyric);
                     if !result.is_empty() {
@@ -1795,7 +1824,7 @@ fn try_extract_yrc(body: &serde_json::Value) -> String {
         }
         if let Some(lyric) = klyric.as_str() {
             if lyric.len() > 50 {
-                let re = regex::Regex::new(r"^\[\d+,\d+]").unwrap();
+                let re = WY_YRC_CHECK_RE.get_or_init(|| Regex::new(r"^\[\d+,\d+]").unwrap());
                 if re.is_match(lyric) {
                     let result = parse_yrc(lyric);
                     if !result.is_empty() {
@@ -1845,7 +1874,7 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
     if lrc.is_empty() {
         return (lrc.to_string(), tlrc.to_string(), romalrc.to_string());
     }
-    let re = regex::Regex::new(r"\[(\d{2}:\d{2}):(\d{2})]").unwrap();
+    let re = WY_FIX_TIME_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2})]").unwrap());
     let new_lrc = re.replace_all(lrc, "[$1.$2]").to_string();
     let new_tlrc = if !tlrc.is_empty() {
         re.replace_all(tlrc, "[$1.$2]").to_string()
@@ -1855,9 +1884,9 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
 
     if new_lrc != lrc || new_tlrc != tlrc {
         let new_romalrc = if !romalrc.is_empty() {
-            let re2 = regex::Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap();
+            let re2 = WY_FIX_ROMA_TIME_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap());
             let intermediate = re2.replace_all(romalrc, "[$1.$2]").to_string();
-            let re3 = regex::Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap();
+            let re3 = WY_FIX_ROMA_TRAIL_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap());
             re3.replace_all(&intermediate, "[$1]").to_string()
         } else {
             romalrc.to_string()

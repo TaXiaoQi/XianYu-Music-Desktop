@@ -347,7 +347,7 @@ export const createPlayerLifecycle = ({
     watch(sourceSongPaths, scheduleStatePersistence);
     watch(playQueuePaths, scheduleStatePersistence);
     watch(watchedFolders, scheduleStatePersistence);
-    watch(favoritePaths, scheduleStatePersistence, { deep: true });
+    watch(favoritePaths, scheduleStatePersistence);
 
     // 合并两个对 playlists 的 watch：持久化保存 + 在线歌曲注入 songPool。
     // 使用 deep 监听以捕获歌单内歌曲增删，但批量合并 setExtraSongs 以减少 songCatalogVersion 递增。
@@ -371,7 +371,7 @@ export const createPlayerLifecycle = ({
         libraryStore.setExtraSongsBatch(songGroups);
       }
     }, { deep: true, immediate: true });
-    watch(settings, scheduleStatePersistence, { deep: true });
+    watch(() => JSON.stringify(settings.value), scheduleStatePersistence);
     watch(
       () => settings.value.audio.volumeBalance,
       () => {
@@ -386,10 +386,10 @@ export const createPlayerLifecycle = ({
       },
       { deep: true }
     );
-    watch(artistCustomOrder, scheduleStatePersistence, { deep: true });
-    watch(albumCustomOrder, scheduleStatePersistence, { deep: true });
-    watch(folderCustomOrder, scheduleStatePersistence, { deep: true });
-    watch(localCustomOrder, scheduleStatePersistence, { deep: true });
+    watch(artistCustomOrder, scheduleStatePersistence);
+    watch(albumCustomOrder, scheduleStatePersistence);
+    watch(() => JSON.stringify(folderCustomOrder.value), scheduleStatePersistence);
+    watch(localCustomOrder, scheduleStatePersistence);
 
     watch(artistSortMode, value => {
       playerStorage.setString(playerStorageKeys.artistSortMode, value);
@@ -589,9 +589,10 @@ export const createPlayerLifecycle = ({
     const playbackTimePersistTimer = setInterval(persistCurrentPlaybackTime, 2000);
 
     const beforeUnloadHandler = () => {
+      // beforeunload 中 best-effort 持久化：无法 await，失败只能静默忽略
       flushPersistedState().catch(() => {});
       persistCurrentPlaybackTime();
-      // 强制将播放会话状态持久化到 Rust/SQLite
+      // 强制将播放会话状态持久化到 Rust/SQLite（beforeunload best-effort，失败忽略）
       sessionApi.flushPlaybackSession().catch(() => {});
     };
 

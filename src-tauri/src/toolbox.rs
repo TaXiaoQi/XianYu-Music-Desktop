@@ -8,8 +8,12 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tauri::Manager;
 use walkdir::WalkDir;
+
+static TRACK_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+static SOURCE_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RenameConfig {
@@ -130,12 +134,12 @@ fn process_file(path: &Path, config: &RenameConfig) -> RenamePreview {
             let mut stem_str = stem.to_string_lossy().to_string();
 
             if config.remove_track_prefix {
-                let re = Regex::new(r"^\d+[\.\-\s]+").unwrap();
+                let re = TRACK_PREFIX_RE.get_or_init(|| Regex::new(r"^\d+[\.\-\s]+").unwrap());
                 stem_str = re.replace(&stem_str, "").to_string();
             }
 
             if config.remove_source_prefix {
-                let re = Regex::new(r"^\s*\[.*?\]\s*").unwrap();
+                let re = SOURCE_PREFIX_RE.get_or_init(|| Regex::new(r"^\s*\[.*?\]\s*").unwrap());
                 stem_str = re.replace(&stem_str, "").to_string();
             }
 
@@ -1414,6 +1418,8 @@ pub async fn write_state_json(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    let sanitized_key = path_validator::sanitize_filename_component(&key)
+        .map_err(|e| format!("无效的 key: {}", e))?;
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -1422,7 +1428,7 @@ pub async fn write_state_json(
     tokio::fs::create_dir_all(&state_dir)
         .await
         .map_err(|e| format!("创建 state 目录失败: {e}"))?;
-    let file_path = state_dir.join(format!("{key}.json"));
+    let file_path = state_dir.join(format!("{sanitized_key}.json"));
     tokio::fs::write(&file_path, &value)
         .await
         .map_err(|e| format!("写入 state 文件失败: {e}"))?;
@@ -1435,11 +1441,13 @@ pub async fn read_state_json(
     app_handle: tauri::AppHandle,
     key: String,
 ) -> Result<Option<String>, String> {
+    let sanitized_key = path_validator::sanitize_filename_component(&key)
+        .map_err(|e| format!("无效的 key: {}", e))?;
     let app_dir = app_handle
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
-    let file_path = app_dir.join("state").join(format!("{key}.json"));
+    let file_path = app_dir.join("state").join(format!("{sanitized_key}.json"));
     if !file_path.exists() {
         return Ok(None);
     }

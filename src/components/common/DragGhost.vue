@@ -113,7 +113,7 @@ const badgeCount = computed(() => {
           <span class="text-xs text-gray-500 dark:text-white/60 truncate max-w-[200px]">{{ subtitle }}</span>
         </div>
         
-        <div v-if="badgeCount > 1" class="absolute -top-2 -right-2 w-6 h-6 bg-[#EC4141] text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md border-2 border-white dark:border-[#222]">
+        <div v-if="badgeCount > 1" class="absolute -top-2 -right-2 w-6 h-6 bg-[#EC4141] text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md border-2 border-white dark:border-white/10">
            {{ badgeCount }}
         </div>
       </div>

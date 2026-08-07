@@ -13,22 +13,25 @@ const props = defineProps<{
 const emit = defineEmits(['confirm', 'cancel', 'update:visible']);
 
 const isClosing = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleClose = () => {
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('cancel');
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
 const handleConfirm = () => {
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('confirm');
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
@@ -40,7 +43,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 };
 
 onMounted(() => window.addEventListener('keydown', handleKeydown));
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+});
 </script>
 
 <template>

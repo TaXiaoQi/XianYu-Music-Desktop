@@ -24,12 +24,15 @@ watch(() => props.visible, async (val) => {
   }
 });
 
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
 const handleClose = () => {
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('cancel');
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
@@ -37,10 +40,11 @@ const handleConfirm = () => {
   if (!inputValue.value.trim()) return;
   
   isClosing.value = true;
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     emit('confirm', inputValue.value.trim());
     emit('update:visible', false);
     isClosing.value = false;
+    closeTimer = null;
   }, 200);
 };
 
@@ -54,7 +58,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 };
 
 onMounted(() => window.addEventListener('keydown', handleKeydown));
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+});
 </script>
 
 <template>

@@ -45,9 +45,9 @@ const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layo
 
 const { settings } = useSettings();
 watch(
-  () => settings.value.logging,
+  () => ({ ...settings.value.logging }),
   logging => configureApplicationLogger(logging),
-  { deep: true, immediate: true },
+  { immediate: true },
 );
 watch(
   () => settings.value.customLyricsFonts,
