@@ -30,7 +30,7 @@ import {
 } from '../../features/miniPlayer/shared';
 import type { Song } from '../../types';
 import { formatDuration } from '../../utils/format';
-import { sessionApi, type PlaybackSessionChangedPayload } from '../../services/tauri/sessionApi';
+import { sessionApi, type PlaybackSessionChangedPayload, type PlaybackQueueMetaChangedPayload } from '../../services/tauri/sessionApi';
 
 const appWindow = getCurrentWindow();
 const currentSong = ref<Song | null>(null);
@@ -63,6 +63,8 @@ let unlistenVisibility: (() => void) | null = null;
 let unlistenVolumeAction: (() => void) | null = null;
 let unlistenVolumeVisibility: (() => void) | null = null;
 let unlistenSessionChanged: (() => void) | null = null;
+let unlistenQueueMetaChanged: (() => void) | null = null;
+let cachedQueueMeta: Record<string, Song> = {};
 
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0;
@@ -398,6 +400,8 @@ onMounted(async () => {
         currentSong.value = songMeta;
         duration.value = songMeta.duration ?? 0;
       }
+      // 缓存 queueSongMeta 供后续 session-changed 事件使用（事件载荷不含此字段）
+      cachedQueueMeta = session.queueSongMeta ?? {};
     }
   } catch { /* ignore - emitTo will provide full state */ }
 
@@ -412,14 +416,22 @@ onMounted(async () => {
       if (!isDraggingProgress.value) {
         currentTime.value = data.currentPositionSecs;
       }
-      // 若 emitTo 尚未提供歌曲对象，尝试从会话元数据恢复
+      // 若 emitTo 尚未提供歌曲对象，尝试从缓存的元数据恢复
       if (!currentSong.value && data.currentSongPath) {
-        const songMeta = data.queueSongMeta?.[data.currentSongPath];
+        const songMeta = cachedQueueMeta[data.currentSongPath];
         if (songMeta) {
           currentSong.value = songMeta;
           duration.value = songMeta.duration ?? 0;
         }
       }
+    },
+  );
+
+  // 监听 queueSongMeta 变更（仅在元数据变化时发射）
+  unlistenQueueMetaChanged = await listen<PlaybackQueueMetaChangedPayload>(
+    'playback:queue-meta-changed',
+    (event) => {
+      cachedQueueMeta = event.payload;
     },
   );
 
@@ -439,6 +451,7 @@ onUnmounted(() => {
   unlistenVolumeAction?.();
   unlistenVolumeVisibility?.();
   unlistenSessionChanged?.();
+  unlistenQueueMetaChanged?.();
   volumePopoverWindow?.close().catch(() => {});
 });
 </script>
