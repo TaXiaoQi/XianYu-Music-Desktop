@@ -932,16 +932,22 @@ pub async fn download_online_song(
 /// 保存歌词文本到指定文件（用于下载歌曲时一并保存歌词）。
 #[tauri::command]
 pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
+    write_text_file(content, dest_path).await
+}
+
+/// 将文本内容写入指定路径（通用文本写入，自动创建父目录）。
+#[tauri::command]
+pub async fn write_text_file(content: String, dest_path: String) -> Result<String, String> {
     let validated = path_validator::validate_path(&dest_path, None)?;
     let dest = validated;
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| format!("创建歌词目录失败: {e}"))?;
+            .map_err(|e| format!("创建目录失败: {e}"))?;
     }
     tokio::fs::write(&dest, content)
         .await
-        .map_err(|e| format!("写入歌词文件失败: {e}"))?;
+        .map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }
 

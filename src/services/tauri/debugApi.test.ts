@@ -15,10 +15,10 @@ describe('debugApi', () => {
     tauriInvoke.mockReset();
   });
 
-  it('exports logs through the existing text-file writer command', () => {
+  it('exports logs through the write_text_file command', () => {
     debugApi.writeLogExport('C:\\Logs\\xianyu.log', 'log content');
 
-    expect(tauriInvoke).toHaveBeenCalledWith('save_download_lyrics', {
+    expect(tauriInvoke).toHaveBeenCalledWith('write_text_file', {
       content: 'log content',
       destPath: 'C:\\Logs\\xianyu.log',
     });

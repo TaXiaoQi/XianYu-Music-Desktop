@@ -1284,8 +1284,12 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         lrc_info.tlyric = word_time_re.replace_all(&lrc_info.tlyric, "").to_string();
     }
 
-    if let Some(lxlyric) = kw_parse_lxlyric(&lrc_info.lyric) {
-        lrc_info.lxlyric = lxlyric;
+    // 直接保留原始酷我逐字歌词（含 <a,b> 标签）作为 lxlyric，由前端
+    // convertLxLyricToEnhancedLrc 的酷我分支（isKuwoFormat）解析。
+    // 不再调用 kw_parse_lxlyric 转换格式：该函数会丢弃没有逐字标签的行，
+    // 导致"开头有逐字、后续行变普通"（无逐字标签的行被过滤掉）。
+    if word_time_re.is_match(&lrc_info.lyric) {
+        lrc_info.lxlyric = lrc_info.lyric.clone();
     }
 
     lrc_info.lyric = word_time_re.replace_all(&lrc_info.lyric, "").to_string();

@@ -10,7 +10,12 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { tauriInvoke } from './invoke';
-import type { PluginHttpResponseContract, PluginHttpBinaryResponseContract } from './contracts';
+import type {
+  AlternativeSourceResultContract,
+  LxUrlSongInfoContract,
+  PluginHttpBinaryResponseContract,
+  PluginHttpResponseContract,
+} from './contracts';
 import type {
   PluginInfo,
   PluginSearchRequest,
@@ -249,6 +254,45 @@ async function downloadAudioToTemp(
   return tauriInvoke('download_audio_to_temp', { url, headers: headers ?? null });
 }
 
+/**
+ * 获取落雪歌曲封面
+ * 后端 command: get_lx_cover -> string | null
+ */
+async function getLxCover(songInfo: LxUrlSongInfoContract): Promise<string | null> {
+  return tauriInvoke('get_lx_cover', { songInfo });
+}
+
+/**
+ * 按音质候选列表解析落雪歌曲直链（带降级）
+ * 后端 command: resolve_lx_with_quality_fallback
+ */
+async function resolveLxWithQualityFallback(
+  songInfo: LxUrlSongInfoContract,
+  qualities: string[],
+) {
+  return tauriInvoke('resolve_lx_with_quality_fallback', { songInfo, qualities });
+}
+
+/**
+ * 查找替代的落雪音源
+ * 后端 command: find_alternative_lx_source
+ */
+async function findAlternativeLxSource(
+  songName: string,
+  songArtist: string,
+  songDuration: number,
+  failedSources: string[],
+  qualities: string[],
+): Promise<AlternativeSourceResultContract | null> {
+  return tauriInvoke('find_alternative_lx_source', {
+    songName,
+    songArtist,
+    songDuration,
+    failedSources,
+    qualities,
+  });
+}
+
 export const pluginApi = {
   getInstalledPlugins,
   pluginSearch,
@@ -260,4 +304,7 @@ export const pluginApi = {
   fetchPluginUrl,
   proxyImage,
   downloadAudioToTemp,
+  getLxCover,
+  resolveLxWithQualityFallback,
+  findAlternativeLxSource,
 };

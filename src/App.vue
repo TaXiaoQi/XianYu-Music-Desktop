@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
-import { tauriInvoke } from './services/tauri/invoke';
+import { appApi } from './services/tauri/appApi';
 import { defineAsyncComponent, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
@@ -191,7 +191,7 @@ if (currentWindowLabel === 'main') {
     handleDevtoolsKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F12') {
         event.preventDefault();
-        void tauriInvoke('open_devtools').catch(() => { /* 生产环境无 DevTools */ });
+        void appApi.openDevtools().catch(() => { /* 生产环境无 DevTools */ });
       }
     };
     window.addEventListener('keydown', handleDevtoolsKeyDown);

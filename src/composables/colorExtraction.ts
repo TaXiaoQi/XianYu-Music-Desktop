@@ -6,7 +6,7 @@
  * 不再使用 Web Worker，切歌取色不再占用 Worker 线程。
  */
 
-import { tauriInvoke } from '../services/tauri/invoke';
+import { fileApi } from '../services/tauri/fileApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 interface ExtractColorOptions {
@@ -85,7 +85,7 @@ export async function extractDominantColors(
 
   try {
     const palette = await withTimeout(
-      tauriInvoke('extract_palette', { source, count, colorBoost, depth }),
+      fileApi.extractPalette(source, count, colorBoost, depth),
       REQUEST_TIMEOUT_MS,
       fallback,
     );

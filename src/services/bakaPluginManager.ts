@@ -56,7 +56,7 @@ import {
   qualityKeyToPluginString,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
-import { tauriInvoke } from './tauri/invoke';
+import { lyricsApi } from './tauri/lyricsApi';
 
 // ==================== 日志 ====================
 
@@ -207,10 +207,7 @@ async function tryBakaBackendWordLyric(
 
   try {
     log(`[getMediaSource][后备] ${source.name} 尝试后端 API: source=${lxSource}, songmid=${songInfo.songmid}`);
-    const backendLyrics = await tauriInvoke('fetch_lyric_from_source', {
-      source: lxSource,
-      songInfo,
-    });
+    const backendLyrics = await lyricsApi.fetchLyricFromSource(lxSource, songInfo);
     if (!backendLyrics?.lxlyric?.trim()) return null;
 
     const lyric = backendLyrics.lyric || existingLyric;

@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { qualityToLxCandidates } from './downloadService';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('./tauri/invoke', () => ({
+  tauriInvoke: vi.fn(),
 }));
 
 vi.mock('./pluginEngine', () => ({
@@ -68,7 +68,7 @@ vi.mock('../features/playback/store', () => ({
   }),
 }));
 
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './tauri/invoke';
 import { getStoredPlugins } from './pluginEngine';
 import { lxPluginGetMusicUrl } from './lxPluginEngine';
 import { downloadSong } from './downloadService';
@@ -170,7 +170,7 @@ describe('downloadService: download fallback across qualities', () => {
       }),
     );
 
-    (invoke as any).mockImplementation(async (cmd: string, args: any) => {
+    (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
       if (cmd === 'download_online_song') {
         if (String(args.url).includes('320k')) {
           throw new Error('下载服务器返回错误状态: 502 Bad Gateway');
@@ -204,7 +204,7 @@ describe('downloadService: download fallback across qualities', () => {
       }),
     );
 
-    (invoke as any).mockImplementation(async (cmd: string) => {
+    (tauriInvoke as any).mockImplementation(async (cmd: string) => {
       if (cmd === 'download_online_song') {
         throw new Error('下载服务器返回错误状态: 502 Bad Gateway');
       }
@@ -225,7 +225,7 @@ describe('downloadService: download fallback across qualities', () => {
         q === '320k' ? { type: q, url: '' } : { type: q, url: `https://cdn.example.com/${q}.mp3` },
     );
 
-    (invoke as any).mockImplementation(async (cmd: string, args: any) => {
+    (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
       if (cmd === 'download_online_song') return args.destPath;
       if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
       if (cmd === 'file_exists') return false;

@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 
 import type { FolderSortMode } from '../services/storage/playerStorage';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 type BackendFolderSortMode = Exclude<FolderSortMode, 'custom'>;
@@ -48,11 +48,8 @@ export function useLibraryFolderSongPathCache() {
       return inFlight;
     }
 
-    const request = tauriInvoke('get_library_song_paths_for_folder_view', {
-      folderPath,
-      query,
-      sortMode,
-    })
+    const request = libraryApi
+      .getLibrarySongPathsForFolderView(folderPath, query, sortMode)
       .then((paths) => {
         folderViewPathCache.set(cacheKey, paths);
         cacheVersion.value += 1;

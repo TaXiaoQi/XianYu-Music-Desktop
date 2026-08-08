@@ -12,7 +12,9 @@ import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useToast } from '../../composables/toast';
 import { useLibraryStore } from '../../features/library/store';
 import type { LyricsStorageSource } from '../../services/tauri/contracts';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { appApi } from '../../services/tauri/appApi';
+import { downloadApi } from '../../services/tauri/downloadApi';
+import { lyricsApi } from '../../services/tauri/lyricsApi';
 import { formatFileSize } from '../../utils/format';
 
 const props = defineProps<{
@@ -153,7 +155,7 @@ watch(
     const [url, detail, lyricsResult] = await Promise.all([
       loadCover(path),
       loadSongDetail(path).catch(() => null),
-      tauriInvoke('get_song_lyrics_for_edit', { path })
+      lyricsApi.getSongLyricsForEdit(path)
         .then((lyrics) => ({ ...lyrics, error: '' }))
         .catch((error) => ({
           lyrics: '',
@@ -214,7 +216,7 @@ const ensureMusicTagPath = async (): Promise<string | null> => {
   let path = localStorage.getItem(MUSICTAG_PATH_KEY);
 
   if (path) {
-    const exists = await tauriInvoke('file_exists', { path });
+    const exists = await downloadApi.fileExists(path);
     if (!exists) {
       localStorage.removeItem(MUSICTAG_PATH_KEY);
       showToast('MusicTag 路径无效，请重新选择', 'error');
@@ -240,7 +242,7 @@ const ensureMusicTagPath = async (): Promise<string | null> => {
       return null;
     }
 
-    const exists = await tauriInvoke('file_exists', { path: selected });
+    const exists = await downloadApi.fileExists(selected);
     if (!exists) {
       showToast('MusicTag 路径无效', 'error');
       return null;
@@ -260,7 +262,7 @@ const handleOpenInMusicTag = async () => {
     return;
   }
 
-  const songExists = await tauriInvoke('file_exists', { path: songPath });
+  const songExists = await downloadApi.fileExists(songPath);
   if (!songExists) {
     showToast('当前歌曲文件路径无效', 'error');
     return;
@@ -272,10 +274,7 @@ const handleOpenInMusicTag = async () => {
   }
 
   try {
-    await tauriInvoke('open_external_program', {
-      path: musicTagPath,
-      args: [songPath],
-    });
+    await appApi.openExternalProgram(musicTagPath, [songPath]);
     showToast('已在 MusicTag 中打开当前歌曲', 'success');
   } catch (error) {
     console.error('Failed to open MusicTag:', error);
@@ -290,12 +289,12 @@ const handleSaveLyrics = async () => {
   lyricsError.value = '';
 
   try {
-    const savedLyrics = await tauriInvoke('save_song_lyrics', {
-      path: props.song.path,
-      lyrics: lyricsText.value,
-      source: lyricsSource.value,
-      sourcePath: lyricsSourcePath.value,
-    });
+    const savedLyrics = await lyricsApi.saveSongLyrics(
+      props.song.path,
+      lyricsText.value,
+      lyricsSource.value,
+      lyricsSourcePath.value,
+    );
     originalLyricsText.value = lyricsText.value;
     lyricsSource.value = savedLyrics.source;
     lyricsSourcePath.value = savedLyrics.sourcePath;
@@ -456,17 +455,14 @@ const handleSaveSongInfo = async () => {
   songInfoEditError.value = '';
 
   try {
-    const result = await tauriInvoke('save_song_info', {
-      path: songPath,
-      payload: {
-        title,
-        artist: songInfoEditForm.value.artist.trim(),
-        album: songInfoEditForm.value.album.trim(),
-        trackNumber: normalizeFormValue(songInfoEditForm.value.trackNumber),
-        discNumber: normalizeFormValue(songInfoEditForm.value.discNumber),
-        year: normalizeFormValue(songInfoEditForm.value.year),
-        coverPath: songInfoEditForm.value.coverPath,
-      },
+    const result = await lyricsApi.saveSongInfo(songPath, {
+      title,
+      artist: songInfoEditForm.value.artist.trim(),
+      album: songInfoEditForm.value.album.trim(),
+      trackNumber: normalizeFormValue(songInfoEditForm.value.trackNumber),
+      discNumber: normalizeFormValue(songInfoEditForm.value.discNumber),
+      year: normalizeFormValue(songInfoEditForm.value.year),
+      coverPath: songInfoEditForm.value.coverPath,
     });
 
     savedSongOverride.value = result.song;
@@ -474,7 +470,7 @@ const handleSaveSongInfo = async () => {
     libraryStore.setSongRecord(result.song);
 
     if (songInfoEditForm.value.coverPath) {
-      await tauriInvoke('clear_cover_cache');
+      await appApi.clearCoverCache();
       clearCoverCaches();
       coverUrl.value = (await loadCover(songPath)) || '';
     }

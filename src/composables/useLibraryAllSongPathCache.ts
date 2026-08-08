@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 
 import type { LocalSortMode } from '../services/storage/playerStorage';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 import { useLibraryStore } from '../features/library/store';
@@ -55,12 +55,8 @@ export function useLibraryAllSongPathCache() {
     // 记录发起异步请求时的全局数据版本
     const requestVersion = libraryStore.libraryDataVersion;
 
-    const request = tauriInvoke('get_library_song_paths_for_all_view', {
-      query,
-      artistFilter,
-      albumFilter,
-      sortMode,
-    })
+    const request = libraryApi
+      .getLibrarySongPathsForAllView(query, artistFilter, albumFilter, sortMode)
       .then((paths) => {
         // 强一致性校验：若在请求未决期间数据版本发生变更（如新增、删除或重排），则丢弃缓存回填
         if (libraryStore.libraryDataVersion === requestVersion) {

@@ -901,12 +901,10 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
 async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let request_data = serde_json::json!({
         "comm": {
-            "ct": "11", "cv": "14090508", "v": "14090508", "tmeAppID": "qqmusic",
-            "phonetype": "EBG-AN10", "deviceScore": "553.47", "devicelevel": "50", "newdevicelevel": "20",
-            "rom": "HuaWei/EMOTION/EmotionUI_14.2.0", "os_ver": "12",
-            "OpenUDID": "0", "OpenUDID2": "0", "QIMEI36": "0", "udid": "0", "chid": "0", "aid": "0",
-            "oaid": "0", "taid": "0", "tid": "0", "wid": "0", "uid": "0", "sid": "0",
-            "modeSwitch": "6", "teenMode": "0", "ui_mode": "2", "nettype": "1020", "v4ip": "",
+            "ct": "24", "cv": "4747474", "v": "4747474", "tmeAppID": "qqmusic",
+            "format": "json", "inCharset": "utf-8", "outCharset": "utf-8",
+            "platform": "yqq.json", "needNewCode": 0,
+            "uin": "0", "guid": "0",
         },
         "req": {
             "module": "music.search.SearchCgiService",
@@ -930,8 +928,9 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         &url,
         &request_str,
         &[
-            ("User-Agent", "QQMusic 14090508(android 12)"),
+            ("User-Agent", "Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36"),
             ("Content-Type", "application/json"),
+            ("Referer", "https://y.qq.com/"),
         ],
     )
     .await?;

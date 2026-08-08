@@ -1,4 +1,4 @@
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import type { SongDetail } from '../types';
 import { MemoryCache } from '../utils/MemoryCache';
 
@@ -28,7 +28,7 @@ export function useSongDetailCache() {
       return inFlight;
     }
 
-    const request = tauriInvoke('get_song_detail', { path })
+    const request = libraryApi.getSongDetail(path)
       .then((detail) => {
         songDetailCache.set(path, detail);
         return detail;

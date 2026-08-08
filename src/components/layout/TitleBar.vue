@@ -7,7 +7,7 @@ import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { windowApi } from '../../services/tauri/windowApi';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
@@ -110,7 +110,7 @@ const isMaximizeDisabled = computed(
 );
 const toggleMaximize = () => {
   if (isMaximizeDisabled.value) return;
-  void tauriInvoke('smart_toggle_maximize');
+  void windowApi.smartToggleMaximize();
 };
 const closeWindow = async () => {
   if (settings.value.closeToTray) {

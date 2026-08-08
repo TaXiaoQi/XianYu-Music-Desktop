@@ -1,7 +1,12 @@
 import type {
+  BehaviorStats,
+  FormatDistribution,
+  LibraryStats,
+  QualityDistribution,
   StatisticsExportResult,
   StatisticsImportPreview,
   StatisticsImportResult,
+  TimeRange,
 } from './contracts';
 import { tauriInvoke } from './invoke';
 
@@ -28,4 +33,11 @@ export const statisticsApi = {
         continueDuplicateImport,
       },
     }) as Promise<StatisticsImportResult>,
+  getLibraryStats: (): Promise<LibraryStats> => tauriInvoke('get_library_stats'),
+  getBehaviorStats: (timeRange: TimeRange): Promise<BehaviorStats> =>
+    tauriInvoke('get_behavior_stats', { timeRange }),
+  getQualityDistribution: (): Promise<QualityDistribution> =>
+    tauriInvoke('get_quality_distribution'),
+  getFormatDistribution: (): Promise<FormatDistribution> =>
+    tauriInvoke('get_format_distribution'),
 };

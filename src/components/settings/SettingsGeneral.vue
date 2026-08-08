@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useSettings } from '../../features/settings/useSettings';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
 import { useToast } from '../../composables/toast';
 import { appApi } from '../../services/tauri/appApi';
@@ -25,7 +25,7 @@ async function handleGpuAccelerationChange() {
   settings.value.gpuAcceleration = next;
 
   try {
-    await tauriInvoke('set_gpu_acceleration', { enabled: next });
+    await toolboxApi.setGpuAcceleration(next);
     showToast('GPU 加速设置已更新，重启软件后生效', 'success');
   } catch (error) {
     settings.value.gpuAcceleration = previous;

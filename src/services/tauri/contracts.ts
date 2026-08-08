@@ -980,6 +980,8 @@ export interface TauriCommandMap {
   set_gpu_acceleration: { payload: { enabled: boolean }; response: void };
   // ============ 壁纸下载 ============
   download_wallpaper: { payload: { url: string; filename: string }; response: string };
+  // ============ 通用文件写入 ============
+  write_text_file: { payload: { content: string; destPath: string }; response: string };
 }
 
 /** 听歌识曲接口响应 */

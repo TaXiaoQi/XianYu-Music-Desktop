@@ -3,7 +3,7 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { libraryApi } from '../../services/tauri/libraryApi';
 import { useLibraryStore } from '../../features/library/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
@@ -222,11 +222,11 @@ const triggerAvatarSave = async (imagePath: string, writeToTags: boolean) => {
   isSavingAvatar.value = true;
 
   try {
-    const result = await tauriInvoke('save_artist_avatar', {
-      artistId: currentArtist.value.id,
+    const result = await libraryApi.saveArtistAvatar(
+      currentArtist.value.id,
       imagePath,
       writeToTags,
-    });
+    );
 
     // Update store to trigger reactivity
     const updatedCatalog = libraryStore.artistCatalog.map(item => {

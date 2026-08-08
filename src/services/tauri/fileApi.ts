@@ -26,4 +26,15 @@ export const fileApi = {
     tauriInvoke('get_song_background', { songPath }),
   clearSongBackground: (songPath: string): Promise<void> =>
     tauriInvoke('clear_song_background', { songPath }),
+  getSongCover: (path: string): Promise<string> =>
+    tauriInvoke('get_song_cover', { path }),
+  getSongCoverThumbnail: (path: string): Promise<string> =>
+    tauriInvoke('get_song_cover_thumbnail', { path }),
+  extractPalette: (
+    source: string,
+    count: number,
+    colorBoost: number,
+    depth: number,
+  ): Promise<string[]> =>
+    tauriInvoke('extract_palette', { source, count, colorBoost, depth }),
 };

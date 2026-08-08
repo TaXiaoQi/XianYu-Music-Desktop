@@ -1,5 +1,6 @@
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { windowApi } from '../services/tauri/windowApi';
+import { appApi } from '../services/tauri/appApi';
 import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
@@ -227,7 +228,7 @@ export function useTrayMenuEvents(router: Router) {
 
   const updateNativeTrayMenu = async () => {
     try {
-      await tauriInvoke('update_native_tray_menu', { state: createTrayMenuState() });
+      await windowApi.updateNativeTrayMenu(createTrayMenuState());
     } catch (error) {
       console.warn('Failed to update native tray menu:', error);
     }
@@ -325,7 +326,7 @@ export function useTrayMenuEvents(router: Router) {
     await targetWindow.setFocus();
   };
 
-  const quitApp = () => tauriInvoke('exit_app');
+  const quitApp = () => appApi.exitApp();
 
   onMounted(async () => {
     await updateNativeTrayMenu();

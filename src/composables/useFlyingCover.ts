@@ -1,3 +1,4 @@
+import { ref } from 'vue';
 import { usePlaybackStore } from '../features/playback/store';
 
 /**
@@ -26,6 +27,12 @@ const FLY_EASING = 'cubic-bezier(0.4, 0.0, 0.2, 1)';
 const PARK_TIMEOUT = 3000;
 
 let currentFlyId = 0;
+
+/**
+ * 飞封面动画是否正在进行（含飞行 + 悬停淡出阶段）。
+ * PlayerDetailLeft 据此暂缓底栏封面显示，避免飞行中底栏已出现封面图标。
+ */
+export const isFlyingCover = ref(false);
 
 /**
  * 当前飞封面动画的飞行 Promise（封面从列表飞抵底栏）。
@@ -74,7 +81,25 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
     const sourceEl = findSourceEl(songPath);
     const targetEl = findTargetEl();
-    if (!sourceEl || !targetEl) { resolve(); return; }
+    if (!sourceEl) { resolve(); return; }
+
+    // 第一首歌播放时，launchFlyingCover 在 emit('play') 之前调用，
+    // 此时 currentSong 仍为 null → PlayerFooter 尚未挂载 → [data-footer-cover] 找不到。
+    // 轻量兜底：用底栏封面的固定坐标（左下角，48px 封面 + 16px 边距）作为飞行终点，
+    // 不等待目标元素挂载，避免轮询延迟影响体感。
+    const fromRect = sourceEl.getBoundingClientRect();
+    const toRect = targetEl
+      ? targetEl.getBoundingClientRect()
+      : {
+          left: 16,
+          top: window.innerHeight - 64,
+          width: 48,
+          height: 48,
+        };
+    if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) {
+      resolve();
+      return;
+    }
 
     // 若调用方未提供封面 URL（本地歌曲封面可能尚未异步加载完成），
     // 回退到源元素内 <img> 的 src，确保动画仍能触发
@@ -115,12 +140,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
     function beginFlight(url: string) {
       if (flyId !== currentFlyId) { resolve(); return; }
 
-      const fromRect = sourceEl!.getBoundingClientRect();
-      const toRect = targetEl!.getBoundingClientRect();
-      if (fromRect.width === 0 || fromRect.height === 0 || toRect.width === 0 || toRect.height === 0) {
-        resolve();
-        return;
-      }
+      isFlyingCover.value = true;
 
       const img = document.createElement('img');
       img.src = url;
@@ -136,6 +156,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 
       const remove = () => {
         if (flyId === currentFlyId) img.remove();
+        if (flyId === currentFlyId) isFlyingCover.value = false;
       };
 
       const startFlight = () => {
@@ -245,7 +266,8 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
           if (flyId === currentFlyId && img.isConnected) {
             startFlight();
           } else if (flyId === currentFlyId) {
-            // 图片已断开（可能被取消），确保 resolve
+            // 图片已断开（可能被取消），确保 resolve 并清除飞行标志
+            isFlyingCover.value = false;
             resolve();
           }
         }, 60);
@@ -261,4 +283,5 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
 /** 取消当前正在进行的飞入动画 */
 export function cancelFlyingCover(): void {
   currentFlyId++;
+  isFlyingCover.value = false;
 }

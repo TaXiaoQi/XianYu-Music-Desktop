@@ -5,11 +5,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('./tauri/invoke', () => ({
+  tauriInvoke: vi.fn(),
 }));
 
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './tauri/invoke';
 import {
   __resetDownloadHistoryCacheForTest,
   checkDownloadExists,
@@ -35,7 +35,7 @@ const makeRecord = (overrides: Partial<DownloadRecord> = {}): DownloadRecord => 
 
 /** 默认桩：read 返回 diskContent，write 更新 diskContent，file_exists 返回 true */
 function stubInvoke(fileExists = true) {
-  (invoke as any).mockImplementation(async (cmd: string, args: any) => {
+  (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
     if (cmd === 'read_download_history') return diskContent;
     if (cmd === 'write_download_history') {
       diskContent = args.content;

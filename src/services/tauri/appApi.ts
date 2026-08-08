@@ -6,4 +6,6 @@ export const appApi = {
   openExternalProgram: (path: string, args: string[] = []) =>
     tauriInvoke('open_external_program', { path, args }),
   consumePendingOpenPaths: () => tauriInvoke('consume_pending_open_paths'),
+  openDevtools: () => tauriInvoke('open_devtools'),
+  exitApp: () => tauriInvoke('exit_app'),
 };

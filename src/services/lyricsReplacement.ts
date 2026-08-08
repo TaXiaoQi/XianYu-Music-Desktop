@@ -2,7 +2,7 @@ import type { Song, PluginSearchResult, PluginSource } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
 import { buildLyricsRaw, loadLyrics } from '../composables/lyrics';
-import { tauriInvoke } from './tauri/invoke';
+import { lyricsApi } from './tauri/lyricsApi';
 import {
   getStoredPlugins,
   pluginGetLyric,
@@ -335,13 +335,13 @@ export async function applyLyricsReplacement(song: Song, lyricsRaw: string): Pro
   }
 
   if (!isRuntimeOnlyLyricsSong(song)) {
-    const currentStorage = await tauriInvoke('get_song_lyrics_for_edit', { path: song.path });
-    await tauriInvoke('save_song_lyrics', {
-      path: song.path,
-      lyrics: normalizedLyrics,
-      source: currentStorage.source,
-      sourcePath: currentStorage.sourcePath,
-    });
+    const currentStorage = await lyricsApi.getSongLyricsForEdit(song.path);
+    await lyricsApi.saveSongLyrics(
+      song.path,
+      normalizedLyrics,
+      currentStorage.source,
+      currentStorage.sourcePath,
+    );
     await loadLyrics(normalizedLyrics);
     return 'saved';
   }

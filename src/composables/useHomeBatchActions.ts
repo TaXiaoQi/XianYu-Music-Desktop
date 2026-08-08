@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia';
 import { fileApi } from '../services/tauri/fileApi';
 import { usePlaybackStore } from '../features/playback/store';
 import type { Playlist, Song } from '../types';
-import { removeSongPathsFromPlaybackState } from './playbackCleanup';
+import { removeSongPathsFromPlaybackState } from '../features/playback/playbackCleanup';
 
 interface ConfirmOptions {
   title: string;

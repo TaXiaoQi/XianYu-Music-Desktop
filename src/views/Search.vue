@@ -250,7 +250,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallo
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import type { Song, ArtistCatalogItem, AlbumCatalogItem, Playlist } from '../types';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useUiStore } from '../shared/stores/ui';
@@ -818,7 +818,7 @@ const performSearch = async () => {
 
       if (activeSearchType.value === 'track') {
         // 音乐：通过 Rust 后端搜索本地音乐库（避免前端全量 canonicalSongs 内存过滤）
-        const results = await tauriInvoke('search_library_songs', { query, limit: 200 });
+        const results = await libraryApi.searchLibrarySongs(query, 200);
         if (!activeController.signal.aborted) {
           localSearchResults.value = results;
         }

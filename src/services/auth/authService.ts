@@ -16,7 +16,7 @@
  * `getStoredAuth()` / `getAuthToken()` 同步读取内存缓存。
  */
 
-import { tauriInvoke } from '../tauri/invoke';
+import { authApi } from '../tauri/authApi';
 
 export type AuthUser = {
   id: string;
@@ -84,7 +84,7 @@ export function setAuthBaseUrl(baseUrl: string): void {
   const trimmed = (baseUrl || '').trim();
   cachedBaseUrl = trimmed || DEFAULT_AUTH_BASE_URL;
   // 持久化到 Rust（文件），fire-and-forget
-  void tauriInvoke('set_auth_base_url', { baseUrl: cachedBaseUrl }).catch(() => {
+  void authApi.setAuthBaseUrl(cachedBaseUrl).catch(() => {
     /* 静默失败 */
   });
   // 清理旧 localStorage
@@ -111,7 +111,7 @@ export async function initAuthFromKeyring(): Promise<void> {
   keyringInitialized = true;
 
   try {
-    const result = await tauriInvoke('get_auth_credentials');
+    const result = await authApi.getAuthCredentials();
     if (result && result.token) {
       cachedToken = result.token;
       cachedUser = result.user as AuthUser;
@@ -122,7 +122,7 @@ export async function initAuthFromKeyring(): Promise<void> {
 
   // 加载 base_url
   try {
-    cachedBaseUrl = await tauriInvoke('get_auth_base_url');
+    cachedBaseUrl = await authApi.getAuthBaseUrl();
   } catch {
     // 回退到 localStorage
     if (typeof localStorage !== 'undefined') {
@@ -140,7 +140,7 @@ export async function initAuthFromKeyring(): Promise<void> {
         cachedToken = oldToken;
         cachedUser = oldUser;
         // 迁移到 keyring（fire-and-forget）
-        void tauriInvoke('save_auth_credentials', { token: oldToken, user: oldUser }).catch(() => {
+        void authApi.saveAuthCredentials(oldToken, oldUser).catch(() => {
           /* 静默 */
         });
         // 清理旧 localStorage
@@ -170,7 +170,7 @@ export function saveAuth(payload: AuthPayload): void {
   cachedToken = payload.token;
   cachedUser = payload.user;
   // 持久化到 keyring（fire-and-forget）
-  void tauriInvoke('save_auth_credentials', { token: payload.token, user: payload.user }).catch(() => {
+  void authApi.saveAuthCredentials(payload.token, payload.user).catch(() => {
     /* 静默失败 */
   });
 }
@@ -179,7 +179,7 @@ export function clearAuth(): void {
   cachedToken = null;
   cachedUser = null;
   // 清除 keyring（fire-and-forget）
-  void tauriInvoke('clear_auth_credentials').catch(() => {
+  void authApi.clearAuthCredentials().catch(() => {
     /* 静默失败 */
   });
 }
@@ -219,11 +219,7 @@ async function requestEnvelope<T>(
   body: Record<string, unknown>,
   fetchTimeoutMs?: number,
 ): Promise<ApiEnvelope<T>> {
-  const payload = await tauriInvoke('authed_request', {
-    action,
-    body,
-    fetchTimeoutMs,
-  });
+  const payload = await authApi.authedRequest(action, body, fetchTimeoutMs);
   return payload as unknown as ApiEnvelope<T>;
 }
 
@@ -288,11 +284,7 @@ export async function signedPostJson<T>(
   });
 
   const doRequest = async (): Promise<T> => {
-    const payload = await tauriInvoke('signed_post_json', {
-      url,
-      body,
-      fetchTimeoutMs,
-    });
+    const payload = await authApi.signedPostJson(url, body, fetchTimeoutMs);
     const envelope = payload as unknown as ApiEnvelope<T>;
     if (Number(envelope.code) !== 200) {
       throw new Error(envelope.msg || `请求失败（code ${envelope.code}）`);
