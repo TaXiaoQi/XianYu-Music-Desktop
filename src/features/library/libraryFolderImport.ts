@@ -1,16 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { storeToRefs } from 'pinia';
 
+import { tauriInvoke } from '../../services/tauri/invoke';
 import type { Song } from '../../types';
 import { useLibraryStore } from './store';
 import { useSettingsStore } from '../settings/store';
-
-interface GeneratedFolder {
-  name: string;
-  path: string;
-  songs: Song[];
-}
 
 interface CreateLibraryFolderImportDeps {
   showToast: (message: string, type: 'success' | 'info' | 'error') => void;
@@ -43,7 +37,7 @@ export const createLibraryFolderImport = ({
 
       if (!selectedPath || typeof selectedPath !== 'string') return;
 
-      const newFolders = await invoke<GeneratedFolder[]>('scan_folder_as_playlists', {
+      const newFolders = await tauriInvoke('scan_folder_as_playlists', {
         rootPath: selectedPath,
         minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
       });
@@ -86,7 +80,7 @@ export const createLibraryFolderImport = ({
       const selected = await open({ directory: true, multiple: false });
       if (!selected || typeof selected !== 'string') return;
 
-      const newFolders = await invoke<GeneratedFolder[]>('scan_folder_as_playlists', {
+      const newFolders = await tauriInvoke('scan_folder_as_playlists', {
         rootPath: selected,
         minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
       });
@@ -96,7 +90,7 @@ export const createLibraryFolderImport = ({
           watchedFolders.value.push(selected);
         }
 
-        const songs = await invoke<Song[]>('scan_music_folder', {
+        const songs = await tauriInvoke('scan_music_folder', {
           folderPath: selected,
           minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
         });

@@ -62,8 +62,6 @@ md5 = "0.7"
 sha1 = "0.10"
 aes = "0.8"
 flate2 = "1"
-cbc = "0.1"
-tc_tea = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }

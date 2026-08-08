@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../../services/tauri/invoke';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -17,7 +17,7 @@ import {
   type TaskbarPlayerStatePayload,
   type TaskbarPlayerAction,
 } from '../../features/taskbarPlayer/shared';
-import { writeSavedPositionX, type TaskbarTrayGeometry } from '../../composables/useTaskbarPlayerBridge';
+import { writeSavedPositionX } from '../../composables/useTaskbarPlayerBridge';
 import { windowApi } from '../../services/tauri/windowApi';
 import type { Song } from '../../types';
 import { clamp } from '../../utils/math';
@@ -69,7 +69,7 @@ const scheduleDragPosition = (position: LogicalPosition) => {
 };
 
 const getTaskbarDragBounds = async (): Promise<DragBounds | null> => {
-  const geometry = await invoke<TaskbarTrayGeometry>('get_taskbar_tray_geometry').catch((error) => {
+  const geometry = await tauriInvoke('get_taskbar_tray_geometry').catch((error) => {
     console.warn('Failed to get taskbar drag bounds:', error);
     return null;
   });

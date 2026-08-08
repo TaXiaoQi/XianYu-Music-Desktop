@@ -52,6 +52,7 @@ pub struct LxTypeTuple {
 struct SearchCacheEntry {
     items: Vec<LxSearchItem>,
     expires_at: Instant,
+    last_access: Instant,
 }
 
 static SEARCH_CACHE: OnceLock<Arc<RwLock<HashMap<String, SearchCacheEntry>>>> = OnceLock::new();
@@ -61,37 +62,59 @@ fn search_cache() -> &'static Arc<RwLock<HashMap<String, SearchCacheEntry>>> {
 }
 
 const SEARCH_CACHE_TTL_SECS: u64 = 300; // 5 分钟
+/// 缓存硬上限：过期清理后仍超容量时，按 LRU（最久未访问）淘汰
+const SEARCH_CACHE_MAX_ENTRIES: usize = 200;
 
 fn make_search_cache_key(source: &str, keyword: &str, limit: u32) -> String {
     format!("{}/{}/{}", source, keyword, limit)
 }
 
+/// 查询搜索缓存
+///
+/// 命中且未过期时返回拷贝并刷新 `last_access`（LRU）；过期则惰性删除该条目，
+/// 避免过期项长期占内存。使用写锁以更新访问时间，缓存操作极轻量可接受。
 async fn get_cached_search(source: &str, keyword: &str, limit: u32) -> Option<Vec<LxSearchItem>> {
-    let cache = search_cache().read().await;
     let key = make_search_cache_key(source, keyword, limit);
-    if let Some(entry) = cache.get(&key) {
-        if entry.expires_at > Instant::now() {
-            return Some(entry.items.clone());
-        }
+    let mut cache = search_cache().write().await;
+    let now = Instant::now();
+    let entry = cache.get_mut(&key)?;
+    if entry.expires_at <= now {
+        cache.remove(&key);
+        return None;
     }
-    None
+    entry.last_access = now;
+    Some(entry.items.clone())
 }
 
 async fn set_cached_search(source: &str, keyword: &str, limit: u32, items: Vec<LxSearchItem>) {
     let mut cache = search_cache().write().await;
     let key = make_search_cache_key(source, keyword, limit);
+    let now = Instant::now();
     cache.insert(
         key,
         SearchCacheEntry {
             items,
-            expires_at: Instant::now() + Duration::from_secs(SEARCH_CACHE_TTL_SECS),
+            expires_at: now + Duration::from_secs(SEARCH_CACHE_TTL_SECS),
+            last_access: now,
         },
     );
 
-    // 淘汰过期条目
-    if cache.len() > 200 {
-        let now = Instant::now();
-        cache.retain(|_, entry| entry.expires_at > now);
+    // 先清过期项；若仍超容量，按 last_access 最早淘汰（LRU）
+    evict_search_cache(&mut cache, now);
+}
+
+/// 淘汰过期与超容量条目：先 `retain` 未过期项，再按 `last_access` 升序移除最旧条目直至不超上限
+fn evict_search_cache(cache: &mut HashMap<String, SearchCacheEntry>, now: Instant) {
+    cache.retain(|_, e| e.expires_at > now);
+    let excess = cache.len().saturating_sub(SEARCH_CACHE_MAX_ENTRIES);
+    if excess == 0 {
+        return;
+    }
+    let mut keys: Vec<(String, Instant)> =
+        cache.iter().map(|(k, e)| (k.clone(), e.last_access)).collect();
+    keys.sort_unstable_by_key(|(_, t)| *t);
+    for (k, _) in keys.into_iter().take(excess) {
+        cache.remove(&k);
     }
 }
 
@@ -708,14 +731,19 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
     };
 
     for item in arr {
-        let file = match item.get("file") {
-            Some(f) => f,
-            None => continue,
-        };
-        let media_mid = file.get("media_mid").and_then(|v| v.as_str()).unwrap_or("");
-        if media_mid.is_empty() {
+        // 放宽过滤：仅要求 mid 或 id 存在即可（与前端 txHandleResult、parseTxSong 对齐）。
+        // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
+        // 导致搜索结果被全部静默过滤 → 列表为空。
+        let has_mid = item
+            .get("mid")
+            .and_then(|v| v.as_str())
+            .map_or(false, |s| !s.is_empty());
+        let has_id = item.get("id").is_some();
+        if !has_mid && !has_id {
             continue;
         }
+        let file = item.get("file").unwrap_or(&serde_json::Value::Null);
+        let media_mid = file.get("media_mid").and_then(|v| v.as_str()).unwrap_or("");
 
         let mut types = Vec::new();
         let mut lx_types = HashMap::new();

@@ -1110,6 +1110,24 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
     })
 }
 
+/// 解析 LRC 行时间戳 `[mm:ss.xx]` / `[mm:ss.xxx]` 为毫秒
+fn parse_lrc_time_to_ms(time: &str) -> i32 {
+    let inner = time.trim_start_matches('[').trim_end_matches(']');
+    let mut parts = inner.splitn(2, ':');
+    let min: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let rest = parts.next().unwrap_or("0");
+    let mut sec_parts = rest.splitn(2, '.');
+    let sec: i32 = sec_parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let ms_str = sec_parts.next().unwrap_or("");
+    let ms: i32 = match ms_str.len() {
+        0 => 0,
+        1 => ms_str.parse::<i32>().unwrap_or(0) * 100,
+        2 => ms_str.parse::<i32>().unwrap_or(0) * 10,
+        _ => ms_str[..3].parse::<i32>().unwrap_or(0),
+    };
+    min * 60_000 + sec * 1000 + ms
+}
+
 fn kw_parse_lxlyric(lyric: &str) -> Option<String> {
     let word_time_all_re = KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
     let word_line_re =
@@ -1134,21 +1152,36 @@ fn kw_parse_lxlyric(lyric: &str) -> Option<String> {
 
         if let Some(caps) = word_line_re.captures(line) {
             let time = caps[1].to_string();
+            // 解析行时间戳为毫秒，用于把酷我绝对时间转换为标准 lxlyric 相对行首偏移。
+            // 修复：原实现输出 <绝对start, dur>，但前端标准格式分支把第一个数当作
+            // 相对行首偏移（wordStartMs = lineStartMs + a），导致 wordStartMs 被多加
+            // 一次行时间 → 逐字进度严重超前。改为输出 <start - lineStartMs, dur>。
+            let line_start_ms = parse_lrc_time_to_ms(&time);
             let mut words = caps.get(2).map(|m| m.as_str()).unwrap_or("").to_string();
 
-            let word_times: Vec<(String, String)> = word_time_all_re
+            // 收集每个原始标签的完整文本与 (off, off2)。
+            // 修复：原实现用 word_time_all_re.find() 始终命中第一个标签，
+            // 导致多字行只有第一个标签被反复覆盖、其余原样保留 → 逐字进度错乱。
+            // 改为按每个原始标签文本替换其首次出现（与 lx-music-desktop JS 的
+            // words.replace(wordTime[0], timeStr) 行为一致）。
+            let word_entries: Vec<(String, i32, i32)> = word_time_all_re
                 .captures_iter(&words.clone())
-                .map(|c| (c[1].to_string(), c[2].to_string()))
+                .map(|c| {
+                    (
+                        c[0].to_string(),
+                        c[1].parse::<i32>().unwrap_or(0),
+                        c[2].parse::<i32>().unwrap_or(0),
+                    )
+                })
                 .collect();
 
-            if word_times.is_empty() {
+            if word_entries.is_empty() {
                 continue;
             }
 
-            let mut prev_end: Option<(i32, i32, String)> = None; // (start, end, timeStr)
-            for (str1, str2) in &word_times {
-                let off = str1.parse::<i32>().unwrap_or(0);
-                let off2 = str2.parse::<i32>().unwrap_or(0);
+            // prev_end 存绝对 start/end（用于重叠判断），timeStr 存相对行首格式 <offset, dur>
+            let mut prev_end: Option<(i32, i32, String)> = None;
+            for (original, off, off2) in &word_entries {
                 let start_time = ((off + off2) as f64 / (offset * 2) as f64).abs() as i32;
                 let end_time =
                     ((off - off2) as f64 / (offset2 * 2) as f64).abs() as i32 + start_time;
@@ -1159,20 +1192,25 @@ fn kw_parse_lxlyric(lyric: &str) -> Option<String> {
                         if *p_start > *p_end {
                             *p_start = *p_end;
                         }
-                        let new_str = format!("<{},{}>", p_start, *p_end - *p_start);
-                        // Replace old timeStr with new
-                        if let Some(pos) = words.find(&*p_time.clone()) {
+                        // 相对行首偏移 + 持续时长（标准 lxlyric 格式，正数）
+                        let new_str =
+                            format!("<{},{}>", *p_start - line_start_ms, *p_end - *p_start);
+                        // 替换上一轮写入的相对格式标签
+                        if let Some(pos) = words.find(p_time.as_str()) {
                             words.replace_range(pos..pos + p_time.len(), &new_str);
                         }
                     }
                 }
 
-                let time_str = format!("<{},{}>", start_time, end_time - start_time);
+                // 标准 lxlyric 格式：<相对行首偏移, 持续时长>，均为正数
+                // 前端 convertLxLyricToEnhancedLrc 标准分支：wordStartMs = lineStartMs + offset
+                let time_str =
+                    format!("<{},{}>", start_time - line_start_ms, end_time - start_time);
                 prev_end = Some((start_time, end_time, time_str.clone()));
 
-                // Replace the first occurrence of this word time tag
-                if let Some(m) = word_time_all_re.find(&words.clone()) {
-                    words.replace_range(m.range(), &time_str);
+                // 替换当前原始标签的首次出现
+                if let Some(pos) = words.find(original.as_str()) {
+                    words.replace_range(pos..pos + original.len(), &time_str);
                 }
             }
             lines.push(format!("{}{}", time, words));

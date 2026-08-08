@@ -1,5 +1,4 @@
 import { computed, ref, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
@@ -10,11 +9,11 @@ import type {
   DesktopLyricsSettings,
   LyricLine,
   LyricDocument,
-  LyricsPayload,
   LyricsSettings,
   LyricsStatus,
   SemanticLine,
 } from './types';
+import { tauriInvoke } from '../../services/tauri/invoke';
 
 export const showDesktopLyrics = ref(false);
 export const showLyricsPlayerSettingsPanel = ref(false);
@@ -102,7 +101,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
     // If the song carries pre-fetched lyrics (e.g. from network music API),
     // parse them directly instead of looking up by file path.
     if (lyricsRaw) {
-      const payload = await invoke<LyricsPayload>('parse_lyrics_text', { text: lyricsRaw });
+      const payload = await tauriInvoke('parse_lyrics_text', { text: lyricsRaw });
 
       if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
@@ -153,7 +152,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       return;
     }
 
-    const payload = await invoke<LyricsPayload>('get_song_lyrics_payload', { path: lyricsPath });
+    const payload = await tauriInvoke('get_song_lyrics_payload', { path: lyricsPath });
 
     if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
