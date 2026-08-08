@@ -16,6 +16,7 @@ import GlobalBackground from './GlobalBackground.vue';
 
 const OnboardingModal = defineAsyncComponent(() => import('../onboarding/OnboardingModal.vue'));
 const PlayQueueSidebar = defineAsyncComponent(() => import('../player/PlayQueueSidebar.vue'));
+const CommentPanel = defineAsyncComponent(() => import('../overlays/CommentPanel.vue'));
 const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.vue'));
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
@@ -246,6 +247,7 @@ onMounted(() => {
     </div>
 
     <PlayQueueSidebar v-if="!isMiniMode" />
+    <CommentPanel v-if="!isMiniMode" />
 
     <AddToPlaylistModal
       v-if="!isMiniMode && showAddToPlaylistModal"

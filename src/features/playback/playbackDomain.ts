@@ -56,6 +56,7 @@ export const createPlaybackDomain = <
   togglePlaylist: playbackActions.togglePlaylist,
   toggleMiniPlaylist: playbackActions.toggleMiniPlaylist,
   closeMiniPlaylist: playbackActions.closeMiniPlaylist,
+  toggleComment: playbackActions.toggleComment,
   clearQueue: playbackActions.clearQueue,
   addSongToQueue: playbackActions.addSongToQueue,
   addSongsToQueue: playbackActions.addSongsToQueue,

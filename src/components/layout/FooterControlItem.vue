@@ -71,6 +71,10 @@ const ctx = inject<{
   // 播放队列
   showPlaylist: Ref<boolean>;
   togglePlaylist: () => void;
+  // 评论区
+  isPluginSong: Ref<boolean>;
+  showComment: Ref<boolean>;
+  toggleComment: () => void;
 }>('footerContext')!;
 
 // 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
@@ -111,6 +115,9 @@ const {
   toggleEqPanel,
   showPlaylist,
   togglePlaylist,
+  isPluginSong,
+  showComment,
+  toggleComment,
 } = ctx;
 </script>
 
@@ -321,6 +328,27 @@ const {
       title="播放队列"
     >
       <FooterControlIcon item-key="playlist" class="h-[22px] w-[22px]" />
+    </button>
+  </div>
+
+  <!-- 评论区 -->
+  <div v-else-if="itemKey === 'comment'" class="relative flex items-center justify-center h-full z-[70]">
+    <button
+      v-if="isPluginSong"
+      @click="toggleComment"
+      class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+      :class="showComment ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+      title="评论区"
+    >
+      <FooterControlIcon item-key="comment" class="h-4 w-4" />
+    </button>
+    <button
+      v-else
+      class="w-8 h-8 flex items-center justify-center rounded-full opacity-40 cursor-not-allowed"
+      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-600 dark:text-white/60'"
+      title="当前歌曲不支持评论（仅插件在线歌曲可用）"
+    >
+      <FooterControlIcon item-key="comment" class="h-4 w-4" />
     </button>
   </div>
 </template>

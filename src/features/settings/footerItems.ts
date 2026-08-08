@@ -20,7 +20,7 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   left: ['favorite', 'download'],
   middleLeft: 'playMode',
   middleRight: 'desktopLyrics',
-  right: ['quality', 'volume', 'equalizer', 'playlist'],
+  right: ['quality', 'volume', 'equalizer', 'playlist', 'comment'],
   hidden: [],
 };
 
@@ -40,7 +40,7 @@ export interface FooterItemMeta {
   label: string;
   description: string;
   /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
-  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist';
+  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle';
 }
 
 /**
@@ -56,6 +56,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'volume',         label: '音量',       description: '音量调节与静音', icon: 'volume' },
   { key: 'equalizer',      label: '均衡器',     description: 'EQ 频段调节', icon: 'equalizer' },
   { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', icon: 'playlist' },
+  { key: 'comment',        label: '评论区',     description: '打开当前歌曲评论（仅插件在线歌曲可用）', icon: 'message-circle' },
 ];
 
 export const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(item => item.key);

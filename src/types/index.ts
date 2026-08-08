@@ -299,7 +299,8 @@ export type FooterItemKey =
   | 'quality'         // 音质选择
   | 'volume'          // 音量
   | 'equalizer'       // 均衡器
-  | 'playlist';       // 播放队列
+  | 'playlist'        // 播放队列
+  | 'comment';        // 评论区
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';

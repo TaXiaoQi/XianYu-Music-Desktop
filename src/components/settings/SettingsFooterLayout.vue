@@ -104,8 +104,13 @@ provide('footerContext', {
   toggleMute: () => {},
   showEqPanel: ref(false),
   toggleEqPanel: () => {},
+  // 播放队列
   showPlaylist: ref(false),
   togglePlaylist: () => {},
+  // 评论区
+  isPluginSong: ref(true),
+  showComment: ref(false),
+  toggleComment: () => {},
 });
 
 interface FooterDragState {

@@ -42,6 +42,7 @@ interface PlayerUiShellApi {
   closeMiniPlaylist: () => void;
   handleScan: () => Promise<unknown>;
   removeSongFromList: (song: Song) => Promise<unknown>;
+  toggleComment: () => void;
 }
 
 interface UsePlaybackActionsOptions {
@@ -77,6 +78,7 @@ export function usePlaybackActions({
   const toggleMode = () => getPlayerQueue().toggleMode();
   const togglePlaylist = () => playerUiShell.togglePlaylist();
   const toggleMiniPlaylist = () => playerUiShell.toggleMiniPlaylist();
+  const toggleComment = () => playerUiShell.toggleComment();
   const closeMiniPlaylist = () => playerUiShell.closeMiniPlaylist();
   const handleScan = () => playerUiShell.handleScan();
   const playNext = (song: Song) => getPlayerQueue().playNext(song);
@@ -163,6 +165,7 @@ export function usePlaybackActions({
     toggleMode,
     togglePlaylist,
     toggleMiniPlaylist,
+    toggleComment,
     closeMiniPlaylist,
     handleScan,
     playNext,

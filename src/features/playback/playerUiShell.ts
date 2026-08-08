@@ -113,6 +113,10 @@ export const createPlayerUiShell = ({
     uiStore.showQueue = !uiStore.showQueue;
   };
 
+  const toggleComment = () => {
+    uiStore.showComment = !uiStore.showComment;
+  };
+
   return {
     handleVolume,
     handleVolumeWheel,
@@ -125,5 +129,6 @@ export const createPlayerUiShell = ({
     toggleAlwaysOnTop,
     togglePlayerDetail,
     toggleQueue,
+    toggleComment,
   };
 };
