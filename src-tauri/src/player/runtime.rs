@@ -955,7 +955,8 @@ fn handle_play(
         }
         AudioSource::StreamingTempFile(state) => {
             // [在线播放重构] 从流式临时文件创建 reader，边下边播
-            match state.new_reader() {
+            // 若 ekey 存在（QMC 加密音源），自动包装 QmcDecryptReader 进行流式解密
+            match state.new_reader_with_decryption() {
                 Ok(reader) => append_decoded_source(
                     reader,
                     output,
@@ -1033,8 +1034,9 @@ fn handle_seek(
                 // append_decoded_source 内部会重建 sink、装配处理链并开始播放
                 let start_offset = Some(jump_target);
                 // [在线播放重构] 优先使用 StreamingTempFileReader 重建（边下边播）
+                // 若 ekey 存在（QMC 加密音源），自动包装 QmcDecryptReader 进行流式解密
                 if let Some(state) = streaming_state {
-                    match state.new_reader() {
+                    match state.new_reader_with_decryption() {
                         Ok(reader) => append_decoded_source(
                             reader,
                             output,

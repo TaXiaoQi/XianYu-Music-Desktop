@@ -68,6 +68,8 @@ pub async fn play_audio(
     gain_offset_db: Option<f32>,
     prevent_clipping: Option<bool>, // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效
     headers: Option<std::collections::HashMap<String, String>>,
+    // QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由前端从插件 getMediaSource 响应中提取
+    ekey: Option<String>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
     state: tauri::State<'_, PlayerState>,
@@ -85,6 +87,7 @@ pub async fn play_audio(
             &path,
             headers.as_ref(),
             Some(DEFAULT_STREAM_USER_AGENT),
+            ekey.as_deref(),
         )
         .map_err(|e| format!("在线音频缓存启动失败: {}", e))?;
 

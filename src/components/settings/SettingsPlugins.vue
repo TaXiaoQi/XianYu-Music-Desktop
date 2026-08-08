@@ -5,7 +5,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -42,6 +42,8 @@ onMounted(async () => {
   plugins.value = getStoredPlugins();
   // 异步加载用户变量徽标（不阻塞页面渲染）
   void refreshUserVarBadges();
+  // 异步加载 Baka 插件徽标
+  void refreshBakaBadges();
   // 注册 Tauri 拖放事件监听（仅当本地安装面板打开时响应）
   setupDragDropListeners();
 });
@@ -49,6 +51,7 @@ onMounted(async () => {
 // 插件列表变更时刷新用户变量徽标
 watch(pluginsVersion, () => {
   void refreshUserVarBadges();
+  void refreshBakaBadges();
 });
 
 onUnmounted(() => {
@@ -114,6 +117,31 @@ async function refreshUserVarBadges() {
     pluginsWithUserVars.value = await refreshUserVariableBadges();
   } finally {
     badgeRefreshInProgress = false;
+  }
+}
+
+// 缓存 Baka 系列插件 ID 集合（用于卡片格式标签显示 BakaMusic 而非 MusicFree）
+const pluginsBakaIds = ref<Set<string>>(new Set());
+let bakaRefreshInProgress = false;
+
+async function refreshBakaBadges() {
+  if (bakaRefreshInProgress) return;
+  bakaRefreshInProgress = true;
+  try {
+    const allPlugins = getStoredPlugins();
+    const bakaSet = new Set<string>();
+    await Promise.all(
+      allPlugins
+        .filter((p) => p.enabled && p.format === 'musicfree')
+        .map(async (p) => {
+          try {
+            if (await isBakaPlugin(p)) bakaSet.add(p.id);
+          } catch { /* ignore */ }
+        }),
+    );
+    pluginsBakaIds.value = bakaSet;
+  } finally {
+    bakaRefreshInProgress = false;
   }
 }
 
@@ -1263,7 +1291,7 @@ async function saveUserVariables() {
                   class="settings-plugin-tag"
                   :class="pluginColorClasses(plugin.format).tagBg"
                 >
-                  {{ pluginColorClasses(plugin.format).label }}
+                  {{ pluginsBakaIds.has(plugin.id) ? 'BakaMusic' : pluginColorClasses(plugin.format).label }}
                 </span>
                 <span
                   v-if="plugin.updateAvailable"

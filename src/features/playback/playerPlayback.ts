@@ -836,6 +836,8 @@ const authStore = useAuthStore();
     let audioFilePath = song.cue_source_path || song.path;
     // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），随 URL 一起传递给播放器
     let pluginHeaders: Record<string, string> | null = null;
+    // QMC2 加密密钥（Baka 插件加密音源），随 URL 一起传递给 Rust 后端进行流式解密
+    let pluginEkey: string | undefined = undefined;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
     // [音质列表] 在 URL 解析前等待音质列表获取完成，确保后续音质回退逻辑能正确过滤
@@ -858,6 +860,7 @@ const authStore = useAuthStore();
       });
       audioFilePath = resolvedOnlineAudio.audioFilePath;
       pluginHeaders = resolvedOnlineAudio.pluginHeaders;
+      pluginEkey = resolvedOnlineAudio.ekey;
       if (resolvedOnlineAudio.currentPlayingQuality) {
         playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
       }
@@ -1023,6 +1026,7 @@ const authStore = useAuthStore();
             gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
             preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
             headers: pluginHeaders,
+            ekey: pluginEkey,
           });
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));

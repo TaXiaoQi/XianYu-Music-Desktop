@@ -4,6 +4,7 @@ mod device;
 pub mod equalizer;
 pub mod loudness;
 mod output;
+mod qmc2;
 mod runtime;
 mod session;
 pub mod sound_effect;

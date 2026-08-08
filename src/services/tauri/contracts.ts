@@ -141,6 +141,8 @@ export interface PlayAudioOptions {
   preventClipping?: boolean | null;
   /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），仅对 http(s) 直链生效 */
   headers?: Record<string, string> | null;
+  /** QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由 Rust 后端流式解密 */
+  ekey?: string;
 }
 
 export interface UpdateLoudnessSettingsOptions {
@@ -784,6 +786,18 @@ export interface TauriCommandMap {
   recognize_system_audio: { payload: undefined; response: RecognizeResponseContract };
   recognize_with_pcm: { payload: { pcm: number[] }; response: RecognizeResponseContract };
   cancel_recognize_system_audio: { payload: undefined; response: void };
+  save_song_background: {
+    payload: { songPath: string; backgroundPath: string };
+    response: string;
+  };
+  get_song_background: {
+    payload: { songPath: string };
+    response: string | null;
+  };
+  clear_song_background: {
+    payload: { songPath: string };
+    response: void;
+  };
 }
 
 /** 听歌识曲接口响应 */

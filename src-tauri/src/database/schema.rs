@@ -74,6 +74,15 @@ pub(crate) fn ensure_base_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     conn.execute(
+        "CREATE TABLE IF NOT EXISTS song_backgrounds (
+            song_path TEXT PRIMARY KEY,
+            background_path TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.execute(
         "CREATE TABLE IF NOT EXISTS remote_files (
             source_id TEXT NOT NULL,
             remote_path TEXT NOT NULL,

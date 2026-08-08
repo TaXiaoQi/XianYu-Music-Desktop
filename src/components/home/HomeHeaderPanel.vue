@@ -82,6 +82,7 @@ const isManagementModeModel = computed({
     :subtitle="playlistDetail?.date ? `创建于 ${playlistDetail.date}` : ''"
     :songs="localSongList"
     :selectedCount="selectedCount"
+    :totalSongCount="localSongList.length"
     :showRename="true"
     :showAddToPlaylist="false"
     @playAll="$emit('playAll')"
@@ -89,6 +90,7 @@ const isManagementModeModel = computed({
     @batchDelete="$emit('batchDelete')"
     @batchAddToFavorites="$emit('batchAddToFavorites')"
     @rename="$emit('renamePlaylist')"
+    @selectAll="$emit('selectAll')"
   />
 
   <LocalMusicHeader

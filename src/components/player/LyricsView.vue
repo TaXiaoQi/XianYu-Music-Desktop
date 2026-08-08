@@ -33,6 +33,8 @@ import {
 } from '../../composables/lyrics';
 import { usePlayer } from '../../features/playback';
 import { useSettingsStore } from '../../features/settings/store';
+import { fileApi } from '../../services/tauri/fileApi';
+import { useToast } from '../../composables/toast';
 // [修复防御]: AmlLyricPlayer 静态导入会拉入 PatchedLyricPlayer → @applemusic-like-lyrics/core → @pixi/*
 // 整条重型依赖链到主入口 chunk，导致启动时强制加载 PIXI/AMLL（200-400KB+ JS）。
 // 改为 defineAsyncComponent 后，该依赖链仅在 PlayerDetail 打开且渲染歌词时按需加载，
@@ -64,8 +66,9 @@ const {
   lyricsStatus,
   showLyricsPlayerSettingsPanel,
 } = useLyrics();
-const { seekTo, currentTime, isPlaying } = usePlayer();
+const { seekTo, currentTime, isPlaying, currentSongPath } = usePlayer();
 const { audioDelay } = storeToRefs(useSettingsStore());
+const { showToast } = useToast();
 
 const FONT_SCALE_STEP = 0.05;
 const LINE_GAP_STEP = 0.05;
@@ -274,6 +277,45 @@ const handleChooseBackgroundImage = async () => {
   });
   if (selected && typeof selected === 'string') {
     lyricsSettings.customBackgroundImage = selected;
+  }
+};
+
+/** 将当前自定义背景图写入歌曲元数据（每首歌独立保存） */
+const isSavingSongBackground = ref(false);
+const handleSaveBackgroundToSong = async () => {
+  const songPath = currentSongPath.value;
+  const bgPath = lyricsSettings.customBackgroundImage;
+  if (!songPath) {
+    showToast('当前没有播放的歌曲', 'error');
+    return;
+  }
+  if (!bgPath) {
+    showToast('请先选择自定义背景图片', 'error');
+    return;
+  }
+  isSavingSongBackground.value = true;
+  try {
+    await fileApi.saveSongBackground(songPath, bgPath);
+    showToast('已将背景图写入当前歌曲', 'success');
+  } catch (err) {
+    showToast(`写入失败: ${err}`, 'error');
+  } finally {
+    isSavingSongBackground.value = false;
+  }
+};
+
+/** 清除当前歌曲的独立背景图 */
+const handleClearSongBackground = async () => {
+  const songPath = currentSongPath.value;
+  if (!songPath) {
+    showToast('当前没有播放的歌曲', 'error');
+    return;
+  }
+  try {
+    await fileApi.clearSongBackground(songPath);
+    showToast('已清除当前歌曲的背景图', 'success');
+  } catch (err) {
+    showToast(`清除失败: ${err}`, 'error');
   }
 };
 
@@ -564,6 +606,28 @@ watch(() => props.coverHidden, async () => {
               {{ lyricsSettings.customBackgroundImage }}
             </div>
             <div v-else class="mt-2 text-[10px] text-white/30">未设置自定义背景，使用歌曲封面作为背景</div>
+
+            <div class="mt-4 pt-4 border-t border-white/8">
+              <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Per-Song</div>
+              <div class="mt-1.5">
+                <span class="text-[13px] font-medium text-white/85">单曲背景</span>
+                <span class="ml-1.5 text-[10px] text-white/30">为当前歌曲单独保存背景图</span>
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  :disabled="isSavingSongBackground || !lyricsSettings.customBackgroundImage"
+                  class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-[#EC4141]/80 text-white hover:bg-[#EC4141] disabled:cursor-not-allowed disabled:opacity-30 transition-colors"
+                  @click="handleSaveBackgroundToSong"
+                >写入歌曲</button>
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-white/5 text-white/50 hover:bg-white/10 transition-colors"
+                  @click="handleClearSongBackground"
+                >清除歌曲背景</button>
+              </div>
+              <div class="mt-2 text-[10px] text-white/25">写入后该歌曲将使用独立背景，不影响全局设置</div>
+            </div>
           </div>
 
           <!-- 歌词样式 Tab -->

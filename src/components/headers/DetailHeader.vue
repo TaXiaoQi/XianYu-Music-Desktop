@@ -47,10 +47,11 @@ const props = defineProps<{
   songs: Song[];
   isBatchMode: boolean;
   selectedCount: number;
+  totalSongCount?: number;
   showRename?: boolean;
   /** 只读模式：禁用管理按钮、排序按钮和排序菜单 */
   readOnly?: boolean;
-  /** 是否显示“收藏至歌单/添加到歌单”入口 */
+  /** 是否显示"收藏至歌单/添加到歌单"入口 */
   showAddToPlaylist?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
@@ -63,8 +64,14 @@ const emit = defineEmits([
   'batchDelete',
   'openAddToPlaylist',
   'batchAddToFavorites',
-  'rename'
+  'rename',
+  'selectAll',
 ]);
+
+const isAllSelected = computed(() => {
+  const total = props.totalSongCount ?? props.songs.length;
+  return total > 0 && props.selectedCount === total;
+});
 
 const headerCover = ref('');
 let coverRequestId = 0;
@@ -213,8 +220,9 @@ const handlePlayAll = () => {
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
-        <button @click="emit('batchPlay')" class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 py-1.5 rounded-full text-sm transition flex items-center gap-1 active:scale-95 shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
+        <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path v-if="isAllSelected" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><template v-else><circle cx="12" cy="12" r="9" stroke-width="2" /></template></svg>
+          {{ isAllSelected ? '取消全选' : '全选' }}
         </button>
         <button @click="emit('batchAddToFavorites')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>

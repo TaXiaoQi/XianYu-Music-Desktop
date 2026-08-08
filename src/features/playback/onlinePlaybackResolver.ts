@@ -29,6 +29,10 @@ export interface ResolveOnlineAudioResult {
   currentPlayingAudioUrl: string | null;
   lyricsRaw?: string;
   coverThumbPath?: string;
+  /** QMC2 加密密钥（Baka 插件加密音源） */
+  ekey?: string;
+  /** CENC 内容密钥 */
+  cek?: string;
 }
 
 const sortQualities = (qualities: QualityKey[]) => (
@@ -344,6 +348,8 @@ const resolvePluginAudioUrl = async ({
       currentPlayingAudioUrl: musicInfo.url,
       lyricsRaw: musicInfo.lyricsRaw,
       coverThumbPath,
+      ekey: musicInfo.ekey,
+      cek: musicInfo.cek,
     };
   } catch (error) {
     console.warn(`[Audio] Failed to resolve plugin:// URL: ${getErrorMessage(error)}`);
