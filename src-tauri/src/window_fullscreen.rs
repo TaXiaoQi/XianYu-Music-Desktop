@@ -244,17 +244,17 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     bottom,
                 } = mi.rcMonitor;
 
-                // Windows 10/11 的 DWM 会为窗口保留一圈约 8px 的不可见边框（用于窗口阴影），
-                // 这个边框不会被 SetWindowPos 自动裁剪，导致窗口实际可见区域比 rcMonitor 小一圈。
-                // 把矩形向四周扩大 16px，让不可见边框溢出屏幕边缘，内容即可铺满整屏。
-                const BORDER_OVERLAP: i32 = 16;
+                // 上方已清除 WS_THICKFRAME | WS_CAPTION 及扩展边框样式，窗口已无非客户区，
+                // DWM 不再为窗口保留约 8px 的不可见边框（该边框本服务于可调整大小窗口的阴影/resize 抓手）。
+                // 因此直接用 rcMonitor 铺满即可，无需额外扩大。若再向四周扩大，窗口矩形会大于显示器，
+                // WebView 内容会溢出屏幕边缘几十像素（底部/右侧内容被裁切）。
                 if SetWindowPos(
                     hwnd,
                     std::ptr::null_mut(),
-                    left - BORDER_OVERLAP,
-                    top - BORDER_OVERLAP,
-                    (right - left) + BORDER_OVERLAP * 2,
-                    (bottom - top) + BORDER_OVERLAP * 2,
+                    left,
+                    top,
+                    right - left,
+                    bottom - top,
                     // SWP_FRAMECHANGED: 清除边框样式后强制窗口重新计算非客户区
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 ) == 0
