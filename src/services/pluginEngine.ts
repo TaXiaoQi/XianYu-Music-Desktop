@@ -24,7 +24,7 @@ import type {
   PluginPlaylistSearchResult,
   QualityKey,
 } from '../types';
-import { QUALITY_META, qualityKeyToMfQuality, ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, resolveOnlinePlayQuality } from '../types';
+import { QUALITY_META, qualityKeyToMfQuality, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
@@ -37,14 +37,12 @@ import {
 } from './pluginSandboxManager';
 import {
   createPluginSubscriptionService,
-  type SubscriptionInstallResult,
 } from './pluginSubscriptions';
 import {
   extractAlbum,
   extractArtist,
   extractCoverUrl,
   extractResultList,
-  qualityKeyToPluginString,
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
@@ -66,9 +64,6 @@ const MAX_PLUGIN_SIZE = 2 * 1024 * 1024;
 
 // 内置插件定义：已取消所有内置插件，此映射保留为空用于清理旧版本遗留的内置插件条目
 const BUILTIN_PLUGINS: Record<string, string> = {};
-
-// 不需要卡密的内置插件路径集合（已无内置插件，保留空集合兼容导出）
-export const FREE_BUILTIN_PATHS = new Set<string>();
 
 // ==================== 沙箱隔离配置 ====================
 
@@ -134,10 +129,6 @@ let _logCallback: ((msg: string) => void) | null = null;
 function log(msg: string) {
   console.log(`[PluginEngine] ${msg}`);
   try { _logCallback?.(msg); } catch { /* ignore */ }
-}
-
-export function setLogCallback(cb: ((msg: string) => void) | null) {
-  _logCallback = cb;
 }
 
 // ==================== 插件状态版本号 ====================
@@ -307,67 +298,6 @@ proxyAxios.create = (config?: any) => {
   inst.create = proxyAxios.create;
   return inst;
 };
-
-// ==================== proxyFetch（通过 Tauri 后端代理 fetch 请求，绕过 CORS）====================
-
-export async function proxyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  try {
-    let urlStr: string;
-    if (typeof input === 'string') {
-      urlStr = input;
-    } else if (input instanceof URL) {
-      urlStr = input.toString();
-    } else if (input instanceof Request) {
-      urlStr = input.url;
-    } else {
-      urlStr = String(input);
-    }
-
-    // [修复防御]: 只代理外部 HTTP(S) 请求，本地资源走原生 fetch
-    // 避免 /plugins/builtin_qq.js 等本地资源也走 Tauri IPC
-    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
-      return globalThis.fetch(input, init);
-    }
-
-    const method = (init?.method || 'GET').toUpperCase();
-    const headers: Record<string, string> = {};
-    if (init?.headers) {
-      if (init.headers instanceof Headers) {
-        init.headers.forEach((v, k) => { if (typeof v === 'string') headers[k] = v; });
-      } else if (Array.isArray(init.headers)) {
-        for (const [k, v] of init.headers) { if (typeof v === 'string') headers[k] = v; }
-      } else {
-        for (const [k, v] of Object.entries(init.headers)) {
-          if (typeof v === 'string') headers[k] = v;
-        }
-      }
-    }
-
-    let body: string | undefined;
-    if (init?.body !== undefined && init.body !== null) {
-      body = typeof init.body === 'string' ? init.body : String(init.body);
-      if (body.length > 256 * 1024) {
-        log(`[proxyFetch] 请求体过大 ${body.length} bytes，截断`);
-        body = body.substring(0, 256 * 1024);
-      }
-    }
-
-    log(`[proxyFetch] ${method} ${urlStr.substring(0, 120)}`);
-
-    const response = await pluginApi.pluginHttpRequest(method, urlStr, headers, body);
-
-    log(`[proxyFetch] ← ${response.status} bodyLen=${response.body?.length ?? 0}`);
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.status >= 200 && response.status < 300 ? 'OK' : 'Error',
-      headers: new Headers(response.headers as Record<string, string>),
-    });
-  } catch (e: any) {
-    log(`[proxyFetch] 失败: ${e?.message}`);
-    throw e;
-  }
-}
 
 // ==================== 插件实例缓存 ====================
 
@@ -557,7 +487,7 @@ export async function loadPluginFromScript(
  *   }
  *   return { isEnd: true, data: [] };
  */
-export type PluginMusicSearchStatus =
+type PluginMusicSearchStatus =
   | 'success'
   | 'empty'
   | 'init_failed'
@@ -566,7 +496,7 @@ export type PluginMusicSearchStatus =
   | 'invalid_response'
   | 'search_failed';
 
-export interface PluginMusicSearchDiagnostics {
+interface PluginMusicSearchDiagnostics {
   results: PluginSearchResult[];
   status: PluginMusicSearchStatus;
   reason: string;
@@ -719,31 +649,6 @@ export async function pluginPlaylistSearch(
 }
 
 // ==================== 插件歌单详情 ====================
-
-/** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
-function extractResultList(result: any): any[] {
-  if (!result) return [];
-  // 常见格式: { data: [...] }
-  if (Array.isArray(result.data)) return result.data;
-  // MusicFree 部分插件格式: { musicList: [...] }
-  if (Array.isArray(result.musicList)) return result.musicList;
-  // Baka 插件可能使用 list/albumList/songList 等字段
-  if (Array.isArray(result.list)) return result.list;
-  if (Array.isArray(result.albumList)) return result.albumList;
-  if (Array.isArray(result.songList)) return result.songList;
-  if (Array.isArray(result.songs)) return result.songs;
-  if (Array.isArray(result.tracks)) return result.tracks;
-  // 嵌套格式: { data: { list/songs/... } }
-  if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
-    if (Array.isArray(result.data.list)) return result.data.list;
-    if (Array.isArray(result.data.songs)) return result.data.songs;
-    if (Array.isArray(result.data.musicList)) return result.data.musicList;
-    if (Array.isArray(result.data.albumList)) return result.data.albumList;
-  }
-  // 直接返回数组
-  if (Array.isArray(result)) return result;
-  return [];
-}
 
 export async function pluginGetPlaylistDetail(
   source: PluginSource,
@@ -1361,17 +1266,6 @@ export async function pluginAlbumSearch(
   }
 }
 
-// ==================== 检查插件搜索能力 ====================
-
-/**
- * 检查插件支持的搜索类型
- */
-export function getPluginSupportedSearchTypes(source: PluginSource): string[] {
-  const inst = pluginInstances.get(source.id);
-  if (!inst) return [];
-  return inst.instance.supportedSearchType ?? [];
-}
-
 /**
  * 检查插件是否支持指定搜索类型
  * 始终返回 true：实际搜索函数内部已做 supportedSearchType 检查，
@@ -1410,17 +1304,6 @@ export async function pluginGetMusicComments(
 ): Promise<{ isEnd?: boolean; data?: any[] } | null> {
   await ensurePluginInstance(source);
   return BakaPluginManager.getMusicComments(source, item, page);
-}
-
-/**
- * 获取歌曲详情页 URL（Baka 插件扩展方法）
- */
-export async function pluginGetMusicDetailPageUrl(
-  source: PluginSource,
-  item: PluginSearchResult,
-): Promise<string | null> {
-  await ensurePluginInstance(source);
-  return BakaPluginManager.getMusicDetailPageUrl(source, item);
 }
 
 // ==================== 辅助函数 ====================
@@ -1522,7 +1405,7 @@ export function setPluginUserVariableValues(pluginId: string, values: Record<str
 }
 
 /** 删除指定插件的用户变量值（卸载时调用） */
-export function removePluginUserVariableValues(pluginId: string) {
+function removePluginUserVariableValues(pluginId: string) {
   try {
     localStorage.removeItem(userVarKey(pluginId));
   } catch { /* ignore */ }
@@ -1703,7 +1586,7 @@ export function removePluginSource(id: string) {
   bumpPluginsVersion();
 }
 
-export function updatePluginSource(id: string, updates: Partial<PluginSource>) {
+function updatePluginSource(id: string, updates: Partial<PluginSource>) {
   const stored = readPluginsFromLocalStorage();
   const idx = stored.findIndex(p => p.id === id);
   if (idx >= 0) {
@@ -1769,7 +1652,7 @@ export async function togglePlugin(id: string): Promise<{ success: boolean; enab
 
 // ==================== 内置插件清理（已取消所有内置插件，此函数仅用于清除旧版本遗留的内置插件条目） ====================
 
-export async function loadBuiltinPlugins(): Promise<void> {
+async function loadBuiltinPlugins(): Promise<void> {
   // 清除所有遗留的内置插件条目（BUILTIN_PLUGINS 已为空，所有 builtin:// 条目均视为过期）
   const stored = getStoredPlugins();
   const builtinPaths = new Set(Object.keys(BUILTIN_PLUGINS));
@@ -2055,8 +1938,5 @@ export const updateSubscription = pluginSubscriptionService.updateSubscription;
 export const removeSubscription = pluginSubscriptionService.removeSubscription;
 export const installFromSubscriptionUrl = pluginSubscriptionService.installFromSubscriptionUrl;
 export const installAllSubscriptions = pluginSubscriptionService.installAllSubscriptions;
-export type { SubscriptionInstallResult };
 
 // ==================== 导出 ====================
-
-export type { IPluginInstance };

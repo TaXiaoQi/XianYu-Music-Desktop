@@ -20,12 +20,11 @@ import {
   pluginGetMusicInfo,
   pluginGetBakaMusicInfo,
   isBakaPlugin,
-  pluginGetSupportedQualities,
 } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl, lxPluginGetPic } from './lxPluginEngine';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
-export type LxQuality = QualityKey;
+type LxQuality = QualityKey;
 
 /**
  * 从目标音质向下降级，生成候选音质列表（用于自动回退）。
@@ -34,7 +33,7 @@ export type LxQuality = QualityKey;
  *     选 '320k' → [320k, 192k, 128k, mgg]
  *     选 'flac'  → [flac, 320k, 192k, 128k, mgg]
  */
-export function qualityToLxCandidates(quality: DownloadQuality): LxQuality[] {
+function qualityToLxCandidates(quality: DownloadQuality): LxQuality[] {
   const q = (quality ?? '320k') as QualityKey;
   const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(q);
   if (startIdx === -1) {
@@ -331,207 +330,6 @@ async function resolvePluginUrlForQuality(
   return url;
 }
 
-/** 探测到的单档位信息，供下载对话框展示 */
-export interface ProbedQuality {
-  quality: LxQuality;
-  /** 音源直链 */
-  url: string;
-  /** 供 UI 直接展示的大小字符串（如 "10.5 MB"）；空串表示未知 */
-  sizeText: string;
-  /** 文件扩展名，含点，如 ".flac" ".mp3" */
-  ext: string;
-}
-
-/** 字节数格式化：>= 1MB 用 MB，>= 1KB 用 KB */
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return '';
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${Math.round(bytes)} B`;
-}
-
-/**
- * 归一化 lx `_types[q].size`：
- * 插件返回的可能是 "10.5MB" / "550KB" / "3.2M" / "1234567"（字节）等，
- * 统一格式化成 UI 友好字符串。
- */
-function normalizeLxSize(raw: string | null | undefined): string {
-  if (raw == null) return '';
-  const s = String(raw).trim();
-  if (!s) return '';
-
-  const m = /^(\d+(?:\.\d+)?)\s*([KMG]?B?)$/i.exec(s.replace(/\s+/g, ''));
-  if (m) {
-    const value = parseFloat(m[1]);
-    const unit = m[2].toUpperCase();
-    if (!isFinite(value) || value <= 0) return '';
-    if (unit === 'B' || unit === '') return formatBytes(value);
-    if (unit === 'K' || unit === 'KB') return formatBytes(value * 1024);
-    if (unit === 'M' || unit === 'MB') return formatBytes(value * 1024 * 1024);
-    if (unit === 'G' || unit === 'GB') return formatBytes(value * 1024 * 1024 * 1024);
-  }
-
-  const asNum = Number(s);
-  if (isFinite(asNum) && asNum > 0) return formatBytes(asNum);
-  return '';
-}
-
-/** 将 sizeText 显示为友好文案；空串显示占位符 */
-export function formatFileSize(sizeText: string): string {
-  return sizeText || '大小未知';
-}
-
-/**
- * 探测一首歌当前音源实际能下载的所有音质档位（含大小与扩展名）。
- *
- * LX 路径：大小优先读 lx 搜索结果里已缓存的 `_types[q].size`（搜索阶段就带了，免网络请求）；
- * Plugin 路径：优先读 `rawData.qualities[q].size`；无则统一回退到 Rust `probe_url_size`
- * 用 `Range: bytes=0-0` 探 Content-Length。
- *
- * 返回按品质由高到低排序的可用档位列表。
- */
-export async function probeAvailableQualities(song: Song): Promise<ProbedQuality[]> {
-  // plugin:// 协议走 MusicFree 插件探测路径
-  if (isPluginSong(song)) {
-    return probePluginAvailableQualities(song);
-  }
-
-  const ctx = await prepareResolveContext(song, 'master');
-  if (!ctx) return [];
-
-  const _types: Record<string, { size: string | null; hash?: string }> | undefined =
-    ctx.baseSongInfo?._types;
-
-  const ALL: LxQuality[] = ALL_QUALITY_KEYS_DESC;
-  const probed = await Promise.all(
-    ALL.map(async (q): Promise<ProbedQuality | null> => {
-      let url: string | null;
-      try {
-        url = await resolveUrlForQuality(ctx, q);
-      } catch {
-        return null;
-      }
-      if (!url) return null;
-
-      let sizeText = normalizeLxSize(_types?.[q]?.size);
-
-      if (!sizeText) {
-        try {
-          const info = await downloadApi.probeUrlSize(url);
-          if (info?.size > 0) sizeText = formatBytes(Number(info.size));
-        } catch (e) {
-          console.warn(`[Download] 探测 ${q} 大小失败:`, e);
-        }
-      }
-
-      const ext = extFromUrl(url) || extFromQuality(q);
-      return { quality: q, url, sizeText, ext };
-    }),
-  );
-  return probed.filter((p): p is ProbedQuality => p !== null);
-}
-
-/**
- * 探测 plugin:// 协议歌曲的可用音质。
- *
- * 优化：若插件声明了 `supportedQualities`（Toskysun 系列），仅探测声明的音质档位，
- * 避免对 12 档全部发起 getMediaSource 网络请求。否则回退到全量探测。
- */
-async function probePluginAvailableQualities(song: Song): Promise<ProbedQuality[]> {
-  const ctx = await preparePluginResolveContext(song, 'master');
-  if (!ctx) return [];
-
-  // 尝试从插件实例获取声明的支持音质列表
-  let candidateQualities: LxQuality[] = ALL_QUALITY_KEYS_DESC;
-  try {
-    const supported = await pluginGetSupportedQualities(ctx.pluginSource);
-    if (supported && supported.length > 0) {
-      // 按品质从高到低排序
-      candidateQualities = supported.sort((a, b) => QUALITY_META[b].rank - QUALITY_META[a].rank);
-      console.log(`[Download][plugin] 插件声明支持音质: ${candidateQualities.join(', ')}`);
-    }
-  } catch { /* ignore, fall back to full probe */ }
-
-  const results: ProbedQuality[] = [];
-
-  // 串行探测
-  for (const q of candidateQualities) {
-    let url: string | null;
-    try {
-      url = await resolvePluginUrlForQuality(ctx, q);
-    } catch (e: any) {
-      console.warn(`[Download][plugin] 探测 ${q} 失败:`, e?.message);
-      // 单档位异常不中断整体探测，继续尝试更低音质
-      continue;
-    }
-    if (!url) continue;
-
-    // 优先用预解析 qualities 里的 size（先尝试新键值，再尝试旧三档）
-    const newQ = q === 'mgg' ? '96k' : q;
-    const legacyQ = lxQualityToPluginQuality(q);
-    let sizeText = '';
-    const preSize = ctx.preQualities?.[newQ]?.size ?? ctx.preQualities?.[legacyQ]?.size;
-    if (typeof preSize === 'number') {
-      sizeText = formatBytes(preSize);
-    } else if (typeof preSize === 'string') {
-      sizeText = normalizeLxSize(preSize);
-    }
-
-    if (!sizeText) {
-      try {
-        const info = await downloadApi.probeUrlSize(url);
-        if (info?.size > 0) sizeText = formatBytes(Number(info.size));
-      } catch (e) {
-        console.warn(`[Download][plugin] 探测 ${q} 大小失败:`, e);
-      }
-    }
-
-    const ext = extFromUrl(url) || extFromQuality(q);
-    results.push({ quality: q, url, sizeText, ext });
-  }
-
-  return results;
-}
-
-/**
- * 解析在线歌曲（lx:// 或 plugin://）的真实音源直链，按音质候选逐个尝试。
- * 注意：这里只要拿到首个格式合法的直链即返回，不校验该链接实际能否下载；
- * 下载阶段（downloadSong）会在下载失败时按候选档位继续回退。
- */
-export async function resolveDownloadUrl(
-  song: Song,
-  quality: DownloadQuality,
-): Promise<{ url: string; hitQuality: LxQuality } | null> {
-  const isPlugin = isPluginSong(song);
-  const ctx = isPlugin
-    ? await preparePluginResolveContext(song, quality)
-    : await prepareResolveContext(song, quality);
-  if (!ctx) return null;
-
-  const resolveUrl = (q: LxQuality): Promise<string | null> =>
-    isPlugin
-      ? resolvePluginUrlForQuality(ctx as PluginResolveContext, q)
-      : resolveUrlForQuality(ctx as ResolveDownloadContext, q);
-
-  const errors: string[] = [];
-  for (const q of ctx.candidates) {
-    try {
-      const url = await resolveUrl(q);
-      if (url) {
-        return { url, hitQuality: q };
-      }
-      errors.push(`${q}: 返回空链接`);
-    } catch (e: any) {
-      const msg = typeof e === 'string' ? e : (e?.message || String(e));
-      errors.push(`${q}: ${msg}`);
-      console.warn(`[Download] 获取 ${q} 音源失败:`, msg);
-    }
-  }
-
-  console.warn('[Download] 所有音质档位均失败:', errors);
-  return null;
-}
-
 /** 获取歌词文本（lrc 或纯文本）用于一并下载 */
 async function fetchLyricText(
   song: Song,
@@ -719,7 +517,7 @@ async function resolveNonConflictingPath(fullPath: string, overwriteExisting: bo
   }
 }
 
-export interface DownloadSongOptions {
+interface DownloadSongOptions {
   quality: DownloadQuality;
   downloadDir: string;
   keepSourceFilename: boolean;
@@ -742,7 +540,7 @@ export interface DownloadSongOptions {
   onProgress?: (percent: number) => void;
 }
 
-export interface DownloadSongResult {
+interface DownloadSongResult {
   filePath: string;
   hitQuality: LxQuality;
   lyricsSaved: boolean;
@@ -1030,7 +828,7 @@ export async function downloadSong(
   return { filePath, hitQuality, lyricsSaved, coverSaved, metadataEmbedded };
 }
 
-export interface DownloadExtrasOptions {
+interface DownloadExtrasOptions {
   downloadDir: string;
   fileNameStyle: DownloadFileNameStyle;
   downloadLyrics: boolean;
@@ -1039,7 +837,7 @@ export interface DownloadExtrasOptions {
   downloadCover: boolean;
 }
 
-export interface DownloadExtrasResult {
+interface DownloadExtrasResult {
   lyricsSaved: boolean;
   coverSaved: boolean;
 }

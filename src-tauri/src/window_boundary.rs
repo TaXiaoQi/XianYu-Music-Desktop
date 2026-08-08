@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
-    UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+    UI::Shell::{DefSubclassProc, SetWindowSubclass},
     UI::WindowsAndMessaging::WM_MOVING,
 };
 
@@ -68,14 +68,6 @@ unsafe extern "system" fn boundary_subclass_proc(
 pub fn install_boundary_subclass(hwnd: isize) {
     unsafe {
         SetWindowSubclass(hwnd as HWND, Some(boundary_subclass_proc), SUBCLASS_ID, 0);
-    }
-}
-
-/// 卸载 subclass
-#[cfg(target_os = "windows")]
-pub fn _remove_boundary_subclass(hwnd: isize) {
-    unsafe {
-        RemoveWindowSubclass(hwnd as HWND, Some(boundary_subclass_proc), SUBCLASS_ID);
     }
 }
 

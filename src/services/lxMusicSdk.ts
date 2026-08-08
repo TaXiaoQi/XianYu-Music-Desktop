@@ -984,15 +984,6 @@ export const LX_SOURCE_NAMES: Record<LxSourceId, string> = {
   mg: '小蜜音乐',
 };
 
-/** Reverse mapping: display name -> source id */
-export const LX_NAME_TO_SOURCE: Record<string, LxSourceId> = {
-  '小蜗音乐': 'kw',
-  '小枸音乐': 'kg',
-  '小秋音乐': 'tx',
-  '小芸音乐': 'wy',
-  '小蜜音乐': 'mg',
-};
-
 /**
  * Search music from LX sources
  * @param source Source ID: 'kw'|'kg'|'tx'|'wy'|'mg'
@@ -1322,72 +1313,5 @@ export async function lxGetMusicUrl(
     throw new Error('获取播放链接失败: 后端返回空结果');
   } catch (e: any) {
     throw new Error(`获取播放链接失败: ${e?.message || e}`, { cause: e });
-  }
-}
-
-// ==================== Get Lyrics ====================
-
-/**
- * 通过公共 LX API 获取歌词
- */
-export async function lxGetLyric(songInfo: LxSearchResultItem): Promise<{ lyric: string; tlyric: string | null } | null> {
-  const source = songInfo.source;
-  let id: string;
-
-  switch (source) {
-    case 'kw':
-    case 'tx':
-    case 'wy':
-      id = songInfo.songmid;
-      break;
-    case 'kg':
-      id = songInfo.hash || songInfo.songmid;
-      break;
-    case 'mg':
-      id = songInfo.copyrightId || songInfo.songmid;
-      break;
-    default:
-      return null;
-  }
-
-  const url = `https://lxmusicapi.onrender.com/lrc/${source}/${id}`;
-  console.log(`[LxMusicSdk] getLyric: ${url}`);
-
-  try {
-    const resp = await httpFetch(url, {
-      method: 'GET',
-      headers: { 'User-Agent': 'lx-music request' },
-    });
-    if (resp.status === 429) throw new Error('请求过于频繁');
-    const body = JSON.parse(resp.body);
-    if (body.code === 0 && body.data) {
-      const data = body.data;
-      return {
-        lyric: data.lyric || data.lrc || '',
-        tlyric: data.tlyric || data.translate || null,
-      };
-    }
-    return null;
-  } catch (e: any) {
-    console.warn(`[LxMusicSdk] 歌词主API失败，尝试备用: ${e.message}`);
-    const fallbackUrl = `http://ts.tempmusics.tk/lrc/${source}/${id}`;
-    try {
-      const resp2 = await httpFetch(fallbackUrl, {
-        method: 'GET',
-        headers: { 'User-Agent': 'lx-music request' },
-      });
-      if (resp2.status === 429) throw new Error('请求过于频繁', { cause: e });
-      const body2 = JSON.parse(resp2.body);
-      if (body2.code === 0 && body2.data) {
-        const data = body2.data;
-        return {
-          lyric: data.lyric || data.lrc || '',
-          tlyric: data.tlyric || data.translate || null,
-        };
-      }
-      return null;
-    } catch {
-      return null;
-    }
   }
 }

@@ -68,52 +68,11 @@ export interface LxScriptInfo {
   homepage: string;
 }
 
-export interface SandboxInstance {
-  worker: Worker;
-  pluginId: string;
-  format: 'musicfree' | 'lx';
-  ready: boolean;
-  instance: any | null;
-}
-
 // ==================== HTTP 代理类型 ====================
-
-export interface HttpProxyRequest {
-  method: string;
-  url: string;
-  headers?: Record<string, string>;
-  body?: string;
-  timeout?: number;
-  follow?: number;
-}
 
 export interface HttpProxyResponse {
   status: number;
   url: string;
   headers: Record<string, string>;
   body: string;
-}
-
-export interface HttpBinaryProxyResponse {
-  status: number;
-  url: string;
-  headers: Record<string, string>;
-  body_base64: string;
-}
-
-// ==================== Cookie 代理类型 ====================
-
-export interface CookieInfo {
-  name: string;
-  value: string;
-  domain?: string;
-}
-
-// ==================== RPC 辅助函数 ====================
-
-let _rpcIdCounter = 0;
-
-export function nextRpcId(): number {
-  _rpcIdCounter = (_rpcIdCounter + 1) % 0x7fffffff;
-  return _rpcIdCounter;
 }

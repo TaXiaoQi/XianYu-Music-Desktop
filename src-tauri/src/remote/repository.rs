@@ -1,7 +1,8 @@
 use super::types::{RemoteFileEntry, RemoteSource, RemoteSourceCredentials, RemoteSourceInput};
 use rusqlite::{params, OptionalExtension};
-use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+
+use super::now_seconds;
 
 const REMOTE_KEYRING_SERVICE: &str = "XY-Music WebDAV";
 
@@ -53,13 +54,6 @@ fn migrate_db_password_to_keyring(conn: &rusqlite::Connection, source: &RemoteSo
             params![&source.id],
         );
     }
-}
-
-fn now_seconds() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
 }
 
 fn normalize_root_path(value: Option<String>) -> String {

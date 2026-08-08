@@ -2,6 +2,35 @@
 
 use std::fs;
 
+// ==================== 整数类型转换 ====================
+
+/// 将 i64 钳位到 u32 范围（负值归零，超限取 MAX）
+pub(crate) fn clamp_i64_to_u32(v: i64) -> u32 {
+    if v <= 0 {
+        0
+    } else if v > u32::MAX as i64 {
+        u32::MAX
+    } else {
+        v as u32
+    }
+}
+
+/// 将 Option<i64> 安全转换为 Option<u64>（负值返回 None）
+pub(crate) fn i64_to_u64_opt(v: Option<i64>) -> Option<u64> {
+    v.filter(|value| *value >= 0).map(|value| value as u64)
+}
+
+/// 将 Option<i64> 安全转换为 Option<u8>（超出 0-255 返回 None）
+pub(crate) fn i64_to_u8_opt(v: Option<i64>) -> Option<u8> {
+    v.filter(|value| *value >= 0 && *value <= u8::MAX as i64)
+        .map(|value| value as u8)
+}
+
+/// 将 Option<i64> 转换为 bool（None 或 0 为 false）
+pub(crate) fn i64_to_bool(v: Option<i64>) -> bool {
+    v.unwrap_or(0) != 0
+}
+
 pub const SUPPORTED_LIBRARY_EXTENSIONS: &[&str] = &[
     "aac", "aif", "aiff", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "wav",
 ];

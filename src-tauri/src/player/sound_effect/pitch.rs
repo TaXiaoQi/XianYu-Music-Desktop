@@ -14,7 +14,6 @@
 //! 按帧（一个完整通道组）处理，保持立体声声道关系。
 
 use super::SoundEffectSettings;
-use rodio::source::SeekError;
 use rodio::Source;
 use std::collections::VecDeque;
 
@@ -130,12 +129,6 @@ impl PitchRateProcessor {
             self.rate_multiplier = 1.0;
             self.ratio = 1.0;
         }
-    }
-
-    /// 是否激活（非直通）
-    #[allow(dead_code)]
-    pub fn is_active(&self) -> bool {
-        self.active || self.sample_rate_mode
     }
 
     /// 有效采样率。
@@ -281,43 +274,3 @@ impl PitchRateProcessor {
     }
 }
 
-/// 可选的 Source 装饰器：包裹已处理的 Source 以应用 sample_rate 调整。
-#[allow(dead_code)]
-pub struct PitchRateSource<I> {
-    inner: I,
-    rate: f32,
-}
-
-impl<I: Source<Item = f32>> PitchRateSource<I> {
-    #[allow(dead_code)]
-    pub fn new(inner: I, rate: f32) -> Self {
-        Self { inner, rate }
-    }
-}
-
-impl<I: Source<Item = f32>> Iterator for PitchRateSource<I> {
-    type Item = f32;
-    fn next(&mut self) -> Option<f32> {
-        self.inner.next()
-    }
-}
-
-impl<I: Source<Item = f32>> Source for PitchRateSource<I> {
-    fn channels(&self) -> u16 {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> u32 {
-        ((self.inner.sample_rate() as f32) * self.rate)
-            .round()
-            .max(1.0) as u32
-    }
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
-    }
-    fn total_duration(&self) -> Option<std::time::Duration> {
-        self.inner.total_duration()
-    }
-    fn try_seek(&mut self, pos: std::time::Duration) -> Result<(), SeekError> {
-        self.inner.try_seek(pos)
-    }
-}

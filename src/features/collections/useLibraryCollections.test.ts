@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { ref } from 'vue';
 
-vi.mock('../router', () => ({
+vi.mock('../../router', () => ({
   default: {
     currentRoute: ref({
       path: '/',
@@ -13,13 +13,13 @@ vi.mock('../router', () => ({
   },
 }));
 
-vi.mock('../services/storage/playerStorage', () => ({
+vi.mock('../../services/storage/playerStorage', () => ({
   playerStorage: {
     remove: vi.fn(),
   },
 }));
 
-vi.mock('../services/tauri/historyApi', () => ({
+vi.mock('../../services/tauri/historyApi', () => ({
   historyApi: {
     addToHistory: vi.fn().mockResolvedValue(undefined),
     removeFromRecentHistory: vi.fn().mockResolvedValue(undefined),
@@ -27,14 +27,14 @@ vi.mock('../services/tauri/historyApi', () => ({
   },
 }));
 
-import { playerStorage } from '../services/storage/playerStorage';
-import { historyApi } from '../services/tauri/historyApi';
-import router from '../router';
-import type { Song } from '../types';
-import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
-import { useCollectionsStore } from '../features/collections/store';
-import { useLibraryStore } from '../features/library/store';
-import { useLibraryCollections } from '../features/collections/useLibraryCollections';
+import { playerStorage } from '../../services/storage/playerStorage';
+import { historyApi } from '../../services/tauri/historyApi';
+import router from '../../router';
+import type { Song } from '../../types';
+import { useAddToPlaylistDialog } from './addToPlaylistDialog';
+import { useCollectionsStore } from './store';
+import { useLibraryStore } from '../library/store';
+import { useLibraryCollections } from './useLibraryCollections';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: '/music/demo.flac',

@@ -120,7 +120,6 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
 /// Validate that a path is within a specific directory.
 ///
 /// Convenience wrapper around `validate_path` with a single allowed root.
-#[allow(dead_code)]
 pub fn validate_path_in_dir(input: &str, allowed_root: &Path) -> Result<PathBuf, String> {
     validate_path(input, Some(&[allowed_root.to_path_buf()]))
 }

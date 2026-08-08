@@ -41,10 +41,6 @@ function log(msg: string) {
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
-export function setSandboxLogCallback(cb: ((msg: string) => void) | null) {
-  _logCallback = cb;
-}
-
 // ==================== 类型 ====================
 
 interface PendingCall {
@@ -480,15 +476,6 @@ export async function destroySandbox(pluginId: string): Promise<void> {
 
   _sandboxes.delete(pluginId);
   log(`沙箱已销毁: ${pluginId}`);
-}
-
-/**
- * 销毁所有沙箱
- */
-export async function destroyAllSandboxes(): Promise<void> {
-  const ids = Array.from(_sandboxes.keys());
-  await Promise.all(ids.map(id => destroySandbox(id)));
-  log('所有沙箱已销毁');
 }
 
 /**

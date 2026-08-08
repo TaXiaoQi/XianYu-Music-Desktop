@@ -23,12 +23,12 @@ import { playerStorage } from './storage/playerStorage';
 
 // ==================== 类型定义 ====================
 
-export const APP_BACKUP_SCHEMA = 'xianyu-music.app-backup';
-export const APP_BACKUP_VERSION = 1;
+const APP_BACKUP_SCHEMA = 'xianyu-music.app-backup';
+const APP_BACKUP_VERSION = 1;
 
-export type PlaylistType = 'local' | 'online' | 'mixed';
+type PlaylistType = 'local' | 'online' | 'mixed';
 
-export interface BackupPlaylistEntry {
+interface BackupPlaylistEntry {
   name: string;
   type: PlaylistType;
   songs: Song[];
@@ -36,25 +36,25 @@ export interface BackupPlaylistEntry {
   isFavorite?: boolean;
 }
 
-export interface BackupPluginEntry {
+interface BackupPluginEntry {
   source: PluginSource;
   script: string;
 }
 
-export interface AppBackupData {
+interface AppBackupData {
   playlists: BackupPlaylistEntry[];
   plugins: BackupPluginEntry[];
   settings: AppSettings | null;
 }
 
-export interface AppBackup {
+interface AppBackup {
   schema: string;
   version: number;
   createdAt: string;
   data: AppBackupData;
 }
 
-export interface AppBackupSummary {
+interface AppBackupSummary {
   playlistCount: number;
   localPlaylistCount: number;
   onlinePlaylistCount: number;
@@ -66,7 +66,7 @@ export interface AppBackupSummary {
   hasSettings: boolean;
 }
 
-export interface AppBackupExportResult {
+interface AppBackupExportResult {
   json: string;
   summary: AppBackupSummary;
 }
@@ -92,7 +92,7 @@ function log(msg: string) {
  * - path 以 file:/// 或普通文件路径开头 → local
  * - source_type 字段优先判断
  */
-export function classifySong(song: Song): 'local' | 'online' {
+function classifySong(song: Song): 'local' | 'online' {
   if (song.source_type === 'local') return 'local';
   if (song.source_type === 'remote' || song.source_type === 'plugin') return 'online';
 
@@ -106,7 +106,7 @@ export function classifySong(song: Song): 'local' | 'online' {
 /**
  * 对歌单进行类型分类
  */
-export function classifyPlaylist(songs: Song[]): PlaylistType {
+function classifyPlaylist(songs: Song[]): PlaylistType {
   if (songs.length === 0) return 'local';
   const types = new Set(songs.map(classifySong));
   if (types.size === 1) {
@@ -251,7 +251,7 @@ export function parseAppBackup(jsonContent: string): AppBackup {
 /**
  * 从备份中计算摘要信息
  */
-export function getBackupSummary(backup: AppBackup): AppBackupSummary {
+function getBackupSummary(backup: AppBackup): AppBackupSummary {
   const { playlists, plugins, settings } = backup.data;
   let totalSongs = 0;
   let localSongs = 0;

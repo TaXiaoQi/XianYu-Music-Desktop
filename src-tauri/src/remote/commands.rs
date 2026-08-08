@@ -7,15 +7,9 @@ use super::types::{
 };
 use super::webdav;
 use crate::database::DbState;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 
-fn now_seconds() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
+use super::now_seconds;
 
 fn input_to_credentials(input: RemoteSourceInput) -> Result<RemoteSourceCredentials, String> {
     if input.provider != "webdav" {

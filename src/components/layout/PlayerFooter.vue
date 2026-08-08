@@ -3,7 +3,6 @@ import { AudioLines, ChevronUp, Eye, EyeOff, Palette, MessageCircle } from 'luci
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
-import { useToast } from '../../composables/toast';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { isDownloadableOnlineSong } from '../../services/downloadService';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
@@ -44,9 +43,8 @@ const handleOpenDetail = () => {
   togglePlayerDetail();
 };
 
-const { showDesktopLyrics, showLyricsPlayerSettingsPanel, parsedLyrics } = useLyrics();
+const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
 const { settings, footerLayout } = useSettings();
-const { showToast } = useToast();
 const { isMainWindowLowPower } = useRenderingPower();
 const downloadStore = useDownloadStore();
 

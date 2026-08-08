@@ -33,24 +33,24 @@ export interface AudioOutputStatus {
   fallback_reason: string | null;
 }
 
-export interface MovedMusicFilePath {
+interface MovedMusicFilePath {
   old_path: string;
   new_path: string;
 }
 
-export interface BatchMoveMusicFilesResult {
+interface BatchMoveMusicFilesResult {
   moved_paths: MovedMusicFilePath[];
 }
 
 export type LyricsStorageSource = 'embedded' | 'sidecar' | 'empty';
 
-export interface SongLyricsForEdit {
+interface SongLyricsForEdit {
   lyrics: string;
   source: LyricsStorageSource;
   sourcePath: string | null;
 }
 
-export interface SongInfoEditPayload {
+interface SongInfoEditPayload {
   title: string;
   artist: string;
   album: string;
@@ -60,7 +60,7 @@ export interface SongInfoEditPayload {
   coverPath: string | null;
 }
 
-export interface SaveSongInfoResponse {
+interface SaveSongInfoResponse {
   song: Song;
   detail: SongDetail;
 }
@@ -174,118 +174,118 @@ export interface SeekAudioOptions {
 
 export type ReverbKind = 'none' | 'algorithmic' | 'convolution';
 export type SpatialMode = 'none' | 'surround3d' | 'd8' | 'd36' | 'virtual';
-export type DistortionType = 'soft' | 'hard';
-export type DelayType = 'single' | 'pingpong';
-export type VirtualSurroundMode = '5.1' | '7.1';
+type DistortionType = 'soft' | 'hard';
+type DelayType = 'single' | 'pingpong';
+type VirtualSurroundMode = '5.1' | '7.1';
 
-export interface ModulationParams {
+interface ModulationParams {
   enabled: boolean;
   rate: number;
   depth: number;
 }
-export interface FlangerParams {
-  enabled: boolean;
-  rate: number;
-  depth: number;
-  feedback: number;
-  mix: number;
-}
-export interface PhaserParams {
+interface FlangerParams {
   enabled: boolean;
   rate: number;
   depth: number;
   feedback: number;
   mix: number;
 }
-export interface DelayParams {
+interface PhaserParams {
+  enabled: boolean;
+  rate: number;
+  depth: number;
+  feedback: number;
+  mix: number;
+}
+interface DelayParams {
   enabled: boolean;
   timeMs: number;
   feedback: number;
   mix: number;
   delayType: DelayType;
 }
-export interface CompressorParams {
+interface CompressorParams {
   enabled: boolean;
   threshold: number;
   ratio: number;
   attack: number;
   release: number;
 }
-export interface MultibandParams {
+interface MultibandParams {
   enabled: boolean;
   lowFreq: number;
   midFreq: number;
   threshold: number;
   ratio: number;
 }
-export interface LimiterParams {
+interface LimiterParams {
   enabled: boolean;
   threshold: number;
 }
-export interface NoiseGateParams {
+interface NoiseGateParams {
   enabled: boolean;
   threshold: number;
   attack: number;
   release: number;
 }
-export interface ExpanderParams {
+interface ExpanderParams {
   enabled: boolean;
   threshold: number;
   ratio: number;
 }
-export interface AgcParams {
+interface AgcParams {
   enabled: boolean;
   targetLevel: number;
 }
-export interface DeEsserParams {
+interface DeEsserParams {
   enabled: boolean;
   threshold: number;
   frequency: number;
 }
-export interface DistortionParams {
+interface DistortionParams {
   enabled: boolean;
   amount: number;
   distortionType: DistortionType;
 }
-export interface ExciterParams {
+interface ExciterParams {
   enabled: boolean;
   amount: number;
   frequency: number;
 }
-export interface SubBassParams {
+interface SubBassParams {
   enabled: boolean;
   amount: number;
   frequency: number;
 }
-export interface LoFiParams {
+interface LoFiParams {
   enabled: boolean;
   sampleRate: number;
   bitDepth: number;
   noise: number;
 }
-export interface BitcrushParams {
+interface BitcrushParams {
   enabled: boolean;
   bits: number;
 }
-export interface StereoWidenParams {
+interface StereoWidenParams {
   enabled: boolean;
   amount: number;
 }
-export interface StereoSepParams {
+interface StereoSepParams {
   enabled: boolean;
   width: number;
   centerLevel: number;
 }
-export interface CrossfeedParams {
+interface CrossfeedParams {
   enabled: boolean;
   strength: number;
 }
-export interface BassBoostParams {
+interface BassBoostParams {
   enabled: boolean;
   gain: number;
   dynamic: boolean;
 }
-export interface DynamicEqParams {
+interface DynamicEqParams {
   enabled: boolean;
 }
 
@@ -579,6 +579,7 @@ export interface TauriCommandMap {
   refresh_immersive_fullscreen: { payload: undefined; response: boolean };
   save_window_placement: { payload: undefined; response: boolean };
   set_taskbar_fullscreen_flag: { payload: { enter: boolean }; response: boolean };
+  smart_toggle_maximize: { payload: undefined; response: boolean };
   set_dark_mode_for_window: { payload: { dark: boolean }; response: void };
   get_window_material_capabilities: {
     payload: undefined;
@@ -825,7 +826,7 @@ export interface LxUrlSongInfoContract {
   _types?: Record<string, { size?: string | null; hash?: string }>;
 }
 
-export interface ResolvedUrlContract {
+interface ResolvedUrlContract {
   url: string;
   quality: string;
 }
@@ -849,7 +850,7 @@ export interface AlternativeSourceResultContract {
   resolvedQuality?: string | null;
 }
 
-export interface LyricSongInfoContract {
+interface LyricSongInfoContract {
   songmid: string;
   hash?: string;
   name: string;
@@ -865,14 +866,14 @@ export interface LyricSongInfoContract {
   source?: string;
 }
 
-export interface LyricResultContract {
+interface LyricResultContract {
   lyric: string;
   tlyric: string;
   rlyric: string;
   lxlyric: string;
 }
 
-export interface PlaybackSessionDataContract {
+interface PlaybackSessionDataContract {
   currentSongPath: string | null;
   playQueuePaths: string[];
   sourceSongPaths: string[];
