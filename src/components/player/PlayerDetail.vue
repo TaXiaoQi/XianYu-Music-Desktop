@@ -10,7 +10,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
 import { useUiStore } from '../../shared/stores/ui';
 import type { SongDetail } from '../../types';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { windowApi } from '../../services/tauri/windowApi';
 import { preloadAmlLyricPlayer } from './amlLyricPlayerLoader';
 
 // 详情页内部包含歌词、背景采样、队列与弹窗等较重子树。保持 PlayerDetail 壳组件常驻，
@@ -36,6 +36,14 @@ const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore())
 // 真正可释放的 AMLL 动效实例由 LyricsView 在 disabled 时单独卸载。
 const shouldRenderHeavyContent = ref(false);
 let heavyContentFrameId: number | null = null;
+
+// 封面组件（PlayerDetailLeft）单独提前挂载：有歌曲播放时即渲染，
+// 避免第一首歌底栏无封面承接（歌词页打开前 PlayerDetailLeft 未挂载的窗口期）。
+// 其他重型内容（LyricsView/QueueList 等）仍受 shouldRenderHeavyContent 延迟加载。
+const shouldRenderCover = ref(false);
+watch(currentSong, (song) => {
+  if (song) shouldRenderCover.value = true;
+}, { immediate: true });
 
 const isOnlineSongPath = (path: string) => path.startsWith('lx://') || path.startsWith('plugin://');
 
@@ -120,7 +128,7 @@ const applyImmersiveFullscreen = async (enter: boolean) => {
   //   再清除 WS_MAXIMIZE 等样式位并铺满整屏（含任务栏区域）。
   //   已最大化时直接清除样式位铺满，无"先缩小再放大"的跳变。
   // - 退出时恢复样式和 placement（最大化态直接回最大化，小窗态回原位置）。
-  await tauriInvoke('set_immersive_fullscreen', { enter });
+  await windowApi.setImmersiveFullscreen(enter);
   isFullscreen.value = enter;
 };
 
@@ -172,7 +180,7 @@ const toggleMaximize = async () => {
   // 使用 smart_toggle_maximize 命令：用 Win32 IsZoomed 判断窗口状态（不依赖 tao 内部缓存），
   // 还原时若 SAVED_NORMAL_RECT 有值则用 SetWindowPlacement 一步恢复正确小窗尺寸，
   // 避免沉浸式全屏后 tao 内部还原尺寸被污染导致还原到全屏大小。
-  await tauriInvoke('smart_toggle_maximize');
+  await windowApi.smartToggleMaximize();
 };
 
 const closeApp = async () => {
@@ -513,7 +521,7 @@ const openLyricsReplacement = () => {
       </div>
 
       <PlayerDetailLeft
-        v-if="shouldRenderHeavyContent"
+        v-if="shouldRenderCover || shouldRenderHeavyContent"
         :isExpanded="showPlayerDetail"
         :coverHidden="coverHidden"
         @toggle-cover="handleToggleCover"

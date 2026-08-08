@@ -16,7 +16,7 @@ import type { Song } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { getStoredPlugins } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
-import { tauriInvoke } from './tauri/invoke';
+import { lyricsApi } from './tauri/lyricsApi';
 
 // ==================== Types ====================
 
@@ -90,10 +90,7 @@ export async function fetchLxLyric(
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
   try {
-    const result = await tauriInvoke('fetch_lyric_from_source', {
-      source,
-      songInfo,
-    });
+    const result = await lyricsApi.fetchLyricFromSource(source, songInfo);
     return result;
   } catch (e) {
     console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e);

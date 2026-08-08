@@ -5,7 +5,7 @@ import { LoaderCircle, X } from 'lucide-vue-next';
 
 import type { Song } from '../../types';
 import { useToast } from '../../composables/toast';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { lyricsApi } from '../../services/tauri/lyricsApi';
 import {
   applyLyricsReplacement,
   createDefaultLyricsSearchQuery,
@@ -135,7 +135,7 @@ const handleUpload = async () => {
 
   isUploading.value = true;
   try {
-    const lyrics = await tauriInvoke('read_lyrics_file', { path: selected });
+    const lyrics = await lyricsApi.readLyricsFile(selected);
     await applyLyricsReplacement(props.song, lyrics);
     showToast('歌词已更改', 'success');
     emit('close');

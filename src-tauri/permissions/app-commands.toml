@@ -153,6 +153,7 @@ commands.allow = [
   "write_download_history",
   "save_download_bytes",
   "save_download_lyrics",
+  "write_text_file",
   "embed_audio_metadata",
   "fetch_image_bytes",
   "run_installer",

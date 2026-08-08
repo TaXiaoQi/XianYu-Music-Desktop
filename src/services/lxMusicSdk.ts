@@ -4,7 +4,7 @@ import {
   normalizeKuwoCoverUrl,
 } from '../utils/coverUrl';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import { tauriInvoke } from './tauri/invoke';
+import { pluginApi } from './tauri/pluginApi';
 import type { LxUrlSongInfoContract } from './tauri/contracts';
 
 /**
@@ -91,12 +91,12 @@ async function httpFetch(url: string, options: {
   headers?: Record<string, string>;
   body?: string;
 } = {}): Promise<HttpResponse> {
-  return tauriInvoke('plugin_http_request', {
-    method: options.method || 'GET',
+  return pluginApi.pluginHttpRequest(
+    options.method || 'GET',
     url,
-    headers: options.headers || null,
-    body: options.body || null,
-  });
+    options.headers,
+    options.body,
+  );
 }
 
 async function httpGetJson(url: string, headers?: Record<string, string>): Promise<any> {
@@ -507,15 +507,13 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
 }
 
 async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 5) throw new Error('TX search: 搜索失败');
+  if (retryNum > 3) throw new Error('TX search: 搜索失败');
   const requestData = {
     comm: {
-      ct: '11', cv: '14090508', v: '14090508', tmeAppID: 'qqmusic',
-      phonetype: 'EBG-AN10', deviceScore: '553.47', devicelevel: '50', newdevicelevel: '20',
-      rom: 'HuaWei/EMOTION/EmotionUI_14.2.0', os_ver: '12',
-      OpenUDID: '0', OpenUDID2: '0', QIMEI36: '0', udid: '0', chid: '0', aid: '0',
-      oaid: '0', taid: '0', tid: '0', wid: '0', uid: '0', sid: '0',
-      modeSwitch: '6', teenMode: '0', ui_mode: '2', nettype: '1020', v4ip: '',
+      ct: '24', cv: '4747474', v: '4747474', tmeAppID: 'qqmusic',
+      format: 'json', inCharset: 'utf-8', outCharset: 'utf-8',
+      platform: 'yqq.json', needNewCode: 0,
+      uin: '0', guid: '0',
     },
     req: {
       module: 'music.search.SearchCgiService',
@@ -533,11 +531,14 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
   const sign = await zzcSign(JSON.stringify(requestData));
   const url = `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`;
   const body = await httpPostJson(url, JSON.stringify(requestData), {
-    'User-Agent': 'QQMusic 14090508(android 12)',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36',
     'Content-Type': 'application/json',
+    'Referer': 'https://y.qq.com/',
   });
   if (!body || !body.req || body.code != 0 || body.req.code != 0) {
-    console.warn('[LxMusicSdk] TX search API error', { bodyCode: body?.code, reqCode: body?.req?.code });
+    console.warn('[LxMusicSdk] TX search API error', { bodyCode: body?.code, reqCode: body?.req?.code, retry: retryNum });
+    // 增加重试延迟，避免连续请求被 QQ 音乐风控返回 reqCode 2001
+    await new Promise(r => setTimeout(r, 800 * (retryNum + 1)));
     return searchTx(str, page, limit, ++retryNum);
   }
   const data = body.req.data;
@@ -883,7 +884,7 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
 
   if (source === 'tx') {
     const requestData = {
-      comm: { ct: '11', cv: '14090508', v: '14090508', tmeAppID: 'qqmusic' },
+      comm: { ct: '24', cv: '4747474', v: '4747474', tmeAppID: 'qqmusic', format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', platform: 'yqq.json', needNewCode: 0, uin: '0', guid: '0' },
       req: {
         module: 'music.search.SearchCgiService',
         method: 'DoSearchForQQMusicMobile',
@@ -907,7 +908,7 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
     const data = await httpPostJson(
       `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
       JSON.stringify(requestData),
-      { 'User-Agent': 'QQMusic 14090508(android 12)', 'Content-Type': 'application/json' },
+      { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
     );
     const body = data?.req?.data?.body;
     return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || body?.songlist || []);
@@ -1120,7 +1121,7 @@ export async function lxGetAlbumSongs(
         const resp = await httpPostJson(
           `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
           JSON.stringify(requestData),
-          { 'User-Agent': 'QQMusic 14090508(android 12)', 'Content-Type': 'application/json' },
+          { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
         );
         const songList: any[] = resp?.req?.data?.songList || [];
         if (songList.length === 0) console.warn(`[LxMusicSdk] TX album ${albumId}: empty songList`);
@@ -1229,7 +1230,7 @@ export async function lxGetPlaylistTracks(
         const resp = await httpPostJson(
           `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
           JSON.stringify(requestData),
-          { 'User-Agent': 'QQMusic 14090508(android 12)', 'Content-Type': 'application/json' },
+          { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
         );
         const songlist: any[] = resp?.req?.data?.songlist || [];
         if (songlist.length === 0) console.warn(`[LxMusicSdk] TX playlist ${playlistId}: empty songlist`);
@@ -1290,9 +1291,7 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
   if (songInfo.img) return normalizeKuwoCoverUrl(songInfo.img) || songInfo.img;
 
   try {
-    const result = await tauriInvoke('get_lx_cover', {
-      songInfo: toUrlSongInfo(songInfo),
-    });
+    const result = await pluginApi.getLxCover(toUrlSongInfo(songInfo));
     return result ?? null;
   } catch (e: any) {
     console.warn(`[LxMusicSdk] getLxCover failed: ${e?.message || e}`);

@@ -24,7 +24,7 @@ import { toUrlSongInfo } from './lxMusicSdk';
 import { ensureLxPluginInstance, lxPluginGetMusicUrl } from './lxPluginEngine';
 import { isSongLevelError } from './lxPluginEngine';
 import { getStoredPlugins } from './pluginEngine';
-import { tauriInvoke } from './tauri/invoke';
+import { pluginApi } from './tauri/pluginApi';
 
 // ==================== 协议解析 ====================
 
@@ -154,12 +154,9 @@ export async function resolveLxUrlViaRust(
   qualities: QualityKey[],
 ): Promise<LxUrlResolveResult | null> {
   try {
-    const urlResult = await tauriInvoke(
-      'resolve_lx_with_quality_fallback',
-      {
-        songInfo: toUrlSongInfo(cachedInfo),
-        qualities,
-      },
+    const urlResult = await pluginApi.resolveLxWithQualityFallback(
+      toUrlSongInfo(cachedInfo),
+      qualities,
     );
     if (urlResult?.url && /^https?:/.test(urlResult.url)) {
       return {

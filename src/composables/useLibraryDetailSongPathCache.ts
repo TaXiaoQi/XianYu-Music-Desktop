@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 const DETAIL_PATH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -49,7 +49,7 @@ export function useLibraryDetailSongPathCache() {
     }
 
     return loadWithCache(makeArtistKey(artistName), () =>
-      tauriInvoke('get_library_song_paths_by_artist', { artistName }),
+      libraryApi.getLibrarySongPathsByArtist(artistName),
     );
   };
 
@@ -59,7 +59,7 @@ export function useLibraryDetailSongPathCache() {
     }
 
     return loadWithCache(makeAlbumKey(albumKey), () =>
-      tauriInvoke('get_library_song_paths_by_album', { albumKey }),
+      libraryApi.getLibrarySongPathsByAlbum(albumKey),
     );
   };
 

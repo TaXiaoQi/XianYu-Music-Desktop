@@ -29,7 +29,7 @@ import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
-import { tauriInvoke } from './tauri/invoke';
+import { lyricsApi } from './tauri/lyricsApi';
 import {
   loadMusicFreeInSandbox,
   callSandboxMethod,
@@ -1095,10 +1095,7 @@ async function tryBackendWordLyricFallback(
 
   try {
     log(`[getLyric][后备] ${source.name} 尝试后端 API 获取逐字歌词: source=${lxSource}, songmid=${songInfo.songmid}`);
-    const backendLyrics = await tauriInvoke('fetch_lyric_from_source', {
-      source: lxSource,
-      songInfo,
-    });
+    const backendLyrics = await lyricsApi.fetchLyricFromSource(lxSource, songInfo);
     if (!backendLyrics) {
       log(`[getLyric][后备] ${source.name} 后端 API 返回空`);
       return null;

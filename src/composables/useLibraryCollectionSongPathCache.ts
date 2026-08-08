@@ -2,7 +2,7 @@ import { ref } from 'vue';
 
 import type { HistoryItem } from '../types';
 import type { LocalSortMode } from '../services/storage/playerStorage';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { libraryApi } from '../services/tauri/libraryApi';
 import { MemoryCache } from '../utils/MemoryCache';
 
 type BackendLocalSortMode = Exclude<LocalSortMode, 'custom'>;
@@ -94,13 +94,13 @@ export function useLibraryCollectionSongPathCache() {
 
     const cacheKey = makeFavoriteCacheKey(favoritePaths, query, sortMode, detailFilter);
     return loadWithCache(cacheKey, () =>
-      tauriInvoke('get_favorite_song_paths_view', {
+      libraryApi.getFavoriteSongPathsView(
         favoritePaths,
         query,
         sortMode,
-        detailFilterType: detailFilter?.type,
-        detailFilterValue: detailFilter?.name,
-      }),
+        detailFilter?.type,
+        detailFilter?.name,
+      ),
     );
   };
 
@@ -119,14 +119,14 @@ export function useLibraryCollectionSongPathCache() {
 
     const cacheKey = makeRecentCacheKey(recentSongs, query, sortMode);
     return loadWithCache(cacheKey, () =>
-      tauriInvoke('get_recent_song_paths_view', {
-        recentEntries: recentSongs.map(item => ({
+      libraryApi.getRecentSongPathsView(
+        recentSongs.map(item => ({
           songPath: item.path,
           playedAt: item.playedAt,
         })),
         query,
         sortMode,
-      }),
+      ),
     );
   };
 

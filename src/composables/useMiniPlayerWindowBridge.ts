@@ -11,7 +11,7 @@ import { usePlayer } from '../features/playback';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
 import { useUiStore } from '../shared/stores/ui';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { windowApi } from '../services/tauri/windowApi';
 import {
   MINI_PLAYER_ACTION_EVENT,
   MINI_PLAYER_BOUNDS_EVENT,
@@ -253,7 +253,7 @@ export async function restoreMainWindowFromMiniMode(options: {
   // 若仍处于沉浸全屏状态，重新告知 shell 让任务栏让位（不改变窗口样式/位置，无动画开销）。
   if (options.isImmersiveFullscreen) {
     try {
-      await tauriInvoke('refresh_immersive_fullscreen');
+      await windowApi.refreshImmersiveFullscreen();
     } catch { /* 忽略 */ }
   }
 

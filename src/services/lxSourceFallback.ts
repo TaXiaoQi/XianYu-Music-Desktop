@@ -13,7 +13,7 @@ import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import { cacheLxSong } from './lxSongCache';
 import { cacheLxSongInfo } from './lxLyricFetcher';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
-import { tauriInvoke } from './tauri/invoke';
+import { pluginApi } from './tauri/pluginApi';
 import type { AlternativeSourceResultContract } from './tauri/contracts';
 
 /**
@@ -121,15 +121,12 @@ export async function findAlternativeLxSource(
     : song.artist || '';
 
   try {
-    const result = await tauriInvoke(
-      'find_alternative_lx_source',
-      {
-        songName: song.name,
-        songArtist: artistStr,
-        songDuration: song.duration || 0,
-        failedSources: Array.from(failedSources),
-        qualities,
-      },
+    const result = await pluginApi.findAlternativeLxSource(
+      song.name,
+      artistStr,
+      song.duration || 0,
+      Array.from(failedSources),
+      qualities,
     );
 
     if (!result) return null;

@@ -296,8 +296,22 @@ export default tseslint.config(
             "message": "Import feature APIs from src/features/* directly. The matching src/composables wrapper is compatibility-only."
           }
         ]
-      }]
+      }],
+      "no-restricted-syntax": [
+        "error",
+        {
+          "selector": "ImportDeclaration[source.value='@tauri-apps/api/core'] > ImportSpecifier[imported.name='invoke']",
+          "message": "Use tauriInvoke from services/tauri/invoke instead of raw invoke from @tauri-apps/api/core."
+        }
+      ]
     }
+  },
+  {
+    // invoke.ts 封装层和 pluginApi.ts mock 占位需要原始 invoke
+    files: ["src/services/tauri/invoke.ts", "src/services/tauri/pluginApi.ts"],
+    rules: {
+      "no-restricted-syntax": "off",
+    },
   },
   {
     files: ["**/*.{ts,vue}"],

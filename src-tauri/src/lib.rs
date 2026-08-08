@@ -88,6 +88,7 @@ use toolbox::{
     preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
     resolve_download_full_path, resolve_download_path, run_installer, save_download_bytes,
     save_download_lyrics, set_gpu_acceleration, write_download_history, write_state_json,
+    write_text_file,
 };
 
 #[cfg(target_os = "windows")]
@@ -298,6 +299,7 @@ pub fn run() {
             write_download_history,
             save_download_bytes,
             save_download_lyrics,
+            write_text_file,
             embed_audio_metadata,
             fetch_image_bytes,
             resolve_download_path,

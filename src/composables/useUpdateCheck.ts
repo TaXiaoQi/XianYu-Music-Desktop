@@ -9,7 +9,8 @@ import {
   type ServerUpdateInfo,
 } from '../utils/update';
 import { useToast } from './toast';
-import { tauriInvoke } from '../services/tauri/invoke';
+import { updateApi } from '../services/tauri/updateApi';
+import { appApi } from '../services/tauri/appApi';
 
 // 模块级单例状态，保证全局共享同一份更新检查状态
 const updateVisible = ref(false);
@@ -197,16 +198,14 @@ export function useUpdateCheck() {
       });
 
       // 下载安装包到 Downloads 目录
-      const path = await tauriInvoke('download_update_file', {
-        url: latestUpdate.value!.downloadUrl,
-      });
+      const path = await updateApi.downloadUpdateFile(latestUpdate.value!.downloadUrl);
 
       // 启动 MSI 安装程序（非阻塞）
-      await tauriInvoke('run_installer', { path });
+      await updateApi.runInstaller(path);
 
       // 等待安装程序初始化后退出应用
       await new Promise((resolve) => setTimeout(resolve, 500));
-      await tauriInvoke('exit_app');
+      await appApi.exitApp();
     } catch (error) {
       showToast('更新失败：' + (error instanceof Error ? error.message : String(error)), 'error');
       isDownloading.value = false;

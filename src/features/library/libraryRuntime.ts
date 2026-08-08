@@ -1,4 +1,4 @@
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { libraryApi } from '../../services/tauri/libraryApi';
 import {
   beginLibraryScanProgress,
   resolveScanLibraryOptions,
@@ -101,7 +101,7 @@ export const createLibraryRuntime = ({
   const loadLibrarySongsFromCache = async () => {
     try {
       flushBufferedLibraryScanBatch();
-      const songs = await tauriInvoke('get_library_songs_cached');
+      const songs = await libraryApi.getLibrarySongsCached();
 
       // 使用增量 Patch 和极速路径覆盖，替代高开销的全量 normalize，加速启动
       libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });
@@ -119,8 +119,8 @@ export const createLibraryRuntime = ({
   const loadLibraryCatalogsFromCache = async () => {
     try {
       const [artists, albums] = await Promise.all([
-        tauriInvoke('get_library_artist_catalog'),
-        tauriInvoke('get_library_album_catalog'),
+        libraryApi.getLibraryArtistCatalog(),
+        libraryApi.getLibraryAlbumCatalog(),
       ]);
 
       libraryStore.setArtistCatalog(artists);
@@ -177,9 +177,7 @@ export const createLibraryRuntime = ({
 
     libraryRefreshPromise = (async () => {
       try {
-        const songs = await tauriInvoke('scan_library', {
-          minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
-        });
+        const songs = await libraryApi.scanLibrary(settingsStore.settings.libraryMinDurationSeconds);
 
         // 1. 先进行最终的增量补全 patch，规避未 patch 到的空洞风险项
         libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });

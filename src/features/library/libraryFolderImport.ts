@@ -1,7 +1,8 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { storeToRefs } from 'pinia';
 
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { fileApi } from '../../services/tauri/fileApi';
+import { libraryApi } from '../../services/tauri/libraryApi';
 import type { Song } from '../../types';
 import { useLibraryStore } from './store';
 import { useSettingsStore } from '../settings/store';
@@ -37,10 +38,10 @@ export const createLibraryFolderImport = ({
 
       if (!selectedPath || typeof selectedPath !== 'string') return;
 
-      const newFolders = await tauriInvoke('scan_folder_as_playlists', {
-        rootPath: selectedPath,
-        minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
-      });
+      const newFolders = await libraryApi.scanFolderAsPlaylists(
+        selectedPath,
+        settingsStore.settings.libraryMinDurationSeconds,
+      );
 
       if (newFolders.length === 0) {
         showToast('未在该目录下找到包含音乐文件的文件夹', 'error');
@@ -80,20 +81,20 @@ export const createLibraryFolderImport = ({
       const selected = await open({ directory: true, multiple: false });
       if (!selected || typeof selected !== 'string') return;
 
-      const newFolders = await tauriInvoke('scan_folder_as_playlists', {
-        rootPath: selected,
-        minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
-      });
+      const newFolders = await libraryApi.scanFolderAsPlaylists(
+        selected,
+        settingsStore.settings.libraryMinDurationSeconds,
+      );
 
       if (newFolders.length === 0) {
         if (!watchedFolders.value.includes(selected)) {
           watchedFolders.value.push(selected);
         }
 
-        const songs = await tauriInvoke('scan_music_folder', {
-          folderPath: selected,
-          minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
-        });
+        const songs = await fileApi.scanMusicFolder(
+          selected,
+          settingsStore.settings.libraryMinDurationSeconds,
+        );
         const existingPaths = new Set(songList.value.map(song => song.path));
         const uniqueSongs = songs.filter(song => !existingPaths.has(song.path));
         songList.value = [...songList.value, ...uniqueSongs];

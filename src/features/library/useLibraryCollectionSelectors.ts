@@ -1,6 +1,6 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue';
 
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { libraryApi } from '../../services/tauri/libraryApi';
 import type {
   HistoryItem,
   Playlist,
@@ -63,9 +63,7 @@ export function useLibraryCollectionSelectors({
       }
 
       try {
-        const result = await tauriInvoke('get_favorite_artist_catalog', {
-          favoritePaths: paths,
-        });
+        const result = await libraryApi.getFavoriteArtistCatalog(paths);
 
         if (requestId !== favoriteArtistRequestId) {
           return;
@@ -94,9 +92,7 @@ export function useLibraryCollectionSelectors({
       }
 
       try {
-        const result = await tauriInvoke('get_favorite_album_catalog', {
-          favoritePaths: paths,
-        });
+        const result = await libraryApi.getFavoriteAlbumCatalog(paths);
 
         if (requestId !== favoriteAlbumRequestId) {
           return;
@@ -135,12 +131,12 @@ export function useLibraryCollectionSelectors({
         const requestId = ++recentAlbumRequestId;
 
         try {
-          const result = await tauriInvoke('get_recent_album_catalog', {
-            recentEntries: items.map(item => ({
+          const result = await libraryApi.getRecentAlbumCatalog(
+            items.map(item => ({
               songPath: item.path,
               playedAt: item.playedAt,
             })),
-          });
+          );
 
           if (requestId !== recentAlbumRequestId) {
             return;
@@ -182,13 +178,13 @@ export function useLibraryCollectionSelectors({
         const requestId = ++recentPlaylistRequestId;
 
         try {
-          const result = await tauriInvoke('get_recent_playlist_catalog', {
-            playlists: playlistItems,
-            recentEntries: recentItems.map(item => ({
+          const result = await libraryApi.getRecentPlaylistCatalog(
+            playlistItems,
+            recentItems.map(item => ({
               songPath: item.path,
               playedAt: item.playedAt,
             })),
-          });
+          );
 
           if (requestId !== recentPlaylistRequestId) {
             return;

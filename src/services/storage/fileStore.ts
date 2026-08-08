@@ -1,4 +1,4 @@
-import { tauriInvoke } from '../tauri/invoke';
+import { stateApi } from '../tauri/stateApi';
 
 /**
  * 基于 Tauri 文件系统的 JSON 存储，用于持久化超过 localStorage 配额（~5MB）的大数据。
@@ -7,7 +7,7 @@ import { tauriInvoke } from '../tauri/invoke';
 export const fileStore = {
   async getJson<T>(key: string): Promise<T | null> {
     try {
-      const raw = await tauriInvoke('read_state_json', { key });
+      const raw = await stateApi.readStateJson(key);
       if (!raw) return null;
       return JSON.parse(raw) as T;
     } catch (e) {
@@ -19,7 +19,7 @@ export const fileStore = {
   async setJson(key: string, value: unknown): Promise<void> {
     try {
       const json = JSON.stringify(value);
-      await tauriInvoke('write_state_json', { key, value: json });
+      await stateApi.writeStateJson(key, json);
     } catch (e) {
       console.error(`[fileStore] setJson("${key}") failed:`, e);
       throw e;

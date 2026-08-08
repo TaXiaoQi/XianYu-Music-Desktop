@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/vue-virtual';
 import { usePlayer } from '../../features/playback';
 import { useThemeSettings } from '../../composables/useThemeSettings';
 import { useSettings } from '../../features/settings/useSettings';
-import { getSongSourceLabel, isRemoteSong } from '../../utils/remoteSong';
+import { getSongSourceLabel } from '../../utils/remoteSong';
 import ModernModal from '../common/ModernModal.vue';
 
 const { settings } = useSettings();
@@ -180,7 +180,7 @@ watch(
                   <div class="flex min-w-0 items-center gap-1.5">
                     <span class="min-w-0 truncate text-sm font-medium leading-tight">{{ vItem.song.title || vItem.song.name.replace(/\.[^/.]+$/, "") }}</span>
                     <span
-                      v-if="isRemoteSong(vItem.song)"
+                      v-if="vItem.song.path?.startsWith('lx://') || vItem.song.path?.startsWith('plugin://') || vItem.song.path?.startsWith('remote://')"
                       class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
                     >{{ getSongSourceLabel(vItem.song) }}</span>
                   </div>

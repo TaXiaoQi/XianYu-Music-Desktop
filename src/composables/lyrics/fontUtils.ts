@@ -9,7 +9,7 @@ import {
   type LyricsFontOption,
 } from './constants';
 import type { ImportedLyricsFont } from '../../types';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { lyricsApi } from '../../services/tauri/lyricsApi';
 
 const builtinPrimaryFontFamilies = new Set(
   LYRICS_FONT_OPTIONS
@@ -39,7 +39,7 @@ const IMPORTED_LYRICS_FONT_LOAD_TIMEOUT_MS = 1200;
 
 async function loadImportedLyricsFontSource(font: ImportedLyricsFont): Promise<string | null> {
   try {
-    return await tauriInvoke('read_lyrics_font_data_url', { fontPath: font.filePath });
+    return await lyricsApi.readLyricsFontDataUrl(font.filePath);
   } catch (error) {
     console.warn('Failed to load imported lyrics font:', font.name, error);
     return null;
@@ -122,7 +122,7 @@ export async function registerImportedLyricsFonts(fonts: ImportedLyricsFont[]) {
 }
 
 export async function importLyricsFontFile(sourcePath: string): Promise<ImportedLyricsFont> {
-  return tauriInvoke('import_lyrics_font', { sourcePath });
+  return lyricsApi.importLyricsFont(sourcePath);
 }
 
 export const systemLyricsFontOptions = ref<LyricsFontOption[]>([]);
@@ -155,7 +155,7 @@ export async function loadSystemLyricsFonts(force = false) {
 
   loadSystemLyricsFontsTask = (async () => {
     try {
-      const fonts = await tauriInvoke('get_system_fonts');
+      const fonts = await lyricsApi.getSystemFonts();
       systemLyricsFontOptions.value = buildSystemLyricsFontOptions(fonts);
     } catch (error) {
       console.warn('Failed to load system fonts:', error);

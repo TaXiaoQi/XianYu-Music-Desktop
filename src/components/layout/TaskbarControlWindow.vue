@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { tauriInvoke } from '../../services/tauri/invoke';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -69,7 +68,7 @@ const scheduleDragPosition = (position: LogicalPosition) => {
 };
 
 const getTaskbarDragBounds = async (): Promise<DragBounds | null> => {
-  const geometry = await tauriInvoke('get_taskbar_tray_geometry').catch((error) => {
+  const geometry = await windowApi.getTaskbarTrayGeometry().catch((error) => {
     console.warn('Failed to get taskbar drag bounds:', error);
     return null;
   });

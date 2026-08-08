@@ -13,7 +13,7 @@ import type {
   LyricsStatus,
   SemanticLine,
 } from './types';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { lyricsApi } from '../../services/tauri/lyricsApi';
 
 export const showDesktopLyrics = ref(false);
 export const showLyricsPlayerSettingsPanel = ref(false);
@@ -101,7 +101,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
     // If the song carries pre-fetched lyrics (e.g. from network music API),
     // parse them directly instead of looking up by file path.
     if (lyricsRaw) {
-      const payload = await tauriInvoke('parse_lyrics_text', { text: lyricsRaw });
+      const payload = await lyricsApi.parseLyricsText(lyricsRaw);
 
       if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
@@ -152,7 +152,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       return;
     }
 
-    const payload = await tauriInvoke('get_song_lyrics_payload', { path: lyricsPath });
+    const payload = await lyricsApi.getSongLyricsPayload(lyricsPath);
 
     if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 

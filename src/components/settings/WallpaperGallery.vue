@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import { getStoredAuth, signedPostJson } from '../../services/auth/authService';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import { toolboxApi } from '../../services/tauri/toolboxApi';
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -287,10 +287,7 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
   downloadError.value = '';
   try {
     const filename = `wallpaper_${wallpaper.id}.jpg`;
-    const localPath = await tauriInvoke('download_wallpaper', {
-      url: wallpaper.imageUrl,
-      filename,
-    });
+    const localPath = await toolboxApi.downloadWallpaper(wallpaper.imageUrl, filename);
     emit('select', localPath);
     handleClose();
   } catch (err) {

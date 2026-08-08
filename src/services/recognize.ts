@@ -11,7 +11,7 @@
  * 加密方式：encryptType 'android'（见 KuGouMusicApi util/helper.js）
  */
 
-import { tauriInvoke } from './tauri/invoke';
+import { recognizeApi } from './tauri/recognizeApi';
 import type { RecognizeResponseContract } from './tauri/contracts';
 import type { LxSearchResultItem } from './lxMusicSdk';
 import type { Song } from '../types';
@@ -92,7 +92,7 @@ export const RECOGNIZE_CANCELLED = '识别已取消';
  * @throws {Error} 当识别被取消时，error.message === RECOGNIZE_CANCELLED
  */
 export async function recognizeSystemAudio(): Promise<RecognizeMatch[]> {
-  const response = await tauriInvoke('recognize_system_audio');
+  const response = await recognizeApi.recognizeSystemAudio();
   return parseRecognizeResponse(response);
 }
 
@@ -103,7 +103,7 @@ export async function recognizeSystemAudio(): Promise<RecognizeMatch[]> {
  * 正在进行的 WASAPI 捕获循环会在下一次迭代时退出。
  */
 export async function cancelRecognizeSystemAudio(): Promise<void> {
-  await tauriInvoke('cancel_recognize_system_audio');
+  await recognizeApi.cancelRecognizeSystemAudio();
 }
 
 /** 解析酷狗识别接口的响应 */
