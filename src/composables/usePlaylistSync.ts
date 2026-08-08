@@ -7,9 +7,9 @@
  * - `syncPlaylists()`：双向同步（先上传后下载）
  *
  * 同步策略：
- * - 上传：本地歌单 → 云端。若本地歌单已有 cloudId 则增量同步歌曲，否则先创建云端歌单。
- * - 下载：云端歌单 → 本地。按 cloudId 匹配本地歌单，匹配不到则新建本地歌单。
- * - 歌曲以 song_hash 去重，云端已存在则跳过。
+ * - 上传：按应用备份同款格式打包本地歌单，自动标记 local / online / mixed。
+ * - 下载：按歌单原 id 匹配本地歌单，匹配不到则新建本地歌单。
+ * - 歌曲保留完整 Song 元数据，并使用 syncType 自动区分本地与在线来源。
  */
 
 import { ref, onUnmounted } from 'vue';
@@ -19,13 +19,13 @@ import { useAuthStore } from '../features/auth/store';
 import { useSettingsStore } from '../features/settings/store';
 import { useToast } from './toast';
 import {
-  cloudSongToSong,
+  classifySyncPlaylist,
   deleteCloudPlaylist,
   fileSyncDownload,
   fileSyncUpload,
   getCiyuanxiId,
-  songToCloudPayload,
-  type CloudSong,
+  songToSyncPayload,
+  syncPayloadToSong,
   type FileSyncPlaylistData,
   type SyncResult,
 } from '../services/playlistSync';
@@ -173,14 +173,19 @@ export function usePlaylistSync() {
 
     try {
       // 收集所有歌单数据
-      const playlistData: FileSyncPlaylistData[] = playlists.map(pl => ({
-        id: pl.id,
-        name: pl.name,
-        cloudId: pl.cloudId,
-        cloudCoverUrl: pl.cloudCoverUrl,
-        isFavorite: pl.isFavorite,
-        songs: collectPlaylistSongs(pl).map(songToCloudPayload),
-      }));
+      const playlistData: FileSyncPlaylistData[] = playlists.map(pl => {
+        const songs = collectPlaylistSongs(pl);
+        return {
+          id: pl.id,
+          name: pl.name,
+          type: classifySyncPlaylist(songs),
+          cloudId: pl.cloudId,
+          cloudCoverUrl: pl.cloudCoverUrl,
+          isFavorite: pl.isFavorite,
+          createdAt: pl.createdAt,
+          songs: songs.map(songToSyncPayload),
+        };
+      });
 
       const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
       logSync(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
@@ -235,8 +240,8 @@ export function usePlaylistSync() {
         logSync(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
         syncProgress.value = `正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`;
 
-        const cloudSongs: CloudSong[] = cloudPl.songs ?? [];
-        const localSongs = cloudSongs.map(cloudSongToSong);
+        const cloudSongs = cloudPl.songs ?? [];
+        const localSongs = cloudSongs.map(syncPayloadToSong);
 
         // 尝试匹配本地歌单（通过原 id）
         const existing = collectionsStore.playlists.find(p => p.id === cloudPl.id);
@@ -244,13 +249,9 @@ export function usePlaylistSync() {
         if (existing) {
           // 已有本地歌单：合并歌曲列表
           const localSongPaths = new Set(existing.songPaths);
-          const onlineSongs: Song[] = [];
           const newPaths: string[] = [];
 
           for (const song of localSongs) {
-            if (!song.path.startsWith('cloud://')) {
-              onlineSongs.push(song);
-            }
             if (!localSongPaths.has(song.path)) {
               newPaths.push(song.path);
             }
@@ -260,13 +261,16 @@ export function usePlaylistSync() {
 
           const existingSongPaths = new Set((existing.songs ?? []).map(s => s.path));
           const mergedSongs = [...(existing.songs ?? [])];
-          for (const song of onlineSongs) {
+          for (const song of localSongs) {
             if (!existingSongPaths.has(song.path)) {
               mergedSongs.push(song);
               existingSongPaths.add(song.path);
             }
           }
           existing.songs = mergedSongs.length > 0 ? mergedSongs : undefined;
+          for (const song of localSongs) {
+            libraryStore.setExtraSong(song);
+          }
           if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
 
           result.downloadedPlaylists++;
@@ -274,21 +278,21 @@ export function usePlaylistSync() {
           logSync(`downloadPlaylists: 合并到已有歌单 "${cloudPl.name}", downloaded=${localSongs.length}`);
         } else {
           // 创建新本地歌单
-          const onlineSongs = localSongs.filter(s => !s.path.startsWith('cloud://'));
           const allPaths = localSongs.map(s => s.path);
 
           const newPlaylist: Playlist = {
             id: cloudPl.id,
             name: cloudPl.name,
             songPaths: allPaths,
-            songs: onlineSongs.length > 0 ? onlineSongs : undefined,
+            songs: localSongs.length > 0 ? localSongs : undefined,
             cloudId: cloudPl.cloudId,
             cloudCoverUrl: cloudPl.cloudCoverUrl || '',
             isFavorite: cloudPl.isFavorite,
+            createdAt: cloudPl.createdAt,
           };
 
           collectionsStore.playlists.push(newPlaylist);
-          for (const song of onlineSongs) {
+          for (const song of localSongs) {
             libraryStore.setExtraSong(song);
           }
 

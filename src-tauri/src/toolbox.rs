@@ -1531,3 +1531,35 @@ pub async fn download_wallpaper(
 
     Ok(dest_path.to_string_lossy().to_string())
 }
+
+/// 删除 app_data_dir/wallpapers 下的已下载壁纸文件。
+#[tauri::command]
+pub async fn delete_wallpaper_file(
+    app_handle: tauri::AppHandle,
+    local_path: String,
+) -> Result<(), String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {e}"))?;
+    let wallpaper_dir = app_dir.join("wallpapers");
+    let target = PathBuf::from(&local_path);
+
+    if !target.exists() {
+        return Ok(());
+    }
+    if !target.is_file() {
+        return Err("目标不是可删除的壁纸文件".to_string());
+    }
+    let canonical_dir = std::fs::canonicalize(&wallpaper_dir)
+        .map_err(|e| format!("读取壁纸目录失败: {e}"))?;
+    let canonical_target = std::fs::canonicalize(&target)
+        .map_err(|e| format!("读取壁纸文件失败: {e}"))?;
+    if !canonical_target.starts_with(&canonical_dir) {
+        return Err("只能删除应用壁纸目录中的文件".to_string());
+    }
+    tokio::fs::remove_file(&target)
+        .await
+        .map_err(|e| format!("删除壁纸文件失败: {e}"))?;
+    Ok(())
+}

@@ -39,7 +39,18 @@ export type AuthPayload = {
 export type AuthMode = 'login' | 'register' | 'forgot';
 
 /** 验证码场景类型，必须与后续接口匹配 */
-export type VerifyCodeType = 'register' | 'login' | 'reset_password';
+export type VerifyCodeType = 'register' | 'login' | 'reset_password' | 'delete_account';
+
+export type HumanCaptcha = {
+  captcha_id: string;
+  question: string;
+  expire_seconds?: number;
+};
+
+export type HumanCaptchaPayload = {
+  captchaId: string;
+  captchaAnswer: string;
+};
 
 export type ProfileStats = {
   favorite_count: number;
@@ -51,8 +62,10 @@ export type ProfileStats = {
   updated_at?: string | null;
 };
 
-/** 默认后端地址：弦予音乐 API */
-export const DEFAULT_AUTH_BASE_URL = 'https://xymusic.zh2026.cn/api';
+/** 默认后端地址：开发模式指向本地服务，生产模式指向弦予音乐 API */
+export const DEFAULT_AUTH_BASE_URL = import.meta.env.DEV
+  ? 'http://127.0.0.1:8081/api'
+  : 'https://xymusic.zh2026.cn/api';
 
 // ─── localStorage 兼容键（仅用于迁移） ──────────────────
 const LEGACY_STORAGE_TOKEN_KEY = 'xy.auth.token';
@@ -299,6 +312,41 @@ export async function signedPostJson<T>(
 //  账号 API 封装
 // ═══════════════════════════════════════════════════════
 
+function withCaptcha(body: Record<string, unknown>, captcha: HumanCaptchaPayload): Record<string, unknown> {
+  return {
+    ...body,
+    captcha_id: captcha.captchaId,
+    captcha_answer: captcha.captchaAnswer,
+  };
+}
+
+/**
+ * 获取一次性人机验证码题目。
+ * 当前服务端实现为简单数学题，提交登录/注册/验证码发送/找回密码时一并校验。
+ */
+export async function getHumanCaptcha(): Promise<HumanCaptcha> {
+  const data = await requestAction<Record<string, unknown>>('get_captcha', {
+    purpose: 'auth',
+  });
+  return {
+    captcha_id: String(data.captcha_id ?? ''),
+    question: String(data.question ?? ''),
+    expire_seconds: Number(data.expire_seconds ?? 0) || undefined,
+  };
+}
+
+/**
+ * 预校验人机验证码。
+ * 此接口只确认答案是否正确，不消费验证码；后续真实登录/注册/发码请求仍会再次校验并消费。
+ */
+export async function verifyHumanCaptcha(captcha: HumanCaptchaPayload): Promise<void> {
+  await requestAction<Record<string, unknown>>('verify_captcha', {
+    purpose: 'auth',
+    captcha_id: captcha.captchaId,
+    captcha_answer: captcha.captchaAnswer,
+  });
+}
+
 /** 将登录接口返回的 data 映射为前端统一的 AuthUser */
 function mapUser(data: Record<string, unknown>): AuthUser {
   const raw = data as Partial<{
@@ -343,12 +391,16 @@ function getAuthErrorMessage(error: unknown, fallback = '请求失败'): string 
  * 密码登录（支持用户名 / 邮箱 / 弦予号三种凭据，同一个输入框即可）
  * POST /api/?action=user_login
  */
-export async function login(username: string, password: string): Promise<AuthPayload> {
+export async function login(
+  username: string,
+  password: string,
+  captcha: HumanCaptchaPayload,
+): Promise<AuthPayload> {
   try {
-    const data = await requestAction<Record<string, unknown>>('user_login', {
+    const data = await requestAction<Record<string, unknown>>('user_login', withCaptcha({
       username,
       password,
-    });
+    }, captcha));
     if (!data.token) throw new Error('登录响应无效');
     const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };
     saveAuth(payload);
@@ -367,19 +419,19 @@ export async function register(
   password: string,
   email: string,
   code: string,
+  captcha: HumanCaptchaPayload,
 ): Promise<AuthPayload> {
   try {
-    await requestAction('register', {
+    const data = await requestAction<Record<string, unknown>>('register', withCaptcha({
       username,
       password,
       email,
       verify_code: code,
-    });
-    try {
-      return await login(username, password);
-    } catch {
-      throw new Error('注册成功，但自动登录失败，请手动登录');
-    }
+    }, captcha));
+    if (!data.token) throw new Error('注册响应无效');
+    const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };
+    saveAuth(payload);
+    return payload;
   } catch (error) {
     throw new Error(getAuthErrorMessage(error, '注册失败'), { cause: error });
   }
@@ -392,12 +444,13 @@ export async function register(
 export async function sendEmailCode(
   email: string,
   type: VerifyCodeType = 'register',
+  captcha: HumanCaptchaPayload,
 ): Promise<{ success: true; message: string }> {
   try {
-    const payload = await requestEnvelope<Record<string, unknown>>('send_verify_code', {
+    const payload = await requestEnvelope<Record<string, unknown>>('send_verify_code', withCaptcha({
       email,
       type,
-    });
+    }, captcha));
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || '验证码发送失败');
     }
@@ -415,19 +468,48 @@ export async function resetPassword(
   email: string,
   verifyCode: string,
   newPassword: string,
+  captcha: HumanCaptchaPayload,
 ): Promise<{ message: string }> {
   try {
-    const payload = await requestEnvelope<Record<string, unknown>>('reset_password', {
+    const payload = await requestEnvelope<Record<string, unknown>>('reset_password', withCaptcha({
       email,
       verify_code: verifyCode,
       new_password: newPassword,
-    });
+    }, captcha));
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || '重置密码失败');
     }
     return { message: payload.msg || '密码修改成功' };
   } catch (error) {
     throw new Error(getAuthErrorMessage(error, '重置密码失败'), { cause: error });
+  }
+}
+
+/**
+ * 注销当前账号。
+ * 需要当前账号注册邮箱收到的 delete_account 验证码。
+ */
+export async function deleteAccount(
+  verifyCode: string,
+): Promise<{ message: string }> {
+  const current = getStoredUser();
+  if (!current?.ciyuanxi_id || !current.email) {
+    throw new Error('未获取到当前账号信息，请重新登录');
+  }
+
+  try {
+    const payload = await requestEnvelope<Record<string, unknown>>('delete_account', {
+      ciyuanxi_id: current.ciyuanxi_id,
+      email: current.email,
+      verify_code: verifyCode,
+    });
+    if (Number(payload.code) !== 200) {
+      throw new Error(payload.msg || '注销账号失败');
+    }
+    clearAuth();
+    return { message: payload.msg || '账号已注销' };
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '注销账号失败'), { cause: error });
   }
 }
 
@@ -496,8 +578,8 @@ export async function getProfile(): Promise<{
 }
 
 /**
- * 更新个人资料（昵称）。当前 API 未提供独立接口，
- * 失败时回退为本地更新，保证界面可用。
+ * 更新个人资料（昵称）。
+ * 改名走审核流程，失败时透传服务端提示。
  */
 export async function updateProfile(
   nickname: string,
@@ -508,7 +590,7 @@ export async function updateProfile(
   if (!token || !current) throw new Error('未登录');
 
   try {
-    const data = await requestAction<{ user?: AuthUser; avatar?: string; nickname_pending?: boolean }>('update_profile', {
+    const data = await requestAction<{ user?: AuthUser; avatar?: string; nickname_pending?: boolean; status?: string }>('update_profile', {
       token,
       ciyuanxi_id: current.ciyuanxi_id || '',
       username: nickname,
@@ -518,7 +600,7 @@ export async function updateProfile(
 
     // 改名走审核流程：后端不会更新 username，前端也保持旧值
     // nickname_pending=true 表示改名申请已提交待审核
-    const nicknamePending = data.nickname_pending === true;
+    const nicknamePending = data.nickname_pending === true || data.status === 'pending';
     const nextUser: AuthUser = data.user ?? {
       ...current,
       avatar: avatar ?? current.avatar,
@@ -526,14 +608,8 @@ export async function updateProfile(
     // 不在本地更新 username/nickname（需审核通过后才更新）
     saveAuth({ token, user: nextUser });
     return { user: nextUser, nicknamePending };
-  } catch {
-    // 接口暂不可用，回退为本地更新（不改名）
-    const nextUser: AuthUser = {
-      ...current,
-      avatar: avatar ?? current.avatar,
-    };
-    saveAuth({ token, user: nextUser });
-    return { user: nextUser };
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '保存失败'), { cause: error });
   }
 }
 

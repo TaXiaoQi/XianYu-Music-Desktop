@@ -517,7 +517,7 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
     },
     req: {
       module: 'music.search.SearchCgiService',
-      method: 'DoSearchForQQMusicMobile',
+      method: 'DoSearchForQQMusicDesktop',
       param: {
         search_type: 0,
         searchid: Math.random().toString().slice(2),
@@ -531,7 +531,7 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
   const sign = await zzcSign(JSON.stringify(requestData));
   const url = `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`;
   const body = await httpPostJson(url, JSON.stringify(requestData), {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Content-Type': 'application/json',
     'Referer': 'https://y.qq.com/',
   });
@@ -542,9 +542,10 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
     return searchTx(str, page, limit, ++retryNum);
   }
   const data = body.req.data;
-  const rawList = data?.body?.item_song;
+  // Desktop 接口返回 body.song.list；保留 item_song 作为回退容错
+  const rawList = data?.body?.song?.list ?? data?.body?.item_song;
   if (!Array.isArray(rawList) || rawList.length === 0) {
-    console.warn('[LxMusicSdk] TX search: item_song missing/empty, data keys:', data ? Object.keys(data) : null);
+    console.warn('[LxMusicSdk] TX search: song.list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null);
   }
   const list = txHandleResult(rawList);
   if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {

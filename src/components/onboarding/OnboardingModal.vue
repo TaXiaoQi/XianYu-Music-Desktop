@@ -4,6 +4,7 @@ import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } fr
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useToast } from '../../composables/toast';
 import { useSettings } from '../../features/settings/useSettings';
+import HumanCaptchaModal from '../common/HumanCaptchaModal.vue';
 import {
   areShortcutBindingsEqual,
   createDefaultShortcutSettings,
@@ -20,6 +21,7 @@ import {
   register,
   sendEmailCode,
   type AuthMode,
+  type HumanCaptchaPayload,
   type VerifyCodeType,
 } from '../../services/auth/authService';
 
@@ -275,6 +277,10 @@ const authMode = ref<AuthMode>('login');
 const authForm = ref({ username: '', email: '', password: '', confirmPassword: '', code: '' });
 const authLoading = ref(false);
 const codeLoading = ref(false);
+const captchaModalOpen = ref(false);
+const captchaModalTitle = ref('人机验证');
+const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
+let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
 const authMessage = ref('');
 const authMessageTone = ref<'error' | 'success'>('error');
 
@@ -301,6 +307,29 @@ const showAuthMessage = (text: string, tone: 'error' | 'success' = 'error') => {
   authMessage.value = text;
 };
 
+const requestHumanCaptcha = (title: string, description: string): Promise<HumanCaptchaPayload | null> => {
+  captchaModalTitle.value = title;
+  captchaModalDescription.value = description;
+  captchaModalOpen.value = true;
+  return new Promise(resolve => {
+    captchaResolver = resolve;
+  });
+};
+
+const resolveHumanCaptcha = (payload: HumanCaptchaPayload | null) => {
+  captchaModalOpen.value = false;
+  captchaResolver?.(payload);
+  captchaResolver = null;
+};
+
+const handleCaptchaVerified = (payload: HumanCaptchaPayload) => {
+  resolveHumanCaptcha(payload);
+};
+
+const handleCaptchaCancel = () => {
+  resolveHumanCaptcha(null);
+};
+
 const handleSendCode = async () => {
   const email = authForm.value.email;
   if (!email) {
@@ -308,10 +337,15 @@ const handleSendCode = async () => {
     return;
   }
   const type: VerifyCodeType = 'register';
+  const captchaPayload = await requestHumanCaptcha(
+    '发送验证码前验证',
+    '完成验证后将向邮箱发送验证码。',
+  );
+  if (!captchaPayload) return;
   codeLoading.value = true;
   authMessage.value = '';
   try {
-    const result = await sendEmailCode(email, type);
+    const result = await sendEmailCode(email, type, captchaPayload);
     showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
   } catch (error) {
@@ -328,17 +362,25 @@ const handleAuthSubmit = async () => {
     showAuthMessage('两次输入的密码不一致');
     return;
   }
+  const captchaPayload = await requestHumanCaptcha(
+    authMode.value === 'login' ? '登录前验证' : '注册前验证',
+    authMode.value === 'login'
+      ? '完成验证后将继续登录当前账号。'
+      : '完成验证后将继续创建账号。',
+  );
+  if (!captchaPayload) return;
   authLoading.value = true;
   authMessage.value = '';
   try {
     const result =
       authMode.value === 'login'
-        ? await login(authForm.value.username, authForm.value.password)
+        ? await login(authForm.value.username, authForm.value.password, captchaPayload)
         : await register(
             authForm.value.username || authForm.value.email.split('@')[0] || '用户',
             authForm.value.password,
             authForm.value.email,
             authForm.value.code,
+            captchaPayload,
           );
 
     authStore.setAuth(result);
@@ -1400,6 +1442,14 @@ onUnmounted(() => {
       </div>
     </transition>
   </Teleport>
+
+  <HumanCaptchaModal
+    :open="captchaModalOpen"
+    :title="captchaModalTitle"
+    :description="captchaModalDescription"
+    @verified="handleCaptchaVerified"
+    @cancel="handleCaptchaCancel"
+  />
 </template>
 
 <style scoped>
