@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Download, Loader2, SlidersHorizontal } from 'lucide-vue-next';
+import { CircleCheck, Download, Loader2, MessageCircle, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 
 defineOptions({ inheritAttrs: false });
@@ -44,4 +44,5 @@ withDefaults(defineProps<{
   </template>
   <SlidersHorizontal v-else-if="itemKey === 'equalizer'" v-bind="$attrs" :stroke-width="2.2" />
   <svg v-else-if="itemKey === 'playlist'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+  <MessageCircle v-else-if="itemKey === 'comment'" v-bind="$attrs" :stroke-width="2.2" />
 </template>

@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { storeToRefs } from 'pinia';
 import { MessageCircle, Heart, X, Loader2, ChevronRight } from 'lucide-vue-next';
 import { pluginGetMusicComments } from '../../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, Song } from '../../types';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { useUiStore } from '../../shared/stores/ui';
+import { useThemeSettings } from '../../composables/useThemeSettings';
 
 const props = defineProps<{
-  visible: boolean;
-  song: Song | null;
+  song?: Song | null;
 }>();
 
-const emit = defineEmits<{
-  (e: 'close'): void;
-}>();
+const { theme } = useThemeSettings();
 
 const { currentSong } = usePlaybackController();
+const uiStore = useUiStore();
+const { showComment } = storeToRefs(uiStore);
+const toggleComment = () => { uiStore.showComment = !uiStore.showComment; };
 
 interface CommentItem {
   id?: string;
@@ -36,15 +39,8 @@ const error = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const canLoadMore = computed(() => !isEnd.value && !loadingMore.value && comments.value.length > 0);
 
-const songTitle = computed(() => {
-  const song = props.song || currentSong.value;
-  return song?.title || song?.name || '';
-});
-
-const songArtist = computed(() => {
-  const song = props.song || currentSong.value;
-  return song?.artist || '';
-});
+const resolvedSong = computed<Song | null>(() => props.song ?? currentSong.value ?? null);
+const commentCount = computed(() => comments.value.length);
 
 function buildSearchResult(song: Song): PluginSearchResult | null {
   if (!song.rawData) return null;
@@ -79,7 +75,7 @@ function buildPluginSource(song: Song): PluginSource | null {
 }
 
 async function fetchComments(page: number = 1) {
-  const song = props.song || currentSong.value;
+  const song = resolvedSong.value;
   if (!song || !song.plugin_id) return;
 
   const source = buildPluginSource(song);
@@ -142,7 +138,7 @@ function formatLike(count?: number): string {
   return String(count);
 }
 
-watch(() => props.visible, async (newVal) => {
+watch(showComment, async (newVal) => {
   if (newVal) {
     await fetchComments(1);
     await nextTick();
@@ -150,8 +146,8 @@ watch(() => props.visible, async (newVal) => {
   }
 });
 
-watch(() => props.song?.path, (newPath, oldPath) => {
-  if (props.visible && newPath !== oldPath) {
+watch(() => resolvedSong.value?.path, (newPath, oldPath) => {
+  if (showComment.value && newPath !== oldPath) {
     fetchComments(1);
   }
 });
@@ -165,7 +161,7 @@ function handleScroll() {
 }
 
 onMounted(() => {
-  if (props.visible) {
+  if (showComment.value) {
     fetchComments(1);
   }
 });
@@ -176,26 +172,46 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Transition name="comment-panel">
-    <div
-      v-if="visible"
-      class="comment-panel-overlay fixed bottom-20 left-1/2 -translate-x-1/2 z-[65] w-[480px] max-w-[90vw]"
-    >
+  <Teleport to="body">
+    <transition name="fade">
       <div
-        class="comment-panel-container rounded-2xl shadow-2xl border overflow-hidden bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-gray-200/50 dark:border-zinc-700/50"
+        v-if="showComment"
+        class="fixed inset-0 z-[90] bg-black/20 backdrop-blur-[2px]"
+        @click="toggleComment"
+      ></div>
+    </transition>
+
+    <transition name="slide-right">
+      <div
+        v-if="showComment"
+        class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#262626]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
+        :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-2xl']"
+        :style="{ width: '420px', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '280px', bottom: '120px' }"
+        @click.stop
       >
         <!-- Header -->
-        <div class="comment-panel-header flex items-center justify-between px-4 py-3 border-b border-gray-200/50 dark:border-zinc-700/50 shrink-0">
-          <div class="flex items-center gap-2 min-w-0">
-            <MessageCircle class="h-4 w-4 text-[#EC4141] shrink-0" :stroke-width="2.2" />
+        <div
+          class="px-5 py-4 border-b border-[#d9e0ea] dark:border-white/10 flex justify-between items-center bg-[#f8fafc]/95 dark:bg-[#262626]/95 z-10 shadow-sm"
+          :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-sm']"
+        >
+          <div class="flex items-center gap-3 min-w-0">
+            <MessageCircle class="h-5 w-5 text-[#EC4141] shrink-0" :stroke-width="2.2" />
             <div class="min-w-0">
-              <div class="text-sm font-semibold text-gray-900 dark:text-white truncate">评论区</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ songTitle }} - {{ songArtist }}</div>
+              <h3 class="font-bold text-[#172033] dark:text-white text-base tracking-tight leading-tight">评论区</h3>
+              <div class="mt-0.5 text-[11px] text-[#34445c] dark:text-white/60 truncate">
+                {{ resolvedSong?.title || resolvedSong?.name || '' }}
+                <span v-if="resolvedSong?.artist"> - {{ resolvedSong.artist }}</span>
+              </div>
             </div>
+            <span
+              v-if="commentCount > 0"
+              class="shrink-0 text-xs text-[#34445c] dark:text-white font-semibold bg-[#e7edf5] dark:bg-white/12 px-2 py-0.5 rounded-full"
+            >{{ commentCount }}</span>
           </div>
           <button
-            @click="emit('close')"
-            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+            @click="toggleComment"
+            class="shrink-0 text-[#34445c] dark:text-white/90 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:hover:bg-red-500/15 w-8 h-8 flex items-center justify-center rounded-lg transition-all active:scale-95"
+            title="关闭"
           >
             <X class="h-4 w-4" :stroke-width="2.2" />
           </button>
@@ -205,11 +221,24 @@ onUnmounted(() => {
         <div
           ref="scrollContainer"
           @scroll="handleScroll"
-          class="comment-panel-content flex-1 overflow-y-auto px-4 py-3 max-h-[400px] min-h-[200px]"
-          style="scrollbar-width: thin;"
+          class="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 bg-[#eef3f8]/45 dark:bg-[#262626]/35"
         >
+          <!-- Not supported -->
+          <div
+            v-if="!resolvedSong?.plugin_id"
+            class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20"
+          >
+            <div class="w-20 h-20 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-inner">
+              <MessageCircle class="h-10 w-10 text-[#42526a] dark:text-white/80" :stroke-width="1.5" />
+            </div>
+            <div class="space-y-1 text-center">
+              <span class="text-sm font-medium block">当前歌曲不支持评论</span>
+              <span class="text-xs text-[#42526a] dark:text-white/60 block">评论功能仅对在线插件源歌曲开放</span>
+            </div>
+          </div>
+
           <!-- Loading -->
-          <div v-if="loading" class="flex items-center justify-center py-12">
+          <div v-else-if="loading" class="flex items-center justify-center py-12">
             <Loader2 class="h-5 w-5 text-[#EC4141] animate-spin" :stroke-width="2.2" />
             <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">加载评论中...</span>
           </div>
@@ -217,15 +246,12 @@ onUnmounted(() => {
           <!-- Error -->
           <div v-else-if="error" class="flex flex-col items-center justify-center py-12">
             <span class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ error }}</span>
-            <button
-              @click="fetchComments(1)"
-              class="text-xs text-[#EC4141] hover:underline"
-            >重试</button>
+            <button @click="fetchComments(1)" class="text-xs text-[#EC4141] hover:underline">重试</button>
           </div>
 
           <!-- Empty -->
-          <div v-else-if="comments.length === 0" class="flex flex-col items-center justify-center py-12">
-            <MessageCircle class="h-8 w-8 text-gray-300 dark:text-zinc-700 mb-2" :stroke-width="1.5" />
+          <div v-else-if="comments.length === 0" class="flex flex-col items-center justify-center py-20">
+            <MessageCircle class="h-10 w-10 text-gray-300 dark:text-zinc-700 mb-2" :stroke-width="1.5" />
             <span class="text-sm text-gray-400 dark:text-gray-500">暂无评论</span>
           </div>
 
@@ -234,7 +260,7 @@ onUnmounted(() => {
             <div
               v-for="(comment, idx) in comments"
               :key="comment.id || idx"
-              class="comment-item flex gap-3 py-3"
+              class="flex gap-3 py-3"
               :class="{ 'border-t border-gray-100/60 dark:border-zinc-800/60': idx > 0 }"
             >
               <!-- Avatar -->
@@ -300,40 +326,29 @@ onUnmounted(() => {
           </template>
         </div>
       </div>
-    </div>
-  </Transition>
+    </transition>
+  </Teleport>
 </template>
 
 <style scoped>
-.comment-panel-enter-active,
-.comment-panel-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.comment-panel-enter-from {
+.slide-right-enter-from,
+.slide-right-leave-to {
+  transform: translateX(100%);
   opacity: 0;
-  transform: translate(-50%, 20px) scale(0.95);
 }
 
-.comment-panel-leave-to {
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
-  transform: translate(-50%, 20px) scale(0.95);
-}
-
-.comment-panel-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.comment-panel-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.comment-panel-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 2px;
-}
-
-html.dark .comment-panel-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
 }
 </style>

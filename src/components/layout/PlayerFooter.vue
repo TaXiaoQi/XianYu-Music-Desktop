@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, ChevronUp, Eye, EyeOff, Palette, MessageCircle } from 'lucide-vue-next';
+import { AudioLines, ChevronUp, Eye, EyeOff, Palette } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
@@ -24,7 +24,6 @@ import {
 const AudioVisualizer = defineAsyncComponent(() => import('../player/AudioVisualizer.vue'));
 const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterContextMenu.vue"));
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
-const CommentPanel = defineAsyncComponent(() => import('../overlays/CommentPanel.vue'));
 
 const {
   currentSong,
@@ -32,9 +31,9 @@ const {
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
-  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail,
+  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail, showComment,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
-  toggleMode, togglePlaylist,
+  toggleMode, togglePlaylist, toggleComment,
   togglePlayerDetail, seekTo, formatDuration, playSong,
 } = usePlaybackController();
 const { isFavorite, toggleFavorite } = useLibraryCollections();
@@ -184,18 +183,18 @@ const showContextMenu = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 
-// --- Comment Panel State ---
-const showCommentPanel = ref(false);
+// --- Comment State (复用全局 UI store，弹窗挂在 MainShell 上) ---
 const isPluginSong = computed(() => {
   const song = currentSong.value;
   return !!song && song.source_type === 'plugin' && !!song.plugin_id;
 });
-const toggleCommentPanel = () => {
+const wrapToggleComment = () => {
   if (!isPluginSong.value) return;
-  showCommentPanel.value = !showCommentPanel.value;
-  if (showCommentPanel.value) {
+  // 打开评论区时自动收起底栏工具弹窗，避免互相遮挡
+  if (!showComment.value) {
     showFooterTools.value = false;
   }
+  toggleComment();
 };
 
 const handleContextMenu = (e: MouseEvent) => {
@@ -732,6 +731,10 @@ provide('footerContext', {
   // 播放队列
   showPlaylist,
   togglePlaylist,
+  // 评论区
+  isPluginSong,
+  showComment,
+  toggleComment: wrapToggleComment,
 });
 
 onMounted(async () => {
@@ -989,15 +992,6 @@ onUnmounted(() => {
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0-1.16.37"/></svg>
             </button>
 
-            <button
-              v-if="isPluginSong"
-              @click="toggleCommentPanel"
-              class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
-              :class="showCommentPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-              title="评论区"
-            >
-              <MessageCircle class="h-4 w-4" :stroke-width="2.2" />
-            </button>
           </div>
         </transition>
 
@@ -1028,13 +1022,6 @@ onUnmounted(() => {
 
           @close="showContextMenu = false"
 
-        />
-
-        <CommentPanel
-          v-if="showCommentPanel"
-          :visible="showCommentPanel"
-          :song="currentSong"
-          @close="showCommentPanel = false"
         />
 
         <!-- 已下载确认：询问是否重新下载 -->

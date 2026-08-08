@@ -39,11 +39,13 @@ describe('footer layout visual editor helpers', () => {
     const hidden = setFooterItemVisibility(DEFAULT_FOOTER_LAYOUT, 'equalizer', false);
     const slots = getFooterPreviewSlotItems(hidden);
 
+    // 隐藏 equalizer 时，equalizer 留在 right-0 槽位但被标记为 hidden（因此 visible 为 null）；
+    // 其余可见项保持相对顺序靠右紧凑，comment 作为默认第 5 项占据 right-4。
     expect(slots['right-0']).toBeNull();
     expect(slots['right-1']).toBe('quality');
     expect(slots['right-2']).toBe('volume');
     expect(slots['right-3']).toBe('playlist');
-    expect(slots['right-4']).toBeNull();
+    expect(slots['right-4']).toBe('comment');
   });
 
   it('does not move buttons across the fixed footer regions when hiding one', () => {
@@ -60,8 +62,13 @@ describe('footer layout visual editor helpers', () => {
     const moved = moveFooterItemToPreviewSlot(hidden, 'playlist', 'right-0');
     const slots = getFooterPreviewSlotItems(moved);
 
+    // playlist 占据 right-0；equalizer 被置换到原 playlist 的 right-3 槽位（hidden → visible 为 null）；
+    // comment 仍默认在 right-4，不与 hidden 项的空槽位重叠。
     expect(slots['right-0']).toBe('playlist');
-    expect(slots['right-4']).toBeNull();
+    expect(slots['right-1']).toBe('quality');
+    expect(slots['right-2']).toBe('volume');
+    expect(slots['right-3']).toBeNull();
+    expect(slots['right-4']).toBe('comment');
     expect(moved.hidden).toContain('equalizer');
   });
 
