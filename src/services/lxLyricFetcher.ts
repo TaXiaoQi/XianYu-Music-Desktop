@@ -150,6 +150,17 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     if (matchedPlugin) {
       await ensureLxPluginInstance(matchedPlugin);
       const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
+      console.log('[LX Lyrics] LX 插件返回:', {
+        lyricLen: pluginLyrics?.lyric?.length || 0,
+        lxlyricLen: pluginLyrics?.lxlyric?.length || 0,
+        yrcLen: pluginLyrics?.yrc?.length || 0,
+        qrcLen: pluginLyrics?.qrc?.length || 0,
+        tlyricLen: pluginLyrics?.tlyric?.length || 0,
+        lyricPreview: pluginLyrics?.lyric?.substring(0, 200) || '',
+        lxlyricPreview: pluginLyrics?.lxlyric?.substring(0, 200) || '',
+        yrcPreview: pluginLyrics?.yrc?.substring(0, 200) || '',
+        qrcPreview: pluginLyrics?.qrc?.substring(0, 200) || '',
+      });
       if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc)) {
         const result = buildLyricsRaw(
           pluginLyrics.lyric,
@@ -159,7 +170,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
           pluginLyrics.yrc,
           pluginLyrics.qrc,
         );
-        console.log('[LX Lyrics] LX 插件获取成功:', { resultLen: result.length, lyricLen: pluginLyrics.lyric.length, lxlyricLen: pluginLyrics.lxlyric?.length || 0 });
+        console.log('[LX Lyrics] LX 插件构建 lyricsRaw 成功:', { resultLen: result.length, resultPreview: result.substring(0, 300) });
         return result;
       }
       console.warn('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');

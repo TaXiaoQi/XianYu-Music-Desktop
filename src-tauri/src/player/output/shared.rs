@@ -1,4 +1,5 @@
 use crate::player::equalizer::EqualizerHandle;
+use crate::player::loudness::{VolumeNormalizer, VolumeNormalizerHandle};
 use crate::player::output::{OutputBackend, OutputError};
 use crate::player::sound_effect::{SoundEffectHandle, SoundEffectSource};
 use crate::player::types::{SharedProgress, TimedSource};
@@ -116,6 +117,8 @@ pub(crate) fn restore_current_playback(
     equalizer_handle: Arc<EqualizerHandle>,
     sound_effect_handle: Arc<SoundEffectHandle>,
     user_volume: Arc<AtomicU32>,
+    volume_balance_gain: f32,
+    current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     remote_stream: Option<&RemoteStreamSource>,
     streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
 ) {
@@ -169,23 +172,28 @@ pub(crate) fn restore_current_playback(
                 // 0. BufferedSource 预读取缓冲（与 runtime.rs 的 append_decoded_source 保持一致）
                 let buffered = crate::player::buffered_source::BufferedSource::new(skipped);
 
-                // 1. Equalizer
-                let eq_source =
-                    crate::player::equalizer::Equalizer::new(buffered, equalizer_handle);
+                // 1. VolumeNormalizer 音量平衡节点（与 runtime.rs 的 append_decoded_source 保持一致）
+                let (normalized_source, handle) =
+                    VolumeNormalizer::new(buffered, volume_balance_gain, 100);
+                *current_normalizer_handle = Some(handle);
 
-                // 1.5 SoundEffectSource 音效处理源
+                // 2. Equalizer
+                let eq_source =
+                    crate::player::equalizer::Equalizer::new(normalized_source, equalizer_handle);
+
+                // 2.5 SoundEffectSource 音效处理源
                 // 注意：必须与 runtime.rs 的 append_decoded_source 保持一致，
                 // 否则设备切换恢复后会丢失全部音效（混响/变调/空间/EQ 等）。
                 let se_source = SoundEffectSource::new(eq_source, sound_effect_handle);
 
-                // 2. UserVolumeSource
+                // 3. UserVolumeSource
                 let vol_source =
                     crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
 
-                // 3. ClipGuardSource
+                // 4. ClipGuardSource
                 let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
 
-                // 4. TimedSource
+                // 5. TimedSource
                 let timed_source = TimedSource::new(
                     clip_source,
                     progress.samples_played.clone(),

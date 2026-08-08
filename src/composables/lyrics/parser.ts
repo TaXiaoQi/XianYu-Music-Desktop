@@ -464,9 +464,18 @@ function msToTimestamp(ms: number): string {
 /**
  * lx-music-desktop 的 lxlyric 格式转换为 Enhanced LRC 格式
  *
- * lxlyric 格式: [mm:ss.ms]<offset,duration>word<offset,duration>word...
- *   - offset: 相对于行首的偏移量（毫秒）
- *   - duration: 该字的持续时间（毫秒）
+ * 支持两种 lxlyric 子格式：
+ *
+ * 1. 标准格式: [mm:ss.ms]<offset,duration>word<offset,duration>word...
+ *    - offset: 相对于行首的偏移量（毫秒，正数）
+ *    - duration: 该字的持续时间（毫秒，正数）
+ *
+ * 2. 酷我格式: [mm:ss.ms]word<a,b>word<a,b>...（或无行时间戳）
+ *    - a, b 均可为负数
+ *    - 词开始时间 = |(a + b) / (kuwoOffset * 2)|
+ *    - 词结束时间 = |(a - b) / (kuwoOffset2 * 2)| + 词开始时间
+ *    - kuwoOffset / kuwoOffset2 从 [kuwo:xxx] 标签解析（八进制），默认 1
+ *    - 词开始时间为绝对时间，不需要加行时间戳
  *
  * Enhanced LRC 格式: [mm:ss.ms]<mm:ss.ms>word<mm:ss.ms>word...<mm:ss.ms>
  *   - 每个标记是绝对时间戳
@@ -480,49 +489,89 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
 
   const lines = lxlyric.split('\n');
   const result: string[] = [];
+  let convertedCount = 0;
 
-  // lxlyric 词时间标记: <offset,duration>
-  const lxWordTimePattern = /<(\d+),(\d+)>/g;
+  // 词时间标记：支持正数（标准）和负数（酷我），以及可选的第三个参数
+  const lxWordTimePattern = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g;
+  // 酷我 [kuwo:xxx] 标签
+  const kuwoTagPattern = /^\[kuwo:\s*(\S+)\s*\]/i;
+
+  // 先解析酷我 offset 参数
+  let kuwoOffset = 1;
+  let kuwoOffset2 = 1;
+  for (const rawLine of lines) {
+    const m = kuwoTagPattern.exec(rawLine.trim());
+    if (m) {
+      const content = m[1].split('][')[0];
+      const value = parseInt(content.trim(), 8) || 0;
+      kuwoOffset = Math.floor(value / 10) || 1;
+      kuwoOffset2 = value % 10 || 1;
+      break;
+    }
+  }
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
 
+    // 跳过 [kuwo:xxx] 标签行
+    if (kuwoTagPattern.test(line)) continue;
+
     // 尝试匹配行时间戳 [mm:ss.ms]
     const lineMatch = LRC_LINE_TIMESTAMP_PATTERN.exec(line);
-    if (!lineMatch) {
-      // 非歌词行（如 [offset:0]）直接保留
-      result.push(line);
-      continue;
-    }
+    const lineStartStr = lineMatch?.[1] ?? null;
+    const lineStartMs = lineStartStr ? parseTimestampToMs(lineStartStr) : null;
+    const body = lineMatch ? lineMatch[2] : line;
 
-    const lineStartStr = lineMatch[1];
-    const lineStartMs = parseTimestampToMs(lineStartStr);
-    if (lineStartMs === null) {
-      result.push(line);
-      continue;
-    }
-
-    const body = lineMatch[2];
+    // 全局重置正则 lastIndex（因为使用 matchAll）
+    lxWordTimePattern.lastIndex = 0;
     const wordTimes = [...body.matchAll(lxWordTimePattern)];
 
     if (wordTimes.length === 0) {
-      // 没有逐字时间标记，保留为普通 LRC 行
-      result.push(line);
+      // 没有逐字时间标记，保留为普通 LRC 行（仅当有行时间戳时）
+      if (lineStartStr && lineStartMs !== null) {
+        result.push(line);
+      }
       continue;
     }
 
-    // 重建 body，将 <offset,duration> 转为 <mm:ss.ms> 绝对时间戳
+    // 判断是否为酷我格式（存在负数标记）
+    const isKuwoFormat = wordTimes.some(wt => parseInt(wt[2]) < 0);
+
+    // 酷我格式需要绝对时间，标准格式需要行时间戳
+    if (!isKuwoFormat && lineStartMs === null) {
+      // 标准格式但没有行时间戳，无法转换
+      continue;
+    }
+
+    // 重建 body，将 <a,b> 转为 <mm:ss.ms> 绝对时间戳
     let convertedBody = '';
     let lastEnd = 0;
-    let lastOffset = 0;
-    let lastDuration = 0;
+    let firstWordStartMs: number | null = null;
+    let lastWordEndMs = 0;
 
     for (const wt of wordTimes) {
-      const offset = parseInt(wt[1]);
-      const duration = parseInt(wt[2]);
-      const absoluteMs = lineStartMs + offset;
-      const timestampStr = msToTimestamp(absoluteMs);
+      const a = parseInt(wt[1]);
+      const b = parseInt(wt[2]);
+
+      let wordStartMs: number;
+      let wordEndMs: number;
+
+      if (isKuwoFormat) {
+        // 酷我格式：a,b 可为负数，时间为绝对值
+        wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
+        wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
+      } else {
+        // 标准格式：offset 相对于行首，duration 持续时间
+        wordStartMs = (lineStartMs as number) + a;
+        wordEndMs = wordStartMs + b;
+      }
+
+      if (firstWordStartMs === null) {
+        firstWordStartMs = wordStartMs;
+      }
+
+      const timestampStr = msToTimestamp(wordStartMs);
 
       // 添加标记之间的文字
       const textBefore = body.substring(lastEnd, wt.index);
@@ -532,20 +581,31 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       convertedBody += `<${timestampStr}>`;
 
       lastEnd = (wt.index ?? 0) + wt[0].length;
-      lastOffset = offset;
-      lastDuration = duration;
+      lastWordEndMs = wordEndMs;
     }
 
     // 添加最后一个标记后的文字
     convertedBody += body.substring(lastEnd);
 
     // 添加行结束时间标记（无文字跟在后面）
-    const endTimeMs = lineStartMs + lastOffset + lastDuration;
-    const endTimeStr = msToTimestamp(endTimeMs);
+    const endTimeStr = msToTimestamp(lastWordEndMs);
     convertedBody += `<${endTimeStr}>`;
 
-    result.push(`[${lineStartStr}]${convertedBody}`);
+    // 确定行时间戳
+    let finalLineStartStr: string;
+    if (lineStartStr && lineStartMs !== null) {
+      finalLineStartStr = lineStartStr;
+    } else {
+      // 无行时间戳：使用第一个词的绝对时间作为行时间戳
+      finalLineStartStr = msToTimestamp(firstWordStartMs ?? 0);
+    }
+
+    result.push(`[${finalLineStartStr}]${convertedBody}`);
+    convertedCount++;
   }
+
+  // 如果没有任何行被成功转换，返回空字符串（让 buildLyricsRaw 回退到普通 LRC）
+  if (convertedCount === 0) return '';
 
   return result.join('\n');
 }

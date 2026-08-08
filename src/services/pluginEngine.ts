@@ -29,6 +29,7 @@ import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
+import { tauriInvoke } from './tauri/invoke';
 import {
   loadMusicFreeInSandbox,
   callSandboxMethod,
@@ -1037,7 +1038,91 @@ export async function pluginGetBakaMusicInfo(
  * Baka 插件还可能返回 eslrc（增强型逐字歌词）和 romanization（罗马音）。
  * 使用 buildLyricsRaw 统一构建为 lyricsRaw 文本（优先级：yrc > qrc > lxlyric > lyric，
  * 高优先级格式解析失败时由后端自动回退到下一档）。
+ *
+ * 后备机制：当插件返回的歌词没有逐字内容（yrc/qrc/eslrc/lxlyric 均为空）时，
+ * 尝试通过后端直接 API（fetch_lyric_from_source）获取逐字歌词。
+ * 这对于 Baka 插件的酷狗/酷我/网易云等音源尤为重要，因为插件可能只返回普通 LRC。
  */
+
+/** Baka/MF 插件 platform → LX 音源标识映射 */
+const PLATFORM_TO_LX_SOURCE: Record<string, 'kw' | 'kg' | 'tx' | 'wy'> = {
+  'qq': 'tx', 'qqmusic': 'tx', 'tencent': 'tx',
+  'kg': 'kg', 'kugou': 'kg',
+  'kw': 'kw', 'kuwo': 'kw',
+  'wy': 'wy', 'netease': 'wy', 'wanyinyue': 'wy', 'wyy': 'wy',
+};
+
+/**
+ * 后备：通过后端直接 API 获取逐字歌词
+ *
+ * 当插件返回的歌词没有逐字内容时，从搜索结果中提取音源和歌曲 ID，
+ * 调用后端 fetch_lyric_from_source 命令获取逐字歌词。
+ */
+async function tryBackendWordLyricFallback(
+  source: PluginSource,
+  item: PluginSearchResult,
+  existingLyric: string,
+  existingTlyric: string,
+  existingRomanization: string | null,
+): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; lyricsRaw?: string } | null> {
+  // 从 platform 映射到 LX 音源
+  const platformKey = (item.platform || '').toLowerCase();
+  const lxSource = PLATFORM_TO_LX_SOURCE[platformKey];
+  if (!lxSource) return null;
+
+  // 从 rawData 中提取歌曲信息
+  const raw = item.rawData || {};
+  const songInfo = {
+    songmid: String(raw.songmid || raw.id || raw.songId || raw.musicId || item.id || ''),
+    hash: raw.hash ? String(raw.hash) : undefined,
+    name: raw.name || raw.title || item.name || item.title || '',
+    singer: raw.singer || raw.artist || item.artist || '',
+    albumName: raw.albumName || raw.album || item.album || undefined,
+    interval: raw.interval ? String(raw.interval) : undefined,
+    _interval: (item.duration && item.duration > 0) ? Math.round(item.duration) : (raw._interval ? Number(raw._interval) : undefined),
+    songId: raw.songId ? String(raw.songId) : undefined,
+    strMediaMid: raw.strMediaMid ? String(raw.strMediaMid) : undefined,
+    albumMid: raw.albumMid ? String(raw.albumMid) : undefined,
+    albumId: raw.albumId || undefined,
+    copyrightId: raw.copyrightId ? String(raw.copyrightId) : undefined,
+    source: lxSource,
+  };
+
+  if (!songInfo.songmid) {
+    log(`[getLyric][后备] ${source.name} 无法提取 songmid，跳过后备`);
+    return null;
+  }
+
+  try {
+    log(`[getLyric][后备] ${source.name} 尝试后端 API 获取逐字歌词: source=${lxSource}, songmid=${songInfo.songmid}`);
+    const backendLyrics = await tauriInvoke('fetch_lyric_from_source', {
+      source: lxSource,
+      songInfo,
+    });
+    if (!backendLyrics) {
+      log(`[getLyric][后备] ${source.name} 后端 API 返回空`);
+      return null;
+    }
+
+    const hasWordLevel = !!(backendLyrics.lxlyric && backendLyrics.lxlyric.trim());
+    if (!hasWordLevel) {
+      log(`[getLyric][后备] ${source.name} 后端 API 无逐字歌词`);
+      return null;
+    }
+
+    // 后端获取到逐字歌词，构建 lyricsRaw
+    const lyric = backendLyrics.lyric || existingLyric;
+    const tlyric = backendLyrics.tlyric || existingTlyric;
+    const rlyric = backendLyrics.rlyric || existingRomanization || null;
+    const lyricsRaw = buildLyricsRaw(lyric, tlyric, rlyric, backendLyrics.lxlyric);
+    log(`[getLyric][后备] ${source.name} 后端 API 成功获取逐字歌词: lxlyricLen=${backendLyrics.lxlyric.length}, lyricsRawLen=${lyricsRaw.length}`);
+    return { lyric, tlyric, lxlyric: backendLyrics.lxlyric, lyricsRaw };
+  } catch (e: any) {
+    log(`[getLyric][后备] ${source.name} 后端 API 失败: ${e?.message ?? e}`);
+    return null;
+  }
+}
+
 export async function pluginGetLyric(
   source: PluginSource,
   item: PluginSearchResult,
@@ -1087,6 +1172,16 @@ export async function pluginGetLyric(
     // 罗马音作为附加轨道（与翻译一样由后端按时间戳聚类）
     const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization || null, lxlyric, yrc, qrc, eslrc);
     log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
+
+    // 后备：当插件返回的歌词没有逐字内容时，尝试通过后端直接 API 获取逐字歌词
+    const hasWordLevel = !!(yrc || qrc || eslrc || lxlyric);
+    if (!hasWordLevel && rawLrc) {
+      const fallback = await tryBackendWordLyricFallback(source, item, rawLrc, translation, romanization || null);
+      if (fallback) {
+        return fallback;
+      }
+    }
+
     return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw };
   } catch (e) {
     log(`获取歌词失败: ${source.name} ${e}`);
