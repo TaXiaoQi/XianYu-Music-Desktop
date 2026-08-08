@@ -1308,6 +1308,10 @@ const handlePlaySong = (item: LxSearchResultItem) => {
   (song as any)._copyrightId = item.copyrightId;
   (song as any)._songmid = item.songmid;
   (song as any)._source = item.source;
+  (song as any)._songId = item.songId;
+  (song as any)._strMediaMid = item.strMediaMid;
+  (song as any)._albumMid = item.albumMid;
+  (song as any)._albumId = item.albumId;
   void playSong(song, { insertAfterCurrent: true });
 };
 
@@ -1566,6 +1570,10 @@ const handleContextMenu = (e: MouseEvent, item: LxSearchResultItem) => {
     _copyrightId: item.copyrightId,
     _songmid: item.songmid,
     _source: item.source,
+    _songId: item.songId,
+    _strMediaMid: item.strMediaMid,
+    _albumMid: item.albumMid,
+    _albumId: item.albumId,
   } as any;
   contextMenuX.value = e.clientX;
   contextMenuY.value = e.clientY;

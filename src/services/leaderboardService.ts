@@ -55,7 +55,7 @@ async function reportListenDuration(
   try {
     await signedRequest('report_listen_stats', {
       ciyuanxi_id: ciyuanxiId,
-      listen_duration: Math.floor(listenDuration),
+      duration: Math.floor(listenDuration),
       unique_songs_count: uniqueSongsCount,
     }, {
       fetchTimeoutMs: 8_000,

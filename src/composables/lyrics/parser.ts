@@ -499,9 +499,11 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
   // 先解析酷我 offset 参数
   let kuwoOffset = 1;
   let kuwoOffset2 = 1;
+  let hasKuwoTag = false;
   for (const rawLine of lines) {
     const m = kuwoTagPattern.exec(rawLine.trim());
     if (m) {
+      hasKuwoTag = true;
       const content = m[1].split('][')[0];
       const value = parseInt(content.trim(), 8) || 0;
       kuwoOffset = Math.floor(value / 10) || 1;
@@ -509,6 +511,21 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       break;
     }
   }
+
+  // 酷我格式是文件级格式（由 [kuwo:xxx] 标签标识），不是逐行格式。
+  // 逐行判断 isKuwoFormat 会导致 b 值全为正数的行被误判为标准格式，
+  // 用错误公式计算产生负数时间戳，该行逐字被丢弃 → "只有第一行逐字"。
+  // 判断条件：有 [kuwo:xxx] 标签，或全文任意 <a,b> 的 a 或 b 为负数。
+  const isKuwoSource = hasKuwoTag || (function checkKuwoValues() {
+    const checkRe = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g;
+    for (const l of lines) {
+      const times = [...l.matchAll(checkRe)];
+      for (const wt of times) {
+        if (parseInt(wt[1]) < 0 || parseInt(wt[2]) < 0) return true;
+      }
+    }
+    return false;
+  })();
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -535,11 +552,8 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       continue;
     }
 
-    // 判断是否为酷我格式（存在负数标记）
-    const isKuwoFormat = wordTimes.some(wt => parseInt(wt[2]) < 0);
-
     // 酷我格式需要绝对时间，标准格式需要行时间戳
-    if (!isKuwoFormat && lineStartMs === null) {
+    if (!isKuwoSource && lineStartMs === null) {
       // 标准格式但没有行时间戳，无法转换
       continue;
     }
@@ -557,8 +571,8 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       let wordStartMs: number;
       let wordEndMs: number;
 
-      if (isKuwoFormat) {
-        // 酷我格式：a,b 可为负数，时间为绝对值
+      if (isKuwoSource) {
+        // 酷我格式（文件级）：a,b 可为负数，时间为绝对值
         wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
         wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
       } else {

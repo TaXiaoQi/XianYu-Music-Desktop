@@ -30,32 +30,16 @@ function logSyncError(msg: string, ...args: unknown[]) {
 
 // ==================== 类型定义 ====================
 
-/** 云端歌曲对象（后端返回） */
-export interface CloudSong {
-  id: number;
-  song_hash: string;
-  songName: string;
-  singer: string;
-  albumName: string;
-  cover: string;
-  duration: number;
-  source: string;
-  songUrl: string;
-  originalId: string;
-  sort_order: number;
-}
+/** 与应用备份导出一致的歌单类型 */
+export type PlaylistType = 'local' | 'online' | 'mixed';
 
-/** 上传用的歌曲对象（与后端 add_song_to_playlist 的 song 字段对齐） */
-export interface CloudSongPayload {
-  song_hash: string;
-  songName: string;
-  singer: string;
-  albumName: string;
-  cover: string;
-  duration: number;
-  source: string;
-  songUrl: string;
-  originalId: string;
+/** 同步文件中的歌曲类型 */
+export type SyncSongType = 'local' | 'online';
+
+/** 新版文件同步歌曲：保留完整 Song 元数据，并额外标记来源类型 */
+export interface SyncSongPayload extends Song {
+  syncType?: SyncSongType;
+  song_hash?: string;
 }
 
 /** 同步结果摘要 */
@@ -76,12 +60,32 @@ export function getCiyuanxiId(): string | null {
 }
 
 /** 判断是否为在线歌曲（非本地文件） */
-function isOnlineSong(song: Song): boolean {
+export function isOnlineSong(song: Song): boolean {
   return (
     isRemoteSong(song)
     || isPluginSong(song)
     || song.path?.startsWith('lx://') === true
+    || song.path?.startsWith('plugin://') === true
+    || song.path?.startsWith('http://') === true
+    || song.path?.startsWith('https://') === true
   );
+}
+
+/** 自动识别歌曲来源类型，与备份导出逻辑保持一致 */
+export function classifySyncSong(song: Song): SyncSongType {
+  if (song.source_type === 'local') return 'local';
+  if (song.source_type === 'remote' || song.source_type === 'plugin') return 'online';
+  return isOnlineSong(song) ? 'online' : 'local';
+}
+
+/** 自动识别歌单类型：纯本地、纯在线或混合 */
+export function classifySyncPlaylist(songs: Song[]): PlaylistType {
+  if (songs.length === 0) return 'local';
+  const types = new Set(songs.map(classifySyncSong));
+  if (types.size === 1) {
+    return types.has('local') ? 'local' : 'online';
+  }
+  return 'mixed';
 }
 
 /**
@@ -100,62 +104,42 @@ function generateSongHash(song: Song): string {
   return md5(`${name}|${artist}|local`);
 }
 
-/**
- * 将本地 Song 转换为云端歌曲上传格式
- */
-export function songToCloudPayload(song: Song): CloudSongPayload {
-  const isOnline = isOnlineSong(song);
-  const source = isOnline
-    ? (song.source_type === 'plugin'
-        ? `plugin:${song.plugin_id || ''}`
-        : song.source_type === 'remote'
-          ? 'remote'
-          : song.path?.startsWith('lx://')
-            ? 'lx'
-            : 'online')
-    : 'local';
-
+/** 将本地 Song 转换为备份同款同步歌曲，保留完整元数据并加来源标记 */
+export function songToSyncPayload(song: Song): SyncSongPayload {
   return {
+    ...JSON.parse(JSON.stringify(song)),
+    syncType: classifySyncSong(song),
     song_hash: generateSongHash(song),
-    songName: song.title || song.name || '',
-    singer: song.artist || '',
-    albumName: song.album || '',
-    cover: song.cover_thumb_path || '',
-    duration: song.duration || 0,
-    source,
-    songUrl: isOnline ? song.path : '',
-    originalId: String(song.id ?? ''),
   };
 }
 
-/**
- * 将云端歌曲转换为本地 Song 对象
- */
-export function cloudSongToSong(cloudSong: CloudSong): Song {
-  const singer = cloudSong.singer || '未知艺术家';
-  const artistNames = singer ? singer.split(/[、,/&]|\sft\.?\s/i).map(s => s.trim()).filter(Boolean) : [singer];
-  const albumName = cloudSong.albumName || '未知专辑';
-
-  // 在线歌曲使用 songUrl 作为 path；本地歌曲用 song_hash 标记（跨设备不可播放但保留元信息）
-  const path = cloudSong.songUrl || `cloud://${cloudSong.song_hash}`;
-  const isOnline = !!cloudSong.songUrl && cloudSong.source !== 'local';
+/** 将同步歌曲恢复成 Song */
+export function syncPayloadToSong(song: SyncSongPayload): Song {
+  const payload = song as SyncSongPayload;
+  const title = payload.title || payload.name || '';
+  const artist = payload.artist || '未知艺术家';
+  const album = payload.album || '未知专辑';
+  const artistNames = payload.artist_names?.length
+    ? payload.artist_names
+    : artist.split(/[、,/&]|\sft\.?\s/i).map(s => s.trim()).filter(Boolean);
 
   return {
-    name: cloudSong.songName,
-    title: cloudSong.songName,
-    path,
-    artist: singer,
-    artist_names: artistNames.length > 0 ? artistNames : [singer],
-    effective_artist_names: artistNames.length > 0 ? artistNames : [singer],
-    album: albumName,
-    album_artist: singer,
-    album_key: `${albumName}-${singer}`,
-    is_various_artists_album: false,
-    collapse_artist_credits: false,
-    duration: cloudSong.duration || 0,
-    cover_thumb_path: cloudSong.cover || undefined,
-    source_type: isOnline ? 'remote' : 'local',
-    remote_source_id: isOnline ? cloudSong.source : undefined,
+    ...payload,
+    name: payload.name || title,
+    title,
+    path: payload.path,
+    artist,
+    artist_names: artistNames.length > 0 ? artistNames : [artist],
+    effective_artist_names: payload.effective_artist_names?.length
+      ? payload.effective_artist_names
+      : (artistNames.length > 0 ? artistNames : [artist]),
+    album,
+    album_artist: payload.album_artist || artist,
+    album_key: payload.album_key || `${album}-${artist}`,
+    is_various_artists_album: payload.is_various_artists_album ?? false,
+    collapse_artist_credits: payload.collapse_artist_credits ?? false,
+    duration: payload.duration || 0,
+    source_type: payload.source_type ?? (payload.syncType === 'online' ? 'remote' : 'local'),
   };
 }
 
@@ -181,10 +165,12 @@ export async function deleteCloudPlaylist(
 export interface FileSyncPlaylistData {
   id: string;
   name: string;
+  type?: PlaylistType;
   cloudId?: number;
   cloudCoverUrl?: string;
   isFavorite?: boolean;
-  songs: CloudSongPayload[];
+  createdAt?: string;
+  songs: SyncSongPayload[];
 }
 
 /** 文件同步下载的完整数据 */
@@ -199,10 +185,12 @@ export interface FileSyncDownloadData {
   playlists: Array<{
     id: string;
     name: string;
+    type?: PlaylistType;
     cloudId?: number;
     cloudCoverUrl?: string;
     isFavorite?: boolean;
-    songs: CloudSong[];
+    createdAt?: string;
+    songs: SyncSongPayload[];
   }>;
 }
 
@@ -403,4 +391,3 @@ export async function fileSyncDownload(ciyuanxiId: string): Promise<FileSyncDown
     throw e;
   }
 }
-

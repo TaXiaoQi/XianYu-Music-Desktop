@@ -90,10 +90,16 @@ export async function fetchLxLyric(
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
   try {
+    console.log('[lxLyricFetcher] 调用后端 fetch_lyric_from_source:', { source, songmid: songInfo.songmid, hasHash: !!songInfo.hash, hasSongId: !!songInfo.songId, _interval: songInfo._interval });
     const result = await lyricsApi.fetchLyricFromSource(source, songInfo);
+    if (!result) {
+      console.warn(`[lxLyricFetcher] 后端返回 null（${source} 可能无歌词或搜索失败）`);
+    } else {
+      console.log(`[lxLyricFetcher] 后端返回成功:`, { lyricLen: result.lyric?.length || 0, lxlyricLen: result.lxlyric?.length || 0, tlyricLen: result.tlyric?.length || 0 });
+    }
     return result;
-  } catch (e) {
-    console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e);
+  } catch (e: any) {
+    console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e?.message || e, '| songInfo:', { songmid: songInfo.songmid, hash: songInfo.hash, name: songInfo.name });
     return null;
   }
 }
@@ -114,11 +120,18 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     _hash?: string;
     _songmid?: string;
     _copyrightId?: string;
+    _songId?: string | number;
+    _strMediaMid?: string;
+    _albumMid?: string;
+    _albumId?: string | number;
   };
   const cached = getCachedLxSongInfo(source, songmid);
   // [修复] 缓存未命中时（如从队列播放/页面刷新后），从 song.duration 补全 _interval，
-  // 否则 KG 歌词搜索的 timelength=0 会导致搜索失败
-  const fallbackInterval = song.duration > 0 ? Math.round(song.duration) : undefined;
+  // 否则 KG 歌词搜索的 timelength=0 会导致搜索失败。
+  // 注意：缓存中 _interval 统一存储为秒数，但 LX 插件和后端酷狗API的 timelength 需要毫秒，
+  // 此处统一转换为毫秒值。
+  const rawInterval = cached?._interval || (song.duration > 0 ? Math.round(song.duration) : undefined);
+  const intervalMs = rawInterval ? rawInterval * 1000 : undefined;
   const songInfo: LxSongInfo = {
     songmid: cached?.songmid || extendedSong._songmid || songmid,
     hash: cached?.hash || extendedSong._hash,
@@ -126,11 +139,11 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     singer: cached?.singer || song.artist || '',
     albumName: cached?.albumName || song.album,
     interval: cached?.interval,
-    _interval: cached?._interval || fallbackInterval,
-    songId: cached?.songId,
-    strMediaMid: cached?.strMediaMid,
-    albumMid: cached?.albumMid,
-    albumId: cached?.albumId,
+    _interval: intervalMs,
+    songId: cached?.songId ?? extendedSong._songId,
+    strMediaMid: cached?.strMediaMid ?? extendedSong._strMediaMid,
+    albumMid: cached?.albumMid ?? extendedSong._albumMid,
+    albumId: cached?.albumId ?? extendedSong._albumId,
     copyrightId: cached?.copyrightId || extendedSong._copyrightId,
     source,
   };
@@ -167,10 +180,14 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
           pluginLyrics.yrc,
           pluginLyrics.qrc,
         );
-        console.log('[LX Lyrics] LX 插件构建 lyricsRaw 成功:', { resultLen: result.length, resultPreview: result.substring(0, 300) });
-        return result;
+        if (result && result.trim()) {
+          console.log('[LX Lyrics] LX 插件构建 lyricsRaw 成功:', { resultLen: result.length, resultPreview: result.substring(0, 300) });
+          return result;
+        }
+        console.warn('[LX Lyrics] LX 插件返回了歌词但 buildLyricsRaw 构建为空，尝试直接 API 后备');
+      } else {
+        console.warn('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');
       }
-      console.warn('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');
     } else {
       console.warn('[LX Lyrics] 未找到可用的 LX 插件，尝试直接 API 后备');
     }

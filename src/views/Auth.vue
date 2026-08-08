@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 import { useAuthStore } from '../features/auth/store';
+import HumanCaptchaModal from '../components/common/HumanCaptchaModal.vue';
 import { downloadApi } from '../services/tauri/downloadApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useToast } from '../composables/toast';
 import { useUiStore } from '../shared/stores/ui';
 import {
   changePassword,
+  deleteAccount,
   getProfile,
   login,
   logout,
@@ -21,6 +23,7 @@ import {
   getAvatarStatus,
   getNicknameStatus,
   type AuthMode,
+  type HumanCaptchaPayload,
   type ProfileStats,
   type VerifyCodeType,
 } from '../services/auth/authService';
@@ -38,6 +41,10 @@ const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
 const loading = ref(false);
 const codeLoading = ref(false);
+const captchaModalOpen = ref(false);
+const captchaModalTitle = ref('人机验证');
+const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
+let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
 const stats = ref<ProfileStats | null>(null);
 const nicknameDraft = ref('');
 const avatarDraft = ref('');
@@ -83,7 +90,7 @@ const nicknameInputRef = ref<HTMLInputElement | null>(null);
 async function startNicknameEdit() {
   // 改名审核中时禁止再次编辑
   if (nicknameStatus.value === 'pending') {
-    showToast('改名申请审核中，请等待审核完成', 'info');
+    showToast('昵称正在审核中哦', 'info');
     return;
   }
   nicknameEditing.value = true;
@@ -99,6 +106,11 @@ async function saveNicknameEdit() {
   if (!next || next === current) {
     nicknameEditing.value = false;
     nicknameDraft.value = current;
+    return;
+  }
+  if (!window.confirm('昵称每日只能修改1次哦')) {
+    nicknameDraft.value = current;
+    nicknameEditing.value = false;
     return;
   }
   await handleSaveProfile();
@@ -125,6 +137,10 @@ const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: ''
 const profileSaving = ref(false);
 const passwordSaving = ref(false);
 const passwordPanelOpen = ref(false);
+const deleteAccountPanelOpen = ref(false);
+const deleteAccountForm = ref({ code: '' });
+const deleteAccountCodeLoading = ref(false);
+const deleteAccountLoading = ref(false);
 
 // 头像弹窗
 const avatarMenuOpen = ref(false);
@@ -181,27 +197,57 @@ function showMessage(text: string, tone: 'error' | 'success' = 'error') {
   message.value = text;
 }
 
+function requestHumanCaptcha(title: string, description: string): Promise<HumanCaptchaPayload | null> {
+  captchaModalTitle.value = title;
+  captchaModalDescription.value = description;
+  captchaModalOpen.value = true;
+  return new Promise(resolve => {
+    captchaResolver = resolve;
+  });
+}
+
+function resolveHumanCaptcha(payload: HumanCaptchaPayload | null) {
+  captchaModalOpen.value = false;
+  captchaResolver?.(payload);
+  captchaResolver = null;
+}
+
+function handleCaptchaVerified(payload: HumanCaptchaPayload) {
+  resolveHumanCaptcha(payload);
+}
+
+function handleCaptchaCancel() {
+  resolveHumanCaptcha(null);
+}
+
 async function onSubmit() {
   if (mode.value === 'forgot') {
     await handleResetPassword();
     return;
   }
+  if (mode.value === 'register' && form.value.password !== form.value.confirmPassword) {
+    showMessage('两次输入的密码不一致');
+    return;
+  }
+  const captchaPayload = await requestHumanCaptcha(
+    mode.value === 'login' ? '登录前验证' : '注册前验证',
+    mode.value === 'login'
+      ? '完成验证后将继续登录当前账号。'
+      : '完成验证后将继续创建账号。',
+  );
+  if (!captchaPayload) return;
   loading.value = true;
   message.value = '';
   try {
-    if (mode.value === 'register' && form.value.password !== form.value.confirmPassword) {
-      showMessage('两次输入的密码不一致');
-      loading.value = false;
-      return;
-    }
     const result =
       mode.value === 'login'
-        ? await login(form.value.username, form.value.password)
+        ? await login(form.value.username, form.value.password, captchaPayload)
         : await register(
             form.value.username || form.value.email.split('@')[0] || '用户',
             form.value.password,
             form.value.email,
             form.value.code,
+            captchaPayload,
           );
 
     authStore.setAuth(result);
@@ -249,10 +295,15 @@ async function handleResetPassword() {
     showMessage('两次输入的新密码不一致');
     return;
   }
+  const captchaPayload = await requestHumanCaptcha(
+    '重置密码前验证',
+    '完成验证后将继续提交密码重置请求。',
+  );
+  if (!captchaPayload) return;
   loading.value = true;
   message.value = '';
   try {
-    const result = await resetPassword(email, code, newPassword);
+    const result = await resetPassword(email, code, newPassword, captchaPayload);
     forgotForm.value = { email: '', code: '', newPassword: '', confirmPassword: '' };
     showMessage(result.message || '密码修改成功', 'success');
     showToast(result.message || '密码修改成功，请使用新密码登录', 'success');
@@ -276,10 +327,15 @@ async function handleSendCode() {
     return;
   }
   const type: VerifyCodeType = isForgot ? 'reset_password' : 'register';
+  const captchaPayload = await requestHumanCaptcha(
+    '发送验证码前验证',
+    '完成验证后将向邮箱发送验证码。',
+  );
+  if (!captchaPayload) return;
   codeLoading.value = true;
   message.value = '';
   try {
-    const result = await sendEmailCode(email, type);
+    const result = await sendEmailCode(email, type, captchaPayload);
     showMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
   } catch (error) {
@@ -394,6 +450,13 @@ async function refreshAvatarStatus() {
 
 function openAvatarPicker() {
   avatarMenuOpen.value = false;
+  if (avatarStatus.value === 'pending') {
+    showToast('头像正在审核中哦', 'info');
+    return;
+  }
+  if (!window.confirm('头像每日只能修改1次哦')) {
+    return;
+  }
   // 下一帧触发点击，避免弹窗关闭动画与文件对话框冲突
   requestAnimationFrame(() => {
     avatarInputRef.value?.click();
@@ -460,6 +523,55 @@ async function handleChangePassword() {
     showToast(tip, 'error');
   } finally {
     passwordSaving.value = false;
+  }
+}
+
+async function handleSendDeleteAccountCode() {
+  const email = authStore.user?.email;
+  if (!email) {
+    showToast('未获取到注册邮箱，请重新登录', 'error');
+    return;
+  }
+  const captchaPayload = await requestHumanCaptcha(
+    '发送注销验证码前验证',
+    '完成验证后将向当前账号的注册邮箱发送注销验证码。',
+  );
+  if (!captchaPayload) return;
+  deleteAccountCodeLoading.value = true;
+  try {
+    const result = await sendEmailCode(email, 'delete_account', captchaPayload);
+    showToast(result.message || '注销验证码已发送到注册邮箱', 'success');
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '注销验证码发送失败';
+    showToast(tip, 'error');
+  } finally {
+    deleteAccountCodeLoading.value = false;
+  }
+}
+
+async function handleDeleteAccount() {
+  const code = deleteAccountForm.value.code.trim();
+  if (!code) {
+    showToast('请输入邮箱验证码', 'error');
+    return;
+  }
+  const confirmed = window.confirm('注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？');
+  if (!confirmed) return;
+
+  deleteAccountLoading.value = true;
+  try {
+    const result = await deleteAccount(code);
+    authStore.reset();
+    stats.value = null;
+    deleteAccountForm.value = { code: '' };
+    mode.value = 'login';
+    message.value = '';
+    showToast(result.message || '账号已注销', 'success');
+  } catch (error) {
+    const tip = error instanceof Error ? error.message : '注销账号失败';
+    showToast(tip, 'error');
+  } finally {
+    deleteAccountLoading.value = false;
   }
 }
 
@@ -1123,6 +1235,65 @@ onMounted(async () => {
           </transition>
         </section>
 
+        <!-- 注销账号（危险操作） -->
+        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 300ms;">
+          <button
+            type="button"
+            class="w-full flex items-center justify-between gap-3 cursor-pointer px-3 py-2 -mx-3 rounded-lg transition-colors hover:bg-red-50/60 dark:hover:bg-red-500/10"
+            :aria-expanded="deleteAccountPanelOpen"
+            @click="deleteAccountPanelOpen = !deleteAccountPanelOpen"
+          >
+            <span class="text-[#EC4141] text-[clamp(1.05rem,1.5vw,1.25rem)] font-medium tracking-wider">注销账号</span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4 text-[#EC4141]/70 transition-transform duration-300"
+              :class="{ 'rotate-180': deleteAccountPanelOpen }"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <transition name="password-panel">
+            <div v-if="deleteAccountPanelOpen" class="password-panel-content">
+              <p class="text-[#EC4141]/80 text-[clamp(0.8rem,1vw,0.9rem)] font-light mt-2 mb-3">
+                注销后账号和云端同步数据将被删除，且无法恢复。验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}
+              </p>
+              <div class="grid gap-3 max-w-xl">
+                <div class="grid grid-cols-[1fr_auto] items-end gap-4">
+                  <label class="grid gap-1.5">
+                    <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">邮箱验证码</span>
+                    <input
+                      v-model="deleteAccountForm.code"
+                      type="text"
+                      placeholder="输入注销验证码"
+                      autocomplete="one-time-code"
+                      class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="h-9 px-4 whitespace-nowrap text-[clamp(0.85rem,1vw,0.95rem)] font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="deleteAccountCodeLoading || deleteAccountLoading"
+                    @click="handleSendDeleteAccountCode"
+                  >
+                    {{ deleteAccountCodeLoading ? '发送中…' : '发送验证码' }}
+                  </button>
+                </div>
+                <div class="pt-1">
+                  <button
+                    type="button"
+                    class="border border-[#EC4141]/35 bg-[#EC4141]/5 hover:bg-[#EC4141] text-[#EC4141] hover:text-white px-6 py-1.5 rounded-full text-[clamp(0.85rem,1vw,0.95rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                    :disabled="deleteAccountLoading || !deleteAccountForm.code.trim()"
+                    @click="handleDeleteAccount"
+                  >
+                    {{ deleteAccountLoading ? '注销中…' : '确认注销账号' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </transition>
+        </section>
+
         <!-- 快捷入口 -->
         <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;">
           <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
@@ -1188,6 +1359,14 @@ onMounted(async () => {
         </div>
       </Transition>
     </Teleport>
+
+    <HumanCaptchaModal
+      :open="captchaModalOpen"
+      :title="captchaModalTitle"
+      :description="captchaModalDescription"
+      @verified="handleCaptchaVerified"
+      @cancel="handleCaptchaCancel"
+    />
   </div>
 </template>
 

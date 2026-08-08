@@ -908,7 +908,7 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         },
         "req": {
             "module": "music.search.SearchCgiService",
-            "method": "DoSearchForQQMusicMobile",
+            "method": "DoSearchForQQMusicDesktop",
             "param": {
                 "search_type": 0,
                 "searchid": format!("{}", chrono_like_random()),
@@ -928,7 +928,7 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         &url,
         &request_str,
         &[
-            ("User-Agent", "Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36"),
+            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
             ("Content-Type", "application/json"),
             ("Referer", "https://y.qq.com/"),
         ],
@@ -942,8 +942,10 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         return Err("TX search: invalid response code".to_string());
     }
 
+    // Desktop 接口返回 body.song.list；回退到 item_song 以兼容旧结构
     let song_list = body
-        .pointer("/req/data/body/item_song")
+        .pointer("/req/data/body/song/list")
+        .or_else(|| body.pointer("/req/data/body/item_song"))
         .unwrap_or(&serde_json::Value::Null);
     Ok(tx_handle_result(song_list))
 }

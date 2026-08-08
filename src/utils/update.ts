@@ -1,5 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { updateApi } from '../services/tauri/updateApi';
+import { signedRequest } from '../services/auth/authService';
 
 const VERSION_PATTERN = /\d+(?:\.\d+)+/;
 
@@ -76,11 +77,6 @@ export async function fetchLatestRelease(owner: string, repo: string): Promise<R
   };
 }
 
-// --- 自建后台版本更新检查 ---
-// 桌面端「检查更新」改用自建后台（xy.zh2026.cn），由后台「版本管理」页顶部卡片配置。
-// 接口为免签公开读取，返回 {code, msg, data}，data 为最新启用版本或 null。
-const SERVER_VERSION_URL = 'https://xy.zh2026.cn/chaoguan/public/api/version.php';
-
 export interface ServerUpdateInfo {
   version: string;
   downloadUrl: string;
@@ -90,32 +86,20 @@ export interface ServerUpdateInfo {
 
 export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
   try {
-    const response = await fetch(SERVER_VERSION_URL, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      console.error('[Update] HTTP 状态异常:', response.status);
-      return null;
-    }
-
-    const payload = await response.json();
-    if (!payload || payload.code !== 200 || !payload.data) {
-      return null;
-    }
-
-    const data = payload.data;
+    const data = await signedRequest<Record<string, unknown>>(
+      'get_latest_version',
+      {},
+      { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
+    );
     if (!data || !data.version) {
       return null;
     }
 
     return {
-      version: data.version,
-      downloadUrl: data.downloadUrl ?? '',
-      updateContent: data.updateContent ?? '',
-      updatedAt: data.updatedAt,
+      version: String(data.version || ''),
+      downloadUrl: String(data.downloadUrl ?? data.download_url ?? ''),
+      updateContent: String(data.updateContent ?? data.content ?? data.update_content ?? ''),
+      updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
     };
   } catch (error) {
     console.error('[Update] 获取版本信息失败:', error);

@@ -163,6 +163,10 @@ function lxResultToSong(item: LxSearchResultItem): Song {
     _copyrightId: item.copyrightId,
     _songmid: item.songmid,
     _source: item.source,
+    _songId: item.songId,
+    _strMediaMid: item.strMediaMid,
+    _albumMid: item.albumMid,
+    _albumId: item.albumId,
     rawData: item,
   } as any;
 }

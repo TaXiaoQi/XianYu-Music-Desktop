@@ -901,7 +901,7 @@ async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     let hash = song_info.hash.as_deref().unwrap_or(&song_info.songmid);
     let time = song_info
         .interval_ms
-        .unwrap_or_else(|| kg_get_intv(song_info.interval.as_deref().unwrap_or("")));
+        .unwrap_or_else(|| kg_get_intv(song_info.interval.as_deref().unwrap_or("")) * 1000);
 
     let search_url = format!(
         "http://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword={}&hash={}&timelength={}&lrctxt=1",

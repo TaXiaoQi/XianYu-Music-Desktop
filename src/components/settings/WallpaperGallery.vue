@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
-import { getStoredAuth, signedPostJson } from '../../services/auth/authService';
+import { getStoredAuth, signedRequest } from '../../services/auth/authService';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 
 const emit = defineEmits<{
@@ -16,6 +16,7 @@ interface Wallpaper {
   thumbnailUrl: string;
   category: string;
   uploaderId?: string;
+  uploaderNickname?: string;
 }
 
 interface MyWallpaper extends Wallpaper {
@@ -25,7 +26,14 @@ interface MyWallpaper extends Wallpaper {
   createdAt?: string;
 }
 
-const WALLPAPER_API = 'https://xy.zh2026.cn/chaoguan/public/api/wallpapers.php';
+interface DownloadedWallpaper extends Wallpaper {
+  localPath: string;
+  downloadedAt: string;
+}
+
+type WallpaperTab = 'browse' | 'mine' | 'downloads';
+
+const DOWNLOADED_WALLPAPERS_KEY = 'xianyu_downloaded_wallpapers_v1';
 
 const wallpapers = ref<Wallpaper[]>([]);
 const isLoading = ref(true);
@@ -47,8 +55,8 @@ const handleClose = () => {
   }, 220);
 };
 
-// 当前标签：browse 浏览壁纸中心 / mine 我的上传
-const activeTab = ref<'browse' | 'mine'>('browse');
+// 当前标签：browse 浏览壁纸中心 / mine 我的上传 / downloads 我的下载
+const activeTab = ref<WallpaperTab>('browse');
 
 // 登录态
 const auth = getStoredAuth();
@@ -59,6 +67,11 @@ const currentUser = computed(() => auth?.user);
 const myWallpapers = ref<MyWallpaper[]>([]);
 const myLoading = ref(false);
 const myError = ref('');
+
+// 我的下载
+const downloadedWallpapers = ref<DownloadedWallpaper[]>([]);
+const selectedDownloadIds = ref<number[]>([]);
+const deletingDownloads = ref(false);
 
 // 上传相关
 const showUploadModal = ref(false);
@@ -80,25 +93,17 @@ const fetchWallpapers = async () => {
   isLoading.value = true;
   loadError.value = '';
   try {
-    const response = await fetch(WALLPAPER_API, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const data = await response.json();
-    if (data.code === 200 && Array.isArray(data.data)) {
-      // 映射上传者 ID，兼容多种字段名
-      wallpapers.value = data.data.map((w: Record<string, unknown>) => ({
-        id: w.id as number,
-        title: w.title as string,
-        description: w.description as string,
-        imageUrl: w.imageUrl as string,
-        thumbnailUrl: w.thumbnailUrl as string,
-        category: w.category as string,
-        uploaderId: (w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? w.uploader ?? '') as string,
-      }));
-    } else {
-      throw new Error(data.msg || '接口返回异常');
-    }
+    const data = await signedRequest<Record<string, unknown>[]>('list_wallpapers', {});
+    wallpapers.value = Array.isArray(data) ? data.map((w: Record<string, unknown>) => ({
+      id: Number(w.id || 0),
+      title: String(w.title || ''),
+      description: String(w.description || ''),
+      imageUrl: String(w.imageUrl || ''),
+      thumbnailUrl: String(w.thumbnailUrl || ''),
+      category: String(w.category || ''),
+      uploaderId: String(w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? w.uploader ?? ''),
+      uploaderNickname: String(w.uploaderNickname ?? w.uploaded_by_nickname ?? w.nickname ?? ''),
+    })) : [];
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : '获取壁纸列表失败';
   } finally {
@@ -111,10 +116,9 @@ const fetchMyWallpapers = async () => {
   myLoading.value = true;
   myError.value = '';
   try {
-    const data = await signedPostJson<MyWallpaper[]>(
-      `${WALLPAPER_API}?action=my_wallpapers`,
-      { ciyuanxi_id: currentUser.value.ciyuanxi_id },
-    );
+    const data = await signedRequest<MyWallpaper[]>('my_wallpapers', {
+      ciyuanxi_id: currentUser.value.ciyuanxi_id,
+    });
     myWallpapers.value = Array.isArray(data) ? data : [];
   } catch (err) {
     myError.value = err instanceof Error ? err.message : '获取我的上传失败';
@@ -123,10 +127,44 @@ const fetchMyWallpapers = async () => {
   }
 };
 
-const switchTab = (tab: 'browse' | 'mine') => {
+const loadDownloadedWallpapers = () => {
+  try {
+    const raw = localStorage.getItem(DOWNLOADED_WALLPAPERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    downloadedWallpapers.value = Array.isArray(parsed)
+      ? parsed.filter((item): item is DownloadedWallpaper => !!item && typeof item.id === 'number' && typeof item.localPath === 'string')
+      : [];
+  } catch {
+    downloadedWallpapers.value = [];
+  }
+};
+
+const persistDownloadedWallpapers = () => {
+  localStorage.setItem(DOWNLOADED_WALLPAPERS_KEY, JSON.stringify(downloadedWallpapers.value));
+};
+
+const downloadedIdSet = computed(() => new Set(downloadedWallpapers.value.map(item => item.id)));
+
+const isDownloaded = (id: number) => downloadedIdSet.value.has(id);
+
+const downloadedRecord = (id: number) => downloadedWallpapers.value.find(item => item.id === id);
+
+const uploaderLabel = (wallpaper: Wallpaper) => {
+  const nick = (wallpaper.uploaderNickname || '').trim();
+  const id = (wallpaper.uploaderId || '').trim();
+  if (nick && id) return `${nick}（${id}）`;
+  if (nick) return nick;
+  if (id) return `@${id}`;
+  return '管理员';
+};
+
+const switchTab = (tab: WallpaperTab) => {
   activeTab.value = tab;
   if (tab === 'mine' && isLoggedIn.value && myWallpapers.value.length === 0 && !myError.value) {
     fetchMyWallpapers();
+  }
+  if (tab === 'downloads') {
+    selectedDownloadIds.value = [];
   }
 };
 
@@ -241,8 +279,8 @@ const doUpload = async () => {
   try {
     // Canvas 压缩为 base64（传输用 0.80 质量，服务端会再次压缩到质量 82 存储）
     const imageData = await compressImageToDataUrl(uploadFile.value, 1920, 0.80);
-    await signedPostJson(
-      `${WALLPAPER_API}?action=upload_wallpaper`,
+    await signedRequest(
+      'upload_wallpaper',
       {
         ciyuanxi_id: currentUser.value.ciyuanxi_id,
         nickname: currentUser.value.nickname || currentUser.value.username || '',
@@ -286,8 +324,21 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
   downloadingId.value = wallpaper.id;
   downloadError.value = '';
   try {
-    const filename = `wallpaper_${wallpaper.id}.jpg`;
-    const localPath = await toolboxApi.downloadWallpaper(wallpaper.imageUrl, filename);
+    let localPath = downloadedRecord(wallpaper.id)?.localPath || '';
+    if (!localPath) {
+      const filename = `wallpaper_${wallpaper.id}.jpg`;
+      localPath = await toolboxApi.downloadWallpaper(wallpaper.imageUrl, filename);
+      const record: DownloadedWallpaper = {
+        ...wallpaper,
+        localPath,
+        downloadedAt: new Date().toISOString(),
+      };
+      downloadedWallpapers.value = [
+        record,
+        ...downloadedWallpapers.value.filter(item => item.id !== wallpaper.id),
+      ];
+      persistDownloadedWallpapers();
+    }
     emit('select', localPath);
     handleClose();
   } catch (err) {
@@ -297,7 +348,45 @@ const downloadAndUse = async (wallpaper: Wallpaper) => {
   }
 };
 
+const toggleDownloadSelection = (id: number) => {
+  selectedDownloadIds.value = selectedDownloadIds.value.includes(id)
+    ? selectedDownloadIds.value.filter(item => item !== id)
+    : [...selectedDownloadIds.value, id];
+};
+
+const selectAllDownloads = () => {
+  selectedDownloadIds.value = downloadedWallpapers.value.map(item => item.id);
+};
+
+const clearDownloadSelection = () => {
+  selectedDownloadIds.value = [];
+};
+
+const deleteSelectedDownloads = async () => {
+  if (selectedDownloadIds.value.length === 0 || deletingDownloads.value) return;
+  const ids = new Set(selectedDownloadIds.value);
+  const targets = downloadedWallpapers.value.filter(item => ids.has(item.id));
+  deletingDownloads.value = true;
+  downloadError.value = '';
+  try {
+    await Promise.all(targets.map(item => toolboxApi.deleteWallpaperFile(item.localPath).catch(() => undefined)));
+    downloadedWallpapers.value = downloadedWallpapers.value.filter(item => !ids.has(item.id));
+    selectedDownloadIds.value = [];
+    persistDownloadedWallpapers();
+  } catch (err) {
+    downloadError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    deletingDownloads.value = false;
+  }
+};
+
+const useDownloadedWallpaper = (item: DownloadedWallpaper) => {
+  emit('select', item.localPath);
+  handleClose();
+};
+
 onMounted(() => {
+  loadDownloadedWallpapers();
   fetchWallpapers();
 });
 
@@ -353,6 +442,10 @@ onBeforeUnmount(() => {
               @click="switchTab('mine')"
               :class="['rounded-lg px-3 py-1.5 text-sm font-medium transition', activeTab === 'mine' ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white']"
             >我的上传</button>
+            <button
+              @click="switchTab('downloads')"
+              :class="['rounded-lg px-3 py-1.5 text-sm font-medium transition', activeTab === 'downloads' ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white']"
+            >我的下载<span v-if="downloadedWallpapers.length" class="ml-1 text-[11px] text-white/40">{{ downloadedWallpapers.length }}</span></button>
           </div>
           <button
             v-if="activeTab === 'mine'"
@@ -411,16 +504,20 @@ onBeforeUnmount(() => {
                 <img :src="wallpaper.thumbnailUrl" :alt="wallpaper.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
               </div>
               <!-- 上传者 ID 徽标 -->
-              <div v-if="wallpaper.uploaderId" class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
-                @{{ wallpaper.uploaderId }}
+              <div class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+                {{ uploaderLabel(wallpaper) }}
+              </div>
+              <div v-if="isDownloaded(wallpaper.id)" class="absolute left-2 top-2 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                已下载
               </div>
               <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                 <div class="p-3">
                   <h3 class="truncate text-sm font-semibold">{{ wallpaper.title }}</h3>
+                  <p class="mt-0.5 truncate text-[11px] text-white/50">上传者：{{ uploaderLabel(wallpaper) }}</p>
                   <p v-if="wallpaper.description" class="mt-0.5 line-clamp-2 text-xs text-white/60">{{ wallpaper.description }}</p>
                   <button @click="downloadAndUse(wallpaper)" :disabled="downloadingId !== null" class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60">
                     <span v-if="downloadingId === wallpaper.id">下载中…</span>
-                    <span v-else>使用此壁纸</span>
+                    <span v-else>{{ isDownloaded(wallpaper.id) ? '使用已下载' : '下载并使用' }}</span>
                   </button>
                 </div>
               </div>
@@ -478,6 +575,7 @@ onBeforeUnmount(() => {
                 <p v-else-if="wp.status === 'rejected'" class="mt-1 text-[11px] text-red-300/80">审核未通过</p>
                 <p v-else-if="wp.status === 'normal'" class="mt-1 text-[11px] text-green-300/80">已通过审核，壁纸中心可见</p>
                 <p v-else-if="wp.status === 'disabled'" class="mt-1 text-[11px] text-gray-300/60">已被管理员禁用</p>
+                <p v-if="wp.status === 'normal' && isDownloaded(wp.id)" class="mt-1 text-[11px] text-sky-300/80">已下载到本地</p>
                 <button
                   v-if="wp.status === 'normal'"
                   @click="downloadAndUse(wp)"
@@ -485,10 +583,63 @@ onBeforeUnmount(() => {
                   class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span v-if="downloadingId === wp.id">下载中…</span>
-                  <span v-else>使用此壁纸</span>
+                  <span v-else>{{ isDownloaded(wp.id) ? '使用已下载' : '下载并使用' }}</span>
                 </button>
               </div>
             </div>
+          </div>
+
+          <!-- ====== 我的下载 ====== -->
+          <div v-if="activeTab === 'downloads'">
+            <div v-if="downloadedWallpapers.length === 0" class="flex flex-col items-center justify-center py-20 text-white/40">
+              <svg xmlns="http://www.w3.org/2000/svg" class="mb-3 h-10 w-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+              </svg>
+              <span class="text-sm">还没有下载过壁纸</span>
+            </div>
+            <template v-else>
+              <div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <div class="text-xs text-white/50">
+                  已保存 {{ downloadedWallpapers.length }} 张，已选择 {{ selectedDownloadIds.length }} 张
+                </div>
+                <div class="flex gap-2">
+                  <button @click="selectAllDownloads" class="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70 transition hover:bg-white/10">全选</button>
+                  <button @click="clearDownloadSelection" class="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70 transition hover:bg-white/10">取消选择</button>
+                  <button
+                    @click="deleteSelectedDownloads"
+                    :disabled="selectedDownloadIds.length === 0 || deletingDownloads"
+                    class="rounded-full bg-[#EC4141] px-3 py-1 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-50"
+                  >{{ deletingDownloads ? '删除中…' : '删除所选' }}</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                <div
+                  v-for="item in downloadedWallpapers"
+                  :key="item.id"
+                  class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
+                  :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141]/70 shadow-[0_0_15px_rgba(236,65,65,0.2)]' : 'border-white/10 hover:border-[#EC4141]/50'"
+                >
+                  <button
+                    @click.stop="toggleDownloadSelection(item.id)"
+                    class="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition"
+                    :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141] bg-[#EC4141] text-white' : 'border-white/30 bg-black/45 text-transparent hover:text-white'"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                  <div class="aspect-[16/10] w-full overflow-hidden">
+                    <img :src="item.thumbnailUrl || item.imageUrl" :alt="item.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                  </div>
+                  <div class="p-3">
+                    <h3 class="truncate text-sm font-semibold">{{ item.title }}</h3>
+                    <p class="mt-1 truncate text-[11px] text-white/50">上传者：{{ uploaderLabel(item) }}</p>
+                    <p class="mt-1 truncate text-[11px] text-white/35">本地：{{ item.localPath }}</p>
+                    <button @click="useDownloadedWallpaper(item)" class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a]">
+                      使用此壁纸
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- 下载错误提示 -->
@@ -499,8 +650,9 @@ onBeforeUnmount(() => {
 
         <!-- 底部说明 -->
         <div class="border-t border-white/10 px-6 py-3 text-center text-[11px] text-white/30">
-          <template v-if="activeTab === 'browse'">点击「使用此壁纸」将下载到本地并应用为背景，可在上方调整模糊 / 遮罩 / 缩放</template>
-          <template v-else>用户上传的壁纸需经管理员审核通过后才会展示在壁纸中心</template>
+          <template v-if="activeTab === 'browse'">点击「下载并使用」将保存到本地，已下载壁纸会直接复用，避免重复下载</template>
+          <template v-else-if="activeTab === 'mine'">用户上传的壁纸需经管理员审核通过后才会展示在壁纸中心</template>
+          <template v-else>我的下载支持多选删除；删除只影响本机已保存的壁纸文件</template>
         </div>
       </div>
 

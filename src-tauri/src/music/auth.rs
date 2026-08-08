@@ -25,8 +25,14 @@ use tauri::{AppHandle, Manager};
 /// API 签名密钥（从文档获取，编译进二进制，不暴露给前端）
 const API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
+/// 官方后端地址
+const OFFICIAL_AUTH_BASE_URL: &str = "https://xymusic.zh2026.cn/api";
+
 /// 默认后端地址
-const DEFAULT_AUTH_BASE_URL: &str = "https://xymusic.zh2026.cn/api";
+#[cfg(debug_assertions)]
+const DEFAULT_AUTH_BASE_URL: &str = "http://127.0.0.1:8081/api";
+#[cfg(not(debug_assertions))]
+const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
 
 /// keyring 服务名 / 账户名
 const KEYRING_SERVICE: &str = "xianyu-music";
@@ -109,10 +115,17 @@ fn read_base_url(app: &AppHandle) -> String {
     match base_url_file_path(app) {
         Ok(path) => {
             if path.exists() {
-                fs::read_to_string(&path)
+                let saved = fs::read_to_string(&path)
                     .unwrap_or_default()
                     .trim()
-                    .to_string()
+                    .to_string();
+                #[cfg(debug_assertions)]
+                {
+                    if saved.is_empty() || saved == OFFICIAL_AUTH_BASE_URL {
+                        return DEFAULT_AUTH_BASE_URL.to_string();
+                    }
+                }
+                saved
             } else {
                 DEFAULT_AUTH_BASE_URL.to_string()
             }
