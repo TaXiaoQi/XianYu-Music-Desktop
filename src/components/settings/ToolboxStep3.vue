@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../composables/toast';
+import { tauriInvoke } from '../../services/tauri/invoke';
 import SettingHint from './SettingHint.vue';
 
 interface RenamePreview {
@@ -9,7 +9,7 @@ interface RenamePreview {
   original_name: string;
   new_name: string;
   status: string;
-  error?: string;
+  error: string | null;
 }
 
 const toast = useToast();
@@ -114,7 +114,7 @@ const handleScan = async () => {
       remove_source_prefix: false,
     };
 
-    const result = await invoke<RenamePreview[]>('preview_rename', {
+    const result = await tauriInvoke('preview_rename', {
       rootPath: props.targetPath,
       config,
     });
@@ -143,7 +143,7 @@ const handleApply = async () => {
       new_name: item.new_name,
     }));
 
-    const count = await invoke<number>('apply_rename', { operations });
+    const count = await tauriInvoke('apply_rename', { operations });
     toast.showToast(`成功重命名 ${count} 个文件`, 'success');
     emit('next');
   } catch (error) {

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../../services/tauri/invoke';
 import {
   beginLibraryScanProgress,
   resolveScanLibraryOptions,
@@ -6,8 +6,6 @@ import {
 } from './libraryScan';
 import type { ScanLibraryOptions } from './libraryScan';
 import type {
-  AlbumCatalogItem,
-  ArtistCatalogItem,
   LibraryScanVisibility,
   LibrarySong,
   Song,
@@ -103,7 +101,7 @@ export const createLibraryRuntime = ({
   const loadLibrarySongsFromCache = async () => {
     try {
       flushBufferedLibraryScanBatch();
-      const songs = await invoke<LibrarySong[]>('get_library_songs_cached');
+      const songs = await tauriInvoke('get_library_songs_cached');
 
       // 使用增量 Patch 和极速路径覆盖，替代高开销的全量 normalize，加速启动
       libraryStore.patchLibrarySongs({ songs, deleted_paths: [] });
@@ -121,8 +119,8 @@ export const createLibraryRuntime = ({
   const loadLibraryCatalogsFromCache = async () => {
     try {
       const [artists, albums] = await Promise.all([
-        invoke<ArtistCatalogItem[]>('get_library_artist_catalog'),
-        invoke<AlbumCatalogItem[]>('get_library_album_catalog'),
+        tauriInvoke('get_library_artist_catalog'),
+        tauriInvoke('get_library_album_catalog'),
       ]);
 
       libraryStore.setArtistCatalog(artists);
@@ -179,7 +177,7 @@ export const createLibraryRuntime = ({
 
     libraryRefreshPromise = (async () => {
       try {
-        const songs = await invoke<LibrarySong[]>('scan_library', {
+        const songs = await tauriInvoke('scan_library', {
           minimumDurationSeconds: settingsStore.settings.libraryMinDurationSeconds,
         });
 

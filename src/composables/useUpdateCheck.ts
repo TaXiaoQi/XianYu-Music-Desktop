@@ -1,5 +1,4 @@
 import { ref } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { APP_VERSION } from '../../version';
@@ -10,6 +9,7 @@ import {
   type ServerUpdateInfo,
 } from '../utils/update';
 import { useToast } from './toast';
+import { tauriInvoke } from '../services/tauri/invoke';
 
 // 模块级单例状态，保证全局共享同一份更新检查状态
 const updateVisible = ref(false);
@@ -197,16 +197,16 @@ export function useUpdateCheck() {
       });
 
       // 下载安装包到 Downloads 目录
-      const path = await invoke<string>('download_update_file', {
+      const path = await tauriInvoke('download_update_file', {
         url: latestUpdate.value!.downloadUrl,
       });
 
       // 启动 MSI 安装程序（非阻塞）
-      await invoke('run_installer', { path });
+      await tauriInvoke('run_installer', { path });
 
       // 等待安装程序初始化后退出应用
       await new Promise((resolve) => setTimeout(resolve, 500));
-      await invoke('exit_app');
+      await tauriInvoke('exit_app');
     } catch (error) {
       showToast('更新失败：' + (error instanceof Error ? error.message : String(error)), 'error');
       isDownloading.value = false;

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '../../composables/toast';
+import { tauriInvoke } from '../../services/tauri/invoke';
 
 interface CleanPreview {
   original_path: string;
   original_name: string;
   new_name: string;
   status: string;
-  error?: string;
+  error: string | null;
 }
 
 const toast = useToast();
@@ -81,7 +81,7 @@ const scanPreview = async () => {
       remove_source_prefix: false,
     };
 
-    const result = await invoke<CleanPreview[]>('preview_rename', {
+    const result = await tauriInvoke('preview_rename', {
       rootPath: props.targetPath,
       config,
     });
@@ -137,7 +137,7 @@ const handleApply = async () => {
       new_name: item.new_name,
     }));
 
-    const count = await invoke<number>('apply_rename', { operations });
+    const count = await tauriInvoke('apply_rename', { operations });
     toast.showToast(`成功处理 ${count} 个文件名`, 'success');
     emit('next');
   } catch (error) {

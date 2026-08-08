@@ -2,9 +2,9 @@ import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow, primaryMonitor } from '@tauri-apps/api/window';
-import { invoke } from '@tauri-apps/api/core';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 
+import { tauriInvoke } from '../services/tauri/invoke';
 import { useCoverCache } from './useCoverCache';
 import { usePlayer } from '../features/playback';
 import { useThemeSettings } from './useThemeSettings';
@@ -67,7 +67,7 @@ async function ensureTaskbarWindowSize(targetWindow: WebviewWindow) {
 
 async function refreshTaskbarWindowTopmost(targetWindow: WebviewWindow) {
   await targetWindow.setAlwaysOnTop(true);
-  await invoke('refresh_taskbar_window_topmost').catch((err) => {
+  await tauriInvoke('refresh_taskbar_window_topmost').catch((err) => {
     console.warn('Failed to refresh taskbar player topmost state:', err);
   });
 }
@@ -131,7 +131,7 @@ async function updatePosition() {
       const scaleFactor = primary?.scaleFactor ?? 1;
 
       // 2. 调用 Rust 底层，返回 Win32 API 在当前进程 DPI awareness 下的原始物理屏幕坐标
-      const geometry = await invoke<TaskbarTrayGeometry>('get_taskbar_tray_geometry').catch((err) => {
+      const geometry = await tauriInvoke('get_taskbar_tray_geometry').catch((err) => {
         console.warn('Failed to invoke get_taskbar_tray_geometry:', err);
         return null;
       });
@@ -278,7 +278,7 @@ async function ensureTaskbarPlayerWindow() {
 
           try {
             // 通过 Rust 底层 Win32 接口应用 WS_EX_NOACTIVATE 扩展样式，并绑定主任务栏 Owner
-            await invoke('setup_taskbar_window');
+            await tauriInvoke('setup_taskbar_window');
 
             settled = true;
             taskbarPlayerWindowPromise = null;
@@ -389,7 +389,7 @@ export function useTaskbarPlayerBridge() {
     isTaskbarPlayerVisible.value = true;
 
     // 安装 Z-order 守护，防止点击任务栏时播控窗口被遮盖
-    void invoke('install_taskbar_zorder_guard').catch((err) => {
+    void tauriInvoke('install_taskbar_zorder_guard').catch((err) => {
       console.warn('Failed to install taskbar zorder guard:', err);
     });
     // Tauri 2 官方 API 缩放更改监听绑定
@@ -421,7 +421,7 @@ export function useTaskbarPlayerBridge() {
       unlistenScaleChange = null;
     }
     // 卸载 Z-order 守护
-    void invoke('uninstall_taskbar_zorder_guard').catch(() => {});
+    void tauriInvoke('uninstall_taskbar_zorder_guard').catch(() => {});
     await emitTo(TASKBAR_PLAYER_WINDOW_LABEL, TASKBAR_PLAYER_VISIBILITY_EVENT, { visible: false });
     await targetWindow.hide();
     isTaskbarPlayerVisible.value = false;
@@ -440,7 +440,7 @@ export function useTaskbarPlayerBridge() {
       unlistenScaleChange = null;
     }
     // 在 destroy 前卸载守护，防止回调访问已失效的 HWND
-    void invoke('uninstall_taskbar_zorder_guard').catch(() => {});
+    void tauriInvoke('uninstall_taskbar_zorder_guard').catch(() => {});
     try {
       await targetWindow.destroy();
     } catch (error) {
@@ -460,7 +460,7 @@ export function useTaskbarPlayerBridge() {
       if (!targetWindow || !settings.value.showTaskbarPlayer) return;
 
       try {
-        const state = await invoke<{ isFullscreen: boolean }>('get_foreground_fullscreen_state');
+        const state = await tauriInvoke('get_foreground_fullscreen_state');
         if (state.isFullscreen) {
           if (isTaskbarPlayerVisible.value) {
             await targetWindow.hide();

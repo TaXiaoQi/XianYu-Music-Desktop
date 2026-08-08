@@ -1,5 +1,6 @@
 import { reactive } from 'vue';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../services/tauri/invoke';
 import { MemoryCache } from '../utils/MemoryCache';
 
 type CoverKind = 'thumbnail' | 'full';
@@ -318,8 +319,9 @@ const loadCoverInternal = (path: string, kind: CoverKind): Promise<string> => {
   const request = (async () => {
     loadingSet.add(requestKey);
     try {
-      const command = kind === 'full' ? 'get_song_cover' : 'get_song_cover_thumbnail';
-      const coverPath = await invoke<string>(command, { path });
+      const coverPath = kind === 'full'
+        ? await tauriInvoke('get_song_cover', { path })
+        : await tauriInvoke('get_song_cover_thumbnail', { path });
       if (requestEpoch !== getCacheEpoch(kind) || invalidatedRequestKeys.has(requestKey)) {
         return '';
       }

@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import {
   buildKuwoAlbumCoverUrl,
   neteasePicIdToUrl,
@@ -92,7 +91,7 @@ async function httpFetch(url: string, options: {
   headers?: Record<string, string>;
   body?: string;
 } = {}): Promise<HttpResponse> {
-  return invoke<HttpResponse>('plugin_http_request', {
+  return tauriInvoke('plugin_http_request', {
     method: options.method || 'GET',
     url,
     headers: options.headers || null,
@@ -453,10 +452,13 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
   if (!rawList || !Array.isArray(rawList)) return [];
   const list: LxSearchResultItem[] = [];
   rawList.forEach(item => {
-    if (!item.file?.media_mid) return;
+    // 放宽过滤：仅要求 mid 或 id 存在即可（与 playlistImport.ts 的 parseTxSong 对齐）。
+    // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
+    // 导致搜索结果被全部静默过滤 → 列表为空（小秋搜索无法加载歌曲列表的根因）。
+    if (!item.mid && !item.id) return;
     const types: LxSearchResultItem['types'] = [];
     const _types: LxSearchResultItem['_types'] = {};
-    const file = item.file;
+    const file = item.file || {};
     if (file.size_128mp3 != 0) {
       const size = sizeFormate(file.size_128mp3);
       types.push({ type: '128k', size });
@@ -492,7 +494,7 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
       interval: formatPlayTime(item.interval),
       songId: item.id,
       albumMid: item.album?.mid ?? '',
-      strMediaMid: item.file.media_mid,
+      strMediaMid: file.media_mid ?? '',
       songmid: item.mid,
       img: (albumId === '' || albumId === '空')
         ? (item.singer?.length && item.singer[0].mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${item.singer[0].mid}.jpg` : null)
@@ -535,10 +537,18 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
     'Content-Type': 'application/json',
   });
   if (!body || !body.req || body.code != 0 || body.req.code != 0) {
+    console.warn('[LxMusicSdk] TX search API error', { bodyCode: body?.code, reqCode: body?.req?.code });
     return searchTx(str, page, limit, ++retryNum);
   }
   const data = body.req.data;
-  const list = txHandleResult(data.body?.item_song);
+  const rawList = data?.body?.item_song;
+  if (!Array.isArray(rawList) || rawList.length === 0) {
+    console.warn('[LxMusicSdk] TX search: item_song missing/empty, data keys:', data ? Object.keys(data) : null);
+  }
+  const list = txHandleResult(rawList);
+  if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {
+    console.warn(`[LxMusicSdk] TX search: all ${rawList.length} items filtered out, sample:`, JSON.stringify(rawList[0]).slice(0, 300));
+  }
   const total = data.meta?.estimate_sum ?? 0;
   return {
     list,

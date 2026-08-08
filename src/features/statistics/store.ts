@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../../services/tauri/invoke';
 
 export interface LibraryStats {
   total_songs: number;
@@ -77,12 +77,12 @@ export const useStatisticsStore = defineStore('statistics', () => {
   let heavyDataReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   const fetchStats = async () => {
-    stats.value = await invoke<LibraryStats>('get_library_stats');
+    stats.value = await tauriInvoke('get_library_stats');
   };
 
   const fetchBehaviorStats = async (range: TimeRangeType) => {
     const timeRange: TimeRange = { type: range };
-    behaviorStats.value = await invoke<BehaviorStats>('get_behavior_stats', { timeRange });
+    behaviorStats.value = await tauriInvoke('get_behavior_stats', { timeRange });
   };
 
   const ensureLoaded = async (range: TimeRangeType = currentBehaviorTimeRange.value) => {
@@ -149,7 +149,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
   const ensureQualityDistribution = async () => {
     cancelHeavyDataRelease();
     if (!qualityDistribution.value) {
-      qualityDistribution.value = await invoke<QualityDistribution>('get_quality_distribution');
+      qualityDistribution.value = await tauriInvoke('get_quality_distribution');
     }
     return qualityDistribution.value;
   };
@@ -157,7 +157,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
   const ensureFormatDistribution = async () => {
     cancelHeavyDataRelease();
     if (!formatDistribution.value) {
-      formatDistribution.value = await invoke<FormatDistribution>('get_format_distribution');
+      formatDistribution.value = await tauriInvoke('get_format_distribution');
     }
     return formatDistribution.value;
   };

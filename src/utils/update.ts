@@ -1,4 +1,5 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../services/tauri/invoke';
 
 const VERSION_PATTERN = /\d+(?:\.\d+)+/;
 
@@ -44,7 +45,7 @@ export async function fetchLatestRelease(owner: string, repo: string): Promise<R
 
   if (isTauri()) {
     try {
-      const rawJson = await invoke<string>('check_update_by_rust', { owner, repo });
+      const rawJson = await tauriInvoke('check_update_by_rust', { owner, repo });
       payload = JSON.parse(rawJson);
     } catch (error) {
       throw new Error(`[Rust Backend] ${error instanceof Error ? error.message : String(error)}`, { cause: error });

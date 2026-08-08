@@ -16,8 +16,10 @@ import type {
   Song,
   SongDetail,
   SaveArtistAvatarResponse,
+  ImportedLyricsFont,
 } from '../../types';
 import type { AudioOutputMode } from '../../types';
+import type { LyricsPayload } from '../../composables/lyrics/types';
 
 export interface AudioDevice {
   id: string;
@@ -353,6 +355,135 @@ export interface WindowMaterialCapabilities {
 
 export interface ForegroundFullscreenState {
   isFullscreen: boolean;
+}
+
+/** 任务栏托盘几何信息（Rust 无 rename_all → snake_case） */
+export interface TaskbarTrayGeometry {
+  taskbar_rect_physical: RectPhysical;
+  tray_rect_physical: RectPhysical | null;
+  taskbar_hwnd_changed: boolean;
+  owner_binding: OwnerBindingState;
+  source: GeometrySource;
+  scale_factor: number;
+}
+
+export interface RectPhysical {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export type OwnerBindingState = 'bound' | 'failed' | 'unsupported' | 'already_bound';
+export type GeometrySource = 'tray' | 'taskbar_fallback';
+
+/** 原生托盘菜单状态（Rust camelCase） */
+export interface NativeTrayMenuState {
+  currentSong?: NativeTrayMenuSong | null;
+  isPlaying: boolean;
+  playMode: number;
+  showDesktopLyrics: boolean;
+  isFavorite: boolean;
+  isMiniMode: boolean;
+  useCustomTrayMenu: boolean;
+}
+
+export interface NativeTrayMenuSong {
+  title?: string | null;
+  name?: string | null;
+  artist?: string | null;
+}
+
+/** 曲库统计（Rust 无 rename_all → snake_case） */
+export interface LibraryStats {
+  total_songs: number;
+  total_duration: number;
+  total_file_size: number;
+  album_count: number;
+  artist_count: number;
+  lossless_count: number;
+  hires_count: number;
+  this_month_added: number;
+}
+
+/** 行为统计时间范围（Rust tag="type" 内部标签枚举，变体名原样） */
+export type TimeRange =
+  | { type: 'All' }
+  | { type: 'Days7' }
+  | { type: 'Days30' }
+  | { type: 'ThisYear' };
+
+export interface BehaviorStats {
+  total_plays: number;
+  total_duration: number;
+  top_songs: TopSong[];
+  top_songs_by_duration: TopSong[];
+  top_artists: TopArtist[];
+  top_albums: TopAlbum[];
+  hour_distribution: number[];
+  recent_activity: number[];
+}
+
+export interface TopSong {
+  song_path: string;
+  play_count: number;
+  value: number;
+}
+
+export interface TopArtist {
+  artist: string;
+  play_count: number;
+}
+
+export interface TopAlbum {
+  album: string;
+  play_count: number;
+}
+
+export interface QualityDistribution {
+  hires: number;
+  super_quality: number;
+  high_quality: number;
+  other: number;
+}
+
+export interface FormatDistribution {
+  flac: number;
+  mp3: number;
+  alac: number;
+  wav: number;
+  aiff: number;
+  aac: number;
+  ogg: number;
+  other: number;
+}
+
+/** 扫描文件夹生成的播放列表（Rust 无 rename_all → snake_case） */
+export interface GeneratedFolder {
+  name: string;
+  path: string;
+  songs: Song[];
+}
+
+/** 重命名工具配置（Rust 无 rename_all → snake_case） */
+export interface RenameConfig {
+  mode: string;
+  template: string;
+  remove_track_prefix: boolean;
+  remove_source_prefix: boolean;
+}
+
+export interface RenamePreview {
+  original_path: string;
+  original_name: string;
+  new_name: string;
+  status: string;
+  error: string | null;
+}
+
+export interface RenameOperation {
+  original_path: string;
+  new_name: string;
 }
 
 export interface TauriCommandMap {
@@ -807,6 +938,48 @@ export interface TauriCommandMap {
     payload: { songPath: string };
     response: void;
   };
+  // ============ 更新检查 ============
+  check_update_by_rust: { payload: { owner: string; repo: string }; response: string };
+  download_update_file: { payload: { url: string }; response: string };
+  run_installer: { payload: { path: string }; response: void };
+  // ============ 应用生命周期 ============
+  exit_app: { payload: undefined; response: void };
+  // ============ 歌词字体 ============
+  read_lyrics_font_data_url: { payload: { fontPath: string }; response: string };
+  import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };
+  get_system_fonts: { payload: undefined; response: string[] };
+  // ============ 歌词解析 ============
+  parse_lyrics_text: { payload: { text: string }; response: LyricsPayload };
+  get_song_lyrics_payload: { payload: { path: string }; response: LyricsPayload };
+  // ============ 任务栏 ============
+  get_taskbar_tray_geometry: { payload: undefined; response: TaskbarTrayGeometry };
+  setup_taskbar_window: { payload: undefined; response: OwnerBindingState };
+  install_taskbar_zorder_guard: { payload: undefined; response: boolean };
+  uninstall_taskbar_zorder_guard: { payload: undefined; response: void };
+  // ============ 原生托盘 ============
+  update_native_tray_menu: { payload: { state: NativeTrayMenuState }; response: void };
+  // ============ 统计 ============
+  get_library_stats: { payload: undefined; response: LibraryStats };
+  get_behavior_stats: { payload: { timeRange: TimeRange }; response: BehaviorStats };
+  get_quality_distribution: { payload: undefined; response: QualityDistribution };
+  get_format_distribution: { payload: undefined; response: FormatDistribution };
+  // ============ 曲库扫描 ============
+  scan_folder_as_playlists: {
+    payload: { rootPath: string; minimumDurationSeconds?: number | null };
+    response: GeneratedFolder[];
+  };
+  get_library_songs_cached: { payload: undefined; response: LibrarySong[] };
+  scan_library: {
+    payload: { minimumDurationSeconds?: number | null };
+    response: LibrarySong[];
+  };
+  // ============ 重命名工具 ============
+  preview_rename: { payload: { rootPath: string; config: RenameConfig }; response: RenamePreview[] };
+  apply_rename: { payload: { operations: RenameOperation[] }; response: number };
+  // ============ GPU 加速 ============
+  set_gpu_acceleration: { payload: { enabled: boolean }; response: void };
+  // ============ 壁纸下载 ============
+  download_wallpaper: { payload: { url: string; filename: string }; response: string };
 }
 
 /** 听歌识曲接口响应 */
