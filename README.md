@@ -150,6 +150,8 @@ graph TD
 
 采用 **Feature-based 模块化** 设计，每个功能领域自包含 Store + Composable + 辅助逻辑，而非按技术层分目录：
 
+> 播放与音乐库领域的权威实现位于 `src/features/playback/`、`src/features/library/`。`src/composables/player*.ts` 仅保留少量旧路径兼容再导出，新增业务逻辑和测试应优先落在 `features/`，避免重构中间态继续扩散。
+
 | 层级 | 说明 |
 | --- | --- |
 | **入口 `main.ts`** | 创建 Vue 应用，安装 Pinia + Router；通过 `getCurrentWindow().label` 分发到 6 个窗口的独立渲染逻辑；三重错误捕获 + 动态导入失败自动刷新恢复 |
@@ -162,7 +164,7 @@ graph TD
 
 ### 后端架构
 
-Rust 后端由多个业务模块组成，通过 `lib.rs` 注册 180+ 个 `#[tauri::command]`：
+Rust 后端由多个业务模块组成，通过 `src-tauri/src/lib.rs` 集中注册 `#[tauri::command]`。命令数量随功能迭代变化较快，实际可调用清单以 `tauri::generate_handler![...]` 中的注册项和 `src-tauri/capabilities/*.json` 的权限分组为准。
 
 | 模块 | 职责 | 关键技术 |
 | --- | --- | --- |

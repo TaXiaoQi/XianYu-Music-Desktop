@@ -40,6 +40,10 @@ export interface SongCore {
   rawData?: any;
   /** 在线歌曲的防盗链 headers（预获取直链时保存） */
   remote_headers?: Record<string, string>;
+  /** 在线插件歌曲的 QMC2 加密密钥（预获取直链时保存，播放时传给后端流式解密） */
+  remote_ekey?: string;
+  /** 在线插件歌曲的 CENC 内容密钥（预留给后端解密链路） */
+  remote_cek?: string;
 }
 
 export interface Song extends SongCore {}

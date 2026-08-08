@@ -89,7 +89,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import type { Song } from '../types';
 import { usePlaybackStore } from '../features/playback';
 import { playbackApi } from '../services/tauri/playbackApi';
-import { createPlayerPlayback } from './playerPlayback';
+import { createPlayerPlayback } from '../features/playback/playerPlayback';
 import { useUiStore } from '../shared/stores/ui';
 import { setMainWindowRenderingSnapshot } from './renderingPower';
 

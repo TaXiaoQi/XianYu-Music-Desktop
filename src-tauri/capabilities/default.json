@@ -51,13 +51,6 @@
     "dialog:default",
     "dialog:allow-confirm",
     "window-state:default",
-    "allow-app-commands",
-    {
-      "identifier": "http:default",
-      "allow": [
-        { "url": "https://**" },
-        { "url": "http://**" }
-      ]
-    }
+    "allow-app-commands"
   ]
 }

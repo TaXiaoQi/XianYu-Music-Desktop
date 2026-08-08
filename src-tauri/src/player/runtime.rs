@@ -6,8 +6,9 @@ use crate::player::output::shared::{restore_current_playback, SharedOutputBacken
 use crate::player::output::wasapi_exclusive::{ExclusivePlayRequest, WasapiExclusivePlayback};
 use crate::player::output::OutputBackend;
 use crate::player::types::{
-    AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, PlaybackProgressPayload,
-    PlayerState, SeekCompletedPayload, SharedProgress, SharedVisualizer, TimedSource,
+    AudioCommand, AudioOutputMode, AudioOutputStatus, AudioSource, BufferedMonitor,
+    PlaybackBufferPayload, PlaybackProgressPayload, PlayerState, SeekCompletedPayload,
+    SharedProgress, SharedVisualizer, TimedSource,
 };
 use crate::remote::cache::RemoteStreamSource;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -26,6 +27,12 @@ const PLAYER_POLL_INTERVAL: Duration = Duration::from_millis(150);
 /// 播放进度事件发射间隔。前端通过 listen('playback:progress') 订阅，
 /// 替代原先每秒轮询 get_playback_progress 的 IPC 调用。
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(500);
+/// 解码缓冲连续饥饿超过该时长后，看门狗暂停音频，进入「缓冲中」等待。
+/// 短于该时长的瞬时卡顿不触发暂停（避免误降级），由 BufferedSource 静音兜底。
+const BUFFER_STARVE_BEFORE_PAUSE: Duration = Duration::from_millis(300);
+/// 缓冲恢复后，额外等待该时长的续优后再自动恢复播放（累积一定余量缓冲，
+/// 避免网络抖动时立刻再次触发暂停，形成乒乓）。
+const BUFFER_RESUME_GRACE: Duration = Duration::from_millis(250);
 
 fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
     let current_samples = progress.samples_played.load(Ordering::Relaxed);
@@ -42,10 +49,12 @@ fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
 fn reset_playback_progress(progress: &Arc<SharedProgress>) {
     progress.samples_played.store(0, Ordering::Relaxed);
     // 同时清零采样率/声道，避免上一首的残留值让 get_playback_ready（判据 sample_rate>0）
-    // 在新歌尚未解码成功时就误报“已就绪”。解码成功后 append_decoded_source 会重新写入正确值。
+    // 在新歌尚未解码成功时就误报"已就绪"。解码成功后 append_decoded_source 会重新写入正确值。
     progress.sample_rate.store(0, Ordering::Relaxed);
     progress.channels.store(0, Ordering::Relaxed);
     progress.start_failed.store(false, Ordering::Relaxed);
+    progress.buffered.starved.store(false, Ordering::Relaxed);
+    progress.buffered.produced.store(false, Ordering::Relaxed);
     progress.visualizer.reset();
 }
 
@@ -334,8 +343,13 @@ const REMOTE_STREAM_CHUNK_BYTES: u64 = 2 * 1024 * 1024;
 
 /// 后台预读线程返回的结果。start 用于校验结果是否对应当前需要的位置，
 /// 避免旧线程的过期结果被误用（seek 后 start 不匹配会被丢弃）。
+/// total 为服务器声明的整曲字节数（从 Content-Range 推断），None 表示未知。
 enum PrefetchResult {
-    Bytes { start: u64, data: Vec<u8> },
+    Bytes {
+        start: u64,
+        data: Vec<u8>,
+        total: Option<u64>,
+    },
     NoRange { data: Vec<u8> },
     Error { start: u64, message: String },
 }
@@ -372,13 +386,14 @@ impl RemoteRangeReader {
             .deflate(true)
             .build()
             .map_err(|error| error.to_string())?;
-        // content_len 失败时不阻塞，返回 None 继续播放
-        let len = Self::content_len(&client, &source);
+        // len 延迟填充：不再同步 HEAD/Range 探测文件长度（那会阻塞播放线程）。
+        // 长度优先从分块响应的 Content-Range 头或「不足一整个 chunk」的尾部块推断，
+        // 首个数据块到达前可能为 None（SeekFrom::End 需长度，此时给出明确错误）。
         Ok(Self {
             client,
             source,
             pos: 0,
-            len,
+            len: None,
             buffer_start: 0,
             buffer: Vec::new(),
             no_range: false,
@@ -473,56 +488,16 @@ impl RemoteRangeReader {
         request
     }
 
-    /// 从响应的 Content-Length 头显式解析长度。
-    /// 注意：不能用 reqwest 的 `response.content_length()`——对 HEAD 等无 body 响应它可能返回
-    /// 已读取 body 的长度（0），而非头部声明的值，导致误判文件长度为 0、整个流读不出。
-    fn content_length_header(response: &reqwest::blocking::Response) -> Option<u64> {
+    /// 从响应的 `Content-Range: bytes start-end/total` 头解析整曲字节数。
+    /// 作为分块请求的免费副产品获得文件长度，无需额外的 HEAD/Range 探测请求。
+    fn content_range_total(response: &reqwest::blocking::Response) -> Option<u64> {
         response
             .headers()
-            .get(reqwest::header::CONTENT_LENGTH)
+            .get(reqwest::header::CONTENT_RANGE)
             .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.rsplit('/').next())
             .and_then(|value| value.trim().parse::<u64>().ok())
             .filter(|len| *len > 0)
-    }
-
-    fn content_len(client: &reqwest::blocking::Client, source: &RemoteStreamSource) -> Option<u64> {
-        // 使用更短的超时，避免 B站 CDN 不响应 HEAD 请求时卡死
-        let timeout_client = match reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(5))
-            .gzip(true)
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return None,
-        };
-        if let Ok(response) = Self::auth(timeout_client.head(&source.url), source).send() {
-            if response.status().is_success() {
-                if let Some(length) = Self::content_length_header(&response) {
-                    return Some(length);
-                }
-            }
-        }
-
-        let response = Self::auth(
-            client
-                .get(&source.url)
-                .header(reqwest::header::RANGE, "bytes=0-0"),
-            source,
-        )
-        .send()
-        .ok()?;
-        if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-            response
-                .headers()
-                .get(reqwest::header::CONTENT_RANGE)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.rsplit('/').next())
-                .and_then(|value| value.parse::<u64>().ok())
-        } else if response.status().is_success() {
-            Self::content_length_header(&response)
-        } else {
-            None
-        }
     }
 
     /// 在后台线程提前下载从 start 位置开始的下一块数据。
@@ -568,10 +543,16 @@ impl RemoteRangeReader {
                     } else if response.status().is_success()
                         || response.status() == reqwest::StatusCode::PARTIAL_CONTENT
                     {
+                        // 从 Content-Range 头拿到整曲长度（若服务器提供），避免单独的探测请求
+                        let total = Self::content_range_total(&response);
                         let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
                         let mut bytes = Vec::new();
                         match limited.read_to_end(&mut bytes) {
-                            Ok(_) => PrefetchResult::Bytes { start, data: bytes },
+                            Ok(_) => PrefetchResult::Bytes {
+                                start,
+                                data: bytes,
+                                total,
+                            },
                             Err(e) => PrefetchResult::Error {
                                 start,
                                 message: e.to_string(),
@@ -627,7 +608,14 @@ impl RemoteRangeReader {
                 PrefetchResult::Bytes {
                     start: res_start,
                     data,
+                    total,
                 } if res_start == start => {
+                    // 从 Content-Range 头推断整曲长度；不足一个 chunk 视为尾部块
+                    if let Some(total) = total {
+                        self.len = Some(total);
+                    } else if data.len() < REMOTE_STREAM_CHUNK_BYTES as usize {
+                        self.len = Some(start + data.len() as u64);
+                    }
                     self.buffer_start = start;
                     self.buffer = data;
                     return Ok(());
@@ -688,10 +676,19 @@ impl RemoteRangeReader {
             return Ok(());
         }
 
+        // 从 Content-Range 头推断整曲长度（服务器提供时）
+        if let Some(total) = Self::content_range_total(&response) {
+            self.len = Some(total);
+        }
+
         let mut limited = response.by_ref().take(REMOTE_STREAM_CHUNK_BYTES);
         let mut bytes = Vec::new();
         limited.read_to_end(&mut bytes)?;
         self.buffer_start = start;
+        // 不足一个 chunk → 这是尾部块，据此推断文件长度
+        if self.len.is_none() && bytes.len() < REMOTE_STREAM_CHUNK_BYTES as usize {
+            self.len = Some(start + bytes.len() as u64);
+        }
         self.buffer = bytes;
         Ok(())
     }
@@ -843,12 +840,17 @@ fn append_decoded_source<R>(
 
             let skipped_source = source.convert_samples::<f32>().skip_duration(offset);
 
-            // 0. BufferedSource 预读取缓冲：后台线程解码（含网络流式 sleep、解码瞬时慢帧），
+// 0. BufferedSource 预读取缓冲：后台线程解码（含网络流式 sleep、解码瞬时慢帧），
             //    cpal 回调仅做 O(1) 通道读取，隔离系统调度抢占对音频线程的影响。
             //    配合较大 cpal 输出缓冲（stream.rs），可容忍数十~百毫秒线程抢占而不断音。
             //    seek 由 handle_seek 的重建路径处理（try_seek 同步 rendezvous 到后台线程）。
+            //    传入 buffered monitor：网络/磁盘 I/O 跟不上时，消费线程置 starved、
+            //    生产线程置 produced，播放线程看门狗据此实现「自动暂停 → 缓冲 → 自动恢复」。
             let buffered_source =
-                crate::player::buffered_source::BufferedSource::new(skipped_source);
+                crate::player::buffered_source::BufferedSource::new_tracked(
+                    skipped_source,
+                    Some(progress.buffered.clone()),
+                );
 
             // 1. VolumeNormalizer 音量平衡节点
             let (normalized_source, handle) = VolumeNormalizer::new(
@@ -1109,6 +1111,111 @@ fn handle_seek(
     );
 }
 
+/// 缓冲降级看门狗：网络/磁盘 I/O 跟不上播放时，自动暂停 → 缓冲 → 自动恢复。
+///
+/// - `monitor.starved` 由 BufferedSource 的消费线程置位（缓冲排空后取不到样本）。
+/// - `monitor.produced` 由 BufferedSource 的生产线程在成功推送数据块后置位，
+///   看门狗用 swap(false) 读取后清除——即使 sink 因缓冲被暂停、消费线程不再读取，
+///   生产线程仍在持续填充通道，`produced` 就是「缓冲已恢复」的可靠信号。
+///
+/// 状态机（仅对网络/磁盘流生效，本地文件解码全内存不含 I/O 卡顿不发暂停）：
+/// 1. starved 连续超过 `BUFFER_STARVE_BEFORE_PAUSE` 且正在播放 → 暂停 + 发射 buffering=true。
+/// 2. 暂停后 produced 到来 → 等待 `BUFFER_RESUME_GRACE` 余量缓冲 → 恢复 + 发射 buffering=false。
+/// 3. 用户主动暂停（is_playing_flag=false）→ 不清空缓冲状态，等待用户手动恢复。
+///
+/// `sink_paused` / `buffering_active` / `starved_since` / `resume_grace_since` 为调用方持有的
+/// 播放线程局部状态（`*mut` 不可用，直接传 `&mut` 引用）。
+#[allow(clippy::too_many_arguments)]
+fn poll_buffering_watchdog(
+    progress: &SharedProgress,
+    current_sink: &Option<Sink>,
+    network_backed: bool,
+    is_playing_flag: bool,
+    app: &AppHandle,
+    sink_paused: &mut bool,
+    buffering_active: &mut bool,
+    starved_since: &mut Option<std::time::Instant>,
+    resume_grace_since: &mut Option<std::time::Instant>,
+) {
+    if !network_backed {
+        // 本地文件：无网络 I/O 竞争，短暂解码抖动由静音兜底，不做降级暂停。
+        return;
+    }
+
+    let now = std::time::Instant::now();
+    let starved = progress.buffered.starved.load(Ordering::Relaxed);
+    let produced = progress.buffered.produced.swap(false, Ordering::Relaxed);
+
+    if starved && is_playing_flag && !*sink_paused {
+        // 饥饿计时，到达阈值即进入缓冲暂停。
+        let since = starved_since.get_or_insert(now);
+        if now.saturating_duration_since(*since) >= BUFFER_STARVE_BEFORE_PAUSE {
+            if let Some(sink) = current_sink {
+                sink.pause();
+            }
+            *sink_paused = true;
+            *starved_since = None;
+            if !*buffering_active {
+                *buffering_active = true;
+                let _ = app.emit(
+                    "playback:buffer",
+                    PlaybackBufferPayload { buffering: true },
+                );
+            }
+        }
+    } else if starved {
+        // 还在饥饿，但用户已暂停（is_playing_flag=false）——等待用户手动继续，不自动恢复。
+        *starved_since = Some(now);
+        *resume_grace_since = None;
+    } else {
+        // 缓冲恢复正常（消费读取到样本 / 生产推送了数据）。
+        *starved_since = None;
+
+        if *sink_paused {
+            if !is_playing_flag {
+                // 播放状态已被用户暂停或切歌：退出缓冲暂停态，保持手动暂停。
+                if *buffering_active {
+                    *buffering_active = false;
+                    let _ = app.emit(
+                        "playback:buffer",
+                        PlaybackBufferPayload { buffering: false },
+                    );
+                }
+                *sink_paused = false;
+                return;
+            }
+            // 缓冲已恢复：等待余量缓冲累积后自动恢复。
+            if resume_grace_since.is_none() {
+                *resume_grace_since = Some(now);
+            }
+            let elapsed = resume_grace_since
+                .and_then(|t| now.checked_duration_since(t))
+                .unwrap_or_default();
+            if elapsed >= BUFFER_RESUME_GRACE {
+                *resume_grace_since = None;
+                if let Some(sink) = current_sink {
+                    sink.play();
+                }
+                *sink_paused = false;
+                if *buffering_active {
+                    *buffering_active = false;
+                    let _ = app.emit(
+                        "playback:buffer",
+                        PlaybackBufferPayload { buffering: false },
+                    );
+                }
+            }
+        } else if *buffering_active {
+            // 饥饿未到暂停阈值就已恢复（短卡顿）：结束缓冲状态。
+            *buffering_active = false;
+            let _ = app.emit(
+                "playback:buffer",
+                PlaybackBufferPayload { buffering: false },
+            );
+        }
+    }
+}
+
 pub fn init_player(app: &AppHandle) -> PlayerState {
     let (tx, rx) = channel::<AudioCommand>();
     let shared_progress = Arc::new(SharedProgress {
@@ -1117,6 +1224,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         channels: Arc::new(AtomicU32::new(2)),
         visualizer: Arc::new(SharedVisualizer::new()),
         start_failed: Arc::new(AtomicBool::new(false)),
+        buffered: Arc::new(BufferedMonitor::new()),
         total_duration_secs: Arc::new(AtomicU64::new(0u64)),
     });
     let thread_progress = shared_progress.clone();
@@ -1164,6 +1272,17 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut current_streaming_state: Option<
             crate::player::stream_cache::StreamingTempFileState,
         > = None;
+        // [缓冲降级] 看门狗状态：是否因缓冲自动暂停了 sink
+        let mut watchdog_sink_paused = false;
+        // [缓冲降级] 当前是否在向前端广播「缓冲中」状态
+        let mut watchdog_buffering_active = false;
+        // [缓冲降级] 饥饿开始时刻（用于达到阈值后暂停）
+        let mut watchdog_starved_since: Option<std::time::Instant> = None;
+        // [缓冲降级] 缓冲恢复后等待的余量窗口开始时刻
+        let mut watchdog_resume_grace_since: Option<std::time::Instant> = None;
+        // 当前音频源是否网络/磁盘流（在线直链 / WebDAV / 流式临时文件），
+        // 只有这类源会触发缓冲降级看门狗（本地文件全内存解码不出 I/O 卡顿）。
+        let mut network_backed = false;
 
         if let Some(output) = &output {
             current_sink = output.create_sink().ok();
@@ -1180,6 +1299,19 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         );
 
         loop {
+            // [缓冲降级] 看门狗：网络/磁盘流缓冲不足时自动暂停 → 缓冲 → 自动恢复。
+            poll_buffering_watchdog(
+                &thread_progress,
+                &current_sink,
+                network_backed,
+                is_playing_flag,
+                &thread_app_handle,
+                &mut watchdog_sink_paused,
+                &mut watchdog_buffering_active,
+                &mut watchdog_starved_since,
+                &mut watchdog_resume_grace_since,
+            );
+
             #[cfg(target_os = "windows")]
             {
                 recover_from_exclusive_failure(
@@ -1230,6 +1362,13 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             AudioSource::StreamingTempFile(state) => Some(state.clone()),
                             _ => None,
                         };
+                        // [缓冲降级] 网络/磁盘流才启用看门狗；进入新播放时复位降级状态。
+                        network_backed =
+                            current_remote_stream.is_some() || current_streaming_state.is_some();
+                        watchdog_sink_paused = false;
+                        watchdog_buffering_active = false;
+                        watchdog_starved_since = None;
+                        watchdog_resume_grace_since = None;
 
                         if let Some(sink) = &current_sink {
                             sink.stop();
@@ -1345,6 +1484,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                     }
                     AudioCommand::Pause => {
                         is_playing_flag = false;
+                        // [缓冲降级] 用户主动暂停：结束缓冲广播（看门狗保持自动暂停至恢复，
+                        // 但 UI 应回到「已暂停」而非「缓冲中」）。
+                        if watchdog_buffering_active {
+                            watchdog_buffering_active = false;
+                            let _ = thread_app_handle.emit(
+                                "playback:buffer",
+                                PlaybackBufferPayload { buffering: false },
+                            );
+                        }
                         #[cfg(target_os = "windows")]
                         if let Some(playback) = &exclusive_playback {
                             playback.pause();
@@ -1360,6 +1508,15 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         is_playing_flag = false;
                         current_path.clear();
                         reset_playback_progress(&thread_progress);
+                        // [缓冲降级] 停止时复位降级状态与广播
+                        watchdog_sink_paused = false;
+                        watchdog_buffering_active = false;
+                        watchdog_starved_since = None;
+                        watchdog_resume_grace_since = None;
+                        let _ = thread_app_handle.emit(
+                            "playback:buffer",
+                            PlaybackBufferPayload { buffering: false },
+                        );
                         if let Some(sink) = &current_sink {
                             sink.stop();
                         }
@@ -1399,6 +1556,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             );
                             continue;
                         }
+
+                        // [缓冲降级] seek 会重建解码链与缓冲，复位看门狗状态避免旧态残留。
+                        watchdog_sink_paused = false;
+                        watchdog_buffering_active = false;
+                        watchdog_starved_since = None;
+                        watchdog_resume_grace_since = None;
 
                         handle_seek(
                             time,
@@ -1994,6 +2157,7 @@ mod tests {
             channels: Arc::new(AtomicU32::new(channels)),
             visualizer: Arc::new(SharedVisualizer::new()),
             start_failed: Arc::new(AtomicBool::new(false)),
+            buffered: Arc::new(BufferedMonitor::new()),
             total_duration_secs: Arc::new(AtomicU64::new(0u64)),
         })
     }

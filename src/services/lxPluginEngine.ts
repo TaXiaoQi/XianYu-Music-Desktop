@@ -43,6 +43,100 @@ const USE_SANDBOX = true;
 // 记录在沙箱中运行的插件 ID 集合
 const _sandboxedPlugins = new Set<string>();
 
+type LxRequestAction = 'musicUrl' | 'lyric' | 'pic';
+
+const LX_SOURCE_KEYS = ['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local'] as const;
+const LX_MUSIC_ACTIONS: LxRequestAction[] = ['musicUrl', 'lyric', 'pic'];
+const LX_STANDARD_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
+  kw: LX_STANDARD_QUALITIES,
+  kg: LX_STANDARD_QUALITIES,
+  tx: LX_STANDARD_QUALITIES,
+  wy: LX_STANDARD_QUALITIES,
+  mg: LX_STANDARD_QUALITIES,
+  xm: LX_STANDARD_QUALITIES,
+  local: [],
+};
+
+function normalizeLxSourceInfo(info: any): LxInitInfo {
+  const sourceInfo: LxInitInfo = { sources: {} };
+  if (!info?.sources || typeof info.sources !== 'object') return sourceInfo;
+
+  for (const source of LX_SOURCE_KEYS) {
+    const userSource = info.sources[source];
+    if (!userSource || userSource.type !== 'music') continue;
+    const declaredActions = Array.isArray(userSource.actions) ? userSource.actions : [];
+    const declaredQualitys = Array.isArray(userSource.qualitys) ? userSource.qualitys : [];
+    const qualitys = LX_SUPPORT_QUALITIES[source] || [];
+    sourceInfo.sources[source] = {
+      name: typeof userSource.name === 'string' ? userSource.name : undefined,
+      type: 'music',
+      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
+      qualitys: qualitys.length ? qualitys.filter(q => declaredQualitys.includes(q)) : declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+    };
+  }
+
+  // 保留插件自定义的非标准源，避免新源或第三方源被初始化阶段裁剪掉。
+  for (const key of Object.keys(info.sources)) {
+    if (sourceInfo.sources[key]) continue;
+    const val = info.sources[key];
+    if (!val || val.type !== 'music') continue;
+    const declaredActions = Array.isArray(val.actions) ? val.actions : [];
+    const declaredQualitys = Array.isArray(val.qualitys) ? val.qualitys : [];
+    sourceInfo.sources[key] = {
+      name: typeof val.name === 'string' ? val.name : undefined,
+      type: 'music',
+      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
+      qualitys: declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+    };
+  }
+
+  return sourceInfo;
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return '';
+}
+
+function normalizeLxLyricResponse(response: any): {
+  lyric: string;
+  tlyric: string | null;
+  rlyric: string | null;
+  lxlyric: string | null;
+  yrc: string | null;
+  qrc: string | null;
+} {
+  if (typeof response !== 'object' || response === null) {
+    throw new Error('lyric response is not an object');
+  }
+
+  const lyric = pickString(response.lyric, response.rawLrc, response.lrc);
+  const tlyric = pickString(response.tlyric, response.translation, response.translateLyric);
+  const rlyric = pickString(response.rlyric, response.romanization);
+  const lxlyric = pickString(response.lxlyric);
+  const yrc = pickString(response.yrc);
+  const qrc = pickString(response.qrc);
+
+  if (!lyric && !lxlyric && !yrc && !qrc) {
+    throw new Error(`lyric response missing or empty: ${JSON.stringify(response).substring(0, 100)}`);
+  }
+  if (lyric.length > 51200 || lxlyric.length > 51200 || yrc.length > 51200 || qrc.length > 51200) {
+    throw new Error('lyric response too large');
+  }
+
+  return {
+    lyric,
+    tlyric: tlyric.length < 51200 ? tlyric : null,
+    rlyric: rlyric.length < 51200 ? rlyric : null,
+    lxlyric: lxlyric.length < 51200 ? lxlyric : null,
+    yrc: yrc.length < 51200 ? yrc : null,
+    qrc: qrc.length < 51200 ? qrc : null,
+  };
+}
+
 // ==================== 日志 ====================
 
 let _logCallback: ((msg: string) => void) | null = null;
@@ -86,6 +180,7 @@ export function setLogCallback(cb: ((msg: string) => void) | null) {
 
 export interface LxSourceInfo {
   type: 'music';
+  name?: string;
   actions: string[];
   qualitys: string[];
 }
@@ -367,8 +462,8 @@ export async function loadLxPluginFromScript(
       log(`=== 落雪插件沙箱加载成功: "${source.name}" (sources: ${Object.keys(initInfo.sources).join(',')}) ===`);
       return source;
     } catch (e: any) {
-      log(`[loadLxPluginFromScript] 沙箱加载失败，回退到直接执行: ${e?.message}`);
-      // 沙箱失败时回退到直接执行路径（下方代码）
+      log(`[loadLxPluginFromScript] 沙箱加载失败，已阻止回退到主线程直接执行: ${e?.message}`);
+      throw e;
     }
   }
 
@@ -392,19 +487,6 @@ export async function loadLxPluginFromScript(
   // ----- [新方案] 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）-----
   // 放弃 iframe 方案：打包模式下 Tauri WebView2 CSP 阻止 iframe 内脚本执行
   // lx-music-desktop 用 Electron webFrame.executeJavaScript 直接在主窗口执行，不使用 iframe
-  const allSources = ['kw', 'kg', 'tx', 'wy', 'mg', 'local'];
-  const supportQualitys: Record<string, string[]> = {
-    kw: ['128k', '320k', 'flac', 'flac24bit'],
-    kg: ['128k', '320k', 'flac', 'flac24bit'],
-    tx: ['128k', '320k', 'flac', 'flac24bit'],
-    wy: ['128k', '320k', 'flac', 'flac24bit'],
-    mg: ['128k', '320k', 'flac', 'flac24bit'],
-    local: [],
-  };
-  const supportActions: Record<string, string[]> = {
-    kw: ['musicUrl'], kg: ['musicUrl'], tx: ['musicUrl'], wy: ['musicUrl'], mg: ['musicUrl'],
-    xm: ['musicUrl'], local: ['musicUrl', 'lyric', 'pic'],
-  };
   let isInitedApi = false;
   const EVENT_NAMES = { request: 'request', inited: 'inited', updateAlert: 'updateAlert' };
   const eventNames = Object.values(EVENT_NAMES);
@@ -415,34 +497,14 @@ export async function loadLxPluginFromScript(
       initReject!(new Error('Missing required parameter init info'));
       return;
     }
-    const sourceInfo: any = { sources: {} };
     try {
-      for (const source of allSources) {
-        const userSource = info.sources?.[source];
-        if (!userSource || userSource.type !== 'music') continue;
-        const qualitys = supportQualitys[source];
-        const actions = supportActions[source];
-        sourceInfo.sources[source] = {
-          type: 'music',
-          actions: actions.filter((a: string) => userSource.actions?.includes(a)),
-          qualitys: qualitys.filter((q: string) => userSource.qualitys?.includes(q)),
-        };
-      }
-      // 保留非标准源
-      if (info.sources) {
-        for (const key of Object.keys(info.sources)) {
-          if (sourceInfo.sources[key]) continue;
-          const val = info.sources[key];
-          if (val.type !== 'music') continue;
-          sourceInfo.sources[key] = val;
-        }
-      }
+      const sourceInfo = normalizeLxSourceInfo(info);
+      log(`[新方案] 插件初始化成功, sources: ${Object.keys(sourceInfo.sources).join(',')}`);
+      initResolve!(sourceInfo);
     } catch (error: any) {
       initReject!(new Error(error.message));
       return;
     }
-    log(`[新方案] 插件初始化成功, sources: ${Object.keys(sourceInfo.sources).join(',')}`);
-    initResolve!(sourceInfo as LxInitInfo);
   };
 
   // 创建 globalThis.lx 对象（与 lx-music-desktop preload.js initEnv 一致）
@@ -497,7 +559,7 @@ export async function loadLxPluginFromScript(
         reqHeaders,
         bodyStr,
         options?.timeout,
-        null,
+        options?.follow,
       ).then((response) => {
         try {
           let body: any = response.body;
@@ -821,23 +883,9 @@ export async function lxPluginRequest(
           log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 成功: ${response.substring(0, 80)}...`);
           return { source: data.source, action, data: { type: data.type, url: response } };
         case 'lyric':
-          if (typeof response !== 'object' || response === null) {
-            throw new Error('lyric response is not an object');
-          }
-          if (typeof response.lyric !== 'string' || response.lyric.length === 0) {
-            throw new Error(`lyric response missing or empty: ${JSON.stringify(response).substring(0, 100)}`);
-          }
-          if (response.lyric.length > 51200) {
-            throw new Error('lyric response too large');
-          }
           return {
             source: data.source, action,
-            data: {
-              lyric: response.lyric,
-              tlyric: (typeof response.tlyric === 'string' && response.tlyric.length < 5120) ? response.tlyric : null,
-              rlyric: (typeof response.rlyric === 'string' && response.rlyric.length < 5120) ? response.rlyric : null,
-              lxlyric: (typeof response.lxlyric === 'string' && response.lxlyric.length < 51200) ? response.lxlyric : null,
-            },
+            data: normalizeLxLyricResponse(response),
           };
         case 'pic':
           if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
@@ -913,25 +961,10 @@ export async function lxPluginRequest(
             data: { type: data.type, url: response },
           };
         case 'lyric':
-          // [修复防御]: 验证 lyric 响应格式, 与 iframe handleRequest 的验证逻辑一致
-          if (typeof response !== 'object' || response === null) {
-            throw new Error('lyric response is not an object');
-          }
-          if (typeof response.lyric !== 'string' || response.lyric.length === 0) {
-            throw new Error(`lyric response missing or empty: ${JSON.stringify(response).substring(0, 100)}`);
-          }
-          if (response.lyric.length > 51200) {
-            throw new Error('lyric response too large');
-          }
           return {
             source: data.source,
             action,
-            data: {
-              lyric: response.lyric,
-              tlyric: (typeof response.tlyric === 'string' && response.tlyric.length < 5120) ? response.tlyric : null,
-              rlyric: (typeof response.rlyric === 'string' && response.rlyric.length < 5120) ? response.rlyric : null,
-              lxlyric: (typeof response.lxlyric === 'string' && response.lxlyric.length < 51200) ? response.lxlyric : null,
-            },
+            data: normalizeLxLyricResponse(response),
           };
         case 'pic':
           if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
@@ -982,12 +1015,26 @@ export async function lxPluginGetMusicUrl(
 
 export async function lxPluginGetLyric(
   source: PluginSource, sourceKey: string, songInfo: any,
-): Promise<{ lyric: string; tlyric: string | null; rlyric: string | null; lxlyric: string | null } | null> {
+): Promise<{
+  lyric: string;
+  tlyric: string | null;
+  rlyric: string | null;
+  lxlyric: string | null;
+  yrc: string | null;
+  qrc: string | null;
+} | null> {
   const result = await lxPluginRequest(source, 'lyric', { source: sourceKey, musicInfo: songInfo });
-  // [修复防御]: lxPluginRequest 现在返回 { source, action, data: { lyric, tlyric, rlyric, lxlyric } }
+  // [修复防御]: lxPluginRequest 现在返回 { source, action, data: { lyric, tlyric, rlyric, lxlyric, yrc, qrc } }
   // data 层已由 lxPluginRequest 的 lyric 分支构造，无需额外解包
   if (!result?.data) return null;
-  return result.data as { lyric: string; tlyric: string | null; rlyric: string | null; lxlyric: string | null };
+  return result.data as {
+    lyric: string;
+    tlyric: string | null;
+    rlyric: string | null;
+    lxlyric: string | null;
+    yrc: string | null;
+    qrc: string | null;
+  };
 }
 
 export async function lxPluginGetPic(

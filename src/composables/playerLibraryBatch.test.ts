@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import type { Song } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
-import { createLibraryBatch } from './playerLibraryBatch';
+import { createLibraryBatch } from '../features/library/libraryBatch';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: '/music/demo.flac',

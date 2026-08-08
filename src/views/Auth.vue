@@ -409,16 +409,13 @@ async function saveAvatarToLocal() {
   avatarMenuOpen.value = false;
   avatarUploading.value = true;
   try {
-    // 拉取头像二进制
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('头像下载失败');
-    const blob = await res.blob();
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // 通过 Rust 后端拉取头像二进制，避免为渲染进程放开任意 connect-src。
+    const image = await downloadApi.fetchImageBytes(url);
     // 从 MIME 推断扩展名
-    const ext = blob.type.includes('png') ? 'png'
-      : blob.type.includes('webp') ? 'webp'
-      : blob.type.includes('gif') ? 'gif'
-      : blob.type.includes('jpeg') || blob.type.includes('jpg') ? 'jpg'
+    const ext = image.mime.includes('png') ? 'png'
+      : image.mime.includes('webp') ? 'webp'
+      : image.mime.includes('gif') ? 'gif'
+      : image.mime.includes('jpeg') || image.mime.includes('jpg') ? 'jpg'
       : 'png';
     const defaultName = `avatar_${authStore.user?.username || 'user'}.${ext}`;
     // 让用户选择保存位置
@@ -427,7 +424,7 @@ async function saveAvatarToLocal() {
       filters: [{ name: '图片', extensions: [ext] }],
     });
     if (!destPath) return; // 用户取消
-    await downloadApi.saveDownloadBytes(Array.from(bytes), destPath);
+    await downloadApi.saveDownloadBytes(image.data, destPath);
     showToast('头像已保存到本地', 'success');
   } catch (error) {
     const tip = error instanceof Error ? error.message : '保存失败';

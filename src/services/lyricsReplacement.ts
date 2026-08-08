@@ -313,7 +313,7 @@ export async function getLyricsForCandidate(candidate: LyricsSearchCandidate): P
   await ensureLxPluginInstance(plugin);
   const result = await lxPluginGetLyric(plugin, candidate.sourceId, candidate.result);
   const lyrics = result
-    ? buildLyricsRaw(result.lyric, result.tlyric, result.rlyric, result.lxlyric)
+    ? buildLyricsRaw(result.lyric, result.tlyric, result.rlyric, result.lxlyric, result.yrc, result.qrc)
     : '';
   if (!lyrics.trim()) throw new Error('该搜索结果没有返回歌词');
   return lyrics;

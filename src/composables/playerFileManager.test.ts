@@ -6,7 +6,7 @@ import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettingsStore } from '../features/settings/store';
-import { createPlayerFileManager } from './playerFileManager';
+import { createPlayerFileManager } from '../features/playback/playerFileManager';
 
 const scanMusicFolderMock = vi.fn();
 const batchMoveMusicFilesMock = vi.fn();

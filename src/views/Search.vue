@@ -289,6 +289,7 @@ import {
   pluginPlaylistSearch,
   pluginSupportsSearchType,
 } from '../services/pluginEngine';
+import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
 import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
 import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
@@ -1049,7 +1050,18 @@ function triggerCoverLoading() {
       const item = items[nextIdx++];
       try {
         // 每个请求最多等 8 秒，超时直接跳过
-        const picUrl = await withTimeoutFallback(lxGetPic(item), 8000, null);
+        const currentSource = selectedSourceItem.value;
+        const pluginPicPromise = currentSource?.type === 'lx' && currentSource.source && currentSource.lxSourceId
+          ? (async () => {
+            await ensureLxPluginInstance(currentSource.source!);
+            return lxPluginGetPic(currentSource.source!, currentSource.lxSourceId!, item);
+          })()
+          : Promise.resolve(null);
+        const picUrl = await withTimeoutFallback(
+          pluginPicPromise.then(url => url || lxGetPic(item)),
+          8000,
+          null,
+        );
         if (version !== coverLoadVersion) return;
         if (picUrl) {
           item.img = picUrl;
@@ -1419,10 +1431,12 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       collapse_artist_credits: false,
       duration: Math.floor((item.duration || 0) / 1000),
       cover_thumb_path: item.coverUrl || musicInfo.coverUrl || '',
-      source_type: 'remote',
+      source_type: 'plugin',
       plugin_id: item.pluginId,
       remote_source_id: musicInfo.url,
       remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
+      remote_ekey: musicInfo.ekey,
+      remote_cek: musicInfo.cek,
       rawData: item,
     } as any;
 
@@ -1456,7 +1470,7 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
         collapse_artist_credits: false,
         duration: Math.floor((mfItem.duration || 0) / 1000),
         cover_thumb_path: mfItem.coverUrl || '',
-        source_type: 'remote' as const,
+        source_type: 'plugin' as const,
         plugin_id: mfItem.pluginId,
         rawData: mfItem,
       } as Song;
@@ -1497,7 +1511,7 @@ const handleMfContextMenu = (e: MouseEvent, item: PluginSearchResult) => {
     collapse_artist_credits: false,
     duration: Math.floor((item.duration || 0) / 1000),
     cover_thumb_path: item.coverUrl || '',
-    source_type: 'remote',
+    source_type: 'plugin',
     plugin_id: item.pluginId,
     remote_source_id: `plugin://${item.platform}/${item.id}`,
     rawData: item,

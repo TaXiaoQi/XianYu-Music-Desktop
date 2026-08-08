@@ -278,6 +278,8 @@ const resolvePluginAudioUrl = async ({
       pluginHeaders: song.remote_headers ?? null,
       currentPlayingQuality: null,
       currentPlayingAudioUrl: preFetchedUrl,
+      ekey: song.remote_ekey,
+      cek: song.remote_cek,
     };
   }
 

@@ -137,14 +137,41 @@ where
     }
 }
 
+/// 解码缓冲监控状态（由 BufferedSource 的消费/生产线程维护，播放线程只读）。
+pub struct BufferedMonitor {
+    /// 缓冲饥饿：消费线程取不到样本块（网络/磁盘 I/O 未跟上）。
+    pub starved: AtomicBool,
+    /// 缓冲已补充：生产线程最近一个轮询周期成功推送了数据块。
+    /// 播放线程用 swap(false) 读取后清除，避免「暂停后消费线程不再读取导致饥饿标志滞留」。
+    pub produced: AtomicBool,
+}
+
+impl BufferedMonitor {
+    pub fn new() -> Self {
+        Self {
+            starved: AtomicBool::new(false),
+            produced: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Default for BufferedMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct SharedProgress {
     pub samples_played: Arc<AtomicU64>,
     pub sample_rate: Arc<AtomicU32>,
     pub channels: Arc<AtomicU32>,
     pub visualizer: Arc<SharedVisualizer>,
     /// 本次播放启动是否失败（远程取流 403/不支持 Range/解码失败等）。
-    /// 供前端「在线走 Rust 起播探测」快速感知硬失败，无需死等超时即可回退 H5。
+    /// 供前端「在线走 Rust 起播探测」实时感知硬失败，无需死等超时即可回退 H5。
     pub start_failed: Arc<AtomicBool>,
+    /// 解码/取流缓冲监控。网络或磁盘 I/O 跟不上播放进度时，播放线程看门狗
+    /// 据此自动暂停 → 等待缓冲 → 自动恢复，并向前端发射 `playback:buffer` 事件。
+    pub buffered: Arc<BufferedMonitor>,
     /// 当前音频源的总时长（秒），0 表示未知。
     /// 在 play_audio 创建音频源时从 Source::total_duration() 提取，
     /// 供前端查询在线歌曲的实际时长（Song.duration 可能为 0）。
@@ -257,4 +284,14 @@ pub(crate) struct PlaybackProgressPayload {
     pub duration: f64,
     /// 是否正在播放
     pub is_playing: bool,
+}
+
+/// 缓冲状态事件载荷（`playback:buffer`）。
+///
+/// Rust 播放线程在网络/磁盘 I/O 跟不上时，会自动暂停音频避免破音/卡顿，
+/// 并通过该事件通知前端显示「缓冲中…」，恢复缓冲后再自动续播并按同样事件返回 false。
+#[derive(Serialize, Clone)]
+pub(crate) struct PlaybackBufferPayload {
+    /// 当前是否处于缓冲等待状态
+    pub buffering: bool,
 }
