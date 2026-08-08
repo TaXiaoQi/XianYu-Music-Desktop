@@ -34,6 +34,7 @@ import {
   type LxAlbumSearchResult,
   type LxArtistSearchResult,
 } from '../services/lxMusicSdk';
+import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
 import { cacheLxSong } from '../services/lxSongCache';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
@@ -130,7 +131,7 @@ function mfResultToSong(item: PluginSearchResult): Song {
     collapse_artist_credits: false,
     duration: Math.floor((durationMs || 0) / 1000),
     cover_thumb_path: item.coverUrl || '',
-    source_type: 'remote',
+    source_type: 'plugin',
     remote_source_id: `plugin://${item.platform}/${item.id}`,
     rawData: item,
   } as any;
@@ -232,7 +233,13 @@ async function fetchMissingLxCovers() {
       const { index, item } = pending[cursor++];
       if (version !== lxCoverFetchVersion) return;
       try {
-        const cover = await lxGetPic(item);
+        const context = ctx.value;
+        let cover: string | null = null;
+        if (context?.engineType === 'lx' && context.pluginSource && context.lxSourceId) {
+          await ensureLxPluginInstance(context.pluginSource);
+          cover = await lxPluginGetPic(context.pluginSource, context.lxSourceId, item);
+        }
+        if (!cover) cover = await lxGetPic(item);
         if (version !== lxCoverFetchVersion) return;
         if (cover && songs.value[index]) {
           songs.value[index] = { ...songs.value[index], img: cover };
@@ -467,8 +474,11 @@ async function handlePlayMfSong(song: Song) {
 
     const playableSong: Song = {
       ...song,
+      source_type: 'plugin',
       remote_source_id: musicInfo.url,
       remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
+      remote_ekey: musicInfo.ekey,
+      remote_cek: musicInfo.cek,
       cover_thumb_path: song.cover_thumb_path || musicInfo.coverUrl || '',
     } as any;
 

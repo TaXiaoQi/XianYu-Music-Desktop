@@ -695,6 +695,10 @@ export interface TauriCommandMap {
     payload: { data: number[]; destPath: string };
     response: string;
   };
+  fetch_image_bytes: {
+    payload: { url: string };
+    response: { data: number[]; mime: string };
+  };
   // ===== 插件基础设施命令 =====
   plugin_http_request: {
     payload: {

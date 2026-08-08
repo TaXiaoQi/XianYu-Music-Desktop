@@ -3,7 +3,7 @@
 //
 // 网络层选择：直接用全局 fetch。
 // - 服务器已设置 Access-Control-Allow-Origin: *，无 CORS 问题
-// - tauri.conf.json 的 CSP connect-src 已允许 https://*
+// - tauri.conf.json 的 CSP connect-src 已白名单允许 xy.zh2026.cn
 // - 不使用 @tauri-apps/plugin-http（其内部资源管理会触发 "resource id is invalid" 错误）
 // - 不使用 Rust 端 fetch_announcement 命令（reqwest 在服务器 TLS 重协商下会超时）
 // - 使用独立的 announcement.php 接口，不依赖 app.php 复杂路由系统

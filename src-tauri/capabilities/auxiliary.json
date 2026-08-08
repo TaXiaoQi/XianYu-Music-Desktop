@@ -48,13 +48,6 @@
     "core:window:allow-start-resize-dragging",
     "core:window:allow-outer-size",
     "window-state:default",
-    "allow-aux-commands",
-    {
-      "identifier": "http:default",
-      "allow": [
-        { "url": "https://**" },
-        { "url": "http://**" }
-      ]
-    }
+    "allow-aux-commands"
   ]
 }

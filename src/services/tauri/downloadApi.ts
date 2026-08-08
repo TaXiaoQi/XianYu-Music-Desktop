@@ -69,6 +69,10 @@ export const downloadApi = {
   saveDownloadBytes: (data: number[], destPath: string) =>
     tauriInvoke('save_download_bytes', { data, destPath }) as Promise<string>,
 
+  /** 通过 Rust 后端下载图片字节，避免渲染进程直接放开任意网络 fetch */
+  fetchImageBytes: (url: string) =>
+    tauriInvoke('fetch_image_bytes', { url }) as Promise<{ data: number[]; mime: string }>,
+
   // ===== 播放缓存复用 =====
 
   /** 检查指定 URL 的播放缓存是否已下载完成 */

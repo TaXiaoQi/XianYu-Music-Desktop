@@ -9,8 +9,8 @@
  *   4. 插件实例的方法调用通过 RPC 从主线程发起
  *
  * 支持两种插件格式：
- *   - MusicFree: new Function() 注入 packages（axios, cheerio, crypto-js 等）
- *   - LX (落雪): eval() + globalThis.lx 事件通信
+ *   - MusicFree: Blob 模块注入 packages（axios, cheerio, crypto-js 等）
+ *   - LX (落雪): Blob 模块 + globalThis.lx 事件通信
  */
 
 import axios from 'axios';
@@ -30,6 +30,30 @@ import type {
   HttpProxyResponse,
   LxScriptInfo,
 } from './pluginSandboxTypes';
+
+type PluginRuntime = Record<string, any>;
+
+const PLUGIN_RUNTIME_KEY = '__xyMusicPluginRuntime';
+
+function getRuntimeMap(): Map<string, PluginRuntime> {
+  const g = globalThis as any;
+  if (!g[PLUGIN_RUNTIME_KEY]) {
+    g[PLUGIN_RUNTIME_KEY] = new Map<string, PluginRuntime>();
+  }
+  return g[PLUGIN_RUNTIME_KEY];
+}
+
+async function importBlobModule(source: string, label: string): Promise<any> {
+  const blob = new Blob([source], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  try {
+    return await import(/* @vite-ignore */ url);
+  } catch (error: any) {
+    throw new Error(`${label}: ${error?.message || String(error)}`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 // ==================== 日志 ====================
 
@@ -355,24 +379,36 @@ const _require = (packageName: string) => {
 interface MusicFreeInstance {
   platform: string;
   version?: string;
+  appVersion?: string;
   author?: string;
   description?: string;
+  srcUrl?: string;
+  primaryKey?: string[];
+  cacheControl?: string;
   supportedSearchType?: string[];
   defaultSearchType?: string;
   userVariables?: any[];
+  hints?: Record<string, string[]>;
+  /** Baka 系列特有：12 档音质声明 */
+  supportedQualities?: string[];
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
-  getMusicInfo?: (musicItem: any) => Promise<any>;
+  getMusicInfo?: (musicBase: any) => Promise<any>;
   getLyric?: (musicItem: any) => Promise<any>;
   getAlbumInfo?: (albumItem: any, page: number) => Promise<any>;
   getArtistWorks?: (artistItem: any, page: number, type: string) => Promise<any>;
+  getArtistInfo?: (artistItem: any) => Promise<any>;
   getTopLists?: () => Promise<any>;
   getTopListDetail?: (topListItem: any, page: number) => Promise<any>;
   importMusicSheet?: (urlLike: string) => Promise<any>;
   importMusicItem?: (urlLike: string) => Promise<any>;
   getMusicSheetInfo?: (sheetItem: any, page: number) => Promise<any>;
   getRecommendSheetTags?: () => Promise<any>;
-  getRecommendSheetsByTag?: (tagItem: any, page: number) => Promise<any>;
+  getRecommendSheetsByTag?: (tagItem: any, page?: number) => Promise<any>;
+  /** Baka 扩展：获取歌曲评论 */
+  getMusicComments?: (musicItem: any, page?: number) => Promise<any>;
+  /** Baka 扩展：获取歌曲详情页 URL */
+  getMusicDetailPageUrl?: (musicItem: any) => Promise<any>;
 }
 
 // 存储已加载的插件实例
@@ -400,6 +436,7 @@ async function loadMusicFreePlugin(
 
     const env = {
       getUserVariables: () => _musicfreeUserVars.get(pluginId) || {},
+      get userVariables() { return _musicfreeUserVars.get(pluginId) || {}; },
       os: 'win32',
       appVersion: '1.0.0',
       lang: 'zh-CN',
@@ -411,18 +448,11 @@ async function loadMusicFreePlugin(
       ensurePluginInitialized: Promise.resolve(),
     };
 
-    // 与 pluginEngine.ts 一致：new Function() 执行插件脚本
-    _instance = Function(
-      `'use strict';
-      return function(require, __musicfree_require, module, exports, console, env, URL, process, fetch) {
-        ${script}
-      }`,
-    )()(
-      _require,
-      _require,
-      _module,
-      _module.exports,
-      {
+    const runtimeId = `musicfree:${pluginId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    getRuntimeMap().set(runtimeId, {
+      require: _require,
+      module: _module,
+      console: {
         log: (...args: any[]) => log('log', args.map(a => typeof a === 'object' ? JSON.stringify(a)?.substring(0, 200) : String(a)).join(' ')),
         warn: (...args: any[]) => log('warn', args.map(a => typeof a === 'object' ? JSON.stringify(a)?.substring(0, 200) : String(a)).join(' ')),
         error: (...args: any[]) => log('error', args.map(a => typeof a === 'object' ? JSON.stringify(a)?.substring(0, 200) : String(a)).join(' ')),
@@ -430,12 +460,37 @@ async function loadMusicFreePlugin(
         info: (...args: any[]) => log('log', args.map(a => typeof a === 'object' ? JSON.stringify(a)?.substring(0, 200) : String(a)).join(' ')),
       },
       env,
-      URL,
-      _process,
-      proxyFetch,
-    );
+      process: _process,
+      fetch: proxyFetch,
+    });
 
-    if (_module.exports.default) {
+    const moduleSource = `
+      'use strict';
+      const runtime = globalThis.${PLUGIN_RUNTIME_KEY}.get(${JSON.stringify(runtimeId)});
+      if (!runtime) throw new Error('插件运行时上下文不存在');
+      const require = runtime.require;
+      const __musicfree_require = runtime.require;
+      const module = runtime.module;
+      const exports = module.exports;
+      const console = runtime.console;
+      const env = runtime.env;
+      const process = runtime.process;
+      const fetch = runtime.fetch;
+      const URL = globalThis.URL;
+      ${script}
+      export default module.exports;
+    `;
+
+    try {
+      const loadedModule = await importBlobModule(moduleSource, `MusicFree 插件加载失败(${pluginId})`);
+      if (loadedModule.default !== _module.exports) {
+        _module.exports = loadedModule.default;
+      }
+    } finally {
+      getRuntimeMap().delete(runtimeId);
+    }
+
+    if (_module.exports?.default) {
       _instance = _module.exports.default;
     } else {
       _instance = _module.exports;
@@ -451,6 +506,7 @@ async function loadMusicFreePlugin(
       'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
       'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
       'getRecommendSheetTags', 'getRecommendSheetsByTag',
+      'getArtistInfo', 'getMusicComments', 'getMusicDetailPageUrl',
     ];
     const _availableMethods = allMethodNames.filter(m => typeof (_instance as any)[m] === 'function');
     return {
@@ -458,11 +514,16 @@ async function loadMusicFreePlugin(
       instance: {
         platform: _instance.platform,
         version: _instance.version,
+        appVersion: (_instance as any).appVersion,
         author: _instance.author,
         description: _instance.description,
+        srcUrl: (_instance as any).srcUrl,
+        primaryKey: (_instance as any).primaryKey,
+        cacheControl: (_instance as any).cacheControl,
         supportedSearchType: _instance.supportedSearchType,
         defaultSearchType: _instance.defaultSearchType,
         userVariables: _instance.userVariables,
+        hints: (_instance as any).hints,
         supportedQualities: (_instance as any).supportedQualities,
         _availableMethods,
       },
@@ -503,6 +564,56 @@ interface LxPluginWorkerState {
 
 const _lxStates = new Map<string, LxPluginWorkerState>();
 
+type LxRequestAction = 'musicUrl' | 'lyric' | 'pic';
+
+const LX_SOURCE_KEYS = ['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local'] as const;
+const LX_MUSIC_ACTIONS: LxRequestAction[] = ['musicUrl', 'lyric', 'pic'];
+const LX_STANDARD_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
+  kw: LX_STANDARD_QUALITIES,
+  kg: LX_STANDARD_QUALITIES,
+  tx: LX_STANDARD_QUALITIES,
+  wy: LX_STANDARD_QUALITIES,
+  mg: LX_STANDARD_QUALITIES,
+  xm: LX_STANDARD_QUALITIES,
+  local: [],
+};
+
+function normalizeLxSourceInfo(info: any): any {
+  const sourceInfo: any = { sources: {} };
+  if (!info?.sources || typeof info.sources !== 'object') return sourceInfo;
+
+  for (const source of LX_SOURCE_KEYS) {
+    const userSource = info.sources[source];
+    if (!userSource || userSource.type !== 'music') continue;
+    const declaredActions = Array.isArray(userSource.actions) ? userSource.actions : [];
+    const declaredQualitys = Array.isArray(userSource.qualitys) ? userSource.qualitys : [];
+    const qualitys = LX_SUPPORT_QUALITIES[source] || [];
+    sourceInfo.sources[source] = {
+      name: typeof userSource.name === 'string' ? userSource.name : undefined,
+      type: 'music',
+      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
+      qualitys: qualitys.length ? qualitys.filter(q => declaredQualitys.includes(q)) : declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+    };
+  }
+
+  for (const key of Object.keys(info.sources)) {
+    if (sourceInfo.sources[key]) continue;
+    const val = info.sources[key];
+    if (!val || val.type !== 'music') continue;
+    const declaredActions = Array.isArray(val.actions) ? val.actions : [];
+    const declaredQualitys = Array.isArray(val.qualitys) ? val.qualitys : [];
+    sourceInfo.sources[key] = {
+      name: typeof val.name === 'string' ? val.name : undefined,
+      type: 'music',
+      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
+      qualitys: declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+    };
+  }
+
+  return sourceInfo;
+}
+
 async function loadLxPlugin(
   pluginId: string,
   script: string,
@@ -523,19 +634,6 @@ async function loadLxPlugin(
     initReject = reject;
   });
 
-  const allSources = ['kw', 'kg', 'tx', 'wy', 'mg', 'local'];
-  const supportQualitys: Record<string, string[]> = {
-    kw: ['128k', '320k', 'flac', 'flac24bit'],
-    kg: ['128k', '320k', 'flac', 'flac24bit'],
-    tx: ['128k', '320k', 'flac', 'flac24bit'],
-    wy: ['128k', '320k', 'flac', 'flac24bit'],
-    mg: ['128k', '320k', 'flac', 'flac24bit'],
-    local: [],
-  };
-  const supportActions: Record<string, string[]> = {
-    kw: ['musicUrl'], kg: ['musicUrl'], tx: ['musicUrl'], wy: ['musicUrl'], mg: ['musicUrl'],
-    xm: ['musicUrl'], local: ['musicUrl', 'lyric', 'pic'],
-  };
   let isInitedApi = false;
   const EVENT_NAMES = { request: 'request', inited: 'inited', updateAlert: 'updateAlert' };
   const eventNames = Object.values(EVENT_NAMES);
@@ -545,41 +643,23 @@ async function loadLxPlugin(
       initReject!(new Error('Missing required parameter init info'));
       return;
     }
-    const sourceInfo: any = { sources: {} };
     try {
-      for (const source of allSources) {
-        const userSource = info.sources?.[source];
-        if (!userSource || userSource.type !== 'music') continue;
-        const qualitys = supportQualitys[source];
-        const actions = supportActions[source];
-        sourceInfo.sources[source] = {
-          type: 'music',
-          actions: actions.filter((a: string) => userSource.actions?.includes(a)),
-          qualitys: qualitys.filter((q: string) => userSource.qualitys?.includes(q)),
-        };
-      }
-      if (info.sources) {
-        for (const key of Object.keys(info.sources)) {
-          if (sourceInfo.sources[key]) continue;
-          const val = info.sources[key];
-          if (val.type !== 'music') continue;
-          sourceInfo.sources[key] = val;
-        }
-      }
+      const sourceInfo = normalizeLxSourceInfo(info);
+      log('log', `插件初始化成功, sources: ${Object.keys(sourceInfo.sources).join(',')}`);
+      initResolve!(sourceInfo);
     } catch (error: any) {
       initReject!(new Error(error.message));
       return;
     }
-    log('log', `插件初始化成功, sources: ${Object.keys(sourceInfo.sources).join(',')}`);
-    initResolve!(sourceInfo);
   };
 
   // HTTP 请求（通过 RPC 代理到主线程）
   const lxNativeRequest = async (
     method: string, url: string, headers: Record<string, string>, body: string | undefined,
     timeout?: number | null,
+    follow?: number | null,
   ): Promise<{ statusCode: number; statusMessage: string; headers: Record<string, string>; body: string }> => {
-    const response = await proxyHttpRequest(method, url, headers, body, timeout ?? undefined);
+    const response = await proxyHttpRequest(method, url, headers, body, timeout ?? undefined, follow ?? undefined);
 
     // 捕获 Cookie
     if (response.headers) {
@@ -632,7 +712,7 @@ async function loadLxPlugin(
         if (!reqHeaders['Content-Type'] && !reqHeaders['content-type']) reqHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
       }
 
-      lxNativeRequest(method, url, reqHeaders, bodyStr, options?.timeout).then((response) => {
+      lxNativeRequest(method, url, reqHeaders, bodyStr, options?.timeout, options?.follow).then((response) => {
         try {
           let body: any = response.body;
           try { body = JSON.parse(response.body); } catch { /* 保持原始字符串 */ }
@@ -771,15 +851,38 @@ async function loadLxPlugin(
   // 设置 globalThis.lx
   (globalThis as any).lx = lxApi;
 
-  // eval 插件脚本
+  // 通过 Blob 模块执行插件脚本，避免依赖 CSP 字符串求值能力。
+  const runtimeId = `lx:${pluginId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  getRuntimeMap().set(runtimeId, {
+    lx: lxApi,
+    Buffer,
+    CryptoJs,
+  });
+
   try {
-    (0, eval)(script);
-    log('log', '脚本 eval 完成(无同步异常)');
+    const moduleSource = `
+      'use strict';
+      const runtime = globalThis.${PLUGIN_RUNTIME_KEY}.get(${JSON.stringify(runtimeId)});
+      if (!runtime) throw new Error('LX 插件运行时上下文不存在');
+      const lx = runtime.lx;
+      const Buffer = runtime.Buffer;
+      const CryptoJs = runtime.CryptoJs;
+      const CryptoJS = runtime.CryptoJs;
+      const window = globalThis;
+      const self = globalThis;
+      const global = globalThis;
+      ${script}
+      export {};
+    `;
+    await importBlobModule(moduleSource, `LX 插件加载失败(${pluginId})`);
+    log('log', '脚本模块加载完成(无同步异常)');
   } catch (e: any) {
-    log('error', `脚本 eval 异常: ${e?.message}`);
+    log('error', `脚本模块加载异常: ${e?.message}`);
     if (!isInitedApi) {
-      return { success: false, error: e?.message || 'eval error' };
+      return { success: false, error: e?.message || 'module import error' };
     }
+  } finally {
+    getRuntimeMap().delete(runtimeId);
   }
 
   // 等待初始化

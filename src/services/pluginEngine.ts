@@ -6,22 +6,16 @@
  *   - 搜索功能/searchPage/hooks/useSearch.ts  (搜索逻辑)
  *
  * 关键流程（与 MusicFree 完全一致）：
- *   1. packages 对象注入 npm 包（axios, cheerio, crypto-js, dayjs, he, qs）
- *   2. _require() 从 packages 中查找模块
- *   3. new Function() 创建插件函数，注入 require/module/exports/console/env/URL/process
- *   4. 执行后从 module.exports 提取插件实例
- *   5. 搜索结果中每个 item 调用 resetMediaItem(_, pluginName) 设置 platform
- *   6. getMediaSource 时传入的 musicItem 就是 resetMediaItem 后的对象
+ *   1. 插件源码只允许委托给 Worker 沙箱执行，主线程不再执行插件源码
+ *   2. Worker 沙箱内注入受控 npm 包和代理 fetch
+ *   3. 执行后从 module.exports 提取插件实例
+ *   4. 搜索结果中每个 item 调用 resetMediaItem(_, pluginName) 设置 platform
+ *   5. getMediaSource 时传入的 musicItem 就是 resetMediaItem 后的对象
  */
 
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import CryptoJs from 'crypto-js';
-import dayjs from 'dayjs';
-import he from 'he';
 import qs from 'qs';
-import bigInt from 'big-integer';
-import { Buffer } from 'buffer';
 import { ref } from 'vue';
 import type {
   PluginSource,
@@ -49,6 +43,7 @@ import {
   extractAlbum,
   extractArtist,
   extractCoverUrl,
+  extractResultList,
   qualityKeyToPluginString,
   resetMediaItem,
   stripHtmlTags,
@@ -59,6 +54,7 @@ import {
   compareVersions,
   createPluginUpdateService,
 } from './pluginUpdates';
+import { BakaPluginManager } from './bakaPluginManager';
 
 export type { PluginUpdateCheckResult } from './pluginUpdates';
 
@@ -96,6 +92,7 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
     'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
     'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
     'getRecommendSheetTags', 'getRecommendSheetsByTag',
+    'getArtistInfo', 'getMusicComments', 'getMusicDetailPageUrl',
   ];
 
   // Worker 返回的 _availableMethods 包含插件实例实际实现的方法名列表
@@ -108,11 +105,16 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
   const proxy: any = {
     platform: metadata.platform,
     version: metadata.version,
+    appVersion: metadata.appVersion,
+    srcUrl: metadata.srcUrl,
     author: metadata.author,
     description: metadata.description,
+    primaryKey: metadata.primaryKey,
+    cacheControl: metadata.cacheControl,
     supportedSearchType: metadata.supportedSearchType,
     defaultSearchType: metadata.defaultSearchType,
     userVariables: metadata.userVariables,
+    hints: metadata.hints,
     supportedQualities: metadata.supportedQualities,
   };
 
@@ -306,87 +308,6 @@ proxyAxios.create = (config?: any) => {
   return inst;
 };
 
-/**
- * 解包 Vite ESM 包装的 CommonJS 模块
- *
- * MusicFreeDesktop 运行在 Electron/webpack 中，import he from "he" 直接得到 CJS module.exports。
- * 本项目运行在 Vite 中，import he from "he" 可能得到 { default: { decode, ... } }（ESM 包装）。
- * 此函数还原 MusicFreeDesktop 的行为：返回原始 CJS 模块对象。
- */
-function unwrapMod(mod: any, checkProp?: string): any {
-  if (!mod) return mod;
-  // 如果模块本身就有 checkProp，说明已是正确形态
-  if (checkProp && mod[checkProp]) return mod;
-  // 如果有 default 属性且 default 有 checkProp，解包 default
-  if (mod.default && mod.default !== mod) {
-    if (!checkProp || mod.default[checkProp] || typeof mod.default === 'function') {
-      return mod.default;
-    }
-  }
-  return mod;
-}
-
-// 与 MusicFree plugin.ts 第26~37行一致
-const packages: Record<string, any> = {
-  cheerio: unwrapMod(cheerio, 'load'),
-  'crypto-js': unwrapMod(CryptoJs, 'SHA256'),
-  axios: proxyAxios,
-  dayjs: unwrapMod(dayjs, 'isDayjs'),
-  'big-integer': unwrapMod(bigInt),
-  qs: unwrapMod(qs, 'stringify'),
-  he: unwrapMod(he, 'decode'),
-  buffer: { Buffer },
-  '@react-native-cookies/cookies': {
-    set: async (url: string, cookie: any) => {
-      try {
-        const urlObj = new URL(url);
-        const domain = urlObj.hostname;
-        const store = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
-        store[cookie.name] = { ...cookie, domain };
-        localStorage.setItem('__plugin_cookies', JSON.stringify(store));
-        return true;
-      } catch { return false; }
-    },
-    get: async (url: string) => {
-      try {
-        const urlObj = new URL(url);
-        const domain = urlObj.hostname;
-        const store = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
-        const result: any = {};
-        for (const [name, info] of Object.entries(store)) {
-          const c = info as any;
-          if (c.domain && (domain.includes(c.domain) || c.domain.includes(domain))) {
-            result[name] = c;
-          }
-        }
-        return result;
-      } catch { return {}; }
-    },
-    flush: async () => {},
-  },
-  'musicfree/storage': {
-    setItem: async (key: string, value: unknown) => {
-      localStorage.setItem(`__plugin_storage_${key}`, typeof value === 'string' ? value : JSON.stringify(value));
-    },
-    getItem: async (key: string) => {
-      return localStorage.getItem(`__plugin_storage_${key}`);
-    },
-    removeItem: async (key: string) => {
-      localStorage.removeItem(`__plugin_storage_${key}`);
-    },
-  },
-};
-
-// 与 MusicFree plugin.ts 第39~46行一致：_require
-const _require = (packageName: string) => {
-  const pkg = packages[packageName];
-  if (pkg) {
-    try { pkg.default = pkg; } catch {}
-    return pkg;
-  }
-  return null;
-};
-
 // ==================== proxyFetch（通过 Tauri 后端代理 fetch 请求，绕过 CORS）====================
 
 export async function proxyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -476,10 +397,11 @@ interface PluginInstance {
   script: string; // 存储插件源码用于错误诊断
 }
 
-/** 与 MusicFree IPlugin.IPluginDefine 一致 */
+/** 与 MusicFree IPlugin.IPluginDefine 一致（扩展 Baka 插件方法） */
 interface IPluginInstance {
   platform: string;
   version?: string;
+  appVersion?: string;
   srcUrl?: string;
   author?: string;
   description?: string;
@@ -487,8 +409,11 @@ interface IPluginInstance {
   defaultSearchType?: string;
   userVariables?: PluginUserVariable[];
   cacheControl?: string;
+  primaryKey?: string[];
   /** 提示文本（与 MusicFree IPlugin.IPluginDefine.hints 一致） */
   hints?: Record<string, string[]>;
+  /** Baka 系列特有：12 档音质声明 */
+  supportedQualities?: string[];
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
   getMusicInfo?: (musicItem: any) => Promise<any>;
@@ -502,6 +427,12 @@ interface IPluginInstance {
   getMusicSheetInfo?: (sheetItem: any, page: number) => Promise<any>;
   getRecommendSheetTags?: () => Promise<any>;
   getRecommendSheetsByTag?: (tagItem: any, page: number) => Promise<any>;
+  /** Baka 扩展：获取歌手详情 */
+  getArtistInfo?: (artistItem: any) => Promise<any>;
+  /** Baka 扩展：获取歌曲评论 */
+  getMusicComments?: (musicItem: any, page?: number) => Promise<any>;
+  /** Baka 扩展：获取歌曲详情页 URL */
+  getMusicDetailPageUrl?: (musicItem: any) => Promise<any>;
 }
 
 // [修复防御]: 挂载到 window 防止 Vite HMR 重置缓存，导致每次搜索都重新加载插件
@@ -594,140 +525,12 @@ export async function loadPluginFromScript(
         log(`=== 插件沙箱加载成功: "${metadata.platform}" ===`);
         return source;
       } catch (e: any) {
-        log(`[loadPluginFromScript] 沙箱加载失败，回退到直接执行: ${e?.message}`);
-        // 沙箱失败时回退到直接执行路径（下方代码）
+        log(`[loadPluginFromScript] 沙箱加载失败，已阻止回退到主线程直接执行: ${e?.message}`);
+        throw e;
       }
     }
 
-    // ===== Step 1: 执行插件脚本（与 MusicFree mountPlugin 第911~955行完全一致）=====
-    const _module: any = { exports: {} };
-    let _instance: IPluginInstance;
-
-    // 与 MusicFree 第915~932行一致
-    // [修复] ensurePluginInitialized — 与 MusicFree plugin.ts 第88~90行一致
-    // 使用 ref 对象避免 TS 控制流分析将变量收窄为 null
-    const _resolveRef: { fn: (() => void) | null } = { fn: null };
-    const ensurePluginInitialized = new Promise<void>((resolve) => {
-      _resolveRef.fn = resolve;
-    });
-
-    // 与 MusicFree plugin.ts 第94~104行一致
-    const env = {
-      getUserVariables: () => getPluginUserVariableValues(hash),
-      os: 'win32',
-      appVersion: '1.0.0',
-      lang: 'zh-CN',
-    };
-    const _process = {
-      // [修复] 设为 win32 模拟桌面端环境
-      platform: 'win32',
-      version: '1.0.0',
-      env,
-      // [修复] 与 MusicFree plugin.ts 第109行一致
-      ensurePluginInitialized,
-    };
-
-    try {
-      // 与 MusicFree 第935~949行完全一致
-      // Function(body)() —— 第一次 () 执行外层函数返回内层函数
-      // 第二次 (args) 执行内层函数，传入 require/module/exports 等参数
-      _instance = Function(
-        `'use strict';
-        return function(require, __musicfree_require, module, exports, console, env, URL, process, fetch) {
-          ${script}
-        }
-      `,
-      )()(
-        _require,
-        _require,
-        _module,
-        _module.exports,
-        console,
-        env,
-        URL,
-        _process,
-        proxyFetch,
-      );
-
-      // 与 MusicFree 第950~955行完全一致
-      if (_module.exports.default) {
-        _instance = _module.exports.default;
-      } else {
-        _instance = _module.exports;
-      }
-
-      // [修复] 与 MusicFree plugin.ts 第132行一致：resolve ensurePluginInitialized
-      if (_resolveRef.fn) _resolveRef.fn();
-
-      // 调试：检查 _instance 内容
-      log(`_module.exports 类型: ${typeof _module.exports}`);
-      log(`_module.exports.default 类型: ${typeof _module.exports.default}`);
-      log(`_module.exports keys: ${Object.keys(_module.exports).join(', ')}`);
-      if (_module.exports.default) {
-        log(`_module.exports.default keys: ${Object.keys(_module.exports.default).join(', ')}`);
-      }
-      log(`_instance 类型: ${typeof _instance}`);
-      log(`_instance keys: ${_instance ? Object.keys(_instance).join(', ') : 'null'}`);
-      log(`_instance.platform: ${(_instance as any)?.platform}`);
-    } catch (e: any) {
-      log(`插件脚本执行失败: ${e?.message || e}`);
-      log(`  堆栈: ${e?.stack || '无'}`);
-      return null;
-    }
-
-    // ===== Step 1.5: 不再替换 globalThis.fetch =====
-    // 之前通过 globalThis.fetch = proxyFetch 临时替换导致 OOM：
-    // 插件异步方法执行期间，Vue 的 <img> 加载封面图也走了 proxyFetch，
-    // 图片二进制数据通过 Tauri IPC 传输导致内存溢出。
-    // 现在只通过 Function 参数注入 fetch（Step 1 中已完成），
-    // 插件代码中直接调用 fetch() 会使用参数中的 proxyFetch（作用域链优先）。
-    // 如果插件通过 globalThis.fetch/window.fetch 调用，则走原生 fetch（受 CORS 限制），
-    // 但这比 OOM 崩溃要好得多。
-
-    // ===== Step 2: 提取插件信息（与 MusicFree 第990~1016行完全一致）=====
-    const platform = _instance.platform || '';
-    const version = _instance.version || '';
-    const author = _instance.author || '';
-    const description = _instance.description || '';
-
-    if (!platform) {
-      log('插件缺少 platform 字段，无法识别');
-      return null;
-    }
-
-    // hash 已在 Step 1 之前预计算（用于 env.getUserVariables 闭包）
-
-    // 与 MusicFree 第993~995行一致：supportedMethods
-    const supportedMethodsSet = new Set(
-      Object.keys(_instance).filter(key => typeof (_instance as any)[key] === 'function'),
-    );
-
-    log(`插件信息 → platform="${platform}", version="${version}", methods=[${[...supportedMethodsSet].join(', ')}]`);
-
-    // ===== Step 3: 构建返回值 =====
-    const source: PluginSource = {
-      id: hash,
-      name: platform,
-      format: 'musicfree',
-      version,
-      author,
-      description,
-      filePath: uri,
-      importedAt: Date.now(),
-      enabled: true,
-      sources: [platform],
-    };
-
-// 缓存实例
-pluginInstances.set(hash, { source, instance: _instance, script });
-
-// 同步缓存用户变量定义（独立于完整实例缓存，供懒加载模式下 UI 读取）
-if (_instance.userVariables) {
-  userVarDefsCache.set(hash, _instance.userVariables);
-}
-
-    log(`=== 插件加载成功: "${platform}" (version=${version}) ===`);
-    return source;
+    throw new Error('插件沙箱未启用，已拒绝在主线程直接执行插件源码');
   } catch (e) {
     console.error('插件加载失败:', e);
     return null;
@@ -1290,23 +1093,16 @@ export async function pluginGetMusicInfo(
 /**
  * 检测插件是否为 Baka/Toskysun 系列。
  *
- * Baka 插件在实例上声明 `supportedQualities` 数组字段（12 档音质），
- * 原版 MusicFree 插件无此字段。
- *
- * 异步确保插件实例已加载到内存中后再检测。
+ * 委托给 BakaPluginManager，支持沙箱和直接执行两种模式的检测。
  */
 export async function isBakaPlugin(source: PluginSource): Promise<boolean> {
-  const inst = await ensurePluginInstance(source);
-  if (!inst) return false;
-  const sq = (inst.instance as any).supportedQualities;
-  return Array.isArray(sq) && sq.length > 0;
+  return BakaPluginManager.isBakaPlugin(source);
 }
 
 /**
  * Baka/Toskysun 系列插件专用播放 URL 获取方法。
  *
- * 与 MusicFree 插件完全分离，使用 12 档原生音质键值（如 '320k'、'flac'、'master'），
- * 不经过 standard/high/lossless 三档映射。
+ * 委托给 BakaPluginManager.getMediaSource，内置 newToLegacyQualityMap 回退。
  */
 export async function pluginGetBakaMusicInfo(
   source: PluginSource,
@@ -1315,123 +1111,9 @@ export async function pluginGetBakaMusicInfo(
   fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
   availableQualities: QualityKey[] | null = null,
 ): Promise<PluginMusicInfo | null> {
-  const inst = await ensurePluginInstance(source);
-  if (!inst) return null;
-
-  if (typeof inst.instance.getMediaSource !== 'function') {
-    log(`[${source.name}] 无 getMediaSource 函数`);
-    return null;
-  }
-
-  const musicItem = item.rawData
-    ? resetMediaItem(item.rawData, source.name)
-    : resetMediaItem(item, source.name);
-
-  const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
-
-  // 构建音质尝试列表：始终使用 12 档原生键值
-  const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
-
-  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
-    const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
-    for (const q of resolvedKeys) {
-      tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
-    }
-  } else if (isQualityKey(quality)) {
-    if (fallbackBehavior === 'pause') {
-      tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-    } else if (fallbackBehavior === 'higher') {
-      const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
-      if (startIdx !== -1) {
-        for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS[i]), qualityKey: ALL_QUALITY_KEYS[i] });
-        }
-      } else {
-        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-      }
-    } else {
-      const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
-      if (startIdx !== -1) {
-        for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]), qualityKey: ALL_QUALITY_KEYS_DESC[i] });
-        }
-      } else {
-        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-      }
-    }
-  } else {
-    // 旧版 standard/high/lossless 直接使用（极少到达此分支）
-    tryPairs.push({ pluginQ: quality, qualityKey: '320k' });
-  }
-
-  const tryQualities = tryPairs.map(p => p.pluginQ);
-  log(`[Baka getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
-
-  let result: any = null;
-  let lastError: any = null;
-  let successPairIdx = -1;
-  let songLevelErrorDetected = false;
-
-  for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
-    const q = tryQualities[pairIdx];
-    for (let retry = 0; retry <= 1; retry++) {
-      try {
-        result = await inst.instance.getMediaSource(musicItem, q);
-        if (result?.url) break;
-      } catch (e: any) {
-        lastError = e;
-        const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
-        log(`[Baka getMediaSource] quality=${q} 第${retry + 1}次异常: ${errMsg}`);
-        if (isSongLevelError(errMsg)) {
-          log(`[Baka getMediaSource] 歌曲级错误，跳过剩余音质: ${errMsg}`);
-          songLevelErrorDetected = true;
-          break;
-        }
-        if (retry < 1) {
-          await new Promise(r => setTimeout(r, 150));
-        }
-      }
-    }
-    if (songLevelErrorDetected) break;
-    if (result?.url) {
-      successPairIdx = pairIdx;
-      break;
-    }
-    log(`[Baka getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
-    result = null;
-  }
-
-  if (!result || typeof result !== 'object') {
-    const errMsg = lastError ? `异常: ${lastError.message}` : (result === null ? '返回null' : `非对象(${typeof result})`);
-    log(`[Baka getMediaSource] ${source.name} 失败: ${errMsg}`);
-    (globalThis as any).__lastPluginError = `[${source.name}] ${errMsg}`;
-    return null;
-  }
-
-  const url = result.url || '';
-  const headers = result.headers || {};
-  const ekey = result.ekey || '';
-  const cek = result.cek || '';
-  const lyric = result.lyric || result.rawLrc || result.lrc || '';
-  const tlyric = result.tlyric || result.translation || '';
-  const lxlyric = result.lxlyric || '';
-  const yrc = result.yrc || '';
-  const qrc = result.qrc || '';
-  const coverUrl = extractCoverUrl(result) || result.coverUrl || result.artwork || '';
-  if (!url) {
-    log(`[Baka getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
-    (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
-    return null;
-  }
-
-  const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
-  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
-    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
-    : '';
-
-  const headerKeys = Object.keys(headers);
-  log(`[Baka getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
-  return { url, headers: headers as Record<string, string>, ekey: ekey || undefined, cek: cek || undefined, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
+  // 确保插件实例已加载
+  await ensurePluginInstance(source);
+  return BakaPluginManager.getMediaSource(source, item, quality, fallbackBehavior, availableQualities);
 }
 
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================
@@ -1446,6 +1128,7 @@ export async function pluginGetBakaMusicInfo(
  *
  * Toskysun 系列插件扩展返回 lxlyric（逐字歌词，lx-music-desktop 格式）。
  * 原版 MF 插件（如 Baka 插件）可能返回 yrc（网易云）/ qrc（QQ 音乐）字段。
+ * Baka 插件还可能返回 eslrc（增强型逐字歌词）和 romanization（罗马音）。
  * 使用 buildLyricsRaw 统一构建为 lyricsRaw 文本（优先级：yrc > qrc > lxlyric > lyric，
  * 高优先级格式解析失败时由后端自动回退到下一档）。
  */
@@ -1481,19 +1164,23 @@ export async function pluginGetLyric(
     const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
     // 兼容多种翻译字段名：translation / tlyric / translateLyric
     const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
+    // 罗马音字段（Baka 插件扩展）
+    const romanization = lrcSource.romanization || lrcSource.rlyric || '';
     // 逐字歌词字段：lxlyric（Toskysun 系列）/ yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）
-    // 不同插件返回字段不同，buildLyricsRaw 会按优先级选用并自动回退
+    // eslrc（Baka 增强型逐字歌词）
     const lxlyric = lrcSource.lxlyric || '';
     const yrc = lrcSource.yrc || '';
     const qrc = lrcSource.qrc || '';
+    const eslrc = lrcSource.eslrc || '';
 
-    if (!rawLrc && !lxlyric && !yrc && !qrc) {
+    if (!rawLrc && !lxlyric && !yrc && !qrc && !eslrc) {
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
     // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
-    const lyricsRaw = buildLyricsRaw(rawLrc, translation, null, lxlyric, yrc, qrc);
-    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}`);
+    // 罗马音作为附加轨道（与翻译一样由后端按时间戳聚类）
+    const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization || null, lxlyric, yrc, qrc);
+    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
     return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw };
   } catch (e) {
     log(`获取歌词失败: ${source.name} ${e}`);
@@ -1697,26 +1384,43 @@ export function pluginSupportsSearchType(_source: PluginSource, _type: 'music' |
 /**
  * 获取插件声明的支持音质列表。
  *
- * Toskysun 系列（BakaMusic）插件在实例上声明 `supportedQualities` 字段，
- * 使用 12 档新键值（如 '320k'、'flac'、'master'）。
+ * 委托给 BakaPluginManager，Baka 插件使用 12 档新键值（如 '320k'、'flac'、'master'）。
  * 原版 MusicFree 插件无此字段，仅支持 standard/high/lossless 三档，
  * 返回对应的 3 档代表音质（128k / 320k / flac），由 qualityKeyToMfQuality 完成实际映射。
  *
  * 返回的键值已映射为本项目的 QualityKey（'96k' → 'mgg'）。
  */
 export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
-  const inst = await ensurePluginInstance(source);
-  if (!inst) return null;
-  const raw = (inst.instance as any).supportedQualities;
-  if (Array.isArray(raw) && raw.length > 0) {
-    // Toskysun 插件：映射 96k → mgg，其余保持原样；过滤未知键值
-    return raw
-      .map((q: string) => (q === '96k' ? 'mgg' : q))
-      .filter((q: string) => q in QUALITY_META) as QualityKey[];
-  }
-  // 原版 MusicFree 插件：仅支持 standard/high/lossless 三档
-  // 返回 3 档代表音质，选择时由 qualityKeyToMfQuality 映射回 MF 三档
-  return ['128k', '320k', 'flac'];
+  await ensurePluginInstance(source);
+  return BakaPluginManager.getSupportedQualities(source);
+}
+
+// ==================== Baka 扩展：歌曲评论 ====================
+
+/**
+ * 获取歌曲评论（Baka 插件扩展方法）
+ *
+ * 委托给 BakaPluginManager.getMusicComments。
+ * 仅 Baka 系列插件实现了 getMusicComments 方法。
+ */
+export async function pluginGetMusicComments(
+  source: PluginSource,
+  item: PluginSearchResult,
+  page: number = 1,
+): Promise<{ isEnd?: boolean; data?: any[] } | null> {
+  await ensurePluginInstance(source);
+  return BakaPluginManager.getMusicComments(source, item, page);
+}
+
+/**
+ * 获取歌曲详情页 URL（Baka 插件扩展方法）
+ */
+export async function pluginGetMusicDetailPageUrl(
+  source: PluginSource,
+  item: PluginSearchResult,
+): Promise<string | null> {
+  await ensurePluginInstance(source);
+  return BakaPluginManager.getMusicDetailPageUrl(source, item);
 }
 
 // ==================== 辅助函数 ====================

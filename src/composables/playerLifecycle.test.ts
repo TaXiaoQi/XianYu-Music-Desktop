@@ -7,7 +7,7 @@ import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback';
 import { useSettingsStore } from '../features/settings/store';
 import { useUiStore } from '../shared/stores/ui';
-import { createPlayerLifecycle } from './playerLifecycle';
+import { createPlayerLifecycle } from '../features/playback/playerLifecycle';
 import * as colorExtraction from './colorExtraction';
 
 const mocks = vi.hoisted(() => ({

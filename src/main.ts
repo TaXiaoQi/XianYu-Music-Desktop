@@ -25,14 +25,6 @@ if (shouldApplyStartupThemePaint(currentWindowLabel)) {
   applyPersistedStartupTheme()
 }
 
-const escapeHtml = (value: unknown) =>
-  String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-
 const formatError = (error: unknown) => {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}${error.stack ? `\n\n${error.stack}` : ''}`
@@ -90,15 +82,29 @@ const showFatalError = (title: string, error: unknown) => {
   const appRoot = document.getElementById('app')
   if (!appRoot) return
 
-  appRoot.innerHTML = `
-    <div style="height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f5f5f5;color:#111827;font-family:'Segoe UI',system-ui,sans-serif;">
-      <div style="width:min(920px,100%);background:#ffffff;border:1px solid rgba(17,24,39,0.08);border-radius:16px;box-shadow:0 20px 50px rgba(15,23,42,0.08);padding:24px;">
-        <div style="font-size:20px;font-weight:600;margin-bottom:12px;">${escapeHtml(title)}</div>
-        <div style="font-size:14px;line-height:1.6;color:#4b5563;margin-bottom:16px;">应用启动时发生异常。请把下面的错误信息反馈给开发者。</div>
-        <pre style="margin:0;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;padding:16px;border-radius:12px;background:#111827;color:#f9fafb;font-size:12px;line-height:1.6;">${escapeHtml(message)}</pre>
-      </div>
-    </div>
-  `
+  appRoot.replaceChildren()
+
+  const page = document.createElement('div')
+  page.className = 'fatal-error-page'
+
+  const card = document.createElement('div')
+  card.className = 'fatal-error-card'
+
+  const titleEl = document.createElement('div')
+  titleEl.className = 'fatal-error-title'
+  titleEl.textContent = title
+
+  const hint = document.createElement('div')
+  hint.className = 'fatal-error-hint'
+  hint.textContent = '应用启动时发生异常。请把下面的错误信息反馈给开发者。'
+
+  const detail = document.createElement('pre')
+  detail.className = 'fatal-error-detail'
+  detail.textContent = message
+
+  card.append(titleEl, hint, detail)
+  page.append(card)
+  appRoot.append(page)
 }
 
 const app = createApp(App)

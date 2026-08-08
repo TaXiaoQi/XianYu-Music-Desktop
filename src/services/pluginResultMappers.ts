@@ -95,3 +95,28 @@ export const parseDuration = (val: any): number => {
   }
   return 0;
 };
+
+/** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
+export const extractResultList = (result: any): any[] => {
+  if (!result) return [];
+  // 常见格式: { data: [...] }
+  if (Array.isArray(result.data)) return result.data;
+  // MusicFree 部分插件格式: { musicList: [...] }
+  if (Array.isArray(result.musicList)) return result.musicList;
+  // Baka 插件可能使用 list/albumList/songList 等字段
+  if (Array.isArray(result.list)) return result.list;
+  if (Array.isArray(result.albumList)) return result.albumList;
+  if (Array.isArray(result.songList)) return result.songList;
+  if (Array.isArray(result.songs)) return result.songs;
+  if (Array.isArray(result.tracks)) return result.tracks;
+  // 嵌套格式: { data: { list/songs/... } }
+  if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+    if (Array.isArray(result.data.list)) return result.data.list;
+    if (Array.isArray(result.data.songs)) return result.data.songs;
+    if (Array.isArray(result.data.musicList)) return result.data.musicList;
+    if (Array.isArray(result.data.albumList)) return result.data.albumList;
+  }
+  // 直接返回数组
+  if (Array.isArray(result)) return result;
+  return [];
+};

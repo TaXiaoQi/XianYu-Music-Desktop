@@ -22,7 +22,7 @@ import {
   isBakaPlugin,
   pluginGetSupportedQualities,
 } from './pluginEngine';
-import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl } from './lxPluginEngine';
+import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl, lxPluginGetPic } from './lxPluginEngine';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 export type LxQuality = QualityKey;
@@ -580,7 +580,7 @@ async function fetchLyricText(
     // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
     // line-by-line：仅使用逐行歌词（lyric）
     const preferWordByWord = lyricsStyle === 'word-by-word';
-    const wordLyric = result?.lxlyric;
+    const wordLyric = result?.lxlyric || result?.yrc || result?.qrc;
     const lineLyric = result?.lyric;
     const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
     if (!lyric) return null;
@@ -783,7 +783,7 @@ async function downloadFromUrl(
 
 /**
  * 解析在线歌曲的封面图片 URL。
- * - lx:// 协议：cover_thumb_path 即远程封面 URL
+ * - lx:// 协议：优先取 cover_thumb_path，否则调用 LX 插件 pic action 获取
  * - plugin:// 协议：优先取 cover_thumb_path，否则调用 pluginGetCover 获取
  */
 async function resolveCoverUrl(song: Song): Promise<string | null> {
@@ -792,6 +792,41 @@ async function resolveCoverUrl(song: Song): Promise<string | null> {
   if (thumb && /^https?:\/\//.test(thumb)) return thumb;
 
   const path = song.cue_source_path || song.path;
+  if (path.startsWith('lx://')) {
+    const parts = path.replace('lx://', '').split('/');
+    const lxSource = parts[0];
+    const songmid = parts.slice(1).join('/');
+    if (!lxSource || !songmid) return null;
+    try {
+      const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
+      let matchedPlugin = lxPlugins.find((p) => p.sources.includes(lxSource));
+      if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+      if (!matchedPlugin) return null;
+
+      await ensureLxPluginInstance(matchedPlugin);
+      const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
+      const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
+      const cover = await lxPluginGetPic(matchedPlugin, lxSource, {
+        songId: songmid,
+        name: song.name,
+        singer: song.artist,
+        albumName: song.album,
+        source: lxSource,
+        songmid,
+        hash: cachedInfo?.hash,
+        copyrightId: cachedInfo?.copyrightId,
+        strMediaMid: cachedInfo?.strMediaMid,
+        albumId: cachedInfo?.albumId,
+        albumMid: cachedInfo?.albumMid,
+        _types: cachedInfo?._types,
+        types: cachedInfo?.types,
+      } as any);
+      return cover && /^https?:\/\//.test(cover) ? cover : null;
+    } catch {
+      return null;
+    }
+  }
+
   if (!path.startsWith('plugin://')) return null;
 
   // plugin:// 歌曲：通过插件引擎获取封面

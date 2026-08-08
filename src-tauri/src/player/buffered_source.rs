@@ -102,6 +102,9 @@ pub struct BufferedSource<I> {
     current_block: VecDeque<f32>,
     /// 内部源是否已耗尽（EOF）且缓冲排空。
     exhausted: bool,
+    /// 可选：缓冲监控。消费线程置 `starved`（饥饿），生产线程置 `produced`（已补充）。
+    /// 供播放线程看门狗实现「自动暂停 → 缓冲 → 自动恢复」降级策略。
+    monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
     /// 后台线程句柄（Drop 时 take + join）。
     thread_handle: Option<thread::JoinHandle<()>>,
     _marker: PhantomData<I>,
@@ -111,8 +114,25 @@ impl<I> BufferedSource<I>
 where
     I: Source<Item = f32> + Send + 'static,
 {
+    /// 更新缓冲监控的饥饿（或补充）标志（可空：无外部观察者时 no-op）。
+    /// `value=true` 标记饥饿；`value=false` 标记恢复（消费线程读到数据时清除）。
+    #[inline]
+    fn set_starvation(&self, value: bool) {
+        if let Some(monitor) = &self.monitor {
+            monitor.starved.store(value, Ordering::Relaxed);
+        }
+    }
+
     /// 构造并启动后台预读取线程。
     pub fn new(inner: I) -> Self {
+        Self::new_tracked(inner, None)
+    }
+
+    /// 构造并启动后台预读取线程，可选项 `monitor` 同步缓冲饥饿/补充状态。
+    pub fn new_tracked(
+        inner: I,
+        monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
+    ) -> Self {
         let sample_rate = inner.sample_rate();
         let channels = inner.channels();
         let total_duration = inner.total_duration();
@@ -127,11 +147,19 @@ where
         // 停止标志：Drop 时置位，后台线程在退避 sleep 中也能及时退出。
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
+        let monitor_clone = monitor.clone();
 
         let thread_handle = thread::Builder::new()
             .name("xy-buffered-source".to_string())
             .spawn(move || {
-                producer_loop(inner, cmd_rx, sample_tx, ack_tx, stop_flag_clone);
+                producer_loop(
+                    inner,
+                    cmd_rx,
+                    sample_tx,
+                    ack_tx,
+                    stop_flag_clone,
+                    monitor_clone,
+                );
             })
             .ok();
 
@@ -144,6 +172,7 @@ where
             total_duration,
             current_block: VecDeque::with_capacity(BLOCK_SAMPLES),
             exhausted: false,
+            monitor,
             thread_handle,
             _marker: PhantomData,
         };
@@ -162,6 +191,7 @@ where
         const PREFILL_TIMEOUT: Duration = Duration::from_millis(500);
         match self.sample_rx.recv_timeout(PREFILL_TIMEOUT) {
             Ok(block) => {
+                self.set_starvation(false);
                 if block.is_empty() {
                     self.exhausted = true;
                 } else {
@@ -186,6 +216,7 @@ fn producer_loop(
     sample_tx: SyncSender<Vec<f32>>,
     ack_tx: std::sync::mpsc::Sender<SeekAck>,
     stop_flag: Arc<AtomicBool>,
+    monitor: Option<Arc<crate::player::types::BufferedMonitor>>,
 ) {
     // 提升生产者线程优先级（Windows: ABOVE_NORMAL），防止系统负载下被抢占
     // 导致缓冲排空 → 静音卡顿。必须在 producer_loop 入口调用（线程已启动后）。
@@ -279,7 +310,13 @@ fn producer_loop(
                 }
 
                 match sample_tx.try_send(block) {
-                    Ok(()) => break,
+                    Ok(()) => {
+                        // 成功推送数据块 → 通知播放线程缓冲已补充（看门狗据此判断可恢复）
+                        if let Some(monitor) = &monitor {
+                            monitor.produced.store(true, Ordering::Relaxed);
+                        }
+                        break;
+                    }
                     Err(mpsc::TrySendError::Full(b)) => {
                         block = b;
                         thread::sleep(BACKOFF);
@@ -318,6 +355,7 @@ where
         loop {
             match self.sample_rx.recv_timeout(CONSUMER_WAIT_TIMEOUT) {
                 Ok(block) => {
+                    self.set_starvation(false);
                     if block.is_empty() {
                         // 空块视为 EOF 信号
                         self.exhausted = true;
@@ -334,11 +372,14 @@ where
                     // 正常运行只短暂等待，避免实时回调长阻塞；测试环境等待更久以消除调度竞态。
                     // 返回静音样本避免 underrun 爆音，等下个回调再试。
                     // 持续空会持续静音，但后台线程恢复后立即补上。
+                    // 置饥饿标志：看门狗据此自动暂停/恢复，避免长时间无声。
+                    self.set_starvation(true);
                     return Some(0.0);
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     // 后台线程退出（EOF 或 Drop）。当前块已空 → 流结束。
                     self.exhausted = true;
+                    self.set_starvation(false);
                     return None;
                 }
             }

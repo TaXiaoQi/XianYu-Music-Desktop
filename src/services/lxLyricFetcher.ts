@@ -150,12 +150,14 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     if (matchedPlugin) {
       await ensureLxPluginInstance(matchedPlugin);
       const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
-      if (pluginLyrics?.lyric) {
+      if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc)) {
         const result = buildLyricsRaw(
           pluginLyrics.lyric,
           pluginLyrics.tlyric,
           pluginLyrics.rlyric,
           pluginLyrics.lxlyric,
+          pluginLyrics.yrc,
+          pluginLyrics.qrc,
         );
         console.log('[LX Lyrics] LX 插件获取成功:', { resultLen: result.length, lyricLen: pluginLyrics.lyric.length, lxlyricLen: pluginLyrics.lxlyric?.length || 0 });
         return result;

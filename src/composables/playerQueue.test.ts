@@ -11,7 +11,7 @@ import { playbackApi } from '../services/tauri/playbackApi';
 import type { Song } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
-import { createPlayerQueue } from './playerQueue';
+import { createPlayerQueue } from '../features/playback/playerQueue';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: '/music/demo.flac',
