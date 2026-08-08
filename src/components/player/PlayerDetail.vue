@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
+import { isFlyingCover } from '../../composables/useFlyingCover';
 import { loadLyrics, lyricsStatus } from '../../composables/lyrics/state';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
@@ -40,9 +41,30 @@ let heavyContentFrameId: number | null = null;
 // 封面组件（PlayerDetailLeft）单独提前挂载：有歌曲播放时即渲染，
 // 避免第一首歌底栏无封面承接（歌词页打开前 PlayerDetailLeft 未挂载的窗口期）。
 // 其他重型内容（LyricsView/QueueList 等）仍受 shouldRenderHeavyContent 延迟加载。
+//
+// 第一首歌特殊处理：PlayerDetailLeft 尚未挂载，飞行动画飞向固定坐标兜底位置。
+// 此时若立即挂载并显示底栏封面，会与飞行中的封面重叠。因此第一首歌等飞行动画
+// 结束（isFlyingCover 变 false）后再挂载。后续歌曲 shouldRenderCover 已为 true，
+// 不受影响，按正常逻辑立即显示封面。
 const shouldRenderCover = ref(false);
 watch(currentSong, (song) => {
-  if (song) shouldRenderCover.value = true;
+  if (!song) return;
+  if (shouldRenderCover.value) return; // 已挂载，后续歌曲无需等待
+  // 第一首歌：等飞行动画结束再挂载底栏封面
+  if (isFlyingCover.value) {
+    const stop = watch(isFlyingCover, (flying) => {
+      if (!flying) {
+        shouldRenderCover.value = true;
+        stop();
+      }
+    });
+    // 兜底：若飞行动画异常未结束，3 秒后强制挂载
+    setTimeout(() => {
+      if (!shouldRenderCover.value) shouldRenderCover.value = true;
+    }, 3000);
+  } else {
+    shouldRenderCover.value = true;
+  }
 }, { immediate: true });
 
 const isOnlineSongPath = (path: string) => path.startsWith('lx://') || path.startsWith('plugin://');

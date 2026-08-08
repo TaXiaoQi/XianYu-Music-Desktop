@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useCoverCache } from '../../composables/useCoverCache';
-import { isFlyingCover } from '../../composables/useFlyingCover';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { usePlaybackStore } from '../../features/playback/store';
 
@@ -42,13 +41,9 @@ const currentBigCoverUrl = computed(() => (
     ? currentCoverFull.value
     : ''
 ));
-const displayedLocalCoverUrl = computed(() => {
-  if (localCoverLoadFailed.value) return '';
-  // 飞封面动画期间且底栏模式（未展开歌词页）暂缓显示底栏封面，
-  // 避免飞行中底栏已出现封面图标，让飞行动画完整落地后再承接。
-  if (isFlyingCover.value && !props.isExpanded) return '';
-  return currentLocalCoverUrl.value;
-});
+const displayedLocalCoverUrl = computed(() => (
+  localCoverLoadFailed.value ? '' : currentLocalCoverUrl.value
+));
 const showCoverPlaceholder = computed(() => !displayedLocalCoverUrl.value && !bigCoverLoaded.value);
 
 const getRetainedFullCoverPaths = (path: string) => {
