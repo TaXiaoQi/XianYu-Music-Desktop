@@ -168,6 +168,7 @@ commands.allow = [
   "recognize_with_pcm",
   "write_state_json",
   "read_state_json",
+  "open_devtools",
   "fetch_lyric_from_source",
   "resolve_lx_music_url",
   "get_lx_cover",
