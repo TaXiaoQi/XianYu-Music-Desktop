@@ -743,6 +743,10 @@ export interface TauriCommandMap {
     payload: { key: string };
     response: string | null;
   };
+  open_devtools: {
+    payload: undefined;
+    response: null;
+  };
   fetch_lyric_from_source: {
     payload: { source: string; songInfo: LyricSongInfoContract };
     response: LyricResultContract | null;
