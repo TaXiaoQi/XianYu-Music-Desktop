@@ -502,7 +502,7 @@ watch(() => props.coverHidden, async () => {
 <template>
   <div class="group/lyrics-view relative h-full min-h-0 w-full min-w-0">
     <div
-      v-show="amllLines.length > 0"
+      v-show="showLyricsPlayerSettingsPanel || amllLines.length > 0"
       ref="fontPanelRef"
       class="pointer-events-none absolute right-[100%] top-2 bottom-12 z-[85] flex min-h-0 min-w-[260px] max-w-[320px] flex-col justify-center"
       :style="fontPanelStyle"
