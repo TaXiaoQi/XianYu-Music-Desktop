@@ -443,6 +443,7 @@ class BakaPluginManagerClass {
     const lxlyric = result.lxlyric || '';
     const yrc = result.yrc || '';
     const qrc = result.qrc || '';
+    const eslrc = result.eslrc || '';
     const coverUrl = extractCoverUrl(result) || result.coverUrl || result.artwork || '';
 
     if (!url) {
@@ -452,8 +453,8 @@ class BakaPluginManagerClass {
     }
 
     const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
-    const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
-      ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
+    const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
+      ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc, eslrc)
       : '';
 
     const headerKeys = Object.keys(headers);
@@ -543,7 +544,7 @@ class BakaPluginManagerClass {
         return null;
       }
 
-      const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization, lxlyric, yrc, qrc);
+      const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization, lxlyric, yrc, qrc, eslrc);
       log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, format=${format}`);
       return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw, format };
     } catch (e) {

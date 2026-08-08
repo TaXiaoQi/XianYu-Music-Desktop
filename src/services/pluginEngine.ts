@@ -969,10 +969,11 @@ export async function pluginGetMusicInfo(
   const lyric = result.lyric || result.rawLrc || result.lrc || '';
   const tlyric = result.tlyric || result.translation || '';
   const lxlyric = result.lxlyric || '';
-  // 逐字歌词：兼容 yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）字段
-  // 不同 MF 插件可能返回其中一种或多种，buildLyricsRaw 会按优先级选用
+  // 逐字歌词：兼容 yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）/ eslrc（Baka 增强）字段
+  // buildLyricsRaw 会按优先级 yrc > qrc > lxlyric > eslrc 仅选用一种，避免格式混合导致解析失败
   const yrc = result.yrc || '';
   const qrc = result.qrc || '';
+  const eslrc = result.eslrc || '';
   const coverUrl = result.coverUrl || result.artwork || '';
   if (!url) {
     log(`[getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
@@ -983,13 +984,13 @@ export async function pluginGetMusicInfo(
   // 实际播放音质（用于底部栏同步显示）
   const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
 
-  // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
-  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc)
-    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc)
+  // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > eslrc > lyric）
+  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
+    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc, eslrc)
     : '';
 
   const headerKeys = Object.keys(headers);
-  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, actualQuality=${actualQuality}`);
+  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}, actualQuality=${actualQuality}`);
   return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
 }
 
@@ -1082,9 +1083,9 @@ export async function pluginGetLyric(
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
-    // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > lyric，解析失败自动回退）
+    // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > eslrc > lyric）
     // 罗马音作为附加轨道（与翻译一样由后端按时间戳聚类）
-    const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization || null, lxlyric, yrc, qrc);
+    const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization || null, lxlyric, yrc, qrc, eslrc);
     log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
     return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw };
   } catch (e) {

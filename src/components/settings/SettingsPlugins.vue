@@ -257,8 +257,8 @@ const pluginStatsLabel = computed(() => {
   return `共 ${total} 个插件，已启用 ${enabled} 个`;
 });
 
-/** 根据插件格式返回对应颜色类名 */
-function pluginColorClasses(format: PluginSource['format']) {
+/** 根据插件格式返回对应颜色类名（Baka 系列插件用独立蓝色配色） */
+function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
   if (format === 'lx') {
     return {
       iconBg: 'bg-gradient-to-br from-green-500/12 to-emerald-400/12',
@@ -269,6 +269,15 @@ function pluginColorClasses(format: PluginSource['format']) {
     };
   }
   if (format === 'musicfree') {
+    if (isBaka) {
+      return {
+        iconBg: 'bg-gradient-to-br from-blue-500/12 to-indigo-400/12',
+        iconText: 'text-blue-600 dark:text-blue-400',
+        toggle: 'bg-blue-500',
+        tagBg: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 dark:bg-blue-500/15',
+        label: 'BakaMusic',
+      };
+    }
     return {
       iconBg: 'bg-gradient-to-br from-orange-500/12 to-amber-400/12',
       iconText: 'text-orange-600 dark:text-orange-400',
@@ -1278,7 +1287,7 @@ async function saveUserVariables() {
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <div
               class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              :class="[pluginColorClasses(plugin.format).iconBg, pluginColorClasses(plugin.format).iconText]"
+              :class="[pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconBg, pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).iconText]"
             >
               <Puzzle class="h-5 w-5" />
             </div>
@@ -1289,9 +1298,9 @@ async function saveUserVariables() {
                 </div>
                 <span
                   class="settings-plugin-tag"
-                  :class="pluginColorClasses(plugin.format).tagBg"
+                  :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagBg"
                 >
-                  {{ pluginsBakaIds.has(plugin.id) ? 'BakaMusic' : pluginColorClasses(plugin.format).label }}
+                  {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
                 </span>
                 <span
                   v-if="plugin.updateAvailable"
@@ -1351,7 +1360,7 @@ async function saveUserVariables() {
             </button>
             <button
               class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ml-1"
-              :class="plugin.enabled ? pluginColorClasses(plugin.format).toggle : 'bg-gray-300 dark:bg-gray-700'"
+              :class="plugin.enabled ? pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).toggle : 'bg-gray-300 dark:bg-gray-700'"
               @click="handleTogglePlugin(plugin)"
             >
               <span
