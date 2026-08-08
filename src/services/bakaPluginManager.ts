@@ -56,6 +56,7 @@ import {
   qualityKeyToPluginString,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
+import { tauriInvoke } from './tauri/invoke';
 
 // ==================== 日志 ====================
 
@@ -160,6 +161,69 @@ const newToLegacyQualityMap: Record<string, string> = {
 };
 
 // ==================== 歌词格式检测 ====================
+
+/** Baka 插件 platform → LX 音源标识映射 */
+const BAKA_PLATFORM_TO_LX_SOURCE: Record<string, 'kw' | 'kg' | 'tx' | 'wy'> = {
+  'qq': 'tx', 'qqmusic': 'tx', 'tencent': 'tx',
+  'kg': 'kg', 'kugou': 'kg',
+  'kw': 'kw', 'kuwo': 'kw',
+  'wy': 'wy', 'netease': 'wy', 'wanyinyue': 'wy', 'wyy': 'wy',
+};
+
+/**
+ * 后备：通过后端直接 API 获取逐字歌词
+ *
+ * 当 Baka 插件返回的歌词没有逐字内容时，从搜索结果中提取音源和歌曲 ID，
+ * 调用后端 fetch_lyric_from_source 命令获取逐字歌词。
+ */
+async function tryBakaBackendWordLyric(
+  source: PluginSource,
+  item: PluginSearchResult,
+  existingLyric: string,
+  existingTlyric: string,
+): Promise<{ lyric: string; tlyric: string; lxlyric: string; lyricsRaw: string } | null> {
+  const platformKey = (item.platform || '').toLowerCase();
+  const lxSource = BAKA_PLATFORM_TO_LX_SOURCE[platformKey];
+  if (!lxSource) return null;
+
+  const raw = item.rawData || {};
+  const songInfo = {
+    songmid: String(raw.songmid || raw.id || raw.songId || raw.musicId || item.id || ''),
+    hash: raw.hash ? String(raw.hash) : undefined,
+    name: raw.name || raw.title || item.name || item.title || '',
+    singer: raw.singer || raw.artist || item.artist || '',
+    albumName: raw.albumName || raw.album || item.album || undefined,
+    interval: raw.interval ? String(raw.interval) : undefined,
+    _interval: (item.duration && item.duration > 0) ? Math.round(item.duration) : (raw._interval ? Number(raw._interval) : undefined),
+    songId: raw.songId ? String(raw.songId) : undefined,
+    strMediaMid: raw.strMediaMid ? String(raw.strMediaMid) : undefined,
+    albumMid: raw.albumMid ? String(raw.albumMid) : undefined,
+    albumId: raw.albumId || undefined,
+    copyrightId: raw.copyrightId ? String(raw.copyrightId) : undefined,
+    source: lxSource,
+  };
+
+  if (!songInfo.songmid) return null;
+
+  try {
+    log(`[getMediaSource][后备] ${source.name} 尝试后端 API: source=${lxSource}, songmid=${songInfo.songmid}`);
+    const backendLyrics = await tauriInvoke('fetch_lyric_from_source', {
+      source: lxSource,
+      songInfo,
+    });
+    if (!backendLyrics?.lxlyric?.trim()) return null;
+
+    const lyric = backendLyrics.lyric || existingLyric;
+    const tlyric = backendLyrics.tlyric || existingTlyric;
+    const rlyric = backendLyrics.rlyric || null;
+    const lyricsRaw = buildLyricsRaw(lyric, tlyric, rlyric, backendLyrics.lxlyric);
+    log(`[getMediaSource][后备] ${source.name} 后端 API 成功: lxlyricLen=${backendLyrics.lxlyric.length}`);
+    return { lyric, tlyric, lxlyric: backendLyrics.lxlyric, lyricsRaw };
+  } catch (e: any) {
+    log(`[getMediaSource][后备] ${source.name} 后端 API 失败: ${e?.message ?? e}`);
+    return null;
+  }
+}
 
 /**
  * 根据歌词内容检测格式（对齐 BakaMusic getLyricFormat）
@@ -453,20 +517,35 @@ class BakaPluginManagerClass {
     }
 
     const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
-    const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
+    let lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
       ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc, eslrc)
       : '';
+    let finalLyric = lyric;
+    let finalTlyric = tlyric;
+    let finalLxlyric = lxlyric;
+
+    // 后备：当插件返回的歌词没有逐字内容时，尝试通过后端直接 API 获取逐字歌词
+    const hasWordLevel = !!(yrc || qrc || eslrc || lxlyric);
+    if (!hasWordLevel && lyric) {
+      const fallback = await tryBakaBackendWordLyric(source, item, lyric, tlyric);
+      if (fallback) {
+        finalLyric = fallback.lyric;
+        finalTlyric = fallback.tlyric;
+        finalLxlyric = fallback.lxlyric;
+        lyricsRaw = fallback.lyricsRaw;
+      }
+    }
 
     const headerKeys = Object.keys(headers);
-    log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
+    log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${finalLyric.length}, actualQuality=${actualQuality}`);
     return {
       url,
       headers: headers as Record<string, string>,
       ekey: ekey || undefined,
       cek: cek || undefined,
-      lyric,
-      tlyric,
-      lxlyric,
+      lyric: finalLyric,
+      tlyric: finalTlyric,
+      lxlyric: finalLxlyric,
       lyricsRaw,
       coverUrl,
       actualQuality,
@@ -522,6 +601,14 @@ class BakaPluginManagerClass {
       const yrc = lrcSource.yrc || '';
       const qrc = lrcSource.qrc || '';
       const eslrc = lrcSource.eslrc || '';
+
+      // [诊断] 输出完整的歌词数据信息，帮助定位逐字歌词缺失问题
+      log(`[getLyric] ${source.name} 原始返回字段: keys=[${Object.keys(lrcSource).join(',')}], format=${lrcSource.format ?? '(none)'}, rawLrcLen=${rawLrc.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}`);
+      if (rawLrc) log(`[getLyric] rawLrc 预览: ${rawLrc.substring(0, 200)}`);
+      if (lxlyric) log(`[getLyric] lxlyric 预览: ${lxlyric.substring(0, 200)}`);
+      if (yrc) log(`[getLyric] yrc 预览: ${yrc.substring(0, 200)}`);
+      if (qrc) log(`[getLyric] qrc 预览: ${qrc.substring(0, 200)}`);
+      if (eslrc) log(`[getLyric] eslrc 预览: ${eslrc.substring(0, 200)}`);
 
       // 检测歌词格式
       let format: BakaLyricFormat | undefined;
