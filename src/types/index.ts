@@ -816,6 +816,10 @@ export interface PluginMusicInfo {
   headers?: Record<string, string>;
   /** 实际获取到有效 URL 的音质（用于底部栏同步显示） */
   actualQuality?: QualityKey;
+  /** QMC2 加密密钥（QQ音乐 L2 等加密音源），由 Baka 插件 getMediaSource 返回 */
+  ekey?: string;
+  /** CENC 内容密钥（32-hex），由 Baka 插件 getMediaSource 返回 */
+  cek?: string;
 }
 
 /** MusicFree 插件歌单搜索结果 */

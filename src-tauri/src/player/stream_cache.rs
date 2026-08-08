@@ -21,6 +21,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
+/// Combined Read + Seek trait for use in trait objects (Rust 不允许 dyn 中出现多个非 auto trait)。
+pub trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
 /// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
 /// 512KB ≈ 32s @ 128kbps / 12.8s @ 320kbps，平衡起播速度和播放流畅度。
 /// 配合 StreamingTempFileReader 的阻塞等待机制，即使播放追上下载进度也能平滑等待。
@@ -35,11 +39,24 @@ pub struct StreamingTempFileReader {
     download_failed: Arc<AtomicBool>,
     pos: u64,
     total_bytes: Option<u64>,
+    /// When true, blocks reads until download thread finishes post-download QMC check/decryption
+    post_check_pending: Option<Arc<AtomicBool>>,
 }
 
 impl Read for StreamingTempFileReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         loop {
+            // Block reads if post-download QMC check/decryption is pending
+            if let Some(ref flag) = self.post_check_pending {
+                if flag.load(Ordering::Relaxed) {
+                    if self.download_failed.load(Ordering::Relaxed) {
+                        return Ok(0);
+                    }
+                    std::thread::sleep(Duration::from_millis(3));
+                    continue;
+                }
+            }
+
             let downloaded = self.downloaded_bytes.load(Ordering::Relaxed);
             if self.pos < downloaded {
                 let max_read = (downloaded - self.pos).min(buf.len() as u64) as usize;
@@ -67,7 +84,9 @@ impl Seek for StreamingTempFileReader {
             SeekFrom::Start(n) => n,
             SeekFrom::Current(n) => (self.pos as i64 + n).max(0) as u64,
             SeekFrom::End(n) => {
-                if self.total_bytes.is_some() {
+                if self.total_bytes.is_some()
+                    || self.download_complete.load(Ordering::Relaxed)
+                {
                     return self.file.seek(SeekFrom::End(n)).map(|p| {
                         self.pos = p;
                         p
@@ -103,6 +122,11 @@ pub struct StreamingTempFileState {
     pub download_complete: Arc<AtomicBool>,
     pub download_failed: Arc<AtomicBool>,
     pub total_bytes: Option<u64>,
+    /// QMC2 ekey (if provided by the plugin or extracted from JSON response).
+    /// 使用 Arc<Mutex> 允许 download_thread 在运行时从 JSON 响应中提取并更新 ekey。
+    pub ekey: Arc<std::sync::Mutex<Option<String>>>,
+    /// When Some(true), blocks reads until download thread finishes post-download QMC check/decryption
+    pub post_check_pending: Option<Arc<AtomicBool>>,
 }
 
 impl std::fmt::Debug for StreamingTempFileState {
@@ -122,6 +146,14 @@ impl std::fmt::Debug for StreamingTempFileState {
                 &self.download_failed.load(Ordering::Relaxed),
             )
             .field("total_bytes", &self.total_bytes)
+            .field(
+                "ekey",
+                &self
+                    .ekey
+                    .lock()
+                    .map(|e| e.is_some())
+                    .unwrap_or(false),
+            )
             .finish()
     }
 }
@@ -136,7 +168,44 @@ impl StreamingTempFileState {
             download_failed: self.download_failed.clone(),
             pos: 0,
             total_bytes: self.total_bytes,
+            post_check_pending: self.post_check_pending.clone(),
         })
+    }
+
+    /// Returns the ekey for QMC2 decryption, if available.
+    pub fn ekey(&self) -> Option<String> {
+        self.ekey.lock().ok().and_then(|e| e.clone())
+    }
+
+    /// 创建 reader，若 ekey 存在则自动包装 QmcDecryptReader 进行流式解密。
+    /// 返回 Box<dyn> 以统一有/无 ekey 两种情况的具体类型。
+    pub fn new_reader_with_decryption(
+        &self,
+    ) -> std::io::Result<Box<dyn ReadSeek + Send + Sync + 'static>> {
+        let reader = self.new_reader()?;
+        let ekey = self.ekey();
+        if let Some(ekey_str) = ekey {
+            match crate::player::qmc2::QmcCrypto::from_ekey(&ekey_str) {
+                Ok(crypto) => {
+                    eprintln!(
+                        "[StreamCache] 使用 QMC2 流式解密 reader (ekey 长度: {})",
+                        ekey_str.len()
+                    );
+                    Ok(Box::new(crate::player::qmc2::QmcDecryptReader::new(
+                        reader, crypto,
+                    )))
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[StreamCache] QMC2 ekey 解析失败: {}，使用原始 reader",
+                        e
+                    );
+                    Ok(Box::new(reader))
+                }
+            }
+        } else {
+            Ok(Box::new(reader))
+        }
     }
 
     pub fn is_download_finished(&self) -> bool {
@@ -315,6 +384,7 @@ pub fn start_streaming_download(
     url: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
+    ekey: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
     let hash = url_hash(url);
     let mut mgr = cache().lock().map_err(|e| e.to_string())?;
@@ -341,6 +411,8 @@ pub fn start_streaming_download(
                 download_complete: Arc::new(AtomicBool::new(true)),
                 download_failed: Arc::new(AtomicBool::new(false)),
                 total_bytes: Some(downloaded),
+                ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
+                post_check_pending: None,
             });
         }
         // 下载进行中：复用同一个文件和下载状态
@@ -350,6 +422,8 @@ pub fn start_streaming_download(
             download_complete: entry.download_complete.clone(),
             download_failed: entry.download_failed.clone(),
             total_bytes: None,
+            ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
+            post_check_pending: None,
         });
     }
 
@@ -367,6 +441,8 @@ pub fn start_streaming_download(
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let download_complete = Arc::new(AtomicBool::new(false));
     let download_failed = Arc::new(AtomicBool::new(false));
+    let post_check_pending = Arc::new(AtomicBool::new(false));
+    let shared_ekey = Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string())));
 
     // 启动后台下载线程
     let url_clone = url.to_string();
@@ -377,6 +453,8 @@ pub fn start_streaming_download(
     let dl_bytes = downloaded_bytes.clone();
     let dl_complete = download_complete.clone();
     let dl_failed = download_failed.clone();
+    let dl_post_check = post_check_pending.clone();
+    let dl_ekey = shared_ekey.clone();
 
     let handle = std::thread::spawn(move || {
         download_thread(
@@ -388,6 +466,8 @@ pub fn start_streaming_download(
             dl_bytes,
             dl_complete,
             dl_failed,
+            dl_post_check,
+            dl_ekey,
         );
     });
 
@@ -411,7 +491,216 @@ pub fn start_streaming_download(
         download_complete,
         download_failed,
         total_bytes: None,
+        ekey: shared_ekey,
+        post_check_pending: Some(post_check_pending),
     })
+}
+
+/// 从 JSON 响应文本中递归提取音频 URL 和 ekey。
+/// 优先检查常见字段名（url, data, musicUrl, audioUrl, src, link, file, path），
+/// 然后递归搜索任意层级的字符串值中以 http:// 或 https:// 开头且含音频扩展名的链接。
+/// 同时搜索 ekey 字段（ekey, eKey, encryptKey, key）。
+fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+
+    // 优先字段名列表（按常见 API 返回格式排序）
+    let priority_keys = [
+        "url", "musicUrl", "audioUrl", "playUrl", "play_url", "music_url",
+        "link", "src", "file", "fileUrl", "file_url",
+        "data", "result", "music", "audio",
+    ];
+
+    // 第一轮：检查优先字段名
+    for key in &priority_keys {
+        if let Some(found) = find_url_by_key(&value, key) {
+            let ekey = find_ekey_in_json(&value);
+            return Some((found, ekey));
+        }
+    }
+
+    // 第二轮：递归搜索任意字符串值
+    if let Some(url) = find_any_audio_url(&value) {
+        let ekey = find_ekey_in_json(&value);
+        return Some((url, ekey));
+    }
+
+    None
+}
+
+/// 在 JSON 中搜索 ekey 字段
+fn find_ekey_in_json(value: &serde_json::Value) -> Option<String> {
+    let ekey_keys = ["ekey", "eKey", "encryptKey", "encryptionKey"];
+    find_string_by_keys(value, &ekey_keys)
+}
+
+/// 在 JSON 中按指定 key 列表搜索非空字符串值
+fn find_string_by_keys(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for &key in keys {
+                if let Some(v) = map.get(key) {
+                    if let Some(s) = v.as_str() {
+                        if !s.is_empty() {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+            }
+            for v in map.values() {
+                if let Some(found) = find_string_by_keys(v, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_string_by_keys(v, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 在 JSON 值中查找指定 key 对应的 URL 字符串
+fn find_url_by_key(value: &serde_json::Value, key: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(v) = map.get(key) {
+                if let Some(s) = v.as_str() {
+                    if s.starts_with("http://") || s.starts_with("https://") {
+                        return Some(s.to_string());
+                    }
+                }
+                // 嵌套对象/数组中继续查找同一 key
+                if let Some(found) = find_url_by_key(v, key) {
+                    return Some(found);
+                }
+            }
+            // 在其他字段中继续查找
+            for v in map.values() {
+                if let Some(found) = find_url_by_key(v, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_url_by_key(v, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 递归搜索 JSON 中任意以 http 开头且看起来像音频 URL 的字符串
+fn find_any_audio_url(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => {
+            if (s.starts_with("http://") || s.starts_with("https://"))
+                && looks_like_audio_url(s)
+            {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values() {
+                if let Some(found) = find_any_audio_url(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_any_audio_url(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 判断 URL 是否看起来像音频链接（包含常见音频扩展名或路径特征）
+fn looks_like_audio_url(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    // 检查常见音频扩展名
+    lower.contains(".mp3")
+        || lower.contains(".flac")
+        || lower.contains(".m4a")
+        || lower.contains(".aac")
+        || lower.contains(".ogg")
+        || lower.contains(".wav")
+        || lower.contains(".wma")
+        || lower.contains(".opus")
+        // QQ音乐/酷狗/酷我/网易云等流媒体域名
+        || lower.contains("stream.qqmusic")
+        || lower.contains("ws.stream.qqmusic")
+        || lower.contains("dl.stream.qqmusic")
+        || lower.contains("trackmedia")
+        || lower.contains("music.126.net")
+        || lower.contains("m.kugou")
+        || lower.contains("track.kg")
+        || lower.contains("kuwo")
+        || lower.contains("car-lv.kuwo")
+        // 没有明确扩展名但路径中含 music/song/track/play 等关键词
+        || (lower.contains("/music") || lower.contains("/song") || lower.contains("/track") || lower.contains("/play"))
+}
+
+/// 检查文件头魔数是否为已知音频格式。
+/// 支持 MP3 (含 ID3 标签)、FLAC、RIFF/WAV、OGG、M4A/MP4、AAC ADTS、AIFF。
+fn is_valid_audio_header(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 {
+        return false;
+    }
+
+    // MP3: ID3 标签开头
+    if &bytes[..3] == b"ID3" {
+        return true;
+    }
+
+    // MP3: 同步字 (第一字节 0xFF，第二字节高3位为 111)
+    if bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 {
+        return true;
+    }
+
+    // FLAC
+    if &bytes[..4] == b"fLaC" {
+        return true;
+    }
+
+    // RIFF (WAV)
+    if &bytes[..4] == b"RIFF" {
+        return true;
+    }
+
+    // OGG
+    if &bytes[..4] == b"OggS" {
+        return true;
+    }
+
+    // AIFF
+    if &bytes[..4] == b"FORM" {
+        return true;
+    }
+
+    // M4A/MP4: bytes 4-7 为 "ftyp"
+    if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" {
+        return true;
+    }
+
+    false
 }
 
 fn download_thread(
@@ -423,6 +712,8 @@ fn download_thread(
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
     download_failed: Arc<AtomicBool>,
+    _post_check_pending: Arc<AtomicBool>,
+    ekey: Arc<std::sync::Mutex<Option<String>>>,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
         eprintln!("[StreamCache] 下载失败: {} url={}", reason, url);
@@ -465,7 +756,7 @@ fn download_thread(
         }
     }
 
-    let response = match req.send() {
+    let mut response = match req.send() {
         Ok(r) => r,
         Err(e) => {
             fail_download(&format!("下载请求失败: {}", e), 0);
@@ -485,19 +776,116 @@ fn download_thread(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_lowercase();
-    let is_html = content_type.contains("text/html")
+    let is_non_audio = content_type.contains("text/html")
         || content_type.contains("application/json")
         || content_type.contains("text/plain");
-    if is_html {
-        eprintln!(
-            "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
-            content_type, url
-        );
-        fail_download(
-            &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
-            0,
-        );
-        return;
+    if is_non_audio {
+        // 部分 Baka 插件的 getMediaSource 返回的是 API 端点 URL（如酷狗 PHP 接口），
+        // 响应为 JSON 且包含真实音频直链。尝试解析 JSON 提取 URL 并重试下载。
+        if content_type.contains("application/json") {
+            let body_text: String = response.text().unwrap_or_default();
+            if let Some((real_url, json_ekey)) = extract_audio_info_from_json(&body_text) {
+                // 如果 JSON 中包含 ekey，更新共享 ekey 字段供后续 QMC 解密使用
+                if let Some(ref ek) = json_ekey {
+                    if let Ok(mut ekey_guard) = ekey.lock() {
+                        if ekey_guard.is_none() {
+                            *ekey_guard = Some(ek.clone());
+                            eprintln!(
+                                "[StreamCache] JSON 响应中提取到 ekey (长度: {})，已更新共享 ekey",
+                                ek.len()
+                            );
+                        }
+                    }
+                }
+                eprintln!(
+                    "[StreamCache] JSON 响应中提取到音频 URL，重试下载: {} -> {}",
+                    url, real_url
+                );
+                // 用提取到的 URL 重新请求
+                let mut retry_req = client.get(&real_url);
+                if let Some(ua) = user_agent {
+                    retry_req = retry_req.header(reqwest::header::USER_AGENT, ua);
+                }
+                if let Some(hdrs) = headers {
+                    for (key, value) in hdrs {
+                        if !key.trim().is_empty() && !value.trim().is_empty() {
+                            if let (Ok(name), Ok(val)) = (
+                                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                                reqwest::header::HeaderValue::from_str(value),
+                            ) {
+                                retry_req = retry_req.header(name, val);
+                            }
+                        }
+                    }
+                }
+                match retry_req.send() {
+                    Ok(retry_resp) if retry_resp.status().is_success() => {
+                        let retry_ct = retry_resp
+                            .headers()
+                            .get(reqwest::header::CONTENT_TYPE)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if retry_ct.contains("text/html")
+                            || retry_ct.contains("application/json")
+                            || retry_ct.contains("text/plain")
+                        {
+                            eprintln!(
+                                "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}",
+                                retry_ct, real_url
+                            );
+                            fail_download(
+                                &format!(
+                                    "提取的 URL 仍返回非音频内容 (Content-Type: {})",
+                                    retry_ct
+                                ),
+                                0,
+                            );
+                            return;
+                        }
+                        eprintln!("[StreamCache] 提取的 URL 返回音频内容，开始下载: {}", real_url);
+                        response = retry_resp;
+                    }
+                    Ok(retry_resp) => {
+                        eprintln!(
+                            "[StreamCache] 提取的 URL 返回 HTTP {} url={}",
+                            retry_resp.status(),
+                            real_url
+                        );
+                        fail_download(
+                            &format!("提取的 URL 返回 HTTP {}", retry_resp.status()),
+                            0,
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        eprintln!("[StreamCache] 提取的 URL 请求失败: {} url={}", e, real_url);
+                        fail_download(&format!("提取的 URL 请求失败: {}", e), 0);
+                        return;
+                    }
+                }
+            } else {
+                eprintln!(
+                    "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
+                    content_type, url
+                );
+                fail_download(
+                    &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
+                    0,
+                );
+                return;
+            }
+        } else {
+            eprintln!(
+                "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
+                content_type, url
+            );
+            fail_download(
+                &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
+                0,
+            );
+            return;
+        }
     }
 
     let total_bytes = response
@@ -514,7 +902,6 @@ fn download_thread(
         }
     };
 
-    let mut response = response;
     let mut buf = [0u8; 64 * 1024];
     let mut bytes_written = 0u64;
     let mut error: Option<String> = None;
@@ -554,6 +941,39 @@ fn download_thread(
         }
     }
 
+    // 验证下载内容的文件头魔数，防止 CDN 返回错误页/加密数据等非音频内容
+    // 即使 Content-Type 为 audio/mpeg，仍可能返回非音频数据（如 vkey 过期时的错误响应）
+    // 注意：当 ekey 存在时（QMC 加密音源），文件头是加密数据而非有效音频头，跳过此验证
+    let has_ekey = ekey.lock().map(|e| e.is_some()).unwrap_or(false);
+    if !has_ekey {
+        if let Ok(mut verify_file) = File::open(&path) {
+            let mut header = [0u8; 16];
+            let header_len = verify_file.read(&mut header).unwrap_or(0);
+            if header_len >= 4 && !is_valid_audio_header(&header[..header_len]) {
+                let header_hex: String = header[..header_len]
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let mut preview_buf = [0u8; 200];
+                let _ = verify_file.seek(SeekFrom::Start(0));
+                let preview_len = verify_file.read(&mut preview_buf).unwrap_or(0);
+                let text_preview = String::from_utf8_lossy(&preview_buf[..preview_len]);
+                eprintln!(
+                    "[StreamCache] 下载内容非有效音频格式 (header: {})，文本预览: {}\nurl={}",
+                    header_hex, text_preview, url
+                );
+                fail_download(
+                    &format!("下载内容非有效音频格式 (header: {})", header_hex),
+                    bytes_written,
+                );
+                return;
+            }
+        }
+    } else {
+        eprintln!("[StreamCache] ekey 存在，跳过音频头验证（QMC 加密音源），将由 QmcDecryptReader 流式解密");
+    }
+
     download_complete.store(true, Ordering::Relaxed);
 
     // 更新缓存大小
@@ -569,6 +989,12 @@ fn download_thread(
 
 /// 等待最小缓冲就绪（在 commands.rs 的 async 上下文中用 tokio::time::sleep 轮询）
 pub fn is_buffer_ready(state: &StreamingTempFileState) -> bool {
+    // Wait for post-download QMC check/decryption if pending
+    if let Some(ref flag) = state.post_check_pending {
+        if flag.load(Ordering::Relaxed) {
+            return false;
+        }
+    }
     state.downloaded_bytes() >= MIN_BUFFER_BYTES || state.is_download_finished()
 }
 

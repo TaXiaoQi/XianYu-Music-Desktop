@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePlayer } from '../../features/playback';
 import { lyricsSettings } from '../../composables/lyrics';
+import { fileApi } from '../../services/tauri/fileApi';
 
 const props = defineProps<{
   bgOpacity?: number;
   active?: boolean;
 }>();
 
-const { dominantColors, currentCover } = usePlayer();
+const { dominantColors, currentCover, currentSongPath } = usePlayer();
 
 const viewportArea = ref(
   typeof window !== 'undefined' ? window.innerWidth * window.innerHeight : 0
@@ -24,9 +25,33 @@ const thumbCoverUrl = computed(() => (
   (props.active ?? true) ? currentCover.value : ''
 ));
 
-/** 自定义背景图 URL：本地文件路径通过 convertFileSrc 转为可访问的 URL */
+/** 单曲独立背景图路径（从数据库读取，每首歌可不同） */
+const songBgPath = ref<string | null>(null);
+
+let fetchSeq = 0;
+async function fetchSongBackground(path: string | null) {
+  if (!path) {
+    songBgPath.value = null;
+    return;
+  }
+  const seq = ++fetchSeq;
+  try {
+    const result = await fileApi.getSongBackground(path);
+    if (seq === fetchSeq) {
+      songBgPath.value = result;
+    }
+  } catch {
+    if (seq === fetchSeq) {
+      songBgPath.value = null;
+    }
+  }
+}
+
+watch(currentSongPath, (path) => fetchSongBackground(path), { immediate: true });
+
+/** 自定义背景图 URL：优先使用单曲背景，其次全局自定义背景 */
 const customBgUrl = computed(() => {
-  const path = lyricsSettings.customBackgroundImage;
+  const path = songBgPath.value || lyricsSettings.customBackgroundImage;
   if (!path) return '';
   return path.startsWith('http') || path.startsWith('data:') || path.startsWith('asset:')
     ? path

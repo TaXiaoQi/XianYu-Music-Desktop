@@ -953,11 +953,15 @@ export async function pluginGetPlaylistDetail(
   try {
     // 优先用 getMusicSheetInfo 获取歌单曲目
     if (typeof inst.instance.getMusicSheetInfo === 'function') {
-      const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
-      const list = extractResultList(result);
-      if (list.length > 0) {
-        list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+      try {
+        const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          list.forEach((_: any) => { resetMediaItem(_, source.name); });
+          return list.map((item: any) => toPluginSearchResult(item, source));
+        }
+      } catch (e: any) {
+        log(`[${source.name}] getMusicSheetInfo 调用失败，尝试搜索回退: ${e?.message}`);
       }
     }
 
@@ -993,11 +997,15 @@ export async function pluginGetArtistWorks(
   try {
     // 优先用 getArtistWorks 获取歌手作品
     if (typeof inst.instance.getArtistWorks === 'function') {
-      const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
-      const list = extractResultList(result);
-      if (list.length > 0) {
-        list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+      try {
+        const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          list.forEach((_: any) => { resetMediaItem(_, source.name); });
+          return list.map((item: any) => toPluginSearchResult(item, source));
+        }
+      } catch (e: any) {
+        log(`[${source.name}] getArtistWorks 调用失败，尝试搜索回退: ${e?.message}`);
       }
     }
 
@@ -1073,11 +1081,15 @@ export async function pluginGetAlbumSongs(
   try {
     // 优先用 getAlbumInfo 获取专辑曲目
     if (typeof inst.instance.getAlbumInfo === 'function') {
-      const result = await inst.instance.getAlbumInfo(albumItem, page);
-      const list = extractResultList(result);
-      if (list.length > 0) {
-        list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+      try {
+        const result = await inst.instance.getAlbumInfo(albumItem, page);
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          list.forEach((_: any) => { resetMediaItem(_, source.name); });
+          return list.map((item: any) => toPluginSearchResult(item, source));
+        }
+      } catch (e: any) {
+        log(`[${source.name}] getAlbumInfo 调用失败，尝试搜索回退: ${e?.message}`);
       }
     }
 
@@ -1398,12 +1410,14 @@ export async function pluginGetBakaMusicInfo(
 
   const url = result.url || '';
   const headers = result.headers || {};
+  const ekey = result.ekey || '';
+  const cek = result.cek || '';
   const lyric = result.lyric || result.rawLrc || result.lrc || '';
   const tlyric = result.tlyric || result.translation || '';
   const lxlyric = result.lxlyric || '';
   const yrc = result.yrc || '';
   const qrc = result.qrc || '';
-  const coverUrl = result.coverUrl || result.artwork || '';
+  const coverUrl = extractCoverUrl(result) || result.coverUrl || result.artwork || '';
   if (!url) {
     log(`[Baka getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
     (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
@@ -1416,8 +1430,8 @@ export async function pluginGetBakaMusicInfo(
     : '';
 
   const headerKeys = Object.keys(headers);
-  log(`[Baka getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
-  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
+  log(`[Baka getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
+  return { url, headers: headers as Record<string, string>, ekey: ekey || undefined, cek: cek || undefined, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
 }
 
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================

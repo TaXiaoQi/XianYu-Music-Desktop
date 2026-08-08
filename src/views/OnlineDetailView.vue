@@ -558,6 +558,16 @@ function handleAddToPlaylist() {
   openAddToPlaylistDialog(songPaths, { songs: songList.value });
 }
 
+/** 全选/取消全选 */
+function handleSelectAll() {
+  const allPaths = songList.value.map(s => s.path);
+  if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
+    selectedPaths.value = new Set();
+  } else {
+    selectedPaths.value = new Set(allPaths);
+  }
+}
+
 function handleContextMenu(e: MouseEvent, song: Song) {
   e.preventDefault();
   contextMenuTargetSong.value = song;
@@ -808,9 +818,11 @@ watch(artistActiveTab, () => {
             :artistName="title"
             :songs="songList"
             :selectedCount="selectedPaths.size"
+            :totalSongCount="songList.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
+            @selectAll="handleSelectAll"
           />
 
           <!-- 歌曲列表 / 专辑列表 tab（不使用 mode="out-in"，避免切换 tab 时内容空白） -->
@@ -880,10 +892,12 @@ watch(artistActiveTab, () => {
             :albumArtist="subtitle"
             :songs="songList"
             :selectedCount="selectedPaths.size"
+            :totalSongCount="songList.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
             @addToPlaylist="handleAddToPlaylist"
+            @selectAll="handleSelectAll"
           />
           <OnlineSongList
             :songs="songList"
@@ -900,10 +914,12 @@ watch(artistActiveTab, () => {
             :songs="songList"
             :isBatchMode="isBatchMode"
             :selectedCount="selectedPaths.size"
+            :totalSongCount="songList.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
             @openAddToPlaylist="handleAddToPlaylist"
+            @selectAll="handleSelectAll"
           />
           <OnlineSongList
             :songs="songList"

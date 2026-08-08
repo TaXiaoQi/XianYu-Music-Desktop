@@ -3,12 +3,14 @@
     <FavoritesHeader
       v-model:isBatchMode="isBatchMode"
       :selectedCount="selectedPaths.size"
+      :totalSongCount="localSongList.length"
       @playAll="handlePlayAll"
       @batchPlay="handleBatchPlay"
       @addToPlaylist="openAddToPlaylistSelection"
       @batchDelete="requestBatchDelete"
       @clearAll="handleClearAll"
       @addAllToQueue="handleAddAllToQueue"
+      @selectAll="handleSelectAll"
     />
     
     <div class="flex-1 flex overflow-hidden relative">
@@ -142,6 +144,16 @@ const handleBatchPlay = () => {
     const firstSong = selected[0];
     void launchFlyingCover(firstSong.path, '');
     void playSong(firstSong);
+  }
+};
+
+// 全选/取消全选
+const handleSelectAll = () => {
+  const allPaths = localSongList.value.map(s => s.path);
+  if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
+    selectedPaths.value = new Set();
+  } else {
+    selectedPaths.value = new Set(allPaths);
   }
 };
 

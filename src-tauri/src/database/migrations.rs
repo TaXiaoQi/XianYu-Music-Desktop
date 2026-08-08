@@ -379,6 +379,19 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), String> {
     migrate_song_loudness(conn)?;
     migrate_artists_columns(conn)?;
     migrate_playback_session(conn)?;
+    migrate_song_backgrounds(conn)?;
+    Ok(())
+}
+
+fn migrate_song_backgrounds(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS song_backgrounds (
+            song_path TEXT PRIMARY KEY,
+            background_path TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| format!("Failed to create song_backgrounds table: {}", e))?;
     Ok(())
 }
 

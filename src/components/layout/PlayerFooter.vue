@@ -195,11 +195,6 @@ const handleContextMenu = (e: MouseEvent) => {
 
 const toggleLyrics = () => { showDesktopLyrics.value = !showDesktopLyrics.value; };
 const toggleLyricsPlayerSettings = () => {
-  // 无歌词时不打开面板，提示用户
-  if (!showLyricsPlayerSettingsPanel.value && parsedLyrics.value.length === 0) {
-    showToast('当前歌曲无歌词', 'info');
-    return;
-  }
   showLyricsPlayerSettingsPanel.value = !showLyricsPlayerSettingsPanel.value;
   // 打开页面样式面板时收起底栏工具弹窗，避免弹窗遮挡页面样式面板
   if (showLyricsPlayerSettingsPanel.value) {

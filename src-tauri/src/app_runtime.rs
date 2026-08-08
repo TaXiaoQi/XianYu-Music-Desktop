@@ -495,7 +495,7 @@ pub(crate) fn update_native_tray_menu(
     apply_tray_menu(&app, &state).map_err(|error| error.to_string())
 }
 
-#[cfg(feature = "devtools")]
+#[cfg(any(feature = "devtools", debug_assertions))]
 #[tauri::command]
 pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
@@ -505,7 +505,7 @@ pub(crate) fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(feature = "devtools"))]
+#[cfg(not(any(feature = "devtools", debug_assertions)))]
 #[tauri::command]
 pub(crate) fn open_devtools(_app: tauri::AppHandle) -> Result<(), String> {
     Err("DevTools 在生产构建中不可用".to_string())

@@ -20,4 +20,10 @@ export const fileApi = {
     tauriInvoke('parse_audio_files', { paths, minimumDurationSeconds }),
   parseMusicFolder: (folderPath: string, minimumDurationSeconds = 0): Promise<Song[]> =>
     tauriInvoke('parse_music_folder', { folderPath, minimumDurationSeconds }),
+  saveSongBackground: (songPath: string, backgroundPath: string): Promise<string> =>
+    tauriInvoke('save_song_background', { songPath, backgroundPath }),
+  getSongBackground: (songPath: string): Promise<string | null> =>
+    tauriInvoke('get_song_background', { songPath }),
+  clearSongBackground: (songPath: string): Promise<void> =>
+    tauriInvoke('clear_song_background', { songPath }),
 };
