@@ -211,7 +211,7 @@ function formatPlayTime(seconds: number): string {
 /**
  * 将酷狗识曲结果映射为项目可播放的 LxSearchResultItem（source='kg'）
  *
- * 播放时通过 `lx://kg/${hash}` 协议，playerPlayback 会调用 lxGetMusicUrl
+ * 播放时通过 `lx://kg/${hash}` 协议，playerPlayback 会调用 lxUrlResolver
  * 用 hash 作为酷狗歌曲标识获取播放链接。
  */
 function mapRecognizeToLxSong(item: RecognizeRawItem): LxSearchResultItem {

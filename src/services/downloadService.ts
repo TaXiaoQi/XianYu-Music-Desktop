@@ -12,7 +12,6 @@ import { downloadApi } from './tauri/downloadApi';
 import type { EmbedMetadataRequestContract } from './tauri/contracts';
 import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
 import { usePlaybackStore } from '../features/playback';
-import { getCachedLxSong } from './lxSongCache';
 import {
   getStoredPlugins,
   pluginGetCover,
@@ -21,7 +20,14 @@ import {
   pluginGetBakaMusicInfo,
   isBakaPlugin,
 } from './pluginEngine';
-import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetMusicUrl, lxPluginGetPic } from './lxPluginEngine';
+import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetPic } from './lxPluginEngine';
+import {
+  parseLxPath,
+  resolveLxCachedInfo,
+  findLxPluginForSource,
+  buildLxSongInfo,
+  resolveLxUrlForSingleQuality,
+} from './lxUrlResolver';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 type LxQuality = QualityKey;
@@ -33,7 +39,7 @@ type LxQuality = QualityKey;
  *     选 '320k' → [320k, 192k, 128k, mgg]
  *     选 'flac'  → [flac, 320k, 192k, 128k, mgg]
  */
-function qualityToLxCandidates(quality: DownloadQuality): LxQuality[] {
+export function qualityToLxCandidates(quality: DownloadQuality): LxQuality[] {
   const q = (quality ?? '320k') as QualityKey;
   const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(q);
   if (startIdx === -1) {
@@ -156,40 +162,18 @@ async function prepareResolveContext(
   quality: DownloadQuality,
 ): Promise<ResolveDownloadContext | null> {
   const path = song.cue_source_path || song.path;
-  if (!path || !path.startsWith('lx://')) return null;
+  const pathInfo = parseLxPath(path || '');
+  if (!pathInfo) return null;
+  const { source: lxSource, songmid } = pathInfo;
 
-  const parts = path.replace('lx://', '').split('/');
-  const lxSource = parts[0];
-  const songmid = parts.slice(1).join('/');
-  if (!lxSource || !songmid) return null;
-
-  const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
-  if (lxPlugins.length === 0) {
+  const matchedPlugin = findLxPluginForSource(lxSource);
+  if (!matchedPlugin) {
     throw new Error('未启用任何落雪音源插件，请先在设置中启用');
   }
-  let matchedPlugin = lxPlugins.find((p) => p.sources.includes(lxSource));
-  if (!matchedPlugin) matchedPlugin = lxPlugins[0];
 
   await ensureLxPluginInstance(matchedPlugin);
-  const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-  const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-
-  const baseSongInfo = {
-    songId: songmid,
-    name: song.name,
-    singer: song.artist,
-    albumName: song.album,
-    source: lxSource,
-    songmid,
-    hash: cachedInfo?.hash,
-    copyrightId: cachedInfo?.copyrightId,
-    strMediaMid: cachedInfo?.strMediaMid,
-    albumId: cachedInfo?.albumId,
-    albumMid: cachedInfo?.albumMid,
-    interval: cachedInfo?.interval,
-    _types: cachedInfo?._types,
-    types: cachedInfo?.types,
-  };
+  const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
+  const baseSongInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
 
   return {
     matchedPlugin,
@@ -210,9 +194,13 @@ async function resolveUrlForQuality(
   ctx: ResolveDownloadContext,
   q: LxQuality,
 ): Promise<string | null> {
-  const result = await lxPluginGetMusicUrl(ctx.matchedPlugin, ctx.lxSource, ctx.baseSongInfo as any, q);
-  const url = result?.url;
-  if (!url || !/^https?:/.test(url)) return null;
+  const url = await resolveLxUrlForSingleQuality(
+    ctx.matchedPlugin,
+    ctx.lxSource,
+    ctx.baseSongInfo,
+    q,
+  );
+  if (!url) return null;
 
   if (QUALITY_META[q]?.isLossless) {
     const ext = extFromUrl(url);
@@ -347,33 +335,18 @@ async function fetchLyricText(
   // lx:// 协议：通过落雪插件引擎获取歌词
   if (!path.startsWith('lx://')) return null;
 
-  const parts = path.replace('lx://', '').split('/');
-  const lxSource = parts[0];
-  const songmid = parts.slice(1).join('/');
-  if (!lxSource || !songmid) return null;
+  const pathInfo = parseLxPath(path);
+  if (!pathInfo) return null;
+  const { source: lxSource, songmid } = pathInfo;
 
   try {
-    const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
-    let matchedPlugin = lxPlugins.find((p) => p.sources.includes(lxSource));
-    if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+    const matchedPlugin = findLxPluginForSource(lxSource);
     if (!matchedPlugin) return null;
 
     await ensureLxPluginInstance(matchedPlugin);
-    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-    const result = await lxPluginGetLyric(matchedPlugin, lxSource, {
-      songId: songmid,
-      name: song.name,
-      singer: song.artist,
-      albumName: song.album,
-      source: lxSource,
-      songmid,
-      hash: cachedInfo?.hash,
-      copyrightId: cachedInfo?.copyrightId,
-      strMediaMid: cachedInfo?.strMediaMid,
-      _types: cachedInfo?._types,
-      types: cachedInfo?.types,
-    } as any);
+    const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
+    const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
+    const result = await lxPluginGetLyric(matchedPlugin, lxSource, songInfo as any);
 
     // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
     // line-by-line：仅使用逐行歌词（lyric）
@@ -590,35 +563,17 @@ async function resolveCoverUrl(song: Song): Promise<string | null> {
   if (thumb && /^https?:\/\//.test(thumb)) return thumb;
 
   const path = song.cue_source_path || song.path;
-  if (path.startsWith('lx://')) {
-    const parts = path.replace('lx://', '').split('/');
-    const lxSource = parts[0];
-    const songmid = parts.slice(1).join('/');
-    if (!lxSource || !songmid) return null;
+  const lxPathInfo = parseLxPath(path || '');
+  if (lxPathInfo) {
+    const { source: lxSource, songmid } = lxPathInfo;
     try {
-      const lxPlugins = getStoredPlugins().filter((p) => p.enabled && p.format === 'lx');
-      let matchedPlugin = lxPlugins.find((p) => p.sources.includes(lxSource));
-      if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
+      const matchedPlugin = findLxPluginForSource(lxSource);
       if (!matchedPlugin) return null;
 
       await ensureLxPluginInstance(matchedPlugin);
-      const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-      const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-      const cover = await lxPluginGetPic(matchedPlugin, lxSource, {
-        songId: songmid,
-        name: song.name,
-        singer: song.artist,
-        albumName: song.album,
-        source: lxSource,
-        songmid,
-        hash: cachedInfo?.hash,
-        copyrightId: cachedInfo?.copyrightId,
-        strMediaMid: cachedInfo?.strMediaMid,
-        albumId: cachedInfo?.albumId,
-        albumMid: cachedInfo?.albumMid,
-        _types: cachedInfo?._types,
-        types: cachedInfo?.types,
-      } as any);
+      const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
+      const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
+      const cover = await lxPluginGetPic(matchedPlugin, lxSource, songInfo as any);
       return cover && /^https?:\/\//.test(cover) ? cover : null;
     } catch {
       return null;

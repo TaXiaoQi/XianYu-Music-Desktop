@@ -15,17 +15,50 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('./pluginEngine', () => ({
   getStoredPlugins: vi.fn(),
+  pluginGetCover: vi.fn(),
+  pluginGetLyric: vi.fn(),
+  pluginGetMusicInfo: vi.fn(),
+  pluginGetBakaMusicInfo: vi.fn(),
+  isBakaPlugin: vi.fn(),
 }));
 
 vi.mock('./lxPluginEngine', () => ({
   lxPluginGetMusicUrl: vi.fn(),
   lxPluginGetLyric: vi.fn(),
+  lxPluginGetPic: vi.fn(),
   ensureLxPluginInstance: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('./lxSongCache', () => ({
   getCachedLxSong: vi.fn().mockReturnValue(null),
 }));
+
+// lxUrlResolver 中的函数内部调用 lxPluginEngine / lxSongCache，
+// 这里 mock lxUrlResolver 让它透传到已 mock 的 lxPluginGetMusicUrl，
+// 保持 downloadService 测试对底层解析逻辑的控制。
+// 使用 vi.hoisted 创建可被 mock 工厂引用的 mock 函数。
+const {
+  mockFindLxPluginForSource,
+  mockResolveLxUrlForSingleQuality,
+} = vi.hoisted(() => ({
+  mockFindLxPluginForSource: vi.fn(),
+  mockResolveLxUrlForSingleQuality: vi.fn(),
+}));
+
+vi.mock('./lxUrlResolver', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./lxUrlResolver')>();
+  return {
+    parseLxPath: actual.parseLxPath,
+    resolveLxCachedInfo: vi.fn(() => null),
+    findLxPluginForSource: mockFindLxPluginForSource,
+    buildLxSongInfo: vi.fn((_song: unknown, songmid: string, lxSource: string) => ({
+      songId: songmid,
+      source: lxSource,
+      songmid,
+    })),
+    resolveLxUrlForSingleQuality: mockResolveLxUrlForSingleQuality,
+  };
+});
 
 vi.mock('../features/playback/store', () => ({
   usePlaybackStore: vi.fn().mockReturnValue({
@@ -111,11 +144,21 @@ describe('downloadService: quality candidates', () => {
 });
 
 describe('downloadService: download fallback across qualities', () => {
+  const mockPlugin = { id: 'p1', enabled: true, format: 'lx', sources: ['kg'], name: 'plugin', filePath: 'x.js' };
+
   beforeEach(() => {
     vi.clearAllMocks();
-    (getStoredPlugins as any).mockReturnValue([
-      { id: 'p1', enabled: true, format: 'lx', sources: ['kg'], name: 'plugin', filePath: 'x.js' },
-    ]);
+    (getStoredPlugins as any).mockReturnValue([mockPlugin]);
+    mockFindLxPluginForSource.mockReturnValue(mockPlugin);
+    // resolveLxUrlForSingleQuality 透传到 lxPluginGetMusicUrl mock
+    mockResolveLxUrlForSingleQuality.mockImplementation(
+      async (_plugin: any, _lxSource: string, _songInfo: any, quality: string) => {
+        const result = await (lxPluginGetMusicUrl as any)(_plugin, _lxSource, _songInfo, quality);
+        const url = result?.url;
+        if (!url || !/^https?:/.test(url)) return null;
+        return url;
+      },
+    );
   });
 
   it('falls back to lower quality when the higher one fails to download (502)', async () => {
@@ -149,7 +192,7 @@ describe('downloadService: download fallback across qualities', () => {
     expect(result.filePath).toContain('测试歌手 - 测试歌曲');
 
     // 确认确实先尝试了 320k 再回退 192k
-    const attemptedQualities = (lxPluginGetMusicUrl as any).mock.calls.map((c: any[]) => c[3]);
+    const attemptedQualities = (mockResolveLxUrlForSingleQuality as any).mock.calls.map((c: any[]) => c[3]);
     expect(attemptedQualities).toEqual(['320k', '192k']);
   });
 

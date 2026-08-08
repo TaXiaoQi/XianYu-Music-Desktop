@@ -1008,7 +1008,7 @@ export async function lxSearch(source: LxSourceId, keyword: string, page = 1, li
 
 /**
  * 从简化数据构造 LxSearchResultItem（用于专辑/歌单接口返回数据，
- * 这些接口通常不返回音质类型信息，types 留空，播放时由 lxGetMusicUrl 公共 API 解析）
+ * 这些接口通常不返回音质类型信息，types 留空，播放时由 lxUrlResolver 统一解析）
  */
 function buildSimpleLxItem(
   source: LxSourceId,
@@ -1290,28 +1290,5 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
   }
 }
 
-// ==================== Get Music URL ====================
-
-/**
- * 获取落雪 LX 音源的实际播放 URL
- *
- * 请求构造+缓存+主备 API 切换均由 Rust 后端 (url_resolver.rs) 完成，
- * 前端仅负责调用 Tauri 命令并返回结果。
- */
-export async function lxGetMusicUrl(
-  songInfo: LxSearchResultItem,
-  type: string = '320k',
-): Promise<{ type: string; url: string }> {
-  try {
-    const result = await tauriInvoke('resolve_lx_music_url', {
-      songInfo: toUrlSongInfo(songInfo),
-      quality: type,
-    });
-    if (result?.url) {
-      return { type: result.quality, url: result.url };
-    }
-    throw new Error('获取播放链接失败: 后端返回空结果');
-  } catch (e: any) {
-    throw new Error(`获取播放链接失败: ${e?.message || e}`, { cause: e });
-  }
-}
+// Note: LX 音乐 URL 解析已统一到 lxUrlResolver.ts（resolveLxUrl），
+// 旧函数 lxGetMusicUrl 已删除。如需单次解析请使用 resolveLxUrl / resolveLxUrlViaRust。
