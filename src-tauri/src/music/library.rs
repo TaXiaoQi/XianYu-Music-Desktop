@@ -3,41 +3,12 @@
 use super::scanner::ScanOptions;
 use super::scanner::{scan_folder_recursive, scan_single_directory_internal};
 use super::types::{AlbumCatalogItem, ArtistCatalogItem, FolderNode, LibraryFolder, LibrarySong};
-use super::utils::{descendant_like_patterns, normalize_path};
+use super::utils::{clamp_i64_to_u32, descendant_like_patterns, i64_to_u64_opt, i64_to_u8_opt, normalize_path};
 use crate::database::DbState;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use tauri::{AppHandle, State};
-
-fn clamp_i64_to_u32(v: i64) -> u32 {
-    if v <= 0 {
-        0
-    } else if v > u32::MAX as i64 {
-        u32::MAX
-    } else {
-        v as u32
-    }
-}
-
-fn i64_to_u64_opt(v: Option<i64>) -> Option<u64> {
-    v.filter(|x| *x >= 0).map(|x| x as u64)
-}
-
-fn i64_to_u8_opt(v: Option<i64>) -> Option<u8> {
-    v.filter(|x| *x >= 0 && *x <= u8::MAX as i64)
-        .map(|x| x as u8)
-}
-
-fn clamp_i64_to_u32_count(v: i64) -> u32 {
-    if v <= 0 {
-        0
-    } else if v > u32::MAX as i64 {
-        u32::MAX
-    } else {
-        v as u32
-    }
-}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -531,7 +502,7 @@ pub async fn get_library_artist_catalog(
                 Ok(ArtistCatalogItem {
                     id: row.get::<_, i64>(0)?,
                     name: row.get::<_, String>(1)?,
-                    count: clamp_i64_to_u32_count(row.get::<_, i64>(2)?),
+                    count: clamp_i64_to_u32(row.get::<_, i64>(2)?),
                     first_song_path: row.get::<_, String>(3)?,
                     avatar_path: row.get::<_, Option<String>>(4)?,
                 })
@@ -600,7 +571,7 @@ pub async fn get_library_album_catalog(
                 Ok(AlbumCatalogItem {
                     key,
                     name: album_name,
-                    count: clamp_i64_to_u32_count(row.get::<_, i64>(3)?),
+                    count: clamp_i64_to_u32(row.get::<_, i64>(3)?),
                     artist: album_artist_name,
                     first_song_path: row.get::<_, String>(4)?,
                 })

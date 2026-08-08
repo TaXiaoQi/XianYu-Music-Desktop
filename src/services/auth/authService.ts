@@ -367,25 +367,6 @@ export async function login(username: string, password: string): Promise<AuthPay
 }
 
 /**
- * 验证码登录（免密，仅凭邮箱 + 验证码）
- * POST /api/?action=login_by_code
- */
-export async function loginByCode(email: string, verifyCode: string): Promise<AuthPayload> {
-  try {
-    const data = await requestAction<Record<string, unknown>>('login_by_code', {
-      email,
-      verify_code: verifyCode,
-    });
-    if (!data.token) throw new Error('登录响应无效');
-    const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };
-    saveAuth(payload);
-    return payload;
-  } catch (error) {
-    throw new Error(getAuthErrorMessage(error, '验证码登录失败'), { cause: error });
-  }
-}
-
-/**
  * 用户注册。注册接口不返回 token，因此注册成功后自动调用登录以获取会话。
  * POST /api/?action=register
  */

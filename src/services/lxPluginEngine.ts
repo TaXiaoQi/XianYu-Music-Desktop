@@ -162,20 +162,6 @@ function log(msg: string) {
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
-// [DEBUG]: 导出调试日志数组，供应用内调试面板读取
-export function getLxDebugLogs(): DebugLogEntry[] {
-  return debugLogs;
-}
-
-// [DEBUG]: 清空调试日志
-export function clearLxDebugLogs(): void {
-  debugLogs.length = 0;
-}
-
-export function setLogCallback(cb: ((msg: string) => void) | null) {
-  _logCallback = cb;
-}
-
 // ==================== 类型 ====================
 
 export interface LxSourceInfo {
@@ -1045,16 +1031,6 @@ export async function lxPluginGetPic(
   return result?.data ?? result ?? null;
 }
 
-// ==================== 插件状态查询 ====================
-
-export function getLxPluginInitInfo(sourceId: string): LxInitInfo | null {
-  return lxPlugins.get(sourceId)?.initInfo ?? null;
-}
-
-export function getLxPluginStatus(sourceId: string): LxPluginState | null {
-  return lxPlugins.get(sourceId) ?? null;
-}
-
 /**
  * 获取 LX 插件的脚本内容（用于云端同步上传）
  * 优先从 scriptCache 读取，没有则通过 fetchLxPluginScript 重新获取。
@@ -1199,17 +1175,5 @@ export async function initLxPlugin(source: PluginSource): Promise<boolean> {
   } catch (e: any) {
     log(`[initLxPlugin] 初始化异常: ${source.name} - ${e?.message}`);
     return false;
-  }
-}
-
-/** 获取落雪插件状态标签（供 UI 显示） */
-export function getLxPluginStatusLabel(sourceId: string): string {
-  const state = lxPlugins.get(sourceId);
-  if (!state) return '未初始化';
-  switch (state.status) {
-    case 'loading': return '初始化中...';
-    case 'ready': return '就绪';
-    case 'error': return '初始化失败';
-    default: return '未知';
   }
 }

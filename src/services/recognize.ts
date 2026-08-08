@@ -106,20 +106,6 @@ export async function cancelRecognizeSystemAudio(): Promise<void> {
   await tauriInvoke('cancel_recognize_system_audio');
 }
 
-/**
- * 使用自定义 PCM 数据识别歌曲
- *
- * 接收 8000Hz / 16bit / 单声道 PCM 字节数组，直接调用酷狗指纹识别接口。
- * 可用于从文件或其他来源提取的音频识别，不依赖 WASAPI 系统音频捕获。
- *
- * @param pcm 8000Hz / 16bit / 单声道 PCM 字节数组
- * @returns 按置信度降序排列的匹配结果
- */
-export async function recognizeWithPcm(pcm: number[]): Promise<RecognizeMatch[]> {
-  const response = await tauriInvoke('recognize_with_pcm', { pcm });
-  return parseRecognizeResponse(response);
-}
-
 /** 解析酷狗识别接口的响应 */
 function parseRecognizeResponse(response: RecognizeResponseContract): Promise<RecognizeMatch[]> {
   if (response.status !== 200) {

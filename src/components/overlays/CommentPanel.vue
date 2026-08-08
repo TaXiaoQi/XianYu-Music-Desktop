@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { MessageCircle, Heart, X, Loader2, ChevronRight } from 'lucide-vue-next';
-import { pluginGetMusicComments, isBakaPlugin } from '../../services/pluginEngine';
+import { pluginGetMusicComments } from '../../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, Song } from '../../types';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 
@@ -35,12 +35,6 @@ const isEnd = ref(false);
 const error = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const canLoadMore = computed(() => !isEnd.value && !loadingMore.value && comments.value.length > 0);
-
-const hasPluginSource = computed(() => {
-  const song = props.song || currentSong.value;
-  if (!song) return false;
-  return song.source_type === 'plugin' && !!song.plugin_id;
-});
 
 const songTitle = computed(() => {
   const song = props.song || currentSong.value;

@@ -29,12 +29,6 @@ struct HslColor {
 
 struct BucketAccumulator {
     count: usize,
-    #[allow(dead_code)]
-    r_sum: f64,
-    #[allow(dead_code)]
-    g_sum: f64,
-    #[allow(dead_code)]
-    b_sum: f64,
     s_sum: f64,
     l_sum: f64,
     hx_sum: f64,
@@ -45,9 +39,6 @@ impl BucketAccumulator {
     fn new() -> Self {
         Self {
             count: 0,
-            r_sum: 0.0,
-            g_sum: 0.0,
-            b_sum: 0.0,
             s_sum: 0.0,
             l_sum: 0.0,
             hx_sum: 0.0,
@@ -320,9 +311,6 @@ fn process_pixel_data(rgba: &[u8], count: usize, color_boost: f64, depth: f64) -
                     let key = get_bucket_key(&hsl);
                     let bucket = buckets.entry(key).or_insert_with(BucketAccumulator::new);
                     bucket.count += 1;
-                    bucket.r_sum += red as f64;
-                    bucket.g_sum += green as f64;
-                    bucket.b_sum += blue as f64;
                     bucket.s_sum += hsl.s;
                     bucket.l_sum += hsl.l;
                     bucket.hx_sum += (hsl.h * std::f64::consts::PI / 180.0).cos();

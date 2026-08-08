@@ -132,7 +132,7 @@ function mockSearch(request: PluginSearchRequest): Promise<PluginSearchResponse>
  * 获取已安装的插件列表
  * 后端 command: get_installed_plugins -> PluginInfo[]
  */
-export async function getInstalledPlugins(): Promise<PluginInfo[]> {
+async function getInstalledPlugins(): Promise<PluginInfo[]> {
   if (MOCK_ENABLED) {
     return [...MOCK_PLUGINS];
   }
@@ -143,7 +143,7 @@ export async function getInstalledPlugins(): Promise<PluginInfo[]> {
  * 搜索插件资源
  * 后端 command: plugin_search -> PluginSearchResponse
  */
-export async function pluginSearch(request: PluginSearchRequest): Promise<PluginSearchResponse> {
+async function pluginSearch(request: PluginSearchRequest): Promise<PluginSearchResponse> {
   if (MOCK_ENABLED) {
     return mockSearch(request);
   }
@@ -154,7 +154,7 @@ export async function pluginSearch(request: PluginSearchRequest): Promise<Plugin
  * 设置插件启用状态
  * 后端 command: set_plugin_enabled
  */
-export async function setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+async function setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
   if (MOCK_ENABLED) {
     return;
   }
@@ -167,7 +167,7 @@ export async function setPluginEnabled(pluginId: string, enabled: boolean): Prom
  *
  * 当 PluginTrack.streamUrl 为空时，前端需要二次调用此接口获取真实音源。
  */
-export async function getPluginTrackUrl(pluginId: string, trackId: string): Promise<string> {
+async function getPluginTrackUrl(pluginId: string, trackId: string): Promise<string> {
   if (MOCK_ENABLED) {
     return `plugin://${pluginId}/stream/${trackId}`;
   }
@@ -208,7 +208,7 @@ export async function readPluginFile(path: string): Promise<string> {
  * 通过后端 HTTP 代理获取远程插件脚本
  * 用于 ensurePluginInstance 加载远程 URL 插件
  */
-export async function fetchPluginUrl(url: string): Promise<string> {
+async function fetchPluginUrl(url: string): Promise<string> {
   const resp = await tauriInvoke('plugin_http_request', { method: 'GET', url });
   if (resp.status < 200 || resp.status >= 300) {
     throw new Error(`HTTP ${resp.status}`);
@@ -216,11 +216,11 @@ export async function fetchPluginUrl(url: string): Promise<string> {
   return resp.body;
 }
 
-export async function proxyImage(url: string, referer?: string): Promise<string> {
+async function proxyImage(url: string, referer?: string): Promise<string> {
   return tauriInvoke('proxy_image', { url, referer: referer ?? null });
 }
 
-export async function pluginHttpRequestBinary(
+async function pluginHttpRequestBinary(
   method: string,
   url: string,
   headers?: Record<string, string>,
@@ -242,7 +242,7 @@ export async function pluginHttpRequestBinary(
  * 下载网络音频到临时文件（用于 B站 m4s 等需要 Referer 头的直链）
  * 后端 command: download_audio_to_temp
  */
-export async function downloadAudioToTemp(
+async function downloadAudioToTemp(
   url: string,
   headers?: Record<string, string>,
 ): Promise<string> {

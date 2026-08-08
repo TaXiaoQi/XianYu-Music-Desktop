@@ -50,7 +50,6 @@ import {
   resetMediaItem,
   extractCoverUrl,
   extractArtist,
-  extractAlbum,
   stripHtmlTags,
   toPluginSearchResult,
   extractResultList,
@@ -67,25 +66,15 @@ function log(msg: string) {
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
-export function setBakaLogCallback(cb: ((msg: string) => void) | null) {
-  _logCallback = cb;
-}
-
 // ==================== 类型定义 ====================
 
-/** Baka 插件音质键值（12 档，对齐 BakaMusic IMusic.IQualityKey） */
-export type BakaQualityKey =
-  | 'mgg' | '128k' | '192k' | '320k'
-  | 'flac' | 'flac24bit' | 'hires' | 'vinyl'
-  | 'dolby' | 'atmos' | 'atmos_plus' | 'master';
-
 /** Baka 歌词格式（对齐 BakaMusic ILyric.LyricFormat） */
-export type BakaLyricFormat =
+type BakaLyricFormat =
   | 'ttml' | 'lrc' | 'lrc-a2' | 'yrc' | 'qrc'
   | 'eslrc' | 'lyl' | 'lys' | 'lqe' | 'plain';
 
 /** Baka 评论项（对齐 BakaMusic IComment.IComment） */
-export interface BakaComment {
+interface BakaComment {
   id?: string;
   nickName: string;
   avatar?: string;
@@ -97,27 +86,13 @@ export interface BakaComment {
 }
 
 /** Baka 评论结果（对齐 BakaMusic IGetCommentResult） */
-export interface BakaCommentResult {
+interface BakaCommentResult {
   isEnd?: boolean;
   data?: BakaComment[];
 }
 
-/** Baka 歌词来源（对齐 BakaMusic ILyric.ILyricSource） */
-export interface BakaLyricSource {
-  rawLrc?: string;
-  lrc?: string;
-  format?: BakaLyricFormat;
-  translation?: string;
-  romanization?: string;
-  /** 扩展字段：逐字歌词 */
-  yrc?: string;
-  qrc?: string;
-  lxlyric?: string;
-  eslrc?: string;
-}
-
 /** Baka 插件实例接口（对齐 BakaMusic IPlugin.IPluginInstance） */
-export interface IBakaPluginInstance {
+interface IBakaPluginInstance {
   platform: string;
   version?: string;
   appVersion?: string;
@@ -152,7 +127,7 @@ export interface IBakaPluginInstance {
 }
 
 /** Baka 插件方法名列表（16 个，对齐 BakaMusic pluginMethodNames） */
-export const BAKA_PLUGIN_METHODS = [
+const BAKA_PLUGIN_METHODS = [
   'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
   'getAlbumInfo', 'getMusicSheetInfo', 'getArtistWorks',
   'getArtistInfo', 'importMusicSheet', 'importMusicItem',
@@ -192,7 +167,7 @@ const newToLegacyQualityMap: Record<string, string> = {
  * Baka 插件可能返回多种歌词格式，优先级：
  * ttml > yrc > qrc > eslrc > lrc-a2 > lyl > lys > lqe > lrc > plain
  */
-export function detectLyricFormat(content: string): BakaLyricFormat {
+function detectLyricFormat(content: string): BakaLyricFormat {
   const trimmed = content.trim();
   if (!trimmed) return 'plain';
 

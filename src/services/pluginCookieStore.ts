@@ -8,25 +8,6 @@
 
 // ==================== Cookie 管理 ====================
 
-/** 获取指定 URL 匹配的所有 Cookie，返回 "name=value; name2=value2" 格式 */
-export function getCookiesForUrl(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    const domain = urlObj.hostname;
-    const cookieStore = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
-    const cookies: string[] = [];
-    for (const [name, info] of Object.entries(cookieStore)) {
-      const c = info as any;
-      if (c.domain && (domain.includes(c.domain) || c.domain.includes(domain))) {
-        cookies.push(`${name}=${c.value}`);
-      }
-    }
-    return cookies.join('; ');
-  } catch {
-    return '';
-  }
-}
-
 /** 从 HTTP 响应头中捕获 Set-Cookie，自动存储到 localStorage */
 export function captureCookiesFromResponse(url: string, responseHeaders: Record<string, string>): void {
   try {

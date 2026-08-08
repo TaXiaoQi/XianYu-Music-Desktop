@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { fetchLeaderboard, type LeaderboardEntry } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
-import { formatFileSize } from '../../utils/format';
+import { formatFileSize, formatListenDuration } from '../../utils/format';
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -34,9 +34,6 @@ const TEXT = {
   unknownSong: '未知歌曲',
   unknownArtist: '未知艺术家',
   deletedSong: '已删除歌曲',
-  hourUnit: '小时',
-  minuteUnit: '分钟',
-  secondUnit: '秒',
   you: '你',
 };
 
@@ -165,26 +162,6 @@ async function handleRefresh() {
   }
 }
 
-function formatDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) {
-    return `0${TEXT.minuteUnit}`;
-  }
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}${TEXT.hourUnit} ${minutes}${TEXT.minuteUnit}`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}${TEXT.minuteUnit} ${secs}${TEXT.secondUnit}`;
-  }
-
-  return `${secs}${TEXT.secondUnit}`;
-}
-
 const longestPlayed = computed(() => {
   const top = behaviorStats.value?.top_songs?.[0];
   if (!top) {
@@ -252,7 +229,7 @@ const losslessRatio = computed(() => {
             <div class="flex-1 grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,2rem)] min-w-0">
               <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.songTotalDuration }}</p>
-                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatDuration(stats.total_duration) }}</p>
+                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatListenDuration(stats.total_duration) }}</p>
               </div>
               <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.librarySize }}</p>
@@ -270,7 +247,7 @@ const losslessRatio = computed(() => {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 100ms;">
             <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatDuration(behaviorStats.total_duration) }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatListenDuration(behaviorStats.total_duration) }}</p>
           </section>
 
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start md:ml-[clamp(3.25rem,5.75vw,5.5rem)]" style="animation-delay: 200ms;">

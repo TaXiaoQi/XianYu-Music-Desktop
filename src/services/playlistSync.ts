@@ -5,9 +5,8 @@
  * 双向同步能力。所有请求复用 authService 的签名机制（MD5 + 可选 AES 加密）。
  *
  * 后端接口一览（action=xxx）：
- * - create_playlist / get_playlists / get_playlist_detail / update_playlist / delete_playlist
- * - add_song_to_playlist / batch_add_songs_to_playlist / batch_add_songs_to_playlist_large
- * - remove_song_from_playlist / get_or_create_favorite_playlist
+ * - delete_playlist
+ * - file_sync_upload_start / file_sync_upload_chunk / file_sync_upload_finish / file_sync_download
  */
 
 import type { Song } from '../types';
@@ -30,19 +29,6 @@ function logSyncError(msg: string, ...args: unknown[]) {
 }
 
 // ==================== 类型定义 ====================
-
-/** 云端歌单对象（后端返回） */
-export interface CloudPlaylist {
-  id: number;
-  name: string;
-  description: string;
-  cover_url: string;
-  song_count: number;
-  is_favorite: number;
-  created_at: string;
-  updated_at: string;
-  source: string;
-}
 
 /** 云端歌曲对象（后端返回） */
 export interface CloudSong {
@@ -175,90 +161,6 @@ export function cloudSongToSong(cloudSong: CloudSong): Song {
 
 // ==================== API 封装 ====================
 
-/** 创建云端歌单 */
-export async function createCloudPlaylist(
-  ciyuanxiId: string,
-  name: string,
-  description = '',
-  coverUrl = '',
-): Promise<{ playlist_id: number }> {
-  logSync(`createCloudPlaylist → action=create_playlist, name="${name}", user_id=${ciyuanxiId}`);
-  try {
-    const data = await signedRequest<{ playlist_id: number }>('create_playlist', {
-      user_id: ciyuanxiId,
-      name,
-      description,
-      cover_url: coverUrl,
-    });
-    logSync(`createCloudPlaylist ← playlist_id=${data.playlist_id}`);
-    return data;
-  } catch (e) {
-    logSyncError(`createCloudPlaylist 失败: name="${name}", error=`, e);
-    throw e;
-  }
-}
-
-/** 获取用户所有云端歌单 */
-export async function getCloudPlaylists(ciyuanxiId: string): Promise<CloudPlaylist[]> {
-  logSync(`getCloudPlaylists → action=get_playlists, user_id=${ciyuanxiId}`);
-  try {
-    const data = await signedRequest<{ playlists: CloudPlaylist[] }>('get_playlists', {
-      user_id: ciyuanxiId,
-    });
-    const result = data.playlists ?? [];
-    logSync(`getCloudPlaylists ← ${result.length} 个歌单`);
-    return result;
-  } catch (e) {
-    logSyncError(`getCloudPlaylists 失败:`, e);
-    throw e;
-  }
-}
-
-/** 获取或创建"我喜欢的音乐"收藏歌单 */
-export async function getOrCreateFavoritePlaylist(ciyuanxiId: string): Promise<{ playlist_id: number }> {
-  const data = await signedRequest<{ playlist_id: number }>('get_or_create_favorite_playlist', {
-    user_id: ciyuanxiId,
-  });
-  return data;
-}
-
-/** 获取歌单详情（含歌曲列表） */
-export async function getCloudPlaylistDetail(
-  ciyuanxiId: string,
-  playlistId: number,
-): Promise<{ playlist: CloudPlaylist; songs: CloudSong[] }> {
-  logSync(`getCloudPlaylistDetail → action=get_playlist_detail, playlist_id=${playlistId}`);
-  try {
-    const data = await signedRequest<{ playlist: CloudPlaylist; songs: CloudSong[] }>(
-      'get_playlist_detail',
-      {
-        user_id: ciyuanxiId,
-        playlist_id: playlistId,
-      },
-    );
-    logSync(`getCloudPlaylistDetail ← songs=${data.songs?.length ?? 0}, name="${data.playlist?.name ?? ''}"`);
-    return data;
-  } catch (e) {
-    logSyncError(`getCloudPlaylistDetail 失败: playlist_id=${playlistId}, error=`, e);
-    throw e;
-  }
-}
-
-/** 更新歌单信息 */
-export async function updateCloudPlaylist(
-  ciyuanxiId: string,
-  playlistId: number,
-  updates: { name?: string; description?: string; cover_url?: string },
-): Promise<void> {
-  await signedRequest('update_playlist', {
-    user_id: ciyuanxiId,
-    playlist_id: playlistId,
-    name: updates.name ?? '',
-    description: updates.description ?? '',
-    cover_url: updates.cover_url ?? '',
-  });
-}
-
 /** 删除云端歌单 */
 export async function deleteCloudPlaylist(
   ciyuanxiId: string,
@@ -268,109 +170,6 @@ export async function deleteCloudPlaylist(
     user_id: ciyuanxiId,
     playlist_id: playlistId,
   });
-}
-
-/** 每批上传的歌曲数量（与后端 batch_add_songs_to_playlist 的 100 首限制对齐） */
-const BATCH_CHUNK_SIZE = 100;
-
-/** 并发上传的块数（同时发送的请求数，避免过多并发被服务器拒绝） */
-const BATCH_CONCURRENCY = 5;
-
-/** 批量添加歌曲到云端歌单（自动分块 + 并发上传，避免触发宝塔 WAF 缓冲区溢出） */
-export async function batchAddSongsToCloudPlaylist(
-  ciyuanxiId: string,
-  playlistId: number,
-  songs: CloudSongPayload[],
-): Promise<{ added: number; duplicates: number; total: number }> {
-  logSync(`batchAddSongsToCloudPlaylist → playlist_id=${playlistId}, songs=${songs.length}, chunkSize=${BATCH_CHUNK_SIZE}, concurrency=${BATCH_CONCURRENCY}`);
-  if (songs.length > 0) {
-    logSync(`  首首歌曲 payload:`, songs[0]);
-  }
-
-  if (songs.length === 0) {
-    return { added: 0, duplicates: 0, total: 0 };
-  }
-
-  // 分块上传：每块 BATCH_CHUNK_SIZE 首，使用 batch_add_songs_to_playlist（非 _large）
-  // 后端 _large 端点虽然支持 1000 首，但整个请求体可能触发宝塔 WAF 的缓冲区溢出
-  const chunks: CloudSongPayload[][] = [];
-  for (let i = 0; i < songs.length; i += BATCH_CHUNK_SIZE) {
-    chunks.push(songs.slice(i, i + BATCH_CHUNK_SIZE));
-  }
-  logSync(`batchAddSongsToCloudPlaylist: 分为 ${chunks.length} 块, 每块最多 ${BATCH_CHUNK_SIZE} 首, 并发=${BATCH_CONCURRENCY}`);
-
-  let totalAdded = 0;
-  let totalDuplicates = 0;
-  let totalProcessed = 0;
-  let completedCount = 0;
-
-  // 并发上传：每次最多 BATCH_CONCURRENCY 个请求同时进行
-  for (let i = 0; i < chunks.length; i += BATCH_CONCURRENCY) {
-    const batch = chunks.slice(i, i + BATCH_CONCURRENCY);
-    const batchStart = i;
-
-    const results = await Promise.allSettled(
-      batch.map(async (chunk, j) => {
-        const chunkNum = batchStart + j + 1;
-        logSync(`batchAddSongsToCloudPlaylist: 上传第 ${chunkNum}/${chunks.length} 块, songs=${chunk.length}`);
-        const data = await signedRequest<{ added: number; duplicates: number; total: number }>(
-          'batch_add_songs_to_playlist',
-          {
-            user_id: ciyuanxiId,
-            playlist_id: playlistId,
-            songs: chunk,
-          },
-        );
-        return { chunkNum, data, chunkLen: chunk.length };
-      }),
-    );
-
-    // 处理结果：任一块失败则抛出错误
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        const { chunkNum, data, chunkLen } = result.value;
-        totalAdded += data.added ?? 0;
-        totalDuplicates += data.duplicates ?? 0;
-        totalProcessed += chunkLen;
-        completedCount++;
-        logSync(`batchAddSongsToCloudPlaylist: 第 ${chunkNum} 块完成, added=${data.added}, duplicates=${data.duplicates} (${completedCount}/${chunks.length})`);
-      } else {
-        const failedChunkNum = batch[results.indexOf(result)] ? batchStart + results.indexOf(result) + 1 : -1;
-        logSyncError(`batchAddSongsToCloudPlaylist: 第 ${failedChunkNum}/${chunks.length} 块失败, error=`, result.reason);
-        throw result.reason;
-      }
-    }
-  }
-
-  logSync(`batchAddSongsToCloudPlaylist ← 全部完成: added=${totalAdded}, duplicates=${totalDuplicates}, total=${totalProcessed}`);
-  return { added: totalAdded, duplicates: totalDuplicates, total: totalProcessed };
-}
-
-/** 从云端歌单移除歌曲 */
-export async function removeSongFromCloudPlaylist(
-  ciyuanxiId: string,
-  playlistId: number,
-  songId: number,
-): Promise<void> {
-  await signedRequest('remove_song_from_playlist', {
-    user_id: ciyuanxiId,
-    playlist_id: playlistId,
-    song_id: songId,
-  });
-}
-
-/** 检查歌曲是否已在歌单中 */
-export async function checkSongInCloudPlaylist(
-  ciyuanxiId: string,
-  playlistId: number,
-  songHash: string,
-): Promise<boolean> {
-  const data = await signedRequest<{ in_playlist: number }>('check_song_in_playlist', {
-    user_id: ciyuanxiId,
-    playlist_id: playlistId,
-    song_hash: songHash,
-  });
-  return data.in_playlist === 1;
 }
 
 // ==================== 文件存储同步 ====================

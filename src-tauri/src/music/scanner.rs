@@ -47,24 +47,7 @@ impl ScanOptions {
     }
 }
 
-pub(super) fn clamp_i64_to_u32(v: i64) -> u32 {
-    if v <= 0 {
-        0
-    } else if v > u32::MAX as i64 {
-        u32::MAX
-    } else {
-        v as u32
-    }
-}
-
-pub(super) fn i64_to_u64_opt(v: Option<i64>) -> Option<u64> {
-    v.filter(|value| *value >= 0).map(|value| value as u64)
-}
-
-pub(super) fn i64_to_u8_opt(v: Option<i64>) -> Option<u8> {
-    v.filter(|value| *value >= 0 && *value <= u8::MAX as i64)
-        .map(|value| value as u8)
-}
+pub(super) use super::utils::{clamp_i64_to_u32, i64_to_bool, i64_to_u64_opt, i64_to_u8_opt};
 
 pub(super) fn u64_to_i64_saturated(v: u64) -> i64 {
     if v > i64::MAX as u64 {
@@ -85,10 +68,6 @@ pub(super) fn deserialize_string_list(raw: Option<String>) -> Vec<String> {
 
 pub(super) fn serialize_string_list(values: &[String]) -> Result<String, String> {
     serde_json::to_string(values).map_err(|error| error.to_string())
-}
-
-pub(super) fn i64_to_bool(v: Option<i64>) -> bool {
-    v.unwrap_or(0) != 0
 }
 
 pub(super) fn is_missing_text(value: &str, placeholder: &str) -> bool {

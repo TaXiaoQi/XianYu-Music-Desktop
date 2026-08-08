@@ -6,6 +6,7 @@ use super::types::{
 use super::webdav;
 use crate::music::scanner::{apply_scan_changes, parse_song_from_file};
 use crate::music::types::Song;
+use crate::music::utils::{i64_to_bool, i64_to_u64_opt, i64_to_u8_opt};
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -240,22 +241,8 @@ fn deserialize_string_list(raw: Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn i64_to_u64_opt(value: Option<i64>) -> Option<u64> {
-    value.filter(|value| *value >= 0).map(|value| value as u64)
-}
-
 fn i64_to_u32(value: Option<i64>) -> u32 {
     value.unwrap_or(0).clamp(0, u32::MAX as i64) as u32
-}
-
-fn i64_to_u8_opt(value: Option<i64>) -> Option<u8> {
-    value
-        .filter(|value| *value >= 0 && *value <= u8::MAX as i64)
-        .map(|value| value as u8)
-}
-
-fn i64_to_bool(value: Option<i64>) -> bool {
-    value.unwrap_or(0) != 0
 }
 
 fn remote_file_needs_refresh(
