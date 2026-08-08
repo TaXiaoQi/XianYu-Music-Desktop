@@ -1631,10 +1631,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             is_playing_flag,
                             &thread_progress,
                             current_volume_balance_gain,
-                            &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
                             thread_se_handle.clone(),
                             thread_user_volume.clone(),
+                            &mut current_normalizer_handle,
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                         );
@@ -1684,10 +1684,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             is_playing_flag,
                             &thread_progress,
                             current_volume_balance_gain,
-                            &mut current_normalizer_handle,
                             thread_eq_handle.clone(),
                             thread_se_handle.clone(),
                             thread_user_volume.clone(),
+                            &mut current_normalizer_handle,
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                         );
@@ -1780,6 +1780,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                     thread_eq_handle.clone(),
                                     thread_se_handle.clone(),
                                     thread_user_volume.clone(),
+                                    current_volume_balance_gain,
+                                    &mut current_normalizer_handle,
                                     current_remote_stream.as_ref(),
                                     current_streaming_state.as_ref(),
                                 );
@@ -1802,6 +1804,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 thread_eq_handle.clone(),
                                 thread_se_handle.clone(),
                                 thread_user_volume.clone(),
+                                &mut current_normalizer_handle,
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
                             );
@@ -1825,6 +1828,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                     thread_eq_handle.clone(),
                                     thread_se_handle.clone(),
                                     thread_user_volume.clone(),
+                                    &mut current_normalizer_handle,
                                     current_remote_stream.as_ref(),
                                     current_streaming_state.as_ref(),
                                 );

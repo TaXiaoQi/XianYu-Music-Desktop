@@ -1,6 +1,5 @@
 import type { QualityKey, Song } from '../../types';
-import { QUALITY_META, resolveOnlinePlayQuality } from '../../types';
-import { getCachedLxSong } from '../../services/lxSongCache';
+import { QUALITY_META } from '../../types';
 import {
   getStoredPlugins,
   pluginGetCover,
@@ -9,9 +8,11 @@ import {
   isBakaPlugin,
   pluginGetSupportedQualities,
 } from '../../services/pluginEngine';
-import { ensureLxPluginInstance, lxPluginGetMusicUrl } from '../../services/lxPluginEngine';
-import { toUrlSongInfo } from '../../services/lxMusicSdk';
-import { tauriInvoke } from '../../services/tauri/invoke';
+import {
+  parseLxPath,
+  resolveLxCachedInfo,
+  resolveLxUrl,
+} from '../../services/lxUrlResolver';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -41,23 +42,16 @@ const sortQualities = (qualities: QualityKey[]) => (
 
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-const isNamedError = (error: unknown, name: string): error is Error =>
-  error instanceof Error && error.name === name;
-
 export const getOnlineAvailableQualities = async (
   songPath: string,
   song: Song,
 ): Promise<QualityKey[] | null> => {
   if (songPath.startsWith('lx://')) {
-    const parts = songPath.replace('lx://', '').split('/');
-    const lxSource = parts[0];
-    const songmid = parts.slice(1).join('/');
-    if (!lxSource || !songmid) {
-      return null;
-    }
+    const pathInfo = parseLxPath(songPath);
+    if (!pathInfo) return null;
+    const { source: lxSource, songmid } = pathInfo;
 
-    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
+    const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
     if (!cachedInfo?._types) {
       return null;
     }
@@ -132,10 +126,8 @@ const resolveLxAudioUrl = async ({
   fallbackBehavior,
   availableQualities,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  const parts = audioFilePath.replace('lx://', '').split('/');
-  const lxSource = parts[0];
-  const songmid = parts.slice(1).join('/');
-  if (!lxSource || !songmid) {
+  const pathInfo = parseLxPath(audioFilePath);
+  if (!pathInfo) {
     return {
       audioFilePath,
       pluginHeaders: null,
@@ -143,117 +135,27 @@ const resolveLxAudioUrl = async ({
       currentPlayingAudioUrl: null,
     };
   }
+  const { source: lxSource, songmid } = pathInfo;
 
   try {
-    const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-    const cachedInfo = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
-    const tryQualities = resolveOnlinePlayQuality(
+    const result = await resolveLxUrl(
+      song,
+      lxSource,
+      songmid,
       requestedQuality,
-      availableQualities,
       fallbackBehavior,
+      availableQualities,
     );
-
-    const lxPlugins = getStoredPlugins().filter(p => p.enabled && p.format === 'lx');
-    let matchedPlugin = lxPlugins.find(p => p.sources.includes(lxSource));
-    if (!matchedPlugin && lxPlugins.length > 0) matchedPlugin = lxPlugins[0];
-
-    if (!matchedPlugin) {
-      // 无 LX 插件时，通过 Rust 后端批量音质解析（带缓存）
-      // 单次 IPC 调用完成多音质回退，避免循环调用
-      if (cachedInfo) {
-        try {
-          const urlResult = await tauriInvoke(
-            'resolve_lx_with_quality_fallback',
-            {
-              songInfo: toUrlSongInfo(cachedInfo),
-              qualities: tryQualities,
-            },
-          );
-          if (urlResult?.url && /^https?:/.test(urlResult.url)) {
-            return {
-              audioFilePath: urlResult.url,
-              pluginHeaders: null,
-              currentPlayingQuality: urlResult.quality as QualityKey,
-              currentPlayingAudioUrl: urlResult.url,
-            };
-          }
-        } catch (error) {
-          console.warn(`[Audio] Rust batch quality fallback failed: ${getErrorMessage(error)}`);
-        }
-      }
+    if (result?.url && /^https?:/.test(result.url)) {
       return {
-        audioFilePath,
+        audioFilePath: result.url,
         pluginHeaders: null,
-        currentPlayingQuality: null,
-        currentPlayingAudioUrl: null,
+        currentPlayingQuality: result.quality,
+        currentPlayingAudioUrl: result.url,
       };
     }
-
-    await ensureLxPluginInstance(matchedPlugin);
-
-    for (const quality of tryQualities) {
-      try {
-        const urlResult = await lxPluginGetMusicUrl(matchedPlugin, lxSource, {
-          songId: songmid,
-          name: song.name,
-          singer: song.artist,
-          albumName: song.album,
-          source: lxSource,
-          songmid,
-          hash: cachedInfo?.hash,
-          copyrightId: cachedInfo?.copyrightId,
-          strMediaMid: cachedInfo?.strMediaMid,
-          albumId: cachedInfo?.albumId,
-          albumMid: cachedInfo?.albumMid,
-          interval: cachedInfo?.interval,
-          _types: cachedInfo?._types,
-          types: cachedInfo?.types,
-        }, quality);
-        const musicUrl = urlResult?.url;
-        if (musicUrl && /^https?:/.test(musicUrl)) {
-          return {
-            audioFilePath: musicUrl,
-            pluginHeaders: null,
-            currentPlayingQuality: quality,
-            currentPlayingAudioUrl: musicUrl,
-          };
-        }
-      } catch (urlErr) {
-        if (isNamedError(urlErr, 'LxSongLevelError')) {
-          console.warn(`[Audio] Song-level error, skipping remaining qualities: ${urlErr.message}`);
-          break;
-        }
-      }
-    }
-
-    console.warn(`[Audio] lxPluginGetMusicUrl returned empty/invalid URL for lx://${lxSource}/${songmid}, tried=${JSON.stringify(tryQualities)}`);
-
-    // [后备] LX 插件解析失败时，通过 Rust 后端批量音质解析（带缓存）
-    // 单次 IPC 调用完成多音质回退，避免循环调用
-    if (cachedInfo) {
-      try {
-        const urlResult = await tauriInvoke(
-          'resolve_lx_with_quality_fallback',
-          {
-            songInfo: toUrlSongInfo(cachedInfo),
-            qualities: tryQualities,
-          },
-        );
-        if (urlResult?.url && /^https?:/.test(urlResult.url)) {
-          console.log(`[Audio] Rust batch fallback resolved URL for lx://${lxSource}/${songmid} quality=${urlResult.quality}`);
-          return {
-            audioFilePath: urlResult.url,
-            pluginHeaders: null,
-            currentPlayingQuality: urlResult.quality as QualityKey,
-            currentPlayingAudioUrl: urlResult.url,
-          };
-        }
-      } catch (error) {
-        console.warn(`[Audio] Rust batch fallback failed: ${getErrorMessage(error)}`);
-      }
-    }
   } catch (error) {
-    console.warn(`[Audio] Failed to resolve lx:// URL via plugin: ${getErrorMessage(error)}`);
+    console.warn(`[Audio] Failed to resolve lx:// URL: ${getErrorMessage(error)}`);
   }
 
   return {
