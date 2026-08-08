@@ -553,16 +553,18 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
 /**
  * 构建用于存储到 lyrics_raw 的歌词文本
  *
- * 优先级（所有逐字格式都加入原文，由后端 parse_raw_lyrics 自动选择最优解析结果，
- * 若高优先级格式解析失败，会自动回退到下一档）：
- * 1. yrc（网易云逐字格式）— 直接追加
- * 2. qrc（QQ 音乐逐字格式，可能为 hex 加密串）— 直接追加
- * 3. lxlyric（lx-music-desktop 逐字格式）— 转换为 Enhanced LRC 后追加
- * 4. lyric（普通 LRC 行歌词）— 作为兜底主歌词
+ * 逐字格式按优先级仅选用最高优先级的一种（不混用，避免后端不同格式解析器
+ * 互相干扰导致解析失败或产生重复行）：
+ * 1. yrc（网易云逐字格式）
+ * 2. qrc（QQ 音乐逐字格式，可能为 hex 加密串）
+ * 3. lxlyric（lx-music-desktop 逐字格式）— 转换为 Enhanced LRC
+ * 4. eslrc（Baka 增强型逐字歌词）
+ *
+ * 仅当没有任何逐字格式时，才使用普通 LRC（lyric）作为主歌词。
  *
  * 翻译歌词（tlyric）和罗马音歌词（rlyric）作为附加行追加在末尾。
  * 后端会按时间戳将附加行聚类为 translation/romanization 轨道，
- * 与主歌词（yrc/qrc/lxlyric/lyric 中的胜出者）配对显示。
+ * 与主歌词配对显示。
  *
  * @param lyric 普通歌词
  * @param tlyric 翻译歌词（可选）
@@ -570,6 +572,7 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
  * @param lxlyric 逐字歌词（可选，lx-music-desktop 格式）
  * @param yrc 逐字歌词（可选，网易云 YRC 格式）
  * @param qrc 逐字歌词（可选，QQ 音乐 QRC 格式，可为 hex 加密串）
+ * @param eslrc 逐字歌词（可选，Baka ESLRC 格式）
  * @returns 用于存储到 lyrics_raw 的歌词文本
  */
 export function buildLyricsRaw(
@@ -579,23 +582,29 @@ export function buildLyricsRaw(
   lxlyric?: string | null,
   yrc?: string | null,
   qrc?: string | null,
+  eslrc?: string | null,
 ): string {
   const parts: string[] = [];
 
-  // 逐字格式按优先级加入，后端 parse_raw_lyrics 会自动选择可解析的格式作为主歌词
+  // 逐字格式按优先级仅选用最高优先级的一种
+  // 不混用多种逐字格式，避免后端 YRC/QRC/ESLRC 解析器在混合内容上互相干扰
+  let wordLevelContent: string | null = null;
   if (yrc && yrc.trim()) {
-    parts.push(yrc.trim());
-  }
-  if (qrc && qrc.trim()) {
-    parts.push(qrc.trim());
-  }
-  if (lxlyric && lxlyric.trim()) {
+    wordLevelContent = yrc.trim();
+  } else if (qrc && qrc.trim()) {
+    wordLevelContent = qrc.trim();
+  } else if (lxlyric && lxlyric.trim()) {
     const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
     if (enhancedLrc) {
-      parts.push(enhancedLrc);
+      wordLevelContent = enhancedLrc;
     }
+  } else if (eslrc && eslrc.trim()) {
+    wordLevelContent = eslrc.trim();
   }
-  if (lyric && lyric.trim()) {
+
+  if (wordLevelContent) {
+    parts.push(wordLevelContent);
+  } else if (lyric && lyric.trim()) {
     parts.push(lyric.trim());
   }
 
