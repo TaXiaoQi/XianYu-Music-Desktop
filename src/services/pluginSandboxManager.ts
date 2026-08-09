@@ -397,6 +397,35 @@ export async function loadLxInSandbox(
 }
 
 /**
+ * 将方法参数转换为可结构化克隆的纯数据。
+ *
+ * postMessage 的结构化克隆算法无法处理 Vue reactive proxy、函数、Symbol、
+ * class 实例上的方法与循环引用。调用方传入的 musicItem / songInfo 往往
+ * 直接来自 Vue 响应式状态或插件返回的对象，含有这些不可克隆成员时
+ * postMessage 会抛 DataCloneError（"could not be cloned"）。
+ *
+ * 用 JSON 序列化做一次深拷贝，剥离函数与不可枚举成员；JSON 化失败
+ * （如存在循环引用）时回退为 null，避免整个调用链因序列化崩溃。
+ */
+function toCloneableArgs(args: any[]): any[] {
+  return args.map((arg) => {
+    if (arg === null || arg === undefined) return arg;
+    const type = typeof arg;
+    // 原始类型可直接克隆
+    if (type === 'string' || type === 'number' || type === 'boolean') return arg;
+    // 函数与 Symbol 无法克隆，置空
+    if (type === 'function' || type === 'symbol') return null;
+
+    try {
+      return JSON.parse(JSON.stringify(arg));
+    } catch {
+      console.warn('[PluginSandbox] 参数无法序列化，已置空:', type);
+      return null;
+    }
+  });
+}
+
+/**
  * 在沙箱中调用插件方法
  *
  * @param pluginId 插件 ID
@@ -425,11 +454,15 @@ export async function callSandboxMethod(
   // 解决沙箱中 env.getUserVariables() 返回加载时快照的问题
   const freshUserVars = _userVarsProvider?.(pluginId) || {};
 
+  // postMessage 使用结构化克隆算法，无法传递 Vue reactive proxy、函数、
+  // Symbol、循环引用等对象。调用方传入的 musicItem 等参数常来自 Vue 响应式
+  // 状态或插件返回的原始对象，直接传递会抛 "could not be cloned"。
+  // 这里统一做 JSON 深拷贝剥离不可克隆部分，保证 Worker 调用稳定。
   const cmd: WorkerCommand = {
     type: 'call_method',
     pluginId,
     method,
-    args,
+    args: toCloneableArgs(args),
     callId,
     userVars: freshUserVars,
   };

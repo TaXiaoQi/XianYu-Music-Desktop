@@ -57,6 +57,7 @@ vi.mock('./lxUrlResolver', async (importOriginal) => {
       songmid,
     })),
     resolveLxUrlForSingleQuality: mockResolveLxUrlForSingleQuality,
+    resolveLxUrlViaRust: vi.fn().mockResolvedValue(null),
   };
 });
 
@@ -71,8 +72,8 @@ vi.mock('../features/playback/store', () => ({
 import { tauriInvoke } from './tauri/invoke';
 import { getStoredPlugins } from './pluginEngine';
 import { lxPluginGetMusicUrl } from './lxPluginEngine';
-import { downloadSong } from './downloadService';
-import type { Song } from '../types';
+import { downloadSong, probeDownloadableQualities } from './downloadService';
+import type { QualityKey, Song } from '../types';
 
 const makeOnlineSong = (): Song => ({
   path: 'lx://kg/song123',
@@ -235,5 +236,130 @@ describe('downloadService: download fallback across qualities', () => {
     const result = await downloadSong(makeOnlineSong(), { ...baseOptions, quality: '320k' });
     // 320k 解析失败 → 跳过 → 命中 192k
     expect(result.hitQuality).toBe('192k');
+  });
+
+  it('reuses preResolvedUrls and skips redundant url resolution', async () => {
+    (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
+      if (cmd === 'download_online_song') return args.destPath;
+      if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
+      if (cmd === 'file_exists') return false;
+      return null;
+    });
+
+    const result = await downloadSong(makeOnlineSong(), {
+      ...baseOptions,
+      quality: '320k',
+      preResolvedUrls: { '320k': 'https://cdn.example.com/pre-320k.mp3' },
+    });
+
+    expect(result.hitQuality).toBe('320k');
+    // 命中探测结果 → 完全不再调用插件解析
+    expect(mockResolveLxUrlForSingleQuality).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 音质探测：插件声明的档位不等于实际可下载。
+ *
+ * 关键回归点：弹窗必须按「实际解析出直链」判定可用性，
+ * 否则会把插件声称支持但实测拿不到直链的无损档位显示为可选，
+ * 用户选中后下载才发现全部失败。
+ */
+describe('downloadService: probeDownloadableQualities', () => {
+  const mockPlugin = { id: 'p1', enabled: true, format: 'lx', sources: ['kg'], name: 'plugin', filePath: 'x.js' };
+  const declared: QualityKey[] = ['128k', '320k', 'flac', 'flac24bit'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getStoredPlugins as any).mockReturnValue([mockPlugin]);
+    mockFindLxPluginForSource.mockReturnValue(mockPlugin);
+    mockResolveLxUrlForSingleQuality.mockImplementation(
+      async (_plugin: any, _lxSource: string, _songInfo: any, quality: string) => {
+        const result = await (lxPluginGetMusicUrl as any)(_plugin, _lxSource, _songInfo, quality);
+        const url = result?.url;
+        if (!url || !/^https?:/.test(url)) return null;
+        return url;
+      },
+    );
+  });
+
+  it('only reports qualities that actually resolve to a url', async () => {
+    // 插件声明支持 flac / flac24bit，但实际只有有损档位能拿到直链
+    (lxPluginGetMusicUrl as any).mockImplementation(
+      async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
+        (q === '320k' || q === '128k')
+          ? { type: q, url: `https://cdn.example.com/${q}.mp3` }
+          : { type: q, url: '' },
+    );
+
+    const result = await probeDownloadableQualities(makeOnlineSong(), declared);
+
+    expect(result.available).toEqual(['128k', '320k']);
+    expect(result.resolvedUrls['320k']).toBe('https://cdn.example.com/320k.mp3');
+    expect(result.resolvedUrls.flac).toBeUndefined();
+    expect(result.resolvedUrls.flac24bit).toBeUndefined();
+  });
+
+  it('treats a lossless quality silently degraded to mp3 as unavailable', async () => {
+    // flac 档位返回 .mp3 直链（音源静默降级）→ 不应计入可用
+    (lxPluginGetMusicUrl as any).mockImplementation(
+      async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
+        q === 'flac'
+          ? { type: q, url: 'https://cdn.example.com/degraded.mp3' }
+          : { type: q, url: `https://cdn.example.com/${q}.mp3` },
+    );
+
+    const result = await probeDownloadableQualities(makeOnlineSong(), ['320k', 'flac']);
+
+    expect(result.available).toEqual(['320k']);
+    expect(result.resolvedUrls.flac).toBeUndefined();
+  });
+
+  it('never probes qualities outside the declared list', async () => {
+    (lxPluginGetMusicUrl as any).mockImplementation(
+      async (_p: unknown, _s: unknown, _info: unknown, q: string) =>
+        ({ type: q, url: `https://cdn.example.com/${q}.mp3` }),
+    );
+
+    await probeDownloadableQualities(makeOnlineSong(), ['320k', '128k']);
+
+    const probed = (mockResolveLxUrlForSingleQuality as any).mock.calls.map((c: any[]) => c[3]);
+    expect(probed.sort()).toEqual(['128k', '320k']);
+  });
+
+  it('returns an empty result without probing when already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await probeDownloadableQualities(makeOnlineSong(), declared, {
+      signal: controller.signal,
+    });
+
+    expect(result.available).toEqual([]);
+    expect(result.resolvedUrls).toEqual({});
+    expect(mockResolveLxUrlForSingleQuality).not.toHaveBeenCalled();
+  });
+
+  it('keeps probing remaining qualities when one throws', async () => {
+    (lxPluginGetMusicUrl as any).mockImplementation(
+      async (_p: unknown, _s: unknown, _info: unknown, q: string) => {
+        if (q === 'flac') throw new Error('音源网关异常');
+        return { type: q, url: `https://cdn.example.com/${q}.mp3` };
+      },
+    );
+
+    const result = await probeDownloadableQualities(makeOnlineSong(), ['320k', 'flac']);
+
+    // flac 抛错不影响 320k 的探测结果
+    expect(result.available).toEqual(['320k']);
+  });
+
+  it('returns an empty result for non-online songs', async () => {
+    const localSong = { path: 'D:\\Music\\local.flac', name: 'local' } as unknown as Song;
+
+    const result = await probeDownloadableQualities(localSong, declared);
+
+    expect(result.available).toEqual([]);
+    expect(mockResolveLxUrlForSingleQuality).not.toHaveBeenCalled();
   });
 });
