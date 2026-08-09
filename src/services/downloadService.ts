@@ -649,24 +649,32 @@ export async function downloadSong(
       && playingQuality === q
       && currentSongPath === song.path
     ) {
-      try {
-        const cached = await downloadApi.isStreamCached(playingUrl);
-        if (cached) {
-          const destPath = await resolveDownloadFullPath(song, playingUrl, q, options);
-          try {
-            await downloadApi.copyStreamCache(playingUrl, destPath);
-            options.onProgress?.(100);
-            filePath = destPath;
-            hitQuality = q;
-            console.info(`[Download] 命中播放缓存，直接复制：${q}`);
-            break;
-          } catch (e: any) {
-            console.warn(`[Download] 复制缓存失败，回退到正常下载:`, e?.message || e);
-            options.onProgress?.(0);
+      // 校验：若目标是无损档位但播放 URL 扩展名为有损格式，说明播放时已被音源降级，
+      // 跳过缓存复用，走正常下载流程以获取真正的无损音源。
+      const isLosslessTarget = QUALITY_META[q]?.isLossless;
+      const cachedExt = extFromUrl(playingUrl);
+      if (isLosslessTarget && (cachedExt === '.mp3' || cachedExt === '.m4a' || cachedExt === '.aac')) {
+        console.warn(`[Download] 缓存复用跳过：${q} 目标为无损但播放缓存为 ${cachedExt}`);
+      } else {
+        try {
+          const cached = await downloadApi.isStreamCached(playingUrl);
+          if (cached) {
+            const destPath = await resolveDownloadFullPath(song, playingUrl, q, options);
+            try {
+              await downloadApi.copyStreamCache(playingUrl, destPath);
+              options.onProgress?.(100);
+              filePath = destPath;
+              hitQuality = q;
+              console.info(`[Download] 命中播放缓存，直接复制：${q}`);
+              break;
+            } catch (e: any) {
+              console.warn(`[Download] 复制缓存失败，回退到正常下载:`, e?.message || e);
+              options.onProgress?.(0);
+            }
           }
+        } catch (e: any) {
+          console.warn('[Download] 缓存复用探测失败，回退到正常下载:', e?.message || e);
         }
-      } catch (e: any) {
-        console.warn('[Download] 缓存复用探测失败，回退到正常下载:', e?.message || e);
       }
     }
 
