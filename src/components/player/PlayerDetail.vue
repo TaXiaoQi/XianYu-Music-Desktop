@@ -423,7 +423,7 @@ const openLyricsReplacement = () => {
 
 <template>
   <div
-    class="fixed inset-0 z-[50] flex flex-col overflow-visible font-sans select-none text-white"
+    class="fixed inset-x-0 bottom-0 z-[50] flex h-[100vh] flex-col overflow-visible font-sans select-none text-white"
     :class="[
       showPlayerDetail ? 'pointer-events-auto' : 'pointer-events-none',
       // 黑色背景由内层带 opacity 过渡的 div 提供，避免切换时瞬间遮罩主页
@@ -432,7 +432,7 @@ const openLyricsReplacement = () => {
     @contextmenu.prevent="handleContextMenu"
   >
     <div
-      class="relative flex h-full w-full flex-col"
+      class="relative flex h-[100vh] w-full flex-col"
       :class="[
         showPlayerDetail && (isFullscreen || fullscreenAnimState) ? 'pt-0' : 'pt-[calc(100vh-100%)]',
         fullscreenAnimState === 'entering' ? 'fs-entering' : '',
