@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ChevronDown } from 'lucide-vue-next';
 
@@ -7,6 +7,7 @@ import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useSettings } from '../../features/settings/useSettings';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
+import { probeDownloadableQualities } from '../../services/downloadService';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import type { Song, DownloadQuality, QualityKey } from '../../types';
 
@@ -20,60 +21,134 @@ const { downloadAudio, downloadLyrics, downloadCover } = useDownloadDialog();
 // 音质与目录每次打开都跟随设置（不记忆）
 const selectedQuality = ref<DownloadQuality>('320k');
 const downloadDir = ref('');
-// 当前歌曲支持的音质列表（null 表示未知，回退到全部可选）
+/**
+ * 实测可下载的音质列表。
+ * null 表示尚未探测（回退到全部可选）；空数组表示探测完成且无可用档位。
+ */
 const availableQualities = ref<QualityKey[] | null>(null);
-const isLoadingQualities = ref(false);
+/** 插件声明的档位列表，探测期间用于显示骨架 */
+const declaredQualities = ref<QualityKey[] | null>(null);
+/** 探测阶段已解析的直链，下载时透传复用 */
+const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
+const isProbing = ref(false);
 // 不支持音质折叠栏展开状态
 const showUnsupportedQualities = ref(false);
 
-/** 支持的音质列表（按 rank 排序） */
+/** 当前探测任务的中止控制器（弹窗关闭或切歌时中止，防止旧结果覆盖新歌） */
+let probeController: AbortController | null = null;
+
+/** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
 const supportedQualityKeys = computed<QualityKey[]>(() => {
+  if (isProbing.value) {
+    const declared = declaredQualities.value;
+    return (declared && declared.length > 0)
+      ? ALL_QUALITY_KEYS.filter(k => declared.includes(k))
+      : ALL_QUALITY_KEYS;
+  }
   const list = availableQualities.value;
-  if (!list || list.length === 0) return ALL_QUALITY_KEYS;
+  if (list === null) return ALL_QUALITY_KEYS;
   return ALL_QUALITY_KEYS.filter(k => list.includes(k));
 });
 
-/** 不支持的音质列表（按 rank 排序，放在折叠栏中） */
+/** 折叠栏中的不可用档位（按 rank 排序） */
 const unsupportedQualityKeys = computed<QualityKey[]>(() => {
+  if (isProbing.value) return [];
   const list = availableQualities.value;
-  if (!list || list.length === 0) return [];
+  if (list === null) return [];
   return ALL_QUALITY_KEYS.filter(k => !list.includes(k));
 });
 
-// 弹窗打开时用设置初始化音质和目录，并异步获取歌曲支持的音质
-watch(
-  () => props.visible,
-  async (visible) => {
-    if (visible) {
-      selectedQuality.value = (settings.value.download.quality as DownloadQuality) ?? '320k';
-      downloadDir.value = settings.value.download.downloadPath ?? '';
-      availableQualities.value = null;
-      showUnsupportedQualities.value = false;
+/** 探测完成且所有档位都不可用 */
+const hasNoAvailableQuality = computed(() =>
+  !isProbing.value
+  && availableQualities.value !== null
+  && availableQualities.value.length === 0,
+);
 
-      // 异步获取歌曲支持的音质
-      const song = props.song;
-      if (song) {
-        const songPath = song.cue_source_path || song.path;
-        if (songPath.startsWith('lx://') || songPath.startsWith('plugin://')) {
-          isLoadingQualities.value = true;
-          try {
-            availableQualities.value = await getOnlineAvailableQualities(songPath, song);
-            // 若当前选择的音质不在支持列表中，自动切到支持的最高音质
-            if (availableQualities.value && availableQualities.value.length > 0) {
-              if (!availableQualities.value.includes(selectedQuality.value as QualityKey)) {
-                selectedQuality.value = availableQualities.value[availableQualities.value.length - 1];
-              }
-            }
-          } catch {
-            availableQualities.value = null;
-          } finally {
-            isLoadingQualities.value = false;
-          }
-        }
-      }
+/** 中止进行中的探测 */
+const abortProbe = () => {
+  probeController?.abort();
+  probeController = null;
+  isProbing.value = false;
+};
+
+/**
+ * 探测当前歌曲各档位的真实可下载性。
+ *
+ * 分两步：先取插件声明列表（快，通常无网络请求，用于确定探测范围与展示骨架），
+ * 再对声明的档位实际请求直链，只保留真正拿到有效 URL 的档位。
+ */
+const probeQualities = async (song: Song) => {
+  const songPath = song.cue_source_path || song.path;
+  if (!songPath.startsWith('lx://') && !songPath.startsWith('plugin://')) {
+    return;
+  }
+
+  abortProbe();
+  const controller = new AbortController();
+  probeController = controller;
+  isProbing.value = true;
+
+  try {
+    // 1. 插件声明列表：作为探测上界与探测期间的展示骨架
+    try {
+      declaredQualities.value = await getOnlineAvailableQualities(songPath, song);
+    } catch {
+      declaredQualities.value = null;
+    }
+    if (controller.signal.aborted) return;
+
+    // 2. 实测探测
+    const result = await probeDownloadableQualities(song, declaredQualities.value, {
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
+
+    availableQualities.value = result.available;
+    probedUrls.value = result.resolvedUrls;
+
+    // 当前选中档位不可用时，切到实测可用的最高档
+    if (result.available.length > 0
+      && !result.available.includes(selectedQuality.value as QualityKey)) {
+      selectedQuality.value = result.available[result.available.length - 1];
+    }
+  } catch (e: any) {
+    if (!controller.signal.aborted) {
+      console.warn('[DownloadDialog] 音质探测失败:', e?.message || e);
+      // 探测失败时回退到"未知"，保持全部档位可选，不堵死用户
+      availableQualities.value = null;
+    }
+  } finally {
+    if (probeController === controller) {
+      probeController = null;
+      isProbing.value = false;
+    }
+  }
+};
+
+// 弹窗打开时用设置初始化音质和目录，并探测真实可用音质
+watch(
+  () => [props.visible, props.song] as const,
+  ([visible, song]) => {
+    if (!visible) {
+      abortProbe();
+      return;
+    }
+
+    selectedQuality.value = (settings.value.download.quality as DownloadQuality) ?? '320k';
+    downloadDir.value = settings.value.download.downloadPath ?? '';
+    availableQualities.value = null;
+    declaredQualities.value = null;
+    probedUrls.value = {};
+    showUnsupportedQualities.value = false;
+
+    if (song) {
+      void probeQualities(song);
     }
   },
 );
+
+onUnmounted(abortProbe);
 
 const chooseDir = async () => {
   const selected = await open({ directory: true, multiple: false, title: '选择下载目录' });
@@ -85,6 +160,7 @@ const chooseDir = async () => {
 const handleDownload = async () => {
   if (!props.song) return;
   const song = props.song;
+  const preResolvedUrls = probedUrls.value;
   emit('close');
   await downloadToLocal(song, {
     quality: selectedQuality.value,
@@ -92,6 +168,7 @@ const handleDownload = async () => {
     downloadAudio: downloadAudio.value,
     downloadLyrics: downloadLyrics.value,
     downloadCover: downloadCover.value,
+    preResolvedUrls,
   });
 };
 </script>
@@ -132,10 +209,13 @@ const handleDownload = async () => {
             <div>
               <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
                 下载音质
-                <span v-if="isLoadingQualities" class="text-gray-400 font-normal">（加载中…）</span>
+                <span v-if="isProbing" class="text-gray-400 font-normal">（正在探测可用音质…）</span>
               </div>
-              <!-- 支持的音质 -->
-              <div class="grid grid-cols-3 gap-1.5">
+              <!-- 可用音质：探测中显示声明列表并禁用交互，避免点到最终不可用的档位 -->
+              <div
+                class="grid grid-cols-3 gap-1.5 transition-opacity"
+                :class="isProbing ? 'opacity-60 pointer-events-none' : ''"
+              >
                 <button
                   v-for="key in supportedQualityKeys"
                   :key="key"
@@ -155,7 +235,15 @@ const handleDownload = async () => {
                 </button>
               </div>
 
-              <!-- 不支持的音质折叠栏 -->
+              <!-- 探测完成但无可用档位：仍允许直接下载（走降级 + 后端兜底） -->
+              <div
+                v-if="hasNoAvailableQuality"
+                class="mt-2 px-3 py-2.5 text-xs rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+              >
+                未探测到可下载的音质，仍可点击下载尝试（会自动降级并使用后端兜底音源）。
+              </div>
+
+              <!-- 不可用音质折叠栏 -->
               <button
                 v-if="unsupportedQualityKeys.length > 0"
                 type="button"
@@ -166,7 +254,7 @@ const handleDownload = async () => {
                   class="h-3 w-3 transition-transform"
                   :class="showUnsupportedQualities ? 'rotate-180' : ''"
                 />
-                <span>{{ showUnsupportedQualities ? '收起' : '查看' }}不支持的音质（{{ unsupportedQualityKeys.length }}）</span>
+                <span>{{ showUnsupportedQualities ? '收起' : '查看' }}不可用的音质（{{ unsupportedQualityKeys.length }}）</span>
               </button>
               <Transition name="unsupported-collapse">
                 <div v-if="showUnsupportedQualities && unsupportedQualityKeys.length > 0" class="grid grid-cols-3 gap-1.5 mt-2">
@@ -176,7 +264,7 @@ const handleDownload = async () => {
                     type="button"
                     disabled
                     class="px-2 py-2 text-xs font-semibold rounded-md text-center whitespace-nowrap flex flex-col items-center gap-0.5 bg-gray-50 dark:bg-white/5 text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    :title="'当前歌曲不支持此音质'"
+                    title="音源未返回可用直链"
                   >
                     <span>{{ QUALITY_META[key].label }}</span>
                     <span class="text-[10px] font-normal opacity-75 text-gray-400 dark:text-gray-500">{{ QUALITY_META[key].description }}</span>

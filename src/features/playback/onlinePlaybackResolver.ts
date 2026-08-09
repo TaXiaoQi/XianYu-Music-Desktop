@@ -1,5 +1,6 @@
 import type { QualityKey, Song } from '../../types';
 import { QUALITY_META } from '../../types';
+import { extFromUrl, resolveActualQuality } from '../../services/audioQualityVerify';
 import {
   getStoredPlugins,
   pluginGetCover,
@@ -147,10 +148,20 @@ const resolveLxAudioUrl = async ({
       availableQualities,
     );
     if (result?.url && /^https?:/.test(result.url)) {
+      // 音源可能对无版权歌曲静默降级（声称 flac 实返 mp3）。
+      // 直接采信 result.quality 会让 UI 显示 SQ/HR 而用户实听有损，
+      // 因此按直链真实格式修正后再上报给 UI。
+      const actualQuality = resolveActualQuality(result.quality, result.url);
+      if (actualQuality !== result.quality) {
+        console.warn(
+          `[Audio] 音源将 ${result.quality} 降级为 ${extFromUrl(result.url)}，`
+          + `实际播放音质按 ${actualQuality} 显示`,
+        );
+      }
       return {
         audioFilePath: result.url,
         pluginHeaders: null,
-        currentPlayingQuality: result.quality,
+        currentPlayingQuality: actualQuality,
         currentPlayingAudioUrl: result.url,
       };
     }
@@ -243,12 +254,25 @@ const resolvePluginAudioUrl = async ({
       } catch { /* ignore cover error */ }
     }
 
+    // 同 lx:// 路径：按直链真实格式修正插件声称的档位，
+    // 避免音源静默降级时 UI 仍显示 SQ/HR。
+    const claimedQuality = musicInfo.actualQuality ?? null;
+    const verifiedQuality = claimedQuality
+      ? resolveActualQuality(claimedQuality, musicInfo.url)
+      : null;
+    if (claimedQuality && verifiedQuality !== claimedQuality) {
+      console.warn(
+        `[Audio] 插件将 ${claimedQuality} 降级为 ${extFromUrl(musicInfo.url)}，`
+        + `实际播放音质按 ${verifiedQuality} 显示`,
+      );
+    }
+
     return {
       audioFilePath: musicInfo.url,
       pluginHeaders: musicInfo.headers && Object.keys(musicInfo.headers).length > 0
         ? musicInfo.headers
         : null,
-      currentPlayingQuality: musicInfo.actualQuality ?? null,
+      currentPlayingQuality: verifiedQuality,
       currentPlayingAudioUrl: musicInfo.url,
       lyricsRaw: musicInfo.lyricsRaw,
       coverThumbPath,

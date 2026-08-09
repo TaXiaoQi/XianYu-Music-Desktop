@@ -19,6 +19,8 @@ export interface DownloadLocalOptions {
   downloadLyrics?: boolean;
   /** 是否下载独立封面文件（默认跟随设置） */
   downloadCover?: boolean;
+  /** 音质探测阶段已解析的直链，命中档位跳过重复解析 */
+  preResolvedUrls?: Partial<Record<QualityKey, string>>;
 }
 
 /**
@@ -85,6 +87,7 @@ export async function downloadToLocal(
         embedLyrics: settings.value.download.embedLyrics,
         embedCover: settings.value.download.embedCover,
         downloadCover,
+        preResolvedUrls: options?.preResolvedUrls,
         onProgress: (percent: number) => downloadStore.setProgress(percent),
       });
 

@@ -10,7 +10,11 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { downloadApi } from './tauri/downloadApi';
 import type { EmbedMetadataRequestContract } from './tauri/contracts';
-import { ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
+import { ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
+import {
+  extFromUrl as extFromUrlShared,
+  isDegradedLossless,
+} from './audioQualityVerify';
 import { usePlaybackStore } from '../features/playback';
 import {
   getStoredPlugins,
@@ -27,6 +31,7 @@ import {
   findLxPluginForSource,
   buildLxSongInfo,
   resolveLxUrlForSingleQuality,
+  resolveLxUrlViaRust,
 } from './lxUrlResolver';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
@@ -75,21 +80,11 @@ function sanitizeFileName(name: string): string {
     .slice(0, 180) || 'download';
 }
 
-/** 从 URL 推断文件扩展名（含点，如 ".flac"）；失败返回空串 */
-function extFromUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    const pathname = u.pathname;
-    const dot = pathname.lastIndexOf('.');
-    if (dot === -1) return '';
-    const ext = pathname.slice(dot).toLowerCase();
-    // 仅接受常见音频扩展名，避免把 query 里的乱七八糟当扩展名
-    if (/^\.(mp3|flac|wav|m4a|aac|ape|ogg|wma)$/.test(ext)) return ext;
-    return '';
-  } catch {
-    return '';
-  }
-}
+/**
+ * 从 URL 推断文件扩展名（含点，如 ".flac"）；失败返回空串。
+ * 复用 audioQualityVerify 的实现，与播放侧共用同一套判定。
+ */
+const extFromUrl = extFromUrlShared;
 
 /** 根据命中的落雪档位推断扩展名兜底 */
 function extFromQuality(quality: LxQuality): string {
@@ -202,12 +197,9 @@ async function resolveUrlForQuality(
   );
   if (!url) return null;
 
-  if (QUALITY_META[q]?.isLossless) {
-    const ext = extFromUrl(url);
-    if (ext === '.mp3' || ext === '.m4a' || ext === '.aac') {
-      console.warn(`[Download] ${q} 请求被音源降级为 ${ext}，跳过该档位`);
-      return null;
-    }
+  if (isDegradedLossless(q, url)) {
+    console.warn(`[Download] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
+    return null;
   }
   return url;
 }
@@ -279,23 +271,19 @@ async function resolvePluginUrlForQuality(
   // 1) 优先使用预解析的 qualities 字段（先尝试新键值，再尝试旧三档）
   const preNew = ctx.preQualities?.[newQuality];
   if (preNew?.url && /^https?:/.test(preNew.url)) {
-    if (QUALITY_META[q]?.isLossless) {
-      const ext = extFromUrl(preNew.url);
-      if (ext === '.mp3' || ext === '.m4a' || ext === '.aac') {
-        console.warn(`[Download][plugin] 预解析 ${q} 被降级为 ${ext}，跳过该档位`);
-        return null;
-      }
+    if (isDegradedLossless(q, preNew.url)) {
+      console.warn(`[Download][plugin] 预解析 ${q} 被降级为 ${extFromUrl(preNew.url)}，跳过该档位`);
+      return null;
     }
     return preNew.url;
   }
   const preLegacy = ctx.preQualities?.[legacyQuality];
   if (preLegacy?.url && /^https?:/.test(preLegacy.url)) {
-    if (QUALITY_META[q]?.isLossless) {
-      const ext = extFromUrl(preLegacy.url);
-      if (ext === '.mp3' || ext === '.m4a' || ext === '.aac') {
-        console.warn(`[Download][plugin] 预解析 ${q}(${legacyQuality}) 被降级为 ${ext}，跳过该档位`);
-        return null;
-      }
+    if (isDegradedLossless(q, preLegacy.url)) {
+      console.warn(
+        `[Download][plugin] 预解析 ${q}(${legacyQuality}) 被降级为 ${extFromUrl(preLegacy.url)}，跳过该档位`,
+      );
+      return null;
     }
     return preLegacy.url;
   }
@@ -308,14 +296,122 @@ async function resolvePluginUrlForQuality(
   const url = musicInfo?.url;
   if (!url || !/^https?:/.test(url)) return null;
 
-  if (QUALITY_META[q]?.isLossless) {
-    const ext = extFromUrl(url);
-    if (ext === '.mp3' || ext === '.m4a' || ext === '.aac') {
-      console.warn(`[Download][plugin] ${q} 请求被音源降级为 ${ext}，跳过该档位`);
-      return null;
-    }
+  if (isDegradedLossless(q, url)) {
+    console.warn(`[Download][plugin] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
+    return null;
   }
   return url;
+}
+
+/** 音质探测结果 */
+export interface ProbeQualityResult {
+  /** 实测可下载的档位（按 rank 升序，与弹窗展示顺序一致） */
+  available: QualityKey[];
+  /**
+   * 探测过程中已解析出的直链，键为档位。
+   * 下载时透传给 downloadSong 的 preResolvedUrls，避免重复请求同一直链。
+   */
+  resolvedUrls: Partial<Record<QualityKey, string>>;
+}
+
+/** 探测选项 */
+export interface ProbeQualityOptions {
+  /** 中止信号：弹窗关闭或切歌时中止探测 */
+  signal?: AbortSignal;
+  /** 并发探测数（默认 4），避免 12 档全并发打爆音源 */
+  concurrency?: number;
+}
+
+/**
+ * 探测歌曲各音质档位是否真实可下载。
+ *
+ * 背景：插件声明的音质列表（lx 的 `_types` / MF 的 `supportedQualities`）
+ * 只表示"插件或该音源平台理论上支持这些档位"，不代表当前这首歌真的能解析出直链。
+ * 常见表现是弹窗显示 Hi-Res 可选，点下载后所有无损档位返回空链接。
+ *
+ * 本函数对每个候选档位实际调用一次直链解析（复用下载流程的同一套解析函数，
+ * 因此天然继承"无损被静默降级为 mp3 则视为不可用"的校验），
+ * 只把真正拿到有效 URL 的档位标为可用。
+ *
+ * 解析出的直链一并返回，下载时可直接复用 —— 探测并非纯额外开销，
+ * 而是把原本下载时才发的请求提前了。
+ *
+ * @param song 目标歌曲（需为 lx:// 或 plugin:// 在线歌曲）
+ * @param declaredQualities 插件声明的档位列表，作为探测上界；为空时回退全部档位
+ * @param options 中止信号与并发度
+ */
+export async function probeDownloadableQualities(
+  song: Song,
+  declaredQualities: QualityKey[] | null,
+  options?: ProbeQualityOptions,
+): Promise<ProbeQualityResult> {
+  const empty: ProbeQualityResult = { available: [], resolvedUrls: {} };
+
+  if (!isDownloadableOnlineSong(song)) return empty;
+  if (options?.signal?.aborted) return empty;
+
+  // 探测范围：插件声明之外的档位无需探测，插件根本不支持
+  const targets = (declaredQualities && declaredQualities.length > 0)
+    ? ALL_QUALITY_KEYS.filter(k => declaredQualities.includes(k))
+    : [...ALL_QUALITY_KEYS];
+  if (targets.length === 0) return empty;
+
+  // 构造一次解析上下文并在所有档位间复用，避免重复定位插件 / 重建 songInfo。
+  // quality 参数只用于生成候选列表，这里探测自带完整档位列表，传任意值即可。
+  const isPlugin = isPluginSong(song);
+  let ctx: ResolveDownloadContext | PluginResolveContext | null;
+  try {
+    ctx = isPlugin
+      ? await preparePluginResolveContext(song, '320k')
+      : await prepareResolveContext(song, '320k');
+  } catch (e: any) {
+    console.warn('[Probe] 构造解析上下文失败:', e?.message || e);
+    return empty;
+  }
+  if (!ctx) return empty;
+
+  if (options?.signal?.aborted) return empty;
+
+  const resolveUrl = (q: QualityKey): Promise<string | null> =>
+    isPlugin
+      ? resolvePluginUrlForQuality(ctx as PluginResolveContext, q)
+      : resolveUrlForQuality(ctx as ResolveDownloadContext, q);
+
+  const resolvedUrls: Partial<Record<QualityKey, string>> = {};
+
+  // worker-pool 并发：多个 worker 从共享队列取档位，控制同时在飞的请求数
+  const queue = [...targets];
+  const concurrency = Math.max(1, Math.min(options?.concurrency ?? 4, queue.length));
+
+  const worker = async () => {
+    for (;;) {
+      if (options?.signal?.aborted) return;
+      const q = queue.shift();
+      if (!q) return;
+
+      try {
+        const url = await resolveUrl(q);
+        // 结果回来时可能已中止，丢弃避免污染
+        if (options?.signal?.aborted) return;
+        if (url) resolvedUrls[q] = url;
+      } catch (e: any) {
+        // 单档位失败不影响其他档位
+        console.warn(`[Probe] ${q} 探测失败:`, e?.message || e);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+
+  if (options?.signal?.aborted) return empty;
+
+  const available = ALL_QUALITY_KEYS.filter(k => Boolean(resolvedUrls[k]));
+  console.info(
+    `[Probe] 声明 ${targets.length} 档，实测可用 ${available.length} 档:`,
+    available.join(', ') || '（无）',
+  );
+
+  return { available, resolvedUrls };
 }
 
 /** 获取歌词文本（lrc 或纯文本）用于一并下载 */
@@ -509,6 +605,13 @@ interface DownloadSongOptions {
   embedCover: boolean;
   /** 是否独立保存封面图片文件（与 embedCover 独立，可同时开启） */
   downloadCover: boolean;
+  /**
+   * 探测阶段已解析出的直链（键为音质档位）。
+   *
+   * 下载弹窗打开时会调用 probeDownloadableQualities 实际请求各档位直链，
+   * 这里透传探测结果：命中的档位跳过重复解析，避免同一直链请求两次。
+   */
+  preResolvedUrls?: Partial<Record<QualityKey, string>>;
   /** 下载进度回调（0-100）。Worker 下载时逐块回报；Rust 回退时通过事件回报。 */
   onProgress?: (percent: number) => void;
 }
@@ -649,12 +752,10 @@ export async function downloadSong(
       && playingQuality === q
       && currentSongPath === song.path
     ) {
-      // 校验：若目标是无损档位但播放 URL 扩展名为有损格式，说明播放时已被音源降级，
+      // 校验：若目标是无损档位但播放 URL 为有损格式，说明播放时已被音源降级，
       // 跳过缓存复用，走正常下载流程以获取真正的无损音源。
-      const isLosslessTarget = QUALITY_META[q]?.isLossless;
-      const cachedExt = extFromUrl(playingUrl);
-      if (isLosslessTarget && (cachedExt === '.mp3' || cachedExt === '.m4a' || cachedExt === '.aac')) {
-        console.warn(`[Download] 缓存复用跳过：${q} 目标为无损但播放缓存为 ${cachedExt}`);
+      if (isDegradedLossless(q, playingUrl)) {
+        console.warn(`[Download] 缓存复用跳过：${q} 目标为无损但播放缓存为 ${extFromUrl(playingUrl)}`);
       } else {
         try {
           const cached = await downloadApi.isStreamCached(playingUrl);
@@ -680,7 +781,11 @@ export async function downloadSong(
 
     let url: string;
     try {
-      const resolvedUrl = await resolveUrl(q);
+      // 探测阶段已解析出该档位直链时直接复用，省掉一次插件请求。
+      // 探测与下载间隔通常只有几秒，直链仍在有效期内；
+      // 若已失效，下方 downloadFromUrl 会失败并自动回退到下一档位。
+      const preResolved = options.preResolvedUrls?.[q];
+      const resolvedUrl = preResolved ?? await resolveUrl(q);
       if (!resolvedUrl) {
         errors.push(`${q}: 返回空链接`);
         continue;
@@ -704,6 +809,38 @@ export async function downloadSong(
       errors.push(`${q}: 下载失败 ${msg}`);
       console.warn(`[Download] ${q} 档位下载失败，尝试回退更低音质:`, msg);
       options.onProgress?.(0);
+    }
+  }
+
+  // [Rust 兜底] 所有插件档位均失败时，回退到 Rust 后端批量音质解析。
+  // 与播放路径（resolveLxUrl）保持一致：插件解析失败不代表歌曲不可下载，
+  // Rust 侧走独立的音源实现，往往能解析出插件拿不到的直链。
+  if ((!filePath || !hitQuality) && !isPlugin) {
+    const lxCtx = ctx as ResolveDownloadContext;
+    const path = song.cue_source_path || song.path;
+    const pathInfo = parseLxPath(path || '');
+    if (pathInfo) {
+      const cachedInfo = resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid);
+      if (cachedInfo) {
+        console.info('[Download] 插件解析全部失败，尝试 Rust 兜底');
+        const rustResult = await resolveLxUrlViaRust(cachedInfo, lxCtx.candidates);
+        if (rustResult) {
+          const q = rustResult.quality;
+          const destPath = await resolveDownloadFullPath(song, rustResult.url, q, options);
+          try {
+            filePath = await downloadFromUrl(rustResult.url, destPath, options.onProgress);
+            hitQuality = q;
+            console.info(`[Download] Rust 兜底成功：${q}`);
+          } catch (e: any) {
+            const msg = typeof e === 'string' ? e : (e?.message || String(e));
+            errors.push(`Rust 兜底(${q}): 下载失败 ${msg}`);
+            console.warn('[Download] Rust 兜底下载失败:', msg);
+            options.onProgress?.(0);
+          }
+        } else {
+          errors.push('Rust 兜底: 无可用直链');
+        }
+      }
     }
   }
 
