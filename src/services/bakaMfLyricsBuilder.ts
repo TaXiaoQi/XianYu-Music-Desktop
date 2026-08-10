@@ -1,9 +1,8 @@
 /**
- * LX/落雪歌词专用构建器。
+ * Baka / MusicFree 歌词专用构建器。
  *
- * LX 返回的逐字歌词格式与普通插件歌词不完全一致，尤其酷我歌词可能经历过
- * Rust 后端 kw_parse_lxlyric 预处理：带行时间戳，但逐字标签是相对行首的
- * <offset,duration>，offset 可能为负数。这里单独处理，避免被通用歌词构建逻辑误判。
+ * 只处理 Baka/MF 插件自身返回的歌词字段，不调用 LX 歌词接口，
+ * 也不依赖 LX 专用构建器，避免两条歌词链路互相串线。
  */
 
 const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
@@ -44,8 +43,6 @@ function msToTimestamp(ms: number): string {
 function buildEnhancedBody(body: string, entries: WordTimeEntry[]): string {
   if (entries.length === 0) return '';
 
-  // LX/KG 常见格式：<offset,duration>字；酷我原始 lyricx 常见格式：字<offset,duration>。
-  // Enhanced LRC 要求每行正文必须以 <绝对时间> 开头，否则后端会按普通 LRC 解析，逐字会丢失。
   const firstEntry = entries[0];
   const hasTextBeforeFirstMarker = body.slice(0, firstEntry.index).trim().length > 0;
   let convertedBody = '';
@@ -54,12 +51,9 @@ function buildEnhancedBody(body: string, entries: WordTimeEntry[]): string {
     let lastEnd = 0;
     for (const entry of entries) {
       const text = body.slice(lastEnd, entry.index);
-      if (text) {
-        convertedBody += `<${msToTimestamp(entry.startMs)}>${text}`;
-      }
+      if (text) convertedBody += `<${msToTimestamp(entry.startMs)}>${text}`;
       lastEnd = entry.endIndex;
     }
-
     const tail = body.slice(lastEnd);
     if (tail) convertedBody += tail;
   } else {
@@ -69,54 +63,24 @@ function buildEnhancedBody(body: string, entries: WordTimeEntry[]): string {
       const textStart = entry.endIndex;
       const textEnd = nextEntry?.index ?? body.length;
       const text = body.slice(textStart, textEnd);
-      if (text) {
-        convertedBody += `<${msToTimestamp(entry.startMs)}>${text}`;
-      }
+      if (text) convertedBody += `<${msToTimestamp(entry.startMs)}>${text}`;
     }
   }
 
-  const lastEndMs = entries[entries.length - 1].endMs;
-  convertedBody += `<${msToTimestamp(lastEndMs)}>`;
+  convertedBody += `<${msToTimestamp(entries[entries.length - 1].endMs)}>`;
   return convertedBody;
 }
 
-function convertLxLyricToEnhancedLrc(lxlyric: string): string {
+function convertPluginLxLyricToEnhancedLrc(lxlyric: string): string {
   const lines = lxlyric.split(/\r?\n/);
   const result: string[] = [];
   let convertedCount = 0;
-
   const wordTimePattern = /<(-?\d+),(-?\d+)(?:,-?\d+)?>/g;
-  const kuwoTagPattern = /^\[kuwo:\s*(\S+)\s*\]/i;
-  let kuwoOffset = 1;
-  let kuwoOffset2 = 1;
-  let hasKuwoTag = false;
-  let hasNegativeWordTime = false;
-
-  for (const rawLine of lines) {
-    const match = kuwoTagPattern.exec(rawLine.trim());
-    if (match) {
-      hasKuwoTag = true;
-      const content = match[1].split('][')[0];
-      const value = parseInt(content.trim(), 8) || 0;
-      kuwoOffset = Math.floor(value / 10) || 1;
-      kuwoOffset2 = value % 10 || 1;
-      continue;
-    }
-
-    wordTimePattern.lastIndex = 0;
-    for (const wordTime of rawLine.matchAll(wordTimePattern)) {
-      if (Number(wordTime[1]) < 0 || Number(wordTime[2]) < 0) {
-        hasNegativeWordTime = true;
-        break;
-      }
-    }
-  }
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (!line || kuwoTagPattern.test(line)) continue;
+    if (!line) continue;
 
-    // 如果已经是 Enhanced LRC，直接保留。
     wordTimePattern.lastIndex = 0;
     if (ENHANCED_TIMESTAMP_PATTERN.test(line) && !wordTimePattern.test(line)) {
       result.push(line);
@@ -135,82 +99,67 @@ function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       if (lineStartStr && lineStartMs !== null) result.push(line);
       continue;
     }
+    if (lineStartMs === null) continue;
 
-    // 后端已处理过的 LX/KW 歌词：有行时间戳，按标准 <相对偏移,持续时间> 解析。
-    // 原始酷我歌词：通常带 [kuwo:]，可能没有行时间戳，此时按酷我公式解析。
-    const useKuwoFormula = hasKuwoTag || (lineStartMs === null && hasNegativeWordTime);
-    if (!useKuwoFormula && lineStartMs === null) continue;
-
-    let firstWordStartMs: number | null = null;
     const entries: WordTimeEntry[] = [];
-
     for (const wordTime of wordTimes) {
-      const a = Number(wordTime[1]);
-      const b = Number(wordTime[2]);
-      let wordStartMs: number;
-      let wordEndMs: number;
-
-      if (useKuwoFormula) {
-        wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
-        wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
-      } else {
-        wordStartMs = (lineStartMs as number) + a;
-        wordEndMs = wordStartMs + b;
-      }
-
-      if (firstWordStartMs === null) firstWordStartMs = wordStartMs;
+      const offset = Number(wordTime[1]);
+      const duration = Number(wordTime[2]);
+      const startMs = lineStartMs + offset;
       entries.push({
         index: wordTime.index ?? 0,
         endIndex: (wordTime.index ?? 0) + wordTime[0].length,
-        startMs: wordStartMs,
-        endMs: wordEndMs,
+        startMs,
+        endMs: startMs + duration,
       });
     }
 
     const convertedBody = buildEnhancedBody(body, entries);
     if (!convertedBody) continue;
-
-    const finalLineStart = lineStartStr && lineStartMs !== null
-      ? msToTimestamp(lineStartMs)
-      : msToTimestamp(firstWordStartMs ?? 0);
-
-    result.push(`[${finalLineStart}]${convertedBody}`);
+    result.push(`[${msToTimestamp(lineStartMs)}]${convertedBody}`);
     convertedCount++;
   }
 
   return convertedCount > 0 ? result.join('\n') : '';
 }
 
-export interface LxLyricsPayload {
+export interface BakaMfLyricsPayload {
   lyric?: string | null;
   tlyric?: string | null;
   rlyric?: string | null;
   lxlyric?: string | null;
   yrc?: string | null;
   qrc?: string | null;
+  eslrc?: string | null;
 }
 
-export function buildLxLyricsRaw(payload: LxLyricsPayload): string {
+export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
   const parts: string[] = [];
+
   const yrc = payload.yrc?.trim();
   const qrc = payload.qrc?.trim();
+  const eslrc = payload.eslrc?.trim();
   const lxlyric = payload.lxlyric?.trim();
+  const lyric = payload.lyric?.trim();
 
-  // 优先保留平台原生逐字格式，交给后端 AMLL 解析器处理。
-  // 只有没有 yrc/qrc 时，才把 LX 专用 lxlyric 转成 Enhanced LRC。
+  let wordLevelContent = '';
   if (yrc) {
-    parts.push(yrc);
+    wordLevelContent = yrc;
   } else if (qrc) {
-    parts.push(qrc);
+    wordLevelContent = qrc;
+  } else if (eslrc) {
+    wordLevelContent = eslrc;
   } else if (lxlyric) {
-    const enhancedLrc = convertLxLyricToEnhancedLrc(lxlyric);
-    if (enhancedLrc) parts.push(enhancedLrc);
+    wordLevelContent = convertPluginLxLyricToEnhancedLrc(lxlyric);
   }
 
-  if (parts.length === 0) {
-    const lyric = payload.lyric?.trim();
-    if (lyric) parts.push(lyric);
+  if (wordLevelContent) {
+    parts.push(wordLevelContent);
+  } else if (lyric) {
+    parts.push(lyric);
   }
+
+  if (parts.length === 0) return '';
 
   const tlyric = payload.tlyric?.trim();
   const rlyric = payload.rlyric?.trim();

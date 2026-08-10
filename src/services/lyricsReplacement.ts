@@ -1,7 +1,7 @@
 import type { Song, PluginSearchResult, PluginSource } from '../types';
 import { useLibraryStore } from '../features/library/store';
 import { usePlaybackStore } from '../features/playback/store';
-import { buildLyricsRaw, loadLyrics } from '../composables/lyrics';
+import { loadLyrics } from '../composables/lyrics';
 import { lyricsApi } from './tauri/lyricsApi';
 import {
   getStoredPlugins,
@@ -19,6 +19,7 @@ import {
   type LxSearchResultItem,
   type LxSourceId,
 } from './lxMusicSdk';
+import { buildLxLyricsRaw } from './lxLyricsBuilder';
 
 const VALID_LX_SOURCES: ReadonlySet<string> = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
 const ONLINE_PATH_RE = /^[a-z][a-z\d+.-]*:\/\//i;
@@ -313,7 +314,7 @@ export async function getLyricsForCandidate(candidate: LyricsSearchCandidate): P
   await ensureLxPluginInstance(plugin);
   const result = await lxPluginGetLyric(plugin, candidate.sourceId, candidate.result);
   const lyrics = result
-    ? buildLyricsRaw(result.lyric, result.tlyric, result.rlyric, result.lxlyric, result.yrc, result.qrc)
+    ? buildLxLyricsRaw(result)
     : '';
   if (!lyrics.trim()) throw new Error('该搜索结果没有返回歌词');
   return lyrics;

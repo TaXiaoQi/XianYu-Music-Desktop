@@ -492,7 +492,7 @@ async function fetchPluginLyricText(
     const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
     if (!lyric) return null;
 
-    // 若有翻译歌词，拼接在后面；lyricsRaw 已由 buildLyricsRaw 合并过翻译/罗马音轨道，避免重复拼接
+    // 若有翻译歌词，拼接在后面；lyricsRaw 已由插件专用构建器合并过翻译/罗马音轨道，避免重复拼接
     const tlyric = result?.tlyric;
     const combined = tlyric && !usesLyricsRaw ? `${lyric}\n[offset:0]\n${tlyric}` : lyric;
 

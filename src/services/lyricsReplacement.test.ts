@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   ensureLxPluginInstance: vi.fn(),
   lxPluginGetLyric: vi.fn(),
   lxSearch: vi.fn(),
-  buildLyricsRaw: vi.fn(),
+  buildLxLyricsRaw: vi.fn(),
   loadLyrics: vi.fn(),
   tauriInvoke: vi.fn(),
   patchSongMeta: vi.fn(),
@@ -37,10 +37,13 @@ vi.mock('./lxMusicSdk', () => ({
 }));
 
 vi.mock('../composables/lyrics', () => ({
-  buildLyricsRaw: mocks.buildLyricsRaw,
   createDefaultDesktopLyricsSettings: vi.fn(() => ({})),
   createDefaultLyricsSettings: vi.fn(() => ({})),
   loadLyrics: mocks.loadLyrics,
+}));
+
+vi.mock('./lxLyricsBuilder', () => ({
+  buildLxLyricsRaw: mocks.buildLxLyricsRaw,
 }));
 
 vi.mock('./tauri/invoke', () => ({
