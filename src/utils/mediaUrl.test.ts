@@ -22,6 +22,19 @@ describe('sanitizeMediaUrl', () => {
     });
   });
 
+  it('为网易云直链补齐默认防盗链请求头', () => {
+    const headers = normalizeMediaRequestHeaders(
+      'https://m701.music.126.net/20260101000000/example/song.mp3',
+      {},
+    );
+
+    expect(headers).toMatchObject({
+      Accept: 'audio/*,*/*;q=0.8',
+      Referer: 'https://music.163.com/',
+      Origin: 'https://music.163.com',
+    });
+  });
+
   it('不覆盖插件显式返回的请求头', () => {
     const headers = normalizeMediaRequestHeaders(
       'https://m.kugou.com/song.mp3',

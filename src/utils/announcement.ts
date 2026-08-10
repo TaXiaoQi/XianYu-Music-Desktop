@@ -1,4 +1,5 @@
-import { signedRequest } from '../services/auth/authService';
+import { getStoredAuth, signedRequest } from '../services/auth/authService';
+import { getDeviceId } from '../services/usageStats';
 
 const DISMISSED_KEY = 'announcement_dismissed_id';
 
@@ -17,9 +18,13 @@ export interface Announcement {
 
 export async function fetchAnnouncement(): Promise<Announcement | null> {
   try {
+    const auth = getStoredAuth();
     const data = await signedRequest<Record<string, unknown>>(
       'get_announcement',
-      {},
+      {
+        ciyuanxi_id: auth?.user?.ciyuanxi_id ?? auth?.user?.id ?? '',
+        device_id: getDeviceId(),
+      },
       { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
     );
     if (!data || !data.id || !data.title || !data.content) {
@@ -40,6 +45,20 @@ export async function fetchAnnouncement(): Promise<Announcement | null> {
     console.error('[Announcement] 获取公告失败:', error);
     return null;
   }
+}
+
+export async function confirmAnnouncement(ann: Announcement): Promise<void> {
+  const auth = getStoredAuth();
+  await signedRequest<Record<string, unknown>>(
+    'confirm_announcement',
+    {
+      announcement_id: ann.id,
+      announcement_updated_at: ann.updatedAt ?? '',
+      ciyuanxi_id: auth?.user?.ciyuanxi_id ?? auth?.user?.id ?? '',
+      device_id: getDeviceId(),
+    },
+    { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
+  );
 }
 
 /**

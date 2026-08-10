@@ -1,33 +1,42 @@
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import type { Announcement } from '../../utils/announcement';
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
   announcement: Announcement | null;
 }>();
 
 const emit = defineEmits(['close', 'action']);
 
-// --- 淡出动画 ---
-const isClosing = ref(false);
-let closeTimer: ReturnType<typeof setTimeout> | null = null;
+const contentBodyRef = ref<HTMLElement | null>(null);
+const scrolledToEnd = ref(false);
 
 const handleClose = () => {
-  if (isClosing.value) return;
-  isClosing.value = true;
-  closeTimer = setTimeout(() => {
-    emit('close');
-    closeTimer = null;
-  }, 220);
+  if (!scrolledToEnd.value) return;
+  emit('close');
 };
 
-onUnmounted(() => {
-  if (closeTimer) {
-    clearTimeout(closeTimer);
-    closeTimer = null;
+const refreshScrollState = () => {
+  const el = contentBodyRef.value;
+  if (!el) return;
+  const hasScrollableContent = el.scrollHeight > el.clientHeight + 4;
+  if (!hasScrollableContent) {
+    scrolledToEnd.value = true;
+    return;
   }
-});
+  scrolledToEnd.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
+};
+
+watch(
+  () => `${props.visible ? '1' : '0'}:${props.announcement?.id ?? ''}:${props.announcement?.updatedAt ?? ''}`,
+  async () => {
+    scrolledToEnd.value = false;
+    await nextTick();
+    refreshScrollState();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -36,12 +45,9 @@ onUnmounted(() => {
       <div
         v-if="visible && announcement"
         class="announcement-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
-        :class="{ 'is-closing': isClosing }"
-        @click.self="handleClose"
       >
         <div
           class="announcement-card bg-white dark:bg-[#262626] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
-          :class="{ 'is-closing': isClosing }"
         >
           <!-- Header -->
           <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
@@ -107,19 +113,33 @@ onUnmounted(() => {
           </div>
 
           <!-- Content -->
-          <div class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto">
+          <div
+            ref="contentBodyRef"
+            class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto"
+            @scroll="refreshScrollState"
+          >
             <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
               {{ announcement.content }}
             </p>
           </div>
 
           <!-- Actions -->
-          <div class="flex border-t border-gray-100 dark:border-white/10 shrink-0">
+          <div class="border-t border-gray-100 dark:border-white/10 shrink-0">
+            <div
+              v-if="!scrolledToEnd"
+              class="px-5 pt-3 text-center text-xs text-gray-400 dark:text-gray-500"
+            >
+              请先阅读并滚动到公告底部
+            </div>
             <button
               @click="handleClose"
-              class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
+              :disabled="!scrolledToEnd"
+              class="w-full py-3 text-sm transition-colors focus:outline-none"
+              :class="scrolledToEnd
+                ? 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'
+                : 'cursor-not-allowed text-gray-300 dark:text-gray-600'"
             >
-              我知道了
+              {{ scrolledToEnd ? '我已阅读并确认' : '阅读到底后可确认' }}
             </button>
           </div>
         </div>
