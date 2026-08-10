@@ -113,7 +113,6 @@ const {
 } = useSidebarPlaylistContextMenu({
   selectedPlaylistIds,
   ensurePlaylistSelected,
-  viewPlaylist,
   getSongsFromPlaylist,
   addSongsToQueue,
   clearQueue,
