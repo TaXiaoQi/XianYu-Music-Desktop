@@ -407,7 +407,7 @@ export type QualityKey =
 export interface QualityMeta {
   key: QualityKey;
   label: string;            /** 中文标签 */
-  description: string;      /** 比特率/格式 */
+  description: string;      /** 详细音质：前端统一展示 Baka/LX 原生音质档位 */
   /** 是否属于无损类（用于判断下载扩展名与无损识别） */
   isLossless: boolean;
   /** 音质排序序号，越小音质越差，用于从高到低降级时翻转 */
@@ -416,18 +416,18 @@ export interface QualityMeta {
 
 /** 音质元数据表：按音质从低到高排序 */
 export const QUALITY_META: Record<QualityKey, QualityMeta> = {
-  mgg:         { key: 'mgg',         label: '低清',   description: '96 kbps',         isLossless: false, rank: 1  },
-  '128k':      { key: '128k',      label: '普通',   description: '128 kbps',        isLossless: false, rank: 2  },
-  '192k':      { key: '192k',      label: '中等',   description: '192 kbps',        isLossless: false, rank: 3  },
-  '320k':      { key: '320k',      label: 'HQ',    description: '320 kbps',        isLossless: false, rank: 4  },
-  flac:         { key: 'flac',         label: 'SQ',    description: 'FLAC',           isLossless: true,  rank: 5  },
-  flac24bit:    { key: 'flac24bit',    label: 'Hi-Res',description: 'FLAC 24位',     isLossless: true,  rank: 6  },
-  hires:        { key: 'hires',        label: '高解析度', description: '高分辨率',       isLossless: true,  rank: 7  },
-  vinyl:        { key: 'vinyl',        label: '黑胶',   description: '黑胶唱片',           isLossless: true,  rank: 8  },
-  dolby:        { key: 'dolby',        label: '杜比全景声', description: '杜比自然声',   isLossless: false, rank: 9  },
-  atmos:        { key: 'atmos',        label: '臻品音质', description: 'Atmos 2.0',       isLossless: false, rank: 10 },
-  atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'Atmos+ 2.0',  isLossless: false, rank: 11 },
-  master:       { key: 'master',       label: '臻品母带', description: '大师3.0',       isLossless: true,  rank: 12 },
+  mgg:         { key: 'mgg',         label: '低清',   description: '96k',         isLossless: false, rank: 1  },
+  '128k':      { key: '128k',      label: '普通',   description: '128k',        isLossless: false, rank: 2  },
+  '192k':      { key: '192k',      label: '中等',   description: '192k',        isLossless: false, rank: 3  },
+  '320k':      { key: '320k',      label: 'HQ',    description: '320k',        isLossless: false, rank: 4  },
+  flac:         { key: 'flac',         label: 'SQ',    description: 'flac',       isLossless: true,  rank: 5  },
+  flac24bit:    { key: 'flac24bit',    label: 'Hi-Res',description: 'flac24bit',  isLossless: true,  rank: 6  },
+  hires:        { key: 'hires',        label: '高解析度', description: 'hires',      isLossless: true,  rank: 7  },
+  vinyl:        { key: 'vinyl',        label: '黑胶',   description: 'vinyl',       isLossless: true,  rank: 8  },
+  dolby:        { key: 'dolby',        label: '杜比全景声', description: 'dolby',     isLossless: false, rank: 9  },
+  atmos:        { key: 'atmos',        label: '臻品音质', description: 'atmos',       isLossless: false, rank: 10 },
+  atmos_plus: { key: 'atmos_plus', label: '臻品全景声', description: 'atmos_plus',  isLossless: false, rank: 11 },
+  master:       { key: 'master',       label: '臻品母带', description: 'master',      isLossless: true,  rank: 12 },
 };
 
 /** 所有 12 种音质键值列表（按 rank 升序：低→高） */
@@ -437,6 +437,76 @@ export const ALL_QUALITY_KEYS: QualityKey[] =
 
 /** 所有 12 种音质键值列表（按 rank 降序：高→低） */
 export const ALL_QUALITY_KEYS_DESC: QualityKey[] = [...ALL_QUALITY_KEYS].reverse();
+
+/** BakaMusic 原生插件音质键（对外传给插件时使用；96k 是 mgg 的插件侧名称） */
+export const BAKA_PLUGIN_QUALITY_KEYS: string[] = ALL_QUALITY_KEYS.map(q => q === 'mgg' ? '96k' : q);
+
+/** BakaMusic 新音质键 → 旧 MF 兼容音质键映射（对齐 newToLegacyQualityMap） */
+export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' | 'high' | 'super'> = {
+  mgg: 'low',
+  '128k': 'low',
+  '192k': 'standard',
+  '320k': 'high',
+  flac: 'super',
+  flac24bit: 'super',
+  hires: 'super',
+  vinyl: 'super',
+  dolby: 'super',
+  atmos: 'super',
+  atmos_plus: 'super',
+  master: 'super',
+};
+
+/** 常见插件/音源别名 → 本项目统一 Baka 音质键 */
+const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
+  '96k': 'mgg',
+  mgg: 'mgg',
+  '128': '128k',
+  '128k': '128k',
+  '192': '192k',
+  '192k': '192k',
+  '320': '320k',
+  '320k': '320k',
+  flac: 'flac',
+  sq: 'flac',
+  super: 'flac',
+  lossless: 'flac',
+  flac24: 'flac24bit',
+  '24bit': 'flac24bit',
+  '24bits': 'flac24bit',
+  '24_bit': 'flac24bit',
+  flac24bit: 'flac24bit',
+  hires: 'hires',
+  'hi-res': 'hires',
+  hi_res: 'hires',
+  hr: 'hires',
+  vinyl: 'vinyl',
+  dolby: 'dolby',
+  atmos: 'atmos',
+  atmosplus: 'atmos_plus',
+  atmos_plus: 'atmos_plus',
+  'atmos+': 'atmos_plus',
+  master: 'master',
+};
+
+/** 将插件声明/接口入参里的音质字符串标准化为 Baka 12 档 QualityKey */
+export function normalizeQualityKey(raw: unknown): QualityKey | null {
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/-/g, '_');
+  if (!normalized) return null;
+  if (normalized in QUALITY_META) return normalized as QualityKey;
+  return QUALITY_KEY_ALIASES[normalized] ?? null;
+}
+
+/** 将内部 QualityKey 转为 Baka 插件原生音质字符串 */
+export function qualityKeyToBakaPluginQuality(q: QualityKey): string {
+  return q === 'mgg' ? '96k' : q;
+}
+
+/** 将内部 QualityKey 转为 BakaMusic 旧版兼容音质键 */
+export function qualityKeyToBakaLegacyQuality(q: QualityKey): 'low' | 'standard' | 'high' | 'super' {
+  return BAKA_TO_LEGACY_QUALITY_MAP[q];
+}
 
 /** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
 /** 现在使用统一的 QualityKey */

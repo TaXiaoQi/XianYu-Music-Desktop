@@ -97,8 +97,8 @@ export function reportAppOpen(): void {
     .then(() => {
       /* 上报成功，静默 */
     })
-    .catch((err) => {
-      console.warn('[usageStats] reportAppOpen failed:', err instanceof Error ? err.message : err);
+    .catch(() => {
+      /* 上报失败，静默 */
     });
 }
 
@@ -132,8 +132,8 @@ export function reportSearch(keyword: string, source: string, resultCount: numbe
     .then(() => {
       /* 上报成功，静默 */
     })
-    .catch((err) => {
-      console.warn('[usageStats] reportSearch failed:', err instanceof Error ? err.message : err);
+    .catch(() => {
+      /* 上报失败，静默 */
     });
 }
 
@@ -167,8 +167,8 @@ export function reportInputStats(charCount: number): void {
       .then(() => {
         /* 上报成功，静默 */
       })
-      .catch((err) => {
-        console.warn('[usageStats] reportInputStats failed:', err instanceof Error ? err.message : err);
+      .catch(() => {
+        /* 上报失败，静默 */
       });
   }, INPUT_FLUSH_DELAY_MS);
 }
@@ -221,8 +221,8 @@ export function reportError(
     .then(() => {
       /* 上报成功，静默 */
     })
-    .catch((err) => {
-      console.warn('[usageStats] reportError failed:', err instanceof Error ? err.message : err);
+    .catch(() => {
+      /* 上报失败，静默 */
     });
 }
 
@@ -262,8 +262,8 @@ export function reportUserBehavior(report: UserBehaviorReport): void {
       .then(() => {
         /* 上报成功，静默 */
       })
-      .catch((err) => {
-        console.warn('[usageStats] reportUserBehavior failed:', err instanceof Error ? err.message : err);
+      .catch(() => {
+        /* 上报失败，静默 */
       });
   };
 

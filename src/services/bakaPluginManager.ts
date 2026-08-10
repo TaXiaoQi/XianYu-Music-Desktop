@@ -41,6 +41,8 @@ import {
   QUALITY_META,
   ALL_QUALITY_KEYS,
   ALL_QUALITY_KEYS_DESC,
+  BAKA_TO_LEGACY_QUALITY_MAP,
+  normalizeQualityKey,
   resolveOnlinePlayQuality,
 } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
@@ -145,41 +147,26 @@ const BAKA_PLUGIN_METHODS = [
  * 也可能使用旧版 MusicFree 的 4 档键（low/standard/high/super）。
  * 当新键请求失败时，回退到旧键重试。
  */
-const newToLegacyQualityMap: Record<string, string> = {
-  'mgg': 'low',
-  '128k': 'low',
-  '192k': 'standard',
-  '320k': 'high',
-  'flac': 'super',
-  'flac24bit': 'super',
-  'hires': 'super',
-  'vinyl': 'super',
-  'dolby': 'super',
-  'atmos': 'super',
-  'atmos_plus': 'super',
-  'master': 'super',
-};
+const newToLegacyQualityMap: Record<string, string> = BAKA_TO_LEGACY_QUALITY_MAP;
 
 /**
- * Baka/Toskysun 插件的稳定识别锚点：声明 12 档新音质。
+ * Baka/Toskysun 插件的稳定识别锚点：声明 Baka 新音质能力。
  *
- * 不能只判断 supportedQualities 是否存在，否则某些 MusicFree 插件也暴露同名字段时会被误识别。
- * 这里要求命中绝大多数 Baka 新音质键，且必须包含高阶独有档位，避免 mf/baka 互换。
+ * BakaMusic 插件 API 向下兼容 MusicFree，但 `supportedQualities` 使用
+ * 96k/128k/320k/flac/hires/master 等原生音质键。不能要求插件一次声明完整
+ * 12 档，否则只声明部分档位的 Baka 系插件会被误判成 MF，进而被传入
+ * standard/high/lossless 导致“不支持音质”。
  */
 const isBakaSupportedQualities = (raw: unknown): raw is string[] => {
   if (!Array.isArray(raw)) return false;
 
   const normalized = new Set(
     raw
-      .map(q => String(q).trim())
-      .filter(Boolean)
-      .map(q => (q === '96k' ? 'mgg' : q)),
+      .map(q => normalizeQualityKey(q))
+      .filter((q): q is QualityKey => !!q),
   );
-  const knownCount = ALL_QUALITY_KEYS.filter(q => normalized.has(q)).length;
-  const hasBakaOnlyHighQualities = ['flac24bit', 'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master']
-    .some(q => normalized.has(q));
 
-  return knownCount >= 10 && hasBakaOnlyHighQualities;
+  return ALL_QUALITY_KEYS.some(q => normalized.has(q));
 };
 
 // ==================== 歌词格式检测 ====================
@@ -332,8 +319,8 @@ class BakaPluginManagerClass {
   /**
    * 检测插件是否为 Baka/Toskysun 系列
    *
-   * Baka 插件在实例上声明 `supportedQualities` 数组字段（12 档音质），
-   * 原版 MusicFree 插件无此字段。
+   * Baka 插件在实例上声明 `supportedQualities` 数组字段（可为完整或部分新音质键）。
+   * 原版 MusicFree 插件无此字段，或仅走 standard/high/lossless。
    */
   async isBakaPlugin(source: PluginSource): Promise<boolean> {
     const cached = this._bakaPluginCache.get(source.id);
@@ -386,10 +373,13 @@ class BakaPluginManagerClass {
     if (!inst) return null;
 
     const raw = inst.supportedQualities;
-    if (isBakaSupportedQualities(raw)) {
-      return raw
-        .map((q: string) => (q === '96k' ? 'mgg' : q))
-        .filter((q: string) => q in QUALITY_META) as QualityKey[];
+    if (Array.isArray(raw)) {
+      const supported = raw
+        .map(q => normalizeQualityKey(q))
+        .filter((q): q is QualityKey => !!q);
+      if (supported.length > 0) {
+        return supported;
+      }
     }
     return ['128k', '320k', 'flac'];
   }
