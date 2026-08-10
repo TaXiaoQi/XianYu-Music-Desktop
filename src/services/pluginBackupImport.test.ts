@@ -237,3 +237,146 @@ describe('describeBackupVersion', () => {
     expect(describeBackupVersion(result)).toBe('MusicFree v1');
   });
 });
+
+/**
+ * 格式检测增强测试：通过歌曲字段特征区分 BakaMusic 和 MusicFree
+ *
+ * 两种格式在歌曲字段上有明显差异：
+ * - BakaMusic: artist, title, album, id
+ * - MusicFree: singer, name, albumName, musicId
+ *
+ * 当结构特征不明确时，用字段特征来辅助判断。
+ */
+describe('preparePluginBackupImport: format detection by song fields', () => {
+  const kgPlugin = plugin({ id: 'mf-kg', name: '酷狗音乐', sources: ['酷狗音乐'] });
+
+  it('detects MusicFree format by singer/name/albumName fields even with nested data.musicSheets', () => {
+    // 模拟一个结构上像 BakaMusic（data.musicSheets），但字段是 MusicFree 风格的备份
+    const backup = JSON.stringify({
+      version: 1,
+      data: {
+        musicSheets: [{
+          name: '我的歌单',
+          musicList: [
+            { musicId: 'kg-1', name: '歌曲1', singer: '歌手1', albumName: '专辑1', platform: '酷狗' },
+            { musicId: 'kg-2', name: '歌曲2', singer: '歌手2', albumName: '专辑2', platform: '酷狗' },
+            { musicId: 'kg-3', name: '歌曲3', singer: '歌手3', albumName: '专辑3', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('musicfree');
+    expect(result.importedSongCount).toBe(3);
+  });
+
+  it('detects BakaMusic format by artist/title/album fields even with top-level musicSheets', () => {
+    // 模拟一个结构上像 MusicFree（顶层 musicSheets），但字段是 BakaMusic 风格的备份
+    const backup = JSON.stringify({
+      version: 2,
+      musicSheets: [{
+        title: '我的收藏',
+        musicList: [
+          { id: 'kg-1', title: '歌曲1', artist: '歌手1', album: '专辑1', platform: '酷狗' },
+          { id: 'kg-2', title: '歌曲2', artist: '歌手2', album: '专辑2', platform: '酷狗' },
+          { id: 'kg-3', title: '歌曲3', artist: '歌手3', album: '专辑3', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+    expect(result.importedSongCount).toBe(3);
+  });
+
+  it('falls back to structure-based detection when song fields are ambiguous', () => {
+    // 歌曲同时有 artist 和 singer 字段，无法从字段区分
+    const backup = JSON.stringify({
+      version: 1,
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { id: 'kg-1', title: '歌', artist: '手', singer: '手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    // 结构是顶层 musicSheets，应判定为 MusicFree
+    expect(result.format).toBe('musicfree');
+  });
+
+  it('schema field always takes precedence over field-based detection', () => {
+    // 有 schema 字段时，即使歌曲字段像 MusicFree 也应判定为 BakaMusic
+    const backup = JSON.stringify({
+      schema: 'bakamusic.music-sheet-backup',
+      version: 3,
+      data: {
+        musicSheets: [{
+          name: '歌单',
+          musicList: [
+            { musicId: 'kg-1', name: '歌曲', singer: '歌手', albumName: '专辑', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('detects BakaMusic format by Toskysun signature in author field', () => {
+    // Toskysun 是 BakaMusic 的开发者，有此标识则必为 BakaMusic
+    const backup = JSON.stringify({
+      version: 1,
+      author: 'Toskysun',
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { musicId: 'kg-1', name: '歌曲', singer: '歌手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('detects BakaMusic format by Toskysun signature in creator field', () => {
+    const backup = JSON.stringify({
+      version: 1,
+      creator: 'BakaMusic by Toskysun',
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { musicId: 'kg-1', name: '歌曲', singer: '歌手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('treats backups authored by 时迁酱 as MusicFree before structure and field inference', () => {
+    // 即使使用 data.musicSheets 和 Baka 风格歌曲字段，作者身份仍应优先判定为 MusicFree。
+    const backup = JSON.stringify({
+      version: 2,
+      author: '时迁酱',
+      data: {
+        musicSheets: [{
+          title: '歌单',
+          musicList: [
+            { id: '2748510187', title: '歌曲', artist: '歌手', album: '专辑', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('musicfree');
+    expect(result.migratedTrackIds).toBe(false);
+    expect(result.importedSongCount).toBe(1);
+  });
+});
