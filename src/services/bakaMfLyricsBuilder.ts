@@ -123,6 +123,57 @@ function convertPluginLxLyricToEnhancedLrc(lxlyric: string): string {
   return convertedCount > 0 ? result.join('\n') : '';
 }
 
+function convertKugouKrcToEnhancedLrc(krc: string): string {
+  const lines = krc.split(/\r?\n/);
+  const result: string[] = [];
+  let convertedCount = 0;
+  const linePattern = /^\[(\d+),(\d+)](.*)$/;
+  const wordTimePattern = /\((-?\d+),(-?\d+)(?:,-?\d+)?\)/g;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const lineMatch = linePattern.exec(line);
+    if (!lineMatch) continue;
+
+    const lineStartMs = Number(lineMatch[1]);
+    const lineDurationMs = Number(lineMatch[2]);
+    const body = lineMatch[3] ?? '';
+    if (!Number.isFinite(lineStartMs) || !Number.isFinite(lineDurationMs) || !body) continue;
+
+    wordTimePattern.lastIndex = 0;
+    const wordTimes = [...body.matchAll(wordTimePattern)];
+    if (wordTimes.length === 0) continue;
+
+    const entries: WordTimeEntry[] = [];
+    for (const wordTime of wordTimes) {
+      const offset = Number(wordTime[1]);
+      const duration = Number(wordTime[2]);
+      if (!Number.isFinite(offset) || !Number.isFinite(duration)) continue;
+      const startMs = lineStartMs + offset;
+      entries.push({
+        index: wordTime.index ?? 0,
+        endIndex: (wordTime.index ?? 0) + wordTime[0].length,
+        startMs,
+        endMs: startMs + Math.max(0, duration),
+      });
+    }
+    if (entries.length === 0) continue;
+
+    const convertedBody = buildEnhancedBody(body, entries);
+    if (!convertedBody) continue;
+    result.push(`[${msToTimestamp(lineStartMs)}]${convertedBody}`);
+    convertedCount++;
+  }
+
+  return convertedCount > 0 ? result.join('\n') : '';
+}
+
+function isKugouKrcLike(content: string): boolean {
+  return /^\[\d+,\d+].*\(-?\d+,-?\d+(?:,-?\d+)?\)/m.test(content);
+}
+
 export interface BakaMfLyricsPayload {
   lyric?: string | null;
   tlyric?: string | null;
@@ -151,6 +202,8 @@ export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
     wordLevelContent = eslrc;
   } else if (lxlyric) {
     wordLevelContent = convertPluginLxLyricToEnhancedLrc(lxlyric);
+  } else if (lyric && isKugouKrcLike(lyric)) {
+    wordLevelContent = convertKugouKrcToEnhancedLrc(lyric);
   }
 
   if (wordLevelContent) {

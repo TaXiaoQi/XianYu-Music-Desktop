@@ -566,6 +566,18 @@ fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> 
     None
 }
 
+fn sanitize_extracted_audio_url(url: &str) -> String {
+    url.trim()
+        .trim_matches(|c: char| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    '`' | '\'' | '"' | ',' | '，' | ';' | '；' | '‘' | '’' | '“' | '”'
+                )
+        })
+        .to_string()
+}
+
 /// 从非音频文本响应中提取真实音频 URL。
 ///
 /// 部分插件返回的播放地址其实是 API 端点，服务端可能以 `text/plain`
@@ -581,15 +593,15 @@ fn extract_audio_info_from_text(body: &str) -> Option<(String, Option<String>)> 
     }
 
     // 策略 2：纯文本直链（去掉外层引号/空白后以 http 开头）
-    let trimmed = body.trim().trim_matches('"').trim_matches('\'');
+    let trimmed = sanitize_extracted_audio_url(body);
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         // 音频特征检查宽松化：只要不是明显非音频 URL 就接受
-        if looks_like_audio_url(trimmed) || !is_obviously_non_audio_url(trimmed) {
+        if looks_like_audio_url(&trimmed) || !is_obviously_non_audio_url(&trimmed) {
             eprintln!(
                 "[StreamCache] 文本直链提取成功: {}",
                 &trimmed[..trimmed.len().min(120)]
             );
-            return Some((trimmed.to_string(), None));
+            return Some((trimmed, None));
         }
     }
 
@@ -653,8 +665,9 @@ fn find_url_by_key(value: &serde_json::Value, key: &str) -> Option<String> {
         serde_json::Value::Object(map) => {
             if let Some(v) = map.get(key) {
                 if let Some(s) = v.as_str() {
-                    if s.starts_with("http://") || s.starts_with("https://") {
-                        return Some(s.to_string());
+                    let clean = sanitize_extracted_audio_url(s);
+                    if clean.starts_with("http://") || clean.starts_with("https://") {
+                        return Some(clean);
                     }
                 }
                 // 嵌套对象/数组中继续查找同一 key
@@ -686,10 +699,11 @@ fn find_url_by_key(value: &serde_json::Value, key: &str) -> Option<String> {
 fn find_any_audio_url(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => {
-            if (s.starts_with("http://") || s.starts_with("https://"))
-                && looks_like_audio_url(s)
+            let clean = sanitize_extracted_audio_url(s);
+            if (clean.starts_with("http://") || clean.starts_with("https://"))
+                && looks_like_audio_url(&clean)
             {
-                Some(s.clone())
+                Some(clean)
             } else {
                 None
             }
@@ -720,9 +734,10 @@ fn find_any_audio_url(value: &serde_json::Value) -> Option<String> {
 fn find_any_http_url(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => {
-            if s.starts_with("http://") || s.starts_with("https://") {
-                if !is_obviously_non_audio_url(s) {
-                    return Some(s.clone());
+            let clean = sanitize_extracted_audio_url(s);
+            if clean.starts_with("http://") || clean.starts_with("https://") {
+                if !is_obviously_non_audio_url(&clean) {
+                    return Some(clean);
                 }
             }
             // 处理协议相对 URL：//cdn.example.com/path
@@ -794,7 +809,7 @@ fn extract_url_from_raw_text(text: &str) -> Option<String> {
                 .unwrap_or(rest.len());
             let url = &rest[..end];
             if url.len() > 10 && !is_obviously_non_audio_url(url) {
-                return Some(url.to_string());
+                return Some(sanitize_extracted_audio_url(url));
             }
         }
     }
