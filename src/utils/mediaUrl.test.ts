@@ -35,6 +35,19 @@ describe('sanitizeMediaUrl', () => {
     });
   });
 
+  it('为酷我直链补齐默认防盗链请求头', () => {
+    const headers = normalizeMediaRequestHeaders(
+      'http://car-er.kuwo.cn/resource/1307392.flac',
+      {},
+    );
+
+    expect(headers).toMatchObject({
+      Accept: 'audio/*,*/*;q=0.8',
+      Referer: 'http://www.kuwo.cn/',
+      Origin: 'http://www.kuwo.cn',
+    });
+  });
+
   it('不覆盖插件显式返回的请求头', () => {
     const headers = normalizeMediaRequestHeaders(
       'https://m.kugou.com/song.mp3',

@@ -3,56 +3,92 @@
  *
  * 一些插件会返回被反引号/引号包裹、尾部带逗号或分号的 URL，例如：
  * `https://example.com/api?level=hires,`
- * 这里会提取第一个 http(s) URL，并清理首尾包装符号与查询参数值末尾的标点。
+ *
+ * 实现策略：用 indexOf 定位 http(s):// 起点，用 while+charCodeAt 逐字符
+ * 剥离尾部非 URL 字符。不依赖正则字符类，避免编码/转义歧义。
  */
+
+/** charCode 是否为需要剥离的尾部脏字符 */
+const isTrailingDirtyChar = (code: number): boolean =>
+  code === 0x2c        // , (半角逗号)
+  || code === 0x3b     // ; (分号)
+  || code === 0x60     // ` (反引号)
+  || code === 0x27     // ' (单引号)
+  || code === 0x22     // " (双引号)
+  || code === 0x3e     // > (尖括号)
+  || code === 0x3c     // <
+  || code === 0x2018   // ‘ (左单引号)
+  || code === 0x2019   // ’ (右单引号)
+  || code === 0x201c   // “ (左双引号)
+  || code === 0x201d   // ” (右双引号)
+  || code === 0x201b   // ‛ (反向单引号)
+  || code === 0x201f   // ‟ (反向双引号)
+  || code === 0x2033   // ″ (双撇号)
+  || code === 0x02b9   // ʹ (修饰字母素)
+  || code === 0x02ca   // ʊ (修饰字母重力)
+  || code === 0xff0c   // ，(全角逗号)
+  || code === 0xff1b   // ；(全角分号)
+  || code === 0xff02   // ＂(全角引号)
+  || code === 0xff07   // ＇(全角单引号)
+  || code === 0xff1e   // ＞(全角大于号)
+  || code === 0xff1c   // ＜(全角小于号)
+  || code <= 0x20;     // 所有空白控制字符
+
+/** 从尾部逐字符剥离脏字符 */
+const stripTrailingDirty = (s: string): string => {
+  let end = s.length;
+  while (end > 0 && isTrailingDirtyChar(s.charCodeAt(end - 1))) {
+    end--;
+  }
+  return end > 0 ? s.substring(0, end) : '';
+};
+
 export const sanitizeMediaUrl = (raw: unknown): string => {
-  if (typeof raw !== 'string') return '';
+  if (typeof raw !== 'string' || !raw) return '';
 
-  const stripEdgeJunk = (value: string): string => {
-    let current = value.trim();
-    let previous = '';
-    while (current && current !== previous) {
-      previous = current;
-      current = current
-        .replace(/^[`´'"\u2018\u2019\u201c\u201d\uff02\uff07\s]+/g, '')
-        .replace(/[,，;；`´'"\u2018\u2019\u201c\u201d\uff02\uff07\s]+$/g, '');
-    }
-    return current;
-  };
-
-  let candidate = raw.trim();
-  const urlStart = candidate.search(/https?:\/\//i);
-  if (urlStart >= 0) {
-    candidate = candidate.slice(urlStart);
+  // 用 indexOf 定位 http:// 或 https:// 的起始位置（不依赖正则）
+  const httpsIdx = raw.indexOf('https://');
+  const httpIdx = raw.indexOf('http://');
+  let start: number;
+  if (httpsIdx >= 0 && (httpIdx < 0 || httpsIdx <= httpIdx)) {
+    start = httpsIdx;
+  } else if (httpIdx >= 0) {
+    start = httpIdx;
+  } else {
+    return '';
   }
 
-  // URL 起始后遇到明显包装符/空白即截断，避免尾部反引号继续穿透。
-  const terminator = candidate.search(/[`´'"\u2018\u2019\u201c\u201d\uff02\uff07<>\s]/);
-  if (terminator > 0) {
-    candidate = candidate.slice(0, terminator);
+  // 从起点截取到末尾，再从尾部剥离脏字符
+  let url = stripTrailingDirty(raw.substring(start));
+
+  if (!url) return '';
+
+  // 诊断：如果原始 URL 有首尾脏字符，打印 charCode 帮助排查
+  if (start > 0 || url.length < raw.length - start) {
+    const firstRaw = raw.substring(0, Math.min(start, 10));
+    const lastRaw = raw.substring(Math.max(start + url.length, raw.length - 10));
+    console.log('[sanitizeMediaUrl] 已清洗:', {
+      before: raw.substring(0, 120),
+      after: url.substring(0, 120),
+      strippedHead: firstRaw.split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
+      strippedTail: lastRaw.split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
+    });
   }
 
-  candidate = stripEdgeJunk(candidate);
-  if (!candidate) return '';
-
+  // 清理查询参数值末尾的标点
   try {
-    const url = new URL(candidate);
+    const parsed = new URL(url);
     let changed = false;
-    const pathname = url.pathname.replace(/[,，;；`´'"\u2018\u2019\u201c\u201d\uff02\uff07\s]+$/g, '');
-    if (pathname !== url.pathname) {
-      url.pathname = pathname;
-      changed = true;
-    }
-    for (const [key, value] of Array.from(url.searchParams.entries())) {
-      const cleaned = stripEdgeJunk(value);
+    for (const [key, value] of Array.from(parsed.searchParams.entries())) {
+      const cleaned = stripTrailingDirty(value);
       if (cleaned !== value) {
-        url.searchParams.set(key, cleaned);
+        parsed.searchParams.set(key, cleaned);
         changed = true;
       }
     }
-    return stripEdgeJunk(changed ? url.toString() : candidate);
+    return changed ? parsed.toString() : url;
   } catch {
-    return candidate;
+    return url;
   }
 };
 
@@ -107,6 +143,11 @@ export const normalizeMediaRequestHeaders = (
       || host.includes('netease')
       || path.includes('/netease/')
       || path.includes('/wy/');
+    const isKuwoLike = host.includes('kuwo.cn')
+      || host.includes('kuwo.com')
+      || host.includes('kuwo')
+      || path.includes('/kuwo/')
+      || path.includes('/kw/');
 
     if (isKugouLike) {
       const referer = host.includes('haitangw.cc')
@@ -116,6 +157,10 @@ export const normalizeMediaRequestHeaders = (
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     } else if (isNeteaseLike) {
       const referer = 'https://music.163.com/';
+      setHeaderIfMissing(headers, 'Referer', referer);
+      setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
+    } else if (isKuwoLike) {
+      const referer = 'http://www.kuwo.cn/';
       setHeaderIfMissing(headers, 'Referer', referer);
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     }

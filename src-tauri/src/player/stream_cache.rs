@@ -21,6 +21,39 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
+/// 清洗插件传入的 URL：移除首尾的反引号、引号、逗号等脏字符。
+///
+/// 前端虽有 sanitizeMediaUrl，但部分插件返回的 URL 包装字符可能穿透到 Rust 端，
+/// 导致 reqwest 无法解析 URL 或请求到错误的地址。此处做最后一道防线。
+fn sanitize_stream_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    // 找到 http:// 或 https:// 的最早起始位置
+    // 注意：必须同时搜索两者并取最小位置，避免 https:// URL 路径中包含 http:// 时匹配错误
+    let http_idx = trimmed.find("http://");
+    let https_idx = trimmed.find("https://");
+    let start = match (http_idx, https_idx) {
+        (Some(h), Some(s)) => h.min(s),
+        (Some(h), None) => h,
+        (None, Some(s)) => s,
+        (None, None) => return trimmed.to_string(),
+    };
+    let candidate = &trimmed[start..];
+    // 从 URL 起始处截断到第一个出现的包装符/空白
+    let end = candidate
+        .find(|c: char| matches!(c, '`' | '\'' | '"' | '<' | '>' | ' ' | '\t' | '\n' | '\r' | '\u{2018}' | '\u{2019}' | '\u{201c}' | '\u{201d}' | '\u{ff02}' | '\u{ff07}'))
+        .unwrap_or(candidate.len());
+    let mut result = candidate[..end].to_string();
+    // 循环移除尾部逗号、分号、反引号等
+    loop {
+        let trimmed_end = result.trim_end_matches(|c: char| matches!(c, ',' | '，' | ';' | '；' | '`' | '\'' | '"' | ' ' | '\u{2018}' | '\u{2019}' | '\u{201c}' | '\u{201d}' | '\u{ff02}' | '\u{ff07}'));
+        if trimmed_end.len() == result.len() {
+            break;
+        }
+        result = trimmed_end.to_string();
+    }
+    result
+}
+
 /// Combined Read + Seek trait for use in trait objects (Rust 不允许 dyn 中出现多个非 auto trait)。
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
@@ -127,6 +160,8 @@ pub struct StreamingTempFileState {
     pub ekey: Arc<std::sync::Mutex<Option<String>>>,
     /// When Some(true), blocks reads until download thread finishes post-download QMC check/decryption
     pub post_check_pending: Option<Arc<AtomicBool>>,
+    /// 下载失败原因（供前端诊断）
+    pub download_error: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for StreamingTempFileState {
@@ -215,6 +250,11 @@ impl StreamingTempFileState {
 
     pub fn downloaded_bytes(&self) -> u64 {
         self.downloaded_bytes.load(Ordering::Relaxed)
+    }
+
+    /// 返回下载失败原因（供前端诊断）
+    pub fn download_error(&self) -> Option<String> {
+        self.download_error.lock().ok().and_then(|e| e.clone())
     }
 }
 
@@ -386,6 +426,12 @@ pub fn start_streaming_download(
     user_agent: Option<&str>,
     ekey: Option<&str>,
 ) -> Result<StreamingTempFileState, String> {
+    // Rust 端 URL 清洗：移除插件可能返回的反引号、引号、逗号等脏字符
+    let cleaned_url = sanitize_stream_url(url);
+    if cleaned_url != url {
+        eprintln!("[StreamCache] URL 清洗: {} -> {}", &url[..url.len().min(120)], &cleaned_url[..cleaned_url.len().min(120)]);
+    }
+    let url = cleaned_url.as_str();
     let hash = url_hash(url);
     let mut mgr = cache().lock().map_err(|e| e.to_string())?;
 
@@ -413,6 +459,7 @@ pub fn start_streaming_download(
                 total_bytes: Some(downloaded),
                 ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
                 post_check_pending: None,
+                download_error: Arc::new(std::sync::Mutex::new(None)),
             });
         }
         // 下载进行中：复用同一个文件和下载状态
@@ -424,6 +471,7 @@ pub fn start_streaming_download(
             total_bytes: None,
             ekey: Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string()))),
             post_check_pending: None,
+            download_error: Arc::new(std::sync::Mutex::new(None)),
         });
     }
 
@@ -443,6 +491,7 @@ pub fn start_streaming_download(
     let download_failed = Arc::new(AtomicBool::new(false));
     let post_check_pending = Arc::new(AtomicBool::new(false));
     let shared_ekey = Arc::new(std::sync::Mutex::new(ekey.map(|s| s.to_string())));
+    let download_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
     // 启动后台下载线程
     let url_clone = url.to_string();
@@ -455,6 +504,7 @@ pub fn start_streaming_download(
     let dl_failed = download_failed.clone();
     let dl_post_check = post_check_pending.clone();
     let dl_ekey = shared_ekey.clone();
+    let dl_error = download_error.clone();
 
     let handle = std::thread::spawn(move || {
         download_thread(
@@ -468,6 +518,7 @@ pub fn start_streaming_download(
             dl_failed,
             dl_post_check,
             dl_ekey,
+            dl_error,
         );
     });
 
@@ -493,6 +544,7 @@ pub fn start_streaming_download(
         total_bytes: None,
         ekey: shared_ekey,
         post_check_pending: Some(post_check_pending),
+        download_error,
     })
 }
 
@@ -937,11 +989,15 @@ fn download_thread(
     download_failed: Arc<AtomicBool>,
     _post_check_pending: Arc<AtomicBool>,
     ekey: Arc<std::sync::Mutex<Option<String>>>,
+    download_error: Arc<std::sync::Mutex<Option<String>>>,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
         eprintln!("[StreamCache] 下载失败: {} url={}", reason, url);
         downloaded_bytes.store(bytes_written, Ordering::Relaxed);
         download_failed.store(true, Ordering::Relaxed);
+        if let Ok(mut err) = download_error.lock() {
+            *err = Some(reason.to_string());
+        }
         if let Ok(mut mgr) = cache().lock() {
             mgr.update_size(hash, bytes_written);
         }

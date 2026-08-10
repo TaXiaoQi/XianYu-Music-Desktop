@@ -62,7 +62,7 @@ export interface LxSearchResultItem {
   // source-specific fields
   hash?: string; // kg
   strMediaMid?: string; // tx
-  songId?: number; // tx
+  songId?: string | number; // tx
   albumMid?: string; // tx
   copyrightId?: string; // mg
   lrcUrl?: string; // mg
@@ -470,13 +470,14 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
   if (!rawList || !Array.isArray(rawList)) return [];
   const list: LxSearchResultItem[] = [];
   rawList.forEach(rawItem => {
-    const item = rawItem?.song || rawItem?.songInfo || rawItem?.musicInfo || rawItem;
+    const item = rawItem?.song || rawItem?.songInfo || rawItem?.musicInfo || rawItem?.item || rawItem?.doc?.song || rawItem?.doc || rawItem;
     if (!item || typeof item !== 'object') return;
     // 放宽过滤：仅要求 mid 或 id 存在即可（与 playlistImport.ts 的 parseTxSong 对齐）。
     // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
     // 导致搜索结果被全部静默过滤 → 列表为空（小秋搜索无法加载歌曲列表的根因）。
-    const songmid = String(item.mid || item.songmid || item.songMid || item.strMediaMid || item.id || '');
-    if (!songmid && !item.id) return;
+    const songmid = String(firstValue(item, ['mid', 'songmid', 'songMid', 'strMediaMid', 'mediaMid', 'mediamid', 'song_mid', 'songMID', 'id', 'songid']) || '');
+    const songId = firstValue(item, ['id', 'songid', 'songId', 'songID']);
+    if (!songmid && songId === undefined) return;
     const types: LxSearchResultItem['types'] = [];
     const _types: LxSearchResultItem['_types'] = {};
     const file = item.file || {};
@@ -500,18 +501,21 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
       types.push({ type: 'flac24bit', size });
       _types.flac24bit = { size };
     }
-    const albumId = String(item.album?.mid ?? item.albumMid ?? item.albummid ?? item.albumid ?? '');
-    const albumName = String(item.album?.name ?? item.albumName ?? item.albumname ?? '');
-    const singer = item.singer ?? item.singerName ?? item.singername ?? '';
-    const strMediaMid = file.media_mid ?? item.strMediaMid ?? item.mediaMid ?? item.mediamid ?? '';
+    const album = item.album || item.albumInfo || item.album_info || {};
+    const albumId = String(album.mid ?? firstValue(item, ['albumMid', 'albummid', 'album_mid', 'albumMID', 'albumid', 'albumId']) ?? '');
+    const albumName = String(album.name ?? album.title ?? firstValue(item, ['albumName', 'albumname', 'album_name', 'albumTitle']) ?? '');
+    const singer = item.singer ?? item.singers ?? item.singerList ?? item.singerName ?? item.singername ?? item.singer_name ?? '';
+    const strMediaMid = file.media_mid ?? firstValue(item, ['strMediaMid', 'mediaMid', 'mediamid', 'media_mid', 'mediaMID']) ?? '';
+    const interval = Number(firstValue(item, ['interval', 'duration', 'time_public']) || 0);
+    const displayName = firstValue(item, ['title', 'name', 'songname', 'songName', 'song_name']) || '';
     list.push({
       singer: formatSingerName(singer, 'name'),
-      name: item.title || item.name || item.songname || '',
+      name: decodeName(String(displayName).replace(/<[^>]*>/g, '')),
       albumName,
       albumId,
       source: 'tx',
-      interval: formatPlayTime(item.interval),
-      songId: item.id ?? item.songid,
+      interval: formatPlayTime(interval),
+      songId,
       albumMid: albumId,
       strMediaMid,
       songmid,
@@ -523,6 +527,79 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
     });
   });
   return list;
+}
+
+function pickArrayFromTxNode(node: any): any[] {
+  if (Array.isArray(node)) return node;
+  if (!node || typeof node !== 'object') return [];
+  const direct = node.list
+    ?? node.songlist
+    ?? node.itemlist
+    ?? node.items
+    ?? node.item_song
+    ?? node.item
+    ?? node.docs
+    ?? node.records
+    ?? node.results
+    ?? node.result
+    ?? node.value
+    ?? node.values
+    ?? node.data;
+  return Array.isArray(direct) ? direct : [];
+}
+
+function findTxSongListDeep(root: any, maxDepth = 6): any[] {
+  if (!root || typeof root !== 'object') return [];
+  const seen = new WeakSet<object>();
+  const queue: Array<{ node: any; depth: number }> = [{ node: root, depth: 0 }];
+
+  while (queue.length > 0) {
+    const { node, depth } = queue.shift()!;
+    if (!node || typeof node !== 'object') continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+      if (node.length > 0 && txHandleResult(node).length > 0) return node;
+      if (depth >= maxDepth) continue;
+      for (const item of node.slice(0, 80)) {
+        if (item && typeof item === 'object') queue.push({ node: item, depth: depth + 1 });
+      }
+      continue;
+    }
+
+    const direct = pickArrayFromTxNode(node);
+    if (direct.length > 0 && txHandleResult(direct).length > 0) return direct;
+    if (depth >= maxDepth) continue;
+
+    const priorityKeys = [
+      'song', 'songlist', 'item_song', 'item_audio',
+      'direct_result', 'direct_result2', 'musicInfo', 'songInfo',
+      'list', 'items', 'data', 'docs', 'records', 'result',
+    ];
+    for (const key of priorityKeys) {
+      const child = node[key];
+      if (child && typeof child === 'object') queue.push({ node: child, depth: depth + 1 });
+    }
+    for (const child of Object.values(node)) {
+      if (child && typeof child === 'object') queue.push({ node: child, depth: depth + 1 });
+    }
+  }
+
+  return [];
+}
+
+function describeTxSearchBody(body: any): Record<string, string[] | null> | null {
+  if (!body || typeof body !== 'object') return null;
+  const pickKeys = (value: any) => (value && typeof value === 'object' ? Object.keys(value).slice(0, 30) : null);
+  return {
+    item_song: pickKeys(body.item_song),
+    item_audio: pickKeys(body.item_audio),
+    direct_result: pickKeys(body.direct_result),
+    direct_result2: pickKeys(body.direct_result2),
+    direct_result_item_song: pickKeys(body.direct_result?.item_song),
+    direct_result2_item_song: pickKeys(body.direct_result2?.item_song),
+  };
 }
 
 function pickTxSearchRawList(data: any): any[] {
@@ -538,17 +615,30 @@ function pickTxSearchRawList(data: any): any[] {
     body?.songlist?.itemlist,
     body?.songlist?.items,
     body?.songlist,
+    body?.item_song?.list,
     body?.item_song,
+    body?.item_audio?.list,
+    body?.item_audio,
+    body?.direct_result?.song?.list,
+    body?.direct_result?.item_song?.list,
+    body?.direct_result?.item_song,
+    body?.direct_result2?.song?.list,
+    body?.direct_result2?.item_song?.list,
+    body?.direct_result2?.item_song,
     data?.song?.list,
+    data?.song,
+    data?.songlist?.list,
     data?.songlist,
+    data?.item_song?.list,
     data?.item_song,
   ];
 
   for (const candidate of candidates) {
-    if (Array.isArray(candidate) && candidate.length > 0) return candidate;
+    const list = pickArrayFromTxNode(candidate);
+    if (list.length > 0 && txHandleResult(list).length > 0) return list;
   }
 
-  return [];
+  return findTxSongListDeep(body ?? data);
 }
 
 function getTxSearchTotal(data: any, fallbackCount: number, limit: number): number {
@@ -616,7 +706,7 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
   // Desktop 接口通常返回 body.song.list；部分接口/插件环境会返回 body.songlist 或 item_song。
   let rawList = pickTxSearchRawList(data);
   if (!Array.isArray(rawList) || rawList.length === 0) {
-    console.warn('[LxMusicSdk] TX search: song list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null, 'song keys:', data?.body?.song ? Object.keys(data.body.song) : null, 'songlist keys:', data?.body?.songlist && typeof data.body.songlist === 'object' ? Object.keys(data.body.songlist) : null);
+    console.warn('[LxMusicSdk] TX search: song list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null, 'song keys:', data?.body?.song ? Object.keys(data.body.song) : null, 'songlist keys:', data?.body?.songlist && typeof data.body.songlist === 'object' ? Object.keys(data.body.songlist) : null, 'nested keys:', describeTxSearchBody(data?.body));
     try {
       const mobileBody = await requestTxSearch('DoSearchForQQMusicMobile', str, page, limit);
       if (mobileBody?.code === 0 && mobileBody?.req?.code === 0) {
@@ -628,7 +718,7 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
           data = mobileData;
           rawList = mobileRawList;
         } else {
-          console.warn('[LxMusicSdk] TX search: Mobile fallback also empty, data keys:', mobileData ? Object.keys(mobileData) : null, 'body keys:', mobileData?.body ? Object.keys(mobileData.body) : null);
+          console.warn('[LxMusicSdk] TX search: Mobile fallback also empty, data keys:', mobileData ? Object.keys(mobileData) : null, 'body keys:', mobileData?.body ? Object.keys(mobileData.body) : null, 'nested keys:', describeTxSearchBody(mobileData?.body));
         }
       } else {
         console.warn('[LxMusicSdk] TX search: Mobile fallback API error', { bodyCode: mobileBody?.code, reqCode: mobileBody?.req?.code });

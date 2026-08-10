@@ -173,7 +173,7 @@ const resolveLxAudioUrl = async ({
       }
       return {
         audioFilePath: result.url,
-        pluginHeaders: null,
+        pluginHeaders: normalizeMediaRequestHeaders(result.url, null),
         currentPlayingQuality: actualQuality,
         currentPlayingAudioUrl: result.url,
       };
@@ -269,7 +269,23 @@ const resolvePluginAudioUrl = async ({
           fallbackBehavior,
           availableQualities,
         );
-    const cleanedMusicUrl = sanitizeMediaUrl(musicInfo?.url);
+    let cleanedMusicUrl = sanitizeMediaUrl(musicInfo?.url);
+    // 兜底：如果 sanitizeMediaUrl 未清除首尾非 URL 字符，用 indexOf 强制提取
+    if (cleanedMusicUrl && !cleanedMusicUrl.startsWith('http://') && !cleanedMusicUrl.startsWith('https://') && musicInfo?.url) {
+      const rawStr = String(musicInfo.url);
+      const idx1 = rawStr.indexOf('https://');
+      const idx2 = rawStr.indexOf('http://');
+      const idx = idx1 >= 0 ? idx1 : idx2;
+      if (idx >= 0) {
+        cleanedMusicUrl = rawStr.substring(idx);
+        while (cleanedMusicUrl.length > 0) {
+          const c = cleanedMusicUrl.charCodeAt(cleanedMusicUrl.length - 1);
+          if (c === 0x2c || c === 0x3b || c === 0x60 || c === 0x27 || c === 0x22 || c <= 0x20) {
+            cleanedMusicUrl = cleanedMusicUrl.substring(0, cleanedMusicUrl.length - 1);
+          } else break;
+        }
+      }
+    }
     if (musicInfo?.url && cleanedMusicUrl !== musicInfo.url) {
       console.warn('[Audio] 已清洗插件 URL:', {
         before: musicInfo.url.slice(0, 120),
