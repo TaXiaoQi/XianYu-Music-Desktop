@@ -2,13 +2,14 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
-import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
+import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import { ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
 
 const showDownloadQualityModal = ref(false);
+const showDownloadBehaviorModal = ref(false);
 const showQualityFallbackModal = ref(false);
 const showFileNameStyleModal = ref(false);
 const showLyricsFormatModal = ref(false);
@@ -18,6 +19,11 @@ const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; de
   { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前，歌名在后' },
   { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前，艺术家在后' },
   { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑信息' },
+];
+
+const DOWNLOAD_BEHAVIOR_OPTIONS: { value: DownloadBehavior; label: string; description: string }[] = [
+  { value: 'default', label: '默认安装', description: '底部下载栏只选择音质，下载位置和内容应用本页设置' },
+  { value: 'ask', label: '每次询问我', description: '每次下载都打开详细弹窗，可临时自定义位置和下载内容' },
 ];
 
 const QUALITY_FALLBACK_OPTIONS: { value: DownloadQualityFallbackBehavior; label: string; description: string }[] = [
@@ -43,6 +49,22 @@ const patchDownloadQuality = (value: DownloadQuality) => {
 const handleDownloadQualitySelect = (value: DownloadQuality) => {
   showDownloadQualityModal.value = false;
   patchDownloadQuality(value);
+};
+
+/** 弹窗中选择下载行为 */
+const handleDownloadBehaviorSelect = (value: DownloadBehavior) => {
+  showDownloadBehaviorModal.value = false;
+  patchSettings({ download: { ...settings.value.download, behavior: value } });
+};
+
+const handleBatchDownloadLimitChange = (event: Event) => {
+  const value = Number((event.target as HTMLInputElement).value);
+  patchSettings({
+    download: {
+      ...settings.value.download,
+      batchDownloadLimit: Math.min(5, Math.max(1, Math.round(value))),
+    },
+  });
 };
 
 /** 弹窗中选择音质缺失行为 */
@@ -81,11 +103,11 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
 
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <!-- 下载位置 -->
+    <!-- 下载行为 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        下载位置
+        下载行为
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="desktop-setting-row rounded-xl">
@@ -108,8 +130,83 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             </button>
           </div>
         </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">下载行为</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">控制底部下载栏点击后显示音质选择还是详细弹窗</div>
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            @click="showDownloadBehaviorModal = true"
+          >
+            <span>{{ DOWNLOAD_BEHAVIOR_OPTIONS.find(o => o.value === settings.download.behavior)?.label }}</span>
+            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">批量下载数量上限</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">同时下载数量，最高 5，默认 2</div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0 min-w-[220px]">
+            <input
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              :value="settings.download.batchDownloadLimit ?? 2"
+              class="w-36 accent-[#EC4141]"
+              @input="handleBatchDownloadLimitChange"
+            />
+            <span class="w-6 text-center text-sm font-semibold text-[#EC4141]">
+              {{ settings.download.batchDownloadLimit ?? 2 }}
+            </span>
+          </div>
+        </div>
       </div>
     </section>
+
+    <!-- 下载行为选择弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal-pop">
+        <div
+          v-if="showDownloadBehaviorModal"
+          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          @click.self="showDownloadBehaviorModal = false"
+        >
+          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择下载行为</h3>
+              <button
+                @click="showDownloadBehaviorModal = false"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >✕</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
+              <button
+                v-for="option in DOWNLOAD_BEHAVIOR_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                :class="settings.download.behavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
+                @click="handleDownloadBehaviorSelect(option.value)"
+              >
+                <div class="flex-1 min-w-0 text-left">
+                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">{{ option.description }}</div>
+                </div>
+                <Check
+                  v-if="settings.download.behavior === option.value"
+                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 下载音质 -->
     <section class="space-y-3">

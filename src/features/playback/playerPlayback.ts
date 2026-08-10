@@ -17,6 +17,7 @@ import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
+import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 
 interface PlaySongOptions {
@@ -823,17 +824,32 @@ const authStore = useAuthStore();
       scheduleAddToHistory(currentSong.value ?? song);
     };
 
-    // [预获取优化] 音质列表获取与 URL 解析并行执行，减少起播延迟
-    // 音质列表独立于播放流程，可在后台并行获取
     currentAvailableQualities.value = null;
-    const qSongPath = song.cue_source_path || song.path;
-    const qualityListPromise = (async () => {
-      try {
-        currentAvailableQualities.value = await getOnlineAvailableQualities(qSongPath, song);
-      } catch { /* ignore: 音质列表获取失败不影响播放 */ }
-    })();
 
     let audioFilePath = song.cue_source_path || song.path;
+    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
+    let usingDownloadedAudioFile = false;
+
+    // [本地优先] 收藏、最近播放、歌单中保存的是在线歌曲路径，但若该歌曲已下载且文件仍存在，
+    // 直接播放下载文件，避免每次起播都调用 LX/插件解析直链。未命中时才进入后续在线解析流程。
+    if (isOriginalOnlineSong) {
+      const downloadedRecord = await checkDownloadExists(audioFilePath);
+      if (requestId !== playRequestId) return;
+      if (downloadedRecord?.filePath) {
+        audioFilePath = downloadedRecord.filePath;
+        usingDownloadedAudioFile = true;
+      }
+    }
+
+    // [预获取优化] 仅在线解析路径需要获取可用音质；本地下载命中时跳过，确保不触发插件调用。
+    const qualityListPromise = usingDownloadedAudioFile
+      ? Promise.resolve()
+      : (async () => {
+        try {
+          currentAvailableQualities.value = await getOnlineAvailableQualities(audioFilePath, song);
+        } catch { /* ignore: 音质列表获取失败不影响播放 */ }
+      })();
+
     // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），随 URL 一起传递给播放器
     let pluginHeaders: Record<string, string> | null = null;
     // QMC2 加密密钥（Baka 插件加密音源），随 URL 一起传递给 Rust 后端进行流式解密
@@ -847,31 +863,33 @@ const authStore = useAuthStore();
     if (requestId !== playRequestId) return;
 
     try {
-      const requestedQuality = (playbackStore.sessionQualityOverride
-        || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
-      const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-      const resolvedOnlineAudio = await resolveOnlineAudio({
-        audioFilePath,
-        song,
-        requestedQuality,
-        fallbackBehavior,
-        availableQualities: playbackStore.currentAvailableQualities,
-        preFetchedUrl: song.remote_source_id,
-      });
-      audioFilePath = resolvedOnlineAudio.audioFilePath;
-      pluginHeaders = resolvedOnlineAudio.pluginHeaders;
-      pluginEkey = resolvedOnlineAudio.ekey;
-      if (resolvedOnlineAudio.currentPlayingQuality) {
-        playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
-      }
-      if (resolvedOnlineAudio.currentPlayingAudioUrl) {
-        playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
-      }
-      if (!song.lyrics_raw?.trim() && resolvedOnlineAudio.lyricsRaw) {
-        song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
-      }
-      if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
-        song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
+      if (!usingDownloadedAudioFile) {
+        const requestedQuality = (playbackStore.sessionQualityOverride
+          || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
+        const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+        const resolvedOnlineAudio = await resolveOnlineAudio({
+          audioFilePath,
+          song,
+          requestedQuality,
+          fallbackBehavior,
+          availableQualities: playbackStore.currentAvailableQualities,
+          preFetchedUrl: song.remote_source_id,
+        });
+        audioFilePath = resolvedOnlineAudio.audioFilePath;
+        pluginHeaders = resolvedOnlineAudio.pluginHeaders;
+        pluginEkey = resolvedOnlineAudio.ekey;
+        if (resolvedOnlineAudio.currentPlayingQuality) {
+          playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
+        }
+        if (resolvedOnlineAudio.currentPlayingAudioUrl) {
+          playbackStore.currentPlayingAudioUrl = resolvedOnlineAudio.currentPlayingAudioUrl;
+        }
+        if (!song.lyrics_raw?.trim() && resolvedOnlineAudio.lyricsRaw) {
+          song.lyrics_raw = resolvedOnlineAudio.lyricsRaw;
+        }
+        if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
+          song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
+        }
       }
 
     // [可打断] lx:///plugin:// URL 解析期间用户可能切歌，需检查是否仍是当前请求
@@ -880,7 +898,7 @@ const authStore = useAuthStore();
     // [歌词获取] URL 解析完成后启动异步歌词请求。
     // 移至此处确保插件实例已初始化且 musicUrl 请求已完成（部分 LX 插件依赖 song-specific 状态才能获取歌词）。
     // LX 歌曲：通过落雪插件引擎或直接 API 获取歌词
-    if (song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
+    if (!usingDownloadedAudioFile && song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
       void fetchLxSongLyricsRaw(song)
         .then((lyricsRaw) => {
           if (!lyricsRaw) {
@@ -908,7 +926,7 @@ const authStore = useAuthStore();
 
     // [歌词获取] plugin:// 歌曲：通过 pluginGetLyric 补获歌词（支持逐字歌词）
     // 播放入口可能已通过 pluginGetMusicInfo 获取歌词并设置到 lyrics_raw，此处仅在为空时补获
-    if (song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
+    if (!usingDownloadedAudioFile && song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
       const pluginSearchResult = song.rawData;
       if (pluginSearchResult?.pluginId) {
         void (async () => {

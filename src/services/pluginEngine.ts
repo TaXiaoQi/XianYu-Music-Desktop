@@ -109,7 +109,7 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
     cacheControl: metadata.cacheControl,
     supportedSearchType: metadata.supportedSearchType,
     defaultSearchType: metadata.defaultSearchType,
-    userVariables: metadata.userVariables,
+    userVariables: normalizePluginUserVariables(metadata.userVariables),
     hints: metadata.hints,
     supportedQualities: metadata.supportedQualities,
   };
@@ -322,6 +322,92 @@ export interface PluginUserVariable {
   required?: boolean;
 }
 
+/**
+ * 兼容 MusicFree 与 Baka/Toskysun 插件的用户变量定义。
+ *
+ * MF 常用 name/title/defaultValue，Baka 插件可能使用 key/id、label、default、desc 等别名。
+ * 统一规范化后，设置页按 name 保存，Worker 里的 env.getUserVariables()/env.userVariables
+ * 就能拿到插件期望的 key。
+ */
+function normalizePluginUserVariables(raw: unknown): PluginUserVariable[] {
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object'
+      ? Object.entries(raw as Record<string, any>).map(([key, value]) => (
+        value && typeof value === 'object'
+          ? { name: key, ...value }
+          : { name: key, defaultValue: value }
+      ))
+      : [];
+
+  return list
+    .map((item): PluginUserVariable | null => {
+      if (!item || typeof item !== 'object') return null;
+      const v = item as Record<string, any>;
+      const name = String(v.name ?? v.key ?? v.id ?? '').trim();
+      if (!name) return null;
+
+      const rawType = String(v.type ?? v.inputType ?? '').toLowerCase();
+      const type: PluginUserVariable['type'] = rawType === 'password'
+        ? 'password'
+        : rawType === 'select'
+          ? 'select'
+          : 'text';
+
+      const rawOptions = Array.isArray(v.options)
+        ? v.options
+        : Array.isArray(v.enums)
+          ? v.enums
+          : [];
+      const options = rawOptions
+        .map((option: any) => {
+          if (typeof option === 'string') return option;
+          if (option && typeof option === 'object') {
+            return String(option.value ?? option.key ?? option.label ?? option.name ?? '').trim();
+          }
+          return String(option ?? '').trim();
+        })
+        .filter(Boolean);
+
+      const defaultValue = v.defaultValue ?? v.default ?? v.value;
+      return {
+        name,
+        title: typeof v.title === 'string'
+          ? v.title
+          : typeof v.label === 'string'
+            ? v.label
+            : undefined,
+        type,
+        defaultValue: defaultValue === undefined || defaultValue === null ? undefined : String(defaultValue),
+        options,
+        description: typeof v.description === 'string'
+          ? v.description
+          : typeof v.desc === 'string'
+            ? v.desc
+            : typeof v.remark === 'string'
+              ? v.remark
+              : undefined,
+        placeholder: typeof v.placeholder === 'string'
+          ? v.placeholder
+          : typeof v.hint === 'string'
+            ? v.hint
+            : undefined,
+        required: Boolean(v.required),
+      };
+    })
+    .filter((item): item is PluginUserVariable => Boolean(item));
+}
+
+function getNormalizedCachedUserVariables(pluginId: string): PluginUserVariable[] {
+  const cached = userVarDefsCache.get(pluginId);
+  if (!cached) return [];
+  const normalized = normalizePluginUserVariables(cached);
+  if (normalized.length > 0 && normalized !== cached) {
+    userVarDefsCache.set(pluginId, normalized);
+  }
+  return normalized;
+}
+
 interface PluginInstance {
   source: PluginSource;
   instance: IPluginInstance;
@@ -449,8 +535,9 @@ export async function loadPluginFromScript(
         pluginInstances.set(hash, { source, instance: proxyInstance, script });
         _sandboxedPlugins.add(hash);
 
-        if (metadata.userVariables) {
-          userVarDefsCache.set(hash, metadata.userVariables);
+        const userVariables = normalizePluginUserVariables(metadata.userVariables);
+        if (userVariables.length > 0) {
+          userVarDefsCache.set(hash, userVariables);
         }
 
         log(`=== 插件沙箱加载成功: "${metadata.platform}" ===`);
@@ -1379,7 +1466,13 @@ export function pluginSupportsSearchType(_source: PluginSource, _type: 'music' |
  */
 export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
   await ensurePluginInstance(source);
-  return BakaPluginManager.getSupportedQualities(source);
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    return BakaPluginManager.getSupportedQualities(source);
+  }
+
+  // 原版 MusicFree 插件没有 Baka 的 12 档 supportedQualities，
+  // 只暴露 standard/high/lossless 三档，这里返回对应的代表音质用于 UI 与回退逻辑。
+  return ['128k', '320k', 'flac'];
 }
 
 // ==================== Baka 扩展：歌曲评论 ====================
@@ -1511,8 +1604,14 @@ function removePluginUserVariableValues(pluginId: string) {
  */
 export function getPluginUserVariables(pluginId: string): PluginUserVariable[] {
   const inst = pluginInstances.get(pluginId);
-  if (inst?.instance?.userVariables) return inst.instance.userVariables;
-  return userVarDefsCache.get(pluginId) ?? [];
+  if (inst?.instance?.userVariables) {
+    const normalized = normalizePluginUserVariables(inst.instance.userVariables);
+    if (normalized.length > 0) {
+      userVarDefsCache.set(pluginId, normalized);
+      return normalized;
+    }
+  }
+  return getNormalizedCachedUserVariables(pluginId);
 }
 
 /**
@@ -1525,20 +1624,22 @@ export function getPluginUserVariables(pluginId: string): PluginUserVariable[] {
  */
 export async function ensurePluginUserVariables(source: PluginSource): Promise<PluginUserVariable[]> {
   // 1. 优先从已有缓存读取（无需加载插件）
-  const cached = userVarDefsCache.get(source.id);
-  if (cached) return cached;
+  const cached = getNormalizedCachedUserVariables(source.id);
+  if (cached.length > 0) return cached;
 
   const inst = pluginInstances.get(source.id);
   if (inst?.instance?.userVariables) {
-    userVarDefsCache.set(source.id, inst.instance.userVariables);
-    return inst.instance.userVariables;
+    const normalized = normalizePluginUserVariables(inst.instance.userVariables);
+    userVarDefsCache.set(source.id, normalized);
+    return normalized;
   }
 
   // 2. 缓存未命中，触发完整加载
   const loaded = await ensurePluginInstance(source);
   if (loaded?.instance?.userVariables) {
-    userVarDefsCache.set(source.id, loaded.instance.userVariables);
-    return loaded.instance.userVariables;
+    const normalized = normalizePluginUserVariables(loaded.instance.userVariables);
+    userVarDefsCache.set(source.id, normalized);
+    return normalized;
   }
 
   return [];
@@ -1558,17 +1659,20 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
     if (source.format === 'lx') return;
 
     // 优先读缓存
-    const cached = userVarDefsCache.get(source.id);
-    if (cached && cached.length > 0) {
+    const cached = getNormalizedCachedUserVariables(source.id);
+    if (cached.length > 0) {
       result.add(source.id);
       return;
     }
 
     // 已在实例缓存中
     const inst = pluginInstances.get(source.id);
-    if (inst?.instance?.userVariables && inst.instance.userVariables.length > 0) {
-      userVarDefsCache.set(source.id, inst.instance.userVariables);
-      result.add(source.id);
+    if (inst?.instance?.userVariables) {
+      const normalized = normalizePluginUserVariables(inst.instance.userVariables);
+      if (normalized.length > 0) {
+        userVarDefsCache.set(source.id, normalized);
+        result.add(source.id);
+      }
       return;
     }
 
@@ -1577,9 +1681,12 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
     if (source.format === 'musicfree') {
       try {
         const loaded = await ensurePluginInstance(source);
-        if (loaded?.instance?.userVariables && loaded.instance.userVariables.length > 0) {
-          userVarDefsCache.set(source.id, loaded.instance.userVariables);
-          result.add(source.id);
+        if (loaded?.instance?.userVariables) {
+          const normalized = normalizePluginUserVariables(loaded.instance.userVariables);
+          if (normalized.length > 0) {
+            userVarDefsCache.set(source.id, normalized);
+            result.add(source.id);
+          }
         }
       } catch {
         // 加载失败不阻塞其他插件

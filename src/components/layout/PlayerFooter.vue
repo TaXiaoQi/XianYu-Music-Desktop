@@ -73,8 +73,9 @@ const rightItems = computed(() => normalizedLayout.value.right.filter(key => !no
 const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value));
 
 // --- 下载功能 ---
-// 底栏下载：点击展开音质下拉（复用播放音质选择 UI），选择音质后直接触发下载。
-// 下载设置（目录/文件名样式/歌词等）在设置-下载页配置，底栏不再弹对话框。
+// 底栏下载：根据设置中的下载行为决定只展开音质下拉，或打开详细下载弹窗。
+// 默认安装：选择音质后直接触发下载，位置/内容/命名等应用设置-下载页配置。
+// 每次询问我：打开详细弹窗，允许临时自定义下载位置和下载内容。
 const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value));
 
 // 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
@@ -144,17 +145,31 @@ const selectedDownloadQuality = computed<DownloadQuality>(
 
 const { openDownloadDialog } = useDownloadDialog();
 
+const openDownloadByBehavior = () => {
+  if (!currentSong.value) return;
+  showQualityMenu.value = false;
+  if ((settings.value.download.behavior ?? 'default') === 'ask') {
+    showDownloadQualityMenu.value = false;
+    openDownloadDialog(currentSong.value);
+    return;
+  }
+  showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
+};
+
 const handleDownloadClick = () => {
   if (!isOnlineSong.value || isDownloading.value) return;
   if (!currentSong.value) return;
-  // 打开下载弹窗，让用户选择音质/目录/下载内容
-  openDownloadDialog(currentSong.value);
+  if (downloadedRecord.value) {
+    showRedownloadConfirm.value = true;
+    return;
+  }
+  openDownloadByBehavior();
 };
 
-/** 确认重新下载：直接打开下载弹窗 */
+/** 确认重新下载：按下载行为打开音质菜单或详细弹窗 */
 const handleConfirmRedownload = () => {
   if (!currentSong.value) return;
-  openDownloadDialog(currentSong.value);
+  openDownloadByBehavior();
 };
 
 /** 选择下载音质并立即开始下载（复用共享下载逻辑，状态写入 download store 驱动底栏动画） */

@@ -150,6 +150,7 @@ export function useHomePageModel() {
     handleFolderBatchDelete,
     executeConfirmAction,
     handleBatchMove,
+    handleBatchDownload,
     confirmBatchMove,
     openConfirm,
   } = useHomeBatchActions({
@@ -165,6 +166,7 @@ export function useHomePageModel() {
     removeFromHistory,
     showToast,
     getRoutePath: () => route.path,
+    resolveSongByPath,
   });
 
   const {
@@ -371,6 +373,7 @@ export function useHomePageModel() {
     handleAddToPlaylistRequest,
     handleSelectAll,
     handleBatchAddToFavorites,
+    handleBatchDownload,
     requestBatchDelete,
     handleFolderBatchDelete,
     handleBatchMove,

@@ -161,6 +161,8 @@ export const defaultAudioSettings: AudioSettings = {
 
 export const defaultDownloadSettings: DownloadSettings = {
   downloadPath: '',
+  behavior: 'default',
+  batchDownloadLimit: 2,
   format: 'mp3',
   quality: '320k',
   downloadLyrics: true,
@@ -300,6 +302,7 @@ export const mergeUploadSettings = (
 });
 
 const VALID_DOWNLOAD_FORMATS: DownloadSettings['format'][] = ['flac', 'mp3', 'wav', 'aac'];
+const VALID_DOWNLOAD_BEHAVIORS: DownloadSettings['behavior'][] = ['default', 'ask'];
 const VALID_DOWNLOAD_QUALITIES = ALL_QUALITY_KEYS;
 const VALID_LYRICS_FORMATS: DownloadSettings['lyricsFormat'][] = ['lrc', 'txt'];
 const VALID_LYRICS_STYLES: DownloadLyricsStyle[] = ['word-by-word', 'line-by-line'];
@@ -316,6 +319,9 @@ export const mergeDownloadSettings = (
   const format = patch.format && VALID_DOWNLOAD_FORMATS.includes(patch.format)
     ? patch.format
     : base.format;
+  const behavior = patch.behavior && VALID_DOWNLOAD_BEHAVIORS.includes(patch.behavior)
+    ? patch.behavior
+    : base.behavior;
   const quality = patch.quality && VALID_DOWNLOAD_QUALITIES.includes(patch.quality)
     ? patch.quality
     : base.quality;
@@ -331,9 +337,15 @@ export const mergeDownloadSettings = (
   const qualityFallbackBehavior = patch.qualityFallbackBehavior && ['lower', 'higher'].includes(patch.qualityFallbackBehavior)
     ? patch.qualityFallbackBehavior
     : base.qualityFallbackBehavior;
+  const rawBatchDownloadLimit = Number(patch.batchDownloadLimit);
+  const batchDownloadLimit = Number.isFinite(rawBatchDownloadLimit)
+    ? Math.min(5, Math.max(1, Math.round(rawBatchDownloadLimit)))
+    : (base.batchDownloadLimit ?? 2);
 
   return {
     downloadPath: typeof patch.downloadPath === 'string' ? patch.downloadPath : base.downloadPath,
+    behavior,
+    batchDownloadLimit,
     format,
     quality,
     downloadLyrics: typeof patch.downloadLyrics === 'boolean' ? patch.downloadLyrics : base.downloadLyrics,

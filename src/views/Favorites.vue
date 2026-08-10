@@ -7,6 +7,7 @@
       @playAll="handlePlayAll"
       @batchPlay="handleBatchPlay"
       @addToPlaylist="openAddToPlaylistSelection"
+      @batchDownload="handleBatchDownload"
       @batchDelete="requestBatchDelete"
       @clearAll="handleClearAll"
       @addAllToQueue="handleAddAllToQueue"
@@ -70,6 +71,10 @@ import { usePlaybackController } from '../features/playback/usePlaybackControlle
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { useSongContextActions } from '../composables/useSongContextActions';
 import { launchFlyingCover } from '../composables/useFlyingCover';
+import { useSettings } from '../features/settings/useSettings';
+import { useToast } from '../composables/toast';
+import { downloadToLocal } from '../composables/useDownloadToLocal';
+import { isDownloadableOnlineSong } from '../services/downloadService';
 
 import { useSongDrag } from '../composables/useSongDrag';
 
@@ -82,6 +87,8 @@ const ModernModal = defineAsyncComponent(() => import('../components/common/Mode
 const { displaySongList, searchQuery } = usePlayerLibraryView();
 const { playSong, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+const { settings } = useSettings();
+const { showToast } = useToast();
 const {
   favoritePaths,
   clearFavorites,
@@ -145,6 +152,58 @@ const handleBatchPlay = () => {
     void launchFlyingCover(firstSong.path, '');
     void playSong(firstSong);
   }
+};
+
+const runWithConcurrency = async (
+  tasks: Array<() => Promise<boolean>>,
+  limit: number,
+): Promise<number> => {
+  let nextIndex = 0;
+  let successCount = 0;
+  const workerCount = Math.min(limit, tasks.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < tasks.length) {
+      const task = tasks[nextIndex++];
+      if (await task()) {
+        successCount++;
+      }
+    }
+  }));
+
+  return successCount;
+};
+
+const handleBatchDownload = async () => {
+  const selected = localSongList.value.filter(s => selectedPaths.value.has(s.path));
+  if (selected.length === 0) return;
+
+  const downloadableSongs = selected.filter(isDownloadableOnlineSong);
+  const skippedLocalCount = selected.length - downloadableSongs.length;
+
+  if (skippedLocalCount > 0) {
+    showToast(`已跳过 ${skippedLocalCount} 首本地歌曲`, 'info');
+  }
+  if (downloadableSongs.length === 0) {
+    showToast('没有可下载的在线歌曲', 'info');
+    return;
+  }
+
+  const concurrency = Math.min(5, Math.max(1, Math.round(settings.value.download.batchDownloadLimit ?? 2)));
+  showToast(`开始批量下载 ${downloadableSongs.length} 首歌曲（同时 ${concurrency} 首）`, 'info');
+
+  const tasks = downloadableSongs.map(song => async () => downloadToLocal(song));
+  const successCount = await runWithConcurrency(tasks, concurrency);
+  const failedCount = downloadableSongs.length - successCount;
+
+  showToast(
+    failedCount > 0
+      ? `批量下载完成：成功 ${successCount} 首，失败 ${failedCount} 首`
+      : `批量下载完成：成功 ${successCount} 首`,
+    failedCount > 0 ? 'info' : 'success',
+  );
+
+  isBatchMode.value = false;
 };
 
 // 全选/取消全选

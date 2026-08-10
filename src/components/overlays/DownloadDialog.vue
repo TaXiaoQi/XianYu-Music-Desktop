@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
-import { ChevronDown } from 'lucide-vue-next';
 
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useSettings } from '../../features/settings/useSettings';
+import { usePlaybackStore } from '../../features/playback/store';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { probeDownloadableQualities } from '../../services/downloadService';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
-import type { Song, DownloadQuality, QualityKey } from '../../types';
+import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
 
 const props = defineProps<{ visible: boolean; song: Song | null }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const { settings } = useSettings();
-// 下载内容勾选状态来自模块级 store，跨弹窗打开记忆上次选择
-const { downloadAudio, downloadLyrics, downloadCover } = useDownloadDialog();
+const playbackStore = usePlaybackStore();
 
 // 音质与目录每次打开都跟随设置（不记忆）
 const selectedQuality = ref<DownloadQuality>('320k');
 const downloadDir = ref('');
+const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
+const downloadLyrics = ref(false);
 /**
  * 实测可下载的音质列表。
  * null 表示尚未探测（回退到全部可选）；空数组表示探测完成且无可用档位。
@@ -31,11 +31,84 @@ const declaredQualities = ref<QualityKey[] | null>(null);
 /** 探测阶段已解析的直链，下载时透传复用 */
 const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
 const isProbing = ref(false);
-// 不支持音质折叠栏展开状态
-const showUnsupportedQualities = ref(false);
+
+const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
+  { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前' },
+  { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前' },
+  { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑' },
+];
+
+const dialogTitle = computed(() => {
+  const song = props.song;
+  if (!song) return '下载歌曲';
+  const title = song.title || song.name || '未知歌曲';
+  const artist = song.artist || '未知歌手';
+  return `${title}-${artist}`;
+});
 
 /** 当前探测任务的中止控制器（弹窗关闭或切歌时中止，防止旧结果覆盖新歌） */
 let probeController: AbortController | null = null;
+
+interface TrustedPlaybackQuality {
+  quality: QualityKey;
+  url: string;
+}
+
+/** 判断播放链路命中的 URL 是否疑似把无损档静默降级成有损格式 */
+const isLikelyDegradedLosslessUrl = (quality: QualityKey, url: string) => {
+  if (!QUALITY_META[quality]?.isLossless) return false;
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return /\.(mp3|m4a|aac|ogg|wma)$/.test(pathname);
+  } catch {
+    return /\.(mp3|m4a|aac|ogg|wma)(?:[?#]|$)/i.test(url);
+  }
+};
+
+/**
+ * 复用播放链路已经解析成功的音质与直链。
+ *
+ * 只信任“当前正在播放同一首歌”的实际命中结果，并过滤无损档返回有损 URL 的情况。
+ * 这样下载弹窗打开时可以先展示这个确定可用的档位，后续探测完成后再合并其它档位。
+ */
+const getTrustedPlaybackQuality = (song: Song): TrustedPlaybackQuality | null => {
+  const playingSong = playbackStore.currentSong;
+  const targetPath = song.path;
+  const targetSourcePath = song.cue_source_path || song.path;
+  const playingPath = playingSong?.path;
+  const playingSourcePath = playingSong?.cue_source_path || playingSong?.path;
+  const isSameSong = playingPath === targetPath || playingSourcePath === targetSourcePath;
+  if (!isSameSong) return null;
+
+  const quality = playbackStore.currentPlayingQuality;
+  const url = playbackStore.currentPlayingAudioUrl;
+  if (!quality || !url || !/^https?:\/\//.test(url)) return null;
+  if (isLikelyDegradedLosslessUrl(quality, url)) return null;
+
+  return { quality, url };
+};
+
+/** 将播放命中的可信档位合并进实测结果，避免后台探测完成后覆盖掉该档位 */
+const mergeTrustedPlaybackQuality = (
+  song: Song,
+  available: QualityKey[],
+  resolvedUrls: Partial<Record<QualityKey, string>>,
+) => {
+  const trusted = getTrustedPlaybackQuality(song);
+  if (!trusted) {
+    return { available, resolvedUrls };
+  }
+
+  return {
+    available: available.includes(trusted.quality)
+      ? available
+      : [...available, trusted.quality],
+    resolvedUrls: {
+      ...resolvedUrls,
+      [trusted.quality]: resolvedUrls[trusted.quality] ?? trusted.url,
+    },
+  };
+};
 
 /** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
 const supportedQualityKeys = computed<QualityKey[]>(() => {
@@ -48,14 +121,6 @@ const supportedQualityKeys = computed<QualityKey[]>(() => {
   const list = availableQualities.value;
   if (list === null) return ALL_QUALITY_KEYS;
   return ALL_QUALITY_KEYS.filter(k => list.includes(k));
-});
-
-/** 折叠栏中的不可用档位（按 rank 排序） */
-const unsupportedQualityKeys = computed<QualityKey[]>(() => {
-  if (isProbing.value) return [];
-  const list = availableQualities.value;
-  if (list === null) return [];
-  return ALL_QUALITY_KEYS.filter(k => !list.includes(k));
 });
 
 /** 探测完成且所有档位都不可用 */
@@ -104,13 +169,14 @@ const probeQualities = async (song: Song) => {
     });
     if (controller.signal.aborted) return;
 
-    availableQualities.value = result.available;
-    probedUrls.value = result.resolvedUrls;
+    const merged = mergeTrustedPlaybackQuality(song, result.available, result.resolvedUrls);
+    availableQualities.value = merged.available;
+    probedUrls.value = merged.resolvedUrls;
 
     // 当前选中档位不可用时，切到实测可用的最高档
-    if (result.available.length > 0
-      && !result.available.includes(selectedQuality.value as QualityKey)) {
-      selectedQuality.value = result.available[result.available.length - 1];
+    if (merged.available.length > 0
+      && !merged.available.includes(selectedQuality.value as QualityKey)) {
+      selectedQuality.value = merged.available[merged.available.length - 1];
     }
   } catch (e: any) {
     if (!controller.signal.aborted) {
@@ -137,12 +203,19 @@ watch(
 
     selectedQuality.value = (settings.value.download.quality as DownloadQuality) ?? '320k';
     downloadDir.value = settings.value.download.downloadPath ?? '';
+    selectedFileNameStyle.value = settings.value.download.fileNameStyle ?? 'artist-title';
+    downloadLyrics.value = false;
     availableQualities.value = null;
     declaredQualities.value = null;
     probedUrls.value = {};
-    showUnsupportedQualities.value = false;
 
     if (song) {
+      const trusted = getTrustedPlaybackQuality(song);
+      if (trusted) {
+        availableQualities.value = [trusted.quality];
+        probedUrls.value = { [trusted.quality]: trusted.url };
+        selectedQuality.value = trusted.quality;
+      }
       void probeQualities(song);
     }
   },
@@ -165,9 +238,10 @@ const handleDownload = async () => {
   await downloadToLocal(song, {
     quality: selectedQuality.value,
     downloadDir: downloadDir.value || undefined,
-    downloadAudio: downloadAudio.value,
+    downloadAudio: true,
     downloadLyrics: downloadLyrics.value,
-    downloadCover: downloadCover.value,
+    downloadCover: true,
+    fileNameStyle: selectedFileNameStyle.value,
     preResolvedUrls,
   });
 };
@@ -181,10 +255,13 @@ const handleDownload = async () => {
         class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
         @click.self="emit('close')"
       >
-        <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[520px] max-w-[90vw] overflow-hidden">
+        <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[380px] max-w-[84vw] overflow-hidden">
           <!-- 标题栏 -->
-          <div class="px-5 py-3.5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
-            <h3 class="font-bold text-gray-800 dark:text-gray-200 text-base">下载歌曲</h3>
+          <div class="px-3.5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+            <h3
+              class="font-bold text-gray-800 dark:text-gray-200 text-base truncate pr-3"
+              :title="dialogTitle"
+            >{{ dialogTitle }}</h3>
             <button
               @click="emit('close')"
               class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
@@ -194,17 +271,7 @@ const handleDownload = async () => {
           </div>
 
           <!-- 主体 -->
-          <div class="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-            <!-- 歌曲信息 -->
-            <div v-if="song" class="flex items-center gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                  {{ song.title || song.name || '未知歌曲' }}
-                </div>
-                <div class="text-xs text-gray-400 truncate">{{ song.artist || '未知歌手' }}</div>
-              </div>
-            </div>
-
+          <div class="px-3.5 py-2.5 space-y-2.5 max-h-[64vh] overflow-y-auto custom-scrollbar">
             <!-- 下载音质 -->
             <div>
               <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
@@ -243,34 +310,6 @@ const handleDownload = async () => {
                 未探测到可下载的音质，仍可点击下载尝试（会自动降级并使用后端兜底音源）。
               </div>
 
-              <!-- 不可用音质折叠栏 -->
-              <button
-                v-if="unsupportedQualityKeys.length > 0"
-                type="button"
-                class="mt-2 flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 transition-colors"
-                @click="showUnsupportedQualities = !showUnsupportedQualities"
-              >
-                <ChevronDown
-                  class="h-3 w-3 transition-transform"
-                  :class="showUnsupportedQualities ? 'rotate-180' : ''"
-                />
-                <span>{{ showUnsupportedQualities ? '收起' : '查看' }}不可用的音质（{{ unsupportedQualityKeys.length }}）</span>
-              </button>
-              <Transition name="unsupported-collapse">
-                <div v-if="showUnsupportedQualities && unsupportedQualityKeys.length > 0" class="grid grid-cols-3 gap-1.5 mt-2">
-                  <button
-                    v-for="key in unsupportedQualityKeys"
-                    :key="key"
-                    type="button"
-                    disabled
-                    class="px-2 py-2 text-xs font-semibold rounded-md text-center whitespace-nowrap flex flex-col items-center gap-0.5 bg-gray-50 dark:bg-white/5 text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    title="音源未返回可用直链"
-                  >
-                    <span>{{ QUALITY_META[key].label }}</span>
-                    <span class="text-[10px] font-normal opacity-75 text-gray-400 dark:text-gray-500">{{ QUALITY_META[key].description }}</span>
-                  </button>
-                </div>
-              </Transition>
             </div>
 
             <!-- 下载目录 -->
@@ -293,46 +332,57 @@ const handleDownload = async () => {
               </div>
             </div>
 
-            <!-- 下载内容 -->
+            <!-- 文件命名样式 -->
             <div>
-              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">下载内容</div>
-              <div class="space-y-2">
-                <label
-                  class="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-md hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">文件命名样式</div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <button
+                  v-for="option in FILE_NAME_STYLE_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center flex flex-col items-center gap-0.5"
+                  :class="selectedFileNameStyle === option.value
+                    ? 'bg-[#EC4141] text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                  :title="option.description"
+                  @click="selectedFileNameStyle = option.value"
                 >
-                  <input
-                    v-model="downloadAudio"
-                    type="checkbox"
-                    class="w-4 h-4 rounded accent-[#EC4141]"
-                  />
-                  <span class="text-sm text-gray-700 dark:text-gray-300">歌曲</span>
-                </label>
-                <label
-                  class="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-md hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                >
-                  <input
-                    v-model="downloadLyrics"
-                    type="checkbox"
-                    class="w-4 h-4 rounded accent-[#EC4141]"
-                  />
-                  <span class="text-sm text-gray-700 dark:text-gray-300">歌词</span>
-                </label>
-                <label
-                  class="flex items-center gap-2.5 cursor-pointer select-none p-2 rounded-md hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                >
-                  <input
-                    v-model="downloadCover"
-                    type="checkbox"
-                    class="w-4 h-4 rounded accent-[#EC4141]"
-                  />
-                  <span class="text-sm text-gray-700 dark:text-gray-300">封面</span>
-                </label>
+                  <span>{{ option.label }}</span>
+                  <span
+                    class="text-[10px] font-normal opacity-75"
+                    :class="selectedFileNameStyle === option.value ? '' : 'text-gray-400 dark:text-gray-500'"
+                  >{{ option.description }}</span>
+                </button>
               </div>
             </div>
+
+            <!-- 下载独立歌词 -->
+            <div>
+              <button
+                type="button"
+                class="w-full flex items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-left"
+                @click="downloadLyrics = !downloadLyrics"
+              >
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-gray-700 dark:text-gray-300">下载独立歌词</div>
+                  <div class="text-xs text-gray-400 dark:text-gray-500">默认关闭，开启后在音频文件旁保存 .lrc/.txt</div>
+                </div>
+                <span
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                  :class="downloadLyrics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+                >
+                  <span
+                    class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                    :class="downloadLyrics ? 'translate-x-6' : 'translate-x-1'"
+                  />
+                </span>
+              </button>
+            </div>
+
           </div>
 
           <!-- 底部按钮 -->
-          <div class="px-5 py-3.5 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2">
+          <div class="px-3.5 py-2.5 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-2">
             <button
               type="button"
               class="px-4 py-2 text-sm font-medium rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
@@ -353,17 +403,3 @@ const handleDownload = async () => {
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-/* 不支持音质折叠栏展开/收起过渡 */
-.unsupported-collapse-enter-active,
-.unsupported-collapse-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
-}
-
-.unsupported-collapse-enter-from,
-.unsupported-collapse-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
-</style>
