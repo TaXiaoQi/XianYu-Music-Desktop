@@ -9,6 +9,7 @@ import type { PlaylistImportResult, PlaylistSource } from '../../services/playli
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
 import {
+  describeBackupVersion,
   preparePluginBackupFile,
   type PreparedPluginBackupImport,
 } from '../../services/pluginBackupImport';
@@ -342,11 +343,11 @@ async function loadBackupFile(filePath: string) {
       // JSON 备份：自动识别本地文件和在线插件匹配
       const prepared = await preparePluginBackupFile(filePath, getStoredPlugins());
       backupPluginResult.value = prepared;
-      const formatName = prepared.format === 'bakamusic' ? 'BakaMusic' : 'MusicFree';
       const missingInfo = prepared.missingPlugins.length > 0
         ? ` · 缺失 ${prepared.missingPlugins.length} 个插件`
         : '';
-      backupDetectedFormat.value = `${formatName} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
+      backupDetectedFormat.value = `${describeBackupVersion(prepared)} · ${prepared.importedSongCount}/${prepared.totalSongCount} 首可导入${missingInfo}`;
+      showToast(describeBackupVersion(prepared), 'info');
     } else {
       // M3U / TXT：纯本地文件解析
       const playlists = await importBackupFile(filePath);
