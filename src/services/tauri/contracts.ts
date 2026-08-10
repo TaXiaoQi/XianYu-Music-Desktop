@@ -1107,6 +1107,7 @@ export interface FinalizeDownloadExtrasResultContract {
   lyrics_saved: boolean;
   cover_saved: boolean;
   metadata_embedded: boolean;
+  metadata_error?: string | null;
   cover_data: number[] | null;
   cover_mime: string;
 }

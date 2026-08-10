@@ -727,6 +727,16 @@ const authStore = useAuthStore();
       && !!previousSong
       && previousSong.path === song.path;
 
+    // [在线播放预解析] 点击切歌后立即启动下一首的在线 URL 解析，与上一首淡出并行。
+    // 这样 Source API / LX URL 等网络等待不会排在淡出动画之后，体感切歌更快。
+    let audioFilePath = song.cue_source_path || song.path;
+    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
+
+    const shouldStopPreviousAudioBeforeOnlineResolve = isOriginalOnlineSong
+      && isPlaying.value
+      && !!previousSong
+      && (previousSong.path !== song.path || isQualitySwitch);
+
     const shouldFadeOnSwitch = (fadeEnabled || isQualitySwitch)
       && isPlaying.value
       && !!previousSong
@@ -736,10 +746,6 @@ const authStore = useAuthStore();
       ? 150
       : fadeDuration;
 
-    // [在线播放预解析] 点击切歌后立即启动下一首的在线 URL 解析，与上一首淡出并行。
-    // 这样 Source API / LX URL 等网络等待不会排在淡出动画之后，体感切歌更快。
-    let audioFilePath = song.cue_source_path || song.path;
-    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
     let usingDownloadedAudioFile = false;
     let pluginHeaders: Record<string, string> | null = null;
     let pluginEkey: string | undefined = undefined;
@@ -825,6 +831,15 @@ const authStore = useAuthStore();
     if (requestId !== playRequestId) return;
 
     flushPlaySession();
+    if (shouldStopPreviousAudioBeforeOnlineResolve) {
+      // 在线歌曲需要先解析直链。若等到新直链响应后才调用 playAudio，
+      // 后端旧音频会在网络等待期间继续出声，造成“下一首响应后才暂停上一首”的错觉。
+      // 这里先停止旧音频，再进入新歌加载态；后续新歌解析成功后会重新 playAudio。
+      try { await playbackApi.stopAudio(); } catch {}
+      stopPlaybackRuntime();
+      sessionStartTime = null;
+      if (requestId !== playRequestId) return;
+    }
     if (!options.continueStatisticsSession) {
       accumulatedTime = 0;
       currentPlayCountRecorded = false;

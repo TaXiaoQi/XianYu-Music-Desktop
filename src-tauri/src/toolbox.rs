@@ -1045,6 +1045,7 @@ pub async fn embed_audio_metadata(request: EmbedMetadataRequest) -> Result<(), S
 /// (`save_download_lyrics` + `fetch_image_bytes` + `save_download_bytes` + `embed_audio_metadata`)。
 /// 所有子步骤独立执行，单步失败不影响其他步骤，最终统一返回各步骤结果。
 #[derive(Debug, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FinalizeDownloadExtrasRequest {
     /// 歌词：文本内容 + 保存路径；为 None 则不保存歌词文件
     pub lyrics_text: Option<String>,
@@ -1064,6 +1065,7 @@ pub struct FinalizeDownloadExtrasResult {
     pub lyrics_saved: bool,
     pub cover_saved: bool,
     pub metadata_embedded: bool,
+    pub metadata_error: Option<String>,
     /// 下载到的封面二进制数据（供前端后续使用，如嵌入已有数据的场景）
     pub cover_data: Option<Vec<u8>>,
     /// 封面 MIME 类型
@@ -1142,8 +1144,15 @@ pub async fn finalize_download_extras(
         let meta = meta.clone();
         match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
             Ok(Ok(())) => result.metadata_embedded = true,
-            Ok(Err(e)) => eprintln!("[finalize_download_extras] 元数据嵌入失败: {e}"),
-            Err(e) => eprintln!("[finalize_download_extras] 元数据嵌入任务失败: {e}"),
+            Ok(Err(e)) => {
+                eprintln!("[finalize_download_extras] 元数据嵌入失败: {e}");
+                result.metadata_error = Some(e);
+            }
+            Err(e) => {
+                let msg = format!("元数据嵌入任务失败: {e}");
+                eprintln!("[finalize_download_extras] {msg}");
+                result.metadata_error = Some(msg);
+            }
         }
     }
 
@@ -1562,4 +1571,43 @@ pub async fn delete_wallpaper_file(
         .await
         .map_err(|e| format!("删除壁纸文件失败: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FinalizeDownloadExtrasRequest;
+
+    #[test]
+    fn finalize_download_extras_request_accepts_frontend_camel_case_payload() {
+        let json = serde_json::json!({
+            "lyricsText": "[00:00.00]测试歌词",
+            "lyricsPath": "D:\\Music\\song.lrc",
+            "coverUrl": "https://example.com/cover.jpg",
+            "coverPath": "D:\\Music\\song.jpg",
+            "embedCover": true,
+            "metadata": {
+                "filePath": "D:\\Music\\song.mp3",
+                "title": "测试歌曲",
+                "albumArtist": "测试专辑艺术家",
+                "trackNumber": "7",
+                "coverMime": "image/jpeg"
+            }
+        });
+
+        let request: FinalizeDownloadExtrasRequest =
+            serde_json::from_value(json).expect("frontend payload should deserialize");
+
+        assert_eq!(request.lyrics_text.as_deref(), Some("[00:00.00]测试歌词"));
+        assert_eq!(request.lyrics_path.as_deref(), Some("D:\\Music\\song.lrc"));
+        assert_eq!(request.cover_url.as_deref(), Some("https://example.com/cover.jpg"));
+        assert_eq!(request.cover_path.as_deref(), Some("D:\\Music\\song.jpg"));
+        assert!(request.embed_cover);
+
+        let metadata = request.metadata.expect("metadata should deserialize");
+        assert_eq!(metadata.file_path, "D:\\Music\\song.mp3");
+        assert_eq!(metadata.title.as_deref(), Some("测试歌曲"));
+        assert_eq!(metadata.album_artist.as_deref(), Some("测试专辑艺术家"));
+        assert_eq!(metadata.track_number.as_deref(), Some("7"));
+        assert_eq!(metadata.cover_mime.as_deref(), Some("image/jpeg"));
+    }
 }
