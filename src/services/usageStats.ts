@@ -35,7 +35,7 @@ function generateUuid(): string {
 }
 
 /** 获取（或首次生成并持久化）稳定的设备标识 */
-function getDeviceId(): string {
+export function getDeviceId(): string {
   try {
     let id = localStorage.getItem(DEVICE_ID_KEY);
     if (!id) {

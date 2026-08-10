@@ -898,6 +898,12 @@ export interface PluginMusicInfo {
   tlyric?: string;
   /** 逐字歌词（lx-music-desktop 格式），由 Toskysun 系列插件提供 */
   lxlyric?: string;
+  /** 网易云 YRC 逐字歌词，由 Baka/MF 插件提供 */
+  yrc?: string;
+  /** QQ 音乐 QRC 逐字歌词，由 Baka/MF 插件提供，可能为 hex 加密串 */
+  qrc?: string;
+  /** Baka ESLRC 增强逐字歌词 */
+  eslrc?: string;
   /** 构建好的歌词文本（优先使用逐字歌词），可直接赋值给 song.lyrics_raw */
   lyricsRaw?: string;
   coverUrl?: string;

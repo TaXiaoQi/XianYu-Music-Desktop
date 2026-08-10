@@ -28,7 +28,7 @@ export interface LxLyricResult {
 }
 
 export interface LxSongInfo {
-  songmid: string;
+  songmid: string | number;
   hash?: string;
   name: string;
   singer: string;
@@ -49,20 +49,43 @@ export interface LxSongInfo {
 const songInfoCache = new Map<string, LxSongInfo>();
 const MAX_CACHE_SIZE = 200;
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value);
+  return text.length > 0 ? text : undefined;
+}
+
+function normalizeLxSongInfo(songInfo: LxSongInfo): LxSongInfo & { songmid: string } {
+  return {
+    ...songInfo,
+    songmid: String(songInfo.songmid),
+    hash: normalizeOptionalString(songInfo.hash),
+    name: String(songInfo.name || ''),
+    singer: String(songInfo.singer || ''),
+    albumName: normalizeOptionalString(songInfo.albumName),
+    interval: normalizeOptionalString(songInfo.interval),
+    strMediaMid: normalizeOptionalString(songInfo.strMediaMid),
+    albumMid: normalizeOptionalString(songInfo.albumMid),
+    copyrightId: normalizeOptionalString(songInfo.copyrightId),
+    source: normalizeOptionalString(songInfo.source),
+  };
+}
+
 /**
  * 缓存歌曲元信息，供后续 playerPlayback.ts 获取歌词时使用
  * @param source 音源 (kw/kg/tx/wy)
  * @param songmid 歌曲 ID
  * @param info 完整的歌曲元信息
  */
-export function cacheLxSongInfo(source: string, songmid: string, info: LxSongInfo): void {
-  const key = `${source}/${songmid}`;
+export function cacheLxSongInfo(source: string, songmid: string | number, info: LxSongInfo): void {
+  const normalizedInfo = normalizeLxSongInfo(info);
+  const key = `${source}/${String(songmid)}`;
   if (songInfoCache.size >= MAX_CACHE_SIZE) {
     // 简单淘汰：删除最早的条目
     const firstKey = songInfoCache.keys().next().value;
     if (firstKey) songInfoCache.delete(firstKey);
   }
-  songInfoCache.set(key, info);
+  songInfoCache.set(key, normalizedInfo);
 }
 
 /**
@@ -71,8 +94,8 @@ export function cacheLxSongInfo(source: string, songmid: string, info: LxSongInf
  * @param songmid 歌曲 ID
  * @returns 缓存的歌曲元信息，未找到时返回 null
  */
-export function getCachedLxSongInfo(source: string, songmid: string): LxSongInfo | null {
-  return songInfoCache.get(`${source}/${songmid}`) ?? null;
+export function getCachedLxSongInfo(source: string, songmid: string | number): LxSongInfo | null {
+  return songInfoCache.get(`${source}/${String(songmid)}`) ?? null;
 }
 
 // ==================== Unified Entry Point ====================
@@ -90,8 +113,9 @@ export async function fetchLxLyric(
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
   try {
-    console.log('[lxLyricFetcher] 调用后端 fetch_lyric_from_source:', { source, songmid: songInfo.songmid, hasHash: !!songInfo.hash, hasSongId: !!songInfo.songId, _interval: songInfo._interval });
-    const result = await lyricsApi.fetchLyricFromSource(source, songInfo);
+    const normalizedSongInfo = normalizeLxSongInfo(songInfo);
+    console.log('[lxLyricFetcher] 调用后端 fetch_lyric_from_source:', { source, songmid: normalizedSongInfo.songmid, hasHash: !!normalizedSongInfo.hash, hasSongId: !!normalizedSongInfo.songId, _interval: normalizedSongInfo._interval });
+    const result = await lyricsApi.fetchLyricFromSource(source, normalizedSongInfo);
     if (!result) {
       console.warn(`[lxLyricFetcher] 后端返回 null（${source} 可能无歌词或搜索失败）`);
     } else {
@@ -99,7 +123,7 @@ export async function fetchLxLyric(
     }
     return result;
   } catch (e: any) {
-    console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e?.message || e, '| songInfo:', { songmid: songInfo.songmid, hash: songInfo.hash, name: songInfo.name });
+    console.warn(`[lxLyricFetcher] 获取 ${source} 歌词失败:`, e?.message || e, '| songInfo:', { songmid: String(songInfo.songmid), hash: songInfo.hash, name: songInfo.name });
     return null;
   }
 }
@@ -118,7 +142,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
 
   const extendedSong = song as Song & {
     _hash?: string;
-    _songmid?: string;
+    _songmid?: string | number;
     _copyrightId?: string;
     _songId?: string | number;
     _strMediaMid?: string;

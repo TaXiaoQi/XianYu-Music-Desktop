@@ -112,6 +112,20 @@ async function handleProxyRequest(request: ProxyRequest): Promise<ProxyResponse>
         break;
       }
 
+      case 'http_request_binary': {
+        const { method, url, headers, body, timeout, follow } = payload;
+        const response = await pluginApi.pluginHttpRequestBinary(
+          method, url, headers, body, timeout, follow,
+        );
+
+        if (url && response.headers) {
+          captureCookiesFromResponse(url, response.headers);
+        }
+
+        data = response;
+        break;
+      }
+
       case 'cookie_get': {
         data = getCookies(payload.url);
         break;

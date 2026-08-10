@@ -17,6 +17,7 @@
  */
 
 import { authApi } from '../tauri/authApi';
+import { getDeviceId } from '../usageStats';
 
 export type AuthUser = {
   id: string;
@@ -53,6 +54,11 @@ export type HumanCaptchaConfig = {
   enabled: boolean;
   provider: HumanCaptchaProvider;
   siteKey: string;
+};
+
+export type UserAgreement = {
+  title: string;
+  content: string;
 };
 
 export type HumanCaptchaPayload = {
@@ -359,6 +365,14 @@ export async function getHumanCaptchaConfig(): Promise<HumanCaptchaConfig> {
   }
 }
 
+export async function getUserAgreement(): Promise<UserAgreement> {
+  const data = await requestAction<Record<string, unknown>>('get_user_agreement', {});
+  return {
+    title: String(data.title || '弦予音乐用户协议'),
+    content: String(data.content || ''),
+  };
+}
+
 /**
  * 获取一次性人机验证码题目。
  * 当前服务端实现为简单数学题，提交登录/注册/验证码发送/找回密码时一并校验。
@@ -440,6 +454,7 @@ export async function login(
     const data = await requestAction<Record<string, unknown>>('user_login', withCaptcha({
       username,
       password,
+      device_id: getDeviceId(),
     }, captcha));
     if (!data.token) throw new Error('登录响应无效');
     const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };
@@ -467,6 +482,7 @@ export async function register(
       password,
       email,
       verify_code: code,
+      device_id: getDeviceId(),
     }, captcha));
     if (!data.token) throw new Error('注册响应无效');
     const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };

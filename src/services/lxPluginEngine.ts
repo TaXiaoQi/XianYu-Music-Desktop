@@ -27,6 +27,7 @@ import {
 } from '../types';
 import {pluginApi} from './tauri/pluginApi';
 import {fetchWithTimeout} from './pluginFetch';
+import {inflateAutoSync} from './pureInflate';
 import {
   loadLxInSandbox,
   callSandboxMethod,
@@ -643,30 +644,23 @@ export async function loadLxPluginFromScript(
       },
       zlib: {
         async inflate(buf: any) {
-          // [修复] 使用 DecompressionStream 正确解压 deflate 数据
-          // 之前是 no-op 直接返回原始数据，导致依赖 zlib.inflate 的 LX 插件
-          // (如 KW/KG 歌词解压) 无法正确解析歌词
+          // 使用纯 JS DEFLATE 解码器，支持 zlib/gzip/raw 格式自动检测
+          // 之前的 DecompressionStream('deflate') 仅支持 raw DEFLATE，
+          // 无法处理带 zlib 头的数据（如 KW 歌词解压）
           try {
             const data = buf instanceof Uint8Array ? buf : Buffer.from(buf);
-            const ds = new DecompressionStream('deflate');
-            const writer = ds.writable.getWriter();
-            writer.write(data).catch(() => {});
-            writer.close().catch(() => {});
-            const reader = ds.readable.getReader();
-            const chunks: Uint8Array[] = [];
-            while (true) {
-              const { done, value } = await reader.read();
-              if (value) chunks.push(value);
-              if (done) break;
-            }
-            reader.releaseLock();
-            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-            const result = new Uint8Array(totalLen);
-            let offset = 0;
-            for (const c of chunks) { result.set(c, offset); offset += c.length; }
-            return Buffer.from(result);
+            return Buffer.from(inflateAutoSync(data));
           } catch (e) {
             log(`[zlib.inflate] 解压失败，返回原始数据: ${e}`);
+            return buf;
+          }
+        },
+        inflateSync(buf: any) {
+          try {
+            const data = buf instanceof Uint8Array ? buf : Buffer.from(buf);
+            return Buffer.from(inflateAutoSync(data));
+          } catch (e) {
+            log(`[zlib.inflateSync] 解压失败，返回原始数据: ${e}`);
             return buf;
           }
         },

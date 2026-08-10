@@ -24,12 +24,11 @@ import type {
   PluginPlaylistSearchResult,
   QualityKey,
 } from '../types';
-import { ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality, resolveOnlinePlayQuality } from '../types';
+import { ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, QUALITY_META, normalizeQualityKey, qualityKeyToMfQuality, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
-import { buildLyricsRaw } from '../composables/lyrics';
+import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
-import { lyricsApi } from './tauri/lyricsApi';
 import {
   loadMusicFreeInSandbox,
   callSandboxMethod,
@@ -75,6 +74,78 @@ const USE_SANDBOX = true;
 
 // 记录在沙箱中运行的插件 ID 集合
 const _sandboxedPlugins = new Set<string>();
+
+function sanitizePluginMediaUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+
+  const stripEdgeJunk = (value: string): string => {
+    let current = value.trim();
+    let previous = '';
+    while (current && current !== previous) {
+      previous = current;
+      current = current
+        .replace(/^[`'"\s]+/g, '')
+        .replace(/[,`'"\s]+$/g, '');
+    }
+    return current;
+  };
+
+  const cleanedRaw = stripEdgeJunk(raw);
+  if (!cleanedRaw) return '';
+
+  try {
+    const url = new URL(cleanedRaw);
+    let changed = false;
+    for (const [key, value] of Array.from(url.searchParams.entries())) {
+      const cleaned = stripEdgeJunk(value);
+      if (cleaned !== value) {
+        url.searchParams.set(key, cleaned);
+        changed = true;
+      }
+    }
+    return changed ? url.toString() : cleanedRaw;
+  } catch {
+    return cleanedRaw;
+  }
+}
+
+function inferActualQualityFromPluginResult(
+  result: any,
+  urlLike: string,
+  fallback?: QualityKey,
+): QualityKey | undefined {
+  const resultQuality = normalizeQualityKey(result?.quality);
+  if (resultQuality) return resultQuality;
+
+  const legacyToQuality: Record<string, QualityKey> = {
+    low: '128k',
+    standard: '128k',
+    high: '320k',
+    exhigh: '320k',
+    super: 'flac',
+    lossless: 'flac',
+  };
+
+  try {
+    const url = new URL(urlLike);
+    const candidates = ['quality', 'level', 'br', 'bitrate', 'rate']
+      .map(key => url.searchParams.get(key))
+      .filter((value): value is string => !!value);
+
+    for (const raw of candidates) {
+      const cleaned = raw.trim().replace(/[,`'"\s]+$/g, '');
+      const normalized = normalizeQualityKey(cleaned);
+      if (normalized) return normalized;
+
+      const legacy = legacyToQuality[cleaned.toLowerCase()];
+      if (legacy) return legacy;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+
+  return fallback;
+}
 
 /**
  * 创建沙箱代理实例
@@ -1150,7 +1221,8 @@ export async function pluginGetMusicInfo(
     return null;
   }
 
-  const url = result.url || '';
+  const rawUrl = typeof result.url === 'string' ? result.url : '';
+  const url = sanitizePluginMediaUrl(rawUrl);
   const headers = result.headers || {};
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
   // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）
@@ -1158,7 +1230,7 @@ export async function pluginGetMusicInfo(
   const tlyric = result.tlyric || result.translation || '';
   const lxlyric = result.lxlyric || '';
   // 逐字歌词：兼容 yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）/ eslrc（Baka 增强）字段
-  // buildLyricsRaw 会按优先级 yrc > qrc > lxlyric > eslrc 仅选用一种，避免格式混合导致解析失败
+  // Baka/MF 专用构建器会按优先级 yrc > qrc > eslrc > lxlyric 仅选用一种，避免格式混合导致解析失败
   const yrc = result.yrc || '';
   const qrc = result.qrc || '';
   const eslrc = result.eslrc || '';
@@ -1168,18 +1240,34 @@ export async function pluginGetMusicInfo(
     (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
     return null;
   }
+  if (rawUrl && rawUrl !== url) {
+    log(`[getMediaSource] 已清洗异常URL: ${rawUrl.substring(0, 120)} -> ${url.substring(0, 120)}`);
+  }
 
   // 实际播放音质（用于底部栏同步显示）
-  const actualQuality = successQualityKey ?? (successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined);
+  const requestedSuccessQuality = successQualityKey ?? (successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined);
+  const actualQuality = inferActualQualityFromPluginResult(result, url, requestedSuccessQuality);
 
-  // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > eslrc > lyric）
+  // 使用 Baka/MF 专用构建器构建歌词文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）
   const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
-    ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc, eslrc)
+    ? buildBakaMfLyricsRaw({ lyric, tlyric, lxlyric, yrc, qrc, eslrc })
     : '';
 
   const headerKeys = Object.keys(headers);
   log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}, actualQuality=${actualQuality}`);
-  return { url, headers: headers as Record<string, string>, lyric, tlyric, lxlyric, lyricsRaw, coverUrl, actualQuality };
+  return {
+    url,
+    headers: headers as Record<string, string>,
+    lyric,
+    tlyric,
+    lxlyric,
+    yrc,
+    qrc,
+    eslrc,
+    lyricsRaw,
+    coverUrl,
+    actualQuality,
+  };
 }
 
 // ==================== Baka 插件播放 URL（独立方法，不与 MusicFree 共用）====================
@@ -1220,97 +1308,17 @@ export async function pluginGetBakaMusicInfo(
  *   rawLrc = lrcSource?.rawLrc || rawLrc;
  *   translation = lrcSource?.translation || null;
  *
- * Toskysun 系列插件扩展返回 lxlyric（逐字歌词，lx-music-desktop 格式）。
+ * Toskysun 系列插件扩展返回 lxlyric（逐字歌词字段）。
  * 原版 MF 插件（如 Baka 插件）可能返回 yrc（网易云）/ qrc（QQ 音乐）字段。
  * Baka 插件还可能返回 eslrc（增强型逐字歌词）和 romanization（罗马音）。
- * 使用 buildLyricsRaw 统一构建为 lyricsRaw 文本（优先级：yrc > qrc > lxlyric > lyric，
- * 高优先级格式解析失败时由后端自动回退到下一档）。
- *
- * 后备机制：当插件返回的歌词没有逐字内容（yrc/qrc/eslrc/lxlyric 均为空）时，
- * 尝试通过后端直接 API（fetch_lyric_from_source）获取逐字歌词。
- * 这对于 Baka 插件的酷狗/酷我/网易云等音源尤为重要，因为插件可能只返回普通 LRC。
+ * 使用 Baka/MF 专用构建器构建为 lyricsRaw 文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）。
+ * Baka/MF 不再调用 LX 后端歌词接口补逐字，避免歌词链路串线。
  */
-
-/** Baka/MF 插件 platform → LX 音源标识映射 */
-const PLATFORM_TO_LX_SOURCE: Record<string, 'kw' | 'kg' | 'tx' | 'wy'> = {
-  'qq': 'tx', 'qqmusic': 'tx', 'tencent': 'tx',
-  'kg': 'kg', 'kugou': 'kg',
-  'kw': 'kw', 'kuwo': 'kw',
-  'wy': 'wy', 'netease': 'wy', 'wanyinyue': 'wy', 'wyy': 'wy',
-};
-
-/**
- * 后备：通过后端直接 API 获取逐字歌词
- *
- * 当插件返回的歌词没有逐字内容时，从搜索结果中提取音源和歌曲 ID，
- * 调用后端 fetch_lyric_from_source 命令获取逐字歌词。
- */
-async function tryBackendWordLyricFallback(
-  source: PluginSource,
-  item: PluginSearchResult,
-  existingLyric: string,
-  existingTlyric: string,
-  existingRomanization: string | null,
-): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; lyricsRaw?: string } | null> {
-  // 从 platform 映射到 LX 音源
-  const platformKey = (item.platform || '').toLowerCase();
-  const lxSource = PLATFORM_TO_LX_SOURCE[platformKey];
-  if (!lxSource) return null;
-
-  // 从 rawData 中提取歌曲信息
-  const raw = item.rawData || {};
-  const songInfo = {
-    songmid: String(raw.songmid || raw.id || raw.songId || raw.musicId || item.id || ''),
-    hash: raw.hash ? String(raw.hash) : undefined,
-    name: raw.name || raw.title || item.name || item.title || '',
-    singer: raw.singer || raw.artist || item.artist || '',
-    albumName: raw.albumName || raw.album || item.album || undefined,
-    interval: raw.interval ? String(raw.interval) : undefined,
-    _interval: (item.duration && item.duration > 0) ? Math.round(item.duration) : (raw._interval ? Number(raw._interval) : undefined),
-    songId: raw.songId ? String(raw.songId) : undefined,
-    strMediaMid: raw.strMediaMid ? String(raw.strMediaMid) : undefined,
-    albumMid: raw.albumMid ? String(raw.albumMid) : undefined,
-    albumId: raw.albumId || undefined,
-    copyrightId: raw.copyrightId ? String(raw.copyrightId) : undefined,
-    source: lxSource,
-  };
-
-  if (!songInfo.songmid) {
-    log(`[getLyric][后备] ${source.name} 无法提取 songmid，跳过后备`);
-    return null;
-  }
-
-  try {
-    log(`[getLyric][后备] ${source.name} 尝试后端 API 获取逐字歌词: source=${lxSource}, songmid=${songInfo.songmid}`);
-    const backendLyrics = await lyricsApi.fetchLyricFromSource(lxSource, songInfo);
-    if (!backendLyrics) {
-      log(`[getLyric][后备] ${source.name} 后端 API 返回空`);
-      return null;
-    }
-
-    const hasWordLevel = !!(backendLyrics.lxlyric && backendLyrics.lxlyric.trim());
-    if (!hasWordLevel) {
-      log(`[getLyric][后备] ${source.name} 后端 API 无逐字歌词`);
-      return null;
-    }
-
-    // 后端获取到逐字歌词，构建 lyricsRaw
-    const lyric = backendLyrics.lyric || existingLyric;
-    const tlyric = backendLyrics.tlyric || existingTlyric;
-    const rlyric = backendLyrics.rlyric || existingRomanization || null;
-    const lyricsRaw = buildLyricsRaw(lyric, tlyric, rlyric, backendLyrics.lxlyric);
-    log(`[getLyric][后备] ${source.name} 后端 API 成功获取逐字歌词: lxlyricLen=${backendLyrics.lxlyric.length}, lyricsRawLen=${lyricsRaw.length}`);
-    return { lyric, tlyric, lxlyric: backendLyrics.lxlyric, lyricsRaw };
-  } catch (e: any) {
-    log(`[getLyric][后备] ${source.name} 后端 API 失败: ${e?.message ?? e}`);
-    return null;
-  }
-}
 
 export async function pluginGetLyric(
   source: PluginSource,
   item: PluginSearchResult,
-): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; lyricsRaw?: string } | null> {
+): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; lyricsRaw?: string } | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
@@ -1358,21 +1366,20 @@ export async function pluginGetLyric(
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
-    // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > eslrc > lyric）
+    // 使用 Baka/MF 专用构建器构建歌词文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）
     // 罗马音作为附加轨道（与翻译一样由后端按时间戳聚类）
-    const lyricsRaw = buildLyricsRaw(rawLrc, translation, romanization || null, lxlyric, yrc, qrc, eslrc);
+    const lyricsRaw = buildBakaMfLyricsRaw({
+      lyric: rawLrc,
+      tlyric: translation,
+      rlyric: romanization || null,
+      lxlyric,
+      yrc,
+      qrc,
+      eslrc,
+    });
     log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
 
-    // 后备：当插件返回的歌词没有逐字内容时，尝试通过后端直接 API 获取逐字歌词
-    const hasWordLevel = !!(yrc || qrc || eslrc || lxlyric);
-    if (!hasWordLevel && rawLrc) {
-      const fallback = await tryBackendWordLyricFallback(source, item, rawLrc, translation, romanization || null);
-      if (fallback) {
-        return fallback;
-      }
-    }
-
-    return { lyric: rawLrc, tlyric: translation, lxlyric, lyricsRaw };
+    return { lyric: rawLrc, tlyric: translation, lxlyric, yrc, qrc, eslrc, lyricsRaw };
   } catch (e) {
     log(`获取歌词失败: ${source.name} ${e}`);
     return null;
