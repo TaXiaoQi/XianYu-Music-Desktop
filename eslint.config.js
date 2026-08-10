@@ -14,6 +14,7 @@ export default tseslint.config(
       "tag_test/**",
       ".webpack/**",
       "YinDongMusic/**",
+      "酷狗.js",
     ],
   },
   js.configs.recommended,
