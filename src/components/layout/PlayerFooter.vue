@@ -4,8 +4,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { isDownloadableOnlineSong, probeDownloadableQualities } from '../../services/downloadService';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
+import { downloadApi } from '../../services/tauri/downloadApi';
+import { formatFileSize } from '../../utils/format';
 import { useSettings } from '../../features/settings/useSettings';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
@@ -29,6 +31,7 @@ const {
   currentSong,
   currentAvailableQualities,
   currentPlayingQuality,
+  currentPlayingAudioUrl,
   sessionQualityOverride,
   setSessionQualityOverride,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail, showComment,
@@ -92,6 +95,19 @@ const isDownloading = computed(() => {
 // 防止快速切歌时旧的异步检测结果覆盖新歌状态
 let downloadCheckId = 0;
 
+/** 底栏音质菜单展示用：各档位已解析直链与体积，播放/下载菜单共用 */
+const footerQualityUrls = ref<Partial<Record<QualityKey, string>>>({});
+const footerQualitySizes = ref<Partial<Record<QualityKey, number>>>({});
+const isFooterQualityInfoProbing = ref(false);
+const footerQualityInfoSongPath = ref('');
+let footerQualityInfoController: AbortController | null = null;
+
+const abortFooterQualityInfoProbe = () => {
+  footerQualityInfoController?.abort();
+  footerQualityInfoController = null;
+  isFooterQualityInfoProbing.value = false;
+};
+
 /** 检测当前歌曲是否已下载（文件仍存在）。文件已被删除时记录会被自动清理。 */
 const refreshDownloadedState = async () => {
   const requestId = ++downloadCheckId;
@@ -111,7 +127,13 @@ const refreshDownloadedState = async () => {
 
 watch(
   () => currentSong.value?.cue_source_path || currentSong.value?.path,
-  () => { void refreshDownloadedState(); },
+  () => {
+    abortFooterQualityInfoProbe();
+    footerQualityInfoSongPath.value = '';
+    footerQualityUrls.value = {};
+    footerQualitySizes.value = {};
+    void refreshDownloadedState();
+  },
   { immediate: true },
 );
 
@@ -154,6 +176,9 @@ const openDownloadByBehavior = () => {
     return;
   }
   showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
+  if (showDownloadQualityMenu.value) {
+    void ensureFooterQualityInfo();
+  }
 };
 
 const handleDownloadClick = () => {
@@ -252,6 +277,104 @@ const QUALITY_OPTIONS = computed(() => {
   return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
 });
 
+const compactFileSize = (bytes: number) =>
+  formatFileSize(bytes).replace(/\s*MB$/, 'M').replace(/\s*GB$/, 'G').replace(/\s*KB$/, 'K');
+
+const getAudioExtLabel = (key: QualityKey, url?: string) => {
+  if (url) {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      const match = pathname.match(/\.([a-z0-9]+)$/);
+      if (match?.[1]) return match[1].toUpperCase();
+    } catch {
+      const match = url.toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
+      if (match?.[1]) return match[1].toUpperCase();
+    }
+  }
+  return QUALITY_META[key]?.isLossless ? 'FLAC' : 'MP3';
+};
+
+const footerQualityExtraText = (key: QualityKey) => {
+  const url = footerQualityUrls.value[key];
+  const size = footerQualitySizes.value[key];
+  const ext = getAudioExtLabel(key, url);
+  if (typeof size === 'number' && size > 0) {
+    return `${ext} · ${compactFileSize(size)}`;
+  }
+  if (isFooterQualityInfoProbing.value) return `${ext} · 探测中`;
+  return `${ext} · 未知体积`;
+};
+
+const probeFooterQualitySizes = async (
+  urls: Partial<Record<QualityKey, string>>,
+  signal: AbortSignal,
+) => {
+  const entries = Object.entries(urls) as Array<[QualityKey, string]>;
+  await Promise.all(entries.map(async ([key, url]) => {
+    try {
+      const info = await downloadApi.probeUrlSize(url);
+      if (signal.aborted) return;
+      if (typeof info?.size === 'number' && info.size > 0) {
+        footerQualitySizes.value = { ...footerQualitySizes.value, [key]: info.size };
+      }
+    } catch (e: any) {
+      if (!signal.aborted) {
+        console.warn(`[PlayerFooter] ${key} 体积探测失败:`, e?.message || e);
+      }
+    }
+  }));
+};
+
+const seedCurrentPlayingQualityInfo = (signal: AbortSignal) => {
+  const quality = currentPlayingQuality.value;
+  const url = currentPlayingAudioUrl.value;
+  if (!quality || !url || !/^https?:\/\//.test(url)) return;
+  footerQualityUrls.value = { ...footerQualityUrls.value, [quality]: url };
+  void probeFooterQualitySizes({ [quality]: url }, signal);
+};
+
+const ensureFooterQualityInfo = async () => {
+  const song = currentSong.value;
+  const songPath = song?.cue_source_path || song?.path || '';
+  if (!song || !isDownloadableOnlineSong(song) || !songPath) return;
+  if (
+    footerQualityInfoSongPath.value === songPath
+    && (isFooterQualityInfoProbing.value || Object.keys(footerQualityUrls.value).length > 0)
+  ) {
+    return;
+  }
+
+  abortFooterQualityInfoProbe();
+  const controller = new AbortController();
+  footerQualityInfoController = controller;
+  footerQualityInfoSongPath.value = songPath;
+  footerQualityUrls.value = {};
+  footerQualitySizes.value = {};
+  isFooterQualityInfoProbing.value = true;
+
+  seedCurrentPlayingQualityInfo(controller.signal);
+
+  try {
+    const result = await probeDownloadableQualities(song, currentAvailableQualities.value, {
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
+
+    const mergedUrls = { ...result.resolvedUrls, ...footerQualityUrls.value };
+    footerQualityUrls.value = mergedUrls;
+    await probeFooterQualitySizes(mergedUrls, controller.signal);
+  } catch (e: any) {
+    if (!controller.signal.aborted) {
+      console.warn('[PlayerFooter] 音质体积探测失败:', e?.message || e);
+    }
+  } finally {
+    if (footerQualityInfoController === controller) {
+      footerQualityInfoController = null;
+      isFooterQualityInfoProbing.value = false;
+    }
+  }
+};
+
 /** 音质英文缩写映射（底栏按钮显示用，下拉菜单仍用完整中文标签） */
 const QUALITY_ABBR: Record<QualityKey, string> = {
   mgg: 'LQ',
@@ -346,6 +469,9 @@ const toggleQualityMenu = (e: MouseEvent) => {
   // 关闭下载音质菜单，避免两个下拉同时打开
   showDownloadQualityMenu.value = false;
   showQualityMenu.value = !showQualityMenu.value;
+  if (showQualityMenu.value) {
+    void ensureFooterQualityInfo();
+  }
 };
 
 const selectQuality = async (qualityKey: QualityKey) => {
@@ -699,6 +825,8 @@ provide('footerContext', {
   // 通用
   currentSong,
   showPlayerDetail,
+  footerQualityExtraText,
+  isFooterQualityInfoProbing,
   // 收藏
   isFavorite,
   toggleFavorite,
@@ -778,6 +906,7 @@ onUnmounted(() => {
     marqueeCheckFrame = null;
   }
   if (idleTimer) clearTimeout(idleTimer);
+  abortFooterQualityInfoProbe();
   unlistenRemoteDownload?.();
   unlistenRemoteDownload = null;
 });

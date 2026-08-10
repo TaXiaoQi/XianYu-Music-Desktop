@@ -22,6 +22,7 @@ export function usePlaybackController() {
     currentCoverFull: playbackRefs.currentCoverFull,
     currentAvailableQualities: playbackRefs.currentAvailableQualities,
     currentPlayingQuality: playbackRefs.currentPlayingQuality,
+    currentPlayingAudioUrl: playbackRefs.currentPlayingAudioUrl,
     sessionQualityOverride: playbackRefs.sessionQualityOverride,
     setSessionQualityOverride: playbackStore.setSessionQualityOverride,
     isPlaying: playbackRefs.isPlaying,
