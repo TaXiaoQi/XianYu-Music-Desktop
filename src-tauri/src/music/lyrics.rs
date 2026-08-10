@@ -1141,7 +1141,21 @@ fn collect_candidate(
     }
 
     normalize_end_times(&mut lines);
-    candidates.push(ParserCandidate { source, lines });
+    let candidate_source = if lines
+        .iter()
+        .any(|line| line.source_format == ParsedLineSourceFormat::EnhancedLrc)
+    {
+        // parse_manual_lrc_like 可以同时解析普通 LRC 与 LX 构建出的 Enhanced LRC。
+        // 只要其中包含逐字 Enhanced LRC 行，候选排序就应按 EnhancedLrc 优先级参与竞争，
+        // 否则可能被 amll 的 eslrc/lrc 候选抢走，导致前端拿不到稳定的 words。
+        ParsedLineSourceFormat::EnhancedLrc
+    } else {
+        source
+    };
+    candidates.push(ParserCandidate {
+        source: candidate_source,
+        lines,
+    });
 }
 
 fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
@@ -3624,6 +3638,58 @@ mod tests {
         assert_eq!(payload.display_lines[0].text, "忘れたくないこと");
         assert_eq!(payload.display_lines[0].translation, "我不愿遗忘");
         assert_eq!(payload.display_lines[0].romaji, "wa su re ta ku na i ko to");
+    }
+
+    #[test]
+    fn prefers_lx_converted_enhanced_lrc_as_word_timed_source() {
+        let parsed = parse_raw_lyrics(
+            [
+                "[00:10.000]<00:10.000>其<00:10.300>实<00:10.600>",
+                "[00:12.000]<00:12.000>天<00:12.400>外<00:12.800>",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].source_format, ParsedLineSourceFormat::EnhancedLrc);
+        assert_eq!(parsed[0].text, "其实");
+        assert_eq!(
+            parsed[0]
+                .words
+                .as_ref()
+                .map(|words| words
+                    .iter()
+                    .map(|word| word.text.as_str())
+                    .collect::<Vec<_>>())
+                .unwrap_or_default(),
+            vec!["其", "实"]
+        );
+    }
+
+    #[test]
+    fn structured_payload_keeps_words_for_lx_converted_enhanced_lrc() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:10.000]<00:10.000>其<00:10.300>实<00:10.600>",
+                "[00:12.000]<00:12.000>天<00:12.400>外<00:12.800>",
+            ]
+            .join("\n"),
+        );
+
+        assert_eq!(payload.display_lines.len(), 2);
+        assert_eq!(payload.display_lines[0].text, "其实");
+        assert_eq!(
+            payload.display_lines[0]
+                .words
+                .as_ref()
+                .map(|words| words
+                    .iter()
+                    .map(|word| word.text.as_str())
+                    .collect::<Vec<_>>())
+                .unwrap_or_default(),
+            vec!["其", "实"]
+        );
     }
 
     #[test]
