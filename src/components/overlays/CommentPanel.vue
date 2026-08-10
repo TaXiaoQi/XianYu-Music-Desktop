@@ -130,7 +130,8 @@ async function fetchComments(page: number = 1) {
 
     const result = await pluginGetMusicComments(source, item, page);
     if (result) {
-      const newComments = (result.data || []) as CommentItem[];
+      const rawComments = (result.data || []) as any[];
+      const newComments = rawComments.map(normalizeComment);
       if (page === 1) {
         comments.value = newComments;
       } else {
@@ -150,6 +151,34 @@ async function fetchComments(page: number = 1) {
     loading.value = false;
     loadingMore.value = false;
   }
+}
+
+/**
+ * 规范化评论数据：兼容不同插件返回的二级评论字段名。
+ * 有些插件用 replyList / subComments / children / replys 等字段名而非 replies。
+ */
+function normalizeComment(raw: any): CommentItem {
+  const c: CommentItem = {
+    id: raw.id ?? raw.commentId ?? raw.comment_id,
+    nickName: raw.nickName ?? raw.nickname ?? raw.userName ?? raw.name ?? '',
+    avatar: raw.avatar ?? raw.userAvatar ?? raw.headPic,
+    comment: raw.comment ?? raw.content ?? raw.text ?? '',
+    like: raw.like ?? raw.likeCount ?? raw.likes ?? raw.like_count,
+    createAt: raw.createAt ?? raw.createdAt ?? raw.timestamp ?? raw.time,
+    location: raw.location ?? raw.address,
+    replies: undefined,
+  };
+
+  // 兼容多种二级评论字段名
+  const replyFields = ['replies', 'replyList', 'subComments', 'children', 'replys', 'sub_comment', 'reply_list'];
+  for (const field of replyFields) {
+    if (Array.isArray(raw[field]) && raw[field].length > 0) {
+      c.replies = raw[field].map((r: any) => normalizeComment(r));
+      break;
+    }
+  }
+
+  return c;
 }
 
 async function loadMore() {
@@ -223,7 +252,7 @@ onUnmounted(() => {
         v-if="showComment"
         class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#262626]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
         :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-2xl']"
-        :style="{ width: '340px', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '280px', bottom: '120px' }"
+        :style="{ width: 'clamp(360px, 28vw, 560px)', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '200px', bottom: '96px' }"
         @click.stop
       >
         <!-- Header -->
@@ -355,44 +384,53 @@ onUnmounted(() => {
                     <Heart class="h-3 w-3" :stroke-width="2" />
                     <span>{{ formatLike(comment.like) }}</span>
                   </div>
+                  <!-- 展开/收起 二级评论（与时间、点赞同行） -->
+                  <button
+                    v-if="comment.replies && comment.replies.length > 0"
+                    @click="toggleReplies(comment, idx)"
+                    class="flex items-center gap-0.5 text-[10px] font-medium text-[#EC4141] hover:text-[#d63838] dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                  >
+                    <component :is="isRepliesExpanded(comment, idx) ? ChevronDown : ChevronRight" class="h-3 w-3 transition-transform duration-200" :stroke-width="2.2" />
+                    {{ isRepliesExpanded(comment, idx) ? '收起' : '展开' }}
+                  </button>
                 </div>
 
-                <!-- Collapsed Replies Toggle -->
-                <div v-if="comment.replies && comment.replies.length > 0" class="mt-2">
-                  <button
-                    v-if="!isRepliesExpanded(comment, idx)"
-                    @click="toggleReplies(comment, idx)"
-                    class="flex items-center gap-1 text-[11px] font-medium text-[#EC4141] hover:text-[#d63838] dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                  >
-                    <ChevronRight class="h-3 w-3" :stroke-width="2.2" />
-                    详情 {{ comment.replies.length }}条回复
-                  </button>
-                  <template v-else>
-                    <button
-                      @click="toggleReplies(comment, idx)"
-                      class="flex items-center gap-1 text-[11px] font-medium text-[#EC4141] hover:text-[#d63838] dark:text-red-400 dark:hover:text-red-300 transition-colors mb-2"
-                    >
-                      <ChevronDown class="h-3 w-3" :stroke-width="2.2" />
-                      收起回复
-                    </button>
-                    <div class="pl-3 border-l-2 border-gray-100 dark:border-zinc-800 space-y-2">
-                      <div v-for="(reply, rIdx) in comment.replies" :key="reply.id || rIdx" class="text-sm">
-                        <div class="flex items-center gap-1.5 mb-0.5">
-                          <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ reply.nickName }}</span>
-                          <span v-if="reply.location" class="text-[10px] text-gray-400 dark:text-gray-500">{{ reply.location }}</span>
-                        </div>
-                        <p class="text-gray-700 dark:text-gray-300 leading-relaxed break-words whitespace-pre-wrap">{{ reply.comment }}</p>
-                        <div class="flex items-center gap-3 mt-1">
-                          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatTime(reply.createAt) }}</span>
-                          <div v-if="reply.like && reply.like > 0" class="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-gray-500">
-                            <Heart class="h-3 w-3" :stroke-width="2" />
-                            <span>{{ formatLike(reply.like) }}</span>
-                          </div>
+                <!-- Expanded Replies -->
+                <Transition name="reply-collapse">
+                  <div v-if="comment.replies && comment.replies.length > 0 && isRepliesExpanded(comment, idx)" class="mt-2 pl-3 border-l-2 border-gray-100 dark:border-zinc-800 space-y-2 overflow-hidden">
+                  <div v-for="(reply, rIdx) in comment.replies" :key="reply.id || rIdx" class="flex gap-2 text-sm">
+                    <!-- Reply Avatar -->
+                    <div class="shrink-0 w-6 h-6 rounded-full overflow-hidden bg-gray-200 dark:bg-zinc-700 flex items-center justify-center">
+                      <img
+                        v-if="reply.avatar"
+                        :src="reply.avatar"
+                        :alt="reply.nickName"
+                        class="w-full h-full object-cover"
+                        loading="lazy"
+                        @error="($event.target as HTMLImageElement).style.display = 'none'"
+                      />
+                      <span v-else class="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                        {{ reply.nickName?.charAt(0) || '?' }}
+                      </span>
+                    </div>
+                    <!-- Reply Body -->
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5 mb-0.5">
+                        <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ reply.nickName }}</span>
+                        <span v-if="reply.location" class="text-[10px] text-gray-400 dark:text-gray-500">{{ reply.location }}</span>
+                      </div>
+                      <p class="text-gray-700 dark:text-gray-300 leading-relaxed break-words whitespace-pre-wrap">{{ reply.comment }}</p>
+                      <div class="flex items-center gap-3 mt-1">
+                        <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatTime(reply.createAt) }}</span>
+                        <div v-if="reply.like && reply.like > 0" class="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-gray-500">
+                          <Heart class="h-3 w-3" :stroke-width="2" />
+                          <span>{{ formatLike(reply.like) }}</span>
                         </div>
                       </div>
                     </div>
-                  </template>
-                </div>
+                  </div>
+                  </div>
+                </Transition>
               </div>
             </div>
 
@@ -440,5 +478,31 @@ onUnmounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 二级评论展开/收起过渡 */
+.reply-collapse-enter-active {
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.reply-collapse-leave-active {
+  transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.reply-collapse-enter-from {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.reply-collapse-enter-to,
+.reply-collapse-leave-from {
+  max-height: 1000px;
+  opacity: 1;
+  transform: translateY(0);
+}
+.reply-collapse-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>
