@@ -150,6 +150,177 @@ const BAKA_PLUGIN_METHODS = [
 const newToLegacyQualityMap: Record<string, string> = BAKA_TO_LEGACY_QUALITY_MAP;
 
 /**
+ * 清洗插件返回的媒体 URL。
+ *
+ * 部分 Baka/MF 插件会把音质参数拼成 `level=hires,` 这类尾随逗号形式，
+ * 也可能把 URL 用反引号/引号包起来（例如 `https://...level=standard,`）。
+ * 浏览器或后端播放器会把这些符号当成 URL 内容，导致请求到 JSON/错误页而不是音频。
+ * 这里仅清理 URL 首尾包裹符号和尾随逗号/空白，不改动正常 URL。
+ */
+function sanitizeMediaUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+
+  const stripUrlEdgeJunk = (value: string): string => {
+    let current = value.trim();
+    let previous = '';
+    while (current && current !== previous) {
+      previous = current;
+      current = current
+        .replace(/^[`'"\s]+/g, '')
+        .replace(/[,`'"\s]+$/g, '');
+    }
+    return current;
+  };
+
+  const cleanedRaw = stripUrlEdgeJunk(raw);
+  if (!cleanedRaw) return '';
+
+  try {
+    const url = new URL(cleanedRaw);
+    let changed = false;
+    for (const [key, value] of Array.from(url.searchParams.entries())) {
+      const cleaned = stripUrlEdgeJunk(value);
+      if (cleaned !== value) {
+        url.searchParams.set(key, cleaned);
+        changed = true;
+      }
+    }
+    return changed ? url.toString() : cleanedRaw;
+  } catch {
+    return cleanedRaw;
+  }
+}
+
+/**
+ * 从插件返回的媒体 URL 参数中推断实际播放音质。
+ *
+ * 有些 Baka/MF 插件在请求高音质（如 master）时，会在插件内部自动降级，
+ * 但仍返回一个可播放 URL，例如 `level=standard`。这种情况下不能继续把
+ * 底部栏显示为 master，应以 URL 中的实际 level/quality 参数为准。
+ */
+function inferActualQualityFromMediaUrl(urlLike: string, fallback?: QualityKey): QualityKey | undefined {
+  const legacyToQuality: Record<string, QualityKey> = {
+    low: '128k',
+    standard: '128k',
+    high: '320k',
+    exhigh: '320k',
+    super: 'flac',
+    lossless: 'flac',
+  };
+
+  try {
+    const url = new URL(urlLike);
+    const candidates = ['quality', 'level', 'br', 'bitrate', 'rate']
+      .map(key => url.searchParams.get(key))
+      .filter((value): value is string => !!value);
+
+    for (const raw of candidates) {
+      const cleaned = raw.trim().replace(/[,`'"\s]+$/g, '');
+      const normalized = normalizeQualityKey(cleaned);
+      if (normalized) return normalized;
+
+      const legacy = legacyToQuality[cleaned.toLowerCase()];
+      if (legacy) return legacy;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+
+  return fallback;
+}
+
+function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {
+  const text = [
+    source.name,
+    source.id,
+    mediaItem?.platform,
+    mediaItem?.source,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return text.includes('酷狗') || text.includes('kugou') || /\bkg\b/.test(text);
+}
+
+function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
+  const qualities = mediaItem?.qualities;
+  const fromQuality = qualities?.[qualityKey]?.hash;
+  if (typeof fromQuality === 'string' && fromQuality.trim()) return fromQuality.trim();
+
+  switch (qualityKey) {
+    case '320k':
+      return String(mediaItem?.['320hash'] || '').trim();
+    case 'flac':
+      return String(mediaItem?.sqhash || mediaItem?.SQFileHash || '').trim();
+    case 'flac24bit':
+    case 'hires':
+    case 'master':
+    case 'vinyl':
+    case 'dolby':
+    case 'atmos':
+    case 'atmos_plus':
+      return String(
+        mediaItem?.ResFileHash ||
+        mediaItem?.origin_hash ||
+        mediaItem?.sqhash ||
+        mediaItem?.SQFileHash ||
+        '',
+      ).trim();
+    default:
+      return '';
+  }
+}
+
+function adaptKugouMediaItemForQuality(mediaItem: any, qualityKey: QualityKey): any {
+  const selectedHash = readQualityHash(mediaItem, qualityKey);
+  if (!selectedHash) {
+    return mediaItem;
+  }
+
+  const adapted = { ...mediaItem };
+
+  if (qualityKey === '128k' || qualityKey === '192k' || qualityKey === 'mgg') {
+    adapted.id = selectedHash;
+    adapted.hash = adapted.id;
+    adapted.sqhash = undefined;
+    adapted.ResFileHash = undefined;
+    return adapted;
+  }
+
+  if (qualityKey === '320k') {
+    adapted.id = selectedHash;
+    adapted.hash = selectedHash;
+    adapted['320hash'] = selectedHash;
+    adapted.sqhash = undefined;
+    adapted.ResFileHash = undefined;
+    return adapted;
+  }
+
+  adapted.id = selectedHash;
+  adapted.hash = selectedHash;
+  if (qualityKey === 'flac') {
+    adapted.sqhash = selectedHash;
+  } else {
+    adapted.ResFileHash = selectedHash;
+    adapted.sqhash = selectedHash;
+  }
+  return adapted;
+}
+
+function adaptMediaItemForPluginQuality(
+  source: PluginSource,
+  mediaItem: any,
+  qualityKey: QualityKey,
+): any {
+  if (isKugouLikeSource(source, mediaItem)) {
+    return adaptKugouMediaItemForQuality(mediaItem, qualityKey);
+  }
+
+  return mediaItem;
+}
+
+/**
  * Baka/Toskysun 插件的稳定识别锚点：声明 Baka 新音质能力。
  *
  * BakaMusic 插件 API 向下兼容 MusicFree，但 `supportedQualities` 使用
@@ -463,9 +634,10 @@ class BakaPluginManagerClass {
 
     for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
       const q = tryQualities[pairIdx];
+      const attemptMusicItem = adaptMediaItemForPluginQuality(source, musicItem, tryPairs[pairIdx].qualityKey);
       for (let retry = 0; retry <= 1; retry++) {
         try {
-          result = await inst.getMediaSource(musicItem, q);
+          result = await inst.getMediaSource(attemptMusicItem, q);
           if (result?.url) break;
 
           // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）
@@ -473,7 +645,7 @@ class BakaPluginManagerClass {
             const legacyQ = newToLegacyQualityMap[q];
             if (legacyQ && legacyQ !== q) {
               log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
-              result = await inst.getMediaSource(musicItem, legacyQ);
+              result = await inst.getMediaSource(attemptMusicItem, legacyQ);
               if (result?.url) break;
             }
           }
@@ -507,7 +679,8 @@ class BakaPluginManagerClass {
       return null;
     }
 
-    const url = result.url || '';
+    const rawUrl = typeof result.url === 'string' ? result.url : '';
+    const url = sanitizeMediaUrl(rawUrl);
     const headers = result.headers || {};
     const ekey = result.ekey || '';
     const cek = result.cek || '';
@@ -524,8 +697,13 @@ class BakaPluginManagerClass {
       (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
       return null;
     }
+    if (rawUrl && rawUrl !== url) {
+      log(`[getMediaSource] 已清洗异常URL: ${rawUrl.substring(0, 120)} -> ${url.substring(0, 120)}`);
+    }
 
-    const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
+    const requestedSuccessQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
+    const resultQuality = normalizeQualityKey(result.quality);
+    const actualQuality = resultQuality ?? inferActualQualityFromMediaUrl(url, requestedSuccessQuality);
     let lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
       ? buildLyricsRaw(lyric, tlyric, null, lxlyric, yrc, qrc, eslrc)
       : '';
