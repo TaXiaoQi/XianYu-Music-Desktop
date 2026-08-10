@@ -851,14 +851,14 @@ const performSearch = async () => {
 
       if (activeSearchType.value === 'track') {
         const result = await lxSearch(source.lxSourceId, query, 1);
-        if (searchAbortController.signal.aborted) return;
+        if (activeController.signal.aborted) return;
         lxSearchResults.value = result.list;
         hasMore.value = result.list.length >= result.limit;
         triggerCoverLoading();
       } else if (activeSearchType.value === 'artist') {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[];
-        if (searchAbortController.signal.aborted) return;
+        if (activeController.signal.aborted) return;
         pluginArtistResults.value = results.map(item => ({
           ...item,
           platform: source.lxSourceId!,
@@ -869,7 +869,7 @@ const performSearch = async () => {
       } else if (activeSearchType.value === 'album') {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[];
-        if (searchAbortController.signal.aborted) return;
+        if (activeController.signal.aborted) return;
         pluginAlbumResults.value = results.map(item => ({
           ...item,
           platform: source.lxSourceId!,
@@ -880,7 +880,7 @@ const performSearch = async () => {
       } else {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'playlist', 1) as LxPlaylistSearchResult[];
-        if (searchAbortController.signal.aborted) return;
+        if (activeController.signal.aborted) return;
         pluginPlaylistResults.value = results.map(item => ({
           ...item,
           platform: source.lxSourceId!,
@@ -903,7 +903,7 @@ const performSearch = async () => {
         pluginAlbumResults.value = [];
         pluginPlaylistResults.value = [];
         const results = await pluginSearch(source.source, query, 1, 30);
-        if (searchAbortController.signal.aborted) return;
+        if (activeController.signal.aborted) return;
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
@@ -912,7 +912,7 @@ const performSearch = async () => {
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'artist')) {
           const results = await pluginArtistSearch(source.source, query, 1);
-          if (searchAbortController.signal.aborted) return;
+          if (activeController.signal.aborted) return;
           pluginArtistResults.value = results;
         } else {
           pluginArtistResults.value = [];
@@ -923,7 +923,7 @@ const performSearch = async () => {
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'album')) {
           const results = await pluginAlbumSearch(source.source, query, 1);
-          if (searchAbortController.signal.aborted) return;
+          if (activeController.signal.aborted) return;
           pluginAlbumResults.value = results;
         } else {
           pluginAlbumResults.value = [];
@@ -934,7 +934,7 @@ const performSearch = async () => {
         pluginSearchResults.value = [];
         if (pluginSupportsSearchType(source.source, 'sheet')) {
           const results = await pluginPlaylistSearch(source.source, query, 1);
-          if (searchAbortController.signal.aborted) return;
+          if (activeController.signal.aborted) return;
           pluginPlaylistResults.value = results;
         } else {
           pluginPlaylistResults.value = [];
@@ -943,7 +943,7 @@ const performSearch = async () => {
       }
     }
   } catch (err) {
-    if (!searchAbortController.signal.aborted) {
+    if (!activeController.signal.aborted) {
       console.warn('[Search] failed:', err);
       lxSearchResults.value = [];
       pluginSearchResults.value = [];

@@ -58,6 +58,7 @@ import {
   qualityKeyToPluginString,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
+import { sanitizeMediaUrl } from '../utils/mediaUrl';
 
 // ==================== 日志 ====================
 
@@ -186,63 +187,6 @@ const BAKA_PLUGIN_METHODS = [
  * 当新键请求失败时，回退到旧键重试。
  */
 const newToLegacyQualityMap: Record<string, string> = BAKA_TO_LEGACY_QUALITY_MAP;
-
-/**
- * 清洗插件返回的媒体 URL。
- *
- * 部分 Baka/MF 插件会把音质参数拼成 `level=hires,` 这类尾随逗号形式，
- * 也可能把 URL 用反引号/引号包起来（例如 `https://...level=standard,`）。
- * 浏览器或后端播放器会把这些符号当成 URL 内容，导致请求到 JSON/错误页而不是音频。
- * 这里仅清理 URL 首尾包裹符号和尾随逗号/空白，不改动正常 URL。
- */
-function sanitizeMediaUrl(raw: unknown): string {
-  if (typeof raw !== 'string') return '';
-
-  const stripUrlEdgeJunk = (value: string): string => {
-    let current = value.trim();
-    let previous = '';
-    while (current && current !== previous) {
-      previous = current;
-      current = current
-        .replace(/^[`'"\s]+/g, '')
-        .replace(/[,`'"\s]+$/g, '');
-    }
-    return current;
-  };
-
-  const extractUrlLike = (value: string): string => {
-    const stripped = stripUrlEdgeJunk(value)
-      .replace(/^[\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
-      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
-    const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
-    return stripUrlEdgeJunk(match?.[0] || stripped)
-      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
-  };
-
-  const cleanedRaw = extractUrlLike(raw);
-  if (!cleanedRaw) return '';
-
-  try {
-    const url = new URL(cleanedRaw);
-    let changed = false;
-    const cleanedPathname = url.pathname.replace(/[,，;；`'"\s]+$/g, '');
-    if (cleanedPathname !== url.pathname) {
-      url.pathname = cleanedPathname;
-      changed = true;
-    }
-    for (const [key, value] of Array.from(url.searchParams.entries())) {
-      const cleaned = stripUrlEdgeJunk(value);
-      if (cleaned !== value) {
-        url.searchParams.set(key, cleaned);
-        changed = true;
-      }
-    }
-    return stripUrlEdgeJunk(changed ? url.toString() : cleanedRaw)
-      .replace(/[,，;；`'"\s]+$/g, '');
-  } catch {
-    return cleanedRaw;
-  }
-}
 
 /**
  * 从插件返回的媒体 URL 参数中推断实际播放音质。
