@@ -49,7 +49,7 @@ async function importBlobModule(source: string, label: string): Promise<any> {
   try {
     return await import(/* @vite-ignore */ url);
   } catch (error: any) {
-    throw new Error(`${label}: ${error?.message || String(error)}`);
+    throw new Error(`${label}: ${error?.message || String(error)}`, { cause: error });
   } finally {
     URL.revokeObjectURL(url);
   }
