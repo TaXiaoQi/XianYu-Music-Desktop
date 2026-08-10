@@ -271,7 +271,9 @@ const handleDownload = async () => {
     downloadDir: downloadDir.value || undefined,
     downloadAudio: true,
     downloadLyrics: downloadLyrics.value,
-    downloadCover: true,
+    // 封面由下载设置中的“嵌入封面”写入音频标签；
+    // 下载歌曲时不额外保存独立封面文件。
+    downloadCover: false,
     fileNameStyle: selectedFileNameStyle.value,
     preResolvedUrls,
   });

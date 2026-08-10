@@ -130,6 +130,46 @@ describe('playerFileManager.refreshFolder', () => {
     expect(removeFromHistory).toHaveBeenCalledWith([removedSong.path]);
   });
 
+  it('updates library state when refreshing a folder changes metadata without changing paths', async () => {
+    const libraryStore = useLibraryStore();
+    const oldSong = makeSong({
+      path: 'C:\\Music\\A\\same.flac',
+      name: 'same.flac',
+      title: 'Old Title',
+      artist: 'Old Artist',
+      duration: 180,
+    });
+    const refreshedSong = makeSong({
+      path: oldSong.path,
+      name: oldSong.name,
+      title: 'New Title',
+      artist: 'New Artist',
+      duration: 240,
+    });
+
+    libraryStore.librarySongs = [oldSong];
+    libraryStore.songList = [oldSong];
+    scanMusicFolderMock.mockResolvedValue([refreshedSong]);
+
+    const fileManager = createPlayerFileManager({
+      removeLibraryFolderLinked: vi.fn(),
+      removeFromHistory: vi.fn(),
+      showToast: vi.fn(),
+    });
+
+    const summary = await fileManager.refreshFolder('c:/music/a');
+
+    expect(summary).toEqual({
+      removedCount: 0,
+      removedPaths: [],
+      hasChanges: true,
+    });
+    expect(libraryStore.librarySongs[0]?.title).toBe('New Title');
+    expect(libraryStore.librarySongs[0]?.artist).toBe('New Artist');
+    expect(libraryStore.librarySongs[0]?.duration).toBe(240);
+    expect(libraryStore.songList[0]?.title).toBe('New Title');
+  });
+
   it('passes the configured short audio threshold when refreshing a folder', async () => {
     const settingsStore = useSettingsStore();
     settingsStore.patchSettings({
