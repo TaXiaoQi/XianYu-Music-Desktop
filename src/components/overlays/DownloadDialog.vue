@@ -7,6 +7,8 @@ import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { probeDownloadableQualities } from '../../services/downloadService';
+import { downloadApi } from '../../services/tauri/downloadApi';
+import { formatFileSize } from '../../utils/format';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
 
@@ -30,6 +32,8 @@ const availableQualities = ref<QualityKey[] | null>(null);
 const declaredQualities = ref<QualityKey[] | null>(null);
 /** 探测阶段已解析的直链，下载时透传复用 */
 const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
+/** 各音质直链探测到的文件体积（字节） */
+const qualitySizes = ref<Partial<Record<QualityKey, number>>>({});
 const isProbing = ref(false);
 
 const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
@@ -135,6 +139,54 @@ const ensureSelectedQualityAvailable = (available: QualityKey[]) => {
   }
 };
 
+const compactFileSize = (bytes: number) =>
+  formatFileSize(bytes).replace(/\s*MB$/, 'M').replace(/\s*GB$/, 'G').replace(/\s*KB$/, 'K');
+
+const getAudioExtLabel = (key: QualityKey, url?: string) => {
+  if (url) {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      const match = pathname.match(/\.([a-z0-9]+)$/);
+      if (match?.[1]) return match[1].toUpperCase();
+    } catch {
+      const match = url.toLowerCase().match(/\.([a-z0-9]+)(?:[?#]|$)/);
+      if (match?.[1]) return match[1].toUpperCase();
+    }
+  }
+  return QUALITY_META[key]?.isLossless ? 'FLAC' : 'MP3';
+};
+
+const qualityExtraText = (key: QualityKey) => {
+  const url = probedUrls.value[key];
+  const size = qualitySizes.value[key];
+  const ext = getAudioExtLabel(key, url);
+  if (typeof size === 'number' && size > 0) {
+    return `${ext} · ${compactFileSize(size)}`;
+  }
+  if (isProbing.value) return `${ext} · 探测中`;
+  return `${ext} · 未知体积`;
+};
+
+const probeQualitySizes = async (
+  urls: Partial<Record<QualityKey, string>>,
+  signal: AbortSignal,
+) => {
+  const entries = Object.entries(urls) as Array<[QualityKey, string]>;
+  await Promise.all(entries.map(async ([key, url]) => {
+    try {
+      const info = await downloadApi.probeUrlSize(url);
+      if (signal.aborted) return;
+      if (typeof info?.size === 'number' && info.size > 0) {
+        qualitySizes.value = { ...qualitySizes.value, [key]: info.size };
+      }
+    } catch (e: any) {
+      if (!signal.aborted) {
+        console.warn(`[DownloadDialog] ${key} 体积探测失败:`, e?.message || e);
+      }
+    }
+  }));
+};
+
 /** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
 const supportedQualityKeys = computed<QualityKey[]>(() => {
   if (isProbing.value) {
@@ -197,6 +249,7 @@ const probeQualities = async (song: Song) => {
     const merged = mergeTrustedPlaybackQuality(song, result.available, result.resolvedUrls);
     availableQualities.value = merged.available;
     probedUrls.value = merged.resolvedUrls;
+    void probeQualitySizes(merged.resolvedUrls, controller.signal);
 
     ensureSelectedQualityAvailable(merged.available);
   } catch (e: any) {
@@ -229,6 +282,7 @@ watch(
     availableQualities.value = null;
     declaredQualities.value = null;
     probedUrls.value = {};
+    qualitySizes.value = {};
 
     if (song) {
       const playbackQualities = getPlaybackAvailableQualities(song);
@@ -237,15 +291,16 @@ watch(
         availableQualities.value = merged.available;
         declaredQualities.value = merged.available;
         probedUrls.value = merged.resolvedUrls;
+        void probeQualitySizes(merged.resolvedUrls, new AbortController().signal);
         ensureSelectedQualityAvailable(merged.available);
-        return;
       }
 
-      const trusted = getTrustedPlaybackQuality(song);
+      const trusted = playbackQualities ? null : getTrustedPlaybackQuality(song);
       if (trusted) {
         availableQualities.value = [trusted.quality];
         probedUrls.value = { [trusted.quality]: trusted.url };
         selectedQuality.value = trusted.quality;
+        void probeQualitySizes({ [trusted.quality]: trusted.url }, new AbortController().signal);
       }
       void probeQualities(song);
     }
@@ -313,25 +368,31 @@ const handleDownload = async () => {
               </div>
               <!-- 可用音质：探测中显示声明列表并禁用交互，避免点到最终不可用的档位 -->
               <div
-                class="grid grid-cols-3 gap-1.5 transition-opacity"
+                class="space-y-1.5 transition-opacity"
                 :class="isProbing ? 'opacity-60 pointer-events-none' : ''"
               >
                 <button
                   v-for="key in supportedQualityKeys"
                   :key="key"
                   type="button"
-                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5 cursor-pointer"
+                  class="w-full px-3 py-2 text-left rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer"
                   :class="selectedQuality === key
-                    ? 'bg-[#EC4141] text-white shadow-sm'
+                    ? 'bg-[#EC4141]/10 text-[#EC4141]'
                     : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
-                  :title="QUALITY_META[key].description"
+                  :title="`${QUALITY_META[key].description} · ${qualityExtraText(key)}`"
                   @click="selectedQuality = key"
                 >
-                  <span>{{ QUALITY_META[key].label }}</span>
+                  <span class="min-w-0 flex flex-col">
+                    <span class="text-xs font-semibold truncate">{{ QUALITY_META[key].label }}</span>
+                    <span
+                      class="text-[10px] font-normal truncate"
+                      :class="selectedQuality === key ? 'text-[#EC4141]/70' : 'text-gray-400 dark:text-gray-500'"
+                    >{{ QUALITY_META[key].description }}</span>
+                  </span>
                   <span
-                    class="text-[10px] font-normal opacity-75"
-                    :class="selectedQuality === key ? '' : 'text-gray-400 dark:text-gray-500'"
-                  >{{ QUALITY_META[key].description }}</span>
+                    class="shrink-0 text-[11px] font-semibold whitespace-nowrap"
+                    :class="selectedQuality === key ? 'text-[#EC4141]' : 'text-gray-500 dark:text-gray-400'"
+                  >{{ qualityExtraText(key) }}</span>
                 </button>
               </div>
 

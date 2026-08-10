@@ -24,6 +24,8 @@ const ctx = inject<{
   // 通用
   currentSong: Ref<Song | null>;
   showPlayerDetail: Ref<boolean>;
+  footerQualityExtraText: (qualityKey: QualityKey) => string;
+  isFooterQualityInfoProbing: Ref<boolean>;
   // 收藏
   isFavorite: (song: Song) => boolean;
   toggleFavorite: (song: Song) => void;
@@ -81,6 +83,8 @@ const ctx = inject<{
 const {
   currentSong,
   showPlayerDetail,
+  footerQualityExtraText,
+  isFooterQualityInfoProbing,
   isFavorite,
   toggleFavorite,
   isOnlineSong,
@@ -179,19 +183,24 @@ const {
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
           :class="showPlayerDetail ? 'bg-[#262626]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
         >
-          <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">下载音质</div>
+          <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">
+            下载音质
+            <span v-if="isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
+          </div>
           <button
             v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
             :key="opt.value"
             @click.stop="startDownload(opt.value)"
-            class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+            class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
             :class="selectedDownloadQuality === opt.value
               ? 'text-[#EC4141] bg-[#EC4141]/8'
               : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
           >
-            <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-            <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-            <span v-if="selectedDownloadQuality === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+            <span class="min-w-0 flex flex-col">
+              <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
+              <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
+            </span>
+            <span v-if="selectedDownloadQuality === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
           </button>
         </div>
       </div>
@@ -252,18 +261,24 @@ const {
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
           :class="showPlayerDetail ? 'bg-[#262626]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
         >
+          <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">
+            播放音质
+            <span v-if="isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
+          </div>
           <button
             v-for="opt in QUALITY_OPTIONS"
             :key="opt.value"
             @click="selectQuality(opt.value)"
-            class="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg transition-colors select-none"
+            class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
             :class="activeQualityKey === opt.value
               ? 'text-[#EC4141] bg-[#EC4141]/8'
               : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
           >
-            <span class="flex-1 whitespace-nowrap text-left">{{ opt.label }}</span>
-            <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap shrink-0">{{ opt.description }}</span>
-            <span v-if="activeQualityKey === opt.value" class="w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+            <span class="min-w-0 flex flex-col">
+              <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
+              <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
+            </span>
+            <span v-if="activeQualityKey === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
           </button>
         </div>
       </div>
