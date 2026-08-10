@@ -819,7 +819,8 @@ async function openPluginDetail(plugin: PluginSource) {
   // 先用已缓存的定义快速渲染（可能为空，懒加载模式下尚未加载）
   detailUserVariables.value = getPluginUserVariables(plugin.id);
   detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
-  // 对未设置值的变量填充默认值
+  // 对未设置值的变量填充默认值，并迁移旧键（修复前 name 优先导致存入显示名的问题）
+  migrateOldVarKeys(detailUserVariables.value, detailUserVarValues.value);
   for (const v of detailUserVariables.value) {
     if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
       detailUserVarValues.value[v.name] = v.defaultValue;
@@ -835,6 +836,7 @@ async function openPluginDetail(plugin: PluginSource) {
       if (vars.length > 0) {
         detailUserVariables.value = vars;
         detailUserVarValues.value = { ...getPluginUserVariableValues(plugin.id) };
+        migrateOldVarKeys(vars, detailUserVarValues.value);
         for (const v of vars) {
           if (!(v.name in detailUserVarValues.value) && v.defaultValue !== undefined) {
             detailUserVarValues.value[v.name] = v.defaultValue;
@@ -845,6 +847,36 @@ async function openPluginDetail(plugin: PluginSource) {
       // 加载失败不阻塞详情面板
     } finally {
       loadingUserVars.value = false;
+    }
+  }
+}
+
+/**
+ * 迁移旧的用户变量键名。
+ *
+ * 修复前 normalizePluginUserVariables 使用 v.name ?? v.key，Baka 插件的值
+ * 被存入了显示名（如 "API密钥"）而非变量键（如 "SOURCE_API_KEY"）。
+ * 修复后使用 v.key ?? v.name，此处将旧键的值迁移到正确键名。
+ */
+function migrateOldVarKeys(vars: PluginUserVariable[], values: Record<string, string>) {
+  let migrated = false;
+  for (const v of vars) {
+    if (v.name in values) continue; // 正确键已有值，无需迁移
+    // 检查 title、label 等旧键名是否有值
+    const oldKeys = [v.title, v.placeholder, v.description].filter((k): k is string => !!k && k !== v.name);
+    for (const oldKey of oldKeys) {
+      if (oldKey in values && values[oldKey]) {
+        values[v.name] = values[oldKey];
+        delete values[oldKey];
+        migrated = true;
+        break;
+      }
+    }
+  }
+  if (migrated) {
+    // 持久化迁移结果
+    if (detailPlugin.value) {
+      setPluginUserVariableValues(detailPlugin.value.id, values);
     }
   }
 }

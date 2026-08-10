@@ -20,6 +20,7 @@ import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
 import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
+import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -984,10 +985,14 @@ const authStore = useAuthStore();
     // 移至此处确保插件实例已初始化且 musicUrl 请求已完成（部分 LX 插件依赖 song-specific 状态才能获取歌词）。
     // LX 歌曲：通过落雪插件引擎或直接 API 获取歌词
     if (!usingDownloadedAudioFile && song.path.startsWith('lx://') && !song.lyrics_raw?.trim()) {
+      clearOnlineLyricsUnavailable(song.path);
       void fetchLxSongLyricsRaw(song)
         .then((lyricsRaw) => {
           if (!lyricsRaw) {
             console.warn('[Lyrics] LX 歌词获取返回空:', song.path);
+            if (requestId === playRequestId && currentSong.value?.path === song.path) {
+              markOnlineLyricsUnavailable(song.path);
+            }
             return;
           }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
@@ -1006,12 +1011,18 @@ const authStore = useAuthStore();
           console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
           void loadLyrics(lyricsRaw);
         })
-        .catch(error => console.warn('[Lyrics] LX 在线歌词获取失败:', error));
+        .catch(error => {
+          console.warn('[Lyrics] LX 在线歌词获取失败:', error);
+          if (requestId === playRequestId && currentSong.value?.path === song.path) {
+            markOnlineLyricsUnavailable(song.path);
+          }
+        });
     }
 
     // [歌词获取] plugin:// 歌曲：通过 pluginGetLyric 补获歌词（支持逐字歌词）
     // 播放入口可能已通过 pluginGetMusicInfo 获取歌词并设置到 lyrics_raw，此处仅在为空时补获
     if (!usingDownloadedAudioFile && song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
+      clearOnlineLyricsUnavailable(song.path);
       const pluginSearchResult = song.rawData;
       if (pluginSearchResult?.pluginId) {
         void (async () => {
@@ -1020,11 +1031,17 @@ const authStore = useAuthStore();
             const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
             if (!pluginSource) {
               console.warn('[Lyrics] plugin:// 未找到启用的插件:', pluginSearchResult.pluginId);
+              if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                markOnlineLyricsUnavailable(song.path);
+              }
               return;
             }
             const lyricData = await pluginGetLyric(pluginSource, pluginSearchResult);
             if (!lyricData?.lyricsRaw) {
               console.warn('[Lyrics] plugin:// 歌词获取为空:', pluginSource.name);
+              if (requestId === playRequestId && currentSong.value?.path === song.path) {
+                markOnlineLyricsUnavailable(song.path);
+              }
               return;
             }
             if (
@@ -1041,8 +1058,13 @@ const authStore = useAuthStore();
             void loadLyrics(lyricData.lyricsRaw);
           } catch (error) {
             console.warn('[Lyrics] plugin:// 在线歌词获取失败:', error);
+            if (requestId === playRequestId && currentSong.value?.path === song.path) {
+              markOnlineLyricsUnavailable(song.path);
+            }
           }
         })();
+      } else {
+        markOnlineLyricsUnavailable(song.path);
       }
     }
       // [飞封面同步] consumeFlyCoverPromise 取出飞封面 Promise（取出后立即清除，避免后续误等）。

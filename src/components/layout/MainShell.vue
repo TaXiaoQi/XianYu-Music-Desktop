@@ -44,6 +44,7 @@ const {
   footerBlurStyle,
   showAddToPlaylistModal,
   playlistAddTargetSongs,
+  excludedPlaylistId,
   closeAddToPlaylistDialog,
   handleGlobalAdd,
 } = useAppShell();
@@ -253,6 +254,7 @@ onMounted(() => {
       v-if="!isMiniMode && showAddToPlaylistModal"
       :visible="showAddToPlaylistModal"
       :selectedCount="playlistAddTargetSongs.length"
+      :excluded-playlist-id="excludedPlaylistId"
       @close="closeAddToPlaylistDialog"
       @add="handleGlobalAdd"
     />

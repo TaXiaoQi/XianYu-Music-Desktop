@@ -903,6 +903,29 @@ fn is_valid_audio_header(bytes: &[u8]) -> bool {
     false
 }
 
+fn apply_stream_request_headers(
+    mut req: reqwest::blocking::RequestBuilder,
+    headers: Option<&std::collections::HashMap<String, String>>,
+    user_agent: Option<&str>,
+) -> reqwest::blocking::RequestBuilder {
+    if let Some(ua) = user_agent {
+        req = req.header(reqwest::header::USER_AGENT, ua);
+    }
+    if let Some(hdrs) = headers {
+        for (key, value) in hdrs {
+            if !key.trim().is_empty() && !value.trim().is_empty() {
+                if let (Ok(name), Ok(val)) = (
+                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                    reqwest::header::HeaderValue::from_str(value),
+                ) {
+                    req = req.header(name, val);
+                }
+            }
+        }
+    }
+    req
+}
+
 fn download_thread(
     url: &str,
     hash: &str,
@@ -939,22 +962,7 @@ fn download_thread(
         }
     };
 
-    let mut req = client.get(url);
-    if let Some(ua) = user_agent {
-        req = req.header(reqwest::header::USER_AGENT, ua);
-    }
-    if let Some(hdrs) = headers {
-        for (key, value) in hdrs {
-            if !key.trim().is_empty() && !value.trim().is_empty() {
-                if let (Ok(name), Ok(val)) = (
-                    reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                    reqwest::header::HeaderValue::from_str(value),
-                ) {
-                    req = req.header(name, val);
-                }
-            }
-        }
-    }
+    let req = apply_stream_request_headers(client.get(url), headers, user_agent);
 
     let mut response = match req.send() {
         Ok(r) => r,
@@ -1008,22 +1016,7 @@ fn download_thread(
                 url, real_url
             );
             // 用提取到的 URL 重新请求
-            let mut retry_req = client.get(&real_url);
-            if let Some(ua) = user_agent {
-                retry_req = retry_req.header(reqwest::header::USER_AGENT, ua);
-            }
-            if let Some(hdrs) = headers {
-                for (key, value) in hdrs {
-                    if !key.trim().is_empty() && !value.trim().is_empty() {
-                        if let (Ok(name), Ok(val)) = (
-                            reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                            reqwest::header::HeaderValue::from_str(value),
-                        ) {
-                            retry_req = retry_req.header(name, val);
-                        }
-                    }
-                }
-            }
+            let retry_req = apply_stream_request_headers(client.get(&real_url), headers, user_agent);
             match retry_req.send() {
                 Ok(retry_resp) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
@@ -1050,7 +1043,12 @@ fn download_thread(
                                 real_url, real_url2
                             );
                             // 用二次提取的 URL 再次请求
-                            match client.get(&real_url2).send() {
+                            let resp2_req = apply_stream_request_headers(
+                                client.get(&real_url2),
+                                headers,
+                                user_agent,
+                            );
+                            match resp2_req.send() {
                                 Ok(resp2) if resp2.status().is_success() => {
                                     let ct2 = resp2
                                         .headers()

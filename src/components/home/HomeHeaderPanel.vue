@@ -22,6 +22,7 @@ interface Props {
   currentFolderFilter: string;
   playlistDetail: PlaylistDetail | null;
   localSongList: Song[];
+  localSongPaths?: string[];
 }
 
 const props = defineProps<Props>();
@@ -83,11 +84,13 @@ const isManagementModeModel = computed({
     :subtitle="playlistDetail?.date ? `创建于 ${playlistDetail.date}` : ''"
     :songs="localSongList"
     :selectedCount="selectedCount"
-    :totalSongCount="localSongList.length"
+    :totalSongCount="localSongPaths?.length ?? localSongList.length"
     :showRename="true"
-    :showAddToPlaylist="false"
+    :showAddToPlaylist="true"
+    :showHeaderAddToPlaylist="false"
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
+    @openAddToPlaylist="$emit('showAddToPlaylist')"
     @batchDelete="$emit('batchDelete')"
     @batchAddToFavorites="$emit('batchAddToFavorites')"
     @batchDownload="$emit('batchDownload')"

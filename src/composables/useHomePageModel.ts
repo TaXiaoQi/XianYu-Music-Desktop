@@ -269,8 +269,13 @@ export function useHomePageModel() {
     const songPaths = isBatchMode.value
       ? Array.from(selectedPaths.value)
       : (contextMenuTargetSong.value ? [contextMenuTargetSong.value.path] : []);
+    const songs = songPaths
+      .map(path => resolveSongByPath(path))
+      .filter((song): song is Song => Boolean(song));
 
     openAddToPlaylistDialog(songPaths, {
+      songs,
+      excludedPlaylistId: currentViewMode.value === 'playlist' ? filterCondition.value : null,
       onAdded: () => {
         if (isBatchMode.value) {
           isBatchMode.value = false;

@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLibraryStore } from '../../features/library/store';
-import { onUnmounted, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import ModernInputModal from '../common/ModernInputModal.vue';
 import { useCoverCache } from '../../composables/useCoverCache';
@@ -10,7 +10,8 @@ import type { Playlist } from '../../types';
 
 const props = defineProps<{
   visible: boolean,
-  selectedCount: number
+  selectedCount: number,
+  excludedPlaylistId?: string | null
 }>();
 
 const emit = defineEmits(['close', 'add']);
@@ -20,6 +21,9 @@ const libraryStore = useLibraryStore();
 const playlistCoverCache = ref<Map<string, string>>(new Map());
 let clearTimer: number | null = null;
 const { loadCover } = useCoverCache();
+const availablePlaylists = computed(() =>
+  playlists.value.filter(playlist => playlist.id !== props.excludedPlaylistId),
+);
 
 const clearCoverCache = () => {
   playlistCoverCache.value.clear();
@@ -84,7 +88,7 @@ watch(() => props.visible, (val) => {
   if (val) {
     cancelClearTimer();
     // 仅对没有自定义封面、且首歌曲无 cover_thumb_path 的歌单加载后端缩略图
-    playlists.value.forEach(pl => {
+    availablePlaylists.value.forEach(pl => {
       if (getPlaylistCover(pl)) return;
       if (pl.songPaths.length > 0) void loadPlaylistCover(pl.id, pl.songPaths[0]);
     });
@@ -130,7 +134,7 @@ const handleConfirmCreate = (name: string) => {
               </div>
               <span class="text-sm text-gray-600">创建新歌单</span>
             </div>
-            <div v-for="pl in playlists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div v-for="pl in availablePlaylists" :key="pl.id" @click="emit('add', pl.id)" class="flex items-center p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
               <div class="w-10 h-10 bg-gray-100 rounded flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
                 <img v-if="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" :src="getPlaylistCover(pl) || playlistCoverCache.get(pl.id)" class="w-full h-full object-cover" loading="lazy" decoding="async">
                 <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>

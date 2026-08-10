@@ -54,7 +54,7 @@ import {
   createPluginUpdateService,
 } from './pluginUpdates';
 import { BakaPluginManager } from './bakaPluginManager';
-import { sanitizeMediaUrl } from '../utils/mediaUrl';
+import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
 
 export type { PluginUpdateCheckResult } from './pluginUpdates';
 
@@ -155,7 +155,7 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
 
   for (const method of availableMethods) {
     proxy[method] = async (...args: any[]) => {
-      return callSandboxMethod(pluginId, method, args);
+      return callSandboxMethod(pluginId, method, args, method === 'getLyric' ? 8000 : 30000);
     };
   }
 
@@ -423,6 +423,10 @@ export interface PluginUserVariable {
  * MF 常用 name/title/defaultValue，Baka 插件可能使用 key/id、label、default、desc 等别名。
  * 统一规范化后，设置页按 name 保存，Worker 里的 env.getUserVariables()/env.userVariables
  * 就能拿到插件期望的 key。
+ *
+ * [修复] Baka 插件常用 key 作为变量键、name 作为显示名。
+ * 优先使用 key（Baka 约定），其次 name（MF 约定），最后 id。
+ * 同时将 name 字段作为 title 的回退（Baka 的 name 实为显示名）。
  */
 function normalizePluginUserVariables(raw: unknown): PluginUserVariable[] {
   const list = Array.isArray(raw)
@@ -439,7 +443,9 @@ function normalizePluginUserVariables(raw: unknown): PluginUserVariable[] {
     .map((item): PluginUserVariable | null => {
       if (!item || typeof item !== 'object') return null;
       const v = item as Record<string, any>;
-      const name = String(v.name ?? v.key ?? v.id ?? '').trim();
+      // [修复] 优先使用 key（Baka 约定：key 是变量键，name 是显示名），
+      // 其次 name（MF 约定：name 本身就是变量键），最后 id
+      const name = String(v.key ?? v.name ?? v.id ?? '').trim();
       if (!name) return null;
 
       const rawType = String(v.type ?? v.inputType ?? '').toLowerCase();
@@ -465,13 +471,15 @@ function normalizePluginUserVariables(raw: unknown): PluginUserVariable[] {
         .filter(Boolean);
 
       const defaultValue = v.defaultValue ?? v.default ?? v.value;
+      // [修复] 当 key 被用作变量键时，name 实为显示名，应作为 title 回退
+      const titleFromName = (typeof v.name === 'string' && v.name !== name) ? v.name : undefined;
       return {
         name,
         title: typeof v.title === 'string'
           ? v.title
           : typeof v.label === 'string'
             ? v.label
-            : undefined,
+            : titleFromName,
         type,
         defaultValue: defaultValue === undefined || defaultValue === null ? undefined : String(defaultValue),
         options,
@@ -605,10 +613,20 @@ export async function loadPluginFromScript(
         setUserVarsProvider((pluginId: string) => getPluginUserVariableValues(pluginId));
 
         const userVars = getPluginUserVariableValues(hash);
+        const userVarKeys = Object.keys(userVars);
+        log(`[loadPluginFromScript] hash=${hash.substring(0, 16)}... userVars keys=[${userVarKeys.join(',')}] count=${userVarKeys.length}`);
         const metadata = await loadMusicFreeInSandbox(hash, script, userVars);
 
         if (!metadata?.platform) {
           throw new Error('沙箱: 插件缺少 platform 字段');
+        }
+
+        // [诊断] 记录插件声明的 userVariables 定义
+        const declaredVars = normalizePluginUserVariables(metadata.userVariables);
+        if (declaredVars.length > 0) {
+          log(`[loadPluginFromScript] 插件 "${metadata.platform}" 声明 userVariables: ${declaredVars.map(v => `name=${v.name} type=${v.type || 'text'}`).join(', ')}`);
+        } else {
+          log(`[loadPluginFromScript] 插件 "${metadata.platform}" 未声明 userVariables`);
         }
 
         // 创建代理实例（所有方法调用通过 RPC 转发到 Worker）
@@ -1190,7 +1208,7 @@ export async function pluginGetMusicInfo(
 
   const rawUrl = typeof result.url === 'string' ? result.url : '';
   const url = sanitizeMediaUrl(rawUrl);
-  const headers = result.headers || {};
+  const headers = normalizeMediaRequestHeaders(url, result.headers || {}) || {};
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
   // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）
   const lyric = result.lyric || result.rawLrc || result.lrc || '';
@@ -1657,17 +1675,33 @@ const userVarKey = (pluginId: string) => `xianyu_plugin_user_vars_${pluginId}`;
 /** 读取指定插件的用户变量值 */
 export function getPluginUserVariableValues(pluginId: string): Record<string, string> {
   try {
-    const raw = localStorage.getItem(userVarKey(pluginId));
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+    const storageKey = userVarKey(pluginId);
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const keys = Object.keys(parsed);
+      log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... storageKey=${storageKey.substring(0, 40)}... keys=[${keys.join(',')}] count=${keys.length}`);
+      return parsed;
+    }
+    log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... localStorage无值 (key=${storageKey.substring(0, 40)}...)`);
+  } catch (e) {
+    log(`[getPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... 读取异常: ${e}`);
+  }
   return {};
 }
 
 /** 保存指定插件的用户变量值 */
 export function setPluginUserVariableValues(pluginId: string, values: Record<string, string>) {
   try {
+    const keys = Object.keys(values);
+    log(`[setPluginUserVariableValues] pluginId=${pluginId.substring(0, 12)}... 保存 keys=[${keys.join(',')}] count=${keys.length}`);
+    for (const k of keys) {
+      log(`[setPluginUserVariableValues]  ${k}=${values[k] ? '(已设置,' + String(values[k]).length + '字符)' : '(空)'}`);
+    }
     localStorage.setItem(userVarKey(pluginId), JSON.stringify(values));
-  } catch { /* ignore */ }
+  } catch (e) {
+    log(`[setPluginUserVariableValues] 保存异常: ${e}`);
+  }
 }
 
 /** 删除指定插件的用户变量值（卸载时调用） */
