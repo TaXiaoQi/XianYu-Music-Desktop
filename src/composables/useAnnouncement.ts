@@ -3,6 +3,7 @@ import {
   fetchAnnouncement,
   isAnnouncementDismissed,
   dismissAnnouncement,
+  confirmAnnouncement,
   type Announcement,
 } from '../utils/announcement';
 import { useToast } from './toast';
@@ -58,16 +59,29 @@ export function useAnnouncement() {
     }
   };
 
-  const closeAnnouncement = () => {
-    if (currentAnnouncement.value) {
-      dismissAnnouncement(currentAnnouncement.value);
+  const closeAnnouncement = async () => {
+    const announcement = currentAnnouncement.value;
+    if (announcement) {
+      if (announcement.id.startsWith('debug-')) {
+        dismissAnnouncement(announcement);
+        announcementVisible.value = false;
+        return;
+      }
+      try {
+        await confirmAnnouncement(announcement);
+        dismissAnnouncement(announcement);
+      } catch (error) {
+        console.error('[Announcement] 确认公告失败:', error);
+        showToast('公告确认失败，请检查网络后重试', 'error');
+        return;
+      }
     }
     announcementVisible.value = false;
   };
 
-  const handleAnnouncementAction = (url: string) => {
+  const handleAnnouncementAction = async (url: string) => {
     window.open(url, '_blank');
-    closeAnnouncement();
+    await closeAnnouncement();
   };
 
   /** 调试用：使用模拟数据直接弹出公告弹窗，不做真实网络请求 */

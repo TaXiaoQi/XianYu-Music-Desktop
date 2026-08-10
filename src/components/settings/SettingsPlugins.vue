@@ -905,7 +905,8 @@ async function saveUserVariables() {
     setPluginUserVariableValues(detailPlugin.value.id, { ...detailUserVarValues.value });
     // 清除缓存的插件实例，下次使用时会重新加载并读取新的用户变量值
     reloadPluginInstance(detailPlugin.value.id);
-    showToast('用户变量已保存，插件将在下次使用时重新加载', 'success');
+    showToast('已保存用户变量，开始生效', 'success');
+    closePluginDetail();
   } catch {
     showToast('保存失败，请重试', 'error');
   } finally {
@@ -1581,7 +1582,6 @@ async function saveUserVariables() {
           v-if="detailPlugin"
           class="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           :class="overlayZClass"
-          @click.self="closePluginDetail"
         >
           <div class="plugin-detail-card">
             <!-- 头部 -->
@@ -1700,6 +1700,14 @@ async function saveUserVariables() {
                 </div>
               </div>
               <div class="plugin-detail-user-vars-footer">
+                <button
+                  type="button"
+                  class="plugin-detail-var-cancel"
+                  :disabled="savingUserVars"
+                  @click="closePluginDetail"
+                >
+                  取消
+                </button>
                 <button
                   type="button"
                   class="plugin-detail-var-save"
@@ -2296,9 +2304,11 @@ async function saveUserVariables() {
 .plugin-detail-user-vars-footer {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 14px;
 }
 
+.plugin-detail-var-cancel,
 .plugin-detail-var-save {
   display: inline-flex;
   align-items: center;
@@ -2315,10 +2325,37 @@ async function saveUserVariables() {
   transition: background-color 160ms ease, opacity 160ms ease;
 }
 
+.plugin-detail-var-cancel {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.04);
+  color: #4b5563;
+}
+
+.dark .plugin-detail-var-cancel {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.plugin-detail-var-cancel:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .plugin-detail-var-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.plugin-detail-var-save {
+  border: none;
+  background: #EC4141;
+  color: #fff;
+}
+
 .plugin-detail-var-save:hover:not(:disabled) {
   background: #d63a3a;
 }
 
+.plugin-detail-var-cancel:disabled,
 .plugin-detail-var-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
