@@ -160,6 +160,28 @@ const newToLegacyQualityMap: Record<string, string> = {
   'master': 'super',
 };
 
+/**
+ * Baka/Toskysun 插件的稳定识别锚点：声明 12 档新音质。
+ *
+ * 不能只判断 supportedQualities 是否存在，否则某些 MusicFree 插件也暴露同名字段时会被误识别。
+ * 这里要求命中绝大多数 Baka 新音质键，且必须包含高阶独有档位，避免 mf/baka 互换。
+ */
+const isBakaSupportedQualities = (raw: unknown): raw is string[] => {
+  if (!Array.isArray(raw)) return false;
+
+  const normalized = new Set(
+    raw
+      .map(q => String(q).trim())
+      .filter(Boolean)
+      .map(q => (q === '96k' ? 'mgg' : q)),
+  );
+  const knownCount = ALL_QUALITY_KEYS.filter(q => normalized.has(q)).length;
+  const hasBakaOnlyHighQualities = ['flac24bit', 'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master']
+    .some(q => normalized.has(q));
+
+  return knownCount >= 10 && hasBakaOnlyHighQualities;
+};
+
 // ==================== 歌词格式检测 ====================
 
 /** Baka 插件 platform → LX 音源标识映射 */
@@ -326,7 +348,7 @@ class BakaPluginManagerClass {
     // 优先从沙箱元数据检测
     if (isSandboxReady(source.id)) {
       const meta = getSandboxInstance(source.id);
-      if (meta?.supportedQualities && Array.isArray(meta.supportedQualities) && meta.supportedQualities.length > 0) {
+      if (isBakaSupportedQualities(meta?.supportedQualities)) {
         return true;
       }
     }
@@ -335,7 +357,7 @@ class BakaPluginManagerClass {
     const instances = _globalThis.__pluginInstances as Map<string, any> | undefined;
     if (instances) {
       const inst = instances.get(source.id);
-      if (inst?.instance?.supportedQualities && Array.isArray(inst.instance.supportedQualities) && inst.instance.supportedQualities.length > 0) {
+      if (isBakaSupportedQualities(inst?.instance?.supportedQualities)) {
         return true;
       }
     }
@@ -364,7 +386,7 @@ class BakaPluginManagerClass {
     if (!inst) return null;
 
     const raw = inst.supportedQualities;
-    if (Array.isArray(raw) && raw.length > 0) {
+    if (isBakaSupportedQualities(raw)) {
       return raw
         .map((q: string) => (q === '96k' ? 'mgg' : q))
         .filter((q: string) => q in QUALITY_META) as QualityKey[];

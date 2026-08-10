@@ -35,6 +35,7 @@ const emit = defineEmits<{
   (event: 'batchDelete'): void;
   (event: 'folderBatchDelete'): void;
   (event: 'batchMove'): void;
+  (event: 'batchDownload'): void;
   (event: 'rootCreatePlaylist', path: string, name: string): void;
   (event: 'addFolder'): void;
   (event: 'refreshFolder'): void;
@@ -89,6 +90,7 @@ const isManagementModeModel = computed({
     @batchPlay="$emit('batchPlay')"
     @batchDelete="$emit('batchDelete')"
     @batchAddToFavorites="$emit('batchAddToFavorites')"
+    @batchDownload="$emit('batchDownload')"
     @rename="$emit('renamePlaylist')"
     @selectAll="$emit('selectAll')"
   />
@@ -103,6 +105,7 @@ const isManagementModeModel = computed({
     @addToPlaylist="$emit('showAddToPlaylist')"
     @batchDelete="$emit('batchDelete')"
     @batchMove="$emit('batchMove')"
+    @batchDownload="$emit('batchDownload')"
     @refreshAll="$emit('refreshAll')"
   />
 </template>

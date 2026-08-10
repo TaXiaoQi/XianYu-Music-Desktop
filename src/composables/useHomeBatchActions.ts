@@ -4,6 +4,9 @@ import { fileApi } from '../services/tauri/fileApi';
 import { usePlaybackStore } from '../features/playback/store';
 import type { Playlist, Song } from '../types';
 import { removeSongPathsFromPlaybackState } from '../features/playback/playbackCleanup';
+import { useSettings } from '../features/settings/useSettings';
+import { downloadToLocal } from './useDownloadToLocal';
+import { isDownloadableOnlineSong } from '../services/downloadService';
 
 interface ConfirmOptions {
   title: string;
@@ -25,6 +28,7 @@ interface UseHomeBatchActionsOptions {
   removeFromHistory: (songPaths: string[]) => Promise<void>;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   getRoutePath: () => string;
+  resolveSongByPath?: (path: string) => Song | null;
 }
 
 export function useHomeBatchActions({
@@ -40,6 +44,7 @@ export function useHomeBatchActions({
   removeFromHistory,
   showToast,
   getRoutePath,
+  resolveSongByPath,
 }: UseHomeBatchActionsOptions) {
   const showMoveToFolderModal = ref(false);
   const showConfirm = ref(false);
@@ -49,6 +54,7 @@ export function useHomeBatchActions({
   const confirmAction = ref<() => void | Promise<void>>(() => {});
   const playbackStore = usePlaybackStore();
   const { playQueue, tempQueue, currentSong } = storeToRefs(playbackStore);
+  const { settings } = useSettings();
 
   const resetSelection = () => {
     selectedPaths.value.clear();
@@ -158,6 +164,72 @@ export function useHomeBatchActions({
     }
   };
 
+  const resolveSelectedSong = (path: string): Song | null => {
+    return resolveSongByPath?.(path)
+      ?? sourceSongs.value.find(song => song.path === path)
+      ?? canonicalSongs.value.find(song => song.path === path)
+      ?? null;
+  };
+
+  const runWithConcurrency = async (
+    tasks: Array<() => Promise<boolean>>,
+    limit: number,
+  ): Promise<number> => {
+    let nextIndex = 0;
+    let successCount = 0;
+    const workerCount = Math.min(limit, tasks.length);
+
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (nextIndex < tasks.length) {
+        const task = tasks[nextIndex++];
+        if (await task()) {
+          successCount++;
+        }
+      }
+    }));
+
+    return successCount;
+  };
+
+  const handleBatchDownload = async () => {
+    const paths = Array.from(selectedPaths.value);
+    if (paths.length === 0) return;
+
+    const selectedSongs = paths
+      .map(resolveSelectedSong)
+      .filter((song): song is Song => Boolean(song));
+    const missingCount = paths.length - selectedSongs.length;
+    const downloadableSongs = selectedSongs.filter(isDownloadableOnlineSong);
+    const skippedLocalCount = selectedSongs.length - downloadableSongs.length;
+
+    if (missingCount > 0) {
+      showToast(`${missingCount} 首歌曲信息缺失，已跳过`, 'error');
+    }
+    if (skippedLocalCount > 0) {
+      showToast(`已跳过 ${skippedLocalCount} 首本地歌曲`, 'info');
+    }
+    if (downloadableSongs.length === 0) {
+      showToast('没有可下载的在线歌曲', 'info');
+      return;
+    }
+
+    const concurrency = Math.min(5, Math.max(1, Math.round(settings.value.download.batchDownloadLimit ?? 2)));
+    showToast(`开始批量下载 ${downloadableSongs.length} 首歌曲（同时 ${concurrency} 首）`, 'info');
+
+    const tasks = downloadableSongs.map(song => async () => downloadToLocal(song));
+    const successCount = await runWithConcurrency(tasks, concurrency);
+    const failedCount = downloadableSongs.length - successCount;
+
+    showToast(
+      failedCount > 0
+        ? `批量下载完成：成功 ${successCount} 首，失败 ${failedCount} 首`
+        : `批量下载完成：成功 ${successCount} 首`,
+      failedCount > 0 ? 'info' : 'success',
+    );
+
+    resetSelection();
+  };
+
   const confirmBatchMove = async (targetFolder: string, folderName: string) => {
     try {
       const paths = Array.from(selectedPaths.value);
@@ -180,6 +252,7 @@ export function useHomeBatchActions({
     handleFolderBatchDelete,
     executeConfirmAction,
     handleBatchMove,
+    handleBatchDownload,
     confirmBatchMove,
     openConfirm,
   };

@@ -658,8 +658,15 @@ export type DownloadFileNameStyle = 'artist-title' | 'title-artist' | 'title-art
 /** 歌词下载样式：word-by-word 优先逐字歌词（回退逐行），line-by-line 仅逐行歌词 */
 export type DownloadLyricsStyle = 'word-by-word' | 'line-by-line';
 
+/** 底部下载按钮行为：default 使用下载设置，ask 每次打开详细弹窗 */
+export type DownloadBehavior = 'default' | 'ask';
+
 export interface DownloadSettings {
   downloadPath: string;
+  /** 底部下载按钮点击行为 */
+  behavior: DownloadBehavior;
+  /** 批量下载同时下载数量上限，范围 1-5，默认 2 */
+  batchDownloadLimit: number;
   format: DownloadFormat;
   quality: DownloadQuality;
   /** 下载独立歌词文件（.lrc/.txt），默认 true */

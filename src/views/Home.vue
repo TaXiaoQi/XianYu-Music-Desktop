@@ -30,6 +30,7 @@
       @batchDelete="requestBatchDelete"
       @folderBatchDelete="handleFolderBatchDelete"
       @batchMove="handleBatchMove"
+      @batchDownload="handleBatchDownload"
       @selectAll="handleSelectAll"
       @batchAddToFavorites="handleBatchAddToFavorites"
       @rootCreatePlaylist="handleRootCreatePlaylistRequest"
@@ -167,6 +168,7 @@ const {
   requestBatchDelete,
   handleFolderBatchDelete,
   handleBatchMove,
+  handleBatchDownload,
   handleSelectAll,
   handleBatchAddToFavorites,
   handleRootCreatePlaylistRequest,

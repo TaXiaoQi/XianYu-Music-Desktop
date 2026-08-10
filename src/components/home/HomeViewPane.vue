@@ -53,6 +53,7 @@ const emit = defineEmits<{
   (event: 'batchDelete'): void;
   (event: 'folderBatchDelete'): void;
   (event: 'batchMove'): void;
+  (event: 'batchDownload'): void;
   (event: 'rootCreatePlaylist', path: string, name: string): void;
   (event: 'addFolder'): void;
   (event: 'refreshFolder'): void;
@@ -138,6 +139,7 @@ const viewInstanceKey = computed(() =>
         @batchDelete="$emit('batchDelete')"
         @folderBatchDelete="$emit('folderBatchDelete')"
         @batchMove="$emit('batchMove')"
+        @batchDownload="$emit('batchDownload')"
         @addFolder="$emit('addFolder')"
         @refreshFolder="$emit('refreshFolder')"
         @removeFolder="(path, name) => $emit('removeFolder', path, name)"

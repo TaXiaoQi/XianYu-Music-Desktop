@@ -132,7 +132,7 @@ async function refreshBakaBadges() {
     const bakaSet = new Set<string>();
     await Promise.all(
       allPlugins
-        .filter((p) => p.enabled && p.format === 'musicfree')
+        .filter((p) => p.format === 'musicfree')
         .map(async (p) => {
           try {
             if (await isBakaPlugin(p)) bakaSet.add(p.id);

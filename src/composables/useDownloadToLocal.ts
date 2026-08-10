@@ -5,7 +5,7 @@ import { downloadSong, downloadSongExtras, isDownloadableOnlineSong } from '../s
 import { recordDownload, fileNameFromPath } from '../services/downloadHistory';
 import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeActions';
 import { QUALITY_META } from '../types';
-import type { Song, QualityKey, DownloadQuality } from '../types';
+import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';
 
 /** 下载弹窗传入的覆盖选项，未指定字段回退到设置中的默认值 */
 export interface DownloadLocalOptions {
@@ -19,6 +19,8 @@ export interface DownloadLocalOptions {
   downloadLyrics?: boolean;
   /** 是否下载独立封面文件（默认跟随设置） */
   downloadCover?: boolean;
+  /** 文件命名样式（覆盖设置中的 fileNameStyle） */
+  fileNameStyle?: DownloadFileNameStyle;
   /** 音质探测阶段已解析的直链，命中档位跳过重复解析 */
   preResolvedUrls?: Partial<Record<QualityKey, string>>;
 }
@@ -55,6 +57,7 @@ export async function downloadToLocal(
   const downloadAudio = options?.downloadAudio ?? true;
   const downloadLyrics = options?.downloadLyrics ?? settings.value.download.downloadLyrics;
   const downloadCover = options?.downloadCover ?? settings.value.download.embedCover;
+  const fileNameStyle = options?.fileNameStyle ?? settings.value.download.fileNameStyle;
 
   // 至少需要下载一项内容
   if (!downloadAudio && !downloadLyrics && !downloadCover) {
@@ -78,7 +81,7 @@ export async function downloadToLocal(
         quality,
         downloadDir,
         keepSourceFilename: settings.value.download.keepSourceFilename,
-        fileNameStyle: settings.value.download.fileNameStyle,
+        fileNameStyle,
         overwriteExisting: settings.value.download.overwriteExisting,
         downloadLyrics,
         lyricsFormat: settings.value.download.lyricsFormat,
@@ -119,7 +122,7 @@ export async function downloadToLocal(
       // 仅下载歌词和封面（不下载音频）
       const result = await downloadSongExtras(song, {
         downloadDir,
-        fileNameStyle: settings.value.download.fileNameStyle,
+        fileNameStyle,
         downloadLyrics,
         lyricsFormat: settings.value.download.lyricsFormat,
         lyricsStyle: settings.value.download.lyricsStyle,
