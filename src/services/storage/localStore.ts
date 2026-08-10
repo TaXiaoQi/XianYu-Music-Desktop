@@ -35,6 +35,32 @@ export const localStore = {
 
   setJson(key: string, value: unknown) {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(key, JSON.stringify(value));
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e: any) {
+      // QuotaExceededError: localStorage 容量超限。
+      // 尝试清理已知的大体积键后重试一次，仍失败则静默跳过，不影响播放。
+      if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+        const disposableKeys = [
+          'player_recent_song_meta',
+          'player_queue_song_meta',
+          'player_favorite_song_meta',
+          'player_recent_online_history',
+        ];
+        for (const dk of disposableKeys) {
+          if (dk !== key && localStorage.getItem(dk)) {
+            localStorage.removeItem(dk);
+          }
+        }
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+          // 仍然超限，静默跳过
+          console.warn(`[localStore] localStorage 容量超限，跳过写入: ${key}`);
+        }
+      } else {
+        throw e;
+      }
+    }
   },
 };

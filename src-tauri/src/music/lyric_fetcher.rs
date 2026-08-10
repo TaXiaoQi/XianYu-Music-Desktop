@@ -528,6 +528,17 @@ fn decompress_deflate_to_string(bytes: &[u8]) -> Result<String, String> {
     Ok(result)
 }
 
+fn decompress_deflate_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+    let mut decoder = DeflateDecoder::new(bytes);
+    let mut result = Vec::new();
+    decoder
+        .read_to_end(&mut result)
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 fn decompress_zlib_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
     use flate2::read::ZlibDecoder;
     use std::io::Read;
@@ -553,6 +564,24 @@ fn decompress_zlib_to_bytes_skip_header(bytes: &[u8]) -> Result<Vec<u8>, String>
     Err("zlib decompression failed".to_string())
 }
 
+fn decompress_gzip_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let mut decoder = GzDecoder::new(bytes);
+    let mut result = Vec::new();
+    decoder
+        .read_to_end(&mut result)
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+fn bytes_to_lossy_string(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes).unwrap_or_else(|e| {
+        let bytes = e.into_bytes();
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
+}
+
 // ==================== KRC Decryption (Kugou) ====================
 
 const KG_KRC_KEY: [u8; 16] = [
@@ -571,15 +600,22 @@ fn decode_kg_krc(base64_data: &str) -> Result<String, String> {
     for i in 0..data.len() {
         data[i] ^= KG_KRC_KEY[i % 16];
     }
-    // deflate decompress
-    use flate2::read::DeflateDecoder;
-    use std::io::Read;
-    let mut decoder = DeflateDecoder::new(&data[..]);
-    let mut result = String::new();
-    decoder
-        .read_to_string(&mut result)
-        .map_err(|e| e.to_string())?;
-    Ok(result)
+
+    let mut errors: Vec<String> = Vec::new();
+    for (name, attempt) in [
+        ("raw deflate", decompress_deflate_to_bytes(&data)),
+        ("zlib", decompress_zlib_to_bytes(&data)),
+        ("zlib/skip-header", decompress_zlib_to_bytes_skip_header(&data)),
+        ("gzip", decompress_gzip_to_bytes(&data)),
+    ] {
+        match attempt {
+            Ok(bytes) if !bytes.is_empty() => return Ok(bytes_to_lossy_string(bytes)),
+            Ok(_) => errors.push(format!("{name}: empty")),
+            Err(error) => errors.push(format!("{name}: {error}")),
+        }
+    }
+
+    Err(format!("KRC 解压失败: {}", errors.join(" | ")))
 }
 
 // ==================== KW Lyric Encryption/Decryption (Kuwo) ====================
@@ -936,77 +972,137 @@ async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         return Ok(None);
     }
 
-    let info = &candidates[0];
-    let krctype = info.get("krctype").and_then(|v| v.as_i64()).unwrap_or(0);
-    let contenttype = info
-        .get("contenttype")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let fmt = if krctype == 1 && contenttype != 1 {
-        "krc"
-    } else {
-        "lrc"
-    };
+    async fn download_kg_lyric_content(
+        id_value: &str,
+        accesskey: &str,
+        fmt: &str,
+    ) -> Result<Option<(String, String)>, String> {
+        let download_url = format!(
+            "http://lyrics.kugou.com/download?ver=1&client=pc&id={}&accesskey={}&fmt={}&charset=utf8",
+            id_value,
+            accesskey,
+            fmt
+        );
+        let resp = http_fetch_text(
+            &download_url,
+            "GET",
+            &[
+                ("KG-RC", "1"),
+                ("KG-THash", "expand_search_manager.cpp:852736169:451"),
+                ("User-Agent", "KuGou2012-9020-ExpandSearchManager"),
+            ],
+            None,
+        )
+        .await?;
 
-    let id = info
-        .get("id")
-        .and_then(|v| v.as_str())
-        .or_else(|| info.get("id").and_then(|v| v.as_i64().map(|_| "")))
-        .unwrap_or("");
-    let id_num = info.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-    let accesskey = info.get("accesskey").and_then(|v| v.as_str()).unwrap_or("");
+        if resp.status != 200 {
+            return Ok(None);
+        }
 
-    let download_url =
-        format!(
-        "http://lyrics.kugou.com/download?ver=1&client=pc&id={}&accesskey={}&fmt={}&charset=utf8",
-        if id.is_empty() { id_num.to_string() } else { id.to_string() },
-        accesskey,
-        fmt
-    );
+        let download_body: serde_json::Value =
+            serde_json::from_str(&resp.body).map_err(|e| e.to_string())?;
+        let dl_fmt = download_body
+            .get("fmt")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let content = download_body
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
-    let resp2 = http_fetch_text(
-        &download_url,
-        "GET",
-        &[
-            ("KG-RC", "1"),
-            ("KG-THash", "expand_search_manager.cpp:852736169:451"),
-            ("User-Agent", "KuGou2012-9020-ExpandSearchManager"),
-        ],
-        None,
-    )
-    .await?;
-
-    if resp2.status != 200 {
-        return Ok(None);
+        if content.trim().is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((dl_fmt, content)))
     }
 
-    let download_body: serde_json::Value =
-        serde_json::from_str(&resp2.body).map_err(|e| e.to_string())?;
-    let dl_fmt = download_body
-        .get("fmt")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let content = download_body
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    if dl_fmt == "krc" {
-        let decoded = decode_kg_krc(content)?;
-        Ok(Some(kg_parse_lyric(&decoded)))
-    } else if dl_fmt == "lrc" {
+    fn parse_kg_lrc_content(content: &str) -> Result<LyricResult, String> {
         let b64 = pad_base64(content);
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(&b64)
             .map_err(|e| e.to_string())?;
         let lyric = String::from_utf8_lossy(&decoded).into_owned();
-        Ok(Some(LyricResult {
+        Ok(LyricResult {
             lyric: decode_html_entities(&lyric),
             ..Default::default()
-        }))
-    } else {
-        Ok(None)
+        })
     }
+
+    let mut last_error: Option<String> = None;
+    for info in candidates {
+        let krctype = info.get("krctype").and_then(|v| v.as_i64()).unwrap_or(0);
+        let contenttype = info
+            .get("contenttype")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let fmt = if krctype == 1 && contenttype != 1 {
+            "krc"
+        } else {
+            "lrc"
+        };
+
+        let id_value = info
+            .get("id")
+            .and_then(|v| {
+                if let Some(s) = v.as_str() {
+                    Some(s.to_string())
+                } else {
+                    v.as_i64().map(|n| n.to_string())
+                }
+            })
+            .unwrap_or_default();
+        let accesskey = info.get("accesskey").and_then(|v| v.as_str()).unwrap_or("");
+        if id_value.is_empty() || accesskey.is_empty() {
+            continue;
+        }
+
+        let downloaded = match download_kg_lyric_content(&id_value, accesskey, fmt).await {
+            Ok(value) => value,
+            Err(error) => {
+                last_error = Some(error);
+                continue;
+            }
+        };
+        let Some((dl_fmt, content)) = downloaded else {
+            continue;
+        };
+
+        if dl_fmt == "krc" {
+            match decode_kg_krc(&content) {
+                Ok(decoded) => return Ok(Some(kg_parse_lyric(&decoded))),
+                Err(error) => {
+                    eprintln!("[lyric_fetcher][kg] KRC 解码失败，尝试 LRC/下一候选回退: {}", error);
+                    last_error = Some(error);
+                    if let Some((fallback_fmt, fallback_content)) =
+                        download_kg_lyric_content(&id_value, accesskey, "lrc").await?
+                    {
+                        if fallback_fmt == "lrc" {
+                            match parse_kg_lrc_content(&fallback_content) {
+                                Ok(result) => return Ok(Some(result)),
+                                Err(error) => {
+                                    last_error = Some(error);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if dl_fmt == "lrc" {
+            match parse_kg_lrc_content(&content) {
+                Ok(result) => return Ok(Some(result)),
+                Err(error) => {
+                    last_error = Some(error);
+                }
+            }
+        }
+    }
+
+    if let Some(error) = last_error {
+        eprintln!("[lyric_fetcher][kg] 所有候选歌词均失败: {}", error);
+    }
+    Ok(None)
 }
 
 // ==================== KW (Kuwo) Lyric Fetching ====================
@@ -1176,6 +1272,9 @@ fn kw_parse_lxlyric(lyric: &str) -> Option<String> {
                 .collect();
 
             if word_entries.is_empty() {
+                // 保留没有逐字标签的行作为普通 LRC，避免整行丢失导致
+                // 前端只显示第一行逐字、后续行全部消失。
+                lines.push(format!("{}{}", time, words));
                 continue;
             }
 
@@ -1284,10 +1383,9 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         lrc_info.tlyric = word_time_re.replace_all(&lrc_info.tlyric, "").to_string();
     }
 
-    // 直接保留原始酷我逐字歌词（含 <a,b> 标签）作为 lxlyric，由前端
-    // convertLxLyricToEnhancedLrc 的酷我分支（isKuwoFormat）解析。
-    // 不再调用 kw_parse_lxlyric 转换格式：该函数会丢弃没有逐字标签的行，
-    // 导致"开头有逐字、后续行变普通"（无逐字标签的行被过滤掉）。
+    // 与酷狗(kg)处理方式一致：后端直接输出原始歌词（含 [kuwo:] 标签和 <a,b> 加密标签），
+    // 前端 convertLxLyricToEnhancedLrc 检测到 [kuwo:] 标签后会对全文统一使用酷我公式解析。
+    // 不再在 Rust 侧用 kw_parse_lxlyric 转换，避免转换 bug 导致逐字行丢失。
     if word_time_re.is_match(&lrc_info.lyric) {
         lrc_info.lxlyric = lrc_info.lyric.clone();
     }
@@ -1835,9 +1933,8 @@ fn krc_lines_to_lxlyric(lines: &[KrcLine]) -> String {
 }
 
 fn try_extract_yrc(body: &serde_json::Value) -> String {
-    if body.get("code").and_then(|v| v.as_i64()) != Some(200) {
-        return String::new();
-    }
+    // 不再强制检查 code==200：eapi 响应可能不包含 code 字段，
+    // 只要有 yrc/klyric 字段就尝试提取。
 
     // Check yrc field
     if let Some(yrc) = body
@@ -1881,9 +1978,7 @@ fn try_extract_yrc(body: &serde_json::Value) -> String {
 }
 
 fn try_extract_krc(body: &serde_json::Value) -> String {
-    if body.get("code").and_then(|v| v.as_i64()) != Some(200) {
-        return String::new();
-    }
+    // 不再强制检查 code==200：同 try_extract_yrc。
 
     if let Some(klyric) = body.get("klyric") {
         if let Some(lyric) = klyric.as_str() {
@@ -1969,9 +2064,13 @@ async fn wy_eapi_post(
 
 /// Fallback karaoke lyrics extraction: tries two parameter sets to get YRC/KRC
 async fn wyy_get_karaoke(song_id: &str) -> String {
+    let song_id_value = song_id
+        .parse::<i64>()
+        .map(serde_json::Value::from)
+        .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
     // First try: same params as main request (kv=0, yv=0)
     let data1 = serde_json::json!({
-        "id": song_id, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
+        "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
     if let Ok(Some(body)) = wy_eapi_post("/api/song/lyric/v1", data1, &[]).await {
         let yrc = try_extract_yrc(&body);
@@ -2026,17 +2125,100 @@ async fn wyy_get_karaoke(song_id: &str) -> String {
     String::new()
 }
 
-async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
-    let songmid = &song_info.songmid;
+async fn fetch_wy_legacy_lyric(song_id: &str) -> Result<Option<LyricResult>, String> {
+    let url = format!(
+        "https://music.163.com/api/song/lyric?id={}&lv=-1&kv=-1&tv=-1&rv=-1",
+        urlencoding::encode(song_id)
+    );
+    let resp = http_fetch_text(
+        &url,
+        "GET",
+        &[
+            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+            ("Referer", "https://music.163.com/"),
+            ("Cookie", "os=pc; appver=8.9.75; osver=; deviceId=pyncm!"),
+        ],
+        None,
+    )
+    .await?;
+
+    if resp.status != 200 {
+        return Ok(None);
+    }
+    let body: serde_json::Value = match serde_json::from_str(&resp.body) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+
+    let final_lxlyric = {
+        let yrc = try_extract_yrc(&body);
+        if !yrc.is_empty() {
+            yrc
+        } else {
+            try_extract_krc(&body)
+        }
+    };
+    let lrc = body
+        .get("lrc")
+        .and_then(|v| v.get("lyric"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let tlrc = body
+        .get("tlyric")
+        .and_then(|v| v.get("lyric"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let romalrc = body
+        .get("romalrc")
+        .and_then(|v| v.get("lyric"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let (fixed_lrc, fixed_tlrc, fixed_romalrc) = wy_fix_time_label(lrc, tlrc, romalrc);
+
+    if fixed_lrc.is_empty() && final_lxlyric.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(LyricResult {
+        lyric: fixed_lrc,
+        tlyric: fixed_tlrc,
+        rlyric: fixed_romalrc,
+        lxlyric: final_lxlyric,
+    }))
+}
+
+fn collect_wy_song_ids(song_info: &LyricSongInfo) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    if let Some(value) = &song_info.song_id {
+        if let Some(id) = value.as_str() {
+            if !id.trim().is_empty() {
+                ids.push(id.trim().to_string());
+            }
+        } else if let Some(id) = value.as_i64() {
+            ids.push(id.to_string());
+        } else if let Some(id) = value.as_u64() {
+            ids.push(id.to_string());
+        }
+    }
+    if !song_info.songmid.trim().is_empty() && !ids.iter().any(|id| id == &song_info.songmid) {
+        ids.push(song_info.songmid.clone());
+    }
+    ids
+}
+
+async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, String> {
+    let song_id_value = song_id
+        .parse::<i64>()
+        .map(serde_json::Value::from)
+        .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
 
     // Use /api/song/lyric/v1 with POST (matching frontend's proven approach)
     // kv=0 + yv=0 lets the API return yrc field for YRC word-by-word lyrics
     let data = serde_json::json!({
-        "id": songmid, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
+        "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
     let body = match wy_eapi_post("/api/song/lyric/v1", data, &[]).await? {
         Some(b) => b,
-        None => return Ok(None),
+        None => return fetch_wy_legacy_lyric(song_id).await,
     };
 
     // Try YRC first, then KRC
@@ -2054,7 +2236,7 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 
     // If no word-by-word lyrics, try fallback karaoke extraction
     if final_lxlyric.is_empty() {
-        final_lxlyric = wyy_get_karaoke(songmid).await;
+        final_lxlyric = wyy_get_karaoke(song_id).await;
     }
 
     // Get plain lyrics
@@ -2077,7 +2259,17 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     let (fixed_lrc, fixed_tlrc, fixed_romalrc) = wy_fix_time_label(lrc, tlrc, romalrc);
 
     if fixed_lrc.is_empty() && final_lxlyric.is_empty() {
-        return Ok(None);
+        return fetch_wy_legacy_lyric(song_id).await;
+    }
+
+    // eapi 返回了普通歌词但没有逐字歌词时，尝试 legacy API 获取 YRC/KRC。
+    // 某些歌曲的逐字歌词只在非加密 API 中可用。
+    if final_lxlyric.is_empty() && !fixed_lrc.is_empty() {
+        if let Ok(Some(legacy)) = fetch_wy_legacy_lyric(song_id).await {
+            if !legacy.lxlyric.is_empty() {
+                final_lxlyric = legacy.lxlyric;
+            }
+        }
     }
 
     Ok(Some(LyricResult {
@@ -2086,6 +2278,32 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         rlyric: fixed_romalrc,
         lxlyric: final_lxlyric,
     }))
+}
+
+async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+    let ids = collect_wy_song_ids(song_info);
+    if ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut last_error: Option<String> = None;
+    for song_id in ids {
+        match fetch_wy_lyric_by_id(&song_id).await {
+            Ok(Some(result)) => return Ok(Some(result)),
+            Ok(None) => {
+                eprintln!("[lyric_fetcher][wy] 歌词为空，尝试下一个 ID: {}", song_id);
+            }
+            Err(error) => {
+                eprintln!("[lyric_fetcher][wy] 获取歌词失败，尝试下一个 ID: {} - {}", song_id, error);
+                last_error = Some(error);
+            }
+        }
+    }
+
+    if let Some(error) = last_error {
+        eprintln!("[lyric_fetcher][wy] 所有 ID 歌词获取均失败: {}", error);
+    }
+    Ok(None)
 }
 
 // ==================== Tauri Command ====================

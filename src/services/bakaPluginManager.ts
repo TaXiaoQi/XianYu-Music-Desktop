@@ -59,6 +59,7 @@ import {
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
+import { pluginHttpRequest } from './tauri/pluginApi';
 
 // ==================== 日志 ====================
 
@@ -332,6 +333,213 @@ function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {
     .toLowerCase();
 
   return text.includes('酷狗') || text.includes('kugou') || /\bkg\b/.test(text);
+}
+
+/**
+ * 酷狗插件专用 URL 清洗器。
+ *
+ * 酷狗（含赞助版）插件返回的 URL 常被反引号包裹、尾部带逗号，
+ * 且通用 sanitizeMediaUrl 在某些环境下可能无法正确剥离。
+ * 此方法使用白名单策略：从 http(s):// 开始，从尾部逐字符检查，
+ * 只保留 URL 合法字符，遇到任何非法字符即截断。
+ */
+function cleanKugouPluginUrl(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw) return '';
+
+  // Step 1: 用 indexOf 定位 http(s):// 起点
+  const httpsIdx = raw.indexOf('https://');
+  const httpIdx = raw.indexOf('http://');
+  let start: number;
+  if (httpsIdx >= 0 && (httpIdx < 0 || httpsIdx <= httpIdx)) {
+    start = httpsIdx;
+  } else if (httpIdx >= 0) {
+    start = httpIdx;
+  } else {
+    console.warn('[cleanKugouPluginUrl] 未找到 http(s)://:', {
+      raw: raw.substring(0, 120),
+      first10Codes: raw.substring(0, 10).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
+    });
+    return '';
+  }
+
+  // Step 2: 从起点截取到末尾
+  let url = raw.substring(start);
+
+  // Step 3: 白名单剥离尾部 —— 只保留 URL 合法字符
+  // 合法：字母、数字、/:?&=_-.~#+%@
+  while (url.length > 0) {
+    const c = url.charCodeAt(url.length - 1);
+    const isAllowed =
+      (c >= 0x30 && c <= 0x39)  // 0-9
+      || (c >= 0x41 && c <= 0x5a)  // A-Z
+      || (c >= 0x61 && c <= 0x7a)  // a-z
+      || c === 0x2f  // /
+      || c === 0x3a  // :
+      || c === 0x3f  // ?
+      || c === 0x26  // &
+      || c === 0x3d  // =
+      || c === 0x5f  // _
+      || c === 0x2d  // -
+      || c === 0x2e  // .
+      || c === 0x7e  // ~
+      || c === 0x23  // #
+      || c === 0x2b  // +
+      || c === 0x25  // %
+      || c === 0x40; // @
+    if (isAllowed) break;
+    url = url.substring(0, url.length - 1);
+  }
+
+  if (start > 0 || (typeof raw === 'string' && url.length < raw.length - start)) {
+    console.log('[cleanKugouPluginUrl] 酷狗 URL 专用清洗:', {
+      before: raw.substring(0, 150),
+      after: url.substring(0, 150),
+      beforeLen: raw.length,
+      afterLen: url.length,
+      strippedHead: raw.substring(0, start).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
+      strippedTail: raw.substring(start + url.length).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
+    });
+  }
+
+  return url;
+}
+
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string {
+  if (!headers) return '';
+  const target = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) return value || '';
+  }
+  return '';
+}
+
+function isAudioLikeContentType(contentType: string): boolean {
+  const lower = contentType.toLowerCase();
+  return lower.startsWith('audio/')
+    || lower.includes('application/octet-stream')
+    || lower.includes('application/vnd.apple.mpegurl')
+    || lower.includes('application/x-mpegurl');
+}
+
+function isTextLikeContentType(contentType: string): boolean {
+  const lower = contentType.toLowerCase();
+  return lower.includes('application/json')
+    || lower.startsWith('text/')
+    || lower.includes('application/xml')
+    || lower.includes('application/javascript');
+}
+
+function isLikelyKugouProxyApiUrl(urlLike: string): boolean {
+  try {
+    const url = new URL(urlLike);
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.toLowerCase();
+    return (
+      host.includes('haitangw.cc')
+      || path.includes('/kgqq/')
+      || path.endsWith('/kg.php')
+    ) && (
+      path.endsWith('.php')
+      || url.searchParams.has('type')
+      || url.searchParams.has('level')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function jsonValueHasPlayableUrl(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return /^https?:\/\//i.test(trimmed);
+  }
+  if (Array.isArray(value)) {
+    return value.some(jsonValueHasPlayableUrl);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).some(jsonValueHasPlayableUrl);
+  }
+  return false;
+}
+
+function responseBodyHasPlayableUrl(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  try {
+    return jsonValueHasPlayableUrl(JSON.parse(trimmed));
+  } catch {
+    return /https?:\/\/[^\s"'<>}]+/i.test(trimmed);
+  }
+}
+
+function responseBodyLooksLikeDefiniteError(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (jsonValueHasPlayableUrl(parsed)) return false;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const code = record.code ?? record.status ?? record.errCode ?? record.errorCode;
+      const msg = String(record.msg ?? record.message ?? record.error ?? '').toLowerCase();
+      return code !== undefined || /error|fail|失败|无版权|付费|会员|不存在|为空/.test(msg);
+    }
+  } catch {
+    // 非 JSON 交给调用方继续按 URL/文本判断。
+  }
+  return false;
+}
+
+async function probeKugouProxyCandidate(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ playable: boolean; reason?: string }> {
+  try {
+    const probeHeaders = { ...headers, Accept: '*/*' };
+    const headResp = await pluginHttpRequest('HEAD', url, probeHeaders, undefined, 8, 3);
+    if (headResp.status >= 400) {
+      // 部分代理接口不支持 HEAD。此时不直接判失败，交给 GET 正文判断；
+      // 如果 GET 也失败，才跳过该音质。
+      const getResp = await pluginHttpRequest('GET', url, probeHeaders, undefined, 8, 3);
+      if (getResp.status >= 400) {
+        return { playable: false, reason: `GET HTTP ${getResp.status}` };
+      }
+      if (responseBodyHasPlayableUrl(getResp.body)) {
+        return { playable: true };
+      }
+      if (responseBodyLooksLikeDefiniteError(getResp.body)) {
+        return { playable: false, reason: `代理接口返回错误: ${getResp.body.trim().slice(0, 120)}` };
+      }
+      return { playable: true };
+    }
+
+    const headContentType = getHeaderValue(headResp.headers, 'content-type');
+    if (isAudioLikeContentType(headContentType)) {
+      return { playable: true };
+    }
+
+    if (!isTextLikeContentType(headContentType)) {
+      return { playable: true };
+    }
+
+    const getResp = await pluginHttpRequest('GET', url, probeHeaders, undefined, 8, 3);
+    if (getResp.status >= 400) {
+      return { playable: false, reason: `GET HTTP ${getResp.status}` };
+    }
+
+    if (responseBodyHasPlayableUrl(getResp.body)) {
+      return { playable: true };
+    }
+    if (responseBodyLooksLikeDefiniteError(getResp.body)) {
+      return { playable: false, reason: `代理接口返回错误: ${getResp.body.trim().slice(0, 120)}` };
+    }
+
+    return { playable: true };
+  } catch (error: any) {
+    // 探测失败不应误杀候选 URL，保留 Rust 播放链路的最终提取/重试能力。
+    return { playable: true, reason: error?.message || String(error || '') };
+  }
 }
 
 function readQualityHash(mediaItem: any, qualityKey: QualityKey): string {
@@ -686,10 +894,22 @@ class BakaPluginManagerClass {
       : resetMediaItem(item, source.name);
     const cacheKey = buildMediaSourceCacheKey(source, item, musicItem, quality, fallbackBehavior, availableQualities);
     const now = Date.now();
+    const isKugou = isKugouLikeSource(source, musicItem);
     const cached = this._mediaSourceCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
-      log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
-      return clonePluginMusicInfo(cached.value);
+      const cachedValue = clonePluginMusicInfo(cached.value);
+      if (isKugou && cachedValue.url && isLikelyKugouProxyApiUrl(cachedValue.url)) {
+        const probe = await probeKugouProxyCandidate(cachedValue.url, cachedValue.headers || {});
+        if (probe.playable) {
+          log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
+          return cachedValue;
+        }
+        log(`[getMediaSource] 短时缓存中的酷狗代理URL已失效，删除缓存并重新解析: ${probe.reason || cachedValue.url}`);
+        this._mediaSourceCache.delete(cacheKey);
+      } else {
+        log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
+        return cachedValue;
+      }
     }
     if (cached) {
       this._mediaSourceCache.delete(cacheKey);
@@ -786,6 +1006,28 @@ class BakaPluginManagerClass {
     let songLevelErrorDetected = false;
     let nextPairIdxOverride: number | null = null;
     const attemptedPluginQualities = new Set<string>();
+    const isKugou = isKugouLikeSource(source, musicItem);
+    const shouldAcceptMediaResult = async (candidate: any, pairIdx: number, qualityLabel: string): Promise<boolean> => {
+      const candidateRawUrl = typeof candidate?.url === 'string' ? candidate.url : '';
+      if (!candidateRawUrl) return false;
+
+      const candidateUrl = isKugou ? cleanKugouPluginUrl(candidateRawUrl) : sanitizeMediaUrl(candidateRawUrl);
+      if (isKugou && candidateUrl && isLikelyKugouProxyApiUrl(candidateUrl)) {
+        const candidateHeaders = normalizeMediaRequestHeaders(
+          candidateUrl,
+          firstHeaderMap(candidate.headers, candidate.header, candidate.requestHeaders),
+        ) || {};
+        const probe = await probeKugouProxyCandidate(candidateUrl, candidateHeaders);
+        if (!probe.playable) {
+          lastError = new Error(probe.reason || '代理接口未返回可播放地址');
+          log(`[getMediaSource] quality=${qualityLabel} 返回的代理URL不可播放，继续下一档: ${probe.reason || candidateUrl}`);
+          return false;
+        }
+      }
+
+      successPairIdx = pairIdx;
+      return true;
+    };
 
     for (let pairIdx = 0; pairIdx < tryPairs.length; pairIdx++) {
       const q = tryPairs[pairIdx].pluginQ;
@@ -800,8 +1042,10 @@ class BakaPluginManagerClass {
       try {
         result = await inst.getMediaSource(attemptMusicItem, q);
         if (result?.url) {
-          successPairIdx = pairIdx;
-          break;
+          if (await shouldAcceptMediaResult(result, pairIdx, q)) {
+            break;
+          }
+          result = null;
         }
 
         // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）。
@@ -815,8 +1059,10 @@ class BakaPluginManagerClass {
             log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
             result = await inst.getMediaSource(attemptMusicItem, legacyQ);
             if (result?.url) {
-              successPairIdx = pairIdx;
-              break;
+              if (await shouldAcceptMediaResult(result, pairIdx, legacyQ)) {
+                break;
+              }
+              result = null;
             }
           }
         }
@@ -867,7 +1113,40 @@ class BakaPluginManagerClass {
     }
 
     const rawUrl = typeof result.url === 'string' ? result.url : '';
-    const url = sanitizeMediaUrl(rawUrl);
+
+    // 酷狗插件专用 URL 清洗：白名单策略，比通用方法更激进
+    let url: string;
+    if (isKugou) {
+      url = cleanKugouPluginUrl(rawUrl);
+      // 如果专用方法失败，回退到通用方法
+      if (!url || !/^https?:\/\//.test(url)) {
+        console.warn('[BakaPluginManager] 酷狗专用清洗失败，回退到通用 sanitizeMediaUrl');
+        url = sanitizeMediaUrl(rawUrl);
+      }
+    } else {
+      url = sanitizeMediaUrl(rawUrl);
+    }
+
+    // 通用兜底：如果清洗后仍不以 http 开头，用 indexOf 强制提取
+    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+      const idx1 = rawUrl.indexOf('https://');
+      const idx2 = rawUrl.indexOf('http://');
+      const idx = idx1 >= 0 ? idx1 : idx2;
+      if (idx >= 0) {
+        console.warn('[BakaPluginManager] 通用清洗未生效，indexOf 兜底提取:', {
+          sanitized: url.slice(0, 120),
+          firstChars: rawUrl.slice(0, 5).split('').map((c: string) => '0x' + c.charCodeAt(0).toString(16)).join(','),
+          lastChars: rawUrl.slice(-5).split('').map((c: string) => '0x' + c.charCodeAt(0).toString(16)).join(','),
+        });
+        url = rawUrl.substring(idx);
+        while (url.length > 0) {
+          const c = url.charCodeAt(url.length - 1);
+          if (c === 0x2c || c === 0x3b || c === 0x60 || c === 0x27 || c === 0x22 || c <= 0x20) {
+            url = url.substring(0, url.length - 1);
+          } else break;
+        }
+      }
+    }
     const headers = normalizeMediaRequestHeaders(
       url,
       firstHeaderMap(result.headers, result.header, result.requestHeaders),

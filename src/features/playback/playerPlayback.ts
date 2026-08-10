@@ -976,6 +976,28 @@ const authStore = useAuthStore();
             resolvedOnlineAudio.currentPlayingAudioUrl = sanitizedAudioFilePath;
           }
         }
+        // 终极兜底：如果 URL 仍不以 http 开头，用 indexOf 强制提取
+        if (audioFilePath && !audioFilePath.startsWith('http://') && !audioFilePath.startsWith('https://')) {
+          const idx1 = audioFilePath.indexOf('https://');
+          const idx2 = audioFilePath.indexOf('http://');
+          const idx = idx1 >= 0 ? idx1 : idx2;
+          if (idx >= 0) {
+            console.warn('[Audio] sanitizeMediaUrl 失败，indexOf 强制提取 URL:', {
+              before: audioFilePath.slice(0, 120),
+              after: audioFilePath.substring(idx, idx + 120),
+            });
+            audioFilePath = audioFilePath.substring(idx);
+            while (audioFilePath.length > 0) {
+              const c = audioFilePath.charCodeAt(audioFilePath.length - 1);
+              if (c === 0x2c || c === 0x3b || c === 0x60 || c === 0x27 || c === 0x22 || c <= 0x20) {
+                audioFilePath = audioFilePath.substring(0, audioFilePath.length - 1);
+              } else break;
+            }
+            if (resolvedOnlineAudio.currentPlayingAudioUrl) {
+              resolvedOnlineAudio.currentPlayingAudioUrl = audioFilePath;
+            }
+          }
+        }
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
@@ -1173,6 +1195,22 @@ const authStore = useAuthStore();
       // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
       // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
+        // [诊断] 传给 Rust 的 URL 最终检查：打印 URL 及首尾 charCode
+        if (audioFilePath && (audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://'))) {
+          const first5 = audioFilePath.substring(0, 5).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(',');
+          const last5 = audioFilePath.substring(Math.max(0, audioFilePath.length - 5)).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(',');
+          console.log('[Audio] 传给 Rust 的 URL:', {
+            urlPrefix: audioFilePath.substring(0, 120),
+            urlLen: audioFilePath.length,
+            first5Codes: first5,
+            last5Codes: last5,
+            startsWithHttp: audioFilePath.startsWith('http'),
+          });
+        } else {
+          console.error('[Audio] 传给 Rust 的 URL 不是 http 开头!', {
+            urlPrefix: audioFilePath?.substring(0, 120),
+          });
+        }
         try {
           await playbackApi.playAudio({
             path: audioFilePath,

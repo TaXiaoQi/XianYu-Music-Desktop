@@ -16,6 +16,11 @@ interface WordTimeEntry {
   endMs: number;
 }
 
+interface WordTimeCandidate {
+  entries: WordTimeEntry[];
+  score: number;
+}
+
 function parseTimestampToMs(raw: string): number | null {
   const match = /^(\d+):(\d{2})(?:\.(\d{1,4}))?$/.exec(raw.trim());
   if (!match) return null;
@@ -80,6 +85,116 @@ function buildEnhancedBody(body: string, entries: WordTimeEntry[]): string {
   return convertedBody;
 }
 
+function normalizeEntriesForEnhanced(entries: WordTimeEntry[]): WordTimeEntry[] {
+  let previousStart = 0;
+  return entries.map((entry, index) => {
+    const startMs = index === 0
+      ? Math.max(0, entry.startMs)
+      : Math.max(previousStart, entry.startMs);
+    const endMs = Math.max(startMs, entry.endMs);
+    previousStart = startMs;
+
+    return {
+      ...entry,
+      startMs,
+      endMs,
+    };
+  });
+}
+
+function buildWordTimeCandidate(
+  wordTimes: RegExpMatchArray[],
+  lineStartMs: number | null,
+  mode: 'relative' | 'kuwo',
+  kuwoOffset: number,
+  kuwoOffset2: number,
+): WordTimeCandidate | null {
+  if (mode === 'relative' && lineStartMs === null) return null;
+  if (mode === 'kuwo' && (kuwoOffset <= 0 || kuwoOffset2 <= 0)) return null;
+
+  const entries: WordTimeEntry[] = [];
+  let invalidCount = 0;
+  let backwardCount = 0;
+  let previousStart: number | null = null;
+
+  for (const wordTime of wordTimes) {
+    const a = Number(wordTime[1]);
+    const b = Number(wordTime[2]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      invalidCount++;
+      continue;
+    }
+
+    let wordStartMs: number;
+    let wordEndMs: number;
+
+    if (mode === 'kuwo') {
+      wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
+      wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
+    } else {
+      wordStartMs = (lineStartMs as number) + a;
+      wordEndMs = wordStartMs + b;
+    }
+
+    if (!Number.isFinite(wordStartMs) || !Number.isFinite(wordEndMs) || wordEndMs < wordStartMs) {
+      invalidCount++;
+    }
+    if (previousStart !== null && wordStartMs < previousStart) {
+      backwardCount++;
+    }
+    previousStart = wordStartMs;
+
+    entries.push({
+      index: wordTime.index ?? 0,
+      endIndex: (wordTime.index ?? 0) + wordTime[0].length,
+      startMs: wordStartMs,
+      endMs: wordEndMs,
+    });
+  }
+
+  if (entries.length === 0) return null;
+
+  const firstStart = entries[0].startMs;
+  const lineDistance = lineStartMs === null ? 0 : Math.abs(firstStart - lineStartMs);
+  const negativeStartPenalty = entries.some(entry => entry.startMs < 0) ? 100_000 : 0;
+  const score = (invalidCount * 1_000_000)
+    + (backwardCount * 100_000)
+    + negativeStartPenalty
+    + lineDistance;
+
+  return {
+    entries: normalizeEntriesForEnhanced(entries),
+    score,
+  };
+}
+
+function selectWordTimeEntries(
+  wordTimes: RegExpMatchArray[],
+  lineStartMs: number | null,
+  hasKuwoTag: boolean,
+  lineHasNegativeWordTime: boolean,
+  kuwoOffset: number,
+  kuwoOffset2: number,
+): WordTimeEntry[] {
+  const kuwoCandidate = buildWordTimeCandidate(wordTimes, lineStartMs, 'kuwo', kuwoOffset, kuwoOffset2);
+  const relativeCandidate = buildWordTimeCandidate(wordTimes, lineStartMs, 'relative', kuwoOffset, kuwoOffset2);
+
+  if (hasKuwoTag || lineStartMs === null) {
+    return kuwoCandidate?.entries ?? relativeCandidate?.entries ?? [];
+  }
+  if (lineHasNegativeWordTime) {
+    const best = [relativeCandidate, kuwoCandidate]
+      .filter((candidate): candidate is WordTimeCandidate => candidate !== null)
+      .sort((left, right) => left.score - right.score)[0];
+    return best?.entries ?? [];
+  }
+
+  const best = [relativeCandidate, kuwoCandidate]
+    .filter((candidate): candidate is WordTimeCandidate => candidate !== null)
+    .sort((left, right) => left.score - right.score)[0];
+  return best?.entries ?? [];
+}
+
 function convertLxLyricToEnhancedLrc(lxlyric: string): string {
   const lines = lxlyric.split(/\r?\n/);
   const result: string[] = [];
@@ -90,7 +205,6 @@ function convertLxLyricToEnhancedLrc(lxlyric: string): string {
   let kuwoOffset = 1;
   let kuwoOffset2 = 1;
   let hasKuwoTag = false;
-  let hasNegativeWordTime = false;
 
   for (const rawLine of lines) {
     const match = kuwoTagPattern.exec(rawLine.trim());
@@ -101,14 +215,6 @@ function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       kuwoOffset = Math.floor(value / 10) || 1;
       kuwoOffset2 = value % 10 || 1;
       continue;
-    }
-
-    wordTimePattern.lastIndex = 0;
-    for (const wordTime of rawLine.matchAll(wordTimePattern)) {
-      if (Number(wordTime[1]) < 0 || Number(wordTime[2]) < 0) {
-        hasNegativeWordTime = true;
-        break;
-      }
     }
   }
 
@@ -136,44 +242,25 @@ function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       continue;
     }
 
-    // 后端已处理过的 LX/KG/KW 歌词：有行时间戳，按标准 <相对偏移,持续时间> 解析。
-    // 原始酷我 lyricx 是文件级格式：只要全文存在 [kuwo:] 或任意负数标签，
-    // 后续全正数行也要继续按酷我公式解析，否则会出现“只有部分行逐字”的问题。
-    const useKuwoFormula = hasKuwoTag || hasNegativeWordTime;
-    if (!useKuwoFormula && lineStartMs === null) continue;
-
-    let firstWordStartMs: number | null = null;
-    const entries: WordTimeEntry[] = [];
-
-    for (const wordTime of wordTimes) {
-      const a = Number(wordTime[1]);
-      const b = Number(wordTime[2]);
-      let wordStartMs: number;
-      let wordEndMs: number;
-
-      if (useKuwoFormula) {
-        wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
-        wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
-      } else {
-        wordStartMs = (lineStartMs as number) + a;
-        wordEndMs = wordStartMs + b;
-      }
-
-      if (firstWordStartMs === null) firstWordStartMs = wordStartMs;
-      entries.push({
-        index: wordTime.index ?? 0,
-        endIndex: (wordTime.index ?? 0) + wordTime[0].length,
-        startMs: wordStartMs,
-        endMs: wordEndMs,
-      });
-    }
+    const lineHasNegativeWordTime = wordTimes.some(wordTime => (
+      Number(wordTime[1]) < 0 || Number(wordTime[2]) < 0
+    ));
+    const entries = selectWordTimeEntries(
+      wordTimes,
+      lineStartMs,
+      hasKuwoTag,
+      lineHasNegativeWordTime,
+      kuwoOffset,
+      kuwoOffset2,
+    );
+    if (entries.length === 0) continue;
 
     const convertedBody = buildEnhancedBody(body, entries);
     if (!convertedBody) continue;
 
     const finalLineStart = lineStartStr && lineStartMs !== null
       ? msToTimestamp(lineStartMs)
-      : msToTimestamp(firstWordStartMs ?? 0);
+      : msToTimestamp(entries[0]?.startMs ?? 0);
 
     result.push(`[${finalLineStart}]${convertedBody}`);
     convertedCount++;

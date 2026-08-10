@@ -78,6 +78,30 @@ pub async fn play_audio(
 ) -> Result<(), String> {
     let playback_id = state.playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let mut selected_output_mode = output_mode;
+
+    // [URL 清洗] 在 is_http_stream 判断之前清洗 URL，移除插件可能返回的首尾反引号、
+    // 引号、逗号等脏字符。如果不在此时清洗，带反引号的 URL 不会被识别为 HTTP 流，
+    // 导致走错误的播放分支。
+    let path = {
+        let trimmed = path.trim();
+        let http_idx = trimmed.find("http://");
+        let https_idx = trimmed.find("https://");
+        let start = match (http_idx, https_idx) {
+            (Some(h), Some(s)) => h.min(s),
+            (Some(h), None) => h,
+            (None, Some(s)) => s,
+            (None, None) => 0,
+        };
+        let mut result = trimmed[start..].to_string();
+        while result.ends_with(|c: char| matches!(c, '`' | '\'' | '"' | ',' | '，' | ';' | '；' | ' ' | '\t' | '\n' | '\r' | '<' | '>')) {
+            result.pop();
+        }
+        if start > 0 || result.len() < trimmed.len() - start {
+            eprintln!("[Audio][rust] play_audio URL 清洗: {} -> {}", &trimmed[..trimmed.len().min(120)], &result[..result.len().min(120)]);
+        }
+        result
+    };
+
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
     let source = if is_http_stream {
         eprintln!(
@@ -109,9 +133,11 @@ pub async fn play_audio(
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         if stream_state.download_failed.load(Ordering::Relaxed) {
+            let error_reason = stream_state.download_error().unwrap_or_else(|| "未知原因".to_string());
             return Err(format!(
-                "在线音频缓存下载失败，已下载 {} bytes",
-                stream_state.downloaded_bytes()
+                "在线音频缓存下载失败，已下载 {} bytes，原因: {}",
+                stream_state.downloaded_bytes(),
+                error_reason
             ));
         }
 

@@ -1207,7 +1207,22 @@ export async function pluginGetMusicInfo(
   }
 
   const rawUrl = typeof result.url === 'string' ? result.url : '';
-  const url = sanitizeMediaUrl(rawUrl);
+  let url = sanitizeMediaUrl(rawUrl);
+  // 兜底：如果 sanitizeMediaUrl 未清除首尾非 URL 字符，用 indexOf 强制提取
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    const idx1 = rawUrl.indexOf('https://');
+    const idx2 = rawUrl.indexOf('http://');
+    const idx = idx1 >= 0 ? idx1 : idx2;
+    if (idx >= 0) {
+      url = rawUrl.substring(idx);
+      while (url.length > 0) {
+        const c = url.charCodeAt(url.length - 1);
+        if (c === 0x2c || c === 0x3b || c === 0x60 || c === 0x27 || c === 0x22 || c <= 0x20) {
+          url = url.substring(0, url.length - 1);
+        } else break;
+      }
+    }
+  }
   const headers = normalizeMediaRequestHeaders(url, result.headers || {}) || {};
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
   // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）

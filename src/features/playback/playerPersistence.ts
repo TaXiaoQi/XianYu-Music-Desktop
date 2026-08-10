@@ -96,7 +96,12 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       clearTimeout(persistTimer);
     }
     persistTimer = setTimeout(() => {
-      flushPersistedState().catch(e => console.error('[persist] flushPersistedState failed:', e));
+      void flushPersistedState().catch(e => {
+        // QuotaExceededError 已在 localStore.setJson 中处理，此处仅记录非配额错误
+        if (e?.name !== 'QuotaExceededError' && e?.code !== 22) {
+          console.error('[persist] flushPersistedState failed:', e);
+        }
+      });
     }, 200);
   };
 
