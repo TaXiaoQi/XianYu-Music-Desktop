@@ -168,6 +168,11 @@ interface IBakaPluginInstance {
   getMusicDetailPageUrl?: (musicItem: any) => Promise<any>;
 }
 
+interface MediaSourceCacheEntry {
+  expiresAt: number;
+  value: PluginMusicInfo;
+}
+
 /** Baka 插件方法名列表（16 个，对齐 BakaMusic pluginMethodNames） */
 const BAKA_PLUGIN_METHODS = [
   'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
@@ -187,6 +192,53 @@ const BAKA_PLUGIN_METHODS = [
  * 当新键请求失败时，回退到旧键重试。
  */
 const newToLegacyQualityMap: Record<string, string> = BAKA_TO_LEGACY_QUALITY_MAP;
+
+// Baka 音源通常需要向第三方接口换取临时直链。短时缓存可优化重复播放/切回同一首歌的等待，
+// 同时避免长时间复用可能过期的 vkey/ekey。
+const MEDIA_SOURCE_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function clonePluginMusicInfo(value: PluginMusicInfo): PluginMusicInfo {
+  return {
+    ...value,
+    headers: value.headers ? { ...value.headers } : undefined,
+  };
+}
+
+function getMediaItemStableId(item: PluginSearchResult, musicItem: any): string {
+  const raw = item.rawData || {};
+  const id = raw.songmid
+    ?? raw.mid
+    ?? raw.id
+    ?? raw.songid
+    ?? musicItem.songmid
+    ?? musicItem.mid
+    ?? musicItem.id
+    ?? musicItem.songid
+    ?? item.id
+    ?? item.title;
+  return String(id ?? '').trim();
+}
+
+function buildMediaSourceCacheKey(
+  source: PluginSource,
+  item: PluginSearchResult,
+  musicItem: any,
+  quality: QualityKey | 'standard' | 'high' | 'lossless',
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+  availableQualities: QualityKey[] | null,
+): string {
+  const stableId = getMediaItemStableId(item, musicItem);
+  const availableKey = availableQualities?.length
+    ? [...availableQualities].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank).join(',')
+    : '';
+  return [
+    source.id,
+    stableId,
+    quality,
+    fallbackBehavior,
+    availableKey,
+  ].join('|');
+}
 
 /**
  * 从插件返回的媒体 URL 参数中推断实际播放音质。
@@ -468,6 +520,25 @@ function detectLyricFormat(content: string): BakaLyricFormat {
 class BakaPluginManagerClass {
   /** 已检测的 Baka 插件 ID 缓存 */
   private _bakaPluginCache = new Map<string, boolean>();
+  /** Baka 播放直链短时缓存 */
+  private _mediaSourceCache = new Map<string, MediaSourceCacheEntry>();
+  /** 同一首歌同一音质的并发解析复用，避免重复请求音源接口 */
+  private _mediaSourcePending = new Map<string, Promise<PluginMusicInfo | null>>();
+
+  clearMediaSourceCache(pluginId?: string) {
+    if (!pluginId) {
+      this._mediaSourceCache.clear();
+      this._mediaSourcePending.clear();
+      return;
+    }
+    const prefix = `${pluginId}|`;
+    for (const key of this._mediaSourceCache.keys()) {
+      if (key.startsWith(prefix)) this._mediaSourceCache.delete(key);
+    }
+    for (const key of this._mediaSourcePending.keys()) {
+      if (key.startsWith(prefix)) this._mediaSourcePending.delete(key);
+    }
+  }
 
   // ==================== 插件检测 ====================
 
@@ -557,6 +628,52 @@ class BakaPluginManagerClass {
    * @param availableQualities 可用音质列表
    */
   async getMediaSource(
+    source: PluginSource,
+    item: PluginSearchResult,
+    quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
+    fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
+    availableQualities: QualityKey[] | null = null,
+  ): Promise<PluginMusicInfo | null> {
+    const musicItem = item.rawData
+      ? resetMediaItem(item.rawData, source.name)
+      : resetMediaItem(item, source.name);
+    const cacheKey = buildMediaSourceCacheKey(source, item, musicItem, quality, fallbackBehavior, availableQualities);
+    const now = Date.now();
+    const cached = this._mediaSourceCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
+      return clonePluginMusicInfo(cached.value);
+    }
+    if (cached) {
+      this._mediaSourceCache.delete(cacheKey);
+    }
+
+    const pending = this._mediaSourcePending.get(cacheKey);
+    if (pending) {
+      log(`[getMediaSource] 复用进行中的直链解析: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
+      const value = await pending;
+      return value ? clonePluginMusicInfo(value) : null;
+    }
+
+    const pendingPromise = this._getMediaSourceUncached(source, item, quality, fallbackBehavior, availableQualities)
+      .then((value) => {
+        if (value?.url) {
+          this._mediaSourceCache.set(cacheKey, {
+            expiresAt: Date.now() + MEDIA_SOURCE_CACHE_TTL_MS,
+            value: clonePluginMusicInfo(value),
+          });
+        }
+        return value;
+      })
+      .finally(() => {
+        this._mediaSourcePending.delete(cacheKey);
+      });
+    this._mediaSourcePending.set(cacheKey, pendingPromise);
+    const value = await pendingPromise;
+    return value ? clonePluginMusicInfo(value) : null;
+  }
+
+  private async _getMediaSourceUncached(
     source: PluginSource,
     item: PluginSearchResult,
     quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',

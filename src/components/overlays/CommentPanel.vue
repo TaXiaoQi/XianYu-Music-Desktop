@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
-import { MessageCircle, Heart, X, Loader2, ChevronRight } from 'lucide-vue-next';
+import { MessageCircle, Heart, X, Loader2, ChevronRight, ChevronDown, Flame, Clock } from 'lucide-vue-next';
 import { pluginGetMusicComments } from '../../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, Song } from '../../types';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
@@ -39,8 +39,44 @@ const error = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const canLoadMore = computed(() => !isEnd.value && !loadingMore.value && comments.value.length > 0);
 
+/** 评论排序模式：'likes' 最多赞（默认）| 'newest' 最新 */
+const sortMode = ref<'likes' | 'newest'>('likes');
+
+/** 记录已展开二级评论的一级评论 key 集合 */
+const expandedReplies = ref<Set<string>>(new Set());
+
 const resolvedSong = computed<Song | null>(() => props.song ?? currentSong.value ?? null);
 const commentCount = computed(() => comments.value.length);
+
+/** 排序后的评论列表（仅排序一级评论，不影响分页加载） */
+const sortedComments = computed(() => {
+  const list = [...comments.value];
+  if (sortMode.value === 'likes') {
+    list.sort((a, b) => (b.like ?? 0) - (a.like ?? 0));
+  } else {
+    list.sort((a, b) => (b.createAt ?? 0) - (a.createAt ?? 0));
+  }
+  return list;
+});
+
+function getCommentKey(comment: CommentItem, idx: number): string {
+  return comment.id || `idx-${idx}`;
+}
+
+function toggleReplies(comment: CommentItem, idx: number) {
+  const key = getCommentKey(comment, idx);
+  if (expandedReplies.value.has(key)) {
+    expandedReplies.value.delete(key);
+  } else {
+    expandedReplies.value.add(key);
+  }
+  // 触发响应式更新
+  expandedReplies.value = new Set(expandedReplies.value);
+}
+
+function isRepliesExpanded(comment: CommentItem, idx: number): boolean {
+  return expandedReplies.value.has(getCommentKey(comment, idx));
+}
 
 function buildSearchResult(song: Song): PluginSearchResult | null {
   if (!song.rawData) return null;
@@ -86,6 +122,7 @@ async function fetchComments(page: number = 1) {
     if (page === 1) {
       loading.value = true;
       comments.value = [];
+      expandedReplies.value.clear();
     } else {
       loadingMore.value = true;
     }
@@ -186,7 +223,7 @@ onUnmounted(() => {
         v-if="showComment"
         class="fixed right-0 rounded-l-2xl shadow-[0_18px_50px_rgba(15,23,42,0.22)] border-l border-t border-b border-white/70 dark:border-white/10 z-[100] flex flex-col overflow-hidden font-sans select-none bg-[#f7f9fc]/90 dark:bg-[#262626]/90 transition-all duration-300 ring-1 ring-black/5 dark:ring-white/5"
         :class="[(theme.dynamicBgType === 'none' && theme.mode === 'custom') ? '' : 'backdrop-blur-2xl']"
-        :style="{ width: '420px', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '280px', bottom: '120px' }"
+        :style="{ width: '340px', maxWidth: '95vw', height: 'calc(100vh - 180px)', minHeight: '280px', bottom: '120px' }"
         @click.stop
       >
         <!-- Header -->
@@ -214,6 +251,33 @@ onUnmounted(() => {
             title="关闭"
           >
             <X class="h-4 w-4" :stroke-width="2.2" />
+          </button>
+        </div>
+
+        <!-- Sort Bar -->
+        <div
+          v-if="resolvedSong?.plugin_id && comments.length > 0"
+          class="flex items-center gap-1 px-4 py-2 border-b border-[#d9e0ea]/60 dark:border-white/8 bg-[#f3f6fa]/80 dark:bg-[#2a2a2a]/80"
+        >
+          <button
+            @click="sortMode = 'likes'"
+            class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+            :class="sortMode === 'likes'
+              ? 'bg-[#EC4141]/12 text-[#EC4141] dark:bg-red-500/18 dark:text-red-400'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/70 dark:hover:bg-white/8'"
+          >
+            <Flame class="h-3 w-3" :stroke-width="2.2" />
+            最多赞
+          </button>
+          <button
+            @click="sortMode = 'newest'"
+            class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+            :class="sortMode === 'newest'
+              ? 'bg-[#EC4141]/12 text-[#EC4141] dark:bg-red-500/18 dark:text-red-400'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100/70 dark:hover:bg-white/8'"
+          >
+            <Clock class="h-3 w-3" :stroke-width="2.2" />
+            最新
           </button>
         </div>
 
@@ -258,7 +322,7 @@ onUnmounted(() => {
           <!-- Comment List -->
           <template v-else>
             <div
-              v-for="(comment, idx) in comments"
+              v-for="(comment, idx) in sortedComments"
               :key="comment.id || idx"
               class="flex gap-3 py-3"
               :class="{ 'border-t border-gray-100/60 dark:border-zinc-800/60': idx > 0 }"
@@ -293,15 +357,41 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- Replies -->
-                <div v-if="comment.replies && comment.replies.length > 0" class="mt-2 pl-3 border-l-2 border-gray-100 dark:border-zinc-800 space-y-2">
-                  <div v-for="(reply, rIdx) in comment.replies" :key="reply.id || rIdx" class="text-sm">
-                    <div class="flex items-center gap-1.5 mb-0.5">
-                      <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ reply.nickName }}</span>
-                      <span v-if="reply.location" class="text-[10px] text-gray-400 dark:text-gray-500">{{ reply.location }}</span>
+                <!-- Collapsed Replies Toggle -->
+                <div v-if="comment.replies && comment.replies.length > 0" class="mt-2">
+                  <button
+                    v-if="!isRepliesExpanded(comment, idx)"
+                    @click="toggleReplies(comment, idx)"
+                    class="flex items-center gap-1 text-[11px] font-medium text-[#EC4141] hover:text-[#d63838] dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                  >
+                    <ChevronRight class="h-3 w-3" :stroke-width="2.2" />
+                    详情 {{ comment.replies.length }}条回复
+                  </button>
+                  <template v-else>
+                    <button
+                      @click="toggleReplies(comment, idx)"
+                      class="flex items-center gap-1 text-[11px] font-medium text-[#EC4141] hover:text-[#d63838] dark:text-red-400 dark:hover:text-red-300 transition-colors mb-2"
+                    >
+                      <ChevronDown class="h-3 w-3" :stroke-width="2.2" />
+                      收起回复
+                    </button>
+                    <div class="pl-3 border-l-2 border-gray-100 dark:border-zinc-800 space-y-2">
+                      <div v-for="(reply, rIdx) in comment.replies" :key="reply.id || rIdx" class="text-sm">
+                        <div class="flex items-center gap-1.5 mb-0.5">
+                          <span class="text-xs font-medium text-gray-600 dark:text-gray-400">{{ reply.nickName }}</span>
+                          <span v-if="reply.location" class="text-[10px] text-gray-400 dark:text-gray-500">{{ reply.location }}</span>
+                        </div>
+                        <p class="text-gray-700 dark:text-gray-300 leading-relaxed break-words whitespace-pre-wrap">{{ reply.comment }}</p>
+                        <div class="flex items-center gap-3 mt-1">
+                          <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ formatTime(reply.createAt) }}</span>
+                          <div v-if="reply.like && reply.like > 0" class="flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-gray-500">
+                            <Heart class="h-3 w-3" :stroke-width="2" />
+                            <span>{{ formatLike(reply.like) }}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <p class="text-gray-700 dark:text-gray-300 leading-relaxed break-words whitespace-pre-wrap">{{ reply.comment }}</p>
-                  </div>
+                  </template>
                 </div>
               </div>
             </div>

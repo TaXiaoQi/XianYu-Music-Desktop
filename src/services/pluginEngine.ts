@@ -1816,6 +1816,8 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
  * 清除缓存后下次 ensurePluginInstance 会重新执行插件脚本。
  */
 export function reloadPluginInstance(pluginId: string) {
+  // 用户变量或插件实例变化后，清理 Baka 短时直链缓存，避免继续复用旧 key 解析出来的 URL。
+  BakaPluginManager.clearMediaSourceCache(pluginId);
   // 沙箱模式清理：销毁 Worker，下次加载时重新创建
   if (_sandboxedPlugins.has(pluginId)) {
     _sandboxedPlugins.delete(pluginId);

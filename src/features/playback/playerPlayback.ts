@@ -736,6 +736,83 @@ const authStore = useAuthStore();
       ? 150
       : fadeDuration;
 
+    // [在线播放预解析] 点击切歌后立即启动下一首的在线 URL 解析，与上一首淡出并行。
+    // 这样 Source API / LX URL 等网络等待不会排在淡出动画之后，体感切歌更快。
+    let audioFilePath = song.cue_source_path || song.path;
+    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
+    let usingDownloadedAudioFile = false;
+    let pluginHeaders: Record<string, string> | null = null;
+    let pluginEkey: string | undefined = undefined;
+    let pluginCek: string | undefined = undefined;
+
+    currentAvailableQualities.value = null;
+    // [音质跟踪] 切歌时重置实际播放音质，URL 解析成功后重新设置
+    playbackStore.currentPlayingQuality = null;
+    // [缓存复用] 切歌时清空上一首的音频直链，URL 解析成功后重新记录
+    playbackStore.currentPlayingAudioUrl = null;
+    // [会话音质] 切换到不同歌曲时清空底部栏会话级音质覆盖，让新歌优先应用设置页的在线播放音质。
+    // 同一首歌重播（如底部栏切音质触发的 replay）保留覆盖，以确保切音质立即生效。
+    if (previousSong && previousSong.path !== song.path) {
+      playbackStore.sessionQualityOverride = null;
+    }
+
+    const onlineAudioPreparationPromise = (async () => {
+      let preparedAudioFilePath = audioFilePath;
+      let preparedUsingDownloadedAudioFile = false;
+      let preparedAvailableQualities: QualityKey[] | null = null;
+
+      // [本地优先] 收藏、最近播放、歌单中保存的是在线歌曲路径，但若该歌曲已下载且文件仍存在，
+      // 直接播放下载文件，避免每次起播都调用 LX/插件解析直链。未命中时才进入后续在线解析流程。
+      if (isOriginalOnlineSong) {
+        const downloadedRecord = await checkDownloadExists(preparedAudioFilePath);
+        if (downloadedRecord?.filePath) {
+          preparedAudioFilePath = downloadedRecord.filePath;
+          preparedUsingDownloadedAudioFile = true;
+        }
+      }
+
+      if (isOriginalOnlineSong && !preparedUsingDownloadedAudioFile) {
+        try {
+          preparedAvailableQualities = await getOnlineAvailableQualities(preparedAudioFilePath, song);
+        } catch { /* ignore: 音质列表获取失败不影响播放 */ }
+      }
+
+      if (isOriginalOnlineSong && !preparedUsingDownloadedAudioFile) {
+        const requestedQuality = (playbackStore.sessionQualityOverride
+          || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
+        const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+        const resolvedOnlineAudio = await resolveOnlineAudio({
+          audioFilePath: preparedAudioFilePath,
+          song,
+          requestedQuality,
+          fallbackBehavior,
+          availableQualities: preparedAvailableQualities,
+          preFetchedUrl: song.remote_source_id,
+        });
+        return {
+          audioFilePath: resolvedOnlineAudio.audioFilePath,
+          usingDownloadedAudioFile: preparedUsingDownloadedAudioFile,
+          availableQualities: preparedAvailableQualities,
+          resolvedOnlineAudio,
+        };
+      }
+
+      return {
+        audioFilePath: preparedAudioFilePath,
+        usingDownloadedAudioFile: preparedUsingDownloadedAudioFile,
+        availableQualities: preparedAvailableQualities,
+        resolvedOnlineAudio: null,
+      };
+    })().catch((error) => {
+      console.warn('[Audio] 在线音频预解析失败:', error);
+      return {
+        audioFilePath,
+        usingDownloadedAudioFile: false,
+        availableQualities: null,
+        resolvedOnlineAudio: null,
+      };
+    });
+
     if (shouldFadeOnSwitch) {
       await fadeVolumeTo(0, effectiveFadeDuration);
     } else {
@@ -777,16 +854,6 @@ const authStore = useAuthStore();
           }
         }
       }
-    }
-
-    // [音质跟踪] 切歌时重置实际播放音质，URL 解析成功后重新设置
-    playbackStore.currentPlayingQuality = null;
-    // [缓存复用] 切歌时清空上一首的音频直链，URL 解析成功后重新记录
-    playbackStore.currentPlayingAudioUrl = null;
-    // [会话音质] 切换到不同歌曲时清空底部栏会话级音质覆盖，让新歌优先应用设置页的在线播放音质。
-    // 同一首歌重播（如底部栏切音质触发的 replay）保留覆盖，以确保切音质立即生效。
-    if (previousSong && previousSong.path !== song.path) {
-      playbackStore.sessionQualityOverride = null;
     }
 
     // [歌词获取] LX/plugin:// 歌曲的异步歌词获取已移至 URL 解析之后，
@@ -886,60 +953,18 @@ const authStore = useAuthStore();
       scheduleAddToHistory(currentSong.value ?? song);
     };
 
-    currentAvailableQualities.value = null;
-
-    let audioFilePath = song.cue_source_path || song.path;
-    const isOriginalOnlineSong = audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://');
-    let usingDownloadedAudioFile = false;
-
-    // [本地优先] 收藏、最近播放、歌单中保存的是在线歌曲路径，但若该歌曲已下载且文件仍存在，
-    // 直接播放下载文件，避免每次起播都调用 LX/插件解析直链。未命中时才进入后续在线解析流程。
-    if (isOriginalOnlineSong) {
-      const downloadedRecord = await checkDownloadExists(audioFilePath);
-      if (requestId !== playRequestId) return;
-      if (downloadedRecord?.filePath) {
-        audioFilePath = downloadedRecord.filePath;
-        usingDownloadedAudioFile = true;
-      }
-    }
-
-    // [预获取优化] 仅在线解析路径需要获取可用音质；本地下载命中时跳过，确保不触发插件调用。
-    const qualityListPromise = usingDownloadedAudioFile
-      ? Promise.resolve()
-      : (async () => {
-        try {
-          currentAvailableQualities.value = await getOnlineAvailableQualities(audioFilePath, song);
-        } catch { /* ignore: 音质列表获取失败不影响播放 */ }
-      })();
-
-    // 插件返回的自定义请求头（防盗链 Cookie/Referer 等），随 URL 一起传递给播放器
-    let pluginHeaders: Record<string, string> | null = null;
-    // QMC2 加密密钥（Baka 插件加密音源），随 URL 一起传递给 Rust 后端进行流式解密
-    let pluginEkey: string | undefined = undefined;
-    // CENC 内容密钥（Baka 插件加密音源），随 URL 一起透传给 Rust 后端
-    let pluginCek: string | undefined = undefined;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
-    // [音质列表] 在 URL 解析前等待音质列表获取完成，确保后续音质回退逻辑能正确过滤
-    await qualityListPromise;
-
-    // [可打断] 音质列表获取期间用户可能切歌，需检查是否仍是当前请求
-    if (requestId !== playRequestId) return;
-
     try {
-      if (!usingDownloadedAudioFile) {
-        const requestedQuality = (playbackStore.sessionQualityOverride
-          || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
-        const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-        const resolvedOnlineAudio = await resolveOnlineAudio({
-          audioFilePath,
-          song,
-          requestedQuality,
-          fallbackBehavior,
-          availableQualities: playbackStore.currentAvailableQualities,
-          preFetchedUrl: song.remote_source_id,
-        });
-        audioFilePath = resolvedOnlineAudio.audioFilePath;
+      const preparedOnlineAudio = await onlineAudioPreparationPromise;
+      if (requestId !== playRequestId) return;
+
+      audioFilePath = preparedOnlineAudio.audioFilePath;
+      usingDownloadedAudioFile = preparedOnlineAudio.usingDownloadedAudioFile;
+      currentAvailableQualities.value = preparedOnlineAudio.availableQualities;
+
+      if (!usingDownloadedAudioFile && preparedOnlineAudio.resolvedOnlineAudio) {
+        const resolvedOnlineAudio = preparedOnlineAudio.resolvedOnlineAudio;
         const sanitizedAudioFilePath = sanitizeMediaUrl(audioFilePath);
         if (sanitizedAudioFilePath && sanitizedAudioFilePath !== audioFilePath) {
           console.warn('[Audio] 播放前兜底清洗在线 URL:', {
