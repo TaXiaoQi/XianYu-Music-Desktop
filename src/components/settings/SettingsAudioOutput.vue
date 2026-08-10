@@ -55,6 +55,8 @@ const isPlayingOnlineSong = () => {
 const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   patchSettings({ audio: { ...settings.value.audio, onlineDefaultQuality: value } });
   localStorage.setItem('online_quality', value);
+  // 设置页的默认音质应成为下一次起播的首选；清掉底栏临时音质覆盖，避免旧会话选择继续优先生效。
+  playbackStore.setSessionQualityOverride(null);
   // [音质验证] 如果当前正在播放在线歌曲，提示新设置在下一首生效
   if (isPlayingOnlineSong()) {
     const available = playbackStore.currentAvailableQualities;

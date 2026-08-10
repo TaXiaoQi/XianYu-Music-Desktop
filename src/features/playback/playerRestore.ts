@@ -92,10 +92,9 @@ export const createPlayerRestore = ({
         playbackStore.currentTime = rustSession.currentPositionSecs;
       }
 
-      // 恢复会话级音质覆盖
-      if (rustSession.sessionQualityOverride) {
-        playbackStore.setSessionQualityOverride(rustSession.sessionQualityOverride as any);
-      }
+      // 不恢复会话级音质覆盖。它只代表底栏本次会话的临时选择，
+      // 跨重启恢复会导致设置页的在线播放默认音质被旧值长期覆盖。
+      playbackStore.setSessionQualityOverride(null);
     } else {
       // 回退到 localStorage 恢复（兼容旧版本或 Rust 无数据的情况）
       const legacySongList = readStoredSongArray(keys.legacyPlayerPlaylist);

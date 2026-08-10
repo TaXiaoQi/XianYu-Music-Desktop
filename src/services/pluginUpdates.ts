@@ -18,6 +18,8 @@ export interface PluginUpdateServiceDeps {
   addPluginSource: (source: PluginSource) => void;
   removePluginSource: (id: string) => void;
   updatePluginSource: (id: string, updates: Partial<PluginSource>) => void;
+  getPluginUserVariableValues: (pluginId: string) => Record<string, string>;
+  setPluginUserVariableValues: (pluginId: string, values: Record<string, string>) => void;
   parseLxScriptInfo: (script: string) => { version: string; homepage?: string };
   initLxPlugin: (source: PluginSource) => Promise<boolean>;
   destroyLxPlugin: (id: string) => void;
@@ -96,6 +98,8 @@ export const createPluginUpdateService = ({
   addPluginSource,
   removePluginSource,
   updatePluginSource,
+  getPluginUserVariableValues,
+  setPluginUserVariableValues,
   parseLxScriptInfo,
   initLxPlugin,
   destroyLxPlugin,
@@ -243,11 +247,21 @@ export const createPluginUpdateService = ({
       newSource.enabled = source.enabled;
       newSource.sortOrder = source.sortOrder;
 
+      // 插件 ID 使用脚本 SHA-256。Baka/MusicFree 插件更新后脚本内容变化会导致 ID 变化，
+      // 而用户变量值按插件 ID 存储。删除旧插件前先取出旧值，安装新插件后迁移到新 ID，
+      // 避免 QQ音乐[L2] 等插件的 SOURCE_API_KEY 在更新后丢失。
+      const oldUserVars = getPluginUserVariableValues(source.id);
+
       if (newSource.id !== source.id) {
         removePluginSource(source.id);
       }
 
       addPluginSource(newSource);
+
+      if (newSource.id !== source.id && Object.keys(oldUserVars).length > 0) {
+        setPluginUserVariableValues(newSource.id, oldUserVars);
+        log(`[performPluginUpdate] 已迁移用户变量: ${source.id.substring(0, 16)}... → ${newSource.id.substring(0, 16)}... keys=[${Object.keys(oldUserVars).join(',')}]`);
+      }
 
       if (newSource.format === 'lx' && newSource.enabled) {
         destroyLxPlugin(source.id);

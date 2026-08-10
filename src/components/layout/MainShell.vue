@@ -60,6 +60,7 @@ import { useDownloadDialog } from '../../composables/useDownloadDialog';
 const {
   isDownloadDialogVisible,
   currentDownloadSong,
+  currentDownloadInitialQuality,
   closeDownloadDialog,
 } = useDownloadDialog();
 const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
@@ -271,6 +272,7 @@ onMounted(() => {
       v-if="!isMiniMode"
       :visible="isDownloadDialogVisible"
       :song="currentDownloadSong"
+      :initial-quality="currentDownloadInitialQuality"
       @close="closeDownloadDialog"
     />
 

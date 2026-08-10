@@ -491,6 +491,28 @@ function responseBodyLooksLikeDefiniteError(body: string): boolean {
   return false;
 }
 
+function formatProxyErrorReason(body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed) return '代理接口返回空错误';
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const code = record.code ?? record.status ?? record.errCode ?? record.errorCode;
+      const msg = record.msg ?? record.message ?? record.error;
+      const parts = [
+        '源站代理接口返回错误',
+        code !== undefined ? `code=${String(code)}` : '',
+        msg ? `msg=${String(msg)}` : '',
+      ].filter(Boolean);
+      return `${parts.join('，')}。请检查插件用户变量/Source API Key/卡密，或稍后重试该源站`;
+    }
+  } catch {
+    // 非 JSON 直接截断展示。
+  }
+  return `源站代理接口返回错误：${trimmed.slice(0, 120)}`;
+}
+
 async function probeKugouProxyCandidate(
   url: string,
   headers: Record<string, string>,
@@ -512,7 +534,7 @@ async function probeKugouProxyCandidate(
         return { playable: true };
       }
       if (responseBodyLooksLikeDefiniteError(getResp.body)) {
-        return { playable: false, reason: `代理接口返回错误: ${getResp.body.trim().slice(0, 120)}` };
+        return { playable: false, reason: formatProxyErrorReason(getResp.body) };
       }
       return { playable: true };
     }
@@ -535,7 +557,7 @@ async function probeKugouProxyCandidate(
       return { playable: true };
     }
     if (responseBodyLooksLikeDefiniteError(getResp.body)) {
-      return { playable: false, reason: `代理接口返回错误: ${getResp.body.trim().slice(0, 120)}` };
+      return { playable: false, reason: formatProxyErrorReason(getResp.body) };
     }
 
     return { playable: true };
@@ -1002,6 +1024,7 @@ class BakaPluginManagerClass {
     }
 
     log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryPairs.map(p => p.pluginQ))}`);
+    (globalThis as any).__lastPluginError = '';
 
     let result: any = null;
     let lastError: any = null;

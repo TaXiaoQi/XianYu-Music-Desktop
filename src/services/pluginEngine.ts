@@ -34,6 +34,7 @@ import {
   callSandboxMethod,
   destroySandbox,
   setUserVarsProvider,
+  linkSandboxAlias,
 } from './pluginSandboxManager';
 import {
   createPluginSubscriptionService,
@@ -511,6 +512,116 @@ function getNormalizedCachedUserVariables(pluginId: string): PluginUserVariable[
   return normalized;
 }
 
+function extractStringProperty(source: string, prop: string): string | undefined {
+  const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(new RegExp(`(?:^|[,\\s])${escaped}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`));
+  return match?.[2]?.trim() || undefined;
+}
+
+function extractBooleanProperty(source: string, prop: string): boolean | undefined {
+  const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(new RegExp(`(?:^|[,\\s])${escaped}\\s*:\\s*(true|false)`));
+  return match ? match[1] === 'true' : undefined;
+}
+
+function extractBalancedArray(script: string, key: string): string | null {
+  const keyIndex = script.indexOf(key);
+  if (keyIndex < 0) return null;
+  const colonIndex = script.indexOf(':', keyIndex + key.length);
+  if (colonIndex < 0) return null;
+  const start = script.indexOf('[', colonIndex + 1);
+  if (start < 0) return null;
+
+  let depth = 0;
+  let quote: '"' | '\'' | '`' | null = null;
+  let escaped = false;
+  for (let i = start; i < script.length; i += 1) {
+    const ch = script[i];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === '\'' || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '[') depth += 1;
+    if (ch === ']') {
+      depth -= 1;
+      if (depth === 0) return script.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function extractPluginUserVariablesFromScript(script: string): PluginUserVariable[] {
+  const arraySource = extractBalancedArray(script, 'userVariables');
+  if (!arraySource) return [];
+
+  const raw = [...arraySource.matchAll(/\{([\s\S]*?)\}/g)]
+    .map((match) => {
+      const body = match[1];
+      const key = extractStringProperty(body, 'key');
+      const name = extractStringProperty(body, 'name');
+      const id = extractStringProperty(body, 'id');
+      if (!key && !name && !id) return null;
+      return {
+        key,
+        name,
+        id,
+        title: extractStringProperty(body, 'title'),
+        label: extractStringProperty(body, 'label'),
+        type: extractStringProperty(body, 'type') || extractStringProperty(body, 'inputType'),
+        defaultValue: extractStringProperty(body, 'defaultValue'),
+        default: extractStringProperty(body, 'default'),
+        value: extractStringProperty(body, 'value'),
+        description: extractStringProperty(body, 'description'),
+        desc: extractStringProperty(body, 'desc'),
+        remark: extractStringProperty(body, 'remark'),
+        placeholder: extractStringProperty(body, 'placeholder'),
+        hint: extractStringProperty(body, 'hint'),
+        required: extractBooleanProperty(body, 'required'),
+      };
+    })
+    .filter(Boolean);
+
+  return normalizePluginUserVariables(raw);
+}
+
+async function readPluginScriptForUserVariables(source: PluginSource): Promise<string> {
+  if (source.filePath.startsWith('builtin://')) {
+    const webPath = BUILTIN_PLUGINS[source.filePath];
+    if (!webPath) return '';
+    const resp = await fetchWithTimeout(webPath, 5000);
+    return resp.ok ? await resp.text() : '';
+  }
+  if (source.filePath.startsWith('http')) {
+    try {
+      const resp = await fetchWithTimeout(source.filePath, 10000);
+      if (resp.ok) return await resp.text();
+    } catch { /* fallback to tauri fetch */ }
+    try {
+      return await pluginApi.fetchPluginUrl(source.filePath);
+    } catch {
+      return '';
+    }
+  }
+  if (source.filePath) {
+    try {
+      return await pluginApi.readPluginFile(source.filePath);
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 interface PluginInstance {
   source: PluginSource;
   instance: IPluginInstance;
@@ -580,6 +691,7 @@ const userVarDefsCache: Map<string, PluginUserVariable[]> = _globalThis.__userVa
 export async function loadPluginFromScript(
   script: string,
   uri: string,
+  userVarsPluginId?: string,
 ): Promise<PluginSource | null> {
   try {
     const bytes = new TextEncoder().encode(script);
@@ -612,9 +724,9 @@ export async function loadPluginFromScript(
         // 注册用户变量提供器（供 Worker 通过 RPC 获取用户变量）
         setUserVarsProvider((pluginId: string) => getPluginUserVariableValues(pluginId));
 
-        const userVars = getPluginUserVariableValues(hash);
+        const userVars = getPluginUserVariableValues(userVarsPluginId || hash);
         const userVarKeys = Object.keys(userVars);
-        log(`[loadPluginFromScript] hash=${hash.substring(0, 16)}... userVars keys=[${userVarKeys.join(',')}] count=${userVarKeys.length}`);
+        log(`[loadPluginFromScript] hash=${hash.substring(0, 16)}... userVarsPluginId=${(userVarsPluginId || hash).substring(0, 16)}... userVars keys=[${userVarKeys.join(',')}] count=${userVarKeys.length}`);
         const metadata = await loadMusicFreeInSandbox(hash, script, userVars);
 
         if (!metadata?.platform) {
@@ -662,8 +774,8 @@ export async function loadPluginFromScript(
     }
 
     throw new Error('插件沙箱未启用，已拒绝在主线程直接执行插件源码');
-  } catch (e) {
-    console.error('插件加载失败:', e);
+  } catch (e: any) {
+    log(`[loadPluginFromScript] 插件加载失败 (uri=${uri}): ${e?.message || e}`);
     return null;
   }
 }
@@ -704,6 +816,10 @@ interface PluginMusicSearchDiagnostics {
   searchType?: string;
   supportsLyrics: boolean;
 }
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const MF_EMPTY_SEARCH_RETRY_DELAY_MS = 450;
 
 /** 音乐搜索诊断版：保留初始化、能力和接口错误，供歌词选择页直接展示原因。 */
 export async function pluginMusicSearchWithDiagnostics(
@@ -751,15 +867,28 @@ export async function pluginMusicSearchWithDiagnostics(
     // 音乐搜索始终使用 'music' 类型；Baka 插件可能未在 supportedSearchType 中声明 'music'
     // 但实际支持音乐搜索。若插件确实不支持则会返回空，由调用方处理。
     const searchType = 'music';
-    log(`[pluginSearch] ${source.name} searchType=${searchType}, 开始调用 search()`);
 
-    // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
-    const result = (await inst.instance.search(keyword, page, searchType)) ?? {};
-    log(`[pluginSearch] ${source.name} search 返回: type=${typeof result}, keys=${result ? Object.keys(result).join(',') : 'null'}, dataIsArray=${Array.isArray(result?.data)}, dataLen=${result?.data?.length ?? 0}`);
+    const callSearch = async (attempt: number) => {
+      log(`[pluginSearch] ${source.name} searchType=${searchType}, 第 ${attempt} 次调用 search()`);
+      // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
+      const result = (await inst.instance.search(keyword, page, searchType)) ?? {};
+      const list = extractResultList(result);
+      log(
+        `[pluginSearch] ${source.name} search 返回(第 ${attempt} 次): type=${typeof result}, keys=${result ? Object.keys(result).join(',') : 'null'}, dataIsArray=${Array.isArray(result?.data)}, dataLen=${result?.data?.length ?? 0}, extractedLen=${list.length}`,
+      );
+      return { result, list };
+    };
 
-    // 使用 extractResultList 统一提取结果，兼容 data/musicList/list/songs 等多种格式
-    // （Baka 系插件可能返回非 { data: [...] } 格式）
-    const list = extractResultList(result);
+    let { result, list } = await callSearch(1);
+
+    // 部分 MusicFree QQ 插件的上游接口会偶发正常响应但 data=[]。
+    // 这种情况下不应立刻判定无结果，短延迟后重试一次即可大幅降低“有时有、有时空”的体验问题。
+    if (list.length === 0) {
+      log(`[pluginSearch] ${source.name} 第 1 次返回空列表，${MF_EMPTY_SEARCH_RETRY_DELAY_MS}ms 后重试一次`);
+      await sleep(MF_EMPTY_SEARCH_RETRY_DELAY_MS);
+      ({ result, list } = await callSearch(2));
+    }
+
     if (list.length > 0) {
       // 关键：每个 item 都调用 resetMediaItem，与 MusicFree 完全一致
       list.forEach((_: any) => {
@@ -780,8 +909,10 @@ export async function pluginMusicSearchWithDiagnostics(
     }
     return {
       results: [],
-      status: 'invalid_response',
-      reason: `插件 search 返回格式无效或为空：实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
+      status: Array.isArray(result?.data) ? 'empty' : 'invalid_response',
+      reason: Array.isArray(result?.data)
+        ? `插件连续两次搜索成功但没有找到与“${keyword}”匹配的歌曲`
+        : `插件 search 返回格式无效或为空：实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
       searchType,
       supportsLyrics: true,
     };
@@ -805,6 +936,10 @@ export async function pluginSearch(
   limit: number,
 ): Promise<PluginSearchResult[]> {
   return (await pluginMusicSearchWithDiagnostics(source, keyword, page, limit)).results;
+}
+
+export function getLastPluginError(): string {
+  return String((globalThis as any).__lastPluginError || '').trim();
 }
 
 // ==================== 插件歌单搜索 ====================
@@ -1049,6 +1184,7 @@ export async function pluginGetMusicInfo(
   fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
   availableQualities: QualityKey[] | null = null,
 ): Promise<PluginMusicInfo | null> {
+  (globalThis as any).__lastPluginError = '';
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
@@ -1643,40 +1779,78 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
     } else if (source.filePath) {
       try {
         script = await pluginApi.readPluginFile(source.filePath);
+        log(`[ensurePluginInstance] ${source.name} 读取脚本成功: ${script.length} chars`);
       } catch (error) {
         readError = `无法读取插件文件：${String(error)}`;
+        log(`[ensurePluginInstance] ${source.name} 读取脚本失败: ${readError}`);
       }
+    } else {
+      readError = '插件 filePath 为空';
     }
 
     if (script) {
-      const loadedSource = await loadPluginFromScript(script, source.filePath);
+      const loadedSource = await loadPluginFromScript(script, source.filePath, source.id);
       if (!loadedSource) {
         readError = '插件脚本执行失败或缺少 platform 字段，请查看插件日志';
-      }
-      // [修复] 直接用 source.id 缓存实例，不依赖 SHA256 hash 匹配
-      if (loadedSource) {
+        log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 返回 null`);
+      } else {
+        log(`[ensurePluginInstance] ${source.name} loadPluginFromScript 成功: loadedId=${loadedSource.id.substring(0, 16)}... sourceId=${source.id.substring(0, 16)}... match=${loadedSource.id === source.id}`);
+        // [修复] 直接用 source.id 缓存实例，不依赖 SHA256 hash 匹配
         const entry = pluginInstances.get(loadedSource.id);
         if (entry) {
-          pluginInstances.set(source.id, entry);
+          linkSandboxAlias(source.id, loadedSource.id);
+          const availableMethods = Object.keys(entry.instance)
+            .filter(key => typeof (entry.instance as any)[key] === 'function');
+          const sourceProxy = createSandboxProxy(source.id, {
+            ...entry.instance,
+            _availableMethods: availableMethods,
+          });
+          pluginInstances.set(source.id, {
+            source,
+            instance: sourceProxy,
+            script: entry.script,
+          });
+          log(`[ensurePluginInstance] ${source.name} 已缓存实例到 source.id，并映射沙箱别名`);
+        } else {
+          log(`[ensurePluginInstance] ${source.name} 警告: loadedSource.id 在 pluginInstances 中未找到`);
         }
       }
       // 回退: 遍历找到 filePath 匹配的条目
       if (!pluginInstances.has(source.id)) {
         for (const [key, entry] of pluginInstances) {
           if (entry.source.filePath === source.filePath && key !== source.id) {
-            pluginInstances.set(source.id, entry);
+            linkSandboxAlias(source.id, key);
+            const availableMethods = Object.keys(entry.instance)
+              .filter(methodName => typeof (entry.instance as any)[methodName] === 'function');
+            const sourceProxy = createSandboxProxy(source.id, {
+              ...entry.instance,
+              _availableMethods: availableMethods,
+            });
+            pluginInstances.set(source.id, {
+              source,
+              instance: sourceProxy,
+              script: entry.script,
+            });
+            log(`[ensurePluginInstance] ${source.name} 回退匹配成功: key=${key.substring(0, 16)}...`);
             break;
           }
         }
       }
+    } else {
+      log(`[ensurePluginInstance] ${source.name} 脚本为空，readError=${readError}`);
     }
 
     const resolved = pluginInstances.get(source.id) || null;
-    if (resolved) pluginInstanceErrors.delete(source.id);
-    else pluginInstanceErrors.set(source.id, readError || '插件脚本为空或实例未注册');
+    if (resolved) {
+      pluginInstanceErrors.delete(source.id);
+      log(`[ensurePluginInstance] ${source.name} 最终: 实例已就绪`);
+    } else {
+      pluginInstanceErrors.set(source.id, readError || '插件脚本为空或实例未注册');
+      log(`[ensurePluginInstance] ${source.name} 最终: 实例为 null, error=${readError}`);
+    }
     return resolved;
   } catch (e) {
-    log(`插件重新加载失败: ${source.name} ${e}`);
+    log(`[ensurePluginInstance] ${source.name} 重新加载异常: ${e?.message || e}`);
     pluginInstanceErrors.set(source.id, `插件初始化异常：${String(e)}`);
     return null;
   }
@@ -1771,6 +1945,18 @@ export async function ensurePluginUserVariables(source: PluginSource): Promise<P
     return normalized;
   }
 
+  // 3. 实例加载失败或实例未暴露 userVariables 时，从源码静态提取。
+  // Baka/Toskysun 插件通常直接在 module.exports 中声明 userVariables，
+  // 例如 QQ音乐[L2] 的 SOURCE_API_KEY。静态兜底可避免设置页密钥输入框消失。
+  const script = await readPluginScriptForUserVariables(source);
+  if (script) {
+    const normalized = extractPluginUserVariablesFromScript(script);
+    if (normalized.length > 0) {
+      userVarDefsCache.set(source.id, normalized);
+      return normalized;
+    }
+  }
+
   return [];
 }
 
@@ -1805,21 +1991,15 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
       return;
     }
 
-    // 未缓存：异步加载（仅 MusicFree 格式，不限制 enabled 状态——
-    // 禁用的插件也应能检测到用户变量定义，供用户在详情面板中配置）
-    if (source.format === 'musicfree') {
-      try {
-        const loaded = await ensurePluginInstance(source);
-        if (loaded?.instance?.userVariables) {
-          const normalized = normalizePluginUserVariables(loaded.instance.userVariables);
-          if (normalized.length > 0) {
-            userVarDefsCache.set(source.id, normalized);
-            result.add(source.id);
-          }
-        }
-      } catch {
-        // 加载失败不阻塞其他插件
+    // 未缓存：异步加载或从源码静态提取。
+    // 不限制 enabled 状态，也兼容历史数据中 format=unknown 的 MusicFree/Baka 插件。
+    try {
+      const normalized = await ensurePluginUserVariables(source);
+      if (normalized.length > 0) {
+        result.add(source.id);
       }
+    } catch {
+      // 加载失败不阻塞其他插件
     }
   }));
 
@@ -2099,23 +2279,51 @@ export async function loadPlugins(lazyLoad: boolean = false): Promise<void> {
       } else {
         try {
           script = await pluginApi.readPluginFile(source.filePath);
-        } catch { /* ignore */ }
+        } catch (e: any) {
+          log(`[loadPlugins] ${source.name} 读取文件失败: ${e?.message || e} (path=${source.filePath})`);
+        }
+      }
+
+      if (!script) {
+        log(`[loadPlugins] ${source.name} 脚本为空，跳过加载 (filePath=${source.filePath})`);
       }
 
       if (script) {
-        const loadedSource = await loadPluginFromScript(script, source.filePath);
+        const loadedSource = await loadPluginFromScript(script, source.filePath, source.id);
         // [修复] 直接用 source.id 缓存实例
         if (loadedSource) {
           const entry = pluginInstances.get(loadedSource.id);
           if (entry) {
-            pluginInstances.set(source.id, entry);
+            linkSandboxAlias(source.id, loadedSource.id);
+            const availableMethods = Object.keys(entry.instance)
+              .filter(key => typeof (entry.instance as any)[key] === 'function');
+            const sourceProxy = createSandboxProxy(source.id, {
+              ...entry.instance,
+              _availableMethods: availableMethods,
+            });
+            pluginInstances.set(source.id, {
+              source,
+              instance: sourceProxy,
+              script: entry.script,
+            });
           }
         }
         // 回退: 遍历找到 filePath 匹配的条目
         if (!pluginInstances.has(source.id)) {
           for (const [key, entry] of pluginInstances) {
             if (entry.source.filePath === source.filePath && key !== source.id) {
-              pluginInstances.set(source.id, entry);
+              linkSandboxAlias(source.id, key);
+              const availableMethods = Object.keys(entry.instance)
+                .filter(methodName => typeof (entry.instance as any)[methodName] === 'function');
+              const sourceProxy = createSandboxProxy(source.id, {
+                ...entry.instance,
+                _availableMethods: availableMethods,
+              });
+              pluginInstances.set(source.id, {
+                source,
+                instance: sourceProxy,
+                script: entry.script,
+              });
               break;
             }
           }
@@ -2136,6 +2344,8 @@ const pluginUpdateService = createPluginUpdateService({
   addPluginSource,
   removePluginSource,
   updatePluginSource,
+  getPluginUserVariableValues,
+  setPluginUserVariableValues,
   parseLxScriptInfo,
   initLxPlugin,
   destroyLxPlugin,

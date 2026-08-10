@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, type Ref } from 'vue';
+import { inject, nextTick, ref, watch, type Ref } from 'vue';
 import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
@@ -37,7 +37,7 @@ const ctx = inject<{
   downloadButtonTitle: Ref<string>;
   showDownloadQualityMenu: Ref<boolean>;
   DOWNLOAD_QUALITY_OPTIONS: Ref<Array<{ label: string; value: DownloadQuality; description: string }>>;
-  selectedDownloadQuality: Ref<DownloadQuality>;
+  activeDownloadQualityKey: Ref<DownloadQuality>;
   startDownload: (qualityKey: DownloadQuality) => Promise<void>;
   downloadQualityButtonRef: Ref<HTMLElement | null>;
   downloadQualityMenuRef: Ref<HTMLElement | null>;
@@ -94,7 +94,7 @@ const {
   downloadButtonTitle,
   showDownloadQualityMenu,
   DOWNLOAD_QUALITY_OPTIONS,
-  selectedDownloadQuality,
+  activeDownloadQualityKey,
   startDownload,
   playMode,
   toggleMode,
@@ -123,6 +123,91 @@ const {
   showComment,
   toggleComment,
 } = ctx;
+
+const downloadQualityListRef = ref<HTMLElement | null>(null);
+const qualityListRef = ref<HTMLElement | null>(null);
+const downloadQualityScrollProgress = ref({ show: false, top: 0, height: 100 });
+const qualityScrollProgress = ref({ show: false, top: 0, height: 100 });
+
+const updateScrollProgress = (
+  containerRef: Ref<HTMLElement | null>,
+  progressRef: Ref<{ show: boolean; top: number; height: number }>,
+) => {
+  const container = containerRef.value;
+  if (!container) {
+    progressRef.value = { show: false, top: 0, height: 100 };
+    return;
+  }
+
+  const maxScroll = container.scrollHeight - container.clientHeight;
+  if (maxScroll <= 1) {
+    progressRef.value = { show: false, top: 0, height: 100 };
+    return;
+  }
+
+  const height = Math.max(18, (container.clientHeight / container.scrollHeight) * 100);
+  const top = (container.scrollTop / maxScroll) * (100 - height);
+  progressRef.value = { show: true, top, height };
+};
+
+const updateDownloadQualityScrollProgress = () => {
+  updateScrollProgress(downloadQualityListRef, downloadQualityScrollProgress);
+};
+
+const updateQualityScrollProgress = () => {
+  updateScrollProgress(qualityListRef, qualityScrollProgress);
+};
+
+const scrollQualityIntoView = async (
+  containerRef: Ref<HTMLElement | null>,
+  qualityKey: QualityKey,
+  onScrolled?: () => void,
+) => {
+  await nextTick();
+  requestAnimationFrame(() => {
+    const container = containerRef.value;
+    if (!container) return;
+
+    const target = container.querySelector<HTMLElement>(`[data-quality-value="${qualityKey}"]`);
+    if (!target) return;
+
+    const targetTop = target.offsetTop - (container.clientHeight - target.clientHeight) / 2;
+    container.scrollTop = Math.max(0, targetTop);
+    onScrolled?.();
+  });
+};
+
+watch(
+  () => [
+    showDownloadQualityMenu.value,
+    DOWNLOAD_QUALITY_OPTIONS.value.length,
+    activeDownloadQualityKey.value,
+  ] as const,
+  ([visible]) => {
+    if (visible) {
+      void scrollQualityIntoView(
+        downloadQualityListRef,
+        activeDownloadQualityKey.value,
+        updateDownloadQualityScrollProgress,
+      );
+      void nextTick(updateDownloadQualityScrollProgress);
+    }
+  },
+);
+
+watch(
+  () => [
+    showQualityMenu.value,
+    QUALITY_OPTIONS.value.length,
+    activeQualityKey.value,
+  ] as const,
+  ([visible]) => {
+    if (visible) {
+      void scrollQualityIntoView(qualityListRef, activeQualityKey.value, updateQualityScrollProgress);
+      void nextTick(updateQualityScrollProgress);
+    }
+  },
+);
 </script>
 
 <template>
@@ -187,21 +272,44 @@ const {
             下载音质
             <span v-if="isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
           </div>
-          <button
-            v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
-            :key="opt.value"
-            @click.stop="startDownload(opt.value)"
-            class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
-            :class="selectedDownloadQuality === opt.value
-              ? 'text-[#EC4141] bg-[#EC4141]/8'
-              : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
-          >
-            <span class="min-w-0 flex flex-col">
-              <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
-              <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
-            </span>
-            <span v-if="selectedDownloadQuality === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-          </button>
+          <div class="relative">
+            <div
+              ref="downloadQualityListRef"
+              class="max-h-[230px] overflow-y-auto pr-3 custom-scrollbar"
+              @scroll="updateDownloadQualityScrollProgress"
+            >
+              <button
+                v-for="opt in DOWNLOAD_QUALITY_OPTIONS"
+                :key="opt.value"
+                :data-quality-value="opt.value"
+                @click.stop="startDownload(opt.value)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
+                :class="activeDownloadQualityKey === opt.value
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="min-w-0 flex flex-col">
+                  <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
+                </span>
+                <span v-if="activeDownloadQualityKey === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+            <div
+              v-if="downloadQualityScrollProgress.show"
+              class="pointer-events-none absolute right-0 top-0 h-full w-1 rounded-full overflow-hidden"
+              :class="showPlayerDetail ? 'bg-white/10' : 'bg-gray-200/75 dark:bg-white/10'"
+              aria-hidden="true"
+            >
+              <div
+                class="absolute left-0 w-full rounded-full bg-[#EC4141]/75"
+                :style="{
+                  top: `${downloadQualityScrollProgress.top}%`,
+                  height: `${downloadQualityScrollProgress.height}%`,
+                }"
+              ></div>
+            </div>
+          </div>
           <div
             v-if="DOWNLOAD_QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing"
             class="px-3 py-2 text-[11px] text-gray-400 dark:text-white/40 whitespace-nowrap"
@@ -271,21 +379,44 @@ const {
             播放音质
             <span v-if="isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
           </div>
-          <button
-            v-for="opt in QUALITY_OPTIONS"
-            :key="opt.value"
-            @click="selectQuality(opt.value)"
-            class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
-            :class="activeQualityKey === opt.value
-              ? 'text-[#EC4141] bg-[#EC4141]/8'
-              : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
-          >
-            <span class="min-w-0 flex flex-col">
-              <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
-              <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
-            </span>
-            <span v-if="activeQualityKey === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
-          </button>
+          <div class="relative">
+            <div
+              ref="qualityListRef"
+              class="max-h-[230px] overflow-y-auto pr-3 custom-scrollbar"
+              @scroll="updateQualityScrollProgress"
+            >
+              <button
+                v-for="opt in QUALITY_OPTIONS"
+                :key="opt.value"
+                :data-quality-value="opt.value"
+                @click="selectQuality(opt.value)"
+                class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg transition-colors select-none"
+                :class="activeQualityKey === opt.value
+                  ? 'text-[#EC4141] bg-[#EC4141]/8'
+                  : (showPlayerDetail ? 'text-white/75 hover:text-white hover:bg-white/8' : 'text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/8')"
+              >
+                <span class="min-w-0 flex flex-col">
+                  <span class="text-[12px] font-medium whitespace-nowrap">{{ opt.label }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-white/40 whitespace-nowrap">{{ footerQualityExtraText(opt.value) }}</span>
+                </span>
+                <span v-if="activeQualityKey === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
+              </button>
+            </div>
+            <div
+              v-if="qualityScrollProgress.show"
+              class="pointer-events-none absolute right-0 top-0 h-full w-1 rounded-full overflow-hidden"
+              :class="showPlayerDetail ? 'bg-white/10' : 'bg-gray-200/75 dark:bg-white/10'"
+              aria-hidden="true"
+            >
+              <div
+                class="absolute left-0 w-full rounded-full bg-[#EC4141]/75"
+                :style="{
+                  top: `${qualityScrollProgress.top}%`,
+                  height: `${qualityScrollProgress.height}%`,
+                }"
+              ></div>
+            </div>
+          </div>
           <div
             v-if="QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing"
             class="px-3 py-2 text-[11px] text-gray-400 dark:text-white/40 whitespace-nowrap"

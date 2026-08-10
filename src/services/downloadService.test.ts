@@ -327,6 +327,14 @@ describe('downloadService: probeDownloadableQualities', () => {
     expect(probed.sort()).toEqual(['128k', '320k']);
   });
 
+  it('does not fallback to probing every quality when declared list is missing', async () => {
+    const result = await probeDownloadableQualities(makeOnlineSong(), null);
+
+    expect(result.available).toEqual([]);
+    expect(result.resolvedUrls).toEqual({});
+    expect(mockResolveLxUrlForSingleQuality).not.toHaveBeenCalled();
+  });
+
   it('returns an empty result without probing when already aborted', async () => {
     const controller = new AbortController();
     controller.abort();
