@@ -19,6 +19,7 @@ import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
 import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
+import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -878,6 +879,17 @@ const authStore = useAuthStore();
           preFetchedUrl: song.remote_source_id,
         });
         audioFilePath = resolvedOnlineAudio.audioFilePath;
+        const sanitizedAudioFilePath = sanitizeMediaUrl(audioFilePath);
+        if (sanitizedAudioFilePath && sanitizedAudioFilePath !== audioFilePath) {
+          console.warn('[Audio] 播放前兜底清洗在线 URL:', {
+            before: audioFilePath.slice(0, 120),
+            after: sanitizedAudioFilePath.slice(0, 120),
+          });
+          audioFilePath = sanitizedAudioFilePath;
+          if (resolvedOnlineAudio.currentPlayingAudioUrl) {
+            resolvedOnlineAudio.currentPlayingAudioUrl = sanitizedAudioFilePath;
+          }
+        }
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;

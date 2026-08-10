@@ -54,6 +54,7 @@ import {
   createPluginUpdateService,
 } from './pluginUpdates';
 import { BakaPluginManager } from './bakaPluginManager';
+import { sanitizeMediaUrl } from '../utils/mediaUrl';
 
 export type { PluginUpdateCheckResult } from './pluginUpdates';
 
@@ -74,55 +75,6 @@ const USE_SANDBOX = true;
 
 // 记录在沙箱中运行的插件 ID 集合
 const _sandboxedPlugins = new Set<string>();
-
-function sanitizePluginMediaUrl(raw: unknown): string {
-  if (typeof raw !== 'string') return '';
-
-  const stripEdgeJunk = (value: string): string => {
-    let current = value.trim();
-    let previous = '';
-    while (current && current !== previous) {
-      previous = current;
-      current = current
-        .replace(/^[`'"\s]+/g, '')
-        .replace(/[,`'"\s]+$/g, '');
-    }
-    return current;
-  };
-
-  const extractUrlLike = (value: string): string => {
-    const stripped = stripEdgeJunk(value)
-      .replace(/^[\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
-      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
-    const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
-    return stripEdgeJunk(match?.[0] || stripped)
-      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
-  };
-
-  const cleanedRaw = extractUrlLike(raw);
-  if (!cleanedRaw) return '';
-
-  try {
-    const url = new URL(cleanedRaw);
-    let changed = false;
-    const cleanedPathname = url.pathname.replace(/[,，;；`'"\s]+$/g, '');
-    if (cleanedPathname !== url.pathname) {
-      url.pathname = cleanedPathname;
-      changed = true;
-    }
-    for (const [key, value] of Array.from(url.searchParams.entries())) {
-      const cleaned = stripEdgeJunk(value);
-      if (cleaned !== value) {
-        url.searchParams.set(key, cleaned);
-        changed = true;
-      }
-    }
-    return stripEdgeJunk(changed ? url.toString() : cleanedRaw)
-      .replace(/[,，;；`'"\s]+$/g, '');
-  } catch {
-    return cleanedRaw;
-  }
-}
 
 function inferActualQualityFromPluginResult(
   result: any,
@@ -1237,7 +1189,7 @@ export async function pluginGetMusicInfo(
   }
 
   const rawUrl = typeof result.url === 'string' ? result.url : '';
-  const url = sanitizePluginMediaUrl(rawUrl);
+  const url = sanitizeMediaUrl(rawUrl);
   const headers = result.headers || {};
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
   // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）

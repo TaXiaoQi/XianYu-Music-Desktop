@@ -14,6 +14,7 @@ import {
   resolveLxCachedInfo,
   resolveLxUrl,
 } from '../../services/lxUrlResolver';
+import { sanitizeMediaUrl } from '../../utils/mediaUrl';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -51,51 +52,6 @@ const canReusePreFetchedPluginUrl = (
   song.remote_requested_quality === requestedQuality
   && song.remote_fallback_behavior === fallbackBehavior
 );
-
-/**
- * 兜底清洗插件媒体 URL。
- *
- * 部分 Baka 插件会返回被反引号/引号包裹，或尾部带逗号的 URL，例如：
- * `https://example.com/api?level=hires,`
- * 若坏字符串穿透到播放层，startsWith('http') 会失败，最终被误当成本地文件播放。
- */
-const sanitizeResolvedMediaUrl = (raw: unknown): string => {
-  if (typeof raw !== 'string') return '';
-  const stripEdgeJunk = (value: string) => {
-    let current = value.trim();
-    let previous = '';
-    while (current && current !== previous) {
-      previous = current;
-      current = current
-        .replace(/^[`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
-        .replace(/[,，;；`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+$/g, '');
-    }
-    return current;
-  };
-  const stripped = stripEdgeJunk(raw);
-  const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
-  const candidate = stripEdgeJunk(match?.[0] || stripped);
-  if (!candidate) return '';
-  try {
-    const url = new URL(candidate);
-    let changed = false;
-    const pathname = url.pathname.replace(/[,，;；`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+$/g, '');
-    if (pathname !== url.pathname) {
-      url.pathname = pathname;
-      changed = true;
-    }
-    for (const [key, value] of Array.from(url.searchParams.entries())) {
-      const cleaned = stripEdgeJunk(value);
-      if (cleaned !== value) {
-        url.searchParams.set(key, cleaned);
-        changed = true;
-      }
-    }
-    return stripEdgeJunk(changed ? url.toString() : candidate);
-  } catch {
-    return candidate;
-  }
-};
 
 export const getOnlineAvailableQualities = async (
   songPath: string,
@@ -242,7 +198,7 @@ const resolvePluginAudioUrl = async ({
   availableQualities,
   preFetchedUrl,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  const cleanedPreFetchedUrl = sanitizeResolvedMediaUrl(preFetchedUrl);
+  const cleanedPreFetchedUrl = sanitizeMediaUrl(preFetchedUrl);
   if (
     cleanedPreFetchedUrl
     && /^https?:/.test(cleanedPreFetchedUrl)
@@ -313,7 +269,7 @@ const resolvePluginAudioUrl = async ({
           fallbackBehavior,
           availableQualities,
         );
-    const cleanedMusicUrl = sanitizeResolvedMediaUrl(musicInfo?.url);
+    const cleanedMusicUrl = sanitizeMediaUrl(musicInfo?.url);
     if (musicInfo?.url && cleanedMusicUrl !== musicInfo.url) {
       console.warn('[Audio] 已清洗插件 URL:', {
         before: musicInfo.url.slice(0, 120),
