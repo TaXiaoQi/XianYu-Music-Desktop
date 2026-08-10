@@ -53,22 +53,6 @@ const dialogTitle = computed(() => {
 /** 当前探测任务的中止控制器（弹窗关闭或切歌时中止，防止旧结果覆盖新歌） */
 let probeController: AbortController | null = null;
 
-interface TrustedPlaybackQuality {
-  quality: QualityKey;
-  url: string;
-}
-
-/** 判断播放链路命中的 URL 是否疑似把无损档静默降级成有损格式 */
-const isLikelyDegradedLosslessUrl = (quality: QualityKey, url: string) => {
-  if (!QUALITY_META[quality]?.isLossless) return false;
-  try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    return /\.(mp3|m4a|aac|ogg|wma)$/.test(pathname);
-  } catch {
-    return /\.(mp3|m4a|aac|ogg|wma)(?:[?#]|$)/i.test(url);
-  }
-};
-
 /** 判断下载目标是否就是当前播放歌曲 */
 const isCurrentPlaybackSong = (song: Song) => {
   const playingSong = playbackStore.currentSong;
@@ -90,45 +74,6 @@ const getPlaybackAvailableQualities = (song: Song): QualityKey[] | null => {
   if (!isCurrentPlaybackSong(song)) return null;
   const qualities = playbackStore.currentAvailableQualities;
   return qualities && qualities.length > 0 ? [...qualities] : null;
-};
-
-/**
- * 复用播放链路已经解析成功的音质与直链。
- *
- * 只信任“当前正在播放同一首歌”的实际命中结果，并过滤无损档返回有损 URL 的情况。
- * 这样下载弹窗打开时可以先展示这个确定可用的档位，后续探测完成后再合并其它档位。
- */
-const getTrustedPlaybackQuality = (song: Song): TrustedPlaybackQuality | null => {
-  if (!isCurrentPlaybackSong(song)) return null;
-
-  const quality = playbackStore.currentPlayingQuality;
-  const url = playbackStore.currentPlayingAudioUrl;
-  if (!quality || !url || !/^https?:\/\//.test(url)) return null;
-  if (isLikelyDegradedLosslessUrl(quality, url)) return null;
-
-  return { quality, url };
-};
-
-/** 将播放命中的可信档位合并进实测结果，避免后台探测完成后覆盖掉该档位 */
-const mergeTrustedPlaybackQuality = (
-  song: Song,
-  available: QualityKey[],
-  resolvedUrls: Partial<Record<QualityKey, string>>,
-) => {
-  const trusted = getTrustedPlaybackQuality(song);
-  if (!trusted) {
-    return { available, resolvedUrls };
-  }
-
-  return {
-    available: available.includes(trusted.quality)
-      ? available
-      : [...available, trusted.quality],
-    resolvedUrls: {
-      ...resolvedUrls,
-      [trusted.quality]: resolvedUrls[trusted.quality] ?? trusted.url,
-    },
-  };
 };
 
 /** 当前选中档位不可用时，自动切换到列表中的最高档 */
@@ -246,12 +191,11 @@ const probeQualities = async (song: Song) => {
     });
     if (controller.signal.aborted) return;
 
-    const merged = mergeTrustedPlaybackQuality(song, result.available, result.resolvedUrls);
-    availableQualities.value = merged.available;
-    probedUrls.value = merged.resolvedUrls;
-    void probeQualitySizes(merged.resolvedUrls, controller.signal);
+    availableQualities.value = result.available;
+    probedUrls.value = result.resolvedUrls;
+    void probeQualitySizes(result.resolvedUrls, controller.signal);
 
-    ensureSelectedQualityAvailable(merged.available);
+    ensureSelectedQualityAvailable(result.available);
   } catch (e: any) {
     if (!controller.signal.aborted) {
       console.warn('[DownloadDialog] 音质探测失败:', e?.message || e);
@@ -287,20 +231,9 @@ watch(
     if (song) {
       const playbackQualities = getPlaybackAvailableQualities(song);
       if (playbackQualities) {
-        const merged = mergeTrustedPlaybackQuality(song, playbackQualities, {});
-        availableQualities.value = merged.available;
-        declaredQualities.value = merged.available;
-        probedUrls.value = merged.resolvedUrls;
-        void probeQualitySizes(merged.resolvedUrls, new AbortController().signal);
-        ensureSelectedQualityAvailable(merged.available);
-      }
-
-      const trusted = playbackQualities ? null : getTrustedPlaybackQuality(song);
-      if (trusted) {
-        availableQualities.value = [trusted.quality];
-        probedUrls.value = { [trusted.quality]: trusted.url };
-        selectedQuality.value = trusted.quality;
-        void probeQualitySizes({ [trusted.quality]: trusted.url }, new AbortController().signal);
+        availableQualities.value = playbackQualities;
+        declaredQualities.value = playbackQualities;
+        ensureSelectedQualityAvailable(playbackQualities);
       }
       void probeQualities(song);
     }

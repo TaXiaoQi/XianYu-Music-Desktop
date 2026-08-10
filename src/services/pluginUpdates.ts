@@ -1,3 +1,4 @@
+import CryptoJs from 'crypto-js';
 import type { PluginSource } from '../types';
 import type { pluginApi } from './tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
@@ -46,14 +47,44 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** 从 MusicFree 脚本中提取版本号（不执行脚本）。 */
+/**
+ * 从 MusicFree/Baka 脚本中提取版本号（不执行脚本）。
+ *
+ * [修复] 旧正则 /version\s*[=:]\s*['"]([^'"]+)['"]/ 会匹配脚本中任意出现的
+ * "version = '...'" 字符串，包括注释、变量声明、API URL 参数等，导致提取到
+ * 错误的版本号。Baka 插件尤其容易在 return 对象之前出现其他 version 字符串。
+ *
+ * 新策略：
+ * 1. 优先匹配对象属性形式的 version（前面是 { 或 ,），取最后一个匹配
+ *    （return 对象通常在脚本末尾）
+ * 2. 回退到旧正则（向后兼容）
+ */
 function extractMusicFreeVersion(script: string): string | null {
+  // 策略 1：匹配对象属性 { version: '1.0.0' } 或 , version: '1.0.0'
+  // 使用 matchAll 找所有匹配，取最后一个（最可能是 return 对象的 version）
+  const propMatches = [...script.matchAll(/[{,]\s*version\s*:\s*['"]([^'"]+)['"]/g)];
+  if (propMatches.length > 0) {
+    return propMatches[propMatches.length - 1][1];
+  }
+
+  // 策略 2（回退）：旧正则，匹配任意 version = '...' 或 version: '...'
   const match = script.match(/version\s*[=:]\s*['"]([^'"]+)['"]/);
   return match ? match[1] : null;
 }
 
-/** 从 MusicFree 脚本中提取 srcUrl（不执行脚本）。 */
+/**
+ * 从 MusicFree/Baka 脚本中提取 srcUrl（不执行脚本）。
+ *
+ * [修复] 同 extractMusicFreeVersion，使用对象属性匹配避免误匹配。
+ */
 function extractMusicFreeSrcUrl(script: string): string | null {
+  // 策略 1：匹配对象属性 { srcUrl: '...' } 或 , srcUrl: '...'
+  const propMatches = [...script.matchAll(/[{,]\s*srcUrl\s*:\s*['"]([^'"]+)['"]/g)];
+  if (propMatches.length > 0) {
+    return propMatches[propMatches.length - 1][1];
+  }
+
+  // 策略 2（回退）：旧正则
   const match = script.match(/srcUrl\s*[=:]\s*['"]([^'"]+)['"]/);
   return match ? match[1] : null;
 }
@@ -87,6 +118,9 @@ export const createPluginUpdateService = ({
    * 检查插件是否有可用更新。
    * - MusicFree 插件：优先使用实例的 srcUrl，回退到 filePath（如果是 http URL）。
    * - LX 插件：使用 parseLxScriptInfo 提取的 @homepage，回退到 filePath。
+   *
+   * [修复] 新增脚本内容哈希对比：source.id 本身就是脚本 SHA256 哈希，
+   * 如果新脚本哈希与 source.id 相同，直接判定为无更新，避免版本提取误差导致的重复更新。
    */
   const checkPluginUpdate = async (source: PluginSource): Promise<PluginUpdateCheckResult | null> => {
     let updateUrl: string | undefined;
@@ -146,6 +180,24 @@ export const createPluginUpdateService = ({
     if (!newScript) {
       log(`[checkPluginUpdate] ${source.name} 获取脚本失败`);
       return null;
+    }
+
+    // [修复] 脚本内容哈希对比：source.id 就是安装时脚本 SHA256 哈希。
+    // 如果新脚本哈希与 source.id 完全一致，说明脚本内容未变化，直接判定无更新。
+    // 这可以避免因版本号正则提取误差导致的"永远有更新"问题。
+    if (source.format === 'musicfree' && source.id) {
+      const newHash = CryptoJs.SHA256(newScript).toString();
+      if (newHash === source.id) {
+        log(`[checkPluginUpdate] ${source.name} 脚本哈希一致 (hash=${newHash.substring(0, 16)}...)，无更新`);
+        return {
+          hasUpdate: false,
+          currentVersion: source.version,
+          newVersion: source.version,
+          newScript: null,
+          updateUrl,
+        };
+      }
+      log(`[checkPluginUpdate] ${source.name} 脚本哈希不同: 当前=${source.id.substring(0, 16)}... 远程=${newHash.substring(0, 16)}...，继续版本比较`);
     }
 
     let newVersion = '';
