@@ -68,6 +68,45 @@ function log(msg: string) {
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
+const firstStringField = (source: any, keys: string[]): string => {
+  if (!source || typeof source !== 'object') {
+    return '';
+  }
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+};
+
+const normalizeHeaderMap = (headers: any): Record<string, string> => {
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) {
+    return {};
+  }
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!key.trim()) continue;
+    if (typeof value === 'string') {
+      normalized[key] = value;
+    } else if (value !== undefined && value !== null) {
+      normalized[key] = String(value);
+    }
+  }
+  return normalized;
+};
+
+const firstHeaderMap = (...candidates: any[]): Record<string, string> => {
+  for (const candidate of candidates) {
+    const normalized = normalizeHeaderMap(candidate);
+    if (Object.keys(normalized).length > 0) {
+      return normalized;
+    }
+  }
+  return {};
+};
+
 // ==================== 类型定义 ====================
 
 /** Baka 歌词格式（对齐 BakaMusic ILyric.LyricFormat） */
@@ -171,12 +210,26 @@ function sanitizeMediaUrl(raw: unknown): string {
     return current;
   };
 
-  const cleanedRaw = stripUrlEdgeJunk(raw);
+  const extractUrlLike = (value: string): string => {
+    const stripped = stripUrlEdgeJunk(value)
+      .replace(/^[\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
+      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
+    const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
+    return stripUrlEdgeJunk(match?.[0] || stripped)
+      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
+  };
+
+  const cleanedRaw = extractUrlLike(raw);
   if (!cleanedRaw) return '';
 
   try {
     const url = new URL(cleanedRaw);
     let changed = false;
+    const cleanedPathname = url.pathname.replace(/[,，;；`'"\s]+$/g, '');
+    if (cleanedPathname !== url.pathname) {
+      url.pathname = cleanedPathname;
+      changed = true;
+    }
     for (const [key, value] of Array.from(url.searchParams.entries())) {
       const cleaned = stripUrlEdgeJunk(value);
       if (cleaned !== value) {
@@ -184,7 +237,8 @@ function sanitizeMediaUrl(raw: unknown): string {
         changed = true;
       }
     }
-    return changed ? url.toString() : cleanedRaw;
+    return stripUrlEdgeJunk(changed ? url.toString() : cleanedRaw)
+      .replace(/[,，;；`'"\s]+$/g, '');
   } catch {
     return cleanedRaw;
   }
@@ -226,6 +280,44 @@ function inferActualQualityFromMediaUrl(urlLike: string, fallback?: QualityKey):
   }
 
   return fallback;
+}
+
+function normalizeSupportedQualities(raw: unknown): QualityKey[] | null {
+  if (!Array.isArray(raw)) return null;
+  const supported = raw
+    .map(q => normalizeQualityKey(q))
+    .filter((q): q is QualityKey => !!q);
+  return supported.length > 0 ? Array.from(new Set(supported)) : null;
+}
+
+function extractOnlySupportedQuality(errMsg: string): QualityKey | undefined {
+  const text = errMsg.toLowerCase();
+  if (!/(仅支持|只支持|只可使用|only\s+supports?|support\s+only|supports?\s+only)/i.test(errMsg)) {
+    return undefined;
+  }
+
+  for (const quality of ALL_QUALITY_KEYS_DESC) {
+    if (text.includes(quality.toLowerCase())) return quality;
+  }
+
+  const legacyAliases: Record<string, QualityKey> = {
+    standard: '128k',
+    low: '128k',
+    high: '320k',
+    exhigh: '320k',
+    super: 'flac',
+    lossless: 'flac',
+  };
+  for (const [alias, quality] of Object.entries(legacyAliases)) {
+    if (text.includes(alias)) return quality;
+  }
+
+  const bitrateMatch = text.match(/(?:^|[^\d])(\d{2,4})\s*k(?:bps)?(?:$|[^\d])/);
+  if (bitrateMatch) {
+    return normalizeQualityKey(`${bitrateMatch[1]}k`);
+  }
+
+  return undefined;
 }
 
 function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {
@@ -535,8 +627,11 @@ class BakaPluginManagerClass {
     // 构建音质尝试列表：始终使用 12 档原生键值
     const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
 
-    if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
-      const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
+    const declaredAvailableQualities = normalizeSupportedQualities(inst.supportedQualities);
+    const effectiveAvailableQualities = availableQualities?.length ? availableQualities : declaredAvailableQualities;
+
+    if (isQualityKey(quality) && effectiveAvailableQualities && effectiveAvailableQualities.length > 0) {
+      const resolvedKeys = resolveOnlinePlayQuality(quality, effectiveAvailableQualities, fallbackBehavior);
       for (const q of resolvedKeys) {
         tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
       }
@@ -566,16 +661,16 @@ class BakaPluginManagerClass {
       tryPairs.push({ pluginQ: quality, qualityKey: '320k' });
     }
 
-    const tryQualities = tryPairs.map(p => p.pluginQ);
-    log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryQualities)}`);
+    log(`[getMediaSource] 调用 ${source.name}, id=${musicItem.id}, platform=${musicItem.platform}, tryQualities=${JSON.stringify(tryPairs.map(p => p.pluginQ))}`);
 
     let result: any = null;
     let lastError: any = null;
     let successPairIdx = -1;
     let songLevelErrorDetected = false;
+    let nextPairIdxOverride: number | null = null;
 
-    for (let pairIdx = 0; pairIdx < tryQualities.length; pairIdx++) {
-      const q = tryQualities[pairIdx];
+    for (let pairIdx = 0; pairIdx < tryPairs.length; pairIdx++) {
+      const q = tryPairs[pairIdx].pluginQ;
       const attemptMusicItem = adaptMediaItemForPluginQuality(source, musicItem, tryPairs[pairIdx].qualityKey);
       for (let retry = 0; retry <= 1; retry++) {
         try {
@@ -600,12 +695,38 @@ class BakaPluginManagerClass {
             songLevelErrorDetected = true;
             break;
           }
+          const onlySupportedQuality = extractOnlySupportedQuality(errMsg);
+          if (onlySupportedQuality) {
+            let targetIdx = tryPairs.findIndex(pair => pair.qualityKey === onlySupportedQuality);
+            if (targetIdx < 0) {
+              targetIdx = tryPairs.length;
+              tryPairs.push({
+                pluginQ: qualityKeyToPluginString(onlySupportedQuality),
+                qualityKey: onlySupportedQuality,
+              });
+            }
+            if (targetIdx >= 0 && targetIdx !== pairIdx) {
+              log(`[getMediaSource] 插件提示仅支持 ${onlySupportedQuality}，跳过中间音质直接尝试`);
+              nextPairIdxOverride = targetIdx;
+              break;
+            }
+            if (targetIdx === pairIdx) {
+              log(`[getMediaSource] 插件声明当前仅支持 ${onlySupportedQuality} 但仍失败，停止重复重试`);
+              break;
+            }
+          }
           if (retry < 1) {
             await new Promise(r => setTimeout(r, 150));
           }
         }
       }
       if (songLevelErrorDetected) break;
+      if (nextPairIdxOverride !== null) {
+        pairIdx = nextPairIdxOverride - 1;
+        nextPairIdxOverride = null;
+        result = null;
+        continue;
+      }
       if (result?.url) {
         successPairIdx = pairIdx;
         break;
@@ -623,9 +744,9 @@ class BakaPluginManagerClass {
 
     const rawUrl = typeof result.url === 'string' ? result.url : '';
     const url = sanitizeMediaUrl(rawUrl);
-    const headers = result.headers || {};
-    const ekey = result.ekey || '';
-    const cek = result.cek || '';
+    const headers = firstHeaderMap(result.headers, result.header, result.requestHeaders);
+    const ekey = firstStringField(result, ['ekey', 'eKey', 'encryptKey', 'encryptionKey', 'qmcKey', 'qmc2Key']);
+    const cek = firstStringField(result, ['cek', 'cKey', 'contentKey', 'decryptKey', 'decryptionKey', 'cencKey']);
     const lyric = result.lyric || result.rawLrc || result.lrc || '';
     const tlyric = result.tlyric || result.translation || '';
     const lxlyric = result.lxlyric || '';
@@ -654,7 +775,7 @@ class BakaPluginManagerClass {
     log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
     return {
       url,
-      headers: headers as Record<string, string>,
+      headers,
       ekey: ekey || undefined,
       cek: cek || undefined,
       lyric,

@@ -90,12 +90,26 @@ function sanitizePluginMediaUrl(raw: unknown): string {
     return current;
   };
 
-  const cleanedRaw = stripEdgeJunk(raw);
+  const extractUrlLike = (value: string): string => {
+    const stripped = stripEdgeJunk(value)
+      .replace(/^[\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
+      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
+    const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
+    return stripEdgeJunk(match?.[0] || stripped)
+      .replace(/[,，;；\u2018\u2019\u201c\u201d\u00b4\uff02\uff07`'"\s]+$/g, '');
+  };
+
+  const cleanedRaw = extractUrlLike(raw);
   if (!cleanedRaw) return '';
 
   try {
     const url = new URL(cleanedRaw);
     let changed = false;
+    const cleanedPathname = url.pathname.replace(/[,，;；`'"\s]+$/g, '');
+    if (cleanedPathname !== url.pathname) {
+      url.pathname = cleanedPathname;
+      changed = true;
+    }
     for (const [key, value] of Array.from(url.searchParams.entries())) {
       const cleaned = stripEdgeJunk(value);
       if (cleaned !== value) {
@@ -103,7 +117,8 @@ function sanitizePluginMediaUrl(raw: unknown): string {
         changed = true;
       }
     }
-    return changed ? url.toString() : cleanedRaw;
+    return stripEdgeJunk(changed ? url.toString() : cleanedRaw)
+      .replace(/[,，;；`'"\s]+$/g, '');
   } catch {
     return cleanedRaw;
   }

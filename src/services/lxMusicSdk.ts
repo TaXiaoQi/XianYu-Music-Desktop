@@ -469,53 +469,54 @@ async function searchKg(str: string, page = 1, limit = 30, retryNum = 0): Promis
 function txHandleResult(rawList: any[]): LxSearchResultItem[] {
   if (!rawList || !Array.isArray(rawList)) return [];
   const list: LxSearchResultItem[] = [];
-  rawList.forEach(item => {
+  rawList.forEach(rawItem => {
+    const item = rawItem?.song || rawItem?.songInfo || rawItem?.musicInfo || rawItem;
+    if (!item || typeof item !== 'object') return;
     // 放宽过滤：仅要求 mid 或 id 存在即可（与 playlistImport.ts 的 parseTxSong 对齐）。
     // 原 media_mid 非空过滤过严：QQ 音乐响应中 file/media_mid 可能为空或缺失，
     // 导致搜索结果被全部静默过滤 → 列表为空（小秋搜索无法加载歌曲列表的根因）。
-    if (!item.mid && !item.id) return;
+    const songmid = String(item.mid || item.songmid || item.songMid || item.strMediaMid || item.id || '');
+    if (!songmid && !item.id) return;
     const types: LxSearchResultItem['types'] = [];
     const _types: LxSearchResultItem['_types'] = {};
     const file = item.file || {};
-    if (file.size_128mp3 != 0) {
+    if (Number(file.size_128mp3) > 0) {
       const size = sizeFormate(file.size_128mp3);
       types.push({ type: '128k', size });
       _types['128k'] = { size };
     }
-    if (file.size_320mp3 !== 0) {
+    if (Number(file.size_320mp3) > 0) {
       const size = sizeFormate(file.size_320mp3);
       types.push({ type: '320k', size });
       _types['320k'] = { size };
     }
-    if (file.size_flac !== 0) {
+    if (Number(file.size_flac) > 0) {
       const size = sizeFormate(file.size_flac);
       types.push({ type: 'flac', size });
       _types.flac = { size };
     }
-    if (file.size_hires !== 0) {
+    if (Number(file.size_hires) > 0) {
       const size = sizeFormate(file.size_hires);
       types.push({ type: 'flac24bit', size });
       _types.flac24bit = { size };
     }
-    let albumId = '';
-    let albumName = '';
-    if (item.album) {
-      albumName = item.album.name;
-      albumId = item.album.mid;
-    }
+    const albumId = String(item.album?.mid ?? item.albumMid ?? item.albummid ?? item.albumid ?? '');
+    const albumName = String(item.album?.name ?? item.albumName ?? item.albumname ?? '');
+    const singer = item.singer ?? item.singerName ?? item.singername ?? '';
+    const strMediaMid = file.media_mid ?? item.strMediaMid ?? item.mediaMid ?? item.mediamid ?? '';
     list.push({
-      singer: formatSingerName(item.singer, 'name'),
-      name: item.title,
+      singer: formatSingerName(singer, 'name'),
+      name: item.title || item.name || item.songname || '',
       albumName,
       albumId,
       source: 'tx',
       interval: formatPlayTime(item.interval),
-      songId: item.id,
-      albumMid: item.album?.mid ?? '',
-      strMediaMid: file.media_mid ?? '',
-      songmid: item.mid,
+      songId: item.id ?? item.songid,
+      albumMid: albumId,
+      strMediaMid,
+      songmid,
       img: (albumId === '' || albumId === '空')
-        ? (item.singer?.length && item.singer[0].mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${item.singer[0].mid}.jpg` : null)
+        ? (Array.isArray(item.singer) && item.singer[0]?.mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${item.singer[0].mid}.jpg` : null)
         : `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumId}.jpg`,
       types,
       _types,
@@ -524,9 +525,49 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
   return list;
 }
 
-async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 3) throw new Error('TX search: 搜索失败');
-  const requestData = {
+function pickTxSearchRawList(data: any): any[] {
+  const body = data?.body;
+  const candidates = [
+    body?.song?.list,
+    body?.song?.songlist,
+    body?.song?.itemlist,
+    body?.song?.items,
+    body?.song?.item_song,
+    body?.songlist?.list,
+    body?.songlist?.songlist,
+    body?.songlist?.itemlist,
+    body?.songlist?.items,
+    body?.songlist,
+    body?.item_song,
+    data?.song?.list,
+    data?.songlist,
+    data?.item_song,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) return candidate;
+  }
+
+  return [];
+}
+
+function getTxSearchTotal(data: any, fallbackCount: number, limit: number): number {
+  const total = data?.meta?.estimate_sum
+    ?? data?.body?.song?.totalnum
+    ?? data?.body?.song?.total
+    ?? data?.body?.song?.total_num
+    ?? data?.body?.songlist?.totalnum
+    ?? data?.body?.songlist?.total
+    ?? data?.body?.songlist?.total_num
+    ?? data?.body?.total
+    ?? fallbackCount;
+  const numericTotal = Number(total);
+  if (Number.isFinite(numericTotal) && numericTotal > 0) return numericTotal;
+  return fallbackCount || limit;
+}
+
+function createTxSearchRequestData(method: 'DoSearchForQQMusicDesktop' | 'DoSearchForQQMusicMobile', str: string, page: number, limit: number) {
+  return {
     comm: {
       ct: '24', cv: '4747474', v: '4747474', tmeAppID: 'qqmusic',
       format: 'json', inCharset: 'utf-8', outCharset: 'utf-8',
@@ -535,7 +576,7 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
     },
     req: {
       module: 'music.search.SearchCgiService',
-      method: 'DoSearchForQQMusicDesktop',
+      method,
       param: {
         search_type: 0,
         searchid: Math.random().toString().slice(2),
@@ -546,30 +587,61 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
       },
     },
   };
+}
+
+async function requestTxSearch(method: 'DoSearchForQQMusicDesktop' | 'DoSearchForQQMusicMobile', str: string, page: number, limit: number): Promise<any> {
+  const requestData = createTxSearchRequestData(method, str, page, limit);
   const sign = await zzcSign(JSON.stringify(requestData));
   const url = `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`;
-  const body = await httpPostJson(url, JSON.stringify(requestData), {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  const isMobile = method === 'DoSearchForQQMusicMobile';
+  return httpPostJson(url, JSON.stringify(requestData), {
+    'User-Agent': isMobile
+      ? 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36'
+      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Content-Type': 'application/json',
     'Referer': 'https://y.qq.com/',
   });
+}
+
+async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
+  if (retryNum > 3) throw new Error('TX search: 搜索失败');
+  let body = await requestTxSearch('DoSearchForQQMusicDesktop', str, page, limit);
   if (!body || !body.req || body.code != 0 || body.req.code != 0) {
     console.warn('[LxMusicSdk] TX search API error', { bodyCode: body?.code, reqCode: body?.req?.code, retry: retryNum });
     // 增加重试延迟，避免连续请求被 QQ 音乐风控返回 reqCode 2001
     await new Promise(r => setTimeout(r, 800 * (retryNum + 1)));
     return searchTx(str, page, limit, ++retryNum);
   }
-  const data = body.req.data;
-  // Desktop 接口返回 body.song.list；保留 item_song 作为回退容错
-  const rawList = data?.body?.song?.list ?? data?.body?.item_song;
+  let data = body.req.data;
+  // Desktop 接口通常返回 body.song.list；部分接口/插件环境会返回 body.songlist 或 item_song。
+  let rawList = pickTxSearchRawList(data);
   if (!Array.isArray(rawList) || rawList.length === 0) {
-    console.warn('[LxMusicSdk] TX search: song.list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null);
+    console.warn('[LxMusicSdk] TX search: song list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null, 'song keys:', data?.body?.song ? Object.keys(data.body.song) : null, 'songlist keys:', data?.body?.songlist && typeof data.body.songlist === 'object' ? Object.keys(data.body.songlist) : null);
+    try {
+      const mobileBody = await requestTxSearch('DoSearchForQQMusicMobile', str, page, limit);
+      if (mobileBody?.code === 0 && mobileBody?.req?.code === 0) {
+        const mobileData = mobileBody.req.data;
+        const mobileRawList = pickTxSearchRawList(mobileData);
+        if (mobileRawList.length > 0) {
+          console.warn('[LxMusicSdk] TX search: Desktop empty, using Mobile fallback list:', mobileRawList.length);
+          body = mobileBody;
+          data = mobileData;
+          rawList = mobileRawList;
+        } else {
+          console.warn('[LxMusicSdk] TX search: Mobile fallback also empty, data keys:', mobileData ? Object.keys(mobileData) : null, 'body keys:', mobileData?.body ? Object.keys(mobileData.body) : null);
+        }
+      } else {
+        console.warn('[LxMusicSdk] TX search: Mobile fallback API error', { bodyCode: mobileBody?.code, reqCode: mobileBody?.req?.code });
+      }
+    } catch (e) {
+      console.warn('[LxMusicSdk] TX search: Mobile fallback request failed', e);
+    }
   }
   const list = txHandleResult(rawList);
   if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {
     console.warn(`[LxMusicSdk] TX search: all ${rawList.length} items filtered out, sample:`, JSON.stringify(rawList[0]).slice(0, 300));
   }
-  const total = data.meta?.estimate_sum ?? 0;
+  const total = getTxSearchTotal(data, list.length, limit);
   return {
     list,
     allPage: Math.ceil(total / limit),

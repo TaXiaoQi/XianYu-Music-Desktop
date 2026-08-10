@@ -54,6 +54,34 @@ describe('playbackApi', () => {
     });
   });
 
+  it('passes plugin stream headers and encrypted keys to play_audio', () => {
+    playbackApi.playAudio({
+      path: 'https://example.test/encrypted.dat',
+      title: 'Encrypted',
+      artist: 'Artist',
+      album: 'Album',
+      cover: '',
+      duration: 180,
+      outputMode: 'shared',
+      headers: { Referer: 'https://example.test/' },
+      ekey: 'qmc-ekey',
+      cek: 'cenc-key',
+    });
+
+    expect(tauriInvoke).toHaveBeenCalledWith('play_audio', {
+      path: 'https://example.test/encrypted.dat',
+      title: 'Encrypted',
+      artist: 'Artist',
+      album: 'Album',
+      cover: '',
+      duration: 180,
+      outputMode: 'shared',
+      headers: { Referer: 'https://example.test/' },
+      ekey: 'qmc-ekey',
+      cek: 'cenc-key',
+    });
+  });
+
   it('calls stop_audio without payload', () => {
     playbackApi.stopAudio();
 

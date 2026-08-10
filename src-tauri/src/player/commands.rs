@@ -70,6 +70,8 @@ pub async fn play_audio(
     headers: Option<std::collections::HashMap<String, String>>,
     // QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由前端从插件 getMediaSource 响应中提取
     ekey: Option<String>,
+    // CENC 内容密钥（Baka 插件可能返回，如酷狗加密音源）。当前先透传并记录，后续由解密链路消费。
+    cek: Option<String>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
     state: tauri::State<'_, PlayerState>,
@@ -78,6 +80,12 @@ pub async fn play_audio(
     let mut selected_output_mode = output_mode;
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
     let source = if is_http_stream {
+        eprintln!(
+            "[Audio][rust] 在线直链参数: headers={}, ekey={}, cek={}",
+            headers.as_ref().map(|h| h.len()).unwrap_or(0),
+            ekey.as_ref().map(|v| v.len()).unwrap_or(0),
+            cek.as_ref().map(|v| v.len()).unwrap_or(0),
+        );
         // [在线播放重构] 把在线音频流式下载到本地临时文件，再用本地引擎播放。
         // 这样所有音乐都走统一的 File::open + Decoder 路径，设备切换恢复天然支持，
         // 无需维护 RemoteRangeReader 的复杂重建逻辑。

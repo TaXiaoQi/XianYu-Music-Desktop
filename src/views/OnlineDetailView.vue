@@ -6,6 +6,8 @@ import { ArrowLeft } from 'lucide-vue-next';
 import type { Song, PluginSearchResult } from '../types';
 import { useOnlineDetailStore, type OnlineDetailType } from '../features/onlineDetail/store';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
+import { usePlaybackStore } from '../features/playback/store';
+import { useSettingsStore } from '../features/settings/store';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
 import { useToast } from '../composables/toast';
@@ -53,6 +55,8 @@ const { playSong, clearQueue, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const libraryStore = useLibraryStore();
 const onlineDetailStore = useOnlineDetailStore();
+const playbackStore = usePlaybackStore();
+const settingsStore = useSettingsStore();
 
 const detailType = computed<OnlineDetailType>(() => (route.query.type as OnlineDetailType) || 'artist');
 const ctx = computed(() => onlineDetailStore.context);
@@ -468,9 +472,12 @@ async function handlePlayMfSong(song: Song) {
   try {
     // 通过插件获取播放 URL（必须，阻塞播放）
     // Baka 插件使用独立的 12 档音质方法
+    const requestedQuality = playbackStore.sessionQualityOverride
+      || settingsStore.settings.audio.onlineDefaultQuality || '320k';
+    const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
     const musicInfo = await isBakaPlugin(ctx.value.pluginSource)
-      ? await pluginGetBakaMusicInfo(ctx.value.pluginSource, mfItem, '320k')
-      : await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, '320k');
+      ? await pluginGetBakaMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior)
+      : await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior);
     if (!musicInfo?.url) {
       showToast('无法获取播放URL', 'error');
       return;
@@ -480,6 +487,9 @@ async function handlePlayMfSong(song: Song) {
       ...song,
       source_type: 'plugin',
       remote_source_id: musicInfo.url,
+      remote_requested_quality: requestedQuality as any,
+      remote_fallback_behavior: fallbackBehavior,
+      remote_actual_quality: musicInfo.actualQuality,
       remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
       remote_ekey: musicInfo.ekey,
       remote_cek: musicInfo.cek,
