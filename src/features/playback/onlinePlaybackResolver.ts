@@ -1,20 +1,15 @@
 import type { QualityKey, Song } from '../../types';
 import { QUALITY_META, normalizeQualityKey } from '../../types';
-import { extFromUrl, resolveActualQuality } from '../../services/audioQualityVerify';
 import {
   getStoredPlugins,
-  pluginGetCover,
-  pluginGetMusicInfo,
-  pluginGetBakaMusicInfo,
-  isBakaPlugin,
   pluginGetSupportedQualities,
 } from '../../services/pluginEngine';
 import {
   parseLxPath,
   resolveLxCachedInfo,
-  resolveLxUrl,
 } from '../../services/lxUrlResolver';
-import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
+import { resolveOnlineQualityUrl } from '../../services/downloadService';
+import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -40,17 +35,6 @@ export interface ResolveOnlineAudioResult {
 
 const sortQualities = (qualities: QualityKey[]) => (
   qualities.sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
-);
-
-const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
-
-const canReusePreFetchedPluginUrl = (
-  song: Song,
-  requestedQuality: QualityKey,
-  fallbackBehavior: ResolveOnlineAudioOptions['fallbackBehavior'],
-) => (
-  song.remote_requested_quality === requestedQuality
-  && song.remote_fallback_behavior === fallbackBehavior
 );
 
 export const getOnlineAvailableQualities = async (
@@ -101,253 +85,45 @@ export const resolveOnlineAudio = async ({
   song,
   requestedQuality,
   fallbackBehavior,
-  availableQualities,
   preFetchedUrl,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  if (audioFilePath.startsWith('lx://')) {
-    return resolveLxAudioUrl({
-      audioFilePath,
-      song,
-      requestedQuality,
-      fallbackBehavior,
-      availableQualities,
-    });
-  }
-
-  if (audioFilePath.startsWith('plugin://')) {
-    return resolvePluginAudioUrl({
-      audioFilePath,
-      song,
-      requestedQuality,
-      fallbackBehavior,
-      availableQualities,
-      preFetchedUrl,
-    });
-  }
-
-  return {
-    audioFilePath,
-    pluginHeaders: null,
-    currentPlayingQuality: null,
-    currentPlayingAudioUrl: null,
-  };
-};
-
-const resolveLxAudioUrl = async ({
-  audioFilePath,
-  song,
-  requestedQuality,
-  fallbackBehavior,
-  availableQualities,
-}: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  const pathInfo = parseLxPath(audioFilePath);
-  if (!pathInfo) {
-    return {
-      audioFilePath,
-      pluginHeaders: null,
-      currentPlayingQuality: null,
-      currentPlayingAudioUrl: null,
-    };
-  }
-  const { source: lxSource, songmid } = pathInfo;
-
-  try {
-    const result = await resolveLxUrl(
-      song,
-      lxSource,
-      songmid,
-      requestedQuality,
-      fallbackBehavior,
-      availableQualities,
-    );
-    if (result?.url && /^https?:/.test(result.url)) {
-      // 音源可能对无版权歌曲静默降级（声称 flac 实返 mp3）。
-      // 直接采信 result.quality 会让 UI 显示 SQ/HR 而用户实听有损，
-      // 因此按直链真实格式修正后再上报给 UI。
-      const actualQuality = resolveActualQuality(result.quality, result.url);
-      if (actualQuality !== result.quality) {
-        console.warn(
-          `[Audio] 音源将 ${result.quality} 降级为 ${extFromUrl(result.url)}，`
-          + `实际播放音质按 ${actualQuality} 显示`,
-        );
-      }
-      return {
-        audioFilePath: result.url,
-        pluginHeaders: normalizeMediaRequestHeaders(result.url, null),
-        currentPlayingQuality: actualQuality,
-        currentPlayingAudioUrl: result.url,
-      };
-    }
-  } catch (error) {
-    console.warn(`[Audio] Failed to resolve lx:// URL: ${getErrorMessage(error)}`);
-  }
-
-  return {
-    audioFilePath,
-    pluginHeaders: null,
-    currentPlayingQuality: null,
-    currentPlayingAudioUrl: null,
-  };
-};
-
-const resolvePluginAudioUrl = async ({
-  audioFilePath,
-  song,
-  requestedQuality,
-  fallbackBehavior,
-  availableQualities,
-  preFetchedUrl,
-}: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  const cleanedPreFetchedUrl = sanitizeMediaUrl(preFetchedUrl);
-  if (
-    cleanedPreFetchedUrl
-    && /^https?:/.test(cleanedPreFetchedUrl)
-    && canReusePreFetchedPluginUrl(song, requestedQuality, fallbackBehavior)
-  ) {
-    if (preFetchedUrl && cleanedPreFetchedUrl !== preFetchedUrl) {
-      console.warn('[Audio] 已清洗预获取插件 URL:', {
-        before: String(preFetchedUrl).slice(0, 120),
-        after: cleanedPreFetchedUrl.slice(0, 120),
-      });
-    }
-    return {
-      audioFilePath: cleanedPreFetchedUrl,
-      pluginHeaders: normalizeMediaRequestHeaders(cleanedPreFetchedUrl, song.remote_headers),
-      currentPlayingQuality: song.remote_actual_quality ?? song.remote_requested_quality ?? null,
-      currentPlayingAudioUrl: cleanedPreFetchedUrl,
-      ekey: song.remote_ekey,
-      cek: song.remote_cek,
-    };
-  }
-  if (cleanedPreFetchedUrl && /^https?:/.test(cleanedPreFetchedUrl)) {
-    console.log('[Audio] 预获取插件 URL 与当前播放设置不一致，重新按设置解析:', {
-      requestedQuality,
-      fallbackBehavior,
-      preFetchedQuality: song.remote_requested_quality ?? null,
-      preFetchedFallback: song.remote_fallback_behavior ?? null,
-    });
-  }
-
-  const pluginSearchResult = song.rawData;
-  if (!pluginSearchResult?.pluginId) {
-    return {
-      audioFilePath,
-      pluginHeaders: null,
-      currentPlayingQuality: null,
-      currentPlayingAudioUrl: null,
-    };
-  }
-
-  try {
-    const plugins = getStoredPlugins();
-    const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
-    if (!pluginSource) {
-      console.warn(`[Audio] No enabled plugin found for pluginId=${pluginSearchResult.pluginId}`);
-      return {
-        audioFilePath,
-        pluginHeaders: null,
-        currentPlayingQuality: null,
-        currentPlayingAudioUrl: null,
-      };
-    }
-
-    // Baka/Toskysun 系列插件使用独立的播放方法（12 档原生音质），
-    // 原版 MusicFree 插件使用 pluginGetMusicInfo（standard/high/lossless 三档）
-    const useBaka = await isBakaPlugin(pluginSource);
-    const musicInfo = useBaka
-      ? await pluginGetBakaMusicInfo(
-          pluginSource,
-          pluginSearchResult,
-          requestedQuality,
-          fallbackBehavior,
-          availableQualities,
-        )
-      : await pluginGetMusicInfo(
-          pluginSource,
-          pluginSearchResult,
-          requestedQuality,
-          fallbackBehavior,
-          availableQualities,
-        );
-    let cleanedMusicUrl = sanitizeMediaUrl(musicInfo?.url);
-    // 兜底：如果 sanitizeMediaUrl 未清除首尾非 URL 字符，用 indexOf 强制提取
-    if (cleanedMusicUrl && !cleanedMusicUrl.startsWith('http://') && !cleanedMusicUrl.startsWith('https://') && musicInfo?.url) {
-      const rawStr = String(musicInfo.url);
-      const idx1 = rawStr.indexOf('https://');
-      const idx2 = rawStr.indexOf('http://');
-      const idx = idx1 >= 0 ? idx1 : idx2;
-      if (idx >= 0) {
-        cleanedMusicUrl = rawStr.substring(idx);
-        while (cleanedMusicUrl.length > 0) {
-          const c = cleanedMusicUrl.charCodeAt(cleanedMusicUrl.length - 1);
-          if (c === 0x2c || c === 0x3b || c === 0x60 || c === 0x27 || c === 0x22 || c <= 0x20) {
-            cleanedMusicUrl = cleanedMusicUrl.substring(0, cleanedMusicUrl.length - 1);
-          } else break;
-        }
-      }
-    }
-    if (musicInfo?.url && cleanedMusicUrl !== musicInfo.url) {
-      console.warn('[Audio] 已清洗插件 URL:', {
-        before: musicInfo.url.slice(0, 120),
-        after: cleanedMusicUrl.slice(0, 120),
-      });
-    }
-    if (!cleanedMusicUrl || !/^https?:/.test(cleanedMusicUrl)) {
-      console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
-      return {
-        audioFilePath,
-        pluginHeaders: null,
-        currentPlayingQuality: null,
-        currentPlayingAudioUrl: null,
-      };
-    }
-    if (!musicInfo) {
-      console.warn(`[Audio] pluginGetMusicInfo returned null for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
-      return {
-        audioFilePath,
-        pluginHeaders: null,
-        currentPlayingQuality: null,
-        currentPlayingAudioUrl: null,
-      };
-    }
-
-    let coverThumbPath = musicInfo.coverUrl;
-    if (!song.cover_thumb_path && !coverThumbPath) {
-      try {
-        coverThumbPath = await pluginGetCover(pluginSource, pluginSearchResult) ?? undefined;
-      } catch { /* ignore cover error */ }
-    }
-
-    // 同 lx:// 路径：按直链真实格式修正插件声称的档位，
-    // 避免音源静默降级时 UI 仍显示 SQ/HR。
-    const claimedQuality = musicInfo.actualQuality ?? null;
-    const verifiedQuality = claimedQuality
-      ? resolveActualQuality(claimedQuality, cleanedMusicUrl)
-      : null;
-    if (claimedQuality && verifiedQuality !== claimedQuality) {
-      console.warn(
-        `[Audio] 插件将 ${claimedQuality} 降级为 ${extFromUrl(cleanedMusicUrl)}，`
-        + `实际播放音质按 ${verifiedQuality} 显示`,
+  if (audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://')) {
+    try {
+      const preResolvedUrls: Partial<Record<QualityKey, string>> | undefined = song.remote_requested_quality === requestedQuality
+        && song.remote_fallback_behavior === fallbackBehavior
+        && preFetchedUrl
+        ? { [requestedQuality]: preFetchedUrl }
+        : undefined;
+      const resolved = await resolveOnlineQualityUrl(
+        song,
+        requestedQuality,
+        fallbackBehavior,
+        null,
+        preResolvedUrls,
+        { includePlaybackExtras: true },
       );
-    }
 
-    return {
-      audioFilePath: cleanedMusicUrl,
-      pluginHeaders: normalizeMediaRequestHeaders(cleanedMusicUrl, musicInfo.headers),
-      currentPlayingQuality: verifiedQuality,
-      currentPlayingAudioUrl: cleanedMusicUrl,
-      lyricsRaw: musicInfo.lyricsRaw,
-      coverThumbPath,
-      ekey: musicInfo.ekey,
-      cek: musicInfo.cek,
-    };
-  } catch (error) {
-    console.warn(`[Audio] Failed to resolve plugin:// URL: ${getErrorMessage(error)}`);
-    return {
-      audioFilePath,
-      pluginHeaders: null,
-      currentPlayingQuality: null,
-      currentPlayingAudioUrl: null,
-    };
+      if (resolved?.url) {
+        return {
+          audioFilePath: resolved.url,
+          pluginHeaders: normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null),
+          currentPlayingQuality: resolved.quality,
+          currentPlayingAudioUrl: resolved.url,
+          lyricsRaw: resolved.lyricsRaw,
+          coverThumbPath: resolved.coverThumbPath,
+          ekey: resolved.ekey,
+          cek: resolved.cek,
+        };
+      }
+    } catch (error) {
+      console.warn('[Audio] 使用下载链路解析在线 URL 失败:', error);
+    }
   }
+
+  return {
+    audioFilePath,
+    pluginHeaders: null,
+    currentPlayingQuality: null,
+    currentPlayingAudioUrl: null,
+  };
 };

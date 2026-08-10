@@ -29,9 +29,7 @@ const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue
 
 const {
   currentSong,
-  currentAvailableQualities,
   currentPlayingQuality,
-  currentPlayingAudioUrl,
   sessionQualityOverride,
   setSessionQualityOverride,
   isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail, showComment,
@@ -96,6 +94,7 @@ const isDownloading = computed(() => {
 let downloadCheckId = 0;
 
 /** 底栏音质菜单展示用：各档位已解析直链与体积，播放/下载菜单共用 */
+const footerAvailableQualityKeys = ref<QualityKey[] | null>(null);
 const footerQualityUrls = ref<Partial<Record<QualityKey, string>>>({});
 const footerQualitySizes = ref<Partial<Record<QualityKey, number>>>({});
 const isFooterQualityInfoProbing = ref(false);
@@ -130,6 +129,7 @@ watch(
   () => {
     abortFooterQualityInfoProbe();
     footerQualityInfoSongPath.value = '';
+    footerAvailableQualityKeys.value = null;
     footerQualityUrls.value = {};
     footerQualitySizes.value = {};
     void refreshDownloadedState();
@@ -148,16 +148,17 @@ watch(
   },
 );
 
-// 下载音质下拉菜单（与播放音质选择器 UI 一致，复用 currentAvailableQualities 预取结果）
+// 下载音质下拉菜单（只展示下载链路实测可用列表；探测完成前不显示旧的播放侧列表）
 const showDownloadQualityMenu = ref(false);
 const downloadQualityButtonRef = ref<HTMLElement | null>(null);
 const downloadQualityMenuRef = ref<HTMLElement | null>(null);
 
-/** 当前歌曲可用的下载音质选项（与播放音质共用 currentAvailableQualities 预取结果） */
+/** 当前歌曲可用的下载音质选项（最终以下载链路 probeDownloadableQualities 的实测结果为准） */
 const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
-  const supported = currentAvailableQualities.value;
-  if (!supported || supported.length === 0) return ALL_QUALITY_OPTIONS;
-  return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
+  if (footerAvailableQualityKeys.value !== null) {
+    return ALL_QUALITY_OPTIONS.filter(opt => footerAvailableQualityKeys.value!.includes(opt.value));
+  }
+  return [];
 });
 
 /** 当前选择的下载音质（来自设置 store，默认 '320k'） */
@@ -270,11 +271,12 @@ const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description
       description: QUALITY_META[k].description,
     }));
 
-/** 当前歌曲可用的音质选项（根据插件/音源实际支持过滤，null 时回退到全部） */
+/** 当前歌曲可用的播放音质选项（最终以下载链路 probeDownloadableQualities 的实测结果为准） */
 const QUALITY_OPTIONS = computed(() => {
-  const supported = currentAvailableQualities.value;
-  if (!supported || supported.length === 0) return ALL_QUALITY_OPTIONS;
-  return ALL_QUALITY_OPTIONS.filter(opt => supported.includes(opt.value));
+  if (footerAvailableQualityKeys.value !== null) {
+    return ALL_QUALITY_OPTIONS.filter(opt => footerAvailableQualityKeys.value!.includes(opt.value));
+  }
+  return [];
 });
 
 const compactFileSize = (bytes: number) =>
@@ -325,21 +327,13 @@ const probeFooterQualitySizes = async (
   }));
 };
 
-const seedCurrentPlayingQualityInfo = (signal: AbortSignal) => {
-  const quality = currentPlayingQuality.value;
-  const url = currentPlayingAudioUrl.value;
-  if (!quality || !url || !/^https?:\/\//.test(url)) return;
-  footerQualityUrls.value = { ...footerQualityUrls.value, [quality]: url };
-  void probeFooterQualitySizes({ [quality]: url }, signal);
-};
-
 const ensureFooterQualityInfo = async () => {
   const song = currentSong.value;
   const songPath = song?.cue_source_path || song?.path || '';
   if (!song || !isDownloadableOnlineSong(song) || !songPath) return;
   if (
     footerQualityInfoSongPath.value === songPath
-    && (isFooterQualityInfoProbing.value || Object.keys(footerQualityUrls.value).length > 0)
+    && (isFooterQualityInfoProbing.value || footerAvailableQualityKeys.value !== null)
   ) {
     return;
   }
@@ -348,21 +342,20 @@ const ensureFooterQualityInfo = async () => {
   const controller = new AbortController();
   footerQualityInfoController = controller;
   footerQualityInfoSongPath.value = songPath;
+  footerAvailableQualityKeys.value = null;
   footerQualityUrls.value = {};
   footerQualitySizes.value = {};
   isFooterQualityInfoProbing.value = true;
 
-  seedCurrentPlayingQualityInfo(controller.signal);
-
   try {
-    const result = await probeDownloadableQualities(song, currentAvailableQualities.value, {
+    const result = await probeDownloadableQualities(song, null, {
       signal: controller.signal,
     });
     if (controller.signal.aborted) return;
 
-    const mergedUrls = { ...result.resolvedUrls, ...footerQualityUrls.value };
-    footerQualityUrls.value = mergedUrls;
-    await probeFooterQualitySizes(mergedUrls, controller.signal);
+    footerAvailableQualityKeys.value = result.available;
+    footerQualityUrls.value = result.resolvedUrls;
+    await probeFooterQualitySizes(result.resolvedUrls, controller.signal);
   } catch (e: any) {
     if (!controller.signal.aborted) {
       console.warn('[PlayerFooter] 音质体积探测失败:', e?.message || e);
@@ -374,6 +367,16 @@ const ensureFooterQualityInfo = async () => {
     }
   }
 };
+
+// 当前播放歌曲变化时，提前在后台探测下载链路可用音质和文件体积。
+// 这样用户稍后打开播放/下载音质弹窗时，大多数情况下可以直接看到结果。
+watch(
+  () => currentSong.value?.cue_source_path || currentSong.value?.path,
+  () => {
+    void ensureFooterQualityInfo();
+  },
+  { immediate: true },
+);
 
 /** 音质英文缩写映射（底栏按钮显示用，下拉菜单仍用完整中文标签） */
 const QUALITY_ABBR: Record<QualityKey, string> = {

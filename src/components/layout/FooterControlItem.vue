@@ -202,6 +202,12 @@ const {
             </span>
             <span v-if="selectedDownloadQuality === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
           </button>
+          <div
+            v-if="DOWNLOAD_QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing"
+            class="px-3 py-2 text-[11px] text-gray-400 dark:text-white/40 whitespace-nowrap"
+          >
+            未探测到可下载音质
+          </div>
         </div>
       </div>
     </transition>
@@ -280,6 +286,12 @@ const {
             </span>
             <span v-if="activeQualityKey === opt.value" class="ml-auto w-1.5 h-1.5 rounded-full bg-[#EC4141] shrink-0"></span>
           </button>
+          <div
+            v-if="QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing"
+            class="px-3 py-2 text-[11px] text-gray-400 dark:text-white/40 whitespace-nowrap"
+          >
+            未探测到可播放音质
+          </div>
         </div>
       </div>
     </transition>

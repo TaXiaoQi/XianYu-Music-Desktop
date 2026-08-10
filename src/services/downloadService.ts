@@ -7,7 +7,7 @@
  */
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
+import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, OnlineQualityFallbackBehavior, Song, QualityKey } from '../types';
 import { downloadApi } from './tauri/downloadApi';
 import type { EmbedMetadataRequestContract } from './tauri/contracts';
 import {
@@ -17,12 +17,13 @@ import {
   qualityKeyToBakaLegacyQuality,
   qualityKeyToBakaPluginQuality,
   qualityKeyToMfQuality,
+  resolveOnlinePlayQuality,
 } from '../types';
 import {
   extFromUrl as extFromUrlShared,
   isDegradedLossless,
 } from './audioQualityVerify';
-import { usePlaybackStore } from '../features/playback';
+import { usePlaybackStore } from '../features/playback/store';
 import {
   getStoredPlugins,
   pluginGetCover,
@@ -40,9 +41,21 @@ import {
   resolveLxUrlForSingleQuality,
   resolveLxUrlViaRust,
 } from './lxUrlResolver';
+import { sanitizeMediaUrl } from '../utils/mediaUrl';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 type LxQuality = QualityKey;
+
+/** 统一在线音频直链解析结果：播放和下载共用同一套单档解析逻辑 */
+export interface ResolvedOnlineQualityUrl {
+  quality: QualityKey;
+  url: string;
+  headers?: Record<string, string> | null;
+  lyricsRaw?: string;
+  coverThumbPath?: string;
+  ekey?: string;
+  cek?: string;
+}
 
 /**
  * 从目标音质向下降级，生成候选音质列表（用于自动回退）。
@@ -192,10 +205,10 @@ async function prepareResolveContext(
  * 时直接返回一个 .mp3 直链。若不校验，就会把降级后的 mp3 用 .flac 扩展名保存，
  * 表现为「下载无损却比高品还小」。这里通过 URL 扩展名识别降级并跳过该档位。
  */
-async function resolveUrlForQuality(
+async function resolveLxAudioForQuality(
   ctx: ResolveDownloadContext,
   q: LxQuality,
-): Promise<string | null> {
+): Promise<ResolvedOnlineQualityUrl | null> {
   const url = await resolveLxUrlForSingleQuality(
     ctx.matchedPlugin,
     ctx.lxSource,
@@ -208,7 +221,14 @@ async function resolveUrlForQuality(
     console.warn(`[Download] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
     return null;
   }
-  return url;
+  return { quality: q, url };
+}
+
+async function resolveUrlForQuality(
+  ctx: ResolveDownloadContext,
+  q: LxQuality,
+): Promise<string | null> {
+  return (await resolveLxAudioForQuality(ctx, q))?.url ?? null;
 }
 
 /** plugin:// 协议的解析上下文 */
@@ -261,10 +281,11 @@ async function preparePluginResolveContext(
  * 优先用预解析的 qualities 字段（无网络开销），否则调用插件的 getMediaSource。
  * 同样检测 lossless 被降级为 mp3 的情况并跳过该档位。
  */
-async function resolvePluginUrlForQuality(
+async function resolvePluginAudioForQuality(
   ctx: PluginResolveContext,
   q: LxQuality,
-): Promise<string | null> {
+  includePlaybackExtras = false,
+): Promise<ResolvedOnlineQualityUrl | null> {
   const nativeQuality = q;
   const bakaPluginQuality = qualityKeyToBakaPluginQuality(q);
   const bakaLegacyQuality = qualityKeyToBakaLegacyQuality(q);
@@ -279,13 +300,14 @@ async function resolvePluginUrlForQuality(
     mfLegacyQuality,
   ]));
   for (const key of preKeys) {
-    const pre = ctx.preQualities?.[key];
-    if (!pre?.url || !/^https?:/.test(pre.url)) continue;
-    if (isDegradedLossless(q, pre.url)) {
-      console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(pre.url)}，跳过该档位`);
+    const rawUrl = ctx.preQualities?.[key]?.url;
+    const preUrl = sanitizeMediaUrl(rawUrl);
+    if (!preUrl || !/^https?:/.test(preUrl)) continue;
+    if (isDegradedLossless(q, preUrl)) {
+      console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(preUrl)}，跳过该档位`);
       return null;
     }
-    return pre.url;
+    return { quality: q, url: preUrl };
   }
 
   // 2) 回退到插件 getMediaSource（传入 QualityKey，内部自动适配）
@@ -293,14 +315,76 @@ async function resolvePluginUrlForQuality(
   const musicInfo = await isBakaPlugin(ctx.pluginSource)
     ? await pluginGetBakaMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q)
     : await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
-  const url = musicInfo?.url;
+  const url = sanitizeMediaUrl(musicInfo?.url);
   if (!url || !/^https?:/.test(url)) return null;
 
   if (isDegradedLossless(q, url)) {
     console.warn(`[Download][plugin] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
     return null;
   }
-  return url;
+  let coverThumbPath = musicInfo?.coverUrl;
+  if (includePlaybackExtras && !ctx.pluginSearchResult?.cover_thumb_path && !coverThumbPath) {
+    try {
+      coverThumbPath = await pluginGetCover(ctx.pluginSource, ctx.pluginSearchResult) ?? undefined;
+    } catch { /* ignore cover error */ }
+  }
+
+  return {
+    quality: q,
+    url,
+    headers: musicInfo?.headers ?? null,
+    lyricsRaw: includePlaybackExtras ? musicInfo?.lyricsRaw : undefined,
+    coverThumbPath: includePlaybackExtras ? coverThumbPath : undefined,
+    ekey: musicInfo?.ekey,
+    cek: musicInfo?.cek,
+  };
+}
+
+async function resolvePluginUrlForQuality(
+  ctx: PluginResolveContext,
+  q: LxQuality,
+): Promise<string | null> {
+  return (await resolvePluginAudioForQuality(ctx, q))?.url ?? null;
+}
+
+/** 使用下载链路解析在线音频直链，并按播放回退策略返回实际命中的档位 */
+export async function resolveOnlineQualityUrl(
+  song: Song,
+  requestedQuality: QualityKey,
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+  availableQualities: QualityKey[] | null,
+  preResolvedUrls?: Partial<Record<QualityKey, string>>,
+  options?: { includePlaybackExtras?: boolean },
+): Promise<ResolvedOnlineQualityUrl | null> {
+  if (!isDownloadableOnlineSong(song)) return null;
+
+  const isPlugin = isPluginSong(song);
+  const ctx = isPlugin
+    ? await preparePluginResolveContext(song, requestedQuality)
+    : await prepareResolveContext(song, requestedQuality);
+  if (!ctx) return null;
+
+  const candidates = resolveOnlinePlayQuality(requestedQuality, availableQualities, fallbackBehavior);
+
+  for (const q of candidates) {
+    const preResolved = sanitizeMediaUrl(preResolvedUrls?.[q]);
+    if (preResolved && /^https?:/.test(preResolved) && !isDegradedLossless(q, preResolved)) {
+      return {
+        quality: song.remote_actual_quality ?? q,
+        url: preResolved,
+        headers: song.remote_headers ?? null,
+        ekey: song.remote_ekey,
+        cek: song.remote_cek,
+      };
+    }
+
+    const resolved = isPlugin
+      ? await resolvePluginAudioForQuality(ctx as PluginResolveContext, q, options?.includePlaybackExtras)
+      : await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
+    if (resolved?.url) return resolved;
+  }
+
+  return null;
 }
 
 /** 音质探测结果 */
