@@ -422,6 +422,7 @@ fn qmc1_get_mask(offset: usize) -> u8 {
 }
 
 /// QMC1 in-place decryption (no ekey needed).
+#[allow(dead_code)]
 pub fn qmc1_decrypt(data: &mut [u8]) {
     for (i, byte) in data.iter_mut().enumerate() {
         *byte ^= qmc1_get_mask(i);
@@ -432,6 +433,7 @@ pub fn qmc1_decrypt(data: &mut [u8]) {
 // Unified QMC crypto
 // ============================================================
 
+#[allow(dead_code)]
 enum QmcCryptoInner {
     Map(Qmc2MapCrypto),
     Rc4(Qmc2Rc4Crypto),
@@ -458,6 +460,7 @@ impl QmcCrypto {
     }
 
     /// Create QMC1 crypto (no ekey).
+    #[allow(dead_code)]
     pub fn qmc1() -> Self {
         Self {
             inner: QmcCryptoInner::Qmc1,
@@ -524,6 +527,7 @@ impl<R: Read + Seek> Seek for QmcDecryptReader<R> {
 
 /// Check if a downloaded file has a QTag or V1 footer with an embedded ekey.
 /// Returns the extracted base64-encoded ekey if found.
+#[allow(dead_code)]
 pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
     if data.len() < 8 {
         return None;
@@ -571,6 +575,7 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
@@ -578,6 +583,7 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// Check if file header looks like QMC-encrypted content (not a valid audio format).
+#[allow(dead_code)]
 pub fn looks_like_qmc_encrypted(header: &[u8]) -> bool {
     if header.len() < 4 {
         return false;
@@ -586,6 +592,7 @@ pub fn looks_like_qmc_encrypted(header: &[u8]) -> bool {
     !is_valid_audio_header(header)
 }
 
+#[allow(dead_code)]
 fn is_valid_audio_header(bytes: &[u8]) -> bool {
     if bytes.len() < 4 {
         return false;

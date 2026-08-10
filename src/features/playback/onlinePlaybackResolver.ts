@@ -301,6 +301,15 @@ const resolvePluginAudioUrl = async ({
         currentPlayingAudioUrl: null,
       };
     }
+    if (!musicInfo) {
+      console.warn(`[Audio] pluginGetMusicInfo returned null for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
+      return {
+        audioFilePath,
+        pluginHeaders: null,
+        currentPlayingQuality: null,
+        currentPlayingAudioUrl: null,
+      };
+    }
 
     let coverThumbPath = musicInfo.coverUrl;
     if (!song.cover_thumb_path && !coverThumbPath) {

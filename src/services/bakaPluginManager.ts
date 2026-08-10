@@ -311,7 +311,7 @@ function extractOnlySupportedQuality(errMsg: string): QualityKey | undefined {
 
   const bitrateMatch = text.match(/(?:^|[^\d])(\d{2,4})\s*k(?:bps)?(?:$|[^\d])/);
   if (bitrateMatch) {
-    return normalizeQualityKey(`${bitrateMatch[1]}k`);
+    return normalizeQualityKey(`${bitrateMatch[1]}k`) ?? undefined;
   }
 
   return undefined;
@@ -496,7 +496,10 @@ async function probeKugouProxyCandidate(
   headers: Record<string, string>,
 ): Promise<{ playable: boolean; reason?: string }> {
   try {
-    const probeHeaders = { ...headers, Accept: '*/*' };
+    const probeHeaders: Record<string, string> = { ...headers, Accept: '*/*' };
+    if (!Object.keys(probeHeaders).some(key => key.toLowerCase() === 'range')) {
+      probeHeaders.Range = 'bytes=0-4095';
+    }
     const headResp = await pluginHttpRequest('HEAD', url, probeHeaders, undefined, 8, 3);
     if (headResp.status >= 400) {
       // 部分代理接口不支持 HEAD。此时不直接判失败，交给 GET 正文判断；
