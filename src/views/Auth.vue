@@ -44,6 +44,8 @@ const loading = ref(false);
 const codeLoading = ref(false);
 const agreementAccepted = ref(false);
 const termsModalOpen = ref(false);
+const termsScrolledToEnd = ref(false);
+const termsBodyRef = ref<HTMLElement | null>(null);
 const agreementTitle = ref('弦予音乐用户协议');
 const captchaModalOpen = ref(false);
 const captchaModalTitle = ref('人机验证');
@@ -232,6 +234,47 @@ async function loadUserAgreement() {
     agreementTitle.value = '弦予音乐用户协议';
     agreementContent.value = defaultAgreementContent;
   }
+}
+
+async function openTermsModal() {
+  termsScrolledToEnd.value = false;
+  termsModalOpen.value = true;
+  await nextTick();
+  refreshTermsScrollState();
+}
+
+function closeTermsModal() {
+  termsModalOpen.value = false;
+}
+
+function refreshTermsScrollState() {
+  const el = termsBodyRef.value;
+  if (!el) return;
+  const hasScrollableContent = el.scrollHeight > el.clientHeight + 4;
+  if (!hasScrollableContent) {
+    termsScrolledToEnd.value = true;
+    return;
+  }
+  termsScrolledToEnd.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
+}
+
+function handleAgreementCheckboxChange(event: Event) {
+  const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+  if (!checked) {
+    agreementAccepted.value = false;
+    return;
+  }
+  agreementAccepted.value = false;
+  void openTermsModal();
+}
+
+function acceptTerms() {
+  if (!termsScrolledToEnd.value) {
+    showToast('请先阅读并滚动到用户协议底部', 'error');
+    return;
+  }
+  agreementAccepted.value = true;
+  termsModalOpen.value = false;
 }
 
 function showMessage(text: string, tone: 'error' | 'success' = 'error') {
@@ -929,24 +972,25 @@ onMounted(async () => {
               />
             </label>
 
-            <label class="flex items-start gap-3 text-sm text-black/60 dark:text-white/60 select-none">
+            <div class="flex items-start gap-3 text-sm text-black/60 dark:text-white/60 select-none">
               <input
                 v-model="agreementAccepted"
                 type="checkbox"
                 class="mt-1 h-4 w-4 accent-[#EC4141] cursor-pointer"
+                @change="handleAgreementCheckboxChange"
               />
               <span>
                 我已阅读并同意
                 <button
                   type="button"
                   class="text-[#EC4141] hover:text-[#d13b3b] underline underline-offset-4 cursor-pointer"
-                  @click="termsModalOpen = true"
+                  @click="openTermsModal"
                 >
                   用户协议
                 </button>
                 ，并知悉账号系统会读取必要的本地数据用于登录、安全风控、同步和统计。
               </span>
-            </label>
+            </div>
 
             <div class="pt-4 flex items-center gap-5 flex-wrap">
               <button
@@ -1439,7 +1483,7 @@ onMounted(async () => {
         <div
           v-if="termsModalOpen"
           class="fixed inset-0 z-[202] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
-          @click.self="termsModalOpen = false"
+          @click.self="closeTermsModal"
         >
           <div class="terms-card">
             <div class="terms-header">
@@ -1447,19 +1491,25 @@ onMounted(async () => {
                 <p>弦予音乐账号系统</p>
                 <h3>{{ agreementTitle }}</h3>
               </div>
-              <button type="button" class="terms-close" aria-label="关闭" @click="termsModalOpen = false">×</button>
+              <button type="button" class="terms-close" aria-label="关闭" @click="closeTermsModal">×</button>
             </div>
-            <div class="terms-body custom-scrollbar">
+            <div
+              ref="termsBodyRef"
+              class="terms-body custom-scrollbar"
+              @scroll="refreshTermsScrollState"
+            >
               <div class="terms-content">{{ agreementContent }}</div>
             </div>
+            <div v-if="!termsScrolledToEnd" class="terms-scroll-tip">请先滚动阅读至协议底部后再同意</div>
             <div class="terms-actions">
-              <button type="button" class="logout-btn logout-btn--ghost" @click="termsModalOpen = false">关闭</button>
+              <button type="button" class="logout-btn logout-btn--ghost" @click="closeTermsModal">关闭</button>
               <button
                 type="button"
                 class="logout-btn logout-btn--danger"
-                @click="agreementAccepted = true; termsModalOpen = false"
+                :disabled="!termsScrolledToEnd"
+                @click="acceptTerms"
               >
-                已阅读并同意
+                {{ termsScrolledToEnd ? '已阅读并同意' : '请先读完协议' }}
               </button>
             </div>
           </div>
@@ -1553,6 +1603,16 @@ onMounted(async () => {
   background: #d13b3b;
 }
 
+.logout-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.logout-btn--danger:disabled,
+.logout-btn--danger:disabled:hover {
+  background: rgba(236, 65, 65, 0.45);
+}
+
 .terms-card {
   width: min(92vw, 680px);
   max-height: min(86vh, 760px);
@@ -1606,8 +1666,10 @@ onMounted(async () => {
 }
 
 .terms-body {
+  flex: 1;
   padding: 4px 22px 18px;
   overflow-y: auto;
+  min-height: 220px;
 }
 
 .terms-content {
@@ -1624,6 +1686,13 @@ onMounted(async () => {
   gap: 10px;
   padding: 14px 22px 18px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.terms-scroll-tip {
+  padding: 10px 22px 0;
+  color: #EC4141;
+  font-size: 0.78rem;
+  text-align: right;
 }
 
 /* 弹窗过渡动画（复用 avatar-modal） */
