@@ -125,6 +125,40 @@ const isSongInFolderScope = (folderPath: string, songPath: string) => {
   return normalizedSong === normalizedFolder || normalizedSong.startsWith(`${normalizedFolder}/`);
 };
 
+const metadataComparableKeys: Array<keyof Song> = [
+  'name',
+  'title',
+  'artist',
+  'album',
+  'album_artist',
+  'year',
+  'track_number',
+  'disc_number',
+  'duration',
+  'cover_thumb_path',
+  'lyrics_raw',
+];
+
+const areComparableValuesEqual = (left: unknown, right: unknown) => {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => item === right[index]);
+  }
+  return left === right;
+};
+
+const hasSongMetadataChanged = (oldSong: Song | undefined, newSong: Song) => {
+  if (!oldSong) {
+    return true;
+  }
+
+  return metadataComparableKeys.some(key =>
+    !areComparableValuesEqual(oldSong[key], newSong[key]),
+  );
+};
+
 export const createPlayerFileManager = ({
   removeLibraryFolderLinked,
   removeFromHistory,
@@ -278,11 +312,16 @@ export const createPlayerFileManager = ({
       .filter(path => !newSongs.some(song => song.path === path));
 
     // Detect if anything actually changed to skip expensive state mutations
-    const oldPathSet = new Set(oldSongsInScope.map(song => song.path));
+    const oldSongByPath = new Map(oldSongsInScope.map(song => [song.path, song]));
+    const oldPathSet = new Set(oldSongByPath.keys());
+    const hasMetadataChanges = newSongs.some(song =>
+      hasSongMetadataChanged(oldSongByPath.get(song.path), song),
+    );
     const hasChanges =
       removedPaths.length > 0 ||
       newSongs.length !== oldSongsInScope.length ||
-      newSongs.some(song => !oldPathSet.has(song.path));
+      newSongs.some(song => !oldPathSet.has(song.path)) ||
+      hasMetadataChanges;
 
     if (!hasChanges) {
       return {
