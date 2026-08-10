@@ -2,9 +2,11 @@
 import { nextTick, ref, watch } from 'vue';
 
 import {
+  getHumanCaptchaConfig,
   getHumanCaptcha,
   verifyHumanCaptcha,
   type HumanCaptcha,
+  type HumanCaptchaConfig,
   type HumanCaptchaPayload,
 } from '../../services/auth/authService';
 
@@ -22,21 +24,89 @@ const emit = defineEmits<{
   (event: 'cancel'): void;
 }>();
 
+const captchaConfig = ref<HumanCaptchaConfig>({
+  enabled: false,
+  provider: 'off',
+  siteKey: '',
+});
 const captcha = ref<HumanCaptcha | null>(null);
 const answer = ref('');
+const providerToken = ref('');
+const providerWidgetId = ref<string | number | null>(null);
+const providerBoxRef = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const verifying = ref(false);
 const errorText = ref('');
 const answerInputRef = ref<HTMLInputElement | null>(null);
 
+function captchaGlobal(): any {
+  return captchaConfig.value.provider === 'hcaptcha' ? (window as any).hcaptcha : (window as any).turnstile;
+}
+
+function isProviderCaptchaEnabled(): boolean {
+  return Boolean(captchaConfig.value.enabled && captchaConfig.value.siteKey && captchaConfig.value.provider !== 'off');
+}
+
+function loadProviderScript(): Promise<void> {
+  if (!isProviderCaptchaEnabled() || captchaGlobal()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const provider = captchaConfig.value.provider === 'hcaptcha' ? 'hcaptcha' : 'turnstile';
+    const existing = document.querySelector<HTMLScriptElement>(`script[data-human-captcha-provider="${provider}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('captcha script load failed')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = provider === 'hcaptcha'
+      ? 'https://js.hcaptcha.com/1/api.js?render=explicit'
+      : 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.dataset.humanCaptchaProvider = provider;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('captcha script load failed'));
+    document.head.appendChild(script);
+  });
+}
+
+async function renderProviderCaptcha() {
+  if (!isProviderCaptchaEnabled()) return;
+  await nextTick();
+  if (!providerBoxRef.value || providerWidgetId.value != null) return;
+  await loadProviderScript();
+  const captchaApi = captchaGlobal();
+  if (!captchaApi) throw new Error('人机验证组件加载失败');
+  providerWidgetId.value = captchaApi.render(providerBoxRef.value, {
+    sitekey: captchaConfig.value.siteKey,
+    callback: (token: string) => { providerToken.value = token; },
+    'expired-callback': () => { providerToken.value = ''; },
+    'error-callback': () => { providerToken.value = ''; },
+  });
+}
+
+function resetProviderCaptcha() {
+  const captchaApi = captchaGlobal();
+  if (!captchaApi || providerWidgetId.value == null) return;
+  providerToken.value = '';
+  captchaApi.reset(providerWidgetId.value);
+}
+
 async function refreshCaptcha() {
   loading.value = true;
   answer.value = '';
+  providerToken.value = '';
   errorText.value = '';
   try {
-    captcha.value = await getHumanCaptcha();
-    await nextTick();
-    answerInputRef.value?.focus();
+    captchaConfig.value = await getHumanCaptchaConfig();
+    if (isProviderCaptchaEnabled()) {
+      captcha.value = null;
+      await renderProviderCaptcha();
+    } else {
+      captcha.value = await getHumanCaptcha();
+      await nextTick();
+      answerInputRef.value?.focus();
+    }
   } catch (error) {
     captcha.value = null;
     errorText.value = error instanceof Error ? error.message : '验证题加载失败，请稍后重试';
@@ -50,6 +120,18 @@ function cancel() {
 }
 
 async function submit() {
+  if (isProviderCaptchaEnabled()) {
+    if (!providerToken.value.trim()) {
+      errorText.value = '请先完成人机验证';
+      return;
+    }
+    emit('verified', {
+      captchaToken: providerToken.value,
+      provider: captchaConfig.value.provider,
+    });
+    return;
+  }
+
   if (!captcha.value?.captcha_id) {
     errorText.value = '请先加载验证题';
     return;
@@ -88,6 +170,9 @@ watch(
     } else {
       captcha.value = null;
       answer.value = '';
+      providerToken.value = '';
+      providerWidgetId.value = null;
+      captchaConfig.value = { enabled: false, provider: 'off', siteKey: '' };
       errorText.value = '';
       loading.value = false;
       verifying.value = false;
@@ -122,7 +207,19 @@ watch(
 
           <p class="human-captcha-desc">{{ description }}</p>
 
-          <div class="human-captcha-question">
+          <div v-if="isProviderCaptchaEnabled()" class="human-captcha-provider">
+            <div ref="providerBoxRef" class="human-captcha-provider-box"></div>
+            <button
+              type="button"
+              class="human-captcha-refresh"
+              :disabled="loading"
+              @click="resetProviderCaptcha"
+            >
+              重新验证
+            </button>
+          </div>
+
+          <div v-else class="human-captcha-question">
             <span>{{ loading ? '正在加载验证题…' : captcha?.question || '验证题加载失败' }}</span>
             <button
               type="button"
@@ -136,6 +233,7 @@ watch(
 
           <form class="human-captcha-form" @submit.prevent="submit">
             <input
+              v-if="!isProviderCaptchaEnabled()"
               ref="answerInputRef"
               v-model="answer"
               type="text"
@@ -159,7 +257,7 @@ watch(
               <button
                 type="submit"
                 class="human-captcha-primary"
-                :disabled="loading || verifying || !captcha"
+                :disabled="loading || verifying || (!isProviderCaptchaEnabled() && !captcha)"
               >
                 {{ verifying ? '验证中…' : '验证并继续' }}
               </button>
@@ -267,6 +365,28 @@ watch(
 :global(.dark) .human-captcha-question {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.human-captcha-provider {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+:global(.dark) .human-captcha-provider {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.human-captcha-provider-box {
+  min-height: 65px;
+  display: grid;
+  place-items: center;
 }
 
 .human-captcha-refresh {

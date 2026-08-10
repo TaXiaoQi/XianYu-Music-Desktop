@@ -499,31 +499,113 @@ pub fn start_streaming_download(
 /// 从 JSON 响应文本中递归提取音频 URL 和 ekey。
 /// 优先检查常见字段名（url, data, musicUrl, audioUrl, src, link, file, path），
 /// 然后递归搜索任意层级的字符串值中以 http:// 或 https:// 开头且含音频扩展名的链接。
-/// 同时搜索 ekey 字段（ekey, eKey, encryptKey, key）。
+/// 最后回退到任意 HTTP URL（不检查音频特征），并搜索 ekey 字段。
 fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    // 处理双重编码 JSON：有些 API 返回 JSON 字符串包裹的 JSON
+    let value: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => {
+            // 尝试去掉外层引号后重新解析
+            let trimmed = body.trim().trim_matches('"');
+            if trimmed != body.trim() {
+                if let Ok(v) = serde_json::from_str(trimmed) {
+                    v
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    };
 
     // 优先字段名列表（按常见 API 返回格式排序）
     let priority_keys = [
         "url", "musicUrl", "audioUrl", "playUrl", "play_url", "music_url",
         "link", "src", "file", "fileUrl", "file_url",
         "data", "result", "music", "audio",
+        "source", "sourceUrl", "source_url", "media", "mediaUrl",
+        "stream", "streamUrl", "stream_url", "cdn", "cdnUrl",
+        "play", "download", "downloadUrl", "download_url",
     ];
 
-    // 第一轮：检查优先字段名
+    // 第一轮：检查优先字段名（接受任何 http/https URL，不检查音频特征）
     for key in &priority_keys {
         if let Some(found) = find_url_by_key(&value, key) {
             let ekey = find_ekey_in_json(&value);
+            eprintln!(
+                "[StreamCache] JSON 提取成功(优先字段 '{}'): {}",
+                key,
+                &found[..found.len().min(120)]
+            );
             return Some((found, ekey));
         }
     }
 
-    // 第二轮：递归搜索任意字符串值
+    // 第二轮：递归搜索任意看起来像音频 URL 的字符串
     if let Some(url) = find_any_audio_url(&value) {
         let ekey = find_ekey_in_json(&value);
+        eprintln!(
+            "[StreamCache] JSON 提取成功(音频URL匹配): {}",
+            &url[..url.len().min(120)]
+        );
         return Some((url, ekey));
     }
 
+    // 第三轮：回退到任意 HTTP/HTTPS URL（不检查音频特征）
+    // 某些 CDN URL 没有标准音频扩展名，但仍可播放
+    if let Some(url) = find_any_http_url(&value) {
+        let ekey = find_ekey_in_json(&value);
+        eprintln!(
+            "[StreamCache] JSON 提取成功(回退任意URL): {}",
+            &url[..url.len().min(120)]
+        );
+        return Some((url, ekey));
+    }
+
+    None
+}
+
+/// 从非音频文本响应中提取真实音频 URL。
+///
+/// 部分插件返回的播放地址其实是 API 端点，服务端可能以 `text/plain`
+/// 返回真实直链，也可能 Content-Type 不准但正文是 JSON 或 HTML。
+/// 提取策略（按优先级）：
+///   1. 解析 JSON（含双重编码处理）
+///   2. 纯文本直链（去掉引号后以 http 开头）
+///   3. 从任意文本中扫描 HTTP URL（处理 HTML/错误页等）
+fn extract_audio_info_from_text(body: &str) -> Option<(String, Option<String>)> {
+    // 策略 1：尝试 JSON 解析
+    if let Some(info) = extract_audio_info_from_json(body) {
+        return Some(info);
+    }
+
+    // 策略 2：纯文本直链（去掉外层引号/空白后以 http 开头）
+    let trimmed = body.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        // 音频特征检查宽松化：只要不是明显非音频 URL 就接受
+        if looks_like_audio_url(trimmed) || !is_obviously_non_audio_url(trimmed) {
+            eprintln!(
+                "[StreamCache] 文本直链提取成功: {}",
+                &trimmed[..trimmed.len().min(120)]
+            );
+            return Some((trimmed.to_string(), None));
+        }
+    }
+
+    // 策略 3：从任意文本中扫描第一个 HTTP URL（处理 HTML/错误页等）
+    if let Some(url) = extract_url_from_raw_text(body) {
+        eprintln!(
+            "[StreamCache] 原始文本 URL 提取成功: {}",
+            &url[..url.len().min(120)]
+        );
+        return Some((url, None));
+    }
+
+    eprintln!(
+        "[StreamCache] 文本/JSON URL 提取失败，响应体前500字符: {}",
+        &body[..body.len().min(500)]
+    );
     None
 }
 
@@ -632,6 +714,93 @@ fn find_any_audio_url(value: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// 递归搜索 JSON 中任意以 http 开头的 URL 字符串（不检查音频特征）。
+/// 作为最后回退手段：某些 CDN 音频 URL 没有标准扩展名或已知域名。
+/// 跳过明显非音频的 URL（如 .html、.htm、图片扩展名、CSS/JS 等）。
+fn find_any_http_url(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.starts_with("http://") || s.starts_with("https://") {
+                if !is_obviously_non_audio_url(s) {
+                    return Some(s.clone());
+                }
+            }
+            // 处理协议相对 URL：//cdn.example.com/path
+            if s.starts_with("//") {
+                let full = format!("https:{}", s);
+                if !is_obviously_non_audio_url(&full) {
+                    return Some(full);
+                }
+            }
+            None
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values() {
+                if let Some(found) = find_any_http_url(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_any_http_url(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 判断 URL 明显不是音频链接（排除 HTML、图片、CSS、JS 等）
+fn is_obviously_non_audio_url(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    lower.contains(".html")
+        || lower.contains(".htm")
+        || lower.contains(".php")
+        || lower.contains(".asp")
+        || lower.contains(".aspx")
+        || lower.contains(".jsp")
+        || lower.contains(".css")
+        || lower.contains(".js")
+        || lower.contains(".png")
+        || lower.contains(".jpg")
+        || lower.contains(".jpeg")
+        || lower.contains(".gif")
+        || lower.contains(".svg")
+        || lower.contains(".webp")
+        || lower.contains(".ico")
+        || lower.contains(".woff")
+        || lower.contains(".ttf")
+        || lower.contains(".pdf")
+        || lower.contains(".zip")
+        || lower.contains(".rar")
+        || lower.contains(".doc")
+        || lower.contains(".docx")
+}
+
+/// 使用正则从任意文本（非 JSON）中提取第一个 HTTP/HTTPS URL。
+/// 用于处理 HTML 响应、错误页面、或格式异常的文本中隐藏的音频 URL。
+fn extract_url_from_raw_text(text: &str) -> Option<String> {
+    // 简单扫描：查找 http:// 或 https:// 开头的子串
+    for prefix in &["https://", "http://"] {
+        if let Some(start) = text.find(prefix) {
+            // 从起始位置截取到下一个空白字符或引号
+            let rest = &text[start..];
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>' || c == ',' || c == '}')
+                .unwrap_or(rest.len());
+            let url = &rest[..end];
+            if url.len() > 10 && !is_obviously_non_audio_url(url) {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// 判断 URL 是否看起来像音频链接（包含常见音频扩展名或路径特征）
 fn looks_like_audio_url(url: &str) -> bool {
     let lower = url.to_lowercase();
@@ -644,16 +813,32 @@ fn looks_like_audio_url(url: &str) -> bool {
         || lower.contains(".wav")
         || lower.contains(".wma")
         || lower.contains(".opus")
+        || lower.contains(".mga")
+        || lower.contains(".mgg")
         // QQ音乐/酷狗/酷我/网易云等流媒体域名
         || lower.contains("stream.qqmusic")
         || lower.contains("ws.stream.qqmusic")
         || lower.contains("dl.stream.qqmusic")
+        || lower.contains("isure.stream")
         || lower.contains("trackmedia")
         || lower.contains("music.126.net")
         || lower.contains("m.kugou")
         || lower.contains("track.kg")
+        || lower.contains("trackercdn.kugou")
+        || lower.contains("fsandroid.kugou")
+        || lower.contains("fsm.kugou")
+        || lower.contains("mobilesdk.kugou")
         || lower.contains("kuwo")
         || lower.contains("car-lv.kuwo")
+        || lower.contains("nmobi.kuwo")
+        || lower.contains("sr.kuwo")
+        || lower.contains("antiserver")
+        // 咪咕音乐
+        || lower.contains("migu.cn")
+        || lower.contains("miguvideo")
+        // 第三方 API 代理域名
+        || lower.contains("haitangw")
+        || lower.contains("musicapi")
         // 没有明确扩展名但路径中含 music/song/track/play 等关键词
         || (lower.contains("/music") || lower.contains("/song") || lower.contains("/track") || lower.contains("/play"))
 }
@@ -778,110 +963,172 @@ fn download_thread(
         .to_lowercase();
     let is_non_audio = content_type.contains("text/html")
         || content_type.contains("application/json")
-        || content_type.contains("text/plain");
+        || content_type.contains("text/plain")
+        || content_type.contains("application/xml")
+        || content_type.contains("text/xml");
     if is_non_audio {
         // 部分 Baka 插件的 getMediaSource 返回的是 API 端点 URL（如酷狗 PHP 接口），
-        // 响应为 JSON 且包含真实音频直链。尝试解析 JSON 提取 URL 并重试下载。
-        if content_type.contains("application/json") {
-            let body_text: String = response.text().unwrap_or_default();
-            if let Some((real_url, json_ekey)) = extract_audio_info_from_json(&body_text) {
-                // 如果 JSON 中包含 ekey，更新共享 ekey 字段供后续 QMC 解密使用
-                if let Some(ref ek) = json_ekey {
-                    if let Ok(mut ekey_guard) = ekey.lock() {
-                        if ekey_guard.is_none() {
-                            *ekey_guard = Some(ek.clone());
+        // 响应可能是 JSON、text/plain 直链、甚至 HTML 页面。
+        // 对所有非音频内容类型统一尝试解析正文提取 URL 并重试下载。
+        eprintln!(
+            "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}，尝试提取真实音频 URL",
+            content_type, url
+        );
+        let body_text: String = response.text().unwrap_or_default();
+        if let Some((real_url, json_ekey)) = extract_audio_info_from_text(&body_text) {
+            // 如果 JSON 中包含 ekey，更新共享 ekey 字段供后续 QMC 解密使用
+            if let Some(ref ek) = json_ekey {
+                if let Ok(mut ekey_guard) = ekey.lock() {
+                    if ekey_guard.is_none() {
+                        *ekey_guard = Some(ek.clone());
+                        eprintln!(
+                            "[StreamCache] JSON 响应中提取到 ekey (长度: {})，已更新共享 ekey",
+                            ek.len()
+                        );
+                    }
+                }
+            }
+            eprintln!(
+                "[StreamCache] 非音频响应中提取到音频 URL，重试下载: {} -> {}",
+                url, real_url
+            );
+            // 用提取到的 URL 重新请求
+            let mut retry_req = client.get(&real_url);
+            if let Some(ua) = user_agent {
+                retry_req = retry_req.header(reqwest::header::USER_AGENT, ua);
+            }
+            if let Some(hdrs) = headers {
+                for (key, value) in hdrs {
+                    if !key.trim().is_empty() && !value.trim().is_empty() {
+                        if let (Ok(name), Ok(val)) = (
+                            reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                            reqwest::header::HeaderValue::from_str(value),
+                        ) {
+                            retry_req = retry_req.header(name, val);
+                        }
+                    }
+                }
+            }
+            match retry_req.send() {
+                Ok(retry_resp) if retry_resp.status().is_success() => {
+                    let retry_ct = retry_resp
+                        .headers()
+                        .get(reqwest::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if retry_ct.contains("text/html")
+                        || retry_ct.contains("application/json")
+                        || retry_ct.contains("text/plain")
+                        || retry_ct.contains("application/xml")
+                        || retry_ct.contains("text/xml")
+                    {
+                        // 二次提取：重试 URL 仍返回非音频内容，尝试再次提取
+                        eprintln!(
+                            "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}，尝试二次提取",
+                            retry_ct, real_url
+                        );
+                        let retry_body: String = retry_resp.text().unwrap_or_default();
+                        if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
                             eprintln!(
-                                "[StreamCache] JSON 响应中提取到 ekey (长度: {})，已更新共享 ekey",
-                                ek.len()
+                                "[StreamCache] 二次提取成功: {} -> {}",
+                                real_url, real_url2
                             );
-                        }
-                    }
-                }
-                eprintln!(
-                    "[StreamCache] JSON 响应中提取到音频 URL，重试下载: {} -> {}",
-                    url, real_url
-                );
-                // 用提取到的 URL 重新请求
-                let mut retry_req = client.get(&real_url);
-                if let Some(ua) = user_agent {
-                    retry_req = retry_req.header(reqwest::header::USER_AGENT, ua);
-                }
-                if let Some(hdrs) = headers {
-                    for (key, value) in hdrs {
-                        if !key.trim().is_empty() && !value.trim().is_empty() {
-                            if let (Ok(name), Ok(val)) = (
-                                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                                reqwest::header::HeaderValue::from_str(value),
-                            ) {
-                                retry_req = retry_req.header(name, val);
+                            // 用二次提取的 URL 再次请求
+                            match client.get(&real_url2).send() {
+                                Ok(resp2) if resp2.status().is_success() => {
+                                    let ct2 = resp2
+                                        .headers()
+                                        .get(reqwest::header::CONTENT_TYPE)
+                                        .and_then(|v| v.to_str().ok())
+                                        .unwrap_or("")
+                                        .to_lowercase();
+                                    if ct2.contains("text/html")
+                                        || ct2.contains("application/json")
+                                        || ct2.contains("text/plain")
+                                    {
+                                        eprintln!(
+                                            "[StreamCache] 二次提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}",
+                                            ct2, real_url2
+                                        );
+                                        fail_download(
+                                            &format!(
+                                                "二次提取的 URL 仍返回非音频内容 (Content-Type: {})",
+                                                ct2
+                                            ),
+                                            0,
+                                        );
+                                        return;
+                                    }
+                                    eprintln!(
+                                        "[StreamCache] 二次提取的 URL 返回音频内容，开始下载: {}",
+                                        real_url2
+                                    );
+                                    response = resp2;
+                                }
+                                Ok(resp2) => {
+                                    fail_download(
+                                        &format!("二次提取的 URL 返回 HTTP {}", resp2.status()),
+                                        0,
+                                    );
+                                    return;
+                                }
+                                Err(e) => {
+                                    fail_download(
+                                        &format!("二次提取的 URL 请求失败: {}", e),
+                                        0,
+                                    );
+                                    return;
+                                }
                             }
-                        }
-                    }
-                }
-                match retry_req.send() {
-                    Ok(retry_resp) if retry_resp.status().is_success() => {
-                        let retry_ct = retry_resp
-                            .headers()
-                            .get(reqwest::header::CONTENT_TYPE)
-                            .and_then(|v| v.to_str().ok())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        if retry_ct.contains("text/html")
-                            || retry_ct.contains("application/json")
-                            || retry_ct.contains("text/plain")
-                        {
+                        } else {
                             eprintln!(
-                                "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}",
+                                "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}，二次提取失败",
                                 retry_ct, real_url
                             );
                             fail_download(
                                 &format!(
-                                    "提取的 URL 仍返回非音频内容 (Content-Type: {})",
+                                    "提取的 URL 仍返回非音频内容 (Content-Type: {})，二次提取失败",
                                     retry_ct
                                 ),
                                 0,
                             );
                             return;
                         }
-                        eprintln!("[StreamCache] 提取的 URL 返回音频内容，开始下载: {}", real_url);
-                        response = retry_resp;
-                    }
-                    Ok(retry_resp) => {
+                    } else {
+                        // 重试 URL 返回的是音频内容，直接使用
                         eprintln!(
-                            "[StreamCache] 提取的 URL 返回 HTTP {} url={}",
-                            retry_resp.status(),
+                            "[StreamCache] 提取的 URL 返回音频内容，开始下载: {}",
                             real_url
                         );
-                        fail_download(
-                            &format!("提取的 URL 返回 HTTP {}", retry_resp.status()),
-                            0,
-                        );
-                        return;
-                    }
-                    Err(e) => {
-                        eprintln!("[StreamCache] 提取的 URL 请求失败: {} url={}", e, real_url);
-                        fail_download(&format!("提取的 URL 请求失败: {}", e), 0);
-                        return;
+                        response = retry_resp;
                     }
                 }
-            } else {
-                eprintln!(
-                    "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
-                    content_type, url
-                );
-                fail_download(
-                    &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
-                    0,
-                );
-                return;
+                Ok(retry_resp) => {
+                    eprintln!(
+                        "[StreamCache] 提取的 URL 返回 HTTP {} url={}",
+                        retry_resp.status(),
+                        real_url
+                    );
+                    fail_download(
+                        &format!("提取的 URL 返回 HTTP {}", retry_resp.status()),
+                        0,
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("[StreamCache] 提取的 URL 请求失败: {} url={}", e, real_url);
+                    fail_download(&format!("提取的 URL 请求失败: {}", e), 0);
+                    return;
+                }
             }
         } else {
             eprintln!(
-                "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}",
+                "[StreamCache] 非音频内容 URL 提取失败 (Content-Type: {}) url={}",
                 content_type, url
             );
             fail_download(
-                &format!("服务器返回非音频内容 (Content-Type: {})", content_type),
+                &format!("服务器返回非音频内容 (Content-Type: {})，URL提取失败", content_type),
                 0,
             );
             return;

@@ -460,13 +460,17 @@ export const BAKA_TO_LEGACY_QUALITY_MAP: Record<QualityKey, 'low' | 'standard' |
 /** 常见插件/音源别名 → 本项目统一 Baka 音质键 */
 const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
   '96k': 'mgg',
+  ogg96: 'mgg',
   mgg: 'mgg',
   '128': '128k',
   '128k': '128k',
   '192': '192k',
   '192k': '192k',
+  ogg192: '192k',
   '320': '320k',
   '320k': '320k',
+  ogg320: '320k',
+  exhigh: '320k',
   flac: 'flac',
   sq: 'flac',
   super: 'flac',
@@ -483,9 +487,11 @@ const QUALITY_KEY_ALIASES: Record<string, QualityKey> = {
   vinyl: 'vinyl',
   dolby: 'dolby',
   atmos: 'atmos',
+  galaxy: 'atmos',
   atmosplus: 'atmos_plus',
   atmos_plus: 'atmos_plus',
   'atmos+': 'atmos_plus',
+  galaxy51: 'atmos_plus',
   master: 'master',
 };
 

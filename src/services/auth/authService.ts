@@ -47,9 +47,19 @@ export type HumanCaptcha = {
   expire_seconds?: number;
 };
 
+export type HumanCaptchaProvider = 'turnstile' | 'hcaptcha' | 'off' | string;
+
+export type HumanCaptchaConfig = {
+  enabled: boolean;
+  provider: HumanCaptchaProvider;
+  siteKey: string;
+};
+
 export type HumanCaptchaPayload = {
-  captchaId: string;
-  captchaAnswer: string;
+  captchaId?: string;
+  captchaAnswer?: string;
+  captchaToken?: string;
+  provider?: HumanCaptchaProvider;
 };
 
 export type ProfileStats = {
@@ -313,11 +323,40 @@ export async function signedPostJson<T>(
 // ═══════════════════════════════════════════════════════
 
 function withCaptcha(body: Record<string, unknown>, captcha: HumanCaptchaPayload): Record<string, unknown> {
+  if (captcha.captchaToken) {
+    return {
+      ...body,
+      captcha_token: captcha.captchaToken,
+      turnstile_token: captcha.captchaToken,
+      captcha_provider: captcha.provider || '',
+    };
+  }
   return {
     ...body,
-    captcha_id: captcha.captchaId,
-    captcha_answer: captcha.captchaAnswer,
+    captcha_id: captcha.captchaId || '',
+    captcha_answer: captcha.captchaAnswer || '',
   };
+}
+
+/**
+ * 获取新版人机验证配置。
+ * 启用 Turnstile / hCaptcha 时，客户端弹窗直接渲染第三方组件；未启用时回退旧算术题。
+ */
+export async function getHumanCaptchaConfig(): Promise<HumanCaptchaConfig> {
+  try {
+    const data = await requestAction<Record<string, unknown>>('email_get_captcha_config', {});
+    return {
+      enabled: Boolean(data.enabled) && Boolean(data.site_key),
+      provider: String(data.provider || 'off'),
+      siteKey: String(data.site_key || ''),
+    };
+  } catch {
+    return {
+      enabled: false,
+      provider: 'off',
+      siteKey: '',
+    };
+  }
 }
 
 /**
@@ -340,10 +379,11 @@ export async function getHumanCaptcha(): Promise<HumanCaptcha> {
  * 此接口只确认答案是否正确，不消费验证码；后续真实登录/注册/发码请求仍会再次校验并消费。
  */
 export async function verifyHumanCaptcha(captcha: HumanCaptchaPayload): Promise<void> {
+  if (captcha.captchaToken) return;
   await requestAction<Record<string, unknown>>('verify_captcha', {
     purpose: 'auth',
-    captcha_id: captcha.captchaId,
-    captcha_answer: captcha.captchaAnswer,
+    captcha_id: captcha.captchaId || '',
+    captcha_answer: captcha.captchaAnswer || '',
   });
 }
 
