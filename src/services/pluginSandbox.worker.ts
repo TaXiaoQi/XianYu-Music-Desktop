@@ -568,7 +568,20 @@ type LxRequestAction = 'musicUrl' | 'lyric' | 'pic';
 
 const LX_SOURCE_KEYS = ['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local'] as const;
 const LX_MUSIC_ACTIONS: LxRequestAction[] = ['musicUrl', 'lyric', 'pic'];
-const LX_STANDARD_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+const LX_STANDARD_QUALITIES = [
+  '96k',
+  '128k',
+  '192k',
+  '320k',
+  'flac',
+  'flac24bit',
+  'hires',
+  'vinyl',
+  'dolby',
+  'atmos',
+  'atmos_plus',
+  'master',
+];
 const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
   kw: LX_STANDARD_QUALITIES,
   kg: LX_STANDARD_QUALITIES,
@@ -578,6 +591,66 @@ const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
   xm: LX_STANDARD_QUALITIES,
   local: [],
 };
+
+const LX_QUALITY_ALIASES: Record<string, string> = {
+  '96k': 'mgg',
+  mgg: 'mgg',
+  '128': '128k',
+  '128k': '128k',
+  '192': '192k',
+  '192k': '192k',
+  '320': '320k',
+  '320k': '320k',
+  flac: 'flac',
+  sq: 'flac',
+  super: 'flac',
+  lossless: 'flac',
+  flac24: 'flac24bit',
+  '24bit': 'flac24bit',
+  '24bits': 'flac24bit',
+  '24_bit': 'flac24bit',
+  flac24bit: 'flac24bit',
+  hires: 'hires',
+  'hi-res': 'hires',
+  hi_res: 'hires',
+  hr: 'hires',
+  vinyl: 'vinyl',
+  dolby: 'dolby',
+  atmos: 'atmos',
+  atmosplus: 'atmos_plus',
+  atmos_plus: 'atmos_plus',
+  'atmos+': 'atmos_plus',
+  master: 'master',
+};
+
+function normalizeLxQualityKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/-/g, '_');
+  if (!normalized) return null;
+  return LX_QUALITY_ALIASES[normalized] ?? null;
+}
+
+function qualityKeyToBakaPluginQuality(qualityKey: string): string {
+  return qualityKey === 'mgg' ? '96k' : qualityKey;
+}
+
+function normalizeLxQualitys(raw: unknown[], allowed?: string[]): string[] {
+  const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of raw) {
+    const qualityKey = normalizeLxQualityKey(item);
+    const quality = qualityKey ? qualityKeyToBakaPluginQuality(qualityKey) : (typeof item === 'string' ? item.trim() : '');
+    if (!quality) continue;
+    if (allowedSet && !allowedSet.has(quality)) continue;
+    if (seen.has(quality)) continue;
+    seen.add(quality);
+    result.push(quality);
+  }
+
+  return result;
+}
 
 function normalizeLxSourceInfo(info: any): any {
   const sourceInfo: any = { sources: {} };
@@ -593,7 +666,7 @@ function normalizeLxSourceInfo(info: any): any {
       name: typeof userSource.name === 'string' ? userSource.name : undefined,
       type: 'music',
       actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: qualitys.length ? qualitys.filter(q => declaredQualitys.includes(q)) : declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+      qualitys: normalizeLxQualitys(declaredQualitys, qualitys),
     };
   }
 
@@ -607,7 +680,7 @@ function normalizeLxSourceInfo(info: any): any {
       name: typeof val.name === 'string' ? val.name : undefined,
       type: 'music',
       actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+      qualitys: normalizeLxQualitys(declaredQualitys),
     };
   }
 

@@ -10,7 +10,14 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, Song, QualityKey } from '../types';
 import { downloadApi } from './tauri/downloadApi';
 import type { EmbedMetadataRequestContract } from './tauri/contracts';
-import { ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality } from '../types';
+import {
+  ALL_QUALITY_KEYS,
+  ALL_QUALITY_KEYS_DESC,
+  QUALITY_META,
+  qualityKeyToBakaLegacyQuality,
+  qualityKeyToBakaPluginQuality,
+  qualityKeyToMfQuality,
+} from '../types';
 import {
   extFromUrl as extFromUrlShared,
   isDegradedLossless,
@@ -204,14 +211,6 @@ async function resolveUrlForQuality(
   return url;
 }
 
-/** MusicFree 插件音质枚举 */
-type PluginQuality = 'standard' | 'high' | 'lossless';
-
-/** 将 LX 档位映射到 MusicFree 插件音质枚举（复用 types 中统一的映射函数） */
-function lxQualityToPluginQuality(q: LxQuality): PluginQuality {
-  return qualityKeyToMfQuality(q);
-}
-
 /** plugin:// 协议的解析上下文 */
 interface PluginResolveContext {
   pluginSource: any;
@@ -243,7 +242,10 @@ async function preparePluginResolveContext(
     throw new Error('该歌曲对应的插件未启用或已被移除');
   }
 
-  // 部分插件在搜索阶段已填充 qualities 字段（{ standard: {url, size}, high: {...}, lossless: {...} }）
+  // 部分插件在搜索阶段已填充 qualities 字段。
+  // Baka 原生键：{ '320k': {url}, flac: {url}, ... }
+  // Baka/MF 兼容键：{ low: {url}, standard: {url}, high: {url}, super: {url} }
+  // 旧 MF 键：{ standard: {url}, high: {url}, lossless: {url} }
   const preQualities = pluginSearchResult.rawData?.qualities ?? undefined;
 
   return {
@@ -263,29 +265,27 @@ async function resolvePluginUrlForQuality(
   ctx: PluginResolveContext,
   q: LxQuality,
 ): Promise<string | null> {
-  // 映射到旧版三档（用于 preQualities 查找兼容）
-  const legacyQuality = lxQualityToPluginQuality(q);
-  // Toskysun 插件用的新键值（mgg→96k）
-  const newQuality = q === 'mgg' ? '96k' : q;
+  const nativeQuality = q;
+  const bakaPluginQuality = qualityKeyToBakaPluginQuality(q);
+  const bakaLegacyQuality = qualityKeyToBakaLegacyQuality(q);
+  const mfLegacyQuality = qualityKeyToMfQuality(q);
 
-  // 1) 优先使用预解析的 qualities 字段（先尝试新键值，再尝试旧三档）
-  const preNew = ctx.preQualities?.[newQuality];
-  if (preNew?.url && /^https?:/.test(preNew.url)) {
-    if (isDegradedLossless(q, preNew.url)) {
-      console.warn(`[Download][plugin] 预解析 ${q} 被降级为 ${extFromUrl(preNew.url)}，跳过该档位`);
+  // 1) 优先使用预解析的 qualities 字段：
+  //    内部 12 档 → Baka 插件原生键（mgg→96k）→ Baka 旧兼容键 → MF 旧 lossless 键
+  const preKeys = Array.from(new Set([
+    nativeQuality,
+    bakaPluginQuality,
+    bakaLegacyQuality,
+    mfLegacyQuality,
+  ]));
+  for (const key of preKeys) {
+    const pre = ctx.preQualities?.[key];
+    if (!pre?.url || !/^https?:/.test(pre.url)) continue;
+    if (isDegradedLossless(q, pre.url)) {
+      console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(pre.url)}，跳过该档位`);
       return null;
     }
-    return preNew.url;
-  }
-  const preLegacy = ctx.preQualities?.[legacyQuality];
-  if (preLegacy?.url && /^https?:/.test(preLegacy.url)) {
-    if (isDegradedLossless(q, preLegacy.url)) {
-      console.warn(
-        `[Download][plugin] 预解析 ${q}(${legacyQuality}) 被降级为 ${extFromUrl(preLegacy.url)}，跳过该档位`,
-      );
-      return null;
-    }
-    return preLegacy.url;
+    return pre.url;
   }
 
   // 2) 回退到插件 getMediaSource（传入 QualityKey，内部自动适配）
@@ -482,22 +482,25 @@ async function fetchPluginLyricText(
 
     const result = await pluginGetLyric(pluginSource, pluginSearchResult);
 
-    // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
+    // word-by-word：优先使用 Baka/MF 统一构建的逐字歌词（lyricsRaw），
+    // 可覆盖 yrc/qrc/eslrc/lxlyric；无逐字时回退到逐行（lyric）。
     // line-by-line：仅使用逐行歌词（lyric）
     const preferWordByWord = lyricsStyle === 'word-by-word';
-    const wordLyric = result?.lxlyric;
+    const wordLyric = result?.lyricsRaw || result?.lxlyric;
+    const usesLyricsRaw = preferWordByWord && !!result?.lyricsRaw;
     const lineLyric = result?.lyric;
     const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
     if (!lyric) return null;
 
-    // 若有翻译歌词，拼接在后面
+    // 若有翻译歌词，拼接在后面；lyricsRaw 已由 buildLyricsRaw 合并过翻译/罗马音轨道，避免重复拼接
     const tlyric = result?.tlyric;
-    const combined = tlyric ? `${lyric}\n[offset:0]\n${tlyric}` : lyric;
+    const combined = tlyric && !usesLyricsRaw ? `${lyric}\n[offset:0]\n${tlyric}` : lyric;
 
     if (format === 'txt') {
       return combined
         .replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '')
         .replace(/<\d+,\d+>/g, '')
+        .replace(/\[\d+,\d+\]/g, '')
         .trim();
     }
     return combined;

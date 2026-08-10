@@ -13,10 +13,10 @@
  */
 
 import type { Song } from '../types';
-import { buildLyricsRaw } from '../composables/lyrics';
 import { getStoredPlugins } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
 import { lyricsApi } from './tauri/lyricsApi';
+import { buildLxLyricsRaw } from './lxLyricsBuilder';
 
 // ==================== Types ====================
 
@@ -172,27 +172,20 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
         qrcPreview: pluginLyrics?.qrc?.substring(0, 200) || '',
       });
       if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc)) {
-        const result = buildLyricsRaw(
-          pluginLyrics.lyric,
-          pluginLyrics.tlyric,
-          pluginLyrics.rlyric,
-          pluginLyrics.lxlyric,
-          pluginLyrics.yrc,
-          pluginLyrics.qrc,
-        );
+        const result = buildLxLyricsRaw(pluginLyrics);
         if (result && result.trim()) {
           console.log('[LX Lyrics] LX 插件构建 lyricsRaw 成功:', { resultLen: result.length, resultPreview: result.substring(0, 300) });
           return result;
         }
-        console.warn('[LX Lyrics] LX 插件返回了歌词但 buildLyricsRaw 构建为空，尝试直接 API 后备');
+        console.log('[LX Lyrics] LX 插件返回了歌词但 LX 专用构建为空，尝试直接 API 后备');
       } else {
-        console.warn('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');
+        console.log('[LX Lyrics] LX 插件返回空歌词，尝试直接 API 后备');
       }
     } else {
-      console.warn('[LX Lyrics] 未找到可用的 LX 插件，尝试直接 API 后备');
+      console.log('[LX Lyrics] 未找到可用的 LX 插件，尝试直接 API 后备');
     }
   } catch (e) {
-    console.warn('[fetchLxSongLyricsRaw] LX 插件歌词获取失败，尝试直接 API 后备:', e);
+    console.log('[fetchLxSongLyricsRaw] LX 插件歌词获取失败，尝试直接 API 后备:', e);
   }
 
   // [后备] LX 插件失败时，直接从音乐平台 API 获取歌词（由 Rust 后端完成）
@@ -200,7 +193,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   if (LX_SOURCES.has(source)) {
     const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
     if (lyrics) {
-      const result = buildLyricsRaw(lyrics.lyric, lyrics.tlyric, lyrics.rlyric, lyrics.lxlyric);
+      const result = buildLxLyricsRaw(lyrics);
       console.log('[LX Lyrics] 直接 API 后备获取成功:', { lyricLen: lyrics.lyric.length, lxlyricLen: lyrics.lxlyric?.length || 0, resultLen: result.length });
       return result;
     }

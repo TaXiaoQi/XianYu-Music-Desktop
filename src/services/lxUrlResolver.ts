@@ -16,7 +16,11 @@
  */
 
 import type { QualityKey, Song } from '../types';
-import { resolveOnlinePlayQuality } from '../types';
+import {
+  normalizeQualityKey,
+  qualityKeyToBakaPluginQuality,
+  resolveOnlinePlayQuality,
+} from '../types';
 import type { PluginSource } from '../types';
 import { getCachedLxSong } from './lxSongCache';
 import type { LxSearchResultItem } from './lxMusicSdk';
@@ -109,6 +113,7 @@ export function buildLxSongInfo(
   lxSource: string,
   cachedInfo: LxSearchResultItem | null,
 ): Record<string, unknown> {
+  const normalizedTypes = normalizeLxTypes(cachedInfo?._types);
   return {
     songId: songmid,
     name: song.name,
@@ -122,9 +127,23 @@ export function buildLxSongInfo(
     albumId: cachedInfo?.albumId,
     albumMid: cachedInfo?.albumMid,
     interval: cachedInfo?.interval,
-    _types: cachedInfo?._types,
+    _types: normalizedTypes,
     types: cachedInfo?.types,
   };
+}
+
+function normalizeLxTypes(
+  raw: Record<string, { size?: string | null; hash?: string }> | undefined,
+): Record<string, { size?: string | null; hash?: string }> | undefined {
+  if (!raw || typeof raw !== 'object') return raw;
+  const result: Record<string, { size?: string | null; hash?: string }> = { ...raw };
+  for (const [key, value] of Object.entries(raw)) {
+    const qualityKey = normalizeQualityKey(key);
+    if (!qualityKey) continue;
+    result[qualityKey] = value;
+    result[qualityKeyToBakaPluginQuality(qualityKey)] = value;
+  }
+  return result;
 }
 
 // ==================== URL 解析 ====================
@@ -159,9 +178,10 @@ export async function resolveLxUrlViaRust(
       qualities,
     );
     if (urlResult?.url && /^https?:/.test(urlResult.url)) {
+      const quality = normalizeQualityKey(urlResult.quality) ?? qualities[0];
       return {
         url: urlResult.url,
-        quality: urlResult.quality as QualityKey,
+        quality,
         source: 'rust',
       };
     }
@@ -194,11 +214,12 @@ export async function resolveLxUrlViaPlugin(
 
   for (const quality of qualities) {
     try {
+      const pluginQuality = qualityKeyToBakaPluginQuality(quality);
       const urlResult = await lxPluginGetMusicUrl(
         plugin,
         lxSource,
         songInfo,
-        quality,
+        pluginQuality,
       );
       const musicUrl = urlResult?.url;
       if (musicUrl && /^https?:/.test(musicUrl)) {
@@ -242,7 +263,7 @@ export async function resolveLxUrlForSingleQuality(
     plugin,
     lxSource,
     songInfo,
-    quality,
+    qualityKeyToBakaPluginQuality(quality),
   );
   const url = urlResult?.url;
   if (!url || !/^https?:/.test(url)) return null;

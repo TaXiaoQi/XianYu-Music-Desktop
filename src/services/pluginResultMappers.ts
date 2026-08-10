@@ -1,4 +1,5 @@
 import type { PluginSearchResult, PluginSource, QualityKey } from '../types';
+import { qualityKeyToBakaPluginQuality } from '../types';
 import { extractNeteasePicId, neteasePicIdToUrl } from '../utils/coverUrl';
 
 export const stripHtmlTags = (str: unknown): string => {
@@ -39,7 +40,7 @@ export const resetMediaItem = (mediaItem: any, pluginName: string): any => {
 };
 
 export const qualityKeyToPluginString = (quality: QualityKey): string => (
-  quality === 'mgg' ? '96k' : quality
+  qualityKeyToBakaPluginQuality(quality)
 );
 
 export const toPluginSearchResult = (item: any, source: PluginSource): PluginSearchResult => {

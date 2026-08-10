@@ -4,6 +4,10 @@ import {
   normalizeKuwoCoverUrl,
 } from '../utils/coverUrl';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
+import {
+  normalizeQualityKey,
+  qualityKeyToBakaPluginQuality,
+} from '../types';
 import { pluginApi } from './tauri/pluginApi';
 import type { LxUrlSongInfoContract } from './tauri/contracts';
 
@@ -23,8 +27,22 @@ export function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
     copyrightId: item.copyrightId,
     strMediaMid: item.strMediaMid,
     songId: item.songId,
-    _types: item._types as Record<string, { size?: string | null; hash?: string }> | undefined,
+    _types: normalizeLxTypes(item._types) as Record<string, { size?: string | null; hash?: string }> | undefined,
   };
+}
+
+function normalizeLxTypes(
+  raw: Record<string, { size?: string | null; hash?: string }> | undefined,
+): Record<string, { size?: string | null; hash?: string }> | undefined {
+  if (!raw || typeof raw !== 'object') return raw;
+  const result: Record<string, { size?: string | null; hash?: string }> = { ...raw };
+  for (const [key, value] of Object.entries(raw)) {
+    const qualityKey = normalizeQualityKey(key);
+    if (!qualityKey) continue;
+    result[qualityKey] = value;
+    result[qualityKeyToBakaPluginQuality(qualityKey)] = value;
+  }
+  return result;
 }
 
 // ==================== Types ====================

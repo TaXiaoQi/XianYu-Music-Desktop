@@ -1,5 +1,5 @@
 import type { QualityKey, Song } from '../../types';
-import { QUALITY_META } from '../../types';
+import { QUALITY_META, normalizeQualityKey } from '../../types';
 import { extFromUrl, resolveActualQuality } from '../../services/audioQualityVerify';
 import {
   getStoredPlugins,
@@ -57,8 +57,11 @@ export const getOnlineAvailableQualities = async (
       return null;
     }
 
-    const lxQualities = Object.keys(cachedInfo._types)
-      .filter(k => k in QUALITY_META) as QualityKey[];
+    const lxQualities = Array.from(new Set(
+      Object.keys(cachedInfo._types)
+        .map(k => normalizeQualityKey(k))
+        .filter((q): q is QualityKey => !!q),
+    ));
     return lxQualities.length > 0 ? sortQualities(lxQualities) : null;
   }
 

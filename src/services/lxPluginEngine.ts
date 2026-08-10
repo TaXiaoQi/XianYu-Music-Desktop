@@ -20,6 +20,11 @@
 import CryptoJs from 'crypto-js';
 import {Buffer} from 'buffer';
 import type {PluginSource} from '../types';
+import {
+  BAKA_PLUGIN_QUALITY_KEYS,
+  normalizeQualityKey,
+  qualityKeyToBakaPluginQuality,
+} from '../types';
 import {pluginApi} from './tauri/pluginApi';
 import {fetchWithTimeout} from './pluginFetch';
 import {
@@ -47,7 +52,7 @@ type LxRequestAction = 'musicUrl' | 'lyric' | 'pic';
 
 const LX_SOURCE_KEYS = ['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local'] as const;
 const LX_MUSIC_ACTIONS: LxRequestAction[] = ['musicUrl', 'lyric', 'pic'];
-const LX_STANDARD_QUALITIES = ['128k', '320k', 'flac', 'flac24bit'];
+const LX_STANDARD_QUALITIES = BAKA_PLUGIN_QUALITY_KEYS;
 const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
   kw: LX_STANDARD_QUALITIES,
   kg: LX_STANDARD_QUALITIES,
@@ -57,6 +62,22 @@ const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
   xm: LX_STANDARD_QUALITIES,
   local: [],
 };
+
+function normalizeLxQualitys(raw: unknown[], allowed?: string[]): string[] {
+  const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const qualityKey = normalizeQualityKey(item);
+    const quality = qualityKey ? qualityKeyToBakaPluginQuality(qualityKey) : (typeof item === 'string' ? item.trim() : '');
+    if (!quality) continue;
+    if (allowedSet && !allowedSet.has(quality)) continue;
+    if (seen.has(quality)) continue;
+    seen.add(quality);
+    result.push(quality);
+  }
+  return result;
+}
 
 function normalizeLxSourceInfo(info: any): LxInitInfo {
   const sourceInfo: LxInitInfo = { sources: {} };
@@ -72,7 +93,7 @@ function normalizeLxSourceInfo(info: any): LxInitInfo {
       name: typeof userSource.name === 'string' ? userSource.name : undefined,
       type: 'music',
       actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: qualitys.length ? qualitys.filter(q => declaredQualitys.includes(q)) : declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+      qualitys: normalizeLxQualitys(declaredQualitys, qualitys),
     };
   }
 
@@ -87,7 +108,7 @@ function normalizeLxSourceInfo(info: any): LxInitInfo {
       name: typeof val.name === 'string' ? val.name : undefined,
       type: 'music',
       actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: declaredQualitys.filter((q: unknown) => typeof q === 'string'),
+      qualitys: normalizeLxQualitys(declaredQualitys),
     };
   }
 
@@ -883,6 +904,10 @@ export async function lxPluginRequest(
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
+      if (action === 'lyric' && /action\s+not\s+support|not\s+support/i.test(errMsg)) {
+        log(`[lxPluginRequest] 沙箱 ${source.name} lyric 不支持，交给后备歌词接口处理`);
+        return null;
+      }
       log(`[lxPluginRequest] 沙箱模式 ${source.name} ${action} 失败: ${errMsg}`);
       if (action === 'musicUrl' && isSongLevelError(errMsg)) {
         throw new LxSongLevelError(errMsg);
@@ -978,6 +1003,10 @@ export async function lxPluginRequest(
   } catch (e) {
       // [修复防御]: 错误对象可能不是 Error 实例 (插件可能抛出字符串或任意值)
       const errMsg = e instanceof Error ? e.message : (typeof e === 'string' ? e : String(e || 'unknown error'));
+      if (action === 'lyric' && /action\s+not\s+support|not\s+support/i.test(errMsg)) {
+        log(`[lxPluginRequest] ${source.name} lyric 不支持，交给后备歌词接口处理`);
+        return null;
+      }
       log(`[lxPluginRequest] ${source.name} ${action} 失败: ${errMsg}`);
 
       // [歌曲级错误] 当错误表明歌曲本身不可用（不存在/版权限制/VIP 等），

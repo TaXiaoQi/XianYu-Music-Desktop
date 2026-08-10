@@ -24,7 +24,7 @@ import type {
   PluginPlaylistSearchResult,
   QualityKey,
 } from '../types';
-import { QUALITY_META, qualityKeyToMfQuality, resolveOnlinePlayQuality } from '../types';
+import { ALL_QUALITY_KEYS, ALL_QUALITY_KEYS_DESC, QUALITY_META, qualityKeyToMfQuality, resolveOnlinePlayQuality } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildLyricsRaw } from '../composables/lyrics';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
@@ -44,6 +44,7 @@ import {
   extractArtist,
   extractCoverUrl,
   extractResultList,
+  qualityKeyToPluginString,
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
@@ -121,6 +122,62 @@ function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
   }
 
   return proxy as IPluginInstance;
+}
+
+function isUnsupportedQualityError(message: string): boolean {
+  return /不支持.*音质|音质.*不支持|quality.*not\s+support|not\s+support.*quality/i.test(message);
+}
+
+function buildNativePluginQualityPairs(
+  quality: QualityKey | 'standard' | 'high' | 'lossless',
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+  availableQualities: QualityKey[] | null,
+): Array<{ pluginQ: string; qualityKey: QualityKey }> {
+  const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
+  const pairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
+  const seen = new Set<string>();
+  const add = (qualityKey: QualityKey) => {
+    const pluginQ = qualityKeyToPluginString(qualityKey);
+    if (!seen.has(pluginQ)) {
+      seen.add(pluginQ);
+      pairs.push({ pluginQ, qualityKey });
+    }
+    // 部分 MusicFree QQ 插件把无损档称作 super，而不是 lossless/flac。
+    if (QUALITY_META[qualityKey].isLossless && !seen.has('super')) {
+      seen.add('super');
+      pairs.push({ pluginQ: 'super', qualityKey });
+    }
+  };
+
+  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
+    resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior).forEach(add);
+  } else if (isQualityKey(quality)) {
+    if (fallbackBehavior === 'pause') {
+      add(quality);
+    } else if (fallbackBehavior === 'higher') {
+      const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
+      if (startIdx >= 0) {
+        for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) add(ALL_QUALITY_KEYS[i]);
+      } else {
+        add(quality);
+      }
+    } else {
+      const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
+      if (startIdx >= 0) {
+        for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) add(ALL_QUALITY_KEYS_DESC[i]);
+      } else {
+        add(quality);
+      }
+    }
+  } else if (quality === 'lossless') {
+    add('flac');
+  } else if (quality === 'high') {
+    add('320k');
+  } else {
+    add('128k');
+  }
+
+  return pairs;
 }
 
 // ==================== 日志 ====================
@@ -939,6 +996,13 @@ export async function pluginGetMusicInfo(
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
+  // BakaMusic API 向下兼容 MusicFree，但播放音质应优先使用 Baka 原生键。
+  // 即使外层仍调用 MF 入口，也在这里统一转交 BakaPluginManager，
+  // 防止 Baka 系插件被传入 standard/high/lossless 后报“不支持音质”。
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    return BakaPluginManager.getMediaSource(source, item, quality, fallbackBehavior, availableQualities);
+  }
+
   if (typeof inst.instance.getMediaSource !== 'function') {
     log(`[${source.name}] 无 getMediaSource 函数`);
     return null;
@@ -1008,6 +1072,7 @@ export async function pluginGetMusicInfo(
   let result: any = null;
   let lastError: any = null;
   let successPairIdx = -1;
+  let successQualityKey: QualityKey | undefined;
   // [歌曲级错误] 当插件返回"歌曲不存在"等歌曲级错误时，换音质无法解决，
   // 立即跳出音质循环，避免对同一首不可用的歌曲发起多次无意义的请求。
   let songLevelErrorDetected = false;
@@ -1037,14 +1102,49 @@ export async function pluginGetMusicInfo(
     if (songLevelErrorDetected) break;
     if (result?.url) {
       successPairIdx = pairIdx;
+      successQualityKey = tryPairs[pairIdx].qualityKey;
       break;
     }
     log(`[getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
     result = null;
   }
 
+  // 兼容修复：部分 QQ/MusicFree 插件实际接收 flac/320k/128k/super 等原生键，
+  // 但没有被 Baka/Toskysun 检测命中。旧三档 lossless/high/standard 全部报
+  // “不支持音质”时，补试原生键，避免可播放歌曲被误判为无法播放。
+  const lastErrorMsg = lastError?.message || (typeof lastError === 'string' ? lastError : String(lastError || ''));
+  if (!result?.url && !songLevelErrorDetected && lastErrorMsg && isUnsupportedQualityError(lastErrorMsg)) {
+    const triedQualities = new Set(tryQualities);
+    const nativePairs = buildNativePluginQualityPairs(quality, fallbackBehavior, availableQualities)
+      .filter(pair => !triedQualities.has(pair.pluginQ));
+    if (nativePairs.length > 0) {
+      log(`[getMediaSource] 旧三档音质均不支持，尝试插件原生音质键: ${JSON.stringify(nativePairs.map(p => p.pluginQ))}`);
+    }
+    for (const pair of nativePairs) {
+      try {
+        result = await inst.instance.getMediaSource(musicItem, pair.pluginQ);
+        if (result?.url) {
+          successQualityKey = pair.qualityKey;
+          log(`[getMediaSource] 原生音质键 ${pair.pluginQ} 获取成功`);
+          break;
+        }
+        log(`[getMediaSource] 原生音质键 ${pair.pluginQ} 未返回有效URL`);
+      } catch (e: any) {
+        lastError = e;
+        const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
+        log(`[getMediaSource] 原生音质键 ${pair.pluginQ} 异常: ${errMsg}`);
+        if (isSongLevelError(errMsg)) {
+          songLevelErrorDetected = true;
+          break;
+        }
+      }
+      result = null;
+    }
+  }
+
   if (!result || typeof result !== 'object') {
-    const errMsg = lastError ? `异常: ${lastError.message}` : (result === null ? '返回null' : `非对象(${typeof result})`);
+    const lastErrorText = lastError?.message || (typeof lastError === 'string' ? lastError : String(lastError || ''));
+    const errMsg = lastError ? `异常: ${lastErrorText}` : (result === null ? '返回null' : `非对象(${typeof result})`);
     log(`[getMediaSource] ${source.name} 失败: ${errMsg}`);
     (globalThis as any).__lastPluginError = `[${source.name}] ${errMsg}`;
     return null;
@@ -1070,7 +1170,7 @@ export async function pluginGetMusicInfo(
   }
 
   // 实际播放音质（用于底部栏同步显示）
-  const actualQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
+  const actualQuality = successQualityKey ?? (successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined);
 
   // 使用 buildLyricsRaw 构建歌词文本（优先级：yrc > qrc > lxlyric > eslrc > lyric）
   const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
@@ -1213,6 +1313,12 @@ export async function pluginGetLyric(
 ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; lyricsRaw?: string } | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
+
+  // Baka 插件支持 yrc/qrc/eslrc/lxlyric/ttml 等逐字歌词扩展，
+  // 优先交给 BakaPluginManager 构建 lyricsRaw，再回退到原 MF 字段兼容逻辑。
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    return BakaPluginManager.getLyric(source, item);
+  }
 
   try {
     if (typeof inst.instance.getLyric !== 'function') {
