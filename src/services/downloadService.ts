@@ -7,7 +7,7 @@
  */
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, OnlineQualityFallbackBehavior, Song, QualityKey } from '../types';
+import type { DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, OnlineQualityFallbackBehavior, Song, QualityKey } from '../types';
 import { downloadApi } from './tauri/downloadApi';
 import type { EmbedMetadataRequestContract } from './tauri/contracts';
 import {
@@ -73,6 +73,30 @@ export function qualityToLxCandidates(quality: DownloadQuality): LxQuality[] {
     return ALL_QUALITY_KEYS_DESC.slice(fallbackIdx);
   }
   return ALL_QUALITY_KEYS_DESC.slice(startIdx);
+}
+
+/** 按下载设置的回退方向生成候选音质列表 */
+export function qualityToDownloadCandidates(
+  quality: DownloadQuality,
+  fallbackBehavior: DownloadQualityFallbackBehavior = 'lower',
+): LxQuality[] {
+  const q = (quality ?? '320k') as QualityKey;
+  const preferredIdx = ALL_QUALITY_KEYS.indexOf(q);
+  if (preferredIdx === -1) {
+    return qualityToLxCandidates('320k');
+  }
+
+  const result: LxQuality[] = [q];
+  if (fallbackBehavior === 'higher') {
+    for (let i = preferredIdx + 1; i < ALL_QUALITY_KEYS.length; i++) {
+      result.push(ALL_QUALITY_KEYS[i]);
+    }
+  } else {
+    for (let i = preferredIdx - 1; i >= 0; i--) {
+      result.push(ALL_QUALITY_KEYS[i]);
+    }
+  }
+  return result;
 }
 
 /** 判断是否为可下载的在线歌曲（lx:// 或 plugin:// 协议） */
@@ -175,6 +199,7 @@ interface ResolveDownloadContext {
 async function prepareResolveContext(
   song: Song,
   quality: DownloadQuality,
+  fallbackBehavior: DownloadQualityFallbackBehavior = 'lower',
 ): Promise<ResolveDownloadContext | null> {
   const path = song.cue_source_path || song.path;
   const pathInfo = parseLxPath(path || '');
@@ -194,7 +219,7 @@ async function prepareResolveContext(
     matchedPlugin,
     lxSource,
     baseSongInfo,
-    candidates: qualityToLxCandidates(quality),
+    candidates: qualityToDownloadCandidates(quality, fallbackBehavior),
   };
 }
 
@@ -249,6 +274,7 @@ interface PluginResolveContext {
 async function preparePluginResolveContext(
   song: Song,
   quality: DownloadQuality,
+  fallbackBehavior: DownloadQualityFallbackBehavior = 'lower',
 ): Promise<PluginResolveContext | null> {
   const path = song.cue_source_path || song.path;
   if (!path || !path.startsWith('plugin://')) return null;
@@ -271,7 +297,7 @@ async function preparePluginResolveContext(
   return {
     pluginSource,
     pluginSearchResult,
-    candidates: qualityToLxCandidates(quality),
+    candidates: qualityToDownloadCandidates(quality, fallbackBehavior),
     preQualities,
   };
 }
@@ -421,7 +447,7 @@ export interface ProbeQualityOptions {
  * 而是把原本下载时才发的请求提前了。
  *
  * @param song 目标歌曲（需为 lx:// 或 plugin:// 在线歌曲）
- * @param declaredQualities 插件声明的档位列表，作为探测上界；为空时回退全部档位
+ * @param declaredQualities 插件声明的档位列表，作为探测上界；为空时不探测，避免展示未声明的无效档位
  * @param options 中止信号与并发度
  */
 export async function probeDownloadableQualities(
@@ -437,7 +463,7 @@ export async function probeDownloadableQualities(
   // 探测范围：插件声明之外的档位无需探测，插件根本不支持
   const targets = (declaredQualities && declaredQualities.length > 0)
     ? ALL_QUALITY_KEYS.filter(k => declaredQualities.includes(k))
-    : [...ALL_QUALITY_KEYS];
+    : [];
   if (targets.length === 0) return empty;
 
   // 构造一次解析上下文并在所有档位间复用，避免重复定位插件 / 重建 songInfo。
@@ -675,6 +701,7 @@ async function resolveNonConflictingPath(fullPath: string, overwriteExisting: bo
 
 interface DownloadSongOptions {
   quality: DownloadQuality;
+  qualityFallbackBehavior?: DownloadQualityFallbackBehavior;
   downloadDir: string;
   keepSourceFilename: boolean;
   /** 文件名样式（keepSourceFilename 为真时不生效） */
@@ -805,8 +832,8 @@ export async function downloadSong(
   // 根据 path 协议前缀路由到对应的解析上下文
   const isPlugin = isPluginSong(song);
   const ctx = isPlugin
-    ? await preparePluginResolveContext(song, options.quality)
-    : await prepareResolveContext(song, options.quality);
+    ? await preparePluginResolveContext(song, options.quality, options.qualityFallbackBehavior)
+    : await prepareResolveContext(song, options.quality, options.qualityFallbackBehavior);
   if (!ctx) {
     throw new Error('无法解析该歌曲的音源信息');
   }

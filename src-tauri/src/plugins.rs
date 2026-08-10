@@ -176,10 +176,11 @@ pub async fn plugin_http_request_binary(
 #[tauri::command]
 pub fn read_plugin_file(path: String) -> Result<String, String> {
     // 路径安全校验：拒绝目录遍历攻击
-    let validated = path_validator::validate_path(&path, None)?;
+    let validated = path_validator::validate_path(&path, None)
+        .map_err(|e| format!("路径校验失败: {} (路径: {})", e, path))?;
     let path_obj = validated.as_path();
     if !path_obj.is_file() {
-        return Err("Plugin file does not exist".to_string());
+        return Err(format!("插件文件不存在: {}", path));
     }
 
     let ext = path_obj
@@ -188,10 +189,10 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
         .unwrap_or_default()
         .to_ascii_lowercase();
     if !matches!(ext.as_str(), "js" | "json" | "txt" | "m3u" | "m3u8") {
-        return Err("Unsupported file type".to_string());
+        return Err(format!("不支持的文件类型: .{} (仅支持 .js/.json/.txt/.m3u/.m3u8)", ext));
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
+    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
     // JSON 备份文件可能包含封面 data URI 和歌词，允许更大体积（50MB）；
     // 其他文本文件（JS/TXT/M3U）保持 5MB 上限
     let max_size = if ext == "json" {
@@ -200,10 +201,10 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
         5 * 1024 * 1024
     };
     if metadata.len() > max_size {
-        return Err(format!("File is larger than {} MB", max_size / 1024 / 1024));
+        return Err(format!("文件过大: {} MB (上限 {} MB)", metadata.len() / 1024 / 1024, max_size / 1024 / 1024));
     }
 
-    fs::read_to_string(path_obj).map_err(|error| error.to_string())
+    fs::read_to_string(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))
 }
 
 /// 代理图片请求 —— 自动添加 Referer 头，解决 B站等 CDN 403 问题

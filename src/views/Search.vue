@@ -285,6 +285,7 @@ import {
   isBakaPlugin,
   pluginGetLyric,
   pluginGetCover,
+  getLastPluginError,
   pluginArtistSearch,
   pluginAlbumSearch,
   pluginPlaylistSearch,
@@ -1417,7 +1418,9 @@ const handlePlayMfSong = async (item: PluginSearchResult) => {
       ? await pluginGetBakaMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior)
       : await pluginGetMusicInfo(pluginSrc, item, requestedQuality, fallbackBehavior);
     if (!musicInfo?.url) {
-      console.warn('[MusicFree] 无法获取播放URL:', item.title);
+      const detail = getLastPluginError();
+      console.warn('[MusicFree] 无法获取播放URL:', item.title, detail);
+      showToast(detail ? `无法获取播放URL：${detail}` : '无法获取播放URL', 'error');
       return;
     }
 

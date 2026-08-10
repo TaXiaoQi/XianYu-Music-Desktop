@@ -754,6 +754,9 @@ const _musicfreeInstances = new Map<string, MusicFreeInstance>();
 // 解决 env.getUserVariables() 需要同步返回最新值的问题
 const _musicfreeUserVars = new Map<string, Record<string, string>>();
 
+// 同一 MusicFree 插件的 search 串行执行，避免插件内部临时状态被并发搜索互相覆盖。
+const _musicfreeSearchQueues = new Map<string, Promise<void>>();
+
 async function loadMusicFreePlugin(
   pluginId: string,
   script: string,
@@ -933,6 +936,34 @@ async function callMusicFreeMethod(
     return { success: true, data: result };
   } catch (e: any) {
     return { success: false, error: e?.message || String(e) };
+  }
+}
+
+async function callQueuedMusicFreeMethod(
+  pluginId: string,
+  method: string,
+  args: any[],
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  if (method !== 'search') {
+    return callMusicFreeMethod(pluginId, method, args);
+  }
+
+  const previous = _musicfreeSearchQueues.get(pluginId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current, () => current);
+  _musicfreeSearchQueues.set(pluginId, queued);
+
+  await previous.catch(() => undefined);
+  try {
+    return await callMusicFreeMethod(pluginId, method, args);
+  } finally {
+    release();
+    if (_musicfreeSearchQueues.get(pluginId) === queued) {
+      _musicfreeSearchQueues.delete(pluginId);
+    }
   }
 }
 
@@ -1445,7 +1476,7 @@ function destroyPlugin(pluginId: string): void {
         const state = _lxStates.get(cmd.pluginId);
         const result = state
           ? await callLxMethod(cmd.pluginId, cmd.method, cmd.args)
-          : await callMusicFreeMethod(cmd.pluginId, cmd.method, cmd.args);
+          : await callQueuedMusicFreeMethod(cmd.pluginId, cmd.method, cmd.args);
 
         const event: WorkerEvent = {
           type: 'method_result',

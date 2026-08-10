@@ -513,7 +513,17 @@ async function installPluginFromScript(script: string, filePath: string) {
 
   addPluginSource(source);
   refreshPluginList();
-  showToast(`成功安装插件: ${source.name} (${source.format === 'lx' ? '落雪' : 'MusicFree'})`, 'success');
+  let isBaka = false;
+  if (source.format === 'musicfree') {
+    try {
+      isBaka = await isBakaPlugin(source);
+    } catch { /* 识别失败时按 MusicFree 展示，不影响安装成功 */ }
+  }
+  if (isBaka) {
+    pluginsBakaIds.value = new Set([...pluginsBakaIds.value, source.id]);
+  }
+  const formatLabel = pluginColorClasses(source.format, isBaka).label;
+  showToast(`成功安装插件: ${source.name} (${formatLabel})`, 'success');
 }
 
 // ==================== 插件管理 ====================
@@ -829,7 +839,7 @@ async function openPluginDetail(plugin: PluginSource) {
 
   // 缓存未命中时异步加载插件以获取完整 userVariables 定义
   // 典型场景：QQ音乐L2 等插件首次打开详情时需触发加载才能显示密钥输入框
-  if (detailUserVariables.value.length === 0 && plugin.format === 'musicfree') {
+  if (detailUserVariables.value.length === 0 && plugin.format !== 'lx') {
     loadingUserVars.value = true;
     try {
       const vars = await ensurePluginUserVariables(plugin);

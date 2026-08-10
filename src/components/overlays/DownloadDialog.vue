@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
@@ -12,13 +12,17 @@ import { formatFileSize } from '../../utils/format';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
 
-const props = defineProps<{ visible: boolean; song: Song | null }>();
+const props = defineProps<{
+  visible: boolean;
+  song: Song | null;
+  initialQuality?: DownloadQuality | null;
+}>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const { settings } = useSettings();
 const playbackStore = usePlaybackStore();
 
-// 音质与目录每次打开都跟随设置（不记忆）
+// 音质与目录每次打开都重新初始化（不记忆）
 const selectedQuality = ref<DownloadQuality>('320k');
 const downloadDir = ref('');
 const selectedFileNameStyle = ref<DownloadFileNameStyle>('artist-title');
@@ -35,6 +39,8 @@ const probedUrls = ref<Partial<Record<QualityKey, string>>>({});
 /** 各音质直链探测到的文件体积（字节） */
 const qualitySizes = ref<Partial<Record<QualityKey, number>>>({});
 const isProbing = ref(false);
+const qualityListRef = ref<HTMLElement | null>(null);
+const qualityScrollProgress = ref({ show: false, top: 0, height: 100 });
 
 const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
   { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前' },
@@ -76,11 +82,34 @@ const getPlaybackAvailableQualities = (song: Song): QualityKey[] | null => {
   return qualities && qualities.length > 0 ? [...qualities] : null;
 };
 
-/** 当前选中档位不可用时，自动切换到列表中的最高档 */
+/** 打开下载弹窗时的初始音质：当前播放歌曲优先对齐实际播放音质 */
+const getInitialDownloadQuality = (song: Song | null): DownloadQuality => {
+  if (props.initialQuality) {
+    return props.initialQuality;
+  }
+  const playingQuality = playbackStore.currentPlayingQuality;
+  if (song && playingQuality && isCurrentPlaybackSong(song)) {
+    return playingQuality;
+  }
+  return (settings.value.download.quality as DownloadQuality) ?? '320k';
+};
+
+/** 当前选中档位不可用时，按下载设置的回退方向选择最接近的可用档 */
 const ensureSelectedQualityAvailable = (available: QualityKey[]) => {
-  if (available.length > 0
-    && !available.includes(selectedQuality.value as QualityKey)) {
-    selectedQuality.value = available[available.length - 1];
+  if (available.length === 0) return;
+  const selected = selectedQuality.value as QualityKey;
+  if (available.includes(selected)) return;
+
+  const fallbackBehavior = settings.value.download.qualityFallbackBehavior ?? 'lower';
+  const selectedRank = QUALITY_META[selected]?.rank ?? QUALITY_META['320k'].rank;
+  const sorted = [...available].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+
+  if (fallbackBehavior === 'higher') {
+    selectedQuality.value = sorted.find(q => QUALITY_META[q].rank > selectedRank)
+      ?? sorted[sorted.length - 1];
+  } else {
+    selectedQuality.value = [...sorted].reverse().find(q => QUALITY_META[q].rank < selectedRank)
+      ?? sorted[0];
   }
 };
 
@@ -138,12 +167,47 @@ const supportedQualityKeys = computed<QualityKey[]>(() => {
     const declared = declaredQualities.value;
     return (declared && declared.length > 0)
       ? ALL_QUALITY_KEYS.filter(k => declared.includes(k))
-      : ALL_QUALITY_KEYS;
+      : [];
   }
   const list = availableQualities.value;
-  if (list === null) return ALL_QUALITY_KEYS;
+  if (list === null) return [];
   return ALL_QUALITY_KEYS.filter(k => list.includes(k));
 });
+
+const hasNoQualityOptions = computed(() => supportedQualityKeys.value.length === 0);
+
+const scrollSelectedQualityIntoView = async () => {
+  await nextTick();
+  requestAnimationFrame(() => {
+    const container = qualityListRef.value;
+    if (!container) return;
+
+    const target = container.querySelector<HTMLElement>(`[data-quality-value="${selectedQuality.value}"]`);
+    if (!target) return;
+
+    const targetTop = target.offsetTop - (container.clientHeight - target.clientHeight) / 2;
+    container.scrollTop = Math.max(0, targetTop);
+    updateQualityScrollProgress();
+  });
+};
+
+const updateQualityScrollProgress = () => {
+  const container = qualityListRef.value;
+  if (!container) {
+    qualityScrollProgress.value = { show: false, top: 0, height: 100 };
+    return;
+  }
+
+  const maxScroll = container.scrollHeight - container.clientHeight;
+  if (maxScroll <= 1) {
+    qualityScrollProgress.value = { show: false, top: 0, height: 100 };
+    return;
+  }
+
+  const height = Math.max(18, (container.clientHeight / container.scrollHeight) * 100);
+  const top = (container.scrollTop / maxScroll) * (100 - height);
+  qualityScrollProgress.value = { show: true, top, height };
+};
 
 /** 探测完成且所有档位都不可用 */
 const hasNoAvailableQuality = computed(() =>
@@ -199,7 +263,7 @@ const probeQualities = async (song: Song) => {
   } catch (e: any) {
     if (!controller.signal.aborted) {
       console.warn('[DownloadDialog] 音质探测失败:', e?.message || e);
-      // 探测失败时回退到"未知"，保持全部档位可选，不堵死用户
+      // 探测失败时不回退展示全部档位，避免出现不可用音质选项。
       availableQualities.value = null;
     }
   } finally {
@@ -210,7 +274,7 @@ const probeQualities = async (song: Song) => {
   }
 };
 
-// 弹窗打开时用设置初始化音质和目录，并探测真实可用音质
+// 弹窗打开时初始化音质和目录，并探测真实可用音质
 watch(
   () => [props.visible, props.song] as const,
   ([visible, song]) => {
@@ -219,7 +283,7 @@ watch(
       return;
     }
 
-    selectedQuality.value = (settings.value.download.quality as DownloadQuality) ?? '320k';
+    selectedQuality.value = getInitialDownloadQuality(song);
     downloadDir.value = settings.value.download.downloadPath ?? '';
     selectedFileNameStyle.value = settings.value.download.fileNameStyle ?? 'artist-title';
     downloadLyrics.value = false;
@@ -236,6 +300,20 @@ watch(
         ensureSelectedQualityAvailable(playbackQualities);
       }
       void probeQualities(song);
+    }
+  },
+);
+
+watch(
+  () => [
+    props.visible,
+    supportedQualityKeys.value.join('|'),
+    selectedQuality.value,
+  ] as const,
+  ([visible]) => {
+    if (visible) {
+      void scrollSelectedQualityIntoView();
+      void nextTick(updateQualityScrollProgress);
     }
   },
 );
@@ -300,33 +378,58 @@ const handleDownload = async () => {
                 <span v-if="isProbing" class="text-gray-400 font-normal">（正在探测可用音质…）</span>
               </div>
               <!-- 可用音质：探测中显示声明列表并禁用交互，避免点到最终不可用的档位 -->
-              <div
-                class="space-y-1.5 transition-opacity"
-                :class="isProbing ? 'opacity-60 pointer-events-none' : ''"
-              >
-                <button
-                  v-for="key in supportedQualityKeys"
-                  :key="key"
-                  type="button"
-                  class="w-full px-3 py-2 text-left rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer"
-                  :class="selectedQuality === key
-                    ? 'bg-[#EC4141]/10 text-[#EC4141]'
-                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
-                  :title="`${QUALITY_META[key].description} · ${qualityExtraText(key)}`"
-                  @click="selectedQuality = key"
+              <div class="relative">
+                <div
+                  v-if="!hasNoQualityOptions"
+                  ref="qualityListRef"
+                  class="space-y-1.5 transition-opacity max-h-[242px] overflow-y-auto pr-3 custom-scrollbar"
+                  :class="isProbing ? 'opacity-60 pointer-events-none' : ''"
+                  @scroll="updateQualityScrollProgress"
                 >
-                  <span class="min-w-0 flex flex-col">
-                    <span class="text-xs font-semibold truncate">{{ QUALITY_META[key].label }}</span>
+                  <button
+                    v-for="key in supportedQualityKeys"
+                    :key="key"
+                    :data-quality-value="key"
+                    type="button"
+                    class="w-full px-3 py-2 text-left rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                    :class="selectedQuality === key
+                      ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                      : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                    :title="`${QUALITY_META[key].description} · ${qualityExtraText(key)}`"
+                    @click="selectedQuality = key"
+                  >
+                    <span class="min-w-0 flex flex-col">
+                      <span class="text-xs font-semibold truncate">{{ QUALITY_META[key].label }}</span>
+                      <span
+                        class="text-[10px] font-normal truncate"
+                        :class="selectedQuality === key ? 'text-[#EC4141]/70' : 'text-gray-400 dark:text-gray-500'"
+                      >{{ QUALITY_META[key].description }}</span>
+                    </span>
                     <span
-                      class="text-[10px] font-normal truncate"
-                      :class="selectedQuality === key ? 'text-[#EC4141]/70' : 'text-gray-400 dark:text-gray-500'"
-                    >{{ QUALITY_META[key].description }}</span>
-                  </span>
-                  <span
-                    class="shrink-0 text-[11px] font-semibold whitespace-nowrap"
-                    :class="selectedQuality === key ? 'text-[#EC4141]' : 'text-gray-500 dark:text-gray-400'"
-                  >{{ qualityExtraText(key) }}</span>
-                </button>
+                      class="shrink-0 text-[11px] font-semibold whitespace-nowrap"
+                      :class="selectedQuality === key ? 'text-[#EC4141]' : 'text-gray-500 dark:text-gray-400'"
+                    >{{ qualityExtraText(key) }}</span>
+                  </button>
+                </div>
+                <div
+                  v-else-if="!hasNoAvailableQuality"
+                  class="px-3 py-2.5 text-xs rounded-md bg-gray-50 text-gray-500 dark:bg-white/5 dark:text-gray-400"
+                >
+                  {{ isProbing ? '正在探测可下载音质…' : '未获取到可下载音质列表，将使用当前音质尝试下载。' }}
+                </div>
+                <div
+                  v-if="qualityScrollProgress.show"
+                  class="pointer-events-none absolute right-0 top-0 h-full w-1 rounded-full bg-gray-200/70 dark:bg-white/10 overflow-hidden"
+                  aria-hidden="true"
+                >
+                  <div
+                    class="absolute left-0 w-full rounded-full bg-[#EC4141]/75"
+                    :style="{
+                      top: `${qualityScrollProgress.top}%`,
+                      height: `${qualityScrollProgress.height}%`,
+                    }"
+                  ></div>
+                </div>
               </div>
 
               <!-- 探测完成但无可用档位：仍允许直接下载（走降级 + 后端兜底） -->

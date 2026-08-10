@@ -21,6 +21,7 @@ import {
   pluginGetBakaMusicInfo,
   isBakaPlugin,
   pluginGetCover,
+  getLastPluginError,
   pluginArtistSearch,
   pluginAlbumSearch,
   type PluginAlbumResult,
@@ -479,7 +480,8 @@ async function handlePlayMfSong(song: Song) {
       ? await pluginGetBakaMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior)
       : await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior);
     if (!musicInfo?.url) {
-      showToast('无法获取播放URL', 'error');
+      const detail = getLastPluginError();
+      showToast(detail ? `无法获取播放URL：${detail}` : '无法获取播放URL', 'error');
       return;
     }
 

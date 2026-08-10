@@ -1,9 +1,10 @@
 import { ref, watch, onUnmounted } from 'vue';
-import type { Song } from '../types';
+import type { DownloadQuality, Song } from '../types';
 import { useSettings } from '../features/settings/useSettings';
 
 const isDownloadDialogVisible = ref(false);
 const currentDownloadSong = ref<Song | null>(null);
+const currentDownloadInitialQuality = ref<DownloadQuality | null>(null);
 
 // 下载内容勾选状态（localStorage 持久化，跨弹窗打开记忆上次选择）
 const SK_AUDIO = 'dl_dialog_audio';
@@ -52,8 +53,9 @@ export function useDownloadDialog() {
     }
   });
 
-  const openDownloadDialog = (song: Song) => {
+  const openDownloadDialog = (song: Song, initialQuality?: DownloadQuality) => {
     currentDownloadSong.value = song;
+    currentDownloadInitialQuality.value = initialQuality ?? null;
     initSelectionIfNeeded();
     isDownloadDialogVisible.value = true;
   };
@@ -66,6 +68,7 @@ export function useDownloadDialog() {
     }
     closeDialogTimer = setTimeout(() => {
       currentDownloadSong.value = null;
+      currentDownloadInitialQuality.value = null;
       closeDialogTimer = null;
     }, 300);
   };
@@ -73,6 +76,7 @@ export function useDownloadDialog() {
   return {
     isDownloadDialogVisible,
     currentDownloadSong,
+    currentDownloadInitialQuality,
     openDownloadDialog,
     closeDownloadDialog,
     downloadAudio,

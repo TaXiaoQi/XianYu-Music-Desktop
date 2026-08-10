@@ -61,7 +61,12 @@ interface ManagedSandbox {
 // ==================== 状态 ====================
 
 const _sandboxes = new Map<string, ManagedSandbox>();
+const _sandboxAliases = new Map<string, string>();
 let _callIdCounter = 0;
+
+function resolveSandboxId(pluginId: string): string {
+  return _sandboxAliases.get(pluginId) || pluginId;
+}
 
 // ==================== Worker 创建 ====================
 
@@ -356,6 +361,19 @@ export async function loadMusicFreeInSandbox(
 }
 
 /**
+ * 给已存在的沙箱注册一个别名。
+ *
+ * 插件记录 ID 可能来自旧版本存储，而重新加载脚本得到的实际 hash ID 可能不同。
+ * 通过别名让调用方仍可使用当前 source.id，同时由管理器转发到实际 Worker。
+ */
+export function linkSandboxAlias(aliasId: string, targetId: string): void {
+  if (!aliasId || !targetId || aliasId === targetId) return;
+  if (!_sandboxes.has(targetId)) return;
+  _sandboxAliases.set(aliasId, targetId);
+  log(`沙箱别名已注册: ${aliasId.substring(0, 12)}... -> ${targetId.substring(0, 12)}...`);
+}
+
+/**
  * 在沙箱中加载 LX 插件
  *
  * @param pluginId 插件唯一 ID
@@ -454,7 +472,8 @@ export async function callSandboxMethod(
   args: any[],
   timeout = 30000,
 ): Promise<any> {
-  const sandbox = _sandboxes.get(pluginId);
+  const sandboxId = resolveSandboxId(pluginId);
+  const sandbox = _sandboxes.get(sandboxId);
   if (!sandbox) {
     throw new Error(`沙箱不存在: ${pluginId}`);
   }
@@ -483,7 +502,7 @@ export async function callSandboxMethod(
   // 这里统一做 JSON 深拷贝剥离不可克隆部分，保证 Worker 调用稳定。
   const cmd: WorkerCommand = {
     type: 'call_method',
-    pluginId,
+    pluginId: sandbox.pluginId,
     method,
     args: toCloneableArgs(args),
     callId,
@@ -510,12 +529,19 @@ export async function callSandboxMethod(
  * 销毁指定插件的沙箱
  */
 export async function destroySandbox(pluginId: string): Promise<void> {
-  const sandbox = _sandboxes.get(pluginId);
+  const sandboxId = resolveSandboxId(pluginId);
+  const sandbox = _sandboxes.get(sandboxId);
   if (!sandbox) return;
+
+  for (const [alias, target] of [..._sandboxAliases]) {
+    if (alias === pluginId || target === sandboxId) {
+      _sandboxAliases.delete(alias);
+    }
+  }
 
   // 通知 Worker 清理
   try {
-    const cmd: WorkerCommand = { type: 'destroy', pluginId };
+    const cmd: WorkerCommand = { type: 'destroy', pluginId: sandbox.pluginId };
     sandbox.worker.postMessage(cmd);
   } catch { /* ignore */ }
 
@@ -530,15 +556,15 @@ export async function destroySandbox(pluginId: string): Promise<void> {
   sandbox.worker.terminate();
   sandbox.ready = false;
 
-  _sandboxes.delete(pluginId);
-  log(`沙箱已销毁: ${pluginId}`);
+  _sandboxes.delete(sandboxId);
+  log(`沙箱已销毁: ${sandboxId}`);
 }
 
 /**
  * 检查沙箱是否存在且就绪
  */
 export function isSandboxReady(pluginId: string): boolean {
-  const sandbox = _sandboxes.get(pluginId);
+  const sandbox = _sandboxes.get(resolveSandboxId(pluginId));
   return !!sandbox?.ready;
 }
 

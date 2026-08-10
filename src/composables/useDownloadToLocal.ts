@@ -79,6 +79,7 @@ export async function downloadToLocal(
     if (downloadAudio) {
       const result = await downloadSong(song, {
         quality,
+        qualityFallbackBehavior: settings.value.download.qualityFallbackBehavior,
         downloadDir,
         keepSourceFilename: settings.value.download.keepSourceFilename,
         fileNameStyle,

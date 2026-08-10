@@ -5,6 +5,7 @@ import { useLibraryCollections } from '../../features/collections/useLibraryColl
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { isDownloadableOnlineSong, probeDownloadableQualities } from '../../services/downloadService';
+import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
@@ -161,10 +162,48 @@ const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
   return [];
 });
 
-/** 当前选择的下载音质（来自设置 store，默认 '320k'） */
+const resolveEffectiveDownloadQuality = (
+  preferred: DownloadQuality,
+  available: QualityKey[] | null,
+): DownloadQuality => {
+  if (!available || available.length === 0 || available.includes(preferred)) {
+    return preferred;
+  }
+
+  const fallbackBehavior = settings.value.download.qualityFallbackBehavior ?? 'lower';
+  const preferredRank = QUALITY_META[preferred]?.rank ?? QUALITY_META['320k'].rank;
+  const sorted = [...available].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank);
+
+  if (fallbackBehavior === 'higher') {
+    return sorted.find(q => QUALITY_META[q].rank > preferredRank)
+      ?? sorted[sorted.length - 1];
+  }
+  return [...sorted].reverse().find(q => QUALITY_META[q].rank < preferredRank)
+    ?? sorted[0];
+};
+
+/** 当前选择的下载音质：优先跟随下载设置，不可用时按下载回退方向取候选 */
 const selectedDownloadQuality = computed<DownloadQuality>(
-  () => (settings.value.download.quality as DownloadQuality) ?? '320k',
+  () => resolveEffectiveDownloadQuality(
+    (settings.value.download.quality as DownloadQuality) ?? '320k',
+    footerAvailableQualityKeys.value,
+  ),
 );
+
+/** 下载音质菜单中用于展示定位的档位：优先对齐当前实际播放音质 */
+const activeDownloadQualityKey = computed<DownloadQuality>(() => {
+  const playingQuality = currentPlayingQuality.value;
+  if (
+    playingQuality
+    && (
+      footerAvailableQualityKeys.value === null
+      || footerAvailableQualityKeys.value.includes(playingQuality)
+    )
+  ) {
+    return playingQuality;
+  }
+  return selectedDownloadQuality.value;
+});
 
 const { openDownloadDialog } = useDownloadDialog();
 
@@ -173,7 +212,7 @@ const openDownloadByBehavior = () => {
   showQualityMenu.value = false;
   if ((settings.value.download.behavior ?? 'default') === 'ask') {
     showDownloadQualityMenu.value = false;
-    openDownloadDialog(currentSong.value);
+    openDownloadDialog(currentSong.value, activeDownloadQualityKey.value);
     return;
   }
   showDownloadQualityMenu.value = !showDownloadQualityMenu.value;
@@ -348,7 +387,15 @@ const ensureFooterQualityInfo = async () => {
   isFooterQualityInfoProbing.value = true;
 
   try {
-    const result = await probeDownloadableQualities(song, null, {
+    let declaredQualities: QualityKey[] | null = null;
+    try {
+      declaredQualities = await getOnlineAvailableQualities(songPath, song);
+    } catch {
+      declaredQualities = null;
+    }
+    if (controller.signal.aborted) return;
+
+    const result = await probeDownloadableQualities(song, declaredQualities, {
       signal: controller.signal,
     });
     if (controller.signal.aborted) return;
@@ -842,6 +889,7 @@ provide('footerContext', {
   showDownloadQualityMenu,
   DOWNLOAD_QUALITY_OPTIONS,
   selectedDownloadQuality,
+  activeDownloadQualityKey,
   startDownload,
   downloadQualityButtonRef,
   downloadQualityMenuRef,

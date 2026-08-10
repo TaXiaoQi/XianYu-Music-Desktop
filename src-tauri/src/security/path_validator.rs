@@ -33,6 +33,7 @@ fn canonicalize_path_or_parent(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
+#[allow(dead_code)]
 fn contains_symlink_component(path: &Path) -> bool {
     for ancestor in path.ancestors() {
         if std::fs::symlink_metadata(ancestor)
@@ -107,12 +108,12 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
 
         Ok(canonical)
     } else {
-        // No allowed_roots - still canonicalize existing path / parent and reject symlink paths.
-        // This prevents callers from operating on a user-visible symlink path that resolves
-        // somewhere else without changing non-symlink path behavior.
-        if contains_symlink_component(&path) {
-            return Err(format!("路径包含符号链接，已拒绝: {}", input));
-        }
+        // No allowed_roots - just return the canonical path.
+        // Symlink check is skipped because there are no directory restrictions to enforce.
+        // The path is already canonicalized (symlinks resolved by canonicalize_path_or_parent),
+        // and directory traversal (..) is already rejected above.
+        // This allows reading user-selected files from OneDrive/junction-managed folders
+        // while still preventing traversal attacks.
         Ok(canonical)
     }
 }
@@ -240,7 +241,9 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_path_without_roots_rejects_symlink_component() {
+    fn test_validate_path_without_roots_allows_symlink_component() {
+        // When allowed_roots is None, symlink paths should be allowed (canonicalized)
+        // because there are no directory restrictions to enforce.
         let base =
             env::temp_dir().join(format!("xy_path_validator_symlink_{}", std::process::id()));
         let real = base.join("real");
@@ -263,10 +266,9 @@ mod tests {
             }
         }
 
-        let target = link.join("child.txt");
-        let result = validate_path(&target.to_string_lossy(), None);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("符号链接"));
+        // The symlink directory itself should be canonicalized (resolved to real path)
+        let result = validate_path(&link.to_string_lossy(), None);
+        assert!(result.is_ok(), "symlink path should be allowed when no allowed_roots");
 
         fs::remove_dir_all(&base).ok();
     }
