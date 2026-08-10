@@ -583,6 +583,46 @@ describe('player playback domain', () => {
     playerPlayback.dispose();
   });
 
+  it('does not repeatedly auto-advance after the same online song fails quickly', async () => {
+    vi.useFakeTimers();
+    const failingSong = makeSong({ path: 'plugin://qishui/failed', title: 'Failed' });
+    const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' });
+    const handleAutoNext = vi.fn();
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [failingSong, nextSong],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext,
+    });
+
+    await playerPlayback.playSong(failingSong);
+    await vi.runOnlyPendingTimersAsync();
+    await playerPlayback.playSong(failingSong);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(handleAutoNext).toHaveBeenCalledTimes(1);
+    playerPlayback.dispose();
+  });
+
+  it('stops instead of skipping to itself when an online song has no alternative queue item', async () => {
+    vi.useFakeTimers();
+    const failingSong = makeSong({ path: 'plugin://qishui/only', title: 'Only Failed' });
+    const handleAutoNext = vi.fn();
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [failingSong],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext,
+    });
+
+    await playerPlayback.playSong(failingSong);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(handleAutoNext).not.toHaveBeenCalled();
+    expect(playbackApi.stopAudio).toHaveBeenCalled();
+    playerPlayback.dispose();
+  });
+
   it('prepares likely full-size covers before switching songs in the player detail view', async () => {
     const playbackStore = usePlaybackStore();
     const uiStore = useUiStore();

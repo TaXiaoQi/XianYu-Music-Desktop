@@ -113,7 +113,7 @@ const firstHeaderMap = (...candidates: any[]): Record<string, string> => {
 /** Baka 歌词格式（对齐 BakaMusic ILyric.LyricFormat） */
 type BakaLyricFormat =
   | 'ttml' | 'lrc' | 'lrc-a2' | 'yrc' | 'qrc'
-  | 'eslrc' | 'lyl' | 'lys' | 'lqe' | 'plain';
+  | 'eslrc' | 'lyl' | 'lys' | 'lqe' | 'krc' | 'plain';
 
 /** Baka 评论项（对齐 BakaMusic IComment.IComment） */
 interface BakaComment {
@@ -264,6 +264,10 @@ function extractOnlySupportedQuality(errMsg: string): QualityKey | undefined {
   return undefined;
 }
 
+function isFatalMediaSourceError(errMsg: string): boolean {
+  return /解密\s*playauth\s*失败|decrypt\s*playauth\s*failed|playauth/i.test(errMsg);
+}
+
 function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {
   const text = [
     source.name,
@@ -408,6 +412,11 @@ function detectLyricFormat(content: string): BakaLyricFormat {
   // ESLRC: 增强型 LRC 逐字格式
   if (/\[\d+:\d+\.\d+\]<\d+:\d+\.\d+>/.test(trimmed)) {
     return 'eslrc';
+  }
+
+  // KRC: 酷狗逐字格式，[行开始,行时长]字(字偏移,字时长)
+  if (/^\[\d+,\d+].*\(-?\d+,-?\d+(?:,-?\d+)?\)/m.test(trimmed)) {
+    return 'krc';
   }
 
   // LRC-A2 (ALRC): 高级 LRC 格式
@@ -612,55 +621,65 @@ class BakaPluginManagerClass {
     let successPairIdx = -1;
     let songLevelErrorDetected = false;
     let nextPairIdxOverride: number | null = null;
+    const attemptedPluginQualities = new Set<string>();
 
     for (let pairIdx = 0; pairIdx < tryPairs.length; pairIdx++) {
       const q = tryPairs[pairIdx].pluginQ;
       const attemptMusicItem = adaptMediaItemForPluginQuality(source, musicItem, tryPairs[pairIdx].qualityKey);
-      for (let retry = 0; retry <= 1; retry++) {
-        try {
-          result = await inst.getMediaSource(attemptMusicItem, q);
-          if (result?.url) break;
+      if (attemptedPluginQualities.has(q)) {
+        log(`[getMediaSource] quality=${q} 已尝试过，跳过重复调用`);
+        result = null;
+        continue;
+      }
+      attemptedPluginQualities.add(q);
 
-          // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）
-          if (!result?.url) {
-            const legacyQ = newToLegacyQualityMap[q];
-            if (legacyQ && legacyQ !== q) {
-              log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
-              result = await inst.getMediaSource(attemptMusicItem, legacyQ);
-              if (result?.url) break;
-            }
-          }
-        } catch (e: any) {
-          lastError = e;
-          const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
-          log(`[getMediaSource] quality=${q} 第${retry + 1}次异常: ${errMsg}`);
-          if (isSongLevelError(errMsg)) {
-            log(`[getMediaSource] 歌曲级错误，跳过剩余音质: ${errMsg}`);
-            songLevelErrorDetected = true;
-            break;
-          }
-          const onlySupportedQuality = extractOnlySupportedQuality(errMsg);
-          if (onlySupportedQuality) {
-            let targetIdx = tryPairs.findIndex(pair => pair.qualityKey === onlySupportedQuality);
-            if (targetIdx < 0) {
-              targetIdx = tryPairs.length;
-              tryPairs.push({
-                pluginQ: qualityKeyToPluginString(onlySupportedQuality),
-                qualityKey: onlySupportedQuality,
-              });
-            }
-            if (targetIdx >= 0 && targetIdx !== pairIdx) {
-              log(`[getMediaSource] 插件提示仅支持 ${onlySupportedQuality}，跳过中间音质直接尝试`);
-              nextPairIdxOverride = targetIdx;
-              break;
-            }
-            if (targetIdx === pairIdx) {
-              log(`[getMediaSource] 插件声明当前仅支持 ${onlySupportedQuality} 但仍失败，停止重复重试`);
+      try {
+        result = await inst.getMediaSource(attemptMusicItem, q);
+        if (result?.url) {
+          successPairIdx = pairIdx;
+          break;
+        }
+
+        // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）。
+        // 当用户选择“暂停/不回退”时，不再尝试旧键，避免绕过设置继续刷请求。
+        const legacyQ = fallbackBehavior === 'pause' ? undefined : newToLegacyQualityMap[q];
+        if (!result?.url && legacyQ && legacyQ !== q) {
+          if (attemptedPluginQualities.has(legacyQ)) {
+            log(`[getMediaSource] legacy quality=${legacyQ} 已尝试过，跳过重复回退`);
+          } else {
+            attemptedPluginQualities.add(legacyQ);
+            log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
+            result = await inst.getMediaSource(attemptMusicItem, legacyQ);
+            if (result?.url) {
+              successPairIdx = pairIdx;
               break;
             }
           }
-          if (retry < 1) {
-            await new Promise(r => setTimeout(r, 150));
+        }
+      } catch (e: any) {
+        lastError = e;
+        const errMsg = e?.message || (typeof e === 'string' ? e : String(e || ''));
+        log(`[getMediaSource] quality=${q} 异常: ${errMsg}`);
+        if (isSongLevelError(errMsg) || isFatalMediaSourceError(errMsg)) {
+          log(`[getMediaSource] 歌曲级/致命错误，跳过剩余音质: ${errMsg}`);
+          songLevelErrorDetected = true;
+          break;
+        }
+        const onlySupportedQuality = fallbackBehavior === 'pause' ? undefined : extractOnlySupportedQuality(errMsg);
+        if (onlySupportedQuality) {
+          let targetIdx = tryPairs.findIndex(pair => pair.qualityKey === onlySupportedQuality);
+          if (targetIdx < 0) {
+            targetIdx = tryPairs.length;
+            tryPairs.push({
+              pluginQ: qualityKeyToPluginString(onlySupportedQuality),
+              qualityKey: onlySupportedQuality,
+            });
+          }
+          if (targetIdx >= 0 && targetIdx !== pairIdx) {
+            log(`[getMediaSource] 插件提示仅支持 ${onlySupportedQuality}，跳过中间音质直接尝试`);
+            nextPairIdxOverride = targetIdx;
+          } else {
+            log(`[getMediaSource] 插件声明当前仅支持 ${onlySupportedQuality} 但仍失败，停止重复重试`);
           }
         }
       }
@@ -671,10 +690,7 @@ class BakaPluginManagerClass {
         result = null;
         continue;
       }
-      if (result?.url) {
-        successPairIdx = pairIdx;
-        break;
-      }
+      if (result?.url) break;
       log(`[getMediaSource] quality=${q} 未返回有效URL，尝试下一档`);
       result = null;
     }

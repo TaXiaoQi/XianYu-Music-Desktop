@@ -537,7 +537,7 @@ export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
  *    - 'lower': 添加低于首选的可用音质（从高到低依次）
  *    - 'higher': 添加高于首选的可用音质（从低到高依次）
  *    - 'pause': 不添加候选
- * 3. 若候选列表为空（音源不支持首选音质且回退行为无法产出候选，如首选最高且回退为更高但音源只有更低音质），
+ * 3. 若候选列表为空且回退行为不是 pause（音源不支持首选音质且回退行为无法产出候选，如首选最高且回退为更高但音源只有更低音质），
  *    回退到可用列表中的最低音质（低音质兜底），确保始终能播放；
  *    实际命中的低音质会通过 currentPlayingQuality 同步显示至底部栏音质按钮
  *
@@ -578,7 +578,13 @@ export function resolveOnlinePlayQuality(
     // 'pause': 不添加回退候选
   }
 
-  // 3. 若候选为空（音源不支持首选音质且回退行为无法产出候选），回退到可用列表中的最低音质
+  // 3. pause 表示严格不回退：首选不在可用列表时仍只尝试首选一次，
+  //    失败后交给在线起播失败行为（跳过/停止）处理，避免后台反复请求其他音质。
+  if (fallbackBehavior === 'pause') {
+    return result.length > 0 ? result : [preferred];
+  }
+
+  // 4. 若候选为空（音源不支持首选音质且回退行为无法产出候选），回退到可用列表中的最低音质
   //    （低音质兜底），实际命中音质会通过 currentPlayingQuality 同步显示至底部栏
   if (result.length === 0 && avail.length > 0) {
     const lowest = [...avail].sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)[0];

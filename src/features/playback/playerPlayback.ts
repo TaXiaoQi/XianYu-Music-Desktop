@@ -81,6 +81,12 @@ let playRequestId = 0;
 // 随后 playSong 跑完又会把状态设回播放中并真的出声，表现为「点暂停没反应」。
 // 这里记录「哪个 playRequestId 已被用户取消」，playSong 在真正启动播放前后据此中止。
 let cancelledPlayRequestId = -1;
+let lastHandledOnlineFailure: {
+  path: string;
+  requestId: number;
+  handledAt: number;
+} | null = null;
+const recentOnlineFailurePaths = new Map<string, number>();
 let latestSeekRequestId = 0;
 let playbackAnchorTime = 0;
 let playbackStartOffset = 0;
@@ -97,6 +103,7 @@ const shortTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
+const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export const createPlayerPlayback = ({
@@ -154,6 +161,14 @@ const authStore = useAuthStore();
   const clearManagedShortTimers = () => {
     shortTimerIds.forEach(timerId => clearTimeout(timerId));
     shortTimerIds.clear();
+  };
+
+  const pruneRecentOnlineFailurePaths = (now = Date.now()) => {
+    for (const [path, failedAt] of recentOnlineFailurePaths) {
+      if (now - failedAt > ONLINE_FAILURE_LOOP_GUARD_MS) {
+        recentOnlineFailurePaths.delete(path);
+      }
+    }
   };
 
   const clearVolumeRestoreTimer = () => {
@@ -569,6 +584,30 @@ const authStore = useAuthStore();
     requestId: number,
     shouldFade: boolean | null,
   ): Promise<void> => {
+    const now = Date.now();
+    const isDuplicateFailure = !!(
+      lastHandledOnlineFailure
+      && lastHandledOnlineFailure.path === song.path
+      && (
+        lastHandledOnlineFailure.requestId === requestId
+        || now - lastHandledOnlineFailure.handledAt < 3000
+      )
+    );
+    if (isDuplicateFailure) {
+      console.warn('[Audio] 已忽略重复的在线播放失败处理:', {
+        path: song.path,
+        requestId,
+      });
+    } else {
+      lastHandledOnlineFailure = {
+        path: song.path,
+        requestId,
+        handledAt: now,
+      };
+      recentOnlineFailurePaths.set(song.path, now);
+      pruneRecentOnlineFailurePaths(now);
+    }
+
     try { await playbackApi.stopAudio(); } catch {}
     // [渐入渐出] 起播失败时恢复后端音量到用户设定值
     if (shouldFade) {
@@ -579,6 +618,10 @@ const authStore = useAuthStore();
     isSongLoaded.value = false;
     stopPlaybackRuntime();
     console.error('[Audio] 在线音频播放失败');
+
+    if (isDuplicateFailure) {
+      return;
+    }
 
     // [自动换源] lx:// 歌曲起播失败时，尝试其他落雪音源播放同一首歌
     const autoSwitchEnabled = settingsStore.settings.audio.autoSwitchSourceOnFailure ?? true;
@@ -625,6 +668,19 @@ const authStore = useAuthStore();
 
     const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
     if (failureBehavior === 'skip') {
+      const hasAlternativeQueueSong = [
+        ...playbackStore.tempQueue,
+        ...playbackStore.playQueue,
+      ].some(item => (
+        item.path !== song.path
+        && !recentOnlineFailurePaths.has(item.path)
+      ));
+
+      if (!hasAlternativeQueueSong) {
+        console.warn('[Audio] 在线音频播放失败，但队列中没有其它未失败歌曲，停止而不是循环请求');
+        return;
+      }
+
       setManagedTimeout(() => {
         if (currentSong.value?.path === song.path) handleAutoNext();
       }, 400);
@@ -653,6 +709,10 @@ const authStore = useAuthStore();
 
     // 新的播放请求：清掉上一次可能残留的取消标记
     cancelledPlayRequestId = -1;
+    if (lastHandledOnlineFailure?.path !== song.path) {
+      lastHandledOnlineFailure = null;
+    }
+    pruneRecentOnlineFailurePaths();
 
     // [渐入渐出] 切歌时先淡出当前正在播放的歌曲，避免新歌起播前旧歌仍在出声。
     // 本地、在线均适用：在线歌 URL 解析期间旧歌会持续淡出，解析完成新歌起播后再淡入。
@@ -1539,6 +1599,8 @@ const authStore = useAuthStore();
     togglePlayToken += 1;
     playRequestId += 1;
     cancelledPlayRequestId = -1;
+    lastHandledOnlineFailure = null;
+    recentOnlineFailurePaths.clear();
     latestSeekRequestId += 1;
     playbackAnchorTime = 0;
     playbackStartOffset = 0;
