@@ -1157,6 +1157,13 @@ fn poll_buffering_watchdog(
     let starved = progress.buffered.starved.load(Ordering::Relaxed);
     let produced = progress.buffered.produced.swap(false, Ordering::Relaxed);
 
+    // `starved` 由消费线程置位。sink 因缓冲被暂停后消费线程不再读取，
+    // 该标志会滞留为 true 无人清除；此时唯一能证明缓冲已恢复的信号就是
+    // 生产线程持续置位的 `produced`。因此暂停期间以 `produced` 为准，
+    // 否则会卡在饥饿分支永远等不到自动恢复。
+    let recovered = produced && *sink_paused;
+    let starved = starved && !recovered;
+
     if starved && is_playing_flag && !*sink_paused {
         // 饥饿计时，到达阈值即进入缓冲暂停。
         let since = starved_since.get_or_insert(now);

@@ -16,6 +16,7 @@ import { getStoredAuth } from '../../services/auth/authService';
 import { getStoredPlugins } from '../../services/pluginEngine';
 import { submitFeedback } from '../../services/usageStats';
 import {
+  describeBackupVersion,
   preparePluginBackupFile,
   type PreparedPluginBackupImport,
 } from '../../services/pluginBackupImport';
@@ -104,10 +105,14 @@ const importPluginBackup = async () => {
     createdPlaylistCount.value = created;
     showBackupImportResult.value = true;
 
+    const versionNote = describeBackupVersion(prepared);
     if (prepared.importedSongCount > 0) {
-      showToast(`已导入 ${prepared.importedSongCount} 首歌曲，${prepared.failures.length} 首未导入`, 'success');
+      showToast(
+        `${versionNote}｜已导入 ${prepared.importedSongCount} 首歌曲，${prepared.failures.length} 首未导入`,
+        'success',
+      );
     } else {
-      showToast('没有歌曲可以导入，请查看缺失插件说明', 'info');
+      showToast(`${versionNote}｜没有歌曲可以导入，请查看缺失插件说明`, 'info');
     }
   } catch (error: any) {
     showToast(`导入备份失败：${error?.message || error}`, 'error');
