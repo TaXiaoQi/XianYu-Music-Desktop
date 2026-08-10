@@ -431,6 +431,30 @@ const isBakaSupportedQualities = (raw: unknown): raw is string[] => {
   return ALL_QUALITY_KEYS.some(q => normalized.has(q));
 };
 
+/**
+ * 检测插件实例（或沙箱元数据）是否实现了评论区 API `getMusicComments`。
+ *
+ * 这是最可靠的 Baka 特征：原版 MusicFree 及时迁酱系列插件都不实现该方法。
+ * 沙箱元数据用 `_availableMethods` 数组声明实现的方法名；全局实例则可直接
+ * 检查 `getMusicComments` 是否为函数。
+ */
+const hasCommentApi = (meta: any): boolean => {
+  if (!meta) return false;
+  if (Array.isArray(meta._availableMethods) && meta._availableMethods.includes('getMusicComments')) {
+    return true;
+  }
+  return typeof meta.getMusicComments === 'function';
+};
+
+/**
+ * 已知的 MusicFree 插件作者（小写）。
+ *
+ * 这些作者的插件虽然可能声明 Baka 风格的 supportedQualities，但本质是
+ * 原版 MusicFree 插件，必须强制排除以免被能力检测误判为 Baka。
+ * 例如「时迁酱」的 v7 系列音源。
+ */
+const NON_BAKA_PLUGIN_AUTHORS = ['时迁酱'];
+
 // ==================== 歌词格式检测 ====================
 
 /**
@@ -549,6 +573,22 @@ class BakaPluginManagerClass {
    * 原版 MusicFree 插件无此字段，或仅走 standard/high/lossless。
    */
   async isBakaPlugin(source: PluginSource): Promise<boolean> {
+    // 作者名判定优先于能力检测：部分 MusicFree 插件（如时迁酱系列）也声明了
+    // Baka 风格的 supportedQualities，仅凭能力检测会误判，因此以作者归属为准。
+    const author = (source.author || '').toLowerCase();
+
+    // Toskysun 是 BakaMusic 的开发者，作者名匹配则强制判定为 Baka。
+    if (author.includes('toskysun')) {
+      this._bakaPluginCache.set(source.id, true);
+      return true;
+    }
+
+    // 已知的 MusicFree 插件作者：强制排除，不走能力检测（避免误判为 Baka）。
+    if (NON_BAKA_PLUGIN_AUTHORS.some(name => author.includes(name))) {
+      this._bakaPluginCache.set(source.id, false);
+      return false;
+    }
+
     const cached = this._bakaPluginCache.get(source.id);
     // true 可以稳定缓存；false 可能是插件尚未加载完成时的临时误判，
     // 因此在沙箱就绪后允许重新检测一次，避免 Baka/Toskysun 插件误走 MF 三档兼容路径。
@@ -561,18 +601,25 @@ class BakaPluginManagerClass {
   }
 
   private async _detectBakaPlugin(source: PluginSource): Promise<boolean> {
-    // 优先从沙箱元数据检测
+    // 注：Toskysun 作者名的判定已在 isBakaPlugin 入口处理，此处专注运行时能力检测。
+
+    // 从沙箱元数据检测
     if (isSandboxReady(source.id)) {
       const meta = getSandboxInstance(source.id);
+      // getMusicComments（评论区 API）是最可靠的 Baka 特征：
+      // 原版 MusicFree 及时迁酱系列插件都不实现该方法。
+      if (hasCommentApi(meta)) return true;
       if (isBakaSupportedQualities(meta?.supportedQualities)) {
         return true;
       }
     }
+
     // 从全局实例缓存检测
     const _globalThis = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {} as any);
     const instances = _globalThis.__pluginInstances as Map<string, any> | undefined;
     if (instances) {
       const inst = instances.get(source.id);
+      if (hasCommentApi(inst?.instance)) return true;
       if (isBakaSupportedQualities(inst?.instance?.supportedQualities)) {
         return true;
       }

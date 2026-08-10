@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PluginSource } from '../types';
-import { preparePluginBackupImport } from './pluginBackupImport';
+import { describeBackupVersion, preparePluginBackupImport } from './pluginBackupImport';
 
 function plugin(overrides: Partial<PluginSource>): PluginSource {
   return {
@@ -104,5 +104,279 @@ describe('preparePluginBackupImport', () => {
   it('rejects unrelated JSON files', () => {
     expect(() => preparePluginBackupImport('{"data":[]}', []))
       .toThrow('无法识别备份格式');
+  });
+});
+
+/**
+ * 歌曲 ID 的 JSON 标量类型是插件契约的一部分：部分歌词 API 只在收到
+ * number 时才返回逐字歌词。BakaMusic v2 把所有 ID 字符串化，v3 起保留原型。
+ *
+ * 我们导入侧原先一律 String()，即使拿到完好的 v3 备份也会把数字 ID 变成字符串，
+ * 导致导入的歌曲丢失逐字歌词。以下用例锁定修复后的行为。
+ */
+describe('preparePluginBackupImport: track id scalar types', () => {
+  const wyPlugin = plugin({ id: 'mf-wy', name: '网易云音乐', sources: ['网易云音乐'] });
+
+  /** 取出最终传给插件的 musicItem.id */
+  const musicItemId = (result: ReturnType<typeof preparePluginBackupImport>) =>
+    (result.playlists[0].songs[0].rawData as any).rawData.id;
+
+  function makeBackup(version: number | undefined, id: unknown) {
+    return JSON.stringify({
+      schema: 'bakamusic.music-sheet-backup',
+      ...(version === undefined ? {} : { version }),
+      data: {
+        musicSheets: [{
+          title: '收藏',
+          musicList: [{ id, title: '歌', artist: '手', platform: '网易云音乐' }],
+        }],
+      },
+    });
+  }
+
+  it('preserves numeric ids from v3 backups', () => {
+    const result = preparePluginBackupImport(makeBackup(3, 2748510187), [wyPlugin]);
+
+    expect(result.backupVersion).toBe(3);
+    expect(result.migratedTrackIds).toBe(false);
+    expect(musicItemId(result)).toBe(2748510187);
+    expect(typeof musicItemId(result)).toBe('number');
+    // 路径始终是字符串形式
+    expect(result.playlists[0].songs[0].path).toContain('2748510187');
+  });
+
+  it('keeps genuine string ids from v3 backups as strings', () => {
+    // 酷狗的 hex hash：v3 中本就是字符串，不能被误转
+    const result = preparePluginBackupImport(
+      makeBackup(3, '572C3807BF90891332ED77A72DB74272'),
+      [wyPlugin],
+    );
+
+    expect(musicItemId(result)).toBe('572C3807BF90891332ED77A72DB74272');
+    expect(result.migratedTrackIdCount).toBe(0);
+  });
+
+  it('restores stringified numeric ids from v2 backups', () => {
+    const result = preparePluginBackupImport(makeBackup(2, '2748510187'), [wyPlugin]);
+
+    expect(result.backupVersion).toBe(2);
+    expect(result.migratedTrackIds).toBe(true);
+    expect(result.migratedTrackIdCount).toBe(1);
+    expect(musicItemId(result)).toBe(2748510187);
+    expect(typeof musicItemId(result)).toBe('number');
+  });
+
+  it.each([
+    ['酷狗 hex hash', '572C3807BF90891332ED77A72DB74272'],
+    ['bilibili BV 号', 'BV1px411F7UF'],
+    ['前导零', '007'],
+    ['带正号', '+42'],
+    ['小数', '1.5'],
+    ['科学计数法', '1e5'],
+    ['超出安全整数范围', '9007199254740993'],
+  ])('never converts %s to a number when migrating v2', (_label, id) => {
+    const result = preparePluginBackupImport(makeBackup(2, id), [wyPlugin]);
+
+    expect(musicItemId(result)).toBe(id);
+    expect(typeof musicItemId(result)).toBe('string');
+    expect(result.migratedTrackIdCount).toBe(0);
+  });
+
+  it('does not migrate when the version is absent or unknown', () => {
+    // 未标注版本：不做有罪推定，保持原样导入
+    const noVersion = preparePluginBackupImport(makeBackup(undefined, '2748510187'), [wyPlugin]);
+    expect(noVersion.backupVersion).toBeNull();
+    expect(noVersion.migratedTrackIds).toBe(false);
+    expect(musicItemId(noVersion)).toBe('2748510187');
+
+    // 未来的未知版本：仍照常解析，只是不迁移
+    const future = preparePluginBackupImport(makeBackup(99, '2748510187'), [wyPlugin]);
+    expect(future.backupVersion).toBe(99);
+    expect(future.migratedTrackIds).toBe(false);
+    expect(future.importedSongCount).toBe(1);
+  });
+});
+
+describe('describeBackupVersion', () => {
+  const wyPlugin = plugin({ id: 'mf-wy', sources: ['网易云音乐'] });
+
+  const prepare = (version: number | undefined, id: unknown = 'wy-1') =>
+    preparePluginBackupImport(JSON.stringify({
+      schema: 'bakamusic.music-sheet-backup',
+      ...(version === undefined ? {} : { version }),
+      data: {
+        musicSheets: [{ title: '收藏', musicList: [{ id, title: '歌', platform: '网易云音乐' }] }],
+      },
+    }), [wyPlugin]);
+
+  it('labels a v3 backup as the new format', () => {
+    expect(describeBackupVersion(prepare(3))).toBe('BakaMusic v3 新版备份');
+  });
+
+  it('reports how many ids were restored for a v2 backup', () => {
+    expect(describeBackupVersion(prepare(2, '2748510187')))
+      .toBe('BakaMusic v2 旧版备份，已还原 1 首歌曲 ID 以恢复逐字歌词');
+  });
+
+  it('omits the restore count when a v2 backup had no numeric ids', () => {
+    expect(describeBackupVersion(prepare(2, 'BV1px411F7UF'))).toBe('BakaMusic v2 旧版备份');
+  });
+
+  it('states that the version is unlabelled when absent', () => {
+    expect(describeBackupVersion(prepare(undefined))).toBe('BakaMusic 备份（未标注版本）');
+  });
+
+  it('labels MusicFree backups without claiming a Baka version', () => {
+    const result = preparePluginBackupImport(JSON.stringify({
+      version: 1,
+      musicSheets: [{ name: 'MF', musicList: [{ musicId: 'kg-1', name: '歌', platform: '酷狗' }] }],
+    }), [plugin({ id: 'mf-kg', name: '酷狗音乐', sources: ['酷狗音乐'] })]);
+
+    expect(result.format).toBe('musicfree');
+    expect(result.migratedTrackIds).toBe(false);
+    expect(describeBackupVersion(result)).toBe('MusicFree v1');
+  });
+});
+
+/**
+ * 格式检测增强测试：通过歌曲字段特征区分 BakaMusic 和 MusicFree
+ *
+ * 两种格式在歌曲字段上有明显差异：
+ * - BakaMusic: artist, title, album, id
+ * - MusicFree: singer, name, albumName, musicId
+ *
+ * 当结构特征不明确时，用字段特征来辅助判断。
+ */
+describe('preparePluginBackupImport: format detection by song fields', () => {
+  const kgPlugin = plugin({ id: 'mf-kg', name: '酷狗音乐', sources: ['酷狗音乐'] });
+
+  it('detects MusicFree format by singer/name/albumName fields even with nested data.musicSheets', () => {
+    // 模拟一个结构上像 BakaMusic（data.musicSheets），但字段是 MusicFree 风格的备份
+    const backup = JSON.stringify({
+      version: 1,
+      data: {
+        musicSheets: [{
+          name: '我的歌单',
+          musicList: [
+            { musicId: 'kg-1', name: '歌曲1', singer: '歌手1', albumName: '专辑1', platform: '酷狗' },
+            { musicId: 'kg-2', name: '歌曲2', singer: '歌手2', albumName: '专辑2', platform: '酷狗' },
+            { musicId: 'kg-3', name: '歌曲3', singer: '歌手3', albumName: '专辑3', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('musicfree');
+    expect(result.importedSongCount).toBe(3);
+  });
+
+  it('detects BakaMusic format by artist/title/album fields even with top-level musicSheets', () => {
+    // 模拟一个结构上像 MusicFree（顶层 musicSheets），但字段是 BakaMusic 风格的备份
+    const backup = JSON.stringify({
+      version: 2,
+      musicSheets: [{
+        title: '我的收藏',
+        musicList: [
+          { id: 'kg-1', title: '歌曲1', artist: '歌手1', album: '专辑1', platform: '酷狗' },
+          { id: 'kg-2', title: '歌曲2', artist: '歌手2', album: '专辑2', platform: '酷狗' },
+          { id: 'kg-3', title: '歌曲3', artist: '歌手3', album: '专辑3', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+    expect(result.importedSongCount).toBe(3);
+  });
+
+  it('falls back to structure-based detection when song fields are ambiguous', () => {
+    // 歌曲同时有 artist 和 singer 字段，无法从字段区分
+    const backup = JSON.stringify({
+      version: 1,
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { id: 'kg-1', title: '歌', artist: '手', singer: '手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    // 结构是顶层 musicSheets，应判定为 MusicFree
+    expect(result.format).toBe('musicfree');
+  });
+
+  it('schema field always takes precedence over field-based detection', () => {
+    // 有 schema 字段时，即使歌曲字段像 MusicFree 也应判定为 BakaMusic
+    const backup = JSON.stringify({
+      schema: 'bakamusic.music-sheet-backup',
+      version: 3,
+      data: {
+        musicSheets: [{
+          name: '歌单',
+          musicList: [
+            { musicId: 'kg-1', name: '歌曲', singer: '歌手', albumName: '专辑', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('detects BakaMusic format by Toskysun signature in author field', () => {
+    // Toskysun 是 BakaMusic 的开发者，有此标识则必为 BakaMusic
+    const backup = JSON.stringify({
+      version: 1,
+      author: 'Toskysun',
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { musicId: 'kg-1', name: '歌曲', singer: '歌手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('detects BakaMusic format by Toskysun signature in creator field', () => {
+    const backup = JSON.stringify({
+      version: 1,
+      creator: 'BakaMusic by Toskysun',
+      musicSheets: [{
+        name: '歌单',
+        musicList: [
+          { musicId: 'kg-1', name: '歌曲', singer: '歌手', platform: '酷狗' },
+        ],
+      }],
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('bakamusic');
+  });
+
+  it('treats backups authored by 时迁酱 as MusicFree before structure and field inference', () => {
+    // 即使使用 data.musicSheets 和 Baka 风格歌曲字段，作者身份仍应优先判定为 MusicFree。
+    const backup = JSON.stringify({
+      version: 2,
+      author: '时迁酱',
+      data: {
+        musicSheets: [{
+          title: '歌单',
+          musicList: [
+            { id: '2748510187', title: '歌曲', artist: '歌手', album: '专辑', platform: '酷狗' },
+          ],
+        }],
+      },
+    });
+    const result = preparePluginBackupImport(backup, [kgPlugin]);
+
+    expect(result.format).toBe('musicfree');
+    expect(result.migratedTrackIds).toBe(false);
+    expect(result.importedSongCount).toBe(1);
   });
 });
