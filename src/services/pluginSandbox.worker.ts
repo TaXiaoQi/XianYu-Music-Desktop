@@ -770,13 +770,59 @@ async function loadMusicFreePlugin(
     // 存储初始用户变量到可变 Map（后续方法调用时会由主线程刷新）
     _musicfreeUserVars.set(pluginId, { ...userVariables });
 
-    const env = {
+    // [诊断] 追踪 Worker 加载时收到的初始用户变量
+    const initVarKeys = Object.keys(userVariables);
+    log('log', `[Worker loadMusicFreePlugin] pluginId=${pluginId.substring(0, 12)}... 初始userVarKeys=[${initVarKeys.join(',')}] count=${initVarKeys.length}`);
+
+    // [修复] 使用 Proxy 使 env 兼容多种用户变量访问方式：
+    //   1. env.getUserVariables().SOURCE_API_KEY  (MusicFree 标准)
+    //   2. env.userVariables.SOURCE_API_KEY       (Baka 属性式)
+    //   3. env.SOURCE_API_KEY                      (直接属性访问)
+    //   4. process.env.SOURCE_API_KEY              (通过 process.env)
+    const _envBase = {
       getUserVariables: () => _musicfreeUserVars.get(pluginId) || {},
-      get userVariables() { return _musicfreeUserVars.get(pluginId) || {}; },
       os: 'win32',
       appVersion: '1.0.0',
       lang: 'zh-CN',
     };
+    const env = new Proxy(_envBase, {
+      get(target, prop, receiver) {
+        // 优先返回静态属性
+        if (prop in target) {
+          return Reflect.get(target, prop, receiver);
+        }
+        // userVariables 属性式访问
+        if (prop === 'userVariables') {
+          return _musicfreeUserVars.get(pluginId) || {};
+        }
+        // 直接属性访问：当作用户变量键
+        const userVars = _musicfreeUserVars.get(pluginId) || {};
+        if (typeof prop === 'string' && prop in userVars) {
+          return userVars[prop];
+        }
+        return undefined;
+      },
+      has(target, prop) {
+        if (prop in target) return true;
+        if (prop === 'userVariables') return true;
+        const userVars = _musicfreeUserVars.get(pluginId) || {};
+        return prop in userVars;
+      },
+      ownKeys(target) {
+        const userVars = _musicfreeUserVars.get(pluginId) || {};
+        return [...Reflect.ownKeys(target), 'userVariables', ...Object.keys(userVars)];
+      },
+      getOwnPropertyDescriptor(target, prop) {
+        if (prop in target) {
+          return Reflect.getOwnPropertyDescriptor(target, prop);
+        }
+        const userVars = _musicfreeUserVars.get(pluginId) || {};
+        if (typeof prop === 'string' && prop in userVars) {
+          return { configurable: true, enumerable: true, value: userVars[prop], writable: false };
+        }
+        return undefined;
+      },
+    });
     const _process = {
       platform: 'win32',
       version: '1.0.0',
@@ -1383,6 +1429,17 @@ function destroyPlugin(pluginId: string): void {
         // 方法调用前刷新用户变量（如卡密），确保 env.getUserVariables() 返回最新值
         if (cmd.userVars && _musicfreeInstances.has(cmd.pluginId)) {
           _musicfreeUserVars.set(cmd.pluginId, { ...cmd.userVars });
+          // [诊断] 追踪 Worker 侧收到的用户变量
+          if (cmd.method === 'getMediaSource' || cmd.method === 'getLyric') {
+            const keys = Object.keys(cmd.userVars);
+            log('log', `[Worker call_method] pluginId=${cmd.pluginId.substring(0, 12)}... method=${cmd.method} 收到userVarKeys=[${keys.join(',')}] count=${keys.length} instanceExists=${_musicfreeInstances.has(cmd.pluginId)}`);
+            const stored = _musicfreeUserVars.get(cmd.pluginId);
+            const storedKeys = stored ? Object.keys(stored) : [];
+            log('log', `[Worker call_method] storedUserVarKeys=[${storedKeys.join(',')}] storedCount=${storedKeys.length}`);
+          }
+        } else if (cmd.method === 'getMediaSource' || cmd.method === 'getLyric') {
+          // [诊断] userVars 为空或实例不存在
+          log('warn', `[Worker call_method] pluginId=${cmd.pluginId.substring(0, 12)}... method=${cmd.method} userVars=${cmd.userVars ? '有' : '空'} instanceExists=${_musicfreeInstances.has(cmd.pluginId)} — 用户变量未刷新!`);
         }
 
         const state = _lxStates.get(cmd.pluginId);

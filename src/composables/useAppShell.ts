@@ -35,6 +35,7 @@ export function useAppShell() {
   const {
     showAddToPlaylistModal,
     playlistAddTargetSongs,
+    excludedPlaylistId,
     closeAddToPlaylistDialog,
     addSelectedSongsToPlaylist,
   } = useAddToPlaylistDialog();
@@ -171,6 +172,7 @@ export function useAppShell() {
     footerBlurStyle,
     showAddToPlaylistModal,
     playlistAddTargetSongs,
+    excludedPlaylistId,
     closeAddToPlaylistDialog,
     handleGlobalAdd,
   };

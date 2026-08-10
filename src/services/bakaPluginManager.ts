@@ -58,7 +58,7 @@ import {
   qualityKeyToPluginString,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
-import { sanitizeMediaUrl } from '../utils/mediaUrl';
+import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
 
 // ==================== 日志 ====================
 
@@ -704,7 +704,10 @@ class BakaPluginManagerClass {
 
     const rawUrl = typeof result.url === 'string' ? result.url : '';
     const url = sanitizeMediaUrl(rawUrl);
-    const headers = firstHeaderMap(result.headers, result.header, result.requestHeaders);
+    const headers = normalizeMediaRequestHeaders(
+      url,
+      firstHeaderMap(result.headers, result.header, result.requestHeaders),
+    ) || {};
     const ekey = firstStringField(result, ['ekey', 'eKey', 'encryptKey', 'encryptionKey', 'qmcKey', 'qmc2Key']);
     const cek = firstStringField(result, ['cek', 'cKey', 'contentKey', 'decryptKey', 'decryptionKey', 'cencKey']);
     const lyric = result.lyric || result.rawLrc || result.lrc || '';
@@ -1357,7 +1360,7 @@ class BakaPluginManagerClass {
     for (const method of BAKA_PLUGIN_METHODS) {
       if (availableMethods.includes(method)) {
         proxy[method] = async (...args: any[]) => {
-          return callSandboxMethod(pluginId, method, args);
+          return callSandboxMethod(pluginId, method, args, method === 'getLyric' ? 8000 : 30000);
         };
       }
     }

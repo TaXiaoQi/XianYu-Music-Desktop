@@ -468,6 +468,15 @@ export async function callSandboxMethod(
   // 解决沙箱中 env.getUserVariables() 返回加载时快照的问题
   const freshUserVars = _userVarsProvider?.(pluginId) || {};
 
+  // [诊断] 追踪用户变量从主线程到 Worker 的传递链路
+  const varKeys = Object.keys(freshUserVars);
+  if (method === 'getMediaSource' || method === 'getLyric') {
+    log(`[callSandboxMethod] pluginId=${pluginId.substring(0, 12)}... method=${method} userVarKeys=[${varKeys.join(',')}] userVarCount=${varKeys.length}`);
+    if (varKeys.length > 0) {
+      log(`[callSandboxMethod] userVar values preview: ${varKeys.map(k => `${k}=${freshUserVars[k] ? '(已设置,' + String(freshUserVars[k]).length + '字符)' : '(空)'}`).join(', ')}`);
+    }
+  }
+
   // postMessage 使用结构化克隆算法，无法传递 Vue reactive proxy、函数、
   // Symbol、循环引用等对象。调用方传入的 musicItem 等参数常来自 Vue 响应式
   // 状态或插件返回的原始对象，直接传递会抛 "could not be cloned"。

@@ -108,6 +108,12 @@ pub async fn play_audio(
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
+        if stream_state.download_failed.load(Ordering::Relaxed) {
+            return Err(format!(
+                "在线音频缓存下载失败，已下载 {} bytes",
+                stream_state.downloaded_bytes()
+            ));
+        }
 
         AudioSource::StreamingTempFile(stream_state)
     } else if is_remote_uri(&path) {

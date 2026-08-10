@@ -130,6 +130,7 @@ const viewInstanceKey = computed(() =>
         :currentFolderFilter="currentFolderFilter"
         :playlistDetail="playlistDetail"
         :localSongList="localSongList"
+        :localSongPaths="localSongPaths"
         @update:isBatchMode="$emit('update:isBatchMode', $event)"
         @update:isManagementMode="$emit('update:isManagementMode', $event)"
         @playAll="$emit('playAll')"

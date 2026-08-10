@@ -14,7 +14,7 @@ import {
   resolveLxCachedInfo,
   resolveLxUrl,
 } from '../../services/lxUrlResolver';
-import { sanitizeMediaUrl } from '../../utils/mediaUrl';
+import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../../utils/mediaUrl';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -212,7 +212,7 @@ const resolvePluginAudioUrl = async ({
     }
     return {
       audioFilePath: cleanedPreFetchedUrl,
-      pluginHeaders: song.remote_headers ?? null,
+      pluginHeaders: normalizeMediaRequestHeaders(cleanedPreFetchedUrl, song.remote_headers),
       currentPlayingQuality: song.remote_actual_quality ?? song.remote_requested_quality ?? null,
       currentPlayingAudioUrl: cleanedPreFetchedUrl,
       ekey: song.remote_ekey,
@@ -308,9 +308,7 @@ const resolvePluginAudioUrl = async ({
 
     return {
       audioFilePath: cleanedMusicUrl,
-      pluginHeaders: musicInfo.headers && Object.keys(musicInfo.headers).length > 0
-        ? musicInfo.headers
-        : null,
+      pluginHeaders: normalizeMediaRequestHeaders(cleanedMusicUrl, musicInfo.headers),
       currentPlayingQuality: verifiedQuality,
       currentPlayingAudioUrl: cleanedMusicUrl,
       lyricsRaw: musicInfo.lyricsRaw,

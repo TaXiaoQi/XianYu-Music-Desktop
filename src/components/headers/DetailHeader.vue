@@ -53,6 +53,8 @@ const props = defineProps<{
   readOnly?: boolean;
   /** 是否显示"收藏至歌单/添加到歌单"入口 */
   showAddToPlaylist?: boolean;
+  /** 是否在详情展示模式显示"收藏至歌单"入口，默认跟随 showAddToPlaylist */
+  showHeaderAddToPlaylist?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
 }>();
@@ -73,6 +75,11 @@ const isAllSelected = computed(() => {
   const total = props.totalSongCount ?? props.songs.length;
   return total > 0 && props.selectedCount === total;
 });
+
+const shouldShowAddToPlaylist = computed(() => props.showAddToPlaylist !== false);
+const shouldShowHeaderAddToPlaylist = computed(() =>
+  props.showHeaderAddToPlaylist ?? shouldShowAddToPlaylist.value,
+);
 
 const headerCover = ref('');
 let coverRequestId = 0;
@@ -229,7 +236,7 @@ const handlePlayAll = () => {
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
           添加至我喜欢
         </button>
-        <button v-if="showAddToPlaylist !== false" @click="emit('openAddToPlaylist')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
+        <button v-if="shouldShowAddToPlaylist" @click="emit('openAddToPlaylist')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> 收藏到歌单
         </button>
         <button @click="emit('batchDownload')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
@@ -286,7 +293,7 @@ const handlePlayAll = () => {
            </button>
 
            <button
-             v-if="showAddToPlaylist !== false"
+             v-if="shouldShowHeaderAddToPlaylist"
              @click="emit('openAddToPlaylist')"
              title="收藏至歌单"
              class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"

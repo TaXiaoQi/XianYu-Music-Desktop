@@ -28,6 +28,32 @@ let loadRequestId = 0;
 // 超过此次数后停止重试，置为 'empty' 状态
 const MAX_ONLINE_LYRICS_RETRIES = 15;
 let onlineLyricsRetryCount = 0;
+const unavailableOnlineLyricsPaths = new Set<string>();
+
+export function markOnlineLyricsUnavailable(songPath: string) {
+  if (!songPath) return;
+
+  unavailableOnlineLyricsPaths.add(songPath);
+
+  const playbackStore = usePlaybackStore();
+  if (playbackStore.currentSong?.path !== songPath) {
+    return;
+  }
+
+  // 让已排队的在线歌词重试失效，避免继续 800ms 轮询占用 UI 状态。
+  loadRequestId += 1;
+  onlineLyricsRetryCount = 0;
+  rawLyrics.value = '';
+  lyricDocument.value = null;
+  semanticLyrics.value = [];
+  parsedLyrics.value = [];
+  lyricsStatus.value = 'empty';
+}
+
+export function clearOnlineLyricsUnavailable(songPath: string) {
+  if (!songPath) return;
+  unavailableOnlineLyricsPaths.delete(songPath);
+}
 
 function createSettingsProxy<T extends object>(
   read: () => T,
@@ -118,6 +144,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       })) as LyricLine[];
       lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
       onlineLyricsRetryCount = 0; // 歌词加载成功，重置重试计数器
+      unavailableOnlineLyricsPaths.delete(song.path);
       return;
     }
 
@@ -127,6 +154,12 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
     const lyricsPath = song.cue_source_path || song.path;
     const isOnlineSong = lyricsPath.startsWith('lx://') || lyricsPath.startsWith('plugin://');
     if (isOnlineSong) {
+      if (unavailableOnlineLyricsPaths.has(song.path)) {
+        lyricsStatus.value = 'empty';
+        onlineLyricsRetryCount = 0;
+        return;
+      }
+
       lyricsStatus.value = 'loading';
       // [修复] 添加最大重试次数，避免歌词获取失败后无限重试
       // 歌词获取成功时 lyrics_raw 会被设置并触发 watcher 调用 loadLyrics，
@@ -135,6 +168,7 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       console.log(`[Lyrics] 在线歌曲等待歌词 (${onlineLyricsRetryCount}/${MAX_ONLINE_LYRICS_RETRIES}):`, song.path);
       if (onlineLyricsRetryCount > MAX_ONLINE_LYRICS_RETRIES) {
         console.warn('[Lyrics] 在线歌曲歌词获取超时，置为空:', song.path);
+        unavailableOnlineLyricsPaths.add(song.path);
         lyricsStatus.value = 'empty';
         onlineLyricsRetryCount = 0;
         return;

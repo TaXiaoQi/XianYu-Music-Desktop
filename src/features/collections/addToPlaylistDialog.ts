@@ -7,6 +7,7 @@ import { useCollectionsStore } from './store';
 const isAddToPlaylistDialogVisible = ref(false);
 const addToPlaylistTargetSongPaths = ref<string[]>([]);
 const addToPlaylistTargetSongs = ref<Song[]>([]);
+const excludedPlaylistId = ref<string | null>(null);
 let afterAddToPlaylist: (() => void) | null = null;
 
 const normalizeSongPaths = (songPaths: string | string[]) => {
@@ -22,12 +23,13 @@ export function useAddToPlaylistDialog() {
     isAddToPlaylistDialogVisible.value = false;
     addToPlaylistTargetSongPaths.value = [];
     addToPlaylistTargetSongs.value = [];
+    excludedPlaylistId.value = null;
     afterAddToPlaylist = null;
   };
 
   const openAddToPlaylistDialog = (
     songPaths: string | string[],
-    options: { onAdded?: () => void; songs?: Song[] } = {},
+    options: { onAdded?: () => void; songs?: Song[]; excludedPlaylistId?: string | null } = {},
   ) => {
     const nextSongPaths = normalizeSongPaths(songPaths);
     if (nextSongPaths.length === 0) {
@@ -36,6 +38,7 @@ export function useAddToPlaylistDialog() {
 
     addToPlaylistTargetSongPaths.value = nextSongPaths;
     addToPlaylistTargetSongs.value = options.songs ?? [];
+    excludedPlaylistId.value = options.excludedPlaylistId ?? null;
     isAddToPlaylistDialogVisible.value = true;
     afterAddToPlaylist = options.onAdded ?? null;
     return true;
@@ -62,6 +65,7 @@ export function useAddToPlaylistDialog() {
   return {
     showAddToPlaylistModal: isAddToPlaylistDialogVisible,
     playlistAddTargetSongs: addToPlaylistTargetSongPaths,
+    excludedPlaylistId,
     selectedCount: computed(() => addToPlaylistTargetSongPaths.value.length),
     openAddToPlaylistDialog,
     closeAddToPlaylistDialog,
