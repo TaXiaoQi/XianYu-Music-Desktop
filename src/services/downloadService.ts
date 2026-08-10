@@ -923,6 +923,9 @@ export async function downloadSong(
       lyricsSaved = result.lyrics_saved;
       coverSaved = result.cover_saved;
       metadataEmbedded = result.metadata_embedded;
+      if (!metadataEmbedded && result.metadata_error) {
+        console.warn('[Download] 元数据嵌入失败:', result.metadata_error);
+      }
     } catch (e: any) {
       console.warn('[Download] 收尾编排失败:', e?.message);
     }

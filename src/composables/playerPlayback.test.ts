@@ -11,8 +11,16 @@ const preloadFullCoversMock = vi.fn();
 const preloadPriorityCoversMock = vi.fn();
 const retainFullCoverPathsMock = vi.fn();
 const primeCoverPathMock = vi.fn().mockReturnValue('');
-const { fetchLxSongLyricsRawMock } = vi.hoisted(() => ({
+const {
+  fetchLxSongLyricsRawMock,
+  pluginGetMusicInfoMock,
+  pluginGetSupportedQualitiesMock,
+  isBakaPluginMock,
+} = vi.hoisted(() => ({
   fetchLxSongLyricsRawMock: vi.fn().mockResolvedValue(''),
+  pluginGetMusicInfoMock: vi.fn().mockResolvedValue({ url: 'https://example.test/audio.mp3' }),
+  pluginGetSupportedQualitiesMock: vi.fn().mockResolvedValue(['320k']),
+  isBakaPluginMock: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../services/lxLyricFetcher', () => ({
@@ -31,6 +39,16 @@ vi.mock('../services/pluginEngine', () => ({
     format: 'lx',
     sources: ['wy', 'tx'],
   }]),
+  pluginGetCover: vi.fn().mockResolvedValue(null),
+  pluginGetLyric: vi.fn().mockResolvedValue(null),
+  pluginGetMusicInfo: pluginGetMusicInfoMock,
+  pluginGetBakaMusicInfo: vi.fn().mockResolvedValue(null),
+  pluginGetSupportedQualities: pluginGetSupportedQualitiesMock,
+  isBakaPlugin: isBakaPluginMock,
+}));
+
+vi.mock('../services/downloadHistory', () => ({
+  checkDownloadExists: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../services/lxPluginEngine', () => ({
@@ -126,6 +144,12 @@ describe('player playback domain', () => {
     primeCoverPathMock.mockReturnValue('');
     fetchLxSongLyricsRawMock.mockReset();
     fetchLxSongLyricsRawMock.mockResolvedValue('');
+    pluginGetMusicInfoMock.mockReset();
+    pluginGetMusicInfoMock.mockResolvedValue({ url: 'https://example.test/audio.mp3' });
+    pluginGetSupportedQualitiesMock.mockReset();
+    pluginGetSupportedQualitiesMock.mockResolvedValue(['320k']);
+    isBakaPluginMock.mockReset();
+    isBakaPluginMock.mockResolvedValue(false);
     setMainWindowRenderingSnapshot({
       documentHidden: false,
       windowFocused: true,
@@ -620,6 +644,47 @@ describe('player playback domain', () => {
 
     expect(handleAutoNext).not.toHaveBeenCalled();
     expect(playbackApi.stopAudio).toHaveBeenCalled();
+    playerPlayback.dispose();
+  });
+
+  it('stops the previous audio immediately while resolving a new online song url', async () => {
+    const playbackStore = usePlaybackStore();
+    const previousSong = makeSong({ path: '/music/previous.flac', title: 'Previous' });
+    const onlineSong = makeSong({
+      path: 'plugin://lx-test-plugin/online-song',
+      title: 'Online Song',
+      rawData: {
+        pluginId: 'lx-test-plugin',
+        id: 'online-song',
+      },
+    } as Partial<Song>);
+
+    let resolveMusicInfo!: (value: { url: string }) => void;
+    const pendingMusicInfo = new Promise<{ url: string }>((resolve) => {
+      resolveMusicInfo = resolve;
+    });
+    pluginGetMusicInfoMock.mockReturnValueOnce(pendingMusicInfo);
+
+    playbackStore.currentSong = previousSong;
+    playbackStore.isPlaying = true;
+    playbackStore.isSongLoaded = true;
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [previousSong, onlineSong],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    const playPromise = playerPlayback.playSong(onlineSong, { preserveQueue: true });
+
+    expect(playbackApi.stopAudio).toHaveBeenCalledTimes(1);
+    expect(playbackApi.playAudio).not.toHaveBeenCalled();
+
+    resolveMusicInfo({ url: 'https://example.test/online-song.mp3' });
+    await playPromise;
+
+    expect(playbackApi.playAudio).toHaveBeenCalled();
     playerPlayback.dispose();
   });
 

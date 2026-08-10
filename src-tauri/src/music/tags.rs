@@ -983,6 +983,7 @@ fn seems_like_lyrics_text(text: &str) -> bool {
 /// 所有字段均为可选，仅写入提供的非空字段。
 /// `cover_data` 为封面二进制数据，`cover_mime` 标识 MIME 类型（默认 image/jpeg）。
 #[derive(serde::Deserialize, Default, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct EmbedMetadataRequest {
     pub file_path: String,
     pub title: Option<String>,
@@ -1117,6 +1118,7 @@ mod tests {
     use super::{
         extract_detail_metadata, extract_embedded_lyrics, extract_text_metadata,
         find_embedded_picture, read_tagged_file_from_path, read_tagged_file_from_path_for_scan,
+        EmbedMetadataRequest,
     };
     use id3::frame::{Frame, Picture as Id3Picture, PictureType as Id3PictureType};
     use id3::TagLike;
@@ -1131,6 +1133,30 @@ mod tests {
 
     fn make_tagged_file(tags: Vec<Tag>) -> TaggedFile {
         TaggedFile::new(FileType::Wav, FileProperties::default(), tags)
+    }
+
+    #[test]
+    fn embed_metadata_request_accepts_frontend_camel_case_payload() {
+        let json = serde_json::json!({
+            "filePath": "D:\\Music\\song.mp3",
+            "title": "测试歌曲",
+            "artist": "测试歌手",
+            "albumArtist": "测试专辑艺术家",
+            "trackNumber": "7",
+            "discNumber": "1",
+            "coverMime": "image/png"
+        });
+
+        let request: EmbedMetadataRequest =
+            serde_json::from_value(json).expect("frontend payload should deserialize");
+
+        assert_eq!(request.file_path, "D:\\Music\\song.mp3");
+        assert_eq!(request.title.as_deref(), Some("测试歌曲"));
+        assert_eq!(request.artist.as_deref(), Some("测试歌手"));
+        assert_eq!(request.album_artist.as_deref(), Some("测试专辑艺术家"));
+        assert_eq!(request.track_number.as_deref(), Some("7"));
+        assert_eq!(request.disc_number.as_deref(), Some("1"));
+        assert_eq!(request.cover_mime.as_deref(), Some("image/png"));
     }
 
     fn minimal_wav_bytes() -> Vec<u8> {
