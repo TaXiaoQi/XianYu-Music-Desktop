@@ -43,6 +43,60 @@ const sortQualities = (qualities: QualityKey[]) => (
 
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+const canReusePreFetchedPluginUrl = (
+  song: Song,
+  requestedQuality: QualityKey,
+  fallbackBehavior: ResolveOnlineAudioOptions['fallbackBehavior'],
+) => (
+  song.remote_requested_quality === requestedQuality
+  && song.remote_fallback_behavior === fallbackBehavior
+);
+
+/**
+ * 兜底清洗插件媒体 URL。
+ *
+ * 部分 Baka 插件会返回被反引号/引号包裹，或尾部带逗号的 URL，例如：
+ * `https://example.com/api?level=hires,`
+ * 若坏字符串穿透到播放层，startsWith('http') 会失败，最终被误当成本地文件播放。
+ */
+const sanitizeResolvedMediaUrl = (raw: unknown): string => {
+  if (typeof raw !== 'string') return '';
+  const stripEdgeJunk = (value: string) => {
+    let current = value.trim();
+    let previous = '';
+    while (current && current !== previous) {
+      previous = current;
+      current = current
+        .replace(/^[`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+/g, '')
+        .replace(/[,，;；`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+$/g, '');
+    }
+    return current;
+  };
+  const stripped = stripEdgeJunk(raw);
+  const match = stripped.match(/https?:\/\/[^\s`'"<>]+/i);
+  const candidate = stripEdgeJunk(match?.[0] || stripped);
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    let changed = false;
+    const pathname = url.pathname.replace(/[,，;；`'"\u2018\u2019\u201c\u201d\u00b4\uff02\uff07\s]+$/g, '');
+    if (pathname !== url.pathname) {
+      url.pathname = pathname;
+      changed = true;
+    }
+    for (const [key, value] of Array.from(url.searchParams.entries())) {
+      const cleaned = stripEdgeJunk(value);
+      if (cleaned !== value) {
+        url.searchParams.set(key, cleaned);
+        changed = true;
+      }
+    }
+    return stripEdgeJunk(changed ? url.toString() : candidate);
+  } catch {
+    return candidate;
+  }
+};
+
 export const getOnlineAvailableQualities = async (
   songPath: string,
   song: Song,
@@ -188,15 +242,34 @@ const resolvePluginAudioUrl = async ({
   availableQualities,
   preFetchedUrl,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
-  if (preFetchedUrl && /^https?:/.test(preFetchedUrl)) {
+  const cleanedPreFetchedUrl = sanitizeResolvedMediaUrl(preFetchedUrl);
+  if (
+    cleanedPreFetchedUrl
+    && /^https?:/.test(cleanedPreFetchedUrl)
+    && canReusePreFetchedPluginUrl(song, requestedQuality, fallbackBehavior)
+  ) {
+    if (preFetchedUrl && cleanedPreFetchedUrl !== preFetchedUrl) {
+      console.warn('[Audio] 已清洗预获取插件 URL:', {
+        before: String(preFetchedUrl).slice(0, 120),
+        after: cleanedPreFetchedUrl.slice(0, 120),
+      });
+    }
     return {
-      audioFilePath: preFetchedUrl,
+      audioFilePath: cleanedPreFetchedUrl,
       pluginHeaders: song.remote_headers ?? null,
-      currentPlayingQuality: null,
-      currentPlayingAudioUrl: preFetchedUrl,
+      currentPlayingQuality: song.remote_actual_quality ?? song.remote_requested_quality ?? null,
+      currentPlayingAudioUrl: cleanedPreFetchedUrl,
       ekey: song.remote_ekey,
       cek: song.remote_cek,
     };
+  }
+  if (cleanedPreFetchedUrl && /^https?:/.test(cleanedPreFetchedUrl)) {
+    console.log('[Audio] 预获取插件 URL 与当前播放设置不一致，重新按设置解析:', {
+      requestedQuality,
+      fallbackBehavior,
+      preFetchedQuality: song.remote_requested_quality ?? null,
+      preFetchedFallback: song.remote_fallback_behavior ?? null,
+    });
   }
 
   const pluginSearchResult = song.rawData;
@@ -240,7 +313,14 @@ const resolvePluginAudioUrl = async ({
           fallbackBehavior,
           availableQualities,
         );
-    if (!musicInfo?.url || !/^https?:/.test(musicInfo.url)) {
+    const cleanedMusicUrl = sanitizeResolvedMediaUrl(musicInfo?.url);
+    if (musicInfo?.url && cleanedMusicUrl !== musicInfo.url) {
+      console.warn('[Audio] 已清洗插件 URL:', {
+        before: musicInfo.url.slice(0, 120),
+        after: cleanedMusicUrl.slice(0, 120),
+      });
+    }
+    if (!cleanedMusicUrl || !/^https?:/.test(cleanedMusicUrl)) {
       console.warn(`[Audio] pluginGetMusicInfo returned empty/invalid URL for plugin://${pluginSearchResult.pluginId}/${pluginSearchResult.id}`);
       return {
         audioFilePath,
@@ -261,22 +341,22 @@ const resolvePluginAudioUrl = async ({
     // 避免音源静默降级时 UI 仍显示 SQ/HR。
     const claimedQuality = musicInfo.actualQuality ?? null;
     const verifiedQuality = claimedQuality
-      ? resolveActualQuality(claimedQuality, musicInfo.url)
+      ? resolveActualQuality(claimedQuality, cleanedMusicUrl)
       : null;
     if (claimedQuality && verifiedQuality !== claimedQuality) {
       console.warn(
-        `[Audio] 插件将 ${claimedQuality} 降级为 ${extFromUrl(musicInfo.url)}，`
+        `[Audio] 插件将 ${claimedQuality} 降级为 ${extFromUrl(cleanedMusicUrl)}，`
         + `实际播放音质按 ${verifiedQuality} 显示`,
       );
     }
 
     return {
-      audioFilePath: musicInfo.url,
+      audioFilePath: cleanedMusicUrl,
       pluginHeaders: musicInfo.headers && Object.keys(musicInfo.headers).length > 0
         ? musicInfo.headers
         : null,
       currentPlayingQuality: verifiedQuality,
-      currentPlayingAudioUrl: musicInfo.url,
+      currentPlayingAudioUrl: cleanedMusicUrl,
       lyricsRaw: musicInfo.lyricsRaw,
       coverThumbPath,
       ekey: musicInfo.ekey,

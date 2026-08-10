@@ -29,6 +29,12 @@ export interface SongCore {
   file_modified_at?: number;
   source_type?: 'local' | 'remote' | 'plugin';
   remote_source_id?: string;
+  /** 预获取直链时使用的请求音质；播放时若当前设置不一致，应重新解析 */
+  remote_requested_quality?: QualityKey;
+  /** 预获取直链时使用的音质失败行为；播放时若当前设置不一致，应重新解析 */
+  remote_fallback_behavior?: OnlineQualityFallbackBehavior;
+  /** 预获取直链实际命中的音质，用于复用直链时同步底部栏显示 */
+  remote_actual_quality?: QualityKey;
   plugin_id?: string;
   cue_source_path?: string;
   cue_start_offset?: number;

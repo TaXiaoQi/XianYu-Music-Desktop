@@ -854,6 +854,8 @@ const authStore = useAuthStore();
     let pluginHeaders: Record<string, string> | null = null;
     // QMC2 加密密钥（Baka 插件加密音源），随 URL 一起传递给 Rust 后端进行流式解密
     let pluginEkey: string | undefined = undefined;
+    // CENC 内容密钥（Baka 插件加密音源），随 URL 一起透传给 Rust 后端
+    let pluginCek: string | undefined = undefined;
     const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
 
     // [音质列表] 在 URL 解析前等待音质列表获取完成，确保后续音质回退逻辑能正确过滤
@@ -878,6 +880,17 @@ const authStore = useAuthStore();
         audioFilePath = resolvedOnlineAudio.audioFilePath;
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
+        pluginCek = resolvedOnlineAudio.cek;
+        if (audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://')) {
+          console.log('[Audio] 在线直链解析完成:', {
+            pathPrefix: audioFilePath.slice(0, 80),
+            headerKeys: pluginHeaders ? Object.keys(pluginHeaders) : [],
+            hasEkey: !!pluginEkey,
+            ekeyLen: pluginEkey?.length ?? 0,
+            hasCek: !!pluginCek,
+            cekLen: pluginCek?.length ?? 0,
+          });
+        }
         if (resolvedOnlineAudio.currentPlayingQuality) {
           playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
         }
@@ -975,6 +988,18 @@ const authStore = useAuthStore();
         return;
       }
 
+      // [plugin:// URL 解析失败/异常清洗失败]
+      // 插件应解析为 http(s) 直链。若仍是 plugin://，或含反引号等坏字符导致不再以 http 开头，
+      // 不要继续按本地文件播放，否则 UI 会停在“加载中”。
+      if (!isNetworkAudio && isOriginalOnlineSong && !usingDownloadedAudioFile) {
+        console.warn('[Audio] 在线插件解析后不是有效 http(s) URL:', {
+          originalPath: song.path,
+          resolvedPathPrefix: audioFilePath.slice(0, 120),
+        });
+        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+        return;
+      }
+
       // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
       // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
       let actualAudioPath = audioFilePath;
@@ -1045,6 +1070,7 @@ const authStore = useAuthStore();
             preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
             headers: pluginHeaders,
             ekey: pluginEkey,
+            cek: pluginCek,
           });
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));

@@ -65,6 +65,29 @@ const isLikelyDegradedLosslessUrl = (quality: QualityKey, url: string) => {
   }
 };
 
+/** 判断下载目标是否就是当前播放歌曲 */
+const isCurrentPlaybackSong = (song: Song) => {
+  const playingSong = playbackStore.currentSong;
+  const targetPath = song.path;
+  const targetSourcePath = song.cue_source_path || song.path;
+  const playingPath = playingSong?.path;
+  const playingSourcePath = playingSong?.cue_source_path || playingSong?.path;
+  return playingPath === targetPath || playingSourcePath === targetSourcePath;
+};
+
+/**
+ * 复用播放链路已获取的可用音质列表。
+ *
+ * currentAvailableQualities 已在播放前由 getOnlineAvailableQualities 获取，
+ * 底栏音质/下载选择也使用同一份列表。下载弹窗打开时若目标就是当前播放歌曲，
+ * 直接使用这份列表，避免再次请求插件或音源探测。
+ */
+const getPlaybackAvailableQualities = (song: Song): QualityKey[] | null => {
+  if (!isCurrentPlaybackSong(song)) return null;
+  const qualities = playbackStore.currentAvailableQualities;
+  return qualities && qualities.length > 0 ? [...qualities] : null;
+};
+
 /**
  * 复用播放链路已经解析成功的音质与直链。
  *
@@ -72,13 +95,7 @@ const isLikelyDegradedLosslessUrl = (quality: QualityKey, url: string) => {
  * 这样下载弹窗打开时可以先展示这个确定可用的档位，后续探测完成后再合并其它档位。
  */
 const getTrustedPlaybackQuality = (song: Song): TrustedPlaybackQuality | null => {
-  const playingSong = playbackStore.currentSong;
-  const targetPath = song.path;
-  const targetSourcePath = song.cue_source_path || song.path;
-  const playingPath = playingSong?.path;
-  const playingSourcePath = playingSong?.cue_source_path || playingSong?.path;
-  const isSameSong = playingPath === targetPath || playingSourcePath === targetSourcePath;
-  if (!isSameSong) return null;
+  if (!isCurrentPlaybackSong(song)) return null;
 
   const quality = playbackStore.currentPlayingQuality;
   const url = playbackStore.currentPlayingAudioUrl;
@@ -108,6 +125,14 @@ const mergeTrustedPlaybackQuality = (
       [trusted.quality]: resolvedUrls[trusted.quality] ?? trusted.url,
     },
   };
+};
+
+/** 当前选中档位不可用时，自动切换到列表中的最高档 */
+const ensureSelectedQualityAvailable = (available: QualityKey[]) => {
+  if (available.length > 0
+    && !available.includes(selectedQuality.value as QualityKey)) {
+    selectedQuality.value = available[available.length - 1];
+  }
 };
 
 /** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
@@ -173,11 +198,7 @@ const probeQualities = async (song: Song) => {
     availableQualities.value = merged.available;
     probedUrls.value = merged.resolvedUrls;
 
-    // 当前选中档位不可用时，切到实测可用的最高档
-    if (merged.available.length > 0
-      && !merged.available.includes(selectedQuality.value as QualityKey)) {
-      selectedQuality.value = merged.available[merged.available.length - 1];
-    }
+    ensureSelectedQualityAvailable(merged.available);
   } catch (e: any) {
     if (!controller.signal.aborted) {
       console.warn('[DownloadDialog] 音质探测失败:', e?.message || e);
@@ -210,6 +231,16 @@ watch(
     probedUrls.value = {};
 
     if (song) {
+      const playbackQualities = getPlaybackAvailableQualities(song);
+      if (playbackQualities) {
+        const merged = mergeTrustedPlaybackQuality(song, playbackQualities, {});
+        availableQualities.value = merged.available;
+        declaredQualities.value = merged.available;
+        probedUrls.value = merged.resolvedUrls;
+        ensureSelectedQualityAvailable(merged.available);
+        return;
+      }
+
       const trusted = getTrustedPlaybackQuality(song);
       if (trusted) {
         availableQualities.value = [trusted.quality];

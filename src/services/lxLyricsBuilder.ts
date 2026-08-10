@@ -136,9 +136,10 @@ function convertLxLyricToEnhancedLrc(lxlyric: string): string {
       continue;
     }
 
-    // 后端已处理过的 LX/KW 歌词：有行时间戳，按标准 <相对偏移,持续时间> 解析。
-    // 原始酷我歌词：通常带 [kuwo:]，可能没有行时间戳，此时按酷我公式解析。
-    const useKuwoFormula = hasKuwoTag || (lineStartMs === null && hasNegativeWordTime);
+    // 后端已处理过的 LX/KG/KW 歌词：有行时间戳，按标准 <相对偏移,持续时间> 解析。
+    // 原始酷我 lyricx 是文件级格式：只要全文存在 [kuwo:] 或任意负数标签，
+    // 后续全正数行也要继续按酷我公式解析，否则会出现“只有部分行逐字”的问题。
+    const useKuwoFormula = hasKuwoTag || hasNegativeWordTime;
     if (!useKuwoFormula && lineStartMs === null) continue;
 
     let firstWordStartMs: number | null = null;

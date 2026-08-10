@@ -145,6 +145,8 @@ export interface PlayAudioOptions {
   headers?: Record<string, string> | null;
   /** QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由 Rust 后端流式解密 */
   ekey?: string;
+  /** CENC 内容密钥（Baka 插件可能返回，如酷狗加密音源），透传给 Rust 后端 */
+  cek?: string;
 }
 
 export interface UpdateLoudnessSettingsOptions {
