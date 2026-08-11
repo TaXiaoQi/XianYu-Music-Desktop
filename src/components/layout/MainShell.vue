@@ -21,6 +21,7 @@ const PlayerDetail = defineAsyncComponent(() => import('../player/PlayerDetail.v
 const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToPlaylistModal.vue'));
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SettingsConflictDialog = defineAsyncComponent(() => import('../common/SettingsConflictDialog.vue'));
+const ProfileLimitDialog = defineAsyncComponent(() => import('../common/ProfileLimitDialog.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
@@ -298,6 +299,7 @@ onMounted(() => {
 
     <Toast />
     <SettingsConflictDialog />
+    <ProfileLimitDialog />
   </div>
 </template>
 

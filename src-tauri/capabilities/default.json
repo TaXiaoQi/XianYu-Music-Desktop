@@ -50,6 +50,7 @@
     "opener:default",
     "dialog:default",
     "dialog:allow-confirm",
+    "dialog:allow-message",
     "window-state:default",
     "allow-app-commands"
   ]
