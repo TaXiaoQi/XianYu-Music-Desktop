@@ -78,6 +78,14 @@ export type ProfileStats = {
   updated_at?: string | null;
 };
 
+export type ProfileAuditStatus = 'pending' | 'rejected' | 'none';
+
+export type ProfileChangeLimitStatus = {
+  status: ProfileAuditStatus;
+  todayBlocked: boolean;
+  blockMessage: string;
+};
+
 /** 默认后端地址：测试构建与正式构建统一指向弦予音乐 API */
 export const DEFAULT_AUTH_BASE_URL = 'https://xymusic.zh2026.cn/api';
 export const DEFAULT_AUTH_API_SECRET = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
@@ -567,15 +575,55 @@ export async function resetPassword(
 }
 
 /**
- * 注销当前账号。
- * 需要当前账号注册邮箱收到的 delete_account 验证码。
+ * 预验证注销凭据（密码 + 邮箱验证码）。
+ * 仅校验凭据是否正确，不执行实际注销。
+ * 用于二级确认弹窗弹出时提前验证，减少用户点击确认后的等待时间。
  */
-export async function deleteAccount(
+export async function preVerifyDeleteAccount(
   verifyCode: string,
+  password: string,
 ): Promise<{ message: string }> {
   const current = getStoredUser();
   if (!current?.ciyuanxi_id || !current.email) {
     throw new Error('未获取到当前账号信息，请重新登录');
+  }
+  if (!password) {
+    throw new Error('请输入登录密码');
+  }
+  if (!verifyCode) {
+    throw new Error('请输入邮箱验证码');
+  }
+
+  try {
+    const payload = await requestEnvelope<Record<string, unknown>>('preverify_delete_account', {
+      ciyuanxi_id: current.ciyuanxi_id,
+      email: current.email,
+      verify_code: verifyCode,
+      password,
+    });
+    if (Number(payload.code) !== 200) {
+      throw new Error(payload.msg || '凭据验证失败');
+    }
+    return { message: payload.msg || '验证通过' };
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '凭据验证失败'), { cause: error });
+  }
+}
+
+/**
+ * 注销当前账号。
+ * 需要当前账号登录密码 + 注册邮箱收到的 delete_account 验证码，双重验证。
+ */
+export async function deleteAccount(
+  verifyCode: string,
+  password: string,
+): Promise<{ message: string }> {
+  const current = getStoredUser();
+  if (!current?.ciyuanxi_id || !current.email) {
+    throw new Error('未获取到当前账号信息，请重新登录');
+  }
+  if (!password) {
+    throw new Error('请输入登录密码');
   }
 
   try {
@@ -583,6 +631,7 @@ export async function deleteAccount(
       ciyuanxi_id: current.ciyuanxi_id,
       email: current.email,
       verify_code: verifyCode,
+      password,
     });
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || '注销账号失败');
@@ -719,6 +768,31 @@ export async function getNicknameStatus(): Promise<'pending' | 'rejected' | 'non
   }
 }
 
+export async function getNicknameChangeLimitStatus(): Promise<ProfileChangeLimitStatus> {
+  const current = getStoredUser();
+  if (!current) return { status: 'none', todayBlocked: false, blockMessage: '' };
+
+  try {
+    const data = await requestAction<{ status: string; today_blocked?: boolean; block_message?: string }>(
+      'get_nickname_status',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+      },
+      15_000,
+    );
+    const rawStatus = data.status ?? 'none';
+    const status: ProfileAuditStatus = rawStatus === 'pending' || rawStatus === 'rejected' ? rawStatus : 'none';
+    return {
+      status,
+      todayBlocked: data.today_blocked === true,
+      blockMessage: String(data.block_message || ''),
+    };
+  } catch (error) {
+    console.warn('[getNicknameChangeLimitStatus] 查询失败:', error);
+    return { status: 'none', todayBlocked: false, blockMessage: '' };
+  }
+}
+
 /**
  * 使用 Canvas 压缩图片为 base64 data URL。
  * Tauri HTTP 插件不支持 FormData 文件上传，因此改为 base64 JSON 方式。
@@ -849,6 +923,31 @@ export async function getAvatarStatus(): Promise<'pending' | 'rejected' | 'none'
   } catch (error) {
     console.warn('[getAvatarStatus] 查询失败:', error);
     return 'none';
+  }
+}
+
+export async function getAvatarChangeLimitStatus(): Promise<ProfileChangeLimitStatus> {
+  const current = getStoredUser();
+  if (!current) return { status: 'none', todayBlocked: false, blockMessage: '' };
+
+  try {
+    const data = await requestAction<{ status: string; today_blocked?: boolean; block_message?: string }>(
+      'get_avatar_status',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+      },
+      15_000,
+    );
+    const rawStatus = data.status ?? 'none';
+    const status: ProfileAuditStatus = rawStatus === 'pending' || rawStatus === 'rejected' ? rawStatus : 'none';
+    return {
+      status,
+      todayBlocked: data.today_blocked === true,
+      blockMessage: String(data.block_message || ''),
+    };
+  } catch (error) {
+    console.warn('[getAvatarChangeLimitStatus] 查询失败:', error);
+    return { status: 'none', todayBlocked: false, blockMessage: '' };
   }
 }
 
