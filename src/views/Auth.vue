@@ -9,6 +9,7 @@ import { downloadApi } from '../services/tauri/downloadApi';
 import { useCollectionsStore } from '../features/collections/store';
 import { useToast } from '../composables/toast';
 import { useUiStore } from '../shared/stores/ui';
+import { showProfileLimitDialog, type ProfileLimitDialogTarget } from '../composables/useProfileLimitDialog';
 import {
   changePassword,
   deleteAccount,
@@ -62,6 +63,10 @@ const nicknameStatus = ref<'none' | 'pending' | 'rejected'>('none');
 const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
 const avatarBtnRef = ref<HTMLElement | null>(null);
 
+async function confirmProfileLimit(target: ProfileLimitDialogTarget): Promise<boolean> {
+  return showProfileLimitDialog(target);
+}
+
 function openAvatarMenu() {
   const el = avatarBtnRef.value;
   if (!el) {
@@ -114,7 +119,7 @@ async function saveNicknameEdit() {
     nicknameDraft.value = current;
     return;
   }
-  if (!window.confirm('昵称每日只能修改1次哦')) {
+  if (!await confirmProfileLimit('nickname')) {
     nicknameDraft.value = current;
     nicknameEditing.value = false;
     return;
@@ -541,13 +546,13 @@ async function refreshAvatarStatus() {
   }
 }
 
-function openAvatarPicker() {
+async function openAvatarPicker() {
   avatarMenuOpen.value = false;
   if (avatarStatus.value === 'pending') {
     showToast('头像正在审核中哦', 'info');
     return;
   }
-  if (!window.confirm('头像每日只能修改1次哦')) {
+  if (!await confirmProfileLimit('avatar')) {
     return;
   }
   // 下一帧触发点击，避免弹窗关闭动画与文件对话框冲突
@@ -648,7 +653,7 @@ async function handleDeleteAccount() {
     showToast('请输入邮箱验证码', 'error');
     return;
   }
-  const confirmed = window.confirm('注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？');
+  const confirmed = await confirmAction('注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？');
   if (!confirmed) return;
 
   deleteAccountLoading.value = true;

@@ -188,3 +188,13 @@ watch(
   transform: scale(0.92) translateY(8px);
 }
 </style>
+
+<style>
+.announcement-card {
+  background: #ffffff;
+}
+
+html.dark .announcement-card {
+  background: #262626;
+}
+</style>

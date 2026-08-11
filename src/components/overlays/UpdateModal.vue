@@ -175,3 +175,13 @@ const formatSpeed = (speed: number) => {
   transform: scale(0.92) translateY(8px);
 }
 </style>
+
+<style>
+.update-card {
+  background: #ffffff;
+}
+
+html.dark .update-card {
+  background: #262626;
+}
+</style>
