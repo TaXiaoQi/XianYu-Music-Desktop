@@ -298,31 +298,37 @@ function updateAutoSyncMaxDelay(event: Event) {
       </div>
     </section>
 
-    <!-- 后端地址 -->
+    <!-- 服务端设置 -->
     <section class="space-y-3">
       <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="flex items-center gap-2">
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-          后端地址
+          服务端设置
         </span>
         <SettingHint severity="warning" :text="`登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
       </h2>
       <div class="flex flex-col gap-2">
-        <input
-          v-model="draftBaseUrl"
-          type="text"
-          placeholder="https://example.com/api"
-          spellcheck="false"
-          class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-        />
-        <input
-          v-model="draftApiSecret"
-          type="password"
-          placeholder="API 签名密钥"
-          spellcheck="false"
-          autocomplete="off"
-          class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-        />
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-gray-500 dark:text-white/50">服务器 API</span>
+          <input
+            v-model="draftBaseUrl"
+            type="text"
+            placeholder="https://example.com/api"
+            spellcheck="false"
+            class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+          />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-medium text-gray-500 dark:text-white/50">服务器密钥</span>
+          <input
+            v-model="draftApiSecret"
+            type="password"
+            placeholder="API 签名密钥"
+            spellcheck="false"
+            autocomplete="off"
+            class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+          />
+        </label>
       </div>
       <div class="flex items-stretch gap-2 flex-wrap">
         <button
