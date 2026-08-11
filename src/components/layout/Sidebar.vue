@@ -45,7 +45,6 @@ const {
   createPlaylist,
   deletePlaylist,
   reorderPlaylists,
-  viewPlaylist,
   getSongsFromPlaylist,
 } = useLibraryCollections();
 

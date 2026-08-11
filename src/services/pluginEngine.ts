@@ -851,6 +851,7 @@ export async function pluginMusicSearchWithDiagnostics(
       supportsLyrics: typeof inst.instance.getLyric === 'function',
     };
   }
+  const pluginSearchMethod = inst.instance.search;
 
   // 仅在歌词替换场景下要求 getLyric；普通搜索（如 bilibili 插件）不要求歌词支持
   if (requireLyricSupport && typeof inst.instance.getLyric !== 'function') {
@@ -871,7 +872,7 @@ export async function pluginMusicSearchWithDiagnostics(
     const callSearch = async (attempt: number) => {
       log(`[pluginSearch] ${source.name} searchType=${searchType}, 第 ${attempt} 次调用 search()`);
       // 与 MusicFree PluginMethodsWrapper.search() 第175~176行一致
-      const result = (await inst.instance.search(keyword, page, searchType)) ?? {};
+      const result = (await pluginSearchMethod(keyword, page, searchType)) ?? {};
       const list = extractResultList(result);
       log(
         `[pluginSearch] ${source.name} search 返回(第 ${attempt} 次): type=${typeof result}, keys=${result ? Object.keys(result).join(',') : 'null'}, dataIsArray=${Array.isArray(result?.data)}, dataLen=${result?.data?.length ?? 0}, extractedLen=${list.length}`,
@@ -1849,9 +1850,10 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
       log(`[ensurePluginInstance] ${source.name} 最终: 实例为 null, error=${readError}`);
     }
     return resolved;
-  } catch (e) {
-    log(`[ensurePluginInstance] ${source.name} 重新加载异常: ${e?.message || e}`);
-    pluginInstanceErrors.set(source.id, `插件初始化异常：${String(e)}`);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    log(`[ensurePluginInstance] ${source.name} 重新加载异常: ${message}`);
+    pluginInstanceErrors.set(source.id, `插件初始化异常：${message}`);
     return null;
   }
 }
