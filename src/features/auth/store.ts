@@ -34,11 +34,15 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value && !!user.value);
   const baseUrl = computed({
     get: () => getAuthBaseUrl(),
-    set: (value: string) => setAuthBaseUrl(value),
+    set: (value: string) => {
+      void setAuthBaseUrl(value);
+    },
   });
   const apiSecret = computed({
     get: () => getAuthApiSecret(),
-    set: (value: string) => setAuthApiSecret(value),
+    set: (value: string) => {
+      void setAuthApiSecret(value);
+    },
   });
 
   function setAuth(payload: AuthPayload | null) {
