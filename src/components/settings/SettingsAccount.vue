@@ -61,20 +61,28 @@ watch(
   },
 );
 
-function handleSaveBaseUrl() {
+async function handleSaveBaseUrl() {
   const next = draftBaseUrl.value.trim();
   const nextSecret = draftApiSecret.value.trim();
-  setAuthBaseUrl(next);
-  setAuthApiSecret(nextSecret);
-  showToast('后端连接配置已更新', 'success');
+  try {
+    await setAuthBaseUrl(next);
+    await setAuthApiSecret(nextSecret);
+    showToast('后端连接配置已更新', 'success');
+  } catch {
+    showToast('后端连接配置保存失败，请重试', 'error');
+  }
 }
 
-function handleResetBaseUrl() {
+async function handleResetBaseUrl() {
   draftBaseUrl.value = DEFAULT_AUTH_BASE_URL;
   draftApiSecret.value = DEFAULT_AUTH_API_SECRET;
-  setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
-  setAuthApiSecret(DEFAULT_AUTH_API_SECRET);
-  showToast('已恢复默认后端连接配置', 'info');
+  try {
+    await setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
+    await setAuthApiSecret(DEFAULT_AUTH_API_SECRET);
+    showToast('已恢复默认后端连接配置', 'info');
+  } catch {
+    showToast('默认后端连接配置保存失败，请重试', 'error');
+  }
 }
 
 function handleOpenAccount() {

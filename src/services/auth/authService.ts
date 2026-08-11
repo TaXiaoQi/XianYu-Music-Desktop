@@ -110,13 +110,11 @@ export function getAuthBaseUrl(): string {
   return cachedBaseUrl;
 }
 
-export function setAuthBaseUrl(baseUrl: string): void {
+export async function setAuthBaseUrl(baseUrl: string): Promise<void> {
   const trimmed = (baseUrl || '').trim();
   cachedBaseUrl = trimmed || DEFAULT_AUTH_BASE_URL;
-  // 持久化到 Rust（文件），fire-and-forget
-  void authApi.setAuthBaseUrl(cachedBaseUrl).catch(() => {
-    /* 静默失败 */
-  });
+  // 持久化到 Rust（文件），确保后续签名请求读取到最新配置
+  await authApi.setAuthBaseUrl(cachedBaseUrl);
   // 清理旧 localStorage
   if (typeof localStorage !== 'undefined') {
     if (trimmed && trimmed !== DEFAULT_AUTH_BASE_URL) {
@@ -131,12 +129,10 @@ export function getAuthApiSecret(): string {
   return cachedApiSecret;
 }
 
-export function setAuthApiSecret(apiSecret: string): void {
+export async function setAuthApiSecret(apiSecret: string): Promise<void> {
   const trimmed = (apiSecret || '').trim();
   cachedApiSecret = trimmed || DEFAULT_AUTH_API_SECRET;
-  void authApi.setAuthApiSecret(cachedApiSecret).catch(() => {
-    /* 静默失败 */
-  });
+  await authApi.setAuthApiSecret(cachedApiSecret);
   if (typeof localStorage !== 'undefined') {
     if (trimmed && trimmed !== DEFAULT_AUTH_API_SECRET) {
       localStorage.setItem(LEGACY_STORAGE_API_SECRET_KEY, cachedApiSecret);
