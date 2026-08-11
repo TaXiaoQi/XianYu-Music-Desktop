@@ -78,20 +78,21 @@ export type ProfileStats = {
   updated_at?: string | null;
 };
 
-/** 默认后端地址：开发模式指向本地服务，生产模式指向弦予音乐 API */
-export const DEFAULT_AUTH_BASE_URL = import.meta.env.DEV
-  ? 'http://127.0.0.1:8081/api'
-  : 'https://xymusic.zh2026.cn/api';
+/** 默认后端地址：测试构建与正式构建统一指向弦予音乐 API */
+export const DEFAULT_AUTH_BASE_URL = 'https://xymusic.zh2026.cn/api';
+export const DEFAULT_AUTH_API_SECRET = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
 
 // ─── localStorage 兼容键（仅用于迁移） ──────────────────
 const LEGACY_STORAGE_TOKEN_KEY = 'xy.auth.token';
 const LEGACY_STORAGE_USER_KEY = 'xy.auth.user';
 const LEGACY_STORAGE_BASE_URL_KEY = 'xy.auth.baseUrl';
+const LEGACY_STORAGE_API_SECRET_KEY = 'xy.auth.apiSecret';
 
 // ─── 内存缓存（同步读取，由 initAuthFromKeyring 填充） ────
 let cachedToken: string | null = null;
 let cachedUser: AuthUser | null = null;
 let cachedBaseUrl: string = DEFAULT_AUTH_BASE_URL;
+let cachedApiSecret: string = DEFAULT_AUTH_API_SECRET;
 let keyringInitialized = false;
 
 /** 后端统一响应：code 200 成功，其他为失败（HTTP 状态码同步设置） */
@@ -126,6 +127,25 @@ export function setAuthBaseUrl(baseUrl: string): void {
   }
 }
 
+export function getAuthApiSecret(): string {
+  return cachedApiSecret;
+}
+
+export function setAuthApiSecret(apiSecret: string): void {
+  const trimmed = (apiSecret || '').trim();
+  cachedApiSecret = trimmed || DEFAULT_AUTH_API_SECRET;
+  void authApi.setAuthApiSecret(cachedApiSecret).catch(() => {
+    /* 静默失败 */
+  });
+  if (typeof localStorage !== 'undefined') {
+    if (trimmed && trimmed !== DEFAULT_AUTH_API_SECRET) {
+      localStorage.setItem(LEGACY_STORAGE_API_SECRET_KEY, cachedApiSecret);
+    } else {
+      localStorage.removeItem(LEGACY_STORAGE_API_SECRET_KEY);
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  凭证管理（keyring + 内存缓存）
 // ═══════════════════════════════════════════════════════
@@ -156,6 +176,15 @@ export async function initAuthFromKeyring(): Promise<void> {
     // 回退到 localStorage
     if (typeof localStorage !== 'undefined') {
       cachedBaseUrl = localStorage.getItem(LEGACY_STORAGE_BASE_URL_KEY) || DEFAULT_AUTH_BASE_URL;
+    }
+  }
+
+  // 加载 API 签名密钥
+  try {
+    cachedApiSecret = await authApi.getAuthApiSecret();
+  } catch {
+    if (typeof localStorage !== 'undefined') {
+      cachedApiSecret = localStorage.getItem(LEGACY_STORAGE_API_SECRET_KEY) || DEFAULT_AUTH_API_SECRET;
     }
   }
 

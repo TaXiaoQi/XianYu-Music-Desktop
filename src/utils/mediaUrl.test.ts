@@ -48,6 +48,23 @@ describe('sanitizeMediaUrl', () => {
     });
   });
 
+  it('为 JOOX 直链补齐 Origin 且保留插件 UA/Referer', () => {
+    const headers = normalizeMediaRequestHeaders(
+      'https://cn.stream.music.joox.com/AIM0Z41D8C5CB32F21.flac?guid=anon&vkey=abc',
+      {
+        'User-Agent': 'JOOX 70003(android 10)',
+        Referer: 'https://www.joox.com/',
+      },
+    );
+
+    expect(headers).toMatchObject({
+      Accept: 'audio/*,*/*;q=0.8',
+      'User-Agent': 'JOOX 70003(android 10)',
+      Referer: 'https://www.joox.com/',
+      Origin: 'https://www.joox.com',
+    });
+  });
+
   it('不覆盖插件显式返回的请求头', () => {
     const headers = normalizeMediaRequestHeaders(
       'https://m.kugou.com/song.mp3',

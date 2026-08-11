@@ -16,6 +16,8 @@ commands.allow = [
   "clear_auth_credentials",
   "set_auth_base_url",
   "get_auth_base_url",
+  "set_auth_api_secret",
+  "get_auth_api_secret",
   "clear_cover_cache",
   "get_song_lyrics",
   "get_song_lyrics_payload",

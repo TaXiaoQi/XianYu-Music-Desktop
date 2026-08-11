@@ -334,6 +334,10 @@ impl StreamCacheManager {
             };
 
             let size = metadata.len();
+            if size == 0 {
+                let _ = std::fs::remove_file(&path);
+                continue;
+            }
             let last_modified = metadata.modified().ok().unwrap_or_else(SystemTime::now);
 
             self.entries.insert(
@@ -960,9 +964,39 @@ fn apply_stream_request_headers(
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
 ) -> reqwest::blocking::RequestBuilder {
-    if let Some(ua) = user_agent {
-        req = req.header(reqwest::header::USER_AGENT, ua);
+    let has_plugin_user_agent = headers
+        .map(|hdrs| hdrs.keys().any(|key| key.eq_ignore_ascii_case("user-agent")))
+        .unwrap_or(false);
+
+    // 插件提供的 User-Agent 必须优先。JOOX 等音源会严格校验 UA；
+    // 如果先设置默认 UA 再追加插件 UA，最终请求可能携带重复 User-Agent，
+    // 服务端会直接返回 403。
+    if !has_plugin_user_agent {
+        if let Some(ua) = user_agent {
+            req = req.header(reqwest::header::USER_AGENT, ua);
+        }
     }
+
+    if let Some(hdrs) = headers {
+        let mut header_names: Vec<String> = hdrs
+            .keys()
+            .filter(|key| !key.trim().is_empty())
+            .map(|key| key.to_string())
+            .collect();
+        header_names.sort_by_key(|key| key.to_lowercase());
+        eprintln!(
+            "[StreamCache] 应用请求头: keys=[{}], plugin_ua={}, default_ua={}",
+            header_names.join(","),
+            has_plugin_user_agent,
+            !has_plugin_user_agent && user_agent.is_some(),
+        );
+    } else if let Some(ua) = user_agent {
+        eprintln!(
+            "[StreamCache] 应用请求头: keys=[], plugin_ua=false, default_ua={}",
+            !ua.is_empty(),
+        );
+    }
+
     if let Some(hdrs) = headers {
         for (key, value) in hdrs {
             if !key.trim().is_empty() && !value.trim().is_empty() {

@@ -7,8 +7,11 @@ import { useSettingsStore } from '../../features/settings/store';
 import { useToast } from '../../composables/toast';
 import { usePlaylistSync } from '../../composables/usePlaylistSync';
 import {
+  DEFAULT_AUTH_API_SECRET,
   DEFAULT_AUTH_BASE_URL,
+  getAuthApiSecret,
   getAuthBaseUrl,
+  setAuthApiSecret,
   setAuthBaseUrl,
 } from '../../services/auth/authService';
 import SettingHint from './SettingHint.vue';
@@ -23,12 +26,23 @@ const playlistSync = usePlaylistSync();
 const pad = (n: number) => n.toString().padStart(2, '0');
 
 const draftBaseUrl = ref(getAuthBaseUrl());
-const isDirty = computed(() => draftBaseUrl.value.trim() !== getAuthBaseUrl());
+const draftApiSecret = ref(getAuthApiSecret());
+const isDirty = computed(() =>
+  draftBaseUrl.value.trim() !== getAuthBaseUrl()
+  || draftApiSecret.value.trim() !== getAuthApiSecret()
+);
 
 watch(
   () => authStore.baseUrl,
   (value) => {
     draftBaseUrl.value = value;
+  },
+);
+
+watch(
+  () => authStore.apiSecret,
+  (value) => {
+    draftApiSecret.value = value;
   },
 );
 
@@ -49,14 +63,18 @@ watch(
 
 function handleSaveBaseUrl() {
   const next = draftBaseUrl.value.trim();
+  const nextSecret = draftApiSecret.value.trim();
   setAuthBaseUrl(next);
-  showToast('后端地址已更新', 'success');
+  setAuthApiSecret(nextSecret);
+  showToast('后端连接配置已更新', 'success');
 }
 
 function handleResetBaseUrl() {
   draftBaseUrl.value = DEFAULT_AUTH_BASE_URL;
+  draftApiSecret.value = DEFAULT_AUTH_API_SECRET;
   setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
-  showToast('已恢复默认后端地址', 'info');
+  setAuthApiSecret(DEFAULT_AUTH_API_SECRET);
+  showToast('已恢复默认后端连接配置', 'info');
 }
 
 function handleOpenAccount() {
@@ -279,16 +297,26 @@ function updateAutoSyncMaxDelay(event: Event) {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           后端地址
         </span>
-        <SettingHint severity="warning" :text="`登录、注册、找回密码等接口的根地址。默认指向弦予音乐官方服务端；如自建后端可在此覆盖。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
+        <SettingHint severity="warning" :text="`登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：${DEFAULT_AUTH_BASE_URL}`" />
       </h2>
-      <div class="flex items-stretch gap-2 flex-wrap">
+      <div class="flex flex-col gap-2">
         <input
           v-model="draftBaseUrl"
           type="text"
           placeholder="https://example.com/api"
           spellcheck="false"
-          class="flex-1 min-w-[240px] h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+          class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
         />
+        <input
+          v-model="draftApiSecret"
+          type="password"
+          placeholder="API 签名密钥"
+          spellcheck="false"
+          autocomplete="off"
+          class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+        />
+      </div>
+      <div class="flex items-stretch gap-2 flex-wrap">
         <button
           type="button"
           class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

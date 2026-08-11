@@ -21,8 +21,9 @@ pub use types::*;
 
 // Re-export commands for lib.rs registration
 pub use auth::{
-    authed_request, clear_auth_credentials, get_auth_base_url, get_auth_credentials,
-    save_auth_credentials, set_auth_base_url, signed_post_json,
+    authed_request, clear_auth_credentials, get_auth_api_secret, get_auth_base_url,
+    get_auth_credentials, save_auth_credentials, set_auth_api_secret, set_auth_base_url,
+    signed_post_json,
 };
 pub use covers::{clear_cover_cache, get_song_cover, get_song_cover_thumbnail, run_cache_cleanup};
 pub use files::{

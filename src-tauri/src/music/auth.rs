@@ -22,16 +22,13 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-/// API 签名密钥（从文档获取，编译进二进制，不暴露给前端）
-const API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
+/// 默认 API 签名密钥。自建后端可在客户端账号设置页覆盖。
+const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
 /// 官方后端地址
 const OFFICIAL_AUTH_BASE_URL: &str = "https://xymusic.zh2026.cn/api";
 
-/// 默认后端地址
-#[cfg(debug_assertions)]
-const DEFAULT_AUTH_BASE_URL: &str = "http://127.0.0.1:8081/api";
-#[cfg(not(debug_assertions))]
+/// 默认后端地址：测试构建与正式构建统一指向弦予音乐 API
 const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
 
 /// keyring 服务名 / 账户名
@@ -70,14 +67,14 @@ fn generate_nonce() -> String {
 }
 
 /// 计算签名并返回带签名的请求头信息
-fn build_signed_headers(body: &str) -> SignedHeaders {
+fn build_signed_headers(body: &str, api_secret: &str) -> SignedHeaders {
     let timestamp = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs())
     .to_string();
     let nonce = generate_nonce();
-    let sign_input = format!("{}{}{}{}", timestamp, nonce, body, API_SECRET);
+    let sign_input = format!("{}{}{}{}", timestamp, nonce, body, api_secret);
     let digest = md5::compute(sign_input.as_bytes());
     let sign = format!("{:x}", digest);
     SignedHeaders {
@@ -110,6 +107,11 @@ fn base_url_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(auth_data_dir(app)?.join("base_url.txt"))
 }
 
+/// api_secret 文件路径
+fn api_secret_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(auth_data_dir(app)?.join("api_secret.txt"))
+}
+
 /// 从文件读取 base_url，不存在时返回默认值
 fn read_base_url(app: &AppHandle) -> String {
     match base_url_file_path(app) {
@@ -119,11 +121,8 @@ fn read_base_url(app: &AppHandle) -> String {
                     .unwrap_or_default()
                     .trim()
                     .to_string();
-                #[cfg(debug_assertions)]
-                {
-                    if saved.is_empty() || saved == OFFICIAL_AUTH_BASE_URL {
-                        return DEFAULT_AUTH_BASE_URL.to_string();
-                    }
+                if saved.is_empty() {
+                    return DEFAULT_AUTH_BASE_URL.to_string();
                 }
                 saved
             } else {
@@ -131,6 +130,28 @@ fn read_base_url(app: &AppHandle) -> String {
             }
         }
         Err(_) => DEFAULT_AUTH_BASE_URL.to_string(),
+    }
+}
+
+/// 从文件读取 API 签名密钥，不存在时返回默认值
+fn read_api_secret(app: &AppHandle) -> String {
+    match api_secret_file_path(app) {
+        Ok(path) => {
+            if path.exists() {
+                let saved = fs::read_to_string(&path)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if saved.is_empty() {
+                    DEFAULT_API_SECRET.to_string()
+                } else {
+                    saved
+                }
+            } else {
+                DEFAULT_API_SECRET.to_string()
+            }
+        }
+        Err(_) => DEFAULT_API_SECRET.to_string(),
     }
 }
 
@@ -189,8 +210,9 @@ pub async fn authed_request(
 ) -> Result<Value, String> {
     let base_url = read_base_url(&app_handle);
     let url = format!("{}/?action={}", base_url, action);
+    let api_secret = read_api_secret(&app_handle);
 
-    do_signed_post(&url, &action, body, fetch_timeout_ms).await
+    do_signed_post(&url, &action, body, fetch_timeout_ms, &api_secret).await
 }
 
 /// 向任意 URL 发起带签名的 POST 请求（壁纸等非账号 API 端点）。
@@ -199,11 +221,13 @@ pub async fn authed_request(
 /// `sign = md5(timestamp + nonce + body + api_secret)`
 #[tauri::command]
 pub async fn signed_post_json(
+    app_handle: AppHandle,
     url: String,
     body: Value,
     fetch_timeout_ms: Option<u64>,
 ) -> Result<Value, String> {
-    do_signed_post(&url, "signedPostJson", body, fetch_timeout_ms).await
+    let api_secret = read_api_secret(&app_handle);
+    do_signed_post(&url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
 }
 
 /// 内部：执行带签名的 POST 请求
@@ -212,9 +236,10 @@ async fn do_signed_post(
     action: &str,
     body: Value,
     fetch_timeout_ms: Option<u64>,
+    api_secret: &str,
 ) -> Result<Value, String> {
     let body_str = serde_json::to_string(&body).unwrap_or_default();
-    let headers = build_signed_headers(&body_str);
+    let headers = build_signed_headers(&body_str, api_secret);
     let timeout_ms = fetch_timeout_ms.unwrap_or(DEFAULT_FETCH_TIMEOUT_MS);
 
     let client = http_client().as_ref().map_err(|e| e.clone())?;
@@ -371,4 +396,25 @@ pub async fn set_auth_base_url(app_handle: AppHandle, base_url: String) -> Resul
 #[tauri::command]
 pub async fn get_auth_base_url(app_handle: AppHandle) -> Result<String, String> {
     Ok(read_base_url(&app_handle))
+}
+
+/// 设置 API 签名密钥（自建服务器使用）。
+#[tauri::command]
+pub async fn set_auth_api_secret(app_handle: AppHandle, api_secret: String) -> Result<(), String> {
+    let trimmed = api_secret.trim();
+    let secret = if trimmed.is_empty() {
+        DEFAULT_API_SECRET.to_string()
+    } else {
+        trimmed.to_string()
+    };
+
+    let path = api_secret_file_path(&app_handle)?;
+    fs::write(&path, &secret).map_err(|e| format!("api_secret 文件写入失败: {e}"))?;
+    Ok(())
+}
+
+/// 获取当前 API 签名密钥。
+#[tauri::command]
+pub async fn get_auth_api_secret(app_handle: AppHandle) -> Result<String, String> {
+    Ok(read_api_secret(&app_handle))
 }

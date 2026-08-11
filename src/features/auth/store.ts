@@ -3,10 +3,12 @@ import { defineStore } from 'pinia';
 
 import {
   clearAuth,
+  getAuthApiSecret,
   getAuthBaseUrl,
   getStoredAuth,
   initAuthFromKeyring,
   refreshSession,
+  setAuthApiSecret,
   setAuthBaseUrl,
   type AuthPayload,
   type AuthUser,
@@ -33,6 +35,10 @@ export const useAuthStore = defineStore('auth', () => {
   const baseUrl = computed({
     get: () => getAuthBaseUrl(),
     set: (value: string) => setAuthBaseUrl(value),
+  });
+  const apiSecret = computed({
+    get: () => getAuthApiSecret(),
+    set: (value: string) => setAuthApiSecret(value),
   });
 
   function setAuth(payload: AuthPayload | null) {
@@ -80,6 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
     initializing,
     isLoggedIn,
     baseUrl,
+    apiSecret,
     setAuth,
     setUser,
     setStats,
