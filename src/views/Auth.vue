@@ -13,6 +13,7 @@ import { showProfileLimitDialog, type ProfileLimitDialogTarget } from '../compos
 import {
   changePassword,
   deleteAccount,
+  preVerifyDeleteAccount,
   getProfile,
   login,
   logout,
@@ -23,6 +24,8 @@ import {
   uploadAvatar,
   getAvatarStatus,
   getNicknameStatus,
+  getAvatarChangeLimitStatus,
+  getNicknameChangeLimitStatus,
   getUserAgreement,
   type AuthMode,
   type HumanCaptchaPayload,
@@ -64,6 +67,26 @@ const avatarMenuPos = ref<{ top: number; left: number } | null>(null);
 const avatarBtnRef = ref<HTMLElement | null>(null);
 
 async function confirmProfileLimit(target: ProfileLimitDialogTarget): Promise<boolean> {
+  const localStatus = target === 'avatar' ? avatarStatus.value : nicknameStatus.value;
+  const limit = target === 'avatar'
+    ? await getAvatarChangeLimitStatus()
+    : await getNicknameChangeLimitStatus();
+  if (target === 'avatar') {
+    avatarStatus.value = limit.status;
+  } else {
+    nicknameStatus.value = limit.status;
+  }
+  const blocked = limit.todayBlocked || limit.status === 'pending' || localStatus === 'pending';
+  if (blocked) {
+    const fallback = target === 'avatar'
+      ? (limit.status === 'pending' || localStatus === 'pending' ? '头像正在审核中哦' : '今日已修改过啦')
+      : (limit.status === 'pending' || localStatus === 'pending' ? '昵称正在审核中哦' : '今日已修改过啦');
+    await showProfileLimitDialog(target, {
+      blocked: true,
+      message: limit.blockMessage || fallback,
+    });
+    return false;
+  }
   return showProfileLimitDialog(target);
 }
 
@@ -101,7 +124,10 @@ const nicknameInputRef = ref<HTMLInputElement | null>(null);
 async function startNicknameEdit() {
   // 改名审核中时禁止再次编辑
   if (nicknameStatus.value === 'pending') {
-    showToast('昵称正在审核中哦', 'info');
+    await showProfileLimitDialog('nickname', {
+      blocked: true,
+      message: '昵称正在审核中哦',
+    });
     return;
   }
   nicknameEditing.value = true;
@@ -149,9 +175,60 @@ const profileSaving = ref(false);
 const passwordSaving = ref(false);
 const passwordPanelOpen = ref(false);
 const deleteAccountPanelOpen = ref(false);
-const deleteAccountForm = ref({ code: '' });
+const deleteAccountForm = ref({ password: '', code: '' });
 const deleteAccountCodeLoading = ref(false);
 const deleteAccountLoading = ref(false);
+
+type AccountConfirmTone = 'danger' | 'success' | 'info';
+
+const accountConfirmDialog = ref<{
+  visible: boolean;
+  title: string;
+  desc: string;
+  confirmText: string;
+  cancelText: string;
+  showCancel: boolean;
+  tone: AccountConfirmTone;
+  resolver: ((confirmed: boolean) => void) | null;
+}>({
+  visible: false,
+  title: '',
+  desc: '',
+  confirmText: '确认',
+  cancelText: '取消',
+  showCancel: true,
+  tone: 'danger',
+  resolver: null,
+});
+
+function showAccountConfirmDialog(options: {
+  title: string;
+  desc: string;
+  confirmText?: string;
+  cancelText?: string;
+  showCancel?: boolean;
+  tone?: AccountConfirmTone;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    accountConfirmDialog.value = {
+      visible: true,
+      title: options.title,
+      desc: options.desc,
+      confirmText: options.confirmText || '确认',
+      cancelText: options.cancelText || '取消',
+      showCancel: options.showCancel !== false,
+      tone: options.tone || 'danger',
+      resolver: resolve,
+    };
+  });
+}
+
+function resolveAccountConfirmDialog(confirmed: boolean) {
+  const resolver = accountConfirmDialog.value.resolver;
+  accountConfirmDialog.value.visible = false;
+  accountConfirmDialog.value.resolver = null;
+  resolver?.(confirmed);
+}
 
 // 头像弹窗
 const avatarMenuOpen = ref(false);
@@ -548,10 +625,6 @@ async function refreshAvatarStatus() {
 
 async function openAvatarPicker() {
   avatarMenuOpen.value = false;
-  if (avatarStatus.value === 'pending') {
-    showToast('头像正在审核中哦', 'info');
-    return;
-  }
   if (!await confirmProfileLimit('avatar')) {
     return;
   }
@@ -649,22 +722,64 @@ async function handleSendDeleteAccountCode() {
 
 async function handleDeleteAccount() {
   const code = deleteAccountForm.value.code.trim();
+  const password = deleteAccountForm.value.password;
+  if (!password) {
+    showToast('请输入登录密码', 'error');
+    return;
+  }
   if (!code) {
     showToast('请输入邮箱验证码', 'error');
     return;
   }
-  const confirmed = await confirmAction('注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？');
+
+  // 并行：弹出二级确认弹窗的同时立即发起预验证（密码+验证码），
+  // 用户阅读确认提示期间验证已在进行，点击确认后无需重复等待。
+  let preVerifyError: Error | null = null;
+  const preVerifyPromise = preVerifyDeleteAccount(code, password)
+    .then(() => { /* 预验证通过 */ })
+    .catch((err: unknown) => {
+      preVerifyError = err instanceof Error ? err : new Error(String(err));
+      // 预验证失败时若弹窗仍开着，主动关闭并提示
+      if (accountConfirmDialog.value.visible) {
+        const tip = preVerifyError.message;
+        resolveAccountConfirmDialog(false);
+        showToast(tip, 'error');
+      }
+    });
+
+  const confirmed = await showAccountConfirmDialog({
+    title: '确认注销账号',
+    desc: '注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？',
+    confirmText: '确认注销',
+    cancelText: '取消',
+    tone: 'danger',
+  });
   if (!confirmed) return;
 
+  // 用户已确认，等待预验证结果
   deleteAccountLoading.value = true;
   try {
-    const result = await deleteAccount(code);
+    await preVerifyPromise;
+    if (preVerifyError) {
+      // 预验证已失败（错误提示已在 catch 中显示），直接退出
+      return;
+    }
+    // 预验证通过，执行实际注销
+    const result = await deleteAccount(code, password);
+    deleteAccountLoading.value = false;
+    await showAccountConfirmDialog({
+      title: '账号已注销',
+      desc: result.message || '账号已注销，点击确认后将退出当前登录状态。',
+      confirmText: '确认',
+      showCancel: false,
+      tone: 'success',
+    });
     authStore.reset();
     stats.value = null;
-    deleteAccountForm.value = { code: '' };
+    deleteAccountForm.value = { password: '', code: '' };
+    deleteAccountPanelOpen.value = false;
     mode.value = 'login';
     message.value = '';
-    showToast(result.message || '账号已注销', 'success');
   } catch (error) {
     const tip = error instanceof Error ? error.message : '注销账号失败';
     showToast(tip, 'error');
@@ -1378,9 +1493,19 @@ onMounted(async () => {
           <transition name="password-panel">
             <div v-if="deleteAccountPanelOpen" class="password-panel-content">
               <p class="text-[#EC4141]/80 text-[clamp(0.8rem,1vw,0.9rem)] font-light mt-2 mb-3">
-                注销后账号和云端同步数据将被删除，且无法恢复。验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}
+                注销后账号和云端同步数据将被删除，且无法恢复。需验证登录密码和邮箱验证码，验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}
               </p>
               <div class="grid gap-3 max-w-xl">
+                <label class="grid gap-1.5">
+                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">登录密码</span>
+                  <input
+                    v-model="deleteAccountForm.password"
+                    type="password"
+                    placeholder="输入当前账号登录密码"
+                    autocomplete="current-password"
+                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  />
+                </label>
                 <div class="grid grid-cols-[1fr_auto] items-end gap-4">
                   <label class="grid gap-1.5">
                     <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">邮箱验证码</span>
@@ -1405,7 +1530,7 @@ onMounted(async () => {
                   <button
                     type="button"
                     class="border border-[#EC4141]/35 bg-[#EC4141]/5 hover:bg-[#EC4141] text-[#EC4141] hover:text-white px-6 py-1.5 rounded-full text-[clamp(0.85rem,1vw,0.95rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                    :disabled="deleteAccountLoading || !deleteAccountForm.code.trim()"
+                    :disabled="deleteAccountLoading || !deleteAccountForm.code.trim() || !deleteAccountForm.password"
                     @click="handleDeleteAccount"
                   >
                     {{ deleteAccountLoading ? '注销中…' : '确认注销账号' }}
@@ -1475,6 +1600,48 @@ onMounted(async () => {
                 @click="confirmLogout"
               >
                 确认退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 账号操作确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="avatar-modal">
+        <div
+          v-if="accountConfirmDialog.visible"
+          class="fixed inset-0 z-[205] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="accountConfirmDialog.showCancel && resolveAccountConfirmDialog(false)"
+        >
+          <div class="logout-confirm-card">
+            <div class="logout-confirm-icon" :class="{ 'logout-confirm-icon--success': accountConfirmDialog.tone === 'success' }">
+              <svg v-if="accountConfirmDialog.tone === 'success'" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h3 class="logout-confirm-title">{{ accountConfirmDialog.title }}</h3>
+            <p class="logout-confirm-desc">{{ accountConfirmDialog.desc }}</p>
+            <div class="logout-confirm-actions" :class="{ 'logout-confirm-actions--single': !accountConfirmDialog.showCancel }">
+              <button
+                v-if="accountConfirmDialog.showCancel"
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                @click="resolveAccountConfirmDialog(false)"
+              >
+                {{ accountConfirmDialog.cancelText }}
+              </button>
+              <button
+                type="button"
+                class="logout-btn"
+                :class="accountConfirmDialog.tone === 'success' ? 'logout-btn--success' : 'logout-btn--danger'"
+                @click="resolveAccountConfirmDialog(true)"
+              >
+                {{ accountConfirmDialog.confirmText }}
               </button>
             </div>
           </div>
@@ -1557,6 +1724,11 @@ onMounted(async () => {
   margin: 0 auto 14px;
 }
 
+.logout-confirm-icon--success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+
 .logout-confirm-title {
   font-size: 1.05rem;
   font-weight: 700;
@@ -1575,6 +1747,11 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   justify-content: center;
+}
+
+.logout-confirm-actions--single {
+  display: grid;
+  grid-template-columns: 1fr;
 }
 
 .logout-btn {
@@ -1606,6 +1783,15 @@ onMounted(async () => {
 
 .logout-btn--danger:hover {
   background: #d13b3b;
+}
+
+.logout-btn--success {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.logout-btn--success:hover {
+  background: #15803d;
 }
 
 .logout-btn:disabled {
@@ -1722,6 +1908,11 @@ onMounted(async () => {
 :global(.dark) .logout-confirm-icon {
   background: rgba(236, 65, 65, 0.18);
   color: #ff8b8b;
+}
+
+:global(.dark) .logout-confirm-icon--success {
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
 }
 
 :global(.dark) .logout-confirm-title {

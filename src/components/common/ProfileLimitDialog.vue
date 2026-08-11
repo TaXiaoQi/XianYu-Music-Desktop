@@ -5,6 +5,15 @@ import { useProfileLimitDialog } from '../../composables/useProfileLimitDialog';
 const { profileLimitDialogState, resolveProfileLimitDialog } = useProfileLimitDialog();
 
 const dialogCopy = computed(() => {
+  if (profileLimitDialogState.value.blocked) {
+    const targetName = profileLimitDialogState.value.target === 'avatar' ? '头像' : '昵称';
+    return {
+      title: `${targetName}暂不能修改`,
+      desc: profileLimitDialogState.value.message || `${targetName}今日已修改过啦，请明天再试。`,
+      badge: profileLimitDialogState.value.target === 'avatar' ? '头像限制' : '改名限制',
+      confirmText: '我知道了',
+    };
+  }
   if (profileLimitDialogState.value.target === 'avatar') {
     return {
       title: '更换头像提示',
@@ -22,7 +31,7 @@ const dialogCopy = computed(() => {
 });
 
 function confirm() {
-  resolveProfileLimitDialog(true);
+  resolveProfileLimitDialog(!profileLimitDialogState.value.blocked);
 }
 
 function cancel() {
@@ -54,9 +63,9 @@ function cancel() {
             <span>请确认本次修改内容无误后再继续。</span>
           </div>
 
-          <div class="profile-limit-actions">
+          <div class="profile-limit-actions" :class="{ 'profile-limit-actions--single': profileLimitDialogState.blocked }">
             <button type="button" class="profile-limit-btn profile-limit-btn--ghost" @click="cancel">
-              取消
+              {{ profileLimitDialogState.blocked ? '关闭' : '取消' }}
             </button>
             <button type="button" class="profile-limit-btn profile-limit-btn--primary" @click="confirm">
               {{ dialogCopy.confirmText }}
@@ -160,6 +169,14 @@ function cancel() {
   grid-template-columns: 1fr 1.25fr;
   gap: 10px;
   margin-top: 20px;
+}
+
+.profile-limit-actions--single {
+  grid-template-columns: 1fr;
+}
+
+.profile-limit-actions--single .profile-limit-btn--ghost {
+  display: none;
 }
 
 .profile-limit-btn {
