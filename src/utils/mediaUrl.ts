@@ -148,6 +148,9 @@ export const normalizeMediaRequestHeaders = (
       || host.includes('kuwo')
       || path.includes('/kuwo/')
       || path.includes('/kw/');
+    const isJooxLike = host.includes('joox.com')
+      || host.includes('music.joox.com')
+      || path.includes('/joox/');
 
     if (isKugouLike) {
       const referer = host.includes('haitangw.cc')
@@ -161,6 +164,10 @@ export const normalizeMediaRequestHeaders = (
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     } else if (isKuwoLike) {
       const referer = 'http://www.kuwo.cn/';
+      setHeaderIfMissing(headers, 'Referer', referer);
+      setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
+    } else if (isJooxLike) {
+      const referer = 'https://www.joox.com/';
       setHeaderIfMissing(headers, 'Referer', referer);
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     }

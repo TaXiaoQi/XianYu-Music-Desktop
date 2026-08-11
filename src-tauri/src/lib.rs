@@ -33,8 +33,8 @@ use music::{
     clear_auth_credentials, clear_cover_cache, clear_lx_all_cache, clear_lx_url_cache,
     clear_song_background,
     create_folder, delete_folder, delete_music_file, extract_palette, fetch_lyric_from_source,
-    find_alternative_lx_source, get_auth_base_url, get_auth_credentials, get_folder_children,
-    get_folder_first_song, get_library_album_catalog, get_library_artist_catalog,
+    find_alternative_lx_source, get_auth_api_secret, get_auth_base_url, get_auth_credentials,
+    get_folder_children, get_folder_first_song, get_library_album_catalog, get_library_artist_catalog,
     get_library_folders, get_library_hierarchy, get_library_song_paths_by_album,
     get_library_song_paths_by_artist, get_library_song_paths_for_all_view,
     get_library_song_paths_for_folder_view, get_library_songs_by_paths, get_library_songs_cached,
@@ -45,7 +45,7 @@ use music::{
     remove_sidebar_folder, resolve_lx_music_url, resolve_lx_with_quality_fallback,
     save_artist_avatar, save_auth_credentials, save_song_background, save_song_info,
     save_song_lyrics, scan_folder_as_playlists, scan_library, scan_music_folder,
-    search_library_songs, set_auth_base_url, show_in_folder, signed_post_json,
+    search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder, signed_post_json,
 };
 use player::{
     clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_visualizer_samples,
@@ -152,6 +152,8 @@ pub fn run() {
             clear_auth_credentials,
             set_auth_base_url,
             get_auth_base_url,
+            set_auth_api_secret,
+            get_auth_api_secret,
             clear_cover_cache,
             get_song_lyrics,
             read_lyrics_file,

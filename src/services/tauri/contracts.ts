@@ -609,6 +609,8 @@ export interface TauriCommandMap {
   clear_auth_credentials: { payload: undefined; response: void };
   set_auth_base_url: { payload: { baseUrl: string }; response: void };
   get_auth_base_url: { payload: undefined; response: string };
+  set_auth_api_secret: { payload: { apiSecret: string }; response: void };
+  get_auth_api_secret: { payload: undefined; response: string };
   clear_cover_cache: { payload: undefined; response: void };
   get_song_lyrics: { payload: { path: string }; response: string };
   read_lyrics_file: { payload: { path: string }; response: string };
