@@ -317,28 +317,32 @@ async function resolvePluginAudioForQuality(
   const bakaLegacyQuality = qualityKeyToBakaLegacyQuality(q);
   const mfLegacyQuality = qualityKeyToMfQuality(q);
 
-  // 1) 优先使用预解析的 qualities 字段：
+  // 1) 优先使用预解析的 qualities 字段（仅对非 Baka 插件）：
   //    内部 12 档 → Baka 插件原生键（mgg→96k）→ Baka 旧兼容键 → MF 旧 lossless 键
-  const preKeys = Array.from(new Set([
-    nativeQuality,
-    bakaPluginQuality,
-    bakaLegacyQuality,
-    mfLegacyQuality,
-  ]));
-  for (const key of preKeys) {
-    const rawUrl = ctx.preQualities?.[key]?.url;
-    const preUrl = sanitizeMediaUrl(rawUrl);
-    if (!preUrl || !/^https?:/.test(preUrl)) continue;
-    if (isDegradedLossless(q, preUrl)) {
-      console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(preUrl)}，跳过该档位`);
-      return null;
+  //    Baka 插件跳过此优化：预解析 qualities 不含 ekey/cek，加密音源必须走 getMediaSource 获取密钥
+  const isBaka = await isBakaPlugin(ctx.pluginSource);
+  if (!isBaka) {
+    const preKeys = Array.from(new Set([
+      nativeQuality,
+      bakaPluginQuality,
+      bakaLegacyQuality,
+      mfLegacyQuality,
+    ]));
+    for (const key of preKeys) {
+      const rawUrl = ctx.preQualities?.[key]?.url;
+      const preUrl = sanitizeMediaUrl(rawUrl);
+      if (!preUrl || !/^https?:/.test(preUrl)) continue;
+      if (isDegradedLossless(q, preUrl)) {
+        console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(preUrl)}，跳过该档位`);
+        return null;
+      }
+      return { quality: q, url: preUrl };
     }
-    return { quality: q, url: preUrl };
   }
 
-  // 2) 回退到插件 getMediaSource（传入 QualityKey，内部自动适配）
+  // 2) 调用插件 getMediaSource 获取直链（含 ekey/cek/headers 等加密音源信息）
   //    Baka 插件使用独立的 12 档音质方法，原版 MF 使用三档映射
-  const musicInfo = await isBakaPlugin(ctx.pluginSource)
+  const musicInfo = isBaka
     ? await pluginGetBakaMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q)
     : await pluginGetMusicInfo(ctx.pluginSource, ctx.pluginSearchResult, q);
   const url = sanitizeMediaUrl(musicInfo?.url);
@@ -351,7 +355,12 @@ async function resolvePluginAudioForQuality(
   let coverThumbPath = musicInfo?.coverUrl;
   if (includePlaybackExtras && !ctx.pluginSearchResult?.cover_thumb_path && !coverThumbPath) {
     try {
-      coverThumbPath = await pluginGetCover(ctx.pluginSource, ctx.pluginSearchResult) ?? undefined;
+      // 超时保护：封面获取不应阻塞播放起播，3 秒内未返回则放弃
+      const coverTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+      coverThumbPath = await Promise.race([
+        pluginGetCover(ctx.pluginSource, ctx.pluginSearchResult),
+        coverTimeout,
+      ]) ?? undefined;
     } catch { /* ignore cover error */ }
   }
 
@@ -749,6 +758,8 @@ async function downloadFromUrl(
   url: string,
   destPath: string,
   onProgress?: (percent: number) => void,
+  ekey?: string | null,
+  headers?: Record<string, string> | null,
 ): Promise<string> {
   // 监听 Rust 进度事件，驱动 onProgress 回调
   let unlisten: UnlistenFn | null = null;
@@ -761,7 +772,7 @@ async function downloadFromUrl(
   }
 
   try {
-    const filePath = await downloadApi.downloadOnlineSong(url, destPath);
+    const filePath = await downloadApi.downloadOnlineSong(url, destPath, ekey, headers);
     onProgress?.(100);
     return filePath;
   } finally {
@@ -838,11 +849,11 @@ export async function downloadSong(
     throw new Error('无法解析该歌曲的音源信息');
   }
 
-  /** 在当前协议下解析某个档位的直链 */
-  const resolveUrl = (q: LxQuality): Promise<string | null> =>
+  /** 在当前协议下解析某个档位的完整音源信息（含 ekey/headers） */
+  const resolveAudio = (q: LxQuality): Promise<ResolvedOnlineQualityUrl | null> =>
     isPlugin
-      ? resolvePluginUrlForQuality(ctx as PluginResolveContext, q)
-      : resolveUrlForQuality(ctx as ResolveDownloadContext, q);
+      ? resolvePluginAudioForQuality(ctx as PluginResolveContext, q)
+      : resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
 
   const candidates = ctx.candidates;
 
@@ -877,6 +888,14 @@ export async function downloadSong(
             const destPath = await resolveDownloadFullPath(song, playingUrl, q, options);
             try {
               await downloadApi.copyStreamCache(playingUrl, destPath);
+              // 缓存文件可能为 QMC2 加密数据（播放时由 QmcDecryptReader 流式解密，
+              // 缓存文件本身保持加密），复制后需原地解密才能正常播放/读取标签。
+              // song.remote_ekey 在搜索/详情页阶段已填充；若未填充则由 Rust 侧尝试从文件 footer 提取。
+              try {
+                await downloadApi.decryptQmcFile(destPath, song.remote_ekey);
+              } catch (decryptErr: any) {
+                console.warn(`[Download] 缓存文件解密失败:`, decryptErr?.message || decryptErr);
+              }
               options.onProgress?.(100);
               filePath = destPath;
               hitQuality = q;
@@ -893,18 +912,21 @@ export async function downloadSong(
       }
     }
 
-    let url: string;
+    let resolved: ResolvedOnlineQualityUrl | null;
     try {
       // 探测阶段已解析出该档位直链时直接复用，省掉一次插件请求。
-      // 探测与下载间隔通常只有几秒，直链仍在有效期内；
-      // 若已失效，下方 downloadFromUrl 会失败并自动回退到下一档位。
+      // 但 plugin:// 协议的 Baka 插件加密音源需要 ekey，preResolvedUrls 只有 URL 不含 ekey，
+      // 必须重新解析获取完整结果。LX 协议无加密，可直接复用 preResolvedUrls。
       const preResolved = options.preResolvedUrls?.[q];
-      const resolvedUrl = preResolved ?? await resolveUrl(q);
-      if (!resolvedUrl) {
+      if (preResolved && !isPlugin) {
+        resolved = { quality: q, url: preResolved };
+      } else {
+        resolved = await resolveAudio(q);
+      }
+      if (!resolved?.url) {
         errors.push(`${q}: 返回空链接`);
         continue;
       }
-      url = resolvedUrl;
     } catch (e: any) {
       const msg = typeof e === 'string' ? e : (e?.message || String(e));
       errors.push(`${q}: 解析失败 ${msg}`);
@@ -912,10 +934,10 @@ export async function downloadSong(
       continue;
     }
 
-    const destPath = await resolveDownloadFullPath(song, url, q, options);
+    const destPath = await resolveDownloadFullPath(song, resolved.url, q, options);
 
     try {
-      filePath = await downloadFromUrl(url, destPath, options.onProgress);
+      filePath = await downloadFromUrl(resolved.url, destPath, options.onProgress, resolved.ekey, resolved.headers);
       hitQuality = q;
       break;
     } catch (e: any) {
