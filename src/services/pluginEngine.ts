@@ -1529,6 +1529,12 @@ export async function pluginGetCover(
   source: PluginSource,
   item: PluginSearchResult,
 ): Promise<string | null> {
+  // Baka 插件：先确保实例加载，再委托给 BakaPluginManager
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getCover(source, item);
+  }
+
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 

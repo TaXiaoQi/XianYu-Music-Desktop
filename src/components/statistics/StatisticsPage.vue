@@ -6,7 +6,7 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
-import { fetchLeaderboard, type LeaderboardEntry } from '../../services/leaderboardService';
+import { fetchLeaderboard, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize, formatListenDuration } from '../../utils/format';
 
@@ -42,7 +42,16 @@ const TEXT = {
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
+const currentPeriod = ref<LeaderboardPeriod>('total');
 let leaderboardRequestId = 0;
+
+const periodLabel = computed(() => {
+  switch (currentPeriod.value) {
+    case 'daily': return '单日听歌时长排行';
+    case 'weekly': return '本周听歌时长排行';
+    default: return '累计听歌时长排行';
+  }
+});
 
 async function loadLeaderboard() {
   const requestId = ++leaderboardRequestId;
@@ -53,7 +62,7 @@ async function loadLeaderboard() {
   try {
     // 传递本地统计的听歌时长，先上报到后端再获取排行榜
     const localDuration = behaviorStats.value?.total_duration ?? 0;
-    const data = await fetchLeaderboard(50, localDuration);
+    const data = await fetchLeaderboard(50, localDuration, currentPeriod.value);
     if (requestId !== leaderboardRequestId) return;
     leaderboard.value = data.leaderboard;
     // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
@@ -71,6 +80,18 @@ async function loadLeaderboard() {
     }
   }
 }
+
+function switchPeriod(period: LeaderboardPeriod) {
+  if (currentPeriod.value === period) return;
+  currentPeriod.value = period;
+  void loadLeaderboard();
+}
+
+const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
+  { value: 'daily', label: '日榜' },
+  { value: 'weekly', label: '周榜' },
+  { value: 'total', label: '总榜' },
+];
 
 // 前15名 + 始终返回自己的排名（用于底部固定显示）
 const leaderboardDisplay = computed(() => {
@@ -267,15 +288,31 @@ const losslessRatio = computed(() => {
           <div class="flex items-end justify-between gap-3 flex-wrap mb-[clamp(0.5rem,1vw,0.875rem)]">
             <div>
               <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider">{{ TEXT.leaderboard }}</p>
-              <p class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light mt-1">{{ TEXT.leaderboardSubtitle }}</p>
+              <p class="text-black/50 dark:text-white/50 text-[clamp(0.7rem,0.9vw,0.8rem)] font-light mt-1">{{ periodLabel }}</p>
             </div>
-            <button
-              type="button"
-              class="text-[clamp(0.7rem,0.9vw,0.8rem)] text-black/60 dark:text-white/60 hover:text-[#EC4141] dark:hover:text-[#EC4141] font-medium transition cursor-pointer"
-              @click="loadLeaderboard"
-            >
-              刷新
-            </button>
+            <div class="flex items-center gap-2">
+              <!-- 周期切换 -->
+              <div class="leaderboard-period-tabs">
+                <button
+                  v-for="p in PERIOD_OPTIONS"
+                  :key="p.value"
+                  type="button"
+                  class="leaderboard-period-tab"
+                  :class="{ active: currentPeriod === p.value }"
+                  :disabled="leaderboardLoading"
+                  @click="switchPeriod(p.value)"
+                >
+                  {{ p.label }}
+                </button>
+              </div>
+              <button
+                type="button"
+                class="text-[clamp(0.7rem,0.9vw,0.8rem)] text-black/60 dark:text-white/60 hover:text-[#EC4141] dark:hover:text-[#EC4141] font-medium transition cursor-pointer"
+                @click="loadLeaderboard"
+              >
+                刷新
+              </button>
+            </div>
           </div>
 
           <!-- 加载骨架屏 -->
@@ -648,5 +685,56 @@ const losslessRatio = computed(() => {
 
 .dark .leaderboard-avatar {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ==================== 排行榜周期切换 ==================== */
+.leaderboard-period-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.dark .leaderboard-period-tabs {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.leaderboard-period-tab {
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.5);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.dark .leaderboard-period-tab {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.leaderboard-period-tab:hover:not(.active):not(:disabled) {
+  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.dark .leaderboard-period-tab:hover:not(.active):not(:disabled) {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.leaderboard-period-tab.active {
+  color: #fff;
+  background: #EC4141;
+  box-shadow: 0 1px 4px rgba(236, 65, 65, 0.3);
+}
+
+.leaderboard-period-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
