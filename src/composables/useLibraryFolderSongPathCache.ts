@@ -52,7 +52,6 @@ export function useLibraryFolderSongPathCache() {
       .getLibrarySongPathsForFolderView(folderPath, query, sortMode)
       .then((paths) => {
         folderViewPathCache.set(cacheKey, paths);
-        cacheVersion.value += 1;
         return paths;
       })
       .finally(() => {

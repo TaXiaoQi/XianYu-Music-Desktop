@@ -63,31 +63,14 @@ export function useHomeFolderManagement({
     return matchedRoots[0] || activeRootPath.value || null;
   };
 
-  const syncRootSelection = async (path: string | null, options: { forceRefresh?: boolean } = {}) => {
+  const syncRootSelection = (path: string | null) => {
     const normalizedPath = path || '';
-    const shouldRefresh =
-      !!normalizedPath && (
-        options.forceRefresh ||
-        activeRootPath.value !== normalizedPath ||
-        currentFolderFilter.value !== normalizedPath
-      );
-
     activeRootPath.value = path;
     currentFolderFilter.value = normalizedPath;
-
-    if (!shouldRefresh) {
-      return;
-    }
-
-    try {
-      await refreshFolder(normalizedPath);
-    } catch (error: any) {
-      showToast(`切换文件夹失败: ${error?.message || error}`, 'error');
-    }
   };
 
   const handleActiveRootChange = (path: string | null) => {
-    void syncRootSelection(path, { forceRefresh: true });
+    syncRootSelection(path);
   };
 
   watch(activeRootPath, (newPath, oldPath) => {
@@ -109,7 +92,7 @@ export function useHomeFolderManagement({
       return;
     }
 
-    void syncRootSelection(newPath);
+    syncRootSelection(newPath);
   });
 
   const requestCreateFolder = (parentPath: string) => {
@@ -184,9 +167,9 @@ export function useHomeFolderManagement({
       if (deletedRoot) {
         const nextRoot = libraryHierarchy.value[0]?.path || null;
         if (nextRoot) {
-          await syncRootSelection(nextRoot, { forceRefresh: true });
+          syncRootSelection(nextRoot);
         } else {
-          await syncRootSelection(null);
+          syncRootSelection(null);
           sourceSongs.value = [];
         }
       } else if (fallbackPath) {
@@ -220,12 +203,17 @@ export function useHomeFolderManagement({
   };
 
   const handleRefreshFolder = async () => {
+    console.log('[RefreshDebug] handleRefreshFolder CALLED', {
+      currentFolderFilter: currentFolderFilter.value,
+    });
     if (!currentFolderFilter.value) {
+      console.log('[RefreshDebug] handleRefreshFolder SKIP: currentFolderFilter is empty');
       return;
     }
 
     try {
       const summary = await refreshFolder(currentFolderFilter.value);
+      console.log('[RefreshDebug] handleRefreshFolder got summary', summary);
       // refreshFolder (libraryCoreActions) already calls fetchFolderTree when changes are detected
       if (summary && typeof summary === 'object' && 'removedCount' in summary) {
         const removedCount = Number(summary.removedCount) || 0;
@@ -240,6 +228,7 @@ export function useHomeFolderManagement({
 
       showToast('刷新成功', 'success');
     } catch (error: any) {
+      console.log('[RefreshDebug] handleRefreshFolder ERROR', error);
       showToast(`刷新失败: ${error?.message || error}`, 'error');
     }
   };
@@ -257,9 +246,9 @@ export function useHomeFolderManagement({
 
         if (wasActive) {
           if (libraryHierarchy.value.length > 0) {
-            await syncRootSelection(libraryHierarchy.value[0].path, { forceRefresh: true });
+            syncRootSelection(libraryHierarchy.value[0].path);
           } else {
-            await syncRootSelection(null);
+            syncRootSelection(null);
             sourceSongs.value = [];
           }
         }
