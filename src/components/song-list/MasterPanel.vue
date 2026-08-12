@@ -104,24 +104,12 @@ const {
   restoreScrollPosition: restoreTreeScrollPosition,
 } = useListScrollMemory(treeScrollMemoryKey, treeContainerRef);
 
-// Track which root folders have already been auto-loaded to prevent
-// refreshFolder → fetchFolderTree → folderTree change → watcher → refreshFolder infinite loop.
-const autoLoadedRootPaths = new Set<string>();
-let isAutoLoading = false;
-
 watch(
   folderTree,
-  async newTree => {
+  newTree => {
     if (newTree.length === 0) {
       activeRootPath.value = null;
       return;
-    }
-
-    // Clean up stale entries for roots that no longer exist
-    for (const path of autoLoadedRootPaths) {
-      if (!newTree.some(node => node.path === path)) {
-        autoLoadedRootPaths.delete(path);
-      }
     }
 
     if (!activeRootPath.value || !newTree.find(node => node.path === activeRootPath.value)) {
@@ -130,27 +118,6 @@ watch(
 
     if (!currentFolderFilter.value) {
       currentFolderFilter.value = activeRootPath.value;
-    }
-
-    const selectedRoot = newTree.find(node => node.path === activeRootPath.value);
-    if (
-      selectedRoot &&
-      selectedRoot.children.length === 0 &&
-      selectedRoot.song_count > 0 &&
-      !isAutoLoading &&
-      !autoLoadedRootPaths.has(selectedRoot.path)
-    ) {
-      isAutoLoading = true;
-      autoLoadedRootPaths.add(selectedRoot.path);
-      currentFolderFilter.value = selectedRoot.path;
-      try {
-        await refreshFolder(selectedRoot.path);
-      } catch (error) {
-        console.error('Failed to auto-load root folder songs:', error);
-        autoLoadedRootPaths.delete(selectedRoot.path);
-      } finally {
-        isAutoLoading = false;
-      }
     }
   },
   { immediate: true },

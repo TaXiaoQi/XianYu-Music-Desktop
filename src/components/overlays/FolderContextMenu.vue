@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties } from 'vue';
 
 import {
-  canUseFolderManagementAction,
   shouldShowFolderManagementActions,
 } from './folderContextMenuState';
 
@@ -103,7 +102,7 @@ const showManagementActions = computed(() =>
 );
 
 const canRemoveFromLibrary = computed(() =>
-  canUseFolderManagementAction(!!props.isManagementMode),
+  !!props.isRootFolder,
 );
 
 const emitIfAllowed = (
@@ -209,24 +208,25 @@ const motionDelay = (index: number): CSSProperties => ({
           <span>刷新文件夹内容</span>
         </div>
 
-        <template v-if="showManagementActions">
-          <div class="song-menu-divider" :style="motionDelay(8)"></div>
-          <div :class="sectionTitleClass" :style="motionDelay(9)">仅管理模式可用</div>
+        <button
+          v-if="isRootFolder"
+          type="button"
+          :class="canRemoveFromLibrary ? enabledItemClass : disabledItemClass"
+          :style="motionDelay(8)"
+          :disabled="!canRemoveFromLibrary"
+          @click="emitIfAllowed('remove', canRemoveFromLibrary)"
+        >
+          <div class="mr-3 flex h-5 w-5 items-center justify-center" :class="canRemoveFromLibrary ? 'text-gray-500 group-hover:text-gray-800' : 'text-gray-400'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" />
+            </svg>
+          </div>
+          <div class="min-w-0">从音乐库移除</div>
+        </button>
 
-          <button
-            type="button"
-            :class="canRemoveFromLibrary ? enabledItemClass : disabledItemClass"
-            :style="motionDelay(10)"
-            :disabled="!canRemoveFromLibrary"
-            @click="emitIfAllowed('remove', canRemoveFromLibrary)"
-          >
-            <div class="mr-3 flex h-5 w-5 items-center justify-center" :class="canRemoveFromLibrary ? 'text-gray-500 group-hover:text-gray-800' : 'text-gray-400'">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" />
-              </svg>
-            </div>
-            <div class="min-w-0">从音乐库移除</div>
-          </button>
+        <template v-if="showManagementActions">
+          <div class="song-menu-divider" :style="motionDelay(9)"></div>
+          <div :class="sectionTitleClass" :style="motionDelay(10)">仅管理模式可用</div>
 
           <button
             type="button"
