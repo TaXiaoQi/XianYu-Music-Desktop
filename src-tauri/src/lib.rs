@@ -82,7 +82,7 @@ use taskbar::{
 };
 use tauri::Manager;
 use toolbox::{
-    apply_rename, build_download_basename, check_update_by_rust, download_online_song,
+    apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
     download_update_file, download_wallpaper, delete_wallpaper_file, embed_audio_metadata, fetch_announcement,
     fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
     preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
@@ -295,6 +295,7 @@ pub fn run() {
             check_update_by_rust,
             download_update_file,
             download_online_song,
+            decrypt_qmc_file,
             download_wallpaper,
             delete_wallpaper_file,
             probe_url_size,

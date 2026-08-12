@@ -800,8 +800,12 @@ export interface TauriCommandMap {
     response: string;
   };
   download_online_song: {
-    payload: { url: string; destPath: string };
+    payload: { url: string; destPath: string; ekey: string | null; headers: Record<string, string> | null };
     response: string;
+  };
+  decrypt_qmc_file: {
+    payload: { filePath: string; ekey: string | null };
+    response: boolean;
   };
   finalize_download_extras: {
     payload: { request: FinalizeDownloadExtrasRequestContract };

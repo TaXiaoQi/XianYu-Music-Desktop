@@ -781,12 +781,18 @@ pub struct SongDownloadProgress {
 /// 下载在线歌曲的真实音源直链到指定目标路径（流式写入 + 进度回报）。
 ///
 /// 前端负责解析音源直链、计算最终目标文件路径（含扩展名与命名冲突处理），
-/// 此命令只负责下载与写盘，进度通过 `song-download-progress` 事件回报。
+/// 此命令负责下载、写盘、以及 QMC2 解密（若提供 ekey），进度通过 `song-download-progress` 事件回报。
+///
+/// 新增参数：
+/// - `ekey`: QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2）。提供时下载后自动解密。
+/// - `headers`: 自定义请求头（防盗链 Cookie/Referer 等）。
 #[tauri::command]
 pub async fn download_online_song(
     app_handle: tauri::AppHandle,
     url: String,
     dest_path: String,
+    ekey: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
     use std::time::Instant;
     use tauri::Emitter;
@@ -813,6 +819,15 @@ pub async fn download_online_song(
         );
         if with_range {
             builder = builder.header("Range", "bytes=0-");
+        }
+        // 透传插件返回的自定义请求头（防盗链 Cookie/Referer/Origin 等）
+        if let Some(ref hdrs) = headers {
+            for (key, value) in hdrs {
+                if key.eq_ignore_ascii_case("accept") || key.eq_ignore_ascii_case("range") {
+                    continue;
+                }
+                builder = builder.header(key.as_str(), value.as_str());
+            }
         }
         builder.send()
     };
@@ -905,6 +920,35 @@ pub async fn download_online_song(
         ));
     }
 
+    // QMC2 解密：若提供了 ekey，下载的文件是 QMC2 加密数据，需要解密后才能播放/读取标签。
+    // 解密在原地完成：读取加密文件 -> 逐块解密 -> 覆盖写回。
+    // 若未提供 ekey 但文件头看起来像 QMC 加密，尝试从文件尾部提取 ekey（QTag/V1 footer）。
+    if let Some(ref ek) = ekey {
+        if !ek.is_empty() {
+            eprintln!("[Download] 检测到 ekey (长度: {})，开始 QMC2 解密: {}", ek.len(), dest.display());
+            match decrypt_qmc_file_inplace(&dest, ek) {
+                Ok(decrypted_size) => {
+                    eprintln!("[Download] QMC2 解密成功，解密后大小: {} bytes", decrypted_size);
+                }
+                Err(e) => {
+                    eprintln!("[Download] QMC2 解密失败: {}，文件可能已损坏或 ekey 不匹配", e);
+                    return Err(format!("QMC2 解密失败: {e}"));
+                }
+            }
+        }
+    } else if let Some(extracted_ekey) = try_extract_ekey_from_file(&dest) {
+        eprintln!("[Download] 从文件 footer 提取到 ekey (长度: {})，开始 QMC2 解密", extracted_ekey.len());
+        match decrypt_qmc_file_inplace(&dest, &extracted_ekey) {
+            Ok(decrypted_size) => {
+                eprintln!("[Download] QMC2 解密成功（footer ekey），解密后大小: {} bytes", decrypted_size);
+            }
+            Err(e) => {
+                eprintln!("[Download] QMC2 解密失败（footer ekey）: {}", e);
+                return Err(format!("QMC2 解密失败（footer ekey）: {e}"));
+            }
+        }
+    }
+
     // 发送最终 100% 进度，确保前端收到完成状态
     let elapsed = start_time.elapsed().as_secs_f64();
     let speed = if elapsed > 0.0 {
@@ -927,6 +971,124 @@ pub async fn download_online_song(
     );
 
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// 从文件尾部提取 QMC ekey（QTag/V1 footer 格式）。
+/// 返回 base64 编码的 ekey 字符串，若文件不含 footer 则返回 None。
+fn try_extract_ekey_from_file(path: &Path) -> Option<String> {
+    let metadata = fs::metadata(path).ok()?;
+    let file_size = metadata.len();
+    if file_size < 8 {
+        return None;
+    }
+
+    // 只读取文件尾部 4KB 用于检测 footer
+    let tail_size = (file_size.min(4096)) as usize;
+    let mut file = fs::File::open(path).ok()?;
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(file_size - tail_size as u64)).ok()?;
+    let mut tail = vec![0u8; tail_size];
+    file.read_exact(&mut tail).ok()?;
+
+    crate::player::qmc2::extract_ekey_from_footer(&tail)
+}
+
+/// 原地解密 QMC2 加密文件：读取加密内容，逐块解密，覆盖写回。
+/// 返回解密后的文件大小（字节）。
+fn decrypt_qmc_file_inplace(path: &Path, ekey: &str) -> Result<u64, String> {
+    use std::io::{Read, Write};
+
+    let crypto = crate::player::qmc2::QmcCrypto::from_ekey(ekey)
+        .map_err(|e| format!("ekey 解析失败: {e}"))?;
+
+    let file_size = fs::metadata(path)
+        .map_err(|e| format!("读取文件元数据失败: {e}"))?
+        .len();
+
+    // 使用临时文件写入解密数据，完成后原子替换原文件
+    let temp_path = path.with_extension("qmc_tmp_dec");
+
+    {
+        let mut input = fs::File::open(path)
+            .map_err(|e| format!("打开加密文件失败: {e}"))?;
+        let mut output = fs::File::create(&temp_path)
+            .map_err(|e| format!("创建临时解密文件失败: {e}"))?;
+
+        let mut offset: u64 = 0;
+        let mut buf = vec![0u8; 64 * 1024]; // 64KB chunks
+
+        loop {
+            let n = input.read(&mut buf)
+                .map_err(|e| format!("读取加密数据失败: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            crypto.decrypt(offset as usize, &mut buf[..n]);
+            output.write_all(&buf[..n])
+                .map_err(|e| format!("写入解密数据失败: {e}"))?;
+            offset += n as u64;
+        }
+
+        output.flush()
+            .map_err(|e| format!("刷新解密文件失败: {e}"))?;
+    }
+
+    // 原子替换：重命名临时文件为原文件
+    fs::rename(&temp_path, path)
+        .map_err(|e| {
+            let _ = fs::remove_file(&temp_path);
+            format!("替换原文件失败: {e}")
+        })?;
+
+    // 返回解密后文件大小（QTag/V1 footer 会被移除，但 QmcCrypto::decrypt 不处理 footer 移除，
+    // 解密后的文件包含原始音频数据 + footer 垃圾字节。
+    // 实际上 QMC2 的 footer 在解密后仍存在但已被破坏，音频播放器通常能忽略尾部垃圾。
+    // 若需要精确裁剪，可在此处检测并截断 footer。）
+    Ok(file_size)
+}
+
+/// 原地解密 QMC2 加密文件（用于缓存复用路径）。
+///
+/// 当 ekey 已知时直接使用；否则尝试从文件尾部 footer 提取 ekey。
+/// 若文件不含 QMC 加密特征（无 ekey、无 footer），返回 Ok(false) 表示无需解密。
+#[tauri::command]
+pub fn decrypt_qmc_file(
+    file_path: String,
+    ekey: Option<String>,
+) -> Result<bool, String> {
+    let validated = path_validator::validate_path(&file_path, None)?;
+    let path = validated;
+
+    if !path.is_file() {
+        return Err(format!("文件不存在: {}", path.display()));
+    }
+
+    let actual_ekey = if let Some(ref ek) = ekey {
+        if !ek.is_empty() {
+            Some(ek.clone())
+        } else {
+            try_extract_ekey_from_file(&path)
+        }
+    } else {
+        try_extract_ekey_from_file(&path)
+    };
+
+    if let Some(ek) = actual_ekey {
+        eprintln!("[Decrypt] 开始 QMC2 解密（ekey 长度: {}）: {}", ek.len(), path.display());
+        match decrypt_qmc_file_inplace(&path, &ek) {
+            Ok(decrypted_size) => {
+                eprintln!("[Decrypt] QMC2 解密成功，解密后大小: {} bytes", decrypted_size);
+                Ok(true)
+            }
+            Err(e) => {
+                eprintln!("[Decrypt] QMC2 解密失败: {}", e);
+                Err(format!("QMC2 解密失败: {e}"))
+            }
+        }
+    } else {
+        // 无 ekey 且文件不含 QMC footer，可能是非加密音源，无需解密
+        Ok(false)
+    }
 }
 
 /// 保存歌词文本到指定文件（用于下载歌曲时一并保存歌词）。

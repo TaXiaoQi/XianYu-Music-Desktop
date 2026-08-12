@@ -53,9 +53,26 @@ export const downloadApi = {
 
   // ===== 下载执行 =====
 
-  /** 使用 Rust reqwest 流式下载在线歌曲到目标路径 */
-  downloadOnlineSong: (url: string, destPath: string) =>
-    tauriInvoke('download_online_song', { url, destPath }) as Promise<string>,
+  /** 使用 Rust reqwest 流式下载在线歌曲到目标路径（支持 QMC2 解密和自定义请求头） */
+  downloadOnlineSong: (
+    url: string,
+    destPath: string,
+    ekey?: string | null,
+    headers?: Record<string, string> | null,
+  ) =>
+    tauriInvoke('download_online_song', {
+      url,
+      destPath,
+      ekey: ekey || null,
+      headers: headers || null,
+    }) as Promise<string>,
+
+  /** 原地解密 QMC2 加密文件（用于缓存复用路径：复制播放缓存后解密） */
+  decryptQmcFile: (filePath: string, ekey?: string | null) =>
+    tauriInvoke('decrypt_qmc_file', {
+      filePath,
+      ekey: ekey || null,
+    }) as Promise<boolean>,
 
   /** 下载后收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入（单次 IPC） */
   finalizeDownloadExtras: (request: FinalizeDownloadExtrasRequestContract) =>
