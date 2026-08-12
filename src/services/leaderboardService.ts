@@ -12,9 +12,13 @@
 
 import { signedRequest } from './auth/authService';
 import { getCiyuanxiId } from './playlistSync';
+import { statisticsApi } from './tauri/statisticsApi';
 
 /** 日志前缀 */
 const LOG = '[Leaderboard]';
+
+/** localStorage 键名，存储最近一次服务端重置时间戳 */
+const RESET_AT_KEY = 'listen_stats_last_reset_at';
 
 /** 排行榜样条目 */
 export interface LeaderboardEntry {
@@ -41,19 +45,21 @@ export interface LeaderboardData {
 /**
  * 上报本地听歌时长到后端（report_listen_stats）
  * 后端采用「最大值覆盖」策略，只增不减。
+ * 如果服务端存在待处理的重置信号，会返回 reset_at 时间戳。
  *
  * @param listenDuration 本地累计听歌时长（秒）
  * @param uniqueSongsCount 本地累计聆听新歌数（可选）
+ * @returns 服务端返回的 data，可能包含 reset_at 字段
  */
 async function reportListenDuration(
   listenDuration: number,
   uniqueSongsCount = 0,
-): Promise<void> {
+): Promise<{ reset_at?: string } | null> {
   const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId || listenDuration <= 0) return;
+  if (!ciyuanxiId || listenDuration <= 0) return null;
 
   try {
-    await signedRequest('report_listen_stats', {
+    const data = await signedRequest<{ reset_at?: string }>('report_listen_stats', {
       ciyuanxi_id: ciyuanxiId,
       duration: Math.floor(listenDuration),
       unique_songs_count: uniqueSongsCount,
@@ -62,10 +68,28 @@ async function reportListenDuration(
       timeoutMs: 10_000,
     });
     console.log(`${LOG} 上报听歌时长成功: ${Math.floor(listenDuration)}秒`);
+    return data ?? null;
   } catch (e) {
     // 上报失败不阻断排行榜获取
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`${LOG} 上报听歌时长失败（不影响排行榜获取）: ${msg}`);
+    return null;
+  }
+}
+
+/**
+ * 检查服务端是否下发了重置信号，如果是则清空本地统计数据
+ */
+async function handleResetSignal(resetAt: string): Promise<void> {
+  try {
+    console.log(`${LOG} 检测到服务端重置信号: ${resetAt}，清空本地统计数据...`);
+    await statisticsApi.resetLocalStatistics();
+    // 记录已处理的重置时间戳，避免重复处理
+    localStorage.setItem(RESET_AT_KEY, resetAt);
+    console.log(`${LOG} 本地统计数据已重置`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`${LOG} 重置本地统计数据失败: ${msg}`);
   }
 }
 
@@ -90,7 +114,16 @@ export async function fetchLeaderboard(
 
   // 只有登录用户才上报个人听歌时长；公共排行榜无需登录即可获取。
   if (ciyuanxiId && localDuration && localDuration > 0) {
-    await reportListenDuration(localDuration);
+    const result = await reportListenDuration(localDuration);
+    // 检查是否有服务端下发的重置信号
+    if (result?.reset_at) {
+      const lastResetAt = localStorage.getItem(RESET_AT_KEY);
+      if (!lastResetAt || result.reset_at > lastResetAt) {
+        await handleResetSignal(result.reset_at);
+        // 重置后重新上报（此时本地数据已清零，上报 0 确保服务端同步）
+        await reportListenDuration(0, 0);
+      }
+    }
   }
 
   try {

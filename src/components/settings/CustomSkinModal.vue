@@ -642,6 +642,7 @@ const handleWallpaperSelect = async (localPath: string) => {
 
     <WallpaperGallery
       v-if="showWallpaperGallery"
+      :current-path="preview.imagePath"
       @close="showWallpaperGallery = false"
       @select="handleWallpaperSelect"
     />

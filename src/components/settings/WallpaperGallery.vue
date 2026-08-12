@@ -3,6 +3,10 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue';
 import { getStoredAuth, signedRequest } from '../../services/auth/authService';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 
+const props = defineProps<{
+  currentPath?: string;
+}>();
+
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'select', localPath: string): void;
@@ -72,6 +76,18 @@ const myError = ref('');
 const downloadedWallpapers = ref<DownloadedWallpaper[]>([]);
 const selectedDownloadIds = ref<number[]>([]);
 const deletingDownloads = ref(false);
+const showBatchOps = ref(false);
+
+/** 判断某个本地壁纸是否正在被使用 */
+const isCurrentWallpaper = (localPath: string) => {
+  return !!props.currentPath && props.currentPath === localPath;
+};
+
+/** 判断某个在线壁纸（通过 id）是否已被下载且正在使用 */
+const isWallpaperInUse = (id: number) => {
+  const record = downloadedRecord(id);
+  return !!record && isCurrentWallpaper(record.localPath);
+};
 
 // 上传相关
 const showUploadModal = ref(false);
@@ -175,6 +191,7 @@ const uploaderLabel = (wallpaper: Wallpaper) => {
 
 const switchTab = (tab: WallpaperTab) => {
   activeTab.value = tab;
+  showBatchOps.value = false;
   if (tab === 'mine' && isLoggedIn.value && myWallpapers.value.length === 0 && !myError.value) {
     fetchMyWallpapers();
   }
@@ -425,11 +442,11 @@ onBeforeUnmount(() => {
       :class="{ 'is-closing': isClosing }"
     >
       <div
-        class="wallpaper-card flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
+        class="wallpaper-card flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-white shadow-2xl backdrop-blur-md"
         :class="{ 'is-closing': isClosing }"
       >
         <!-- 头部 -->
-        <div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
+        <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3">
           <div class="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#EC4141]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -446,8 +463,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- 标签栏 + 上传按钮 -->
-        <div class="flex items-center justify-between border-b border-white/10 px-6 py-2.5">
+        <!-- 标签栏 + 右侧操作 -->
+        <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-2">
           <div class="flex gap-1">
             <button
               @click="switchTab('browse')"
@@ -470,6 +487,51 @@ onBeforeUnmount(() => {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             上传壁纸
           </button>
+          <!-- 批量管理（仅"我的下载"标签显示） -->
+          <div v-if="activeTab === 'downloads' && downloadedWallpapers.length > 0" class="relative">
+            <button
+              @click="showBatchOps = !showBatchOps"
+              class="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-white/10"
+              :class="{ 'bg-white/15': showBatchOps }"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18M7 6V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              </svg>
+              <span>批量管理</span>
+              <span v-if="selectedDownloadIds.length" class="rounded-full bg-[#EC4141] px-1.5 text-[10px] text-white">{{ selectedDownloadIds.length }}</span>
+            </button>
+            <!-- 点击外部关闭 dropdown -->
+            <div v-if="showBatchOps" class="fixed inset-0 z-[19]" @click="showBatchOps = false"></div>
+            <!-- 展开的操作面板 -->
+            <div
+              v-if="showBatchOps"
+              class="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-xl border border-white/15 bg-neutral-900/95 py-1 shadow-2xl backdrop-blur-md"
+            >
+              <button
+                @click="selectAllDownloads"
+                class="flex w-full items-center gap-2 px-4 py-2 text-xs text-white/80 transition hover:bg-white/10"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                全选
+              </button>
+              <button
+                @click="clearDownloadSelection"
+                class="flex w-full items-center gap-2 px-4 py-2 text-xs text-white/80 transition hover:bg-white/10"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                取消选择
+              </button>
+              <div class="my-1 border-t border-white/10"></div>
+              <button
+                @click="deleteSelectedDownloads"
+                :disabled="selectedDownloadIds.length === 0 || deletingDownloads"
+                class="flex w-full items-center gap-2 px-4 py-2 text-xs text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                {{ deletingDownloads ? '删除中…' : '删除所选' }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- 未登录提示（我的上传） -->
@@ -481,7 +543,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 内容区 -->
-        <div v-else class="h-[60vh] overflow-y-auto p-6">
+        <div v-else class="min-h-0 flex-1 overflow-y-auto p-4">
           <!-- ====== 浏览：加载中 ====== -->
           <div v-if="activeTab === 'browse' && isLoading" class="flex flex-col items-center justify-center py-20 text-white/40">
             <svg class="mb-3 h-8 w-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -509,38 +571,40 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- ====== 浏览：壁纸网格 ====== -->
-          <div v-else-if="activeTab === 'browse'" class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          <div v-else-if="activeTab === 'browse'" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             <div
               v-for="wallpaper in wallpapers"
               :key="wallpaper.id"
-              class="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 transition-all hover:border-[#EC4141]/50 hover:shadow-[0_0_15px_rgba(236,65,65,0.25)]"
+              class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
+              :class="isWallpaperInUse(wallpaper.id) ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 hover:border-[#EC4141]/50 hover:shadow-[0_0_15px_rgba(236,65,65,0.25)]'"
             >
-              <div class="aspect-[16/10] w-full overflow-hidden">
+              <div class="aspect-[3/2] w-full overflow-hidden">
                 <img :src="wallpaper.thumbnailUrl || wallpaper.imageUrl" :alt="wallpaper.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
               </div>
-              <!-- 上传者 ID 徽标 -->
-              <div class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
-                {{ uploaderLabel(wallpaper) }}
+              <div v-if="isWallpaperInUse(wallpaper.id)" class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                正在使用
               </div>
-              <div v-if="isDownloaded(wallpaper.id)" class="absolute left-2 top-2 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+              <div v-else-if="isDownloaded(wallpaper.id)" class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
                 已下载
-              </div>
-              <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/85 via-black/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                <div class="p-3">
-                  <h3 class="truncate text-sm font-semibold">{{ wallpaper.title }}</h3>
-                  <p class="mt-0.5 truncate text-[11px] text-white/50">上传者：{{ uploaderLabel(wallpaper) }}</p>
-                  <p v-if="wallpaper.description" class="mt-0.5 line-clamp-2 text-xs text-white/60">{{ wallpaper.description }}</p>
-                  <button @click="downloadAndUse(wallpaper)" :disabled="downloadingId !== null" class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60">
-                    <span v-if="downloadingId === wallpaper.id">下载中…</span>
-                    <span v-else>{{ isDownloaded(wallpaper.id) ? '使用已下载' : '下载并使用' }}</span>
-                  </button>
-                </div>
               </div>
               <div v-if="downloadingId === wallpaper.id" class="absolute inset-0 flex items-center justify-center bg-black/50">
                 <svg class="h-6 w-6 animate-spin text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
+              </div>
+              <div class="p-2.5">
+                <h3 class="truncate text-sm font-semibold">{{ wallpaper.title }}</h3>
+                <p class="mt-0.5 truncate text-[11px] text-white/50">上传者：{{ uploaderLabel(wallpaper) }}</p>
+                <p v-if="wallpaper.description" class="mt-0.5 line-clamp-2 text-xs text-white/60">{{ wallpaper.description }}</p>
+                <div v-if="isWallpaperInUse(wallpaper.id)" class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300">
+                  当前正在使用
+                </div>
+                <button v-else @click="downloadAndUse(wallpaper)" :disabled="downloadingId !== null" class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60">
+                  <span v-if="downloadingId === wallpaper.id">下载中…</span>
+                  <span v-else>{{ isDownloaded(wallpaper.id) ? '使用已下载' : '下载并使用' }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -570,29 +634,36 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- ====== 我的上传：网格 ====== -->
-          <div v-else-if="activeTab === 'mine'" class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          <div v-else-if="activeTab === 'mine'" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             <div
               v-for="wp in myWallpapers"
               :key="wp.id"
-              class="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 transition-all"
-              :class="wp.status === 'normal' ? 'hover:border-[#EC4141]/50' : ''"
+              class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
+              :class="isWallpaperInUse(wp.id) ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : wp.status === 'normal' ? 'border-white/10 hover:border-[#EC4141]/50' : 'border-white/10'"
             >
-              <div class="aspect-[16/10] w-full overflow-hidden">
+              <div class="aspect-[3/2] w-full overflow-hidden">
                 <img :src="wp.thumbnailUrl || wp.imageUrl" :alt="wp.title" loading="eager" class="h-full w-full object-cover" :class="wp.status === 'rejected' || wp.status === 'disabled' ? 'opacity-50 grayscale' : ''" />
               </div>
               <!-- 状态徽标 -->
               <div class="absolute left-2 top-2">
                 <span :class="['rounded-full px-2 py-0.5 text-[10px] font-medium backdrop-blur-sm', statusMeta(wp.status).cls]">{{ statusMeta(wp.status).text }}</span>
               </div>
-              <div class="p-3">
+              <!-- 正在使用 徽标 -->
+              <div v-if="isWallpaperInUse(wp.id)" class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                正在使用
+              </div>
+              <div class="p-2.5">
                 <h3 class="truncate text-sm font-semibold">{{ wp.title }}</h3>
                 <p v-if="wp.status === 'pending'" class="mt-1 text-[11px] text-amber-300/80">等待管理员审核</p>
                 <p v-else-if="wp.status === 'rejected'" class="mt-1 text-[11px] text-red-300/80">审核未通过</p>
                 <p v-else-if="wp.status === 'normal'" class="mt-1 text-[11px] text-green-300/80">已通过审核，壁纸中心可见</p>
                 <p v-else-if="wp.status === 'disabled'" class="mt-1 text-[11px] text-gray-300/60">已被管理员禁用</p>
-                <p v-if="wp.status === 'normal' && isDownloaded(wp.id)" class="mt-1 text-[11px] text-sky-300/80">已下载到本地</p>
+                <div v-if="isWallpaperInUse(wp.id)" class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300">
+                  当前正在使用
+                </div>
                 <button
-                  v-if="wp.status === 'normal'"
+                  v-else-if="wp.status === 'normal'"
                   @click="downloadAndUse(wp)"
                   :disabled="downloadingId !== null"
                   class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-60"
@@ -613,44 +684,43 @@ onBeforeUnmount(() => {
               <span class="text-sm">还没有下载过壁纸</span>
             </div>
             <template v-else>
-              <div class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                <div class="text-xs text-white/50">
-                  已保存 {{ downloadedWallpapers.length }} 张，已选择 {{ selectedDownloadIds.length }} 张
-                </div>
-                <div class="flex gap-2">
-                  <button @click="selectAllDownloads" class="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70 transition hover:bg-white/10">全选</button>
-                  <button @click="clearDownloadSelection" class="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70 transition hover:bg-white/10">取消选择</button>
-                  <button
-                    @click="deleteSelectedDownloads"
-                    :disabled="selectedDownloadIds.length === 0 || deletingDownloads"
-                    class="rounded-full bg-[#EC4141] px-3 py-1 text-xs font-medium text-white transition hover:bg-[#d13a3a] disabled:cursor-not-allowed disabled:opacity-50"
-                  >{{ deletingDownloads ? '删除中…' : '删除所选' }}</button>
-                </div>
-              </div>
-              <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+              <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                 <div
                   v-for="item in downloadedWallpapers"
                   :key="item.id"
                   class="group relative overflow-hidden rounded-xl border bg-white/5 transition-all"
-                  :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141]/70 shadow-[0_0_15px_rgba(236,65,65,0.2)]' : 'border-white/10 hover:border-[#EC4141]/50'"
+                  :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141]/70 shadow-[0_0_15px_rgba(236,65,65,0.2)]' : isCurrentWallpaper(item.localPath) ? 'border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'border-white/10 hover:border-[#EC4141]/50'"
                 >
+                  <!-- 正在使用 徽标 -->
+                  <div v-if="isCurrentWallpaper(item.localPath)" class="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-green-500/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    正在使用
+                  </div>
+                  <!-- 批量选择 checkbox（仅展开批量管理时显示） -->
                   <button
+                    v-if="showBatchOps"
                     @click.stop="toggleDownloadSelection(item.id)"
                     class="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border backdrop-blur-sm transition"
                     :class="selectedDownloadIds.includes(item.id) ? 'border-[#EC4141] bg-[#EC4141] text-white' : 'border-white/30 bg-black/45 text-transparent hover:text-white'"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
                   </button>
-                  <div class="aspect-[16/10] w-full overflow-hidden">
+                  <div class="aspect-[3/2] w-full overflow-hidden">
                     <img :src="item.thumbnailUrl || item.imageUrl" :alt="item.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                   </div>
-                  <div class="p-3">
+                  <div class="p-2.5">
                     <h3 class="truncate text-sm font-semibold">{{ item.title }}</h3>
                     <p class="mt-1 truncate text-[11px] text-white/50">上传者：{{ uploaderLabel(item) }}</p>
-                    <p class="mt-1 truncate text-[11px] text-white/35">本地：{{ item.localPath }}</p>
-                    <button @click="useDownloadedWallpaper(item)" class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a]">
+                    <button
+                      v-if="!isCurrentWallpaper(item.localPath)"
+                      @click="useDownloadedWallpaper(item)"
+                      class="mt-2 w-full rounded-full bg-[#EC4141] py-1.5 text-xs font-medium text-white transition hover:bg-[#d13a3a]"
+                    >
                       使用此壁纸
                     </button>
+                    <div v-else class="mt-2 w-full rounded-full bg-green-500/15 py-1.5 text-center text-xs font-medium text-green-300">
+                      当前正在使用
+                    </div>
                   </div>
                 </div>
               </div>
@@ -664,7 +734,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 底部说明 -->
-        <div class="border-t border-white/10 px-6 py-3 text-center text-[11px] text-white/30">
+        <div class="shrink-0 border-t border-white/10 px-5 py-2 text-center text-[11px] text-white/30">
           <template v-if="activeTab === 'browse'">点击「下载并使用」将保存到本地，已下载壁纸会直接复用，避免重复下载</template>
           <template v-else-if="activeTab === 'mine'">用户上传的壁纸需经管理员审核通过后才会展示在壁纸中心</template>
           <template v-else>我的下载支持多选删除；删除只影响本机已保存的壁纸文件</template>

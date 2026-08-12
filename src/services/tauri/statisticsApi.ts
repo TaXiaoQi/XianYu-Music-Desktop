@@ -40,4 +40,7 @@ export const statisticsApi = {
     tauriInvoke('get_quality_distribution'),
   getFormatDistribution: (): Promise<FormatDistribution> =>
     tauriInvoke('get_format_distribution'),
+  /** 重置所有本地听歌统计数据（播放历史、聚合统计等），从零开始 */
+  resetLocalStatistics: (): Promise<void> =>
+    tauriInvoke('reset_local_statistics'),
 };

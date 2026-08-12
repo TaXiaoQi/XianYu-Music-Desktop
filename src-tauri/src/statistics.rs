@@ -2373,6 +2373,18 @@ pub fn clear_recent_history(db: State<DbState>) -> Result<(), String> {
     Ok(())
 }
 
+/// 重置所有本地听歌统计数据（包括播放历史、聚合统计等），从零开始
+#[tauri::command]
+pub fn reset_local_statistics(db: State<DbState>) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    // 清空所有播放历史
+    conn.execute("DELETE FROM play_history", [])
+        .map_err(|e| e.to_string())?;
+    // 清空聚合统计
+    clear_aggregate_statistics(&conn)?;
+    Ok(())
+}
+
 /// 记录一次播放事件（通过 song_path 查找 song_id）
 #[tauri::command]
 pub fn record_play(db: State<DbState>, payload: RecordPlayPayload) -> Result<(), String> {
