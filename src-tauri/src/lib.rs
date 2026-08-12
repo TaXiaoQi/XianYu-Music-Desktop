@@ -74,6 +74,7 @@ use statistics::{
     get_recent_history, get_recent_playlist_catalog, get_recent_song_paths_view,
     import_recent_history, import_statistics_file, preview_statistics_import, record_play,
     remove_from_recent_history, remove_songs_from_history_and_statistics,
+    reset_local_statistics,
 };
 use system_fonts::get_system_fonts;
 use taskbar::{
@@ -252,6 +253,7 @@ pub fn run() {
             remove_from_recent_history,
             remove_songs_from_history_and_statistics,
             clear_recent_history,
+            reset_local_statistics,
             get_behavior_stats,
             get_quality_distribution,
             get_format_distribution,
