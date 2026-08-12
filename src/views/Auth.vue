@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 
@@ -865,7 +865,84 @@ onMounted(async () => {
   } catch {
     nicknameStatus.value = 'none';
   }
+  // 启动定时轮询审核状态
+  startPolling();
 });
+
+onUnmounted(() => {
+  stopPolling();
+});
+
+// 定时轮询审核状态：当头像/昵称审核通过后自动更新
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+const POLL_INTERVAL = 30000; // 30秒
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    // 用户未登录或不在审核中则跳过
+    if (!authStore.isLoggedIn) return;
+    if (avatarStatus.value !== 'pending' && nicknameStatus.value !== 'pending') {
+      // 没有待审核项，降低轮询频率（每120秒一次）
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(silentPoll, 120000);
+      }
+      return;
+    }
+    await silentPoll();
+  }, POLL_INTERVAL);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+async function silentPoll() {
+  try {
+    const [avatarSt, nicknameSt] = await Promise.all([
+      getAvatarStatus().catch(() => 'none' as const),
+      getNicknameStatus().catch(() => 'none' as const),
+    ]);
+    const prevAvatar = avatarStatus.value;
+    const prevNickname = nicknameStatus.value;
+    avatarStatus.value = avatarSt;
+    nicknameStatus.value = nicknameSt;
+
+    // 检测状态变化：从 pending 变为 approved
+    if (prevAvatar === 'pending' && avatarSt === 'none') {
+      const profile = await getProfile();
+      if (profile) {
+        authStore.setUser(profile.user);
+        avatarDraft.value = profile.user.avatar || '';
+      }
+      showToast('头像已更新', 'success');
+    }
+    if (prevNickname === 'pending' && nicknameSt === 'none') {
+      const profile = await getProfile();
+      if (profile) {
+        authStore.setUser(profile.user);
+        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
+      }
+      showToast('用户名已更新', 'success');
+    }
+    // 如果两边都变为 none，只拉一次 profile
+    if (prevAvatar === 'pending' && prevNickname === 'pending' && avatarSt === 'none' && nicknameSt === 'none') {
+      const profile = await getProfile();
+      if (profile) {
+        authStore.setUser(profile.user);
+        avatarDraft.value = profile.user.avatar || '';
+        nicknameDraft.value = profile.user.nickname || profile.user.username || '';
+      }
+      showToast('头像和用户名已更新', 'success');
+    }
+  } catch {
+    // 静默失败，不影响用户体验
+  }
+}
 </script>
 
 <template>
