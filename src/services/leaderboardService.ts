@@ -69,6 +69,9 @@ async function reportListenDuration(
   }
 }
 
+/** 排行榜时间周期 */
+export type LeaderboardPeriod = 'daily' | 'weekly' | 'total';
+
 /**
  * 获取听歌排行榜
  *
@@ -76,10 +79,12 @@ async function reportListenDuration(
  *
  * @param limit 返回的排行数量，默认 50
  * @param localDuration 本地统计的听歌时长（秒），上报到后端用于排行榜
+ * @param period 排行榜时间周期：daily（日榜）、weekly（周榜）、total（总榜），默认 total
  */
 export async function fetchLeaderboard(
   limit = 50,
   localDuration?: number,
+  period: LeaderboardPeriod = 'total',
 ): Promise<LeaderboardData> {
   const ciyuanxiId = getCiyuanxiId();
 
@@ -107,9 +112,11 @@ export async function fetchLeaderboard(
         is_me: boolean;
       } | null;
       total_users: number;
+      period?: string;
     }>('get_leaderboard', {
       ...(ciyuanxiId ? { ciyuanxi_id: ciyuanxiId } : {}),
       limit,
+      period,
     }, {
       fetchTimeoutMs: 12_000,
       timeoutMs: 15_000,
