@@ -67,6 +67,8 @@ const previewDownloadQualityOptions = ref<Array<{ label: string; value: Download
 provide('footerContext', {
   currentSong: previewCurrentSong,
   showPlayerDetail: previewShowPlayerDetail,
+  footerQualityExtraText: (_qualityKey: QualityKey) => '',
+  isFooterQualityInfoProbing: ref(false),
   isFavorite: () => false,
   toggleFavorite: () => {},
   isOnlineSong: ref(true),
@@ -76,7 +78,7 @@ provide('footerContext', {
   downloadButtonTitle: ref('下载歌曲'),
   showDownloadQualityMenu: ref(false),
   DOWNLOAD_QUALITY_OPTIONS: previewDownloadQualityOptions,
-  selectedDownloadQuality: previewDownloadQuality,
+  activeDownloadQualityKey: previewDownloadQuality,
   startDownload: async () => {},
   downloadQualityButtonRef: previewElementRef,
   downloadQualityMenuRef: previewElementRef,
