@@ -98,8 +98,8 @@ const fetchWallpapers = async () => {
       id: Number(w.id || 0),
       title: String(w.title || ''),
       description: String(w.description || ''),
-      imageUrl: String(w.imageUrl || ''),
-      thumbnailUrl: String(w.thumbnailUrl || ''),
+      imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ''),
+      thumbnailUrl: String(w.thumbnailUrl ?? w.thumbnail_url ?? w.imageUrl ?? w.image_url ?? w.image ?? ''),
       category: String(w.category || ''),
       uploaderId: String(w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? w.uploader ?? ''),
       uploaderNickname: String(w.uploaderNickname ?? w.uploaded_by_nickname ?? w.nickname ?? ''),
@@ -116,10 +116,25 @@ const fetchMyWallpapers = async () => {
   myLoading.value = true;
   myError.value = '';
   try {
-    const data = await signedRequest<MyWallpaper[]>('my_wallpapers', {
+    const data = await signedRequest<Record<string, unknown>[]>('my_wallpapers', {
       ciyuanxi_id: currentUser.value.ciyuanxi_id,
     });
-    myWallpapers.value = Array.isArray(data) ? data : [];
+    // 与 fetchWallpapers 一致，对 API 返回字段做容错映射，
+    // 兼容 camelCase / snake_case 以及 pending 状态下缺少 thumbnailUrl 的情况
+    myWallpapers.value = Array.isArray(data) ? data.map((w: Record<string, unknown>) => ({
+      id: Number(w.id || 0),
+      title: String(w.title || ''),
+      description: String(w.description || ''),
+      imageUrl: String(w.imageUrl ?? w.image_url ?? w.image ?? ''),
+      thumbnailUrl: String(w.thumbnailUrl ?? w.thumbnail_url ?? w.imageUrl ?? w.image_url ?? w.image ?? ''),
+      category: String(w.category || ''),
+      status: String(w.status || 'pending'),
+      reviewedAt: w.reviewedAt ?? w.reviewed_at ?? null,
+      reviewedBy: w.reviewedBy ?? w.reviewed_by ? String(w.reviewedBy ?? w.reviewed_by) : undefined,
+      createdAt: w.createdAt ?? w.created_at ? String(w.createdAt ?? w.created_at) : undefined,
+      uploaderId: String(w.uploaderId ?? w.uploader_id ?? w.ciyuanxi_id ?? ''),
+      uploaderNickname: String(w.uploaderNickname ?? w.uploaded_by_nickname ?? w.nickname ?? ''),
+    })) as MyWallpaper[] : [];
   } catch (err) {
     myError.value = err instanceof Error ? err.message : '获取我的上传失败';
   } finally {
@@ -501,7 +516,7 @@ onBeforeUnmount(() => {
               class="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 transition-all hover:border-[#EC4141]/50 hover:shadow-[0_0_15px_rgba(236,65,65,0.25)]"
             >
               <div class="aspect-[16/10] w-full overflow-hidden">
-                <img :src="wallpaper.thumbnailUrl" :alt="wallpaper.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                <img :src="wallpaper.thumbnailUrl || wallpaper.imageUrl" :alt="wallpaper.title" loading="eager" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
               </div>
               <!-- 上传者 ID 徽标 -->
               <div class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
@@ -563,7 +578,7 @@ onBeforeUnmount(() => {
               :class="wp.status === 'normal' ? 'hover:border-[#EC4141]/50' : ''"
             >
               <div class="aspect-[16/10] w-full overflow-hidden">
-                <img :src="wp.thumbnailUrl" :alt="wp.title" loading="eager" class="h-full w-full object-cover" :class="wp.status === 'rejected' || wp.status === 'disabled' ? 'opacity-50 grayscale' : ''" />
+                <img :src="wp.thumbnailUrl || wp.imageUrl" :alt="wp.title" loading="eager" class="h-full w-full object-cover" :class="wp.status === 'rejected' || wp.status === 'disabled' ? 'opacity-50 grayscale' : ''" />
               </div>
               <!-- 状态徽标 -->
               <div class="absolute left-2 top-2">
