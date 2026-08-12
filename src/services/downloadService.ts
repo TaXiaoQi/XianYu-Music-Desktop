@@ -22,6 +22,7 @@ import {
 import {
   extFromUrl as extFromUrlShared,
   isDegradedLossless,
+  resolveActualQuality,
 } from './audioQualityVerify';
 import { usePlaybackStore } from '../features/playback/store';
 import {
@@ -246,7 +247,7 @@ async function resolveLxAudioForQuality(
     console.warn(`[Download] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
     return null;
   }
-  return { quality: q, url };
+  return { quality: resolveActualQuality(q, url), url };
 }
 
 async function resolveUrlForQuality(
@@ -336,7 +337,7 @@ async function resolvePluginAudioForQuality(
         console.warn(`[Download][plugin] 预解析 ${q}(${key}) 被降级为 ${extFromUrl(preUrl)}，跳过该档位`);
         return null;
       }
-      return { quality: q, url: preUrl };
+      return { quality: resolveActualQuality(q, preUrl), url: preUrl };
     }
   }
 
@@ -364,8 +365,15 @@ async function resolvePluginAudioForQuality(
     } catch { /* ignore cover error */ }
   }
 
+  // 使用插件返回的实际音质（actualQuality），而非请求档位 q。
+  // Baka 插件（QQ音乐/网易云等）在请求 flac 时可能仅能提供 320k，
+  // 插件会在 actualQuality 中报告真实音质；若插件未报告则回退到请求档位。
+  // resolveActualQuality 作为最终安全网：即使插件声称无损但 URL 扩展名为有损格式，也会修正。
+  const reportedQuality = musicInfo?.actualQuality ?? q;
+  const effectiveQuality = resolveActualQuality(reportedQuality, url);
+
   return {
-    quality: q,
+    quality: effectiveQuality,
     url,
     headers: musicInfo?.headers ?? null,
     lyricsRaw: includePlaybackExtras ? musicInfo?.lyricsRaw : undefined,
@@ -405,7 +413,7 @@ export async function resolveOnlineQualityUrl(
     const preResolved = sanitizeMediaUrl(preResolvedUrls?.[q]);
     if (preResolved && /^https?:/.test(preResolved) && !isDegradedLossless(q, preResolved)) {
       return {
-        quality: song.remote_actual_quality ?? q,
+        quality: resolveActualQuality(song.remote_actual_quality ?? q, preResolved),
         url: preResolved,
         headers: song.remote_headers ?? null,
         ekey: song.remote_ekey,
@@ -934,11 +942,13 @@ export async function downloadSong(
       continue;
     }
 
-    const destPath = await resolveDownloadFullPath(song, resolved.url, q, options);
+    // 使用 resolved.quality（已修正为实际音质）而非请求档位 q，
+    // 确保文件扩展名和下载记录与真实音频格式一致。
+    const destPath = await resolveDownloadFullPath(song, resolved.url, resolved.quality, options);
 
     try {
       filePath = await downloadFromUrl(resolved.url, destPath, options.onProgress, resolved.ekey, resolved.headers);
-      hitQuality = q;
+      hitQuality = resolved.quality;
       break;
     } catch (e: any) {
       const msg = typeof e === 'string' ? e : (e?.message || String(e));

@@ -10,6 +10,7 @@ import {
 } from '../../services/lxUrlResolver';
 import { resolveOnlineQualityUrl } from '../../services/downloadService';
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
+import { resolveActualQuality } from '../../services/audioQualityVerify';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
@@ -107,7 +108,7 @@ export const resolveOnlineAudio = async ({
         return {
           audioFilePath: resolved.url,
           pluginHeaders: normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null),
-          currentPlayingQuality: resolved.quality,
+          currentPlayingQuality: resolveActualQuality(resolved.quality, resolved.url),
           currentPlayingAudioUrl: resolved.url,
           lyricsRaw: resolved.lyricsRaw,
           coverThumbPath: resolved.coverThumbPath,
