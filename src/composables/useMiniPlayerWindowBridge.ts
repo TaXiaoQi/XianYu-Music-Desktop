@@ -11,6 +11,7 @@ import { usePlayer } from '../features/playback';
 import { useThemeSettings } from './useThemeSettings';
 import { useSettings } from '../features/settings/useSettings';
 import { useUiStore } from '../shared/stores/ui';
+import { stateApi } from '../services/tauri/stateApi';
 import { windowApi } from '../services/tauri/windowApi';
 import {
   MINI_PLAYER_ACTION_EVENT,
@@ -39,6 +40,9 @@ let resolveMiniPlayerStateApplied: (() => void) | null = null;
 
 let miniPlayerPrewarmTimer: number | null = null;
 
+// 迷你窗位置持久化 key（磁盘 state 文件，重启后仍保留）
+const MINI_PLAYER_BOUNDS_STATE_KEY = 'mini_player_window_bounds';
+
 function clearMiniPlayerPrewarmTimer() {
   if (miniPlayerPrewarmTimer !== null) {
     window.clearTimeout(miniPlayerPrewarmTimer);
@@ -46,10 +50,17 @@ function clearMiniPlayerPrewarmTimer() {
   }
 }
 
-function readMiniPlayerBounds(): MiniPlayerWindowBounds | null {
-  if (typeof localStorage === 'undefined') return null;
-
-  const stored = localStorage.getItem(MINI_PLAYER_BOUNDS_KEY);
+async function readMiniPlayerBounds(): Promise<MiniPlayerWindowBounds | null> {
+  // 优先从磁盘 state 文件读取（重启后仍保留），localStorage 仅作兼容回退
+  let stored: string | null = null;
+  try {
+    stored = await stateApi.readStateJson(MINI_PLAYER_BOUNDS_STATE_KEY);
+  } catch {
+    stored = null;
+  }
+  if (!stored && typeof localStorage !== 'undefined') {
+    stored = localStorage.getItem(MINI_PLAYER_BOUNDS_KEY);
+  }
   if (!stored) return null;
 
   try {
@@ -67,13 +78,19 @@ function readMiniPlayerBounds(): MiniPlayerWindowBounds | null {
   }
 }
 
-function writeMiniPlayerBounds(bounds: MiniPlayerWindowBounds) {
-  if (typeof localStorage === 'undefined') return;
-
-  localStorage.setItem(MINI_PLAYER_BOUNDS_KEY, JSON.stringify({
+async function writeMiniPlayerBounds(bounds: MiniPlayerWindowBounds) {
+  const payload = JSON.stringify({
     x: Math.round(bounds.x),
     y: Math.round(bounds.y),
-  }));
+  });
+  try {
+    await stateApi.writeStateJson(MINI_PLAYER_BOUNDS_STATE_KEY, payload);
+  } catch {
+    /* 磁盘写入失败时忽略，不影响使用 */
+  }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(MINI_PLAYER_BOUNDS_KEY, payload);
+  }
 }
 
 async function normalizeMiniPlayerBounds(bounds: MiniPlayerWindowBounds | null) {
@@ -128,7 +145,7 @@ async function getMiniPlayerWindow() {
 async function ensureMiniPlayerWindow() {
   const existing = await getMiniPlayerWindow();
   if (existing) {
-    const bounds = await normalizeMiniPlayerBounds(readMiniPlayerBounds());
+    const bounds = await normalizeMiniPlayerBounds(await readMiniPlayerBounds());
     if (bounds) {
       await existing.setPosition(new LogicalPosition(bounds.x, bounds.y));
     }
@@ -145,7 +162,7 @@ async function ensureMiniPlayerWindow() {
     resolveMiniPlayerReady = null;
 
     miniPlayerWindowPromise = (async () => {
-      const bounds = await normalizeMiniPlayerBounds(readMiniPlayerBounds());
+      const bounds = await normalizeMiniPlayerBounds(await readMiniPlayerBounds());
       const windowInstance = new WebviewWindow(MINI_PLAYER_WINDOW_LABEL, {
         url: '/',
         title: 'XY-Music Mini Player',
@@ -509,7 +526,7 @@ export function useMiniPlayerWindowBridge() {
     }));
 
     unlisteners.push(await listen<MiniPlayerWindowBounds>(MINI_PLAYER_BOUNDS_EVENT, (event) => {
-      writeMiniPlayerBounds(event.payload);
+      void writeMiniPlayerBounds(event.payload);
     }));
 
     // mini 窗口不再预热常驻：主窗口与 mini 窗口互切时应释放对方前端资源。
