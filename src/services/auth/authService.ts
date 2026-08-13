@@ -475,17 +475,17 @@ function getAuthErrorMessage(error: unknown, fallback = '请求失败'): string 
 }
 
 /**
- * 密码登录（支持用户名 / 邮箱 / 弦予号三种凭据，同一个输入框即可）
+ * 弦予号登录（参考微信号设计：弦予号是唯一登录标识）
  * POST /api/?action=user_login
  */
 export async function login(
-  username: string,
+  ciyuanxiId: string,
   password: string,
   captcha: HumanCaptchaPayload,
 ): Promise<AuthPayload> {
   try {
     const data = await requestAction<Record<string, unknown>>('user_login', withCaptcha({
-      username,
+      ciyuanxi_id: ciyuanxiId,
       password,
       device_id: getDeviceId(),
     }, captcha));
@@ -499,11 +499,11 @@ export async function login(
 }
 
 /**
- * 用户注册。注册接口不返回 token，因此注册成功后自动调用登录以获取会话。
+ * 用户注册（使用昵称注册，注册成功后自动登录获取会话）。
  * POST /api/?action=register
  */
 export async function register(
-  username: string,
+  nickname: string,
   password: string,
   email: string,
   code: string,
@@ -511,7 +511,7 @@ export async function register(
 ): Promise<AuthPayload> {
   try {
     const data = await requestAction<Record<string, unknown>>('register', withCaptcha({
-      username,
+      nickname,
       password,
       email,
       verify_code: code,
@@ -523,6 +523,31 @@ export async function register(
     return payload;
   } catch (error) {
     throw new Error(getAuthErrorMessage(error, '注册失败'), { cause: error });
+  }
+}
+
+/**
+ * 修改弦予号（参考微信号设计：可修改但每月仅限一次）。
+ * 需当前弦予号 + 登录密码校验。
+ * POST /api/?action=update_ciyuanxi_id
+ */
+export async function updateCiyuanxiId(
+  oldCiyuanxiId: string,
+  newCiyuanxiId: string,
+  password: string,
+): Promise<{ message: string; ciyuanxi_id: string }> {
+  try {
+    const data = await requestAction<{ ciyuanxi_id?: string }>('update_ciyuanxi_id', {
+      ciyuanxi_id: oldCiyuanxiId,
+      new_ciyuanxi_id: newCiyuanxiId,
+      password,
+    });
+    return {
+      message: '弦予号修改成功',
+      ciyuanxi_id: String(data.ciyuanxi_id ?? newCiyuanxiId),
+    };
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '弦予号修改失败'), { cause: error });
   }
 }
 
