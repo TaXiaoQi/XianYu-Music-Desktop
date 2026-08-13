@@ -13,6 +13,8 @@ export interface BanDialogState {
   reason: string;
   ciyuanxiId: string;
   nickname: string;
+  /** 调试模拟模式：仅测试页面与流程，提交申诉时不发送服务器 */
+  debug: boolean;
   resolver: ((confirmed: boolean) => void) | null;
 }
 
@@ -22,6 +24,7 @@ const banDialogState = ref<BanDialogState>({
   reason: '',
   ciyuanxiId: '',
   nickname: '',
+  debug: false,
   resolver: null,
 });
 
@@ -30,6 +33,7 @@ export function showBanDialog(
   banType: BanType,
   reason: string,
   meta: BanDialogMeta = { ciyuanxiId: '', nickname: '' },
+  options: { debug?: boolean } = {},
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     banDialogState.value = {
@@ -38,6 +42,7 @@ export function showBanDialog(
       reason,
       ciyuanxiId: meta.ciyuanxiId || '',
       nickname: meta.nickname || '',
+      debug: options.debug === true,
       resolver: resolve,
     };
   });
@@ -52,6 +57,7 @@ export function resolveBanDialog(confirmed: boolean): void {
     reason: '',
     ciyuanxiId: '',
     nickname: '',
+    debug: false,
     resolver: null,
   };
 }

@@ -55,18 +55,24 @@ async function submitAppealHandler() {
     showToast(`申诉内容不能超过 ${APPEAL_MAX} 字`, 'error');
     return;
   }
-  if (!banDialogState.value.ciyuanxiId) {
+  if (!banDialogState.value.ciyuanxiId && !banDialogState.value.debug) {
     showToast('登录信息已失效，无法提交申诉，请重新登录账号', 'error');
     return;
   }
   submitting.value = true;
   try {
-    await submitAppeal(
-      banDialogState.value.ciyuanxiId,
-      banDialogState.value.nickname,
-      content,
-    );
-    showToast('申诉已提交，请耐心等待处理', 'success');
+    if (banDialogState.value.debug) {
+      // 调试模式：仅模拟提交流程，不发送服务器
+      await new Promise((r) => setTimeout(r, 600));
+      showToast('（调试）申诉已提交，请耐心等待处理', 'success');
+    } else {
+      await submitAppeal(
+        banDialogState.value.ciyuanxiId,
+        banDialogState.value.nickname,
+        content,
+      );
+      showToast('申诉已提交，请耐心等待处理', 'success');
+    }
     resolveBanDialog(false);
   } catch (error) {
     showToast(error instanceof Error ? error.message : '申诉提交失败', 'error');
