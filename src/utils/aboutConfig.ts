@@ -21,7 +21,7 @@ export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   updateText: '检查更新',
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
   projectText: '开源地址',
-  referenceProjectUrl: 'https://github.com/Billy636/XianYuMusic',
+  referenceProjectUrl: 'https://github.com/Billy636/LyciaMusic',
   referenceProjectText: '参考项目',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
   joinGroupText: '加入群组',
