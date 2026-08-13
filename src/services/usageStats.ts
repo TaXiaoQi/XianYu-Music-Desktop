@@ -320,3 +320,21 @@ export async function submitFeedback(
   const data = await signedRequest<{ id: string | number }>('submit_feedback', payload);
   return Number(data.id);
 }
+
+/**
+ * 账号封禁申诉：调用 submit_appeal 接口，并入 user_feedback 表（category='appeal'）。
+ * 与普通反馈共享每日限额。
+ */
+export async function submitAppeal(
+  ciyuanxiId: string,
+  nickname: string,
+  content: string,
+): Promise<number> {
+  const payload: Record<string, unknown> = {
+    ciyuanxi_id: ciyuanxiId,
+    nickname: nickname.trim() || '',
+    content: content.trim(),
+  };
+  const data = await signedRequest<{ id: string | number }>('submit_appeal', payload);
+  return Number(data.id);
+}

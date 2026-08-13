@@ -44,100 +44,83 @@ watch(
     <transition name="announcement-modal" appear>
       <div
         v-if="visible && announcement"
-        class="announcement-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
+        class="announcement-overlay fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
       >
-        <div
-          class="announcement-card bg-white dark:bg-[#262626] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
-        >
-          <!-- Header -->
-          <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
-            <div
-              class="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-              :class="{
-                'bg-blue-100 dark:bg-blue-900/30': announcement.type === 'info',
-                'bg-amber-100 dark:bg-amber-900/30': announcement.type === 'warning',
-                'bg-green-100 dark:bg-green-900/30': announcement.type === 'update',
-              }"
+        <div class="announcement-card">
+          <div
+            class="announcement-icon"
+            :class="{
+              'announcement-icon--info': announcement.type === 'info',
+              'announcement-icon--warning': announcement.type === 'warning',
+              'announcement-icon--update': announcement.type === 'update',
+            }"
+          >
+            <!-- info icon -->
+            <svg
+              v-if="announcement.type === 'info'"
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-6 w-6"
+              viewBox="0 0 20 20"
+              fill="currentColor"
             >
-              <!-- info icon -->
-              <svg
-                v-if="announcement.type === 'info'"
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4 text-blue-500"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zm-1 9a1 1 0 01-1-1v-4a1 1 0 112 0v4a1 1 0 01-1 1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <!-- warning icon -->
-              <svg
-                v-else-if="announcement.type === 'warning'"
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4 text-amber-500"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <!-- update icon -->
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-4 w-4 text-green-500"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </div>
-            <div class="min-w-0">
-              <h3 class="text-base font-bold text-gray-800 dark:text-gray-100 truncate">
-                {{ announcement.title }}
-              </h3>
-              <p v-if="announcement.date" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                {{ announcement.date }}
-              </p>
-            </div>
+              <path
+                fill-rule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zm-1 9a1 1 0 01-1-1v-4a1 1 0 112 0v4a1 1 0 01-1 1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <!-- warning icon -->
+            <svg
+              v-else-if="announcement.type === 'warning'"
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-6 w-6"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <!-- update icon -->
+            <svg
+              v-else
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-6 w-6"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
           </div>
+          <h3 class="announcement-title">{{ announcement.title }}</h3>
+          <p v-if="announcement.date" class="announcement-date">{{ announcement.date }}</p>
 
-          <!-- Content -->
           <div
             ref="contentBodyRef"
-            class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto"
+            class="announcement-content"
             @scroll="refreshScrollState"
           >
-            <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
+            <p class="announcement-desc">
               {{ announcement.content }}
             </p>
           </div>
 
-          <!-- Actions -->
-          <div class="border-t border-gray-100 dark:border-white/10 shrink-0">
-            <div
-              v-if="!scrolledToEnd"
-              class="px-5 pt-3 text-center text-xs text-gray-400 dark:text-gray-500"
-            >
+          <div class="announcement-footer">
+            <div v-if="!scrolledToEnd" class="announcement-hint">
               请先阅读并滚动到公告底部
             </div>
             <button
+              type="button"
+              class="announcement-btn"
+              :class="{ 'announcement-btn--disabled': !scrolledToEnd }"
               @click="handleClose"
               :disabled="!scrolledToEnd"
-              class="w-full py-3 text-sm transition-colors focus:outline-none"
-              :class="scrolledToEnd
-                ? 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5'
-                : 'cursor-not-allowed text-gray-300 dark:text-gray-600'"
             >
               {{ scrolledToEnd ? '我已阅读并确认' : '阅读到底后可确认' }}
             </button>
@@ -149,7 +132,7 @@ watch(
 </template>
 
 <style scoped>
-/* ==================== 基础过渡（供 is-closing 使用） ==================== */
+/* ==================== 基础过渡 ==================== */
 .announcement-overlay {
   transition: opacity 0.2s ease;
 }
@@ -177,24 +160,164 @@ watch(
   opacity: 0;
   transform: scale(0.92) translateY(8px);
 }
-
-/* ==================== 离开动画（is-closing 类驱动） ==================== */
-.announcement-overlay.is-closing {
-  opacity: 0;
-}
-
-.announcement-card.is-closing {
-  opacity: 0;
-  transform: scale(0.92) translateY(8px);
-}
 </style>
 
+<!-- 深色模式使用非 scoped style 块，原因同 SettingsConflictDialog -->
 <style>
+/* ==================== 主弹窗 ==================== */
 .announcement-card {
+  width: min(90vw, 400px);
   background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.announcement-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  margin: 0 auto 14px;
+}
+
+.announcement-icon--info {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
+.announcement-icon--warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.announcement-icon--update {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.announcement-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 4px;
+}
+
+.announcement-date {
+  font-size: 0.72rem;
+  color: rgba(107, 114, 128, 0.85);
+  margin: 0 0 16px;
+}
+
+.announcement-content {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  max-height: 40vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.announcement-desc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(75, 85, 99, 0.9);
+  margin: 0;
+  white-space: pre-line;
+}
+
+.announcement-hint {
+  font-size: 0.72rem;
+  color: rgba(107, 114, 128, 0.7);
+  margin-bottom: 8px;
+}
+
+.announcement-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: #1f2937;
+  color: #ffffff;
+  transition: background-color 160ms ease, color 160ms ease, transform 100ms ease;
+}
+
+.announcement-btn:not(:disabled):hover {
+  background: #111827;
+}
+
+.announcement-btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.announcement-btn--disabled {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(107, 114, 128, 0.5);
+  cursor: not-allowed;
+}
+
+/* ==================== 深色模式 ==================== */
 html.dark .announcement-card {
   background: #262626;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .announcement-icon--info {
+  background: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
+}
+
+html.dark .announcement-icon--warning {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+}
+
+html.dark .announcement-icon--update {
+  background: rgba(52, 211, 153, 0.18);
+  color: #34d399;
+}
+
+html.dark .announcement-title {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+html.dark .announcement-date {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .announcement-content {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .announcement-desc {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+html.dark .announcement-hint {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .announcement-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: #262626;
+}
+
+html.dark .announcement-btn:not(:disabled):hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+html.dark .announcement-btn--disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.35);
 }
 </style>

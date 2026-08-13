@@ -7,6 +7,7 @@ import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyrics
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
+import { useBanCheck } from '../../composables/useBanCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
 import Sidebar from './Sidebar.vue';
@@ -22,6 +23,7 @@ const AddToPlaylistModal = defineAsyncComponent(() => import('../overlays/AddToP
 const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SettingsConflictDialog = defineAsyncComponent(() => import('../common/SettingsConflictDialog.vue'));
 const ProfileLimitDialog = defineAsyncComponent(() => import('../common/ProfileLimitDialog.vue'));
+const BanDialog = defineAsyncComponent(() => import('../common/BanDialog.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
@@ -92,6 +94,9 @@ const {
 
 // --- 首次启动引导 ---
 const { showOnboarding, completeOnboarding } = useOnboarding();
+
+// 封禁检测心跳（登录后自动轮询）
+useBanCheck();
 const settingsStore = useSettingsStore();
 
 const handleOnboardingComplete = () => {
@@ -302,6 +307,7 @@ onMounted(() => {
     <Toast />
     <SettingsConflictDialog />
     <ProfileLimitDialog />
+    <BanDialog />
     <CustomSkinModal v-if="uiStore.showCustomSkinModal" @close="uiStore.showCustomSkinModal = false" />
   </div>
 </template>

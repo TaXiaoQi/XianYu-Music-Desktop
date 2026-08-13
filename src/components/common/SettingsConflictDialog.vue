@@ -85,7 +85,6 @@ function cancelAll() {
       <div
         v-if="conflictState.visible && !pendingDirection"
         class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-        @click.self="cancelAll"
       >
         <div class="conflict-card">
           <div class="conflict-icon">
@@ -151,7 +150,6 @@ function cancelAll() {
       <div
         v-if="pendingDirection"
         class="fixed inset-0 z-[310] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-        @click.self="cancelPendingChoice"
       >
         <div class="confirm-card">
           <div class="confirm-icon" :class="pendingDirection === 'local' ? 'confirm-icon--local' : 'confirm-icon--cloud'">

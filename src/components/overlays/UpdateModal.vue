@@ -51,81 +51,58 @@ const formatSpeed = (speed: number) => {
     <transition name="update-modal" appear>
       <div
         v-if="visible && update"
-        class="update-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none"
+        class="update-overlay fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
         :class="{ 'is-closing': isClosing }"
         @click.self="!isDownloading && handleClose()"
       >
-        <div
-          class="update-card bg-white dark:bg-[#262626] rounded-2xl shadow-2xl w-[420px] max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
-          :class="{ 'is-closing': isClosing }"
-        >
-          <!-- Header -->
-          <div class="px-6 pt-6 pb-3 flex items-center gap-3 shrink-0">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-green-100 dark:bg-green-900/30">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </div>
-            <div class="min-w-0">
-              <h3 class="text-base font-bold text-gray-800 dark:text-gray-100 truncate">
-                发现新版本 v{{ update.version }}
-              </h3>
-              <p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                当前版本 v{{ APP_VERSION }}
-              </p>
-            </div>
+        <div class="update-card" :class="{ 'is-closing': isClosing }">
+          <div class="update-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
           </div>
+          <h3 class="update-title">发现新版本 v{{ update.version }}</h3>
+          <p class="update-version">当前版本 v{{ APP_VERSION }}</p>
 
-          <!-- Content -->
-          <div class="px-6 pb-5 flex-1 min-h-0 overflow-y-auto">
-            <p
-              v-if="update.updateContent"
-              class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line"
-            >
+          <div class="update-content">
+            <p v-if="update.updateContent" class="update-desc">
               {{ update.updateContent }}
             </p>
-            <p v-else class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+            <p v-else class="update-desc">
               有新版本可用，建议更新以获取最新功能与修复。
             </p>
           </div>
 
-          <!-- Actions -->
-          <div v-if="isDownloading" class="px-6 py-4 border-t border-gray-100 dark:border-white/10 shrink-0">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-xs text-gray-500 dark:text-gray-400">正在下载更新…</span>
-              <span class="text-xs font-medium text-gray-700 dark:text-gray-200">
+          <div v-if="isDownloading" class="update-progress-block">
+            <div class="update-progress-info">
+              <span class="update-progress-label">正在下载更新…</span>
+              <span class="update-progress-value">
                 {{ progress && progress.total > 0
                   ? formatBytes(progress.downloaded) + ' / ' + formatBytes(progress.total)
                   : formatBytes(progress?.downloaded ?? 0) }}
               </span>
             </div>
-            <div class="w-full h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+            <div class="update-progress-track">
               <div
-                class="h-full bg-[#EC4141] rounded-full transition-all duration-150 ease-out"
+                class="update-progress-bar"
                 :style="{ width: (progress?.progress ?? 0) + '%' }"
               ></div>
             </div>
-            <div class="flex items-center justify-between mt-2">
-              <span class="text-xs text-gray-400 dark:text-gray-500">{{ formatSpeed(progress?.speed ?? 0) }}</span>
-              <span class="text-xs font-medium text-[#EC4141]">{{ (progress?.progress ?? 0).toFixed(1) }}%</span>
+            <div class="update-progress-meta">
+              <span class="update-speed">{{ formatSpeed(progress?.speed ?? 0) }}</span>
+              <span class="update-percent">{{ (progress?.progress ?? 0).toFixed(1) }}%</span>
             </div>
           </div>
-          <div v-else class="flex border-t border-gray-100 dark:border-white/10 shrink-0">
-            <button
-              @click="handleClose"
-              class="flex-1 py-3 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors focus:outline-none"
-            >
+
+          <div v-else class="update-actions">
+            <button type="button" class="update-btn update-btn--ghost" @click="handleClose">
               稍后
             </button>
-            <div class="w-[1px] bg-gray-100 dark:bg-white/10"></div>
-            <button
-              @click="emit('download')"
-              class="flex-1 py-3 text-sm text-[#EC4141] font-medium hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors focus:outline-none"
-            >
+            <button type="button" class="update-btn update-btn--primary" @click="emit('download')">
               立即更新
             </button>
           </div>
@@ -176,12 +153,226 @@ const formatSpeed = (speed: number) => {
 }
 </style>
 
+<!-- 深色模式使用非 scoped style 块，原因同 SettingsConflictDialog -->
 <style>
+/* ==================== 主弹窗 ==================== */
 .update-card {
+  width: min(90vw, 400px);
   background: #ffffff;
+  color: #1f2937;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.update-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  margin: 0 auto 14px;
+}
+
+.update-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 6px;
+}
+
+.update-version {
+  font-size: 0.78rem;
+  color: rgba(107, 114, 128, 0.85);
+  margin: 0 0 16px;
+}
+
+.update-content {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  max-height: 40vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.update-desc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(75, 85, 99, 0.9);
+  margin: 0;
+  white-space: pre-line;
+}
+
+.update-progress-block {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.update-progress-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.update-progress-label {
+  font-size: 0.78rem;
+  color: rgba(107, 114, 128, 0.85);
+}
+
+.update-progress-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(55, 65, 81, 0.9);
+}
+
+.update-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.update-progress-bar {
+  height: 100%;
+  background: #EC4141;
+  border-radius: 999px;
+  transition: width 150ms ease-out;
+}
+
+.update-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.update-speed {
+  font-size: 0.72rem;
+  color: rgba(107, 114, 128, 0.85);
+}
+
+.update-percent {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #EC4141;
+}
+
+.update-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.update-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 100ms ease;
+  border: 1px solid transparent;
+}
+
+.update-btn:active {
+  transform: scale(0.97);
+}
+
+.update-btn--ghost {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.update-btn--ghost:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31, 41, 55);
+}
+
+.update-btn--primary {
+  background: #EC4141;
+  color: #ffffff;
+}
+
+.update-btn--primary:hover {
+  background: #d13b3b;
+}
+
+/* ==================== 深色模式 ==================== */
 html.dark .update-card {
   background: #262626;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .update-icon {
+  background: rgba(52, 211, 153, 0.18);
+  color: #34d399;
+}
+
+html.dark .update-title {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+html.dark .update-version {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .update-content {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .update-desc {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+html.dark .update-progress-block {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark .update-progress-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .update-progress-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+html.dark .update-progress-value {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+html.dark .update-speed {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .update-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+html.dark .update-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+html.dark .update-btn--primary {
+  background: #EC4141;
+  color: #ffffff;
+}
+
+html.dark .update-btn--primary:hover {
+  background: #d13b3b;
 }
 </style>

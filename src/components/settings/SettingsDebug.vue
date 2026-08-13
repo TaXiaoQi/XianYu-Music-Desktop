@@ -5,6 +5,7 @@ import { showSettingsConflict } from '../../composables/useSettingsConflict';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { showProfileLimitDialog } from '../../composables/useProfileLimitDialog';
+import { showBanDialog } from '../../composables/useBanDialog';
 
 const { disableDeveloperMode } = useDeveloperMode();
 const { triggerOnboarding } = useOnboarding();
@@ -22,6 +23,14 @@ function testNicknameLimitDialog() {
 
 function testAvatarLimitDialog() {
   void showProfileLimitDialog('avatar');
+}
+
+function testBanAccountDialog() {
+  void showBanDialog('account', '涉嫌违规使用，已被管理员封禁。如有疑问请联系管理员。');
+}
+
+function testBanDeviceDialog() {
+  void showBanDialog('device', '该设备已被封禁，不支持在该设备上继续使用。如有疑问请联系管理员。');
 }
 </script>
 
@@ -98,6 +107,34 @@ function testAvatarLimitDialog() {
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
           @click="testAvatarLimitDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">账号封禁提示框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试账号被封禁时的踢下线提示弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testBanAccountDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">设备封禁提示框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试设备被封禁时的踢下线提示弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testBanDeviceDialog"
         >
           弹出
         </button>
