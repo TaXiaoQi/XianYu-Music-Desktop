@@ -44,6 +44,12 @@ export function useSettingsThemeControls() {
       patchTheme({ useCustomTrayMenu: value });
     },
   });
+  const showLeaderboard = computed({
+    get: () => theme.value.showLeaderboard,
+    set: (value: boolean) => {
+      patchTheme({ showLeaderboard: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -186,6 +192,10 @@ export function useSettingsThemeControls() {
     useCustomTrayMenu.value = value;
   };
 
+  const setShowLeaderboard = (value: boolean) => {
+    showLeaderboard.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -197,6 +207,7 @@ export function useSettingsThemeControls() {
     materialMode,
     keepWindowMaterialOnBlur,
     useCustomTrayMenu,
+    showLeaderboard,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -219,5 +230,6 @@ export function useSettingsThemeControls() {
     setWindowBlurTint,
     setKeepWindowMaterialOnBlur,
     setUseCustomTrayMenu,
+    setShowLeaderboard,
   };
 }

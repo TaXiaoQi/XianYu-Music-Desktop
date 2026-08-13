@@ -16,15 +16,24 @@ let lastDeveloperModeClickAt = 0;
 const { isDeveloperMode, enableDeveloperMode } = useDeveloperMode();
 const { showToast } = useToast();
 
+/** 兼容缺少协议头的链接（如 "xymusic.cc"），自动补全为 https://，确保能正常在外部浏览器打开 */
+function normalizeExternalUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 /** 在系统默认外部浏览器中打开链接，避免 Tauri webview 内 target=_blank 导航导致 Vue 崩溃 */
 async function openExternal(url: string) {
-  if (!url) return;
+  const normalized = normalizeExternalUrl(url);
+  if (!normalized) return;
   try {
-    await openUrl(url);
+    await openUrl(normalized);
   } catch (error) {
     // 记录真实错误，便于排查 command 未注册 / 权限不足等问题
-    console.error('[openExternal] openUrl 失败，尝试 fallback', url, error);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    console.error('[openExternal] openUrl 失败，尝试 fallback', normalized, error);
+    window.open(normalized, '_blank', 'noopener,noreferrer');
   }
 }
 

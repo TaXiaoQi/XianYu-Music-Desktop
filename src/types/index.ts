@@ -244,6 +244,7 @@ export interface ThemeSettings {
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;
   useCustomTrayMenu: boolean;
+  showLeaderboard: boolean;
   flowColorBoost: number;
   flowDepth: number;
   flowSpeed: number;
