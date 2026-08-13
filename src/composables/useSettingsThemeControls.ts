@@ -2,6 +2,7 @@ import { computed, onMounted, ref } from 'vue';
 
 import { useThemeSettings } from './useThemeSettings';
 import { useWindowMaterial, type WindowMaterialMode } from './windowMaterial';
+import { useUiStore } from '../shared/stores/ui';
 
 const clampFlowValue = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
 type SelectableWindowMaterialMode = Exclude<WindowMaterialMode, 'none'>;
@@ -10,7 +11,11 @@ type WindowMaterialDisabledReason = 'windows' | 'windows11' | 'transparency' | '
 export function useSettingsThemeControls() {
   const { theme, patchTheme, setThemeMode, setDynamicBackgroundType, setWindowMaterial } = useThemeSettings();
   const { capabilities, loadWindowMaterialCapabilities } = useWindowMaterial();
-  const showCustomModal = ref(false);
+  const uiStore = useUiStore();
+  const showCustomModal = computed({
+    get: () => uiStore.showCustomSkinModal,
+    set: (value: boolean) => { uiStore.showCustomSkinModal = value; },
+  });
   const showFlowTuning = ref(false);
   const showBlurTuning = ref(false);
 

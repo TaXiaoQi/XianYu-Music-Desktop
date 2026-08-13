@@ -11,6 +11,7 @@ export const useUiStore = defineStore('ui', () => {
   const showComment = ref(false);
   const isMiniMode = ref(false);
   const showVolumePopover = ref(false);
+  const showCustomSkinModal = ref(false);
   const mainWindowUiSleepRequested = ref(false);
   const skipNextPageTransition = ref(false);
   const startupCompositionMaskVisible = ref(false);
@@ -35,6 +36,7 @@ export const useUiStore = defineStore('ui', () => {
     showComment,
     isMiniMode,
     showVolumePopover,
+    showCustomSkinModal,
     mainWindowUiSleepRequested,
     skipNextPageTransition,
     startupCompositionMaskVisible,

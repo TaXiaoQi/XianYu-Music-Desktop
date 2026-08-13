@@ -3,9 +3,9 @@ import { defineAsyncComponent } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import SettingHint from './SettingHint.vue';
 
-const CustomSkinModal = defineAsyncComponent(() => import('./CustomSkinModal.vue'));
 const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
+const SettingsTopBarLayout = defineAsyncComponent(() => import('./SettingsTopBarLayout.vue'));
 
 const TEXT = {
   paletteTitle: '\u914d\u8272\u65b9\u6848',
@@ -64,7 +64,6 @@ const BLUR_TEXT = {
 
 const {
   theme,
-  showCustomModal,
   colorScheme,
   materialMode,
   keepWindowMaterialOnBlur,
@@ -514,10 +513,11 @@ const {
     <!-- 侧边栏管理（并入外观） -->
     <SettingsSidebar />
 
+    <!-- 顶部栏布局（并入外观，修改即时生效） -->
+    <SettingsTopBarLayout />
+
     <!-- 底部栏布局（并入外观，修改即时生效） -->
     <SettingsFooterLayout />
-
-    <CustomSkinModal v-if="showCustomModal" @close="showCustomModal = false" />
   </div>
 </template>
 

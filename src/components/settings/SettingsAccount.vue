@@ -116,6 +116,14 @@ async function submitCiyuanxi() {
     showToast('弦予号至少 6 个字符', 'error');
     return;
   }
+  if (!/^[a-zA-Z]/.test(newId)) {
+    showToast('弦予号必须以字母开头', 'error');
+    return;
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(newId)) {
+    showToast('弦予号需 6-20 位，仅含字母、数字、下划线、中划线', 'error');
+    return;
+  }
   if (!password) {
     showToast('请输入登录密码', 'error');
     return;
@@ -352,7 +360,7 @@ function updateAutoSyncMaxDelay(event: Event) {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           弦予号
         </span>
-        <SettingHint text="弦予号是登录账号的唯一登录标识（参考微信号设计），格式为 6-32 位字母、数字、下划线或中划线，每月可修改一次。" />
+        <SettingHint text="弦予号是登录账号的唯一登录标识（参考微信号设计），格式为 6-20 位，字母开头，可含数字、下划线或中划线，每月可修改一次。" />
       </h2>
       <div class="flex items-center justify-between gap-4 rounded-xl border border-black/10 bg-white/45 p-4 transition-colors hover:bg-white/60 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10">
         <div class="min-w-0">
@@ -757,7 +765,7 @@ function updateAutoSyncMaxDelay(event: Event) {
                 <input
                   v-model="ciyuanxiForm.newId"
                   type="text"
-                  placeholder="6-32 位字母 / 数字 / _ / -"
+                  placeholder="6-20 位，字母开头"
                   spellcheck="false"
                   class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                 />

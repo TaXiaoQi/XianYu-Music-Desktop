@@ -66,6 +66,11 @@ const refreshFeedbackAuth = () => {
 };
 const isFeedbackLoggedIn = computed(() => !!feedbackAuth.value?.user?.ciyuanxi_id);
 
+// 是否有日志（用于控制「附上全部日志」勾选框显示）
+const hasAnyLogs = computed(() => entries.value.length > 0);
+// 是否有错误日志（用于控制「附上错误日志」勾选框显示）
+const hasErrorLogs = computed(() => entries.value.some(e => e.level === 'error'));
+
 // 应用备份导出/导入状态
 const exportingAppBackup = ref(false);
 const importingAppBackup = ref(false);
@@ -397,9 +402,9 @@ const handleImportAppBackup = async () => {
           </span>
         </label>
 
-        <!-- 日志附送勾选 -->
-        <div class="flex flex-wrap items-center gap-4">
-          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
+        <!-- 日志附送勾选（无对应日志时不显示，避免上传无用日志） -->
+        <div v-if="hasErrorLogs || hasAnyLogs" class="flex flex-wrap items-center gap-4">
+          <label v-if="hasErrorLogs" class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
             <input
               type="checkbox"
               class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"
@@ -408,7 +413,7 @@ const handleImportAppBackup = async () => {
             />
             附上错误日志
           </label>
-          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
+          <label v-if="hasAnyLogs" class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-white/55">
             <input
               type="checkbox"
               class="h-3.5 w-3.5 rounded border-gray-300 text-[#EC4141] focus:ring-[#EC4141]/30 dark:border-gray-600 dark:bg-gray-700"

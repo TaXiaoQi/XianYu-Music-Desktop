@@ -26,6 +26,7 @@ const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoMod
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
 const UpdateModal = defineAsyncComponent(() => import('../overlays/UpdateModal.vue'));
+const CustomSkinModal = defineAsyncComponent(() => import('../settings/CustomSkinModal.vue'));
 
 defineProps<{
   sleep?: boolean;
@@ -65,6 +66,7 @@ const {
   closeDownloadDialog,
 } = useDownloadDialog();
 const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
+const uiStore = useUiStore();
 
 useDesktopLyricsWindowBridge();
 
@@ -300,6 +302,7 @@ onMounted(() => {
     <Toast />
     <SettingsConflictDialog />
     <ProfileLimitDialog />
+    <CustomSkinModal v-if="uiStore.showCustomSkinModal" @close="uiStore.showCustomSkinModal = false" />
   </div>
 </template>
 

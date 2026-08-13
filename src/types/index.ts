@@ -327,6 +327,36 @@ export interface FooterLayoutSettings {
   hidden: FooterItemKey[];
 }
 
+/**
+ * 顶部栏可配置控件标识。
+ * - search（搜索框）与 settings（设置）为固定控件：始终显示、不可关闭，但可调整位置。
+ * - 其余控件（back / recognize / theme / announcement / account / colorScheme）可自定义开关与位置。
+ * 窗口控制（迷你窗、最小化、最大化、关闭）为固定区域，不属于自定义池。
+ */
+export type TopBarItemKey =
+  | 'back'
+  | 'search'
+  | 'recognize'
+  | 'theme'
+  | 'announcement'
+  | 'settings'
+  | 'account'
+  | 'colorScheme';
+
+/** 顶部栏可自定义容器（固定区域：搜索框居中、窗口控制靠右，不参与编排） */
+export type TopBarContainerKey = 'left' | 'right';
+
+/**
+ * 顶部栏布局配置。
+ * - left / right：可自定义容器（搜索框固定的居中弹性区将剩余空间补齐）
+ * - hidden：用户关闭显示的控件（search / settings 固定不可关闭）
+ */
+export interface TopBarLayoutSettings {
+  left: TopBarItemKey[];
+  right: TopBarItemKey[];
+  hidden: TopBarItemKey[];
+}
+
 export type LyricsPlayerAlignment = 'left' | 'center' | 'right';
 export type DesktopLyricsPlayerAlignment = LyricsPlayerAlignment | 'split-corners';
 export type LyricsColorScheme = 'auto' | 'default' | 'pink' | 'blue' | 'green' | 'white' | 'custom';
@@ -717,6 +747,7 @@ export interface AppSettings {
   theme: ThemeSettings;
   sidebar: SidebarSettings;
   footerLayout: FooterLayoutSettings;
+  topBarLayout: TopBarLayoutSettings;
   shortcuts: ShortcutSettings;
   showTaskbarPlayer: boolean;
   taskbarPlayerCanDrag: boolean;
