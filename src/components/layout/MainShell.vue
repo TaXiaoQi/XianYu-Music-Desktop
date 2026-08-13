@@ -6,6 +6,7 @@ import { useAppShell } from '../../composables/useAppShell';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
+import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useBanCheck } from '../../composables/useBanCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
@@ -81,6 +82,14 @@ const {
   handleAnnouncementAction,
 } = useAnnouncement();
 
+// Feedback completion notification logic（反馈处理完成后，通过公告弹窗通知用户）
+const {
+  feedbackVisible,
+  currentFeedbackNotification,
+  checkFeedbackNotification,
+  closeFeedbackNotification,
+} = useFeedbackNotification();
+
 // Update check logic（启动时自动检查，由全局单例管理弹窗）
 const {
   updateVisible,
@@ -102,6 +111,7 @@ const settingsStore = useSettingsStore();
 const handleOnboardingComplete = () => {
   completeOnboarding();
   checkAnnouncement();
+  checkFeedbackNotification();
   if (settingsStore.settings.checkUpdateOnStartup) {
     checkUpdateOnStartup();
   }
@@ -111,10 +121,15 @@ onMounted(() => {
   if (!showOnboarding.value) {
     // 初始化流程拥有首次启动的最高展示优先级，完成后再检查其他启动弹窗。
     checkAnnouncement();
+    checkFeedbackNotification();
     if (settingsStore.settings.checkUpdateOnStartup) {
       checkUpdateOnStartup();
     }
   }
+  // 定时轮询反馈完成通知（后台管理员完成反馈后，客户端约在一分钟内收到）
+  setInterval(() => {
+    checkFeedbackNotification(announcementVisible.value);
+  }, 60_000);
 });
 </script>
 
@@ -290,6 +305,13 @@ onMounted(() => {
       :announcement="currentAnnouncement"
       @close="closeAnnouncement"
       @action="handleAnnouncementAction"
+    />
+
+    <AnnouncementModal
+      v-if="!isMiniMode && feedbackVisible"
+      :visible="feedbackVisible"
+      :announcement="currentFeedbackNotification"
+      @close="closeFeedbackNotification"
     />
 
     <UpdateModal
