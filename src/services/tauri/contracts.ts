@@ -971,6 +971,7 @@ export interface TauriCommandMap {
   get_behavior_stats: { payload: { timeRange: TimeRange }; response: BehaviorStats };
   get_quality_distribution: { payload: undefined; response: QualityDistribution };
   get_format_distribution: { payload: undefined; response: FormatDistribution };
+  reset_local_statistics: { payload: undefined; response: void };
   // ============ 曲库扫描 ============
   scan_folder_as_playlists: {
     payload: { rootPath: string; minimumDurationSeconds?: number | null };

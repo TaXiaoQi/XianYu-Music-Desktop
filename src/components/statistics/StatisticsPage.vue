@@ -6,7 +6,7 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
-import { fetchLeaderboard, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchLeaderboard, checkForResetSignal, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize, formatListenDuration } from '../../utils/format';
 
@@ -42,7 +42,7 @@ const TEXT = {
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
-const currentPeriod = ref<LeaderboardPeriod>('total');
+const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
 const periodLabel = computed(() => {
@@ -65,6 +65,10 @@ async function loadLeaderboard() {
     const data = await fetchLeaderboard(50, localDuration, currentPeriod.value);
     if (requestId !== leaderboardRequestId) return;
     leaderboard.value = data.leaderboard;
+    // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
+    if (data.resetApplied) {
+      await statisticsStore.refreshBehaviorOnly('All');
+    }
     // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
     if (data.me && !leaderboard.value.some(u => u.isMe)) {
       leaderboard.value.push(data.me);
@@ -157,10 +161,18 @@ onMounted(async () => {
   isLeaderboardReady.value = true;
   void loadLeaderboard();
 
-  // 每 30 秒自动刷新行为统计，让「总听歌时长」准实时更新
+  // 每 30 秒自动刷新行为统计，让「总听歌时长」准实时更新，
+  // 同时主动检查服务端是否下发了「重置听歌时长」信号，避免管理员重置后首页仍显示旧数据。
   statsRefreshTimer = setInterval(async () => {
     try {
       await statisticsStore.refreshBehaviorOnly('All');
+      const localDuration = behaviorStats.value?.total_duration ?? 0;
+      // 若本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示并重载排行榜
+      const resetApplied = await checkForResetSignal(localDuration);
+      if (resetApplied) {
+        await statisticsStore.refreshBehaviorOnly('All');
+        await loadLeaderboard();
+      }
     } catch {
       // 刷新失败静默处理，不影响用户使用
     }

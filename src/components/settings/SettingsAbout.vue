@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { APP_VERSION } from '../../../version';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useToast } from '../../composables/toast';
 import { useDeveloperMode } from '../../features/settings/developerMode';
-import { DEFAULT_ABOUT_CONFIG, fetchAboutConfig } from '../../utils/aboutConfig';
+import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '../../utils/aboutConfig';
 
 const appVersion = APP_VERSION;
-const aboutConfig = ref(DEFAULT_ABOUT_CONFIG);
 const DEVELOPER_MODE_CLICK_COUNT = 5;
 const DEVELOPER_MODE_CLICK_INTERVAL = 1500;
 const developerModeClickCount = ref(0);
@@ -36,8 +35,13 @@ function handleDeveloperModeClick() {
 // 检查更新走 Rust 服务端统一 API，由全局 useUpdateCheck 单例管理弹窗
 const { isCheckingUpdate, checkUpdateManual } = useUpdateCheck();
 
-onMounted(async () => {
-  aboutConfig.value = await fetchAboutConfig();
+onMounted(() => {
+  // 启动关于页配置轮询，服务器下发新网址后客户端即时更新
+  startAboutConfigPolling();
+});
+
+onUnmounted(() => {
+  stopAboutConfigPolling();
 });
 </script>
 
@@ -95,6 +99,22 @@ onMounted(async () => {
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
         </svg>
         {{ aboutConfig.officialSiteText }}
+      </a>
+
+      <a
+        v-if="aboutConfig.joinGroupUrl"
+        :href="aboutConfig.joinGroupUrl"
+        target="_blank"
+        rel="noreferrer"
+        class="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-xl bg-[#4E8EFF] px-5 py-2.5 text-sm font-medium text-white no-underline shadow-lg shadow-blue-500/20 transition active:scale-95 hover:bg-[#3d7df3]"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+        {{ aboutConfig.joinGroupText }}
       </a>
 
       <a

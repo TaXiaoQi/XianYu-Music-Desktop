@@ -56,7 +56,8 @@ async function reportListenDuration(
   uniqueSongsCount = 0,
 ): Promise<{ reset_at?: string } | null> {
   const ciyuanxiId = getCiyuanxiId();
-  if (!ciyuanxiId || listenDuration <= 0) return null;
+  // 允许上报 0：即使本地时长为 0，也需要上报以获取服务端待处理的重置信号。
+  if (!ciyuanxiId) return null;
 
   try {
     const data = await signedRequest<{ reset_at?: string }>('report_listen_stats', {
@@ -93,6 +94,41 @@ async function handleResetSignal(resetAt: string): Promise<void> {
   }
 }
 
+/**
+ * 上报本地听歌时长，并处理服务端下发的重置信号。
+ * 若检测到更新重置信号，会清空本地统计并重新上报 0 同步服务端，返回 true。
+ *
+ * @param localDuration 本地累计听歌时长（秒）
+ * @returns 是否实际触发了本地统计重置
+ */
+async function reportAndHandleReset(localDuration: number): Promise<boolean> {
+  const result = await reportListenDuration(localDuration);
+  // 检查是否有服务端下发的重置信号
+  if (result?.reset_at) {
+    const lastResetAt = localStorage.getItem(RESET_AT_KEY);
+    if (!lastResetAt || result.reset_at > lastResetAt) {
+      await handleResetSignal(result.reset_at);
+      // 重置后重新上报（此时本地数据已清零，上报 0 确保服务端同步）
+      await reportListenDuration(0, 0);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 主动检查服务端是否有待处理的重置信号（用于首页定时轮询）。
+ * 会将当前本地时长上报给服务端，若检测到重置信号则清空本地统计并返回 true。
+ *
+ * @param localDuration 本地累计听歌时长（秒）
+ * @returns 是否实际触发了本地统计重置
+ */
+export async function checkForResetSignal(localDuration: number): Promise<boolean> {
+  const ciyuanxiId = getCiyuanxiId();
+  if (!ciyuanxiId) return false;
+  return reportAndHandleReset(localDuration);
+}
+
 /** 排行榜时间周期 */
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'total';
 
@@ -109,21 +145,15 @@ export async function fetchLeaderboard(
   limit = 50,
   localDuration?: number,
   period: LeaderboardPeriod = 'total',
-): Promise<LeaderboardData> {
+): Promise<LeaderboardData & { resetApplied?: boolean }> {
   const ciyuanxiId = getCiyuanxiId();
 
+  // 记录本次调用是否实际触发了本地统计重置（供调用方刷新本地统计展示）
+  let resetApplied = false;
+
   // 只有登录用户才上报个人听歌时长；公共排行榜无需登录即可获取。
-  if (ciyuanxiId && localDuration && localDuration > 0) {
-    const result = await reportListenDuration(localDuration);
-    // 检查是否有服务端下发的重置信号
-    if (result?.reset_at) {
-      const lastResetAt = localStorage.getItem(RESET_AT_KEY);
-      if (!lastResetAt || result.reset_at > lastResetAt) {
-        await handleResetSignal(result.reset_at);
-        // 重置后重新上报（此时本地数据已清零，上报 0 确保服务端同步）
-        await reportListenDuration(0, 0);
-      }
-    }
+  if (ciyuanxiId) {
+    resetApplied = await reportAndHandleReset(localDuration ?? 0);
   }
 
   try {
@@ -181,6 +211,7 @@ export async function fetchLeaderboard(
       leaderboard,
       me,
       totalUsers: data.total_users ?? leaderboard.length,
+      resetApplied,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
