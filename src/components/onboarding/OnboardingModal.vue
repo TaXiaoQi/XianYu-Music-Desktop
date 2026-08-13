@@ -1176,7 +1176,7 @@ onUnmounted(() => {
                               <input
                                 v-model="authForm.nickname"
                                 type="text"
-                                placeholder="留空则默认"弦予+弦予号""
+                                placeholder='留空则默认"弦予+弦予号"'
                                 autocomplete="nickname"
                                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
                                 style="font-size: clamp(15px, 1.3vw, 18px);"
