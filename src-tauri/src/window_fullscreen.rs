@@ -20,7 +20,13 @@
 //!   用 `SetWindowPlacement(SW_SHOWNORMAL)` 一步恢复正确几何，绕过 tao 被污染的还原尺寸缓存
 
 #[cfg(target_os = "windows")]
+use std::sync::atomic::Ordering;
+
+#[cfg(target_os = "windows")]
 use std::sync::Mutex;
+
+#[cfg(target_os = "windows")]
+use crate::window_boundary::FULLSCREEN_ENABLED;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::{
@@ -230,6 +236,10 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !EX_BORDER_MASK);
                 }
 
+                // 标记全屏状态：subclass 据此拦截 WM_NCCALCSIZE 返回 0，
+                // 消除 tao 对无边框窗口默认的 DWM 不可见边框 padding，使内容真正铺满整屏。
+                FULLSCREEN_ENABLED.store(true, Ordering::Relaxed);
+
                 // 用整个显示器矩形（含任务栏区域）铺满窗口
                 let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                 let mut mi: MONITORINFO = std::mem::zeroed();
@@ -265,6 +275,9 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 mark_taskbar_fullscreen(hwnd, true);
                 Ok(true)
             } else {
+                // 退出全屏：先清除标志，恢复 tao 默认的 WM_NCCALCSIZE 处理
+                FULLSCREEN_ENABLED.store(false, Ordering::Relaxed);
+
                 // 先恢复扩展样式和窗口样式（边框位），再恢复窗口 placement
                 if let Some(saved_ex) = SAVED_EXSTYLE.lock().map_err(|e| e.to_string())?.take() {
                     SetWindowLongW(hwnd, GWL_EXSTYLE, saved_ex);
