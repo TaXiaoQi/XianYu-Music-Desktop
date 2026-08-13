@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Moon, Sun, Bell, X, Clock, Trash2, Mic } from 'lucide-vue-next';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { X, Clock, Trash2 } from 'lucide-vue-next';
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -11,8 +11,11 @@ import { windowApi } from '../../services/tauri/windowApi';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
+import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
+import TopBarControlItem from './TopBarControlItem.vue';
+import TopBarControlIcon from './TopBarControlIcon.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -24,8 +27,9 @@ const toggleRecognition = () => {
 };
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
-const { settings } = useSettings();
-const { theme, isDarkTheme, toggleThemeMode } = useThemeSettings();
+const { settings, topBarLayout } = useSettings();
+const { theme, isDarkTheme, toggleThemeMode, setThemeMode } = useThemeSettings();
+const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
 const authStore = useAuthStore();
 const navigationStore = useNavigationStore();
@@ -43,6 +47,21 @@ const themeToggleTitle = computed(() => {
 
   return isDarkTheme.value ? '切换浅色' : '切换深色';
 });
+
+// --- 顶部栏容器化布局 ---
+const layout = computed(() => normalizeTopBarLayout(topBarLayout.value));
+const leftControls = computed(() => layout.value.left);
+const rightControls = computed(() => layout.value.right);
+
+const accountTitle = computed(() =>
+  authStore.isLoggedIn
+    ? (authStore.user?.nickname || authStore.user?.username || '个人中心')
+    : '登录 / 注册',
+);
+const accountAvatar = computed(() => (authStore.isLoggedIn ? authStore.user?.avatar ?? null : null));
+const accountInitial = computed(() =>
+  (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase(),
+);
 
 // --- 搜索历史 ---
 const showHistory = ref(false);
@@ -98,9 +117,36 @@ const toggleSettingsPage = () => {
   }
 };
 
+const openColorScheme = () => {
+  // 切换到自定义皮肤并直接打开自定义配色弹窗
+  setThemeMode('custom');
+  uiStore.showCustomSkinModal = true;
+};
+
 const openAccountPage = () => {
   void router.push('/auth');
 };
+
+// 给 TopBarControlItem 提供渲染上下文
+provide('topBarContext', {
+  isDarkTheme,
+  goBack,
+  toggleRecognition,
+  themeToggleTitle,
+  toggleThemeMode,
+  isFetchingAnnouncement,
+  manualCheckAnnouncement,
+  isSettingsRoute,
+  settingsRotation: rotation,
+  toggleSettingsPage,
+  isAuthRoute,
+  isLoggedIn: computed(() => authStore.isLoggedIn),
+  accountTitle,
+  accountAvatar,
+  accountInitial,
+  openAccountPage,
+  openColorScheme,
+});
 
 const minimize = () => { void appWindow.minimize(); };
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
@@ -141,15 +187,7 @@ onUnmounted(() => {
     class="h-16 flex items-center gap-3 px-6 select-none shrink-0 relative z-[60]"
   >
     <div class="flex items-center gap-4 relative z-10 shrink-0">
-      <button
-        @click="goBack"
-        class="w-8 h-8 rounded-full bg-white/5 dark:bg-white/5 hover:bg-white/20 dark:hover:bg-white/20 flex items-center justify-center text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white transition-colors focus:outline-none cursor-pointer border border-black/10 dark:border-white/10"
-        title="后退"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 -ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
+      <TopBarControlItem v-for="key in leftControls" :key="key" :item-key="key" />
     </div>
 
     <div class="group flex-1 min-w-0 max-w-[32rem] mx-auto bg-white/5 dark:bg-white/5 hover:bg-white/10 dark:hover:bg-white/10 focus-within:bg-white/20 dark:focus-within:bg-white/10 focus-within:ring-2 focus-within:ring-[#EC4141]/20 pl-5 pr-4 py-2.5 rounded-full flex items-center transition-all border border-black/10 dark:border-white/20 z-10 relative">
@@ -173,19 +211,16 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <!-- 听歌识曲（搜索框内最右侧） -->
-      <div class="h-4 w-px bg-black/10 dark:bg-white/10 mx-1 shrink-0"></div>
+      <div class="w-px h-5 bg-black/10 dark:bg-white/15 mx-2 shrink-0"></div>
+
+      <!-- 听歌识曲（随搜索框固定） -->
       <button
-        type="button"
-        class="song-recognition-trigger shrink-0 rounded-md transition-colors cursor-pointer"
-        :class="showRecognition
-          ? 'text-[#EC4141] dark:text-[#ff8b8b]'
-          : 'text-gray-500 dark:text-gray-400 hover:text-[#EC4141] dark:hover:text-[#ff8b8b]'"
+        @click.stop="toggleRecognition"
+        class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-1 shrink-0 cursor-pointer transition-colors"
         title="听歌识曲"
         aria-label="听歌识曲"
-        @click.stop="toggleRecognition"
       >
-        <Mic class="h-4 w-4" :stroke-width="2" />
+        <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
       </button>
 
       <!-- 搜索历史下拉 -->
@@ -222,82 +257,7 @@ onUnmounted(() => {
     </div>
 
     <div class="flex items-center gap-2 relative z-10 shrink-0">
-      <button
-        type="button"
-        class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-        :title="themeToggleTitle"
-        :aria-label="themeToggleTitle"
-        @click.stop="toggleThemeMode"
-      >
-        <Sun v-if="isDarkTheme" class="h-5 w-5" :stroke-width="2" />
-        <Moon v-else class="h-5 w-5" :stroke-width="2" />
-      </button>
-      <button
-        type="button"
-        class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-        :class="{ 'opacity-50 pointer-events-none': isFetchingAnnouncement }"
-        title="公告"
-        aria-label="查看公告"
-        @click.stop="manualCheckAnnouncement"
-      >
-        <Bell class="h-5 w-5" :stroke-width="2" />
-      </button>
-      <button
-        type="button"
-        class="rounded-md p-2 transition-all duration-300 ease-out cursor-pointer"
-        :class="isSettingsRoute
-          ? 'text-[#EC4141] dark:text-[#ff8b8b]'
-          : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
-        :aria-pressed="isSettingsRoute"
-        @click.stop="toggleSettingsPage"
-        title="设置"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5 transition-transform duration-300 ease-out"
-          :style="{ transform: `rotate(${rotation}deg)` }"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="p-1 rounded-md transition-colors cursor-pointer relative"
-        :class="isAuthRoute
-          ? 'text-[#EC4141] dark:text-[#ff8b8b]'
-          : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'"
-        :title="authStore.isLoggedIn ? (authStore.user?.nickname || authStore.user?.username || '个人中心') : '登录 / 注册'"
-        :aria-label="authStore.isLoggedIn ? '个人中心' : '登录 / 注册'"
-        @click.stop="openAccountPage"
-      >
-        <img
-          v-if="authStore.isLoggedIn && authStore.user?.avatar"
-          :src="authStore.user.avatar"
-          alt=""
-          class="h-6 w-6 rounded-full object-cover"
-        />
-        <span
-          v-else-if="authStore.isLoggedIn"
-          class="grid h-6 w-6 place-items-center rounded-full bg-[#EC4141] text-white text-[11px] font-bold"
-        >
-          {{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}
-        </span>
-        <svg
-          v-else
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      </button>
+      <TopBarControlItem v-for="key in rightControls" :key="key" :item-key="key" />
       <div class="h-4 w-px bg-gray-400/30 mx-2"></div>
       <div class="flex items-center gap-1">
         <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" title="Mini 模式">

@@ -499,10 +499,11 @@ export async function login(
 }
 
 /**
- * 用户注册（使用昵称注册，注册成功后自动登录获取会话）。
+ * 用户注册（弦予号必填，昵称可选留空则服务端默认"弦予+号"；注册成功后自动登录获取会话）。
  * POST /api/?action=register
  */
 export async function register(
+  ciyuanxiId: string,
   nickname: string,
   password: string,
   email: string,
@@ -511,6 +512,7 @@ export async function register(
 ): Promise<AuthPayload> {
   try {
     const data = await requestAction<Record<string, unknown>>('register', withCaptcha({
+      ciyuanxi_id: ciyuanxiId.trim(),
       nickname,
       password,
       email,

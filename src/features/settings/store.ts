@@ -16,6 +16,7 @@ import type {
   PluginSettings,
   SidebarSettings,
   ThemeSettings,
+  TopBarLayoutSettings,
   UploadSettings,
 } from '../../types';
 import { ALL_QUALITY_KEYS } from '../../types';
@@ -34,6 +35,7 @@ import {
 } from './shortcuts';
 import { DEFAULT_SIDEBAR_ORDER, normalizeSidebarOrder } from './sidebarItems';
 import { DEFAULT_FOOTER_LAYOUT, normalizeFooterLayout } from './footerItems';
+import { DEFAULT_TOPBAR_LAYOUT, normalizeTopBarLayout } from './topBarItems';
 import { playerStorage } from '../../services/storage/playerStorage';
 import { normalizeLyricsSyncOffsetSeconds } from './lyricsSyncOffset';
 
@@ -48,6 +50,7 @@ export type ThemeSettingsPatch = Partial<Omit<ThemeSettings, 'customBackground'>
 
 export type SidebarSettingsPatch = Partial<SidebarSettings>;
 export type FooterLayoutSettingsPatch = Partial<FooterLayoutSettings>;
+export type TopBarLayoutSettingsPatch = Partial<TopBarLayoutSettings>;
 
 export type LyricsSettingsPatch = Partial<LyricsSettings>;
 export type DesktopLyricsSettingsPatch = Partial<DesktopLyricsSettings>;
@@ -65,10 +68,11 @@ export type AutoSyncConfigPatch = Partial<AutoSyncConfig>;
 export type LogSettingsPatch = Partial<LogSettings>;
 
 export interface AppSettingsPatch
-  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync' | 'logging'>> {
+  extends Partial<Omit<AppSettings, 'theme' | 'sidebar' | 'footerLayout' | 'topBarLayout' | 'shortcuts' | 'lyrics' | 'desktopLyrics' | 'audio' | 'customLyricsFonts' | 'download' | 'upload' | 'plugins' | 'autoSync' | 'logging'>> {
   theme?: ThemeSettingsPatch;
   sidebar?: SidebarSettingsPatch;
   footerLayout?: FooterLayoutSettingsPatch;
+  topBarLayout?: TopBarLayoutSettingsPatch;
   shortcuts?: ShortcutSettingsPatch;
   lyrics?: LyricsSettingsPatch;
   desktopLyrics?: DesktopLyricsSettingsPatch;
@@ -135,6 +139,12 @@ export const defaultFooterLayoutSettings: FooterLayoutSettings = {
   middleRight: DEFAULT_FOOTER_LAYOUT.middleRight,
   right: [...DEFAULT_FOOTER_LAYOUT.right],
   hidden: [...DEFAULT_FOOTER_LAYOUT.hidden],
+};
+
+export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
+  left: [...DEFAULT_TOPBAR_LAYOUT.left],
+  right: [...DEFAULT_TOPBAR_LAYOUT.right],
+  hidden: [...DEFAULT_TOPBAR_LAYOUT.hidden],
 };
 
 export const defaultAudioSettings: AudioSettings = {
@@ -228,6 +238,7 @@ export const defaultAppSettings: AppSettings = {
   theme: defaultThemeSettings,
   sidebar: defaultSidebarSettings,
   footerLayout: defaultFooterLayoutSettings,
+  topBarLayout: defaultTopBarLayoutSettings,
   shortcuts: createDefaultShortcutSettings(),
   showTaskbarPlayer: false,
   taskbarPlayerCanDrag: false,
@@ -261,6 +272,12 @@ export const createDefaultFooterLayoutSettings = (): FooterLayoutSettings => ({
   middleRight: defaultFooterLayoutSettings.middleRight,
   right: [...defaultFooterLayoutSettings.right],
   hidden: [...defaultFooterLayoutSettings.hidden],
+});
+
+export const createDefaultTopBarLayoutSettings = (): TopBarLayoutSettings => ({
+  left: [...defaultTopBarLayoutSettings.left],
+  right: [...defaultTopBarLayoutSettings.right],
+  hidden: [...defaultTopBarLayoutSettings.hidden],
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({
@@ -433,6 +450,19 @@ export const mergeFooterLayoutSettings = (
   hidden: patch.hidden ?? base.hidden,
 });
 
+/**
+ * 合并顶部栏布局：把 patch 与 base 合并后整体归一化。
+ * 直接用 normalizeTopBarLayout 处理合并结果，确保任何路径写入的布局都合法。
+ */
+export const mergeTopBarLayoutSettings = (
+  base: TopBarLayoutSettings,
+  patch: TopBarLayoutSettingsPatch,
+): TopBarLayoutSettings => normalizeTopBarLayout({
+  left: patch.left ?? base.left,
+  right: patch.right ?? base.right,
+  hidden: patch.hidden ?? base.hidden,
+});
+
 export const mergeAudioSettings = (
   base: AudioSettings,
   patch: AudioSettingsPatch,
@@ -542,6 +572,7 @@ export const mergeAppSettings = (
     theme: patch.theme ? mergeThemeSettings(base.theme, patch.theme) : base.theme,
     sidebar: patch.sidebar ? mergeSidebarSettings(base.sidebar, patch.sidebar) : base.sidebar,
     footerLayout: patch.footerLayout ? mergeFooterLayoutSettings(base.footerLayout ?? createDefaultFooterLayoutSettings(), patch.footerLayout) : (base.footerLayout ?? createDefaultFooterLayoutSettings()),
+    topBarLayout: patch.topBarLayout ? mergeTopBarLayoutSettings(base.topBarLayout ?? createDefaultTopBarLayoutSettings(), patch.topBarLayout) : (base.topBarLayout ?? createDefaultTopBarLayoutSettings()),
     shortcuts: patch.shortcuts ? mergeShortcutSettings(base.shortcuts, patch.shortcuts) : base.shortcuts,
     download: patch.download ? mergeDownloadSettings(base.download ?? createDefaultDownloadSettings(), patch.download) : (base.download ?? createDefaultDownloadSettings()),
     upload: patch.upload ? mergeUploadSettings(base.upload ?? createDefaultUploadSettings(), patch.upload) : (base.upload ?? createDefaultUploadSettings()),
@@ -610,6 +641,15 @@ export const useSettingsStore = defineStore('settings', () => {
       };
     },
   });
+  const topBarLayout = computed<TopBarLayoutSettings>({
+    get: () => settings.value.topBarLayout,
+    set: nextTopBarLayout => {
+      settings.value = {
+        ...settings.value,
+        topBarLayout: mergeTopBarLayoutSettings(createDefaultTopBarLayoutSettings(), nextTopBarLayout),
+      };
+    },
+  });
 
   const replaceSettings = (nextSettings: AppSettings) => {
     settings.value = mergeAppSettings(createDefaultAppSettings(), nextSettings);
@@ -649,6 +689,13 @@ export const useSettingsStore = defineStore('settings', () => {
     settings.value = {
       ...settings.value,
       footerLayout: mergeFooterLayoutSettings(settings.value.footerLayout, partialFooterLayout),
+    };
+  };
+
+  const patchTopBarLayout = (partialTopBarLayout: TopBarLayoutSettingsPatch) => {
+    settings.value = {
+      ...settings.value,
+      topBarLayout: mergeTopBarLayoutSettings(settings.value.topBarLayout, partialTopBarLayout),
     };
   };
 
@@ -741,6 +788,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme,
     sidebar,
     footerLayout,
+    topBarLayout,
     equalizerPresets,
     userPresets,
     replaceSettings,
@@ -751,6 +799,7 @@ export const useSettingsStore = defineStore('settings', () => {
     replaceSidebar,
     patchSidebar,
     patchFooterLayout,
+    patchTopBarLayout,
     saveEqualizerPreset,
     updateEqualizerPreset,
     deleteEqualizerPreset,

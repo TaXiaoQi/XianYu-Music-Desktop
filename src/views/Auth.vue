@@ -40,7 +40,7 @@ const { showToast } = useToast();
 const uiStore = useUiStore();
 
 const mode = ref<AuthMode>('login');
-const form = ref({ account: '', email: '', password: '', confirmPassword: '', code: '' });
+const form = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
 const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
@@ -397,6 +397,30 @@ async function onSubmit() {
     showToast('请先勾选同意用户协议', 'error');
     return;
   }
+  if (mode.value === 'login') {
+    if (!form.value.account.trim()) {
+      showMessage('请输入弦予号或邮箱');
+      showToast('请输入弦予号或邮箱', 'error');
+      return;
+    }
+  } else if (mode.value === 'register') {
+    const ciyuanxi = form.value.account.trim();
+    if (!ciyuanxi) {
+      showMessage('请填写弦予号');
+      showToast('请填写弦予号', 'error');
+      return;
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
+      showMessage('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线');
+      showToast('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线', 'error');
+      return;
+    }
+    if (!form.value.email.trim()) {
+      showMessage('请填写邮箱');
+      showToast('请填写邮箱', 'error');
+      return;
+    }
+  }
   if (mode.value === 'register' && form.value.password !== form.value.confirmPassword) {
     showMessage('两次输入的密码不一致');
     return;
@@ -415,7 +439,8 @@ async function onSubmit() {
       mode.value === 'login'
         ? await login(form.value.account, form.value.password, captchaPayload)
         : await register(
-            form.value.account || form.value.email.split('@')[0] || '用户',
+            form.value.account.trim(),
+            form.value.nickname.trim(),
             form.value.password,
             form.value.email,
             form.value.code,
@@ -423,7 +448,7 @@ async function onSubmit() {
           );
 
     authStore.setAuth(result);
-    form.value = { account: '', email: '', password: '', confirmPassword: '', code: '' };
+    form.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
     nicknameDraft.value = result.user.nickname || result.user.username;
     avatarDraft.value = result.user.avatar || '';
     showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success');
@@ -1098,18 +1123,27 @@ async function silentPoll() {
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">{{ mode === 'login' ? '弦予号/邮箱' : '昵称' }}</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">{{ mode === 'login' ? '弦予号/邮箱' : '弦予号' }}</span>
               <input
                 v-model="form.account"
                 type="text"
-                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '为自己取个昵称'"
-                autocomplete="username"
-                required
+                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，字母开头，同微信号规则'"
+                :autocomplete="mode === 'login' ? 'off' : 'username'"
                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
             </label>
 
             <template v-if="mode === 'register'">
+              <label class="grid gap-3">
+                <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">昵称（选填）</span>
+                <input
+                  v-model="form.nickname"
+                  type="text"
+                  placeholder="留空则默认"弦予+弦予号""
+                  autocomplete="nickname"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                />
+              </label>
               <label class="grid gap-3">
                 <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
                 <input

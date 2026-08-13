@@ -274,7 +274,7 @@ const handleCustomThemeClick = () => {
 
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
 const authMode = ref<AuthMode>('login');
-const authForm = ref({ account: '', email: '', password: '', confirmPassword: '', code: '' });
+const authForm = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const authLoading = ref(false);
 const codeLoading = ref(false);
 const captchaModalOpen = ref(false);
@@ -358,6 +358,21 @@ const handleSendCode = async () => {
 };
 
 const handleAuthSubmit = async () => {
+  if (authMode.value === 'register') {
+    const ciyuanxi = authForm.value.account.trim();
+    if (!ciyuanxi) {
+      showAuthMessage('请填写弦予号');
+      return;
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
+      showAuthMessage('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线');
+      return;
+    }
+    if (!authForm.value.email.trim()) {
+      showAuthMessage('请填写邮箱');
+      return;
+    }
+  }
   if (authMode.value === 'register' && authForm.value.password !== authForm.value.confirmPassword) {
     showAuthMessage('两次输入的密码不一致');
     return;
@@ -376,7 +391,8 @@ const handleAuthSubmit = async () => {
       authMode.value === 'login'
         ? await login(authForm.value.account, authForm.value.password, captchaPayload)
         : await register(
-            authForm.value.account || authForm.value.email.split('@')[0] || '用户',
+            authForm.value.account.trim(),
+            authForm.value.nickname.trim(),
             authForm.value.password,
             authForm.value.email,
             authForm.value.code,
@@ -384,7 +400,7 @@ const handleAuthSubmit = async () => {
           );
 
     authStore.setAuth(result);
-    authForm.value = { account: '', email: '', password: '', confirmPassword: '', code: '' };
+    authForm.value = { account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' };
     showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     // 登录成功后稍作停留再完成
@@ -1139,11 +1155,11 @@ onUnmounted(() => {
                             <span
                               class="text-black/70 dark:text-white/70 font-light tracking-wider"
                               style="font-size: clamp(13px, 1.1vw, 16px);"
-                            >{{ authMode === 'login' ? '弦予号/邮箱' : '昵称' }}</span>
+                            >{{ authMode === 'login' ? '弦予号/邮箱' : '弦予号' }}</span>
                             <input
                               v-model="authForm.account"
                               type="text"
-                              :placeholder="authMode === 'login' ? '输入弦予号或邮箱登录' : '为自己取个昵称'"
+                              :placeholder="authMode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，字母开头，同微信号规则'"
                               autocomplete="username"
                               required
                               class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
@@ -1152,6 +1168,20 @@ onUnmounted(() => {
                           </label>
 
                           <template v-if="authMode === 'register'">
+                            <label class="grid gap-3">
+                              <span
+                                class="text-black/70 dark:text-white/70 font-light tracking-wider"
+                                style="font-size: clamp(13px, 1.1vw, 16px);"
+                              >昵称（选填）</span>
+                              <input
+                                v-model="authForm.nickname"
+                                type="text"
+                                placeholder="留空则默认"弦予+弦予号""
+                                autocomplete="nickname"
+                                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                                style="font-size: clamp(15px, 1.3vw, 18px);"
+                              />
+                            </label>
                             <label class="grid gap-3">
                               <span
                                 class="text-black/70 dark:text-white/70 font-light tracking-wider"
