@@ -2,7 +2,7 @@
  * 账号认证服务
  *
  * 适配「弦予音乐 APP」邮箱注册登录 API（见 邮箱注册登录API调用文档.md）。
- * - 基地址：https://xymusic.zh2026.cn/api
+ * - 基地址：http://back.xymusic.cc/api
  * - 端点风格：POST /api/?action=<接口名>
  * - 所有接口需 MD5 签名：sign = md5(timestamp + nonce + body + api_secret)
  *   （签名在 Rust 侧完成，密钥不暴露给前端）
@@ -87,7 +87,7 @@ export type ProfileChangeLimitStatus = {
 };
 
 /** 默认后端地址：测试构建与正式构建统一指向弦予音乐 API */
-export const DEFAULT_AUTH_BASE_URL = 'https://xymusic.zh2026.cn/api';
+export const DEFAULT_AUTH_BASE_URL = 'http://back.xymusic.cc/api';
 export const DEFAULT_AUTH_API_SECRET = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
 
 // ─── localStorage 兼容键（仅用于迁移） ──────────────────
