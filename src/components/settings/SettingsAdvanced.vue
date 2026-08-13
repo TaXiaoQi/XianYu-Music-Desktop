@@ -637,16 +637,20 @@ const handleImportAppBackup = async () => {
                       {{ myFeedbackStatusLabel(item.status).text }}
                     </span>
                   </div>
-                  <p class="fb-my-content">{{ item.content }}</p>
-                  <div v-if="item.images && item.images.length > 0" class="fb-my-imgs">
-                    <img v-for="(img, i) in item.images" :key="i" :src="img" alt="反馈图片" class="fb-my-img" />
-                  </div>
-                  <div v-if="item.status === 'resolved' && item.resolveNote" class="fb-my-reply">
-                    <span class="fb-my-reply-label">处理说明（{{ item.assignee || '管理员' }}）</span>
-                    <span>{{ item.resolveNote }}</span>
-                  </div>
-                  <div class="fb-my-meta">
-                    <span>{{ item.createdAt }}</span>
+                  <div class="fb-my-main">
+                    <div class="fb-my-left">
+                      <p class="fb-my-content">{{ item.content }}</p>
+                      <div v-if="item.status === 'resolved' && item.resolveNote" class="fb-my-reply">
+                        <span class="fb-my-reply-label">处理说明（{{ item.assignee || '管理员' }}）</span>
+                        <span>{{ item.resolveNote }}</span>
+                      </div>
+                      <div class="fb-my-meta">
+                        <span>{{ item.createdAt }}</span>
+                      </div>
+                    </div>
+                    <div v-if="item.images && item.images.length > 0" class="fb-my-right">
+                      <img v-for="(img, i) in item.images" :key="i" :src="img" alt="反馈图片" class="fb-my-img" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -998,15 +1002,27 @@ const handleImportAppBackup = async () => {
 .dark .fb-my-content {
   color: rgba(255, 255, 255, 0.75);
 }
-.fb-my-imgs {
+.fb-my-main {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 12px;
   margin-top: 8px;
 }
+.fb-my-left {
+  flex: 1;
+  min-width: 0;
+}
+.fb-my-right {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 96px;
+}
 .fb-my-img {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.08);
