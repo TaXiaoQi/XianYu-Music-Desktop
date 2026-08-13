@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog';
-import { FileDown, FileUp, History, Loader2, Plus, Trash2, X } from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight, FileDown, FileUp, History, Loader2, Plus, Trash2, X } from 'lucide-vue-next';
 
 import { useToast } from '../../composables/toast';
 import { useCollectionsStore } from '../../features/collections/store';
@@ -69,6 +69,10 @@ const compressingImage = ref(false);
 const showMyFeedback = ref(false);
 const myFeedbackList = ref<MyFeedbackItem[]>([]);
 const loadingMyFeedback = ref(false);
+// 我的反馈图片查看器
+const fbViewerVisible = ref(false);
+const fbViewerList = ref<string[]>([]);
+const fbViewerIndex = ref(0);
 
 // 登录态可能在设置页面打开后变化（如用户在其他窗口登录），聚焦时刷新一次
 const refreshFeedbackAuth = () => {
@@ -274,6 +278,35 @@ const openMyFeedback = async () => {
 const closeMyFeedback = () => {
   if (loadingMyFeedback.value) return;
   showMyFeedback.value = false;
+};
+
+// 我的反馈图片查看器
+const openFbViewer = (imgs: string[], index: number) => {
+  fbViewerList.value = imgs;
+  fbViewerIndex.value = index;
+  fbViewerVisible.value = true;
+};
+const closeFbViewer = () => {
+  fbViewerVisible.value = false;
+  fbViewerList.value = [];
+};
+const fbViewerPrev = () => {
+  if (fbViewerList.value.length === 0) return;
+  fbViewerIndex.value = (fbViewerIndex.value - 1 + fbViewerList.value.length) % fbViewerList.value.length;
+};
+const fbViewerNext = () => {
+  if (fbViewerList.value.length === 0) return;
+  fbViewerIndex.value = (fbViewerIndex.value + 1) % fbViewerList.value.length;
+};
+// 堆叠样式：仅第一张完整显示，其余叠压其后
+const fbStackStyle = (i: number, total: number): Record<string, string> => {
+  if (total <= 1) return {};
+  const offset = Math.min(i, 3) * 5;
+  return {
+    left: `${offset}px`,
+    top: `${offset}px`,
+    zIndex: String(total - i),
+  };
 };
 
 const myFeedbackStatusLabel = (status: string): { text: string; cls: string } => {
@@ -648,8 +681,16 @@ const handleImportAppBackup = async () => {
                         <span>{{ item.createdAt }}</span>
                       </div>
                     </div>
-                    <div v-if="item.images && item.images.length > 0" class="fb-my-right">
-                      <img v-for="(img, i) in item.images" :key="i" :src="img" alt="反馈图片" class="fb-my-img" />
+                    <div v-if="item.images && item.images.length > 0" class="fb-my-right" @click="openFbViewer(item.images, 0)">
+                      <img
+                        v-for="(img, i) in item.images"
+                        :key="i"
+                        :src="img"
+                        alt="反馈图片"
+                        class="fb-my-img"
+                        :style="fbStackStyle(i, item.images.length)"
+                      />
+                      <span v-if="item.images.length > 1" class="fb-my-count">{{ item.images.length }}</span>
                     </div>
                   </div>
                 </div>
@@ -659,6 +700,40 @@ const handleImportAppBackup = async () => {
               <button type="button" class="fb-modal-done" @click="closeMyFeedback">关闭</button>
             </div>
           </div>
+        </div>
+      </transition>
+    </Teleport>
+
+    <!-- 我的反馈图片查看器 -->
+    <Teleport to="body">
+      <transition name="viewer-fade">
+        <div v-if="fbViewerVisible" class="fb-viewer-overlay" @click.self="closeFbViewer">
+          <button type="button" class="fb-viewer-close" @click="closeFbViewer">
+            <X class="h-6 w-6" />
+          </button>
+          <button
+            v-if="fbViewerList.length > 1"
+            type="button"
+            class="fb-viewer-nav fb-viewer-prev"
+            @click="fbViewerPrev"
+          >
+            <ChevronLeft class="h-7 w-7" />
+          </button>
+          <img
+            v-if="fbViewerList[fbViewerIndex]"
+            :src="fbViewerList[fbViewerIndex]"
+            alt="反馈图片预览"
+            class="fb-viewer-img"
+          />
+          <button
+            v-if="fbViewerList.length > 1"
+            type="button"
+            class="fb-viewer-nav fb-viewer-next"
+            @click="fbViewerNext"
+          >
+            <ChevronRight class="h-7 w-7" />
+          </button>
+          <div v-if="fbViewerList.length > 1" class="fb-viewer-counter">{{ fbViewerIndex + 1 }} / {{ fbViewerList.length }}</div>
         </div>
       </transition>
     </Teleport>
@@ -1013,24 +1088,44 @@ const handleImportAppBackup = async () => {
   min-width: 0;
 }
 .fb-my-right {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+  position: relative;
+  width: 72px;
+  height: 72px;
   flex-shrink: 0;
-  max-width: 96px;
+  cursor: zoom-in;
 }
 .fb-my-img {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 72px;
   height: 72px;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  cursor: pointer;
+  background: #fff;
 }
 :global(.dark) .fb-my-img,
 .dark .fb-my-img {
   border-color: rgba(255, 255, 255, 0.1);
+  background: #262626;
+}
+.fb-my-count {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  z-index: 20;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 .fb-my-reply {
   margin-top: 8px;
@@ -1105,6 +1200,87 @@ const handleImportAppBackup = async () => {
 }
 .modal-fade-enter-from,
 .modal-fade-leave-to {
+  opacity: 0;
+}
+
+/* ─── 我的反馈图片查看器 ─── */
+.fb-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.fb-viewer-img {
+  max-width: 88vw;
+  max-height: 84vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.fb-viewer-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.fb-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.fb-viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.fb-viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.fb-viewer-prev {
+  left: 18px;
+}
+.fb-viewer-next {
+  right: 18px;
+}
+.fb-viewer-counter {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+}
+.viewer-fade-enter-active,
+.viewer-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.viewer-fade-enter-from,
+.viewer-fade-leave-to {
   opacity: 0;
 }
 </style>
