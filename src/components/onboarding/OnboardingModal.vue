@@ -274,7 +274,7 @@ const handleCustomThemeClick = () => {
 
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
 const authMode = ref<AuthMode>('login');
-const authForm = ref({ username: '', email: '', password: '', confirmPassword: '', code: '' });
+const authForm = ref({ account: '', email: '', password: '', confirmPassword: '', code: '' });
 const authLoading = ref(false);
 const codeLoading = ref(false);
 const captchaModalOpen = ref(false);
@@ -374,9 +374,9 @@ const handleAuthSubmit = async () => {
   try {
     const result =
       authMode.value === 'login'
-        ? await login(authForm.value.username, authForm.value.password, captchaPayload)
+        ? await login(authForm.value.account, authForm.value.password, captchaPayload)
         : await register(
-            authForm.value.username || authForm.value.email.split('@')[0] || '用户',
+            authForm.value.account || authForm.value.email.split('@')[0] || '用户',
             authForm.value.password,
             authForm.value.email,
             authForm.value.code,
@@ -384,7 +384,7 @@ const handleAuthSubmit = async () => {
           );
 
     authStore.setAuth(result);
-    authForm.value = { username: '', email: '', password: '', confirmPassword: '', code: '' };
+    authForm.value = { account: '', email: '', password: '', confirmPassword: '', code: '' };
     showAuthMessage(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     showToast(authMode.value === 'login' ? '登录成功' : '注册成功', 'success');
     // 登录成功后稍作停留再完成
@@ -1056,7 +1056,7 @@ onUnmounted(() => {
                               class="mt-1 truncate text-black/55 dark:text-white/55 font-light"
                               style="font-size: clamp(12px, 1vw, 15px);"
                             >
-                              @{{ authStore.user?.username }}
+                              @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置弦予号' }}
                             </div>
                             <div
                               v-if="authStore.user?.email"
@@ -1139,11 +1139,11 @@ onUnmounted(() => {
                             <span
                               class="text-black/70 dark:text-white/70 font-light tracking-wider"
                               style="font-size: clamp(13px, 1.1vw, 16px);"
-                            >用户名</span>
+                            >{{ authMode === 'login' ? '弦予号/邮箱' : '昵称' }}</span>
                             <input
-                              v-model="authForm.username"
+                              v-model="authForm.account"
                               type="text"
-                              placeholder="输入用户名"
+                              :placeholder="authMode === 'login' ? '输入弦予号或邮箱登录' : '为自己取个昵称'"
                               autocomplete="username"
                               required
                               class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"

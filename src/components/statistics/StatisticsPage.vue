@@ -378,7 +378,7 @@ const losslessRatio = computed(() => {
                   {{ item.nickname }}
                   <span v-if="item.isMe" class="leaderboard-tag">{{ TEXT.you }}</span>
                 </div>
-                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ item.username }}</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ item.nickname || item.username }}</div>
               </div>
               <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(item.duration) }}</div>
             </div>
@@ -410,7 +410,7 @@ const losslessRatio = computed(() => {
                   {{ leaderboardDisplay.me.nickname }}
                   <span class="leaderboard-tag">{{ TEXT.you }}</span>
                 </div>
-                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.username }}</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">@{{ leaderboardDisplay.me.nickname || leaderboardDisplay.me.username }}</div>
               </div>
               <div class="leaderboard-duration text-gray-800 dark:text-white/90">{{ formatLeaderboardDuration(leaderboardDisplay.me.duration) }}</div>
             </div>

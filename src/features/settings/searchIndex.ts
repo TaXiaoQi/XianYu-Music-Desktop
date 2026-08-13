@@ -205,7 +205,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '远程音乐库', target: '远程', keywords: 'WebDAV 网络服务器' },
     { label: '名称', keywords: '远程音乐库' },
     { label: '服务器地址', keywords: '远程 URL WebDAV' },
-    { label: '用户名', keywords: '远程 登录 账号' },
+    { label: '弦予号', keywords: '远程 登录 账号 昵称' },
     { label: '密码', keywords: '远程 登录' },
     { label: '根目录', keywords: '远程 路径 文件夹' },
   ]),

@@ -13,6 +13,7 @@ import {
   getAuthBaseUrl,
   setAuthApiSecret,
   setAuthBaseUrl,
+  updateCiyuanxiId,
 } from '../../services/auth/authService';
 import SettingHint from './SettingHint.vue';
 
@@ -87,6 +88,52 @@ async function handleResetBaseUrl() {
 
 function handleOpenAccount() {
   void router.push('/auth');
+}
+
+// 修改弦予号（参考微信号设计：登录唯一标识，每月可修改一次）
+const showCiyuanxiModal = ref(false);
+const ciyuanxiForm = ref({ oldId: '', newId: '', password: '' });
+const ciyuanxiLoading = ref(false);
+
+function openCiyuanxiModal() {
+  ciyuanxiForm.value = {
+    oldId: authStore.user?.ciyuanxi_id || authStore.user?.username || '',
+    newId: '',
+    password: '',
+  };
+  showCiyuanxiModal.value = true;
+}
+
+async function submitCiyuanxi() {
+  const oldId = ciyuanxiForm.value.oldId.trim();
+  const newId = ciyuanxiForm.value.newId.trim();
+  const password = ciyuanxiForm.value.password;
+  if (!oldId) {
+    showToast('未获取到当前弦予号，请重新登录', 'error');
+    return;
+  }
+  if (newId.length < 6) {
+    showToast('弦予号至少 6 个字符', 'error');
+    return;
+  }
+  if (!password) {
+    showToast('请输入登录密码', 'error');
+    return;
+  }
+  ciyuanxiLoading.value = true;
+  try {
+    const res = await updateCiyuanxiId(oldId, newId, password);
+    showToast(res.message || '弦予号修改成功', 'success');
+    showCiyuanxiModal.value = false;
+    const user = authStore.user;
+    if (user) {
+      authStore.setUser({ ...user, ciyuanxi_id: res.ciyuanxi_id });
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '弦予号修改失败', 'error');
+  } finally {
+    ciyuanxiLoading.value = false;
+  }
 }
 
 // 退出登录二次确认
@@ -272,7 +319,7 @@ function updateAutoSyncMaxDelay(event: Event) {
             </div>
             <div class="text-xs text-gray-500 dark:text-white/50 truncate mt-0.5">
               <template v-if="authStore.isLoggedIn">
-                @{{ authStore.user?.username }} · {{ authStore.user?.email }}
+                @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置弦予号' }} · {{ authStore.user?.email }}
               </template>
               <template v-else>登录后可同步个人资料到云端服务器</template>
             </div>
@@ -295,6 +342,32 @@ function updateAutoSyncMaxDelay(event: Event) {
             {{ authStore.isLoggedIn ? '前往个人中心' : '前往登录' }}
           </button>
         </div>
+      </div>
+    </section>
+
+    <!-- 弦予号设置 -->
+    <section v-if="authStore.isLoggedIn" class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
+          弦予号
+        </span>
+        <SettingHint text="弦予号是登录账号的唯一登录标识（参考微信号设计），格式为 6-32 位字母、数字、下划线或中划线，每月可修改一次。" />
+      </h2>
+      <div class="flex items-center justify-between gap-4 rounded-xl border border-black/10 bg-white/45 p-4 transition-colors hover:bg-white/60 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10">
+        <div class="min-w-0">
+          <div class="text-xs text-gray-500 dark:text-white/50">当前弦予号</div>
+          <div class="mt-0.5 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+            @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置' }}
+          </div>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 border border-black/15 px-4 h-9 rounded-full text-xs font-medium text-black/70 transition hover:border-[#EC4141]/40 hover:text-[#EC4141] cursor-pointer dark:text-white/70 dark:border-white/15"
+          @click="openCiyuanxiModal"
+        >
+          修改弦予号
+        </button>
       </div>
     </section>
 
@@ -652,6 +725,70 @@ function updateAutoSyncMaxDelay(event: Event) {
                 @click="confirmLogout"
               >
                 确认退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 修改弦予号弹窗 -->
+      <Transition name="logout-modal">
+        <div
+          v-if="showCiyuanxiModal"
+          class="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showCiyuanxiModal = false"
+        >
+          <div class="logout-confirm-card">
+            <h3 class="logout-confirm-title">修改弦予号</h3>
+            <p class="logout-confirm-desc">弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。</p>
+            <div class="flex flex-col gap-3 mt-4">
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">当前弦予号</span>
+                <input
+                  v-model="ciyuanxiForm.oldId"
+                  type="text"
+                  readonly
+                  spellcheck="false"
+                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
+                />
+              </label>
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">新弦予号</span>
+                <input
+                  v-model="ciyuanxiForm.newId"
+                  type="text"
+                  placeholder="6-32 位字母 / 数字 / _ / -"
+                  spellcheck="false"
+                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                />
+              </label>
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">登录密码</span>
+                <input
+                  v-model="ciyuanxiForm.password"
+                  type="password"
+                  placeholder="请输入当前登录密码"
+                  autocomplete="current-password"
+                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                />
+              </label>
+            </div>
+            <div class="logout-confirm-actions mt-5">
+              <button
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                :disabled="ciyuanxiLoading"
+                @click="showCiyuanxiModal = false"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-btn logout-btn--danger"
+                :disabled="ciyuanxiLoading"
+                @click="submitCiyuanxi"
+              >
+                {{ ciyuanxiLoading ? '提交中…' : '确认修改' }}
               </button>
             </div>
           </div>

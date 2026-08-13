@@ -40,7 +40,7 @@ const { showToast } = useToast();
 const uiStore = useUiStore();
 
 const mode = ref<AuthMode>('login');
-const form = ref({ username: '', email: '', password: '', confirmPassword: '', code: '' });
+const form = ref({ account: '', email: '', password: '', confirmPassword: '', code: '' });
 const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
 const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
@@ -413,9 +413,9 @@ async function onSubmit() {
   try {
     const result =
       mode.value === 'login'
-        ? await login(form.value.username, form.value.password, captchaPayload)
+        ? await login(form.value.account, form.value.password, captchaPayload)
         : await register(
-            form.value.username || form.value.email.split('@')[0] || '用户',
+            form.value.account || form.value.email.split('@')[0] || '用户',
             form.value.password,
             form.value.email,
             form.value.code,
@@ -423,7 +423,7 @@ async function onSubmit() {
           );
 
     authStore.setAuth(result);
-    form.value = { username: '', email: '', password: '', confirmPassword: '', code: '' };
+    form.value = { account: '', email: '', password: '', confirmPassword: '', code: '' };
     nicknameDraft.value = result.user.nickname || result.user.username;
     avatarDraft.value = result.user.avatar || '';
     showMessage(mode.value === 'login' ? '登录成功' : '注册成功', 'success');
@@ -483,7 +483,7 @@ async function handleResetPassword() {
     showMessage(result.message || '密码修改成功', 'success');
     showToast(result.message || '密码修改成功，请使用新密码登录', 'success');
     mode.value = 'login';
-    form.value.username = email;
+    form.value.account = '';
     form.value.password = '';
   } catch (error) {
     const tip = error instanceof Error ? error.message : '重置密码失败';
@@ -1098,11 +1098,11 @@ async function silentPoll() {
             @submit.prevent="onSubmit"
           >
             <label class="grid gap-3">
-              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">用户名</span>
+              <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">{{ mode === 'login' ? '弦予号/邮箱' : '昵称' }}</span>
               <input
-                v-model="form.username"
+                v-model="form.account"
                 type="text"
-                placeholder="输入用户名"
+                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '为自己取个昵称'"
                 autocomplete="username"
                 required
                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
@@ -1362,7 +1362,7 @@ async function silentPoll() {
                 改名审核未通过
               </div>
               <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light mt-1.5 truncate">
-                @{{ authStore.user?.username }} · {{ authStore.user?.email }}
+                @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置弦予号' }} · {{ authStore.user?.email }}
               </p>
               <!-- 数据统计 -->
               <div class="flex items-center gap-[clamp(1rem,1.5vw,1.5rem)] flex-wrap mt-3">
