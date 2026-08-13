@@ -245,9 +245,32 @@ export async function restoreMainWindowFromMiniMode(options: {
   if (!options.keepMiniPlayerVisible) {
     await options.hideMiniPlayerWindow();
   }
+  // 小窗消失后再延迟 0.5s 显示主窗
+  await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
+  // 主窗淡入：用不透明遮罩盖住内容，再让遮罩淡出露出主窗。
+  // 主窗是 transparent 窗口，窗口级 setOpacity 在 Windows 上不生效；
+  // 直接对 #app 做 opacity 过渡会因 WebView2 隐藏时保留旧帧而先闪出完整画面。
+  // 遮罩从第一帧就覆盖，无论 WebView2 呈现什么缓存都不会闪。
+  let fadeMask: HTMLDivElement | null = null;
+  if (typeof document !== 'undefined') {
+    const isDark = document.documentElement.classList.contains('dark');
+    fadeMask = document.createElement('div');
+    fadeMask.style.cssText = `position:fixed;inset:0;z-index:99999;pointer-events:none;background-color:${isDark ? '#262626' : '#fafafa'};opacity:1;`;
+    document.body.appendChild(fadeMask);
+  }
+
   await options.mainWindow.unminimize();
   await options.mainWindow.show();
   await options.mainWindow.setFocus();
+
+  if (fadeMask) {
+    requestAnimationFrame(() => {
+      fadeMask.style.transition = 'opacity 0.3s ease-out';
+      fadeMask.style.opacity = '0';
+    });
+    window.setTimeout(() => fadeMask?.remove(), 400);
+  }
 
   // 主窗口 hide → show 后 shell 会忘记之前的全屏标记，导致任务栏重新显示遮挡窗口底部。
   // 若仍处于沉浸全屏状态，重新告知 shell 让任务栏让位（不改变窗口样式/位置，无动画开销）。
@@ -348,15 +371,17 @@ export function useMiniPlayerWindowBridge() {
   const openMiniPlayerWindow = async () => {
     clearMiniPlayerPrewarmTimer();
 
+    // 立刻隐藏主窗口，避免小窗冷启动期间主窗口残留造成卡顿
+    uiStore.mainWindowUiSleepRequested = true;
+    await nextTick();
+    await mainWindow.hide();
+
     const targetWindow = await ensureMiniPlayerWindow();
     await waitForMiniPlayerReady();
     await targetWindow.setAlwaysOnTop(true);
     await emitStateToMiniPlayer();
     isMiniPlayerWindowVisible.value = true;
     await emitMiniPlayerVisibility(true);
-    uiStore.mainWindowUiSleepRequested = true;
-    await nextTick();
-    await mainWindow.hide();
     await targetWindow.show();
   };
 
