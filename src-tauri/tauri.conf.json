@@ -33,7 +33,7 @@
           "$APPCACHE/**"
         ]
       },
-      "csp": "default-src 'self' ipc: http://localhost:1420; img-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: https://xy.zh2026.cn https://xymusic.zh2026.cn https://*.music.126.net https://*.gtimg.cn https://*.kuwo.cn https://*.kugou.com https://*.migu.cn https://*.bilivideo.com https://*.hdslb.com; script-src 'self' blob:; worker-src 'self'; style-src 'self'; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://localhost:1420 ws://localhost:1420 https://api.github.com https://github.com https://xy.zh2026.cn https://xymusic.zh2026.cn;"
+      "csp": "default-src 'self' ipc: http://localhost:1420; img-src 'self' asset: http://asset.localhost https://asset.localhost ms-appx-web: data: blob: http://back.xymusic.cc https://xy.zh2026.cn https://xymusic.zh2026.cn https://*.music.126.net https://*.gtimg.cn https://*.kuwo.cn https://*.kugou.com https://*.migu.cn https://*.bilivideo.com https://*.hdslb.com; script-src 'self' blob:; worker-src 'self'; style-src 'self'; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://localhost:1420 ws://localhost:1420 http://back.xymusic.cc https://api.github.com https://github.com https://xy.zh2026.cn https://xymusic.zh2026.cn;"
     }
   },
   "bundle": {

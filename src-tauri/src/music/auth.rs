@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
 /// 官方后端地址
-const OFFICIAL_AUTH_BASE_URL: &str = "https://xymusic.zh2026.cn/api";
+const OFFICIAL_AUTH_BASE_URL: &str = "http://back.xymusic.cc/api";
 
 /// 默认后端地址：测试构建与正式构建统一指向弦予音乐 API
 const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
