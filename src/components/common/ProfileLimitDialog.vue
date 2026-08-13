@@ -20,7 +20,7 @@ const dialogCopy = computed(() => {
     return {
       title: `${targetName}暂不能修改`,
       desc: profileLimitDialogState.value.message || `${targetName}今日已修改过啦，请明天再试。`,
-      badge: profileLimitDialogState.value.target === 'avatar' ? '头像限制' : '改名限制',
+      badge: '',
       confirmText: '我知道了',
       note: '请确认本次修改内容无误后再继续。',
     };
@@ -29,7 +29,7 @@ const dialogCopy = computed(() => {
     return {
       title: '更换头像提示',
       desc: '头像每日只能修改 1 次，上传后需要等待管理员审核。审核通过前会继续显示当前头像。',
-      badge: '头像审核',
+      badge: '',
       confirmText: '继续选择头像',
       note: '请确认本次修改内容无误后再继续。',
     };
@@ -37,7 +37,7 @@ const dialogCopy = computed(() => {
   return {
     title: '修改昵称提示',
     desc: '昵称每日只能修改 1 次，提交后需要等待管理员审核。审核通过前会继续显示当前昵称。',
-    badge: '改名审核',
+    badge: '',
     confirmText: '继续修改昵称',
     note: '请确认本次修改内容无误后再继续。',
   };
@@ -66,7 +66,7 @@ function cancel() {
             </svg>
           </div>
 
-          <div class="profile-limit-badge">{{ dialogCopy.badge }}</div>
+          <div v-if="dialogCopy.badge" class="profile-limit-badge">{{ dialogCopy.badge }}</div>
           <h3 class="profile-limit-title">{{ dialogCopy.title }}</h3>
           <p class="profile-limit-desc">{{ dialogCopy.desc }}</p>
 
