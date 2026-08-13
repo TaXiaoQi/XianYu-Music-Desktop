@@ -283,23 +283,29 @@ export function reportUserBehavior(report: UserBehaviorReport): void {
 // ─── 问题反馈 ───────────────────────────────────────────
 
 /**
- * 提交问题反馈或建议。
- *
- * 与其他 report* 函数不同：本函数**不** fire-and-forget，而是返回 Promise，
- * 由调用方根据成功/失败给出 toast 反馈（用户主动提交需要即时反馈）。
+ * 提交反馈。反馈类型二选一：
+ *  - 'problem'（问题反馈）：可附带错误/全量日志，不支持图片
+ *  - 'suggestion'（功能建议）：支持上传图片（base64 data URL 数组），不附日志
  *
  * @param title        反馈标题（1-60 字）
  * @param content      反馈内容（1-1000 字）
- * @param errorLogs    可选，附带的错误日志文本
- * @param allLogs      可选，附带的全量日志文本
+ * @param options      可选参数
+ * @param options.feedbackType 反馈类型，默认 'problem'
+ * @param options.errorLogs    可选，问题反馈附带的错误日志文本
+ * @param options.allLogs      可选，问题反馈附带的全部日志文本
+ * @param options.images       可选，功能建议上传的图片（base64 data URL 数组）
  * @returns 后端返回的新反馈 ID
  * @throws 未登录时抛 Error('请先登录后再提交反馈')；后端校验失败抛 Error(msg)
  */
 export async function submitFeedback(
   title: string,
   content: string,
-  errorLogs?: string,
-  allLogs?: string,
+  options: {
+    feedbackType?: 'problem' | 'suggestion';
+    errorLogs?: string;
+    allLogs?: string;
+    images?: string[];
+  } = {},
 ): Promise<number> {
   const auth = getStoredAuth();
   const user = auth?.user;
@@ -308,17 +314,53 @@ export async function submitFeedback(
     throw new Error('请先登录后再提交反馈');
   }
 
+  const feedbackType = options.feedbackType ?? 'problem';
   const payload: Record<string, unknown> = {
     ciyuanxi_id: ciyuanxiId,
     nickname: user?.nickname?.trim() || '',
     title: title.trim(),
     content: content.trim(),
+    feedback_type: feedbackType,
   };
-  if (errorLogs) payload.error_logs = errorLogs;
-  if (allLogs) payload.all_logs = allLogs;
+  if (options.errorLogs) payload.error_logs = options.errorLogs;
+  if (options.allLogs) payload.all_logs = options.allLogs;
+  if (options.images && options.images.length > 0) payload.images = options.images;
 
   const data = await signedRequest<{ id: string | number }>('submit_feedback', payload);
   return Number(data.id);
+}
+
+export interface MyFeedbackItem {
+  id: number;
+  title: string;
+  content: string;
+  feedbackType: 'problem' | 'suggestion';
+  images: string[];
+  status: 'pending' | 'processing' | 'resolved' | 'rejected';
+  category: string;
+  assignee: string;
+  resolveNote: string;
+  hasErrorLogs: boolean;
+  hasAllLogs: boolean;
+  createdAt: string;
+  repliedAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 获取当前用户的反馈列表（含状态），用于客户端「我的反馈」查看。
+ */
+export async function getMyFeedback(): Promise<MyFeedbackItem[]> {
+  const auth = getStoredAuth();
+  const user = auth?.user;
+  const ciyuanxiId = user?.ciyuanxi_id?.trim();
+  if (!ciyuanxiId) {
+    throw new Error('请先登录后再查看反馈');
+  }
+  const data = await signedRequest<{ list: MyFeedbackItem[] }>('list_my_feedback', {
+    ciyuanxi_id: ciyuanxiId,
+  });
+  return data?.list ?? [];
 }
 
 /**
