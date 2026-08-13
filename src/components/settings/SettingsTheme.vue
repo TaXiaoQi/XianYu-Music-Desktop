@@ -35,6 +35,9 @@ const TEXT = {
   customTrayMenuHint: '\u5f00\u542f\u540e\u9ed8\u8ba4\u4f7f\u7528 XY-Music \u7ed8\u5236\u7684\u6258\u76d8\u83dc\u5355\uff1b\u5173\u95ed\u540e\u4f7f\u7528\u7cfb\u7edf\u539f\u751f\u83dc\u5355\u3002',
   customTrayMenuOn: '\u81ea\u5b9a\u4e49',
   customTrayMenuOff: '\u7cfb\u7edf',
+  leaderboardTitle: '\u9996\u9875\u6392\u884c\u699c',
+  leaderboardEnable: '\u662f\u5426\u5728\u9996\u9875\u5c55\u793a\u542c\u6b4c\u6392\u884c\u699c',
+  leaderboardHint: '\u5173\u95ed\u540e\u9996\u9875\u5c06\u4e0d\u518d\u663e\u793a\u542c\u6b4c\u6392\u884c\u699c\u3002',
 };
 
 const FLOW_TEXT = {
@@ -68,6 +71,7 @@ const {
   materialMode,
   keepWindowMaterialOnBlur,
   useCustomTrayMenu,
+  showLeaderboard,
   isWindowMaterialDisabled,
   isWindowMaterialButtonDisabled,
   getWindowMaterialModeDisabledReason,
@@ -88,6 +92,7 @@ const {
   setWindowBlurTint,
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
+  setShowLeaderboard,
 } = useSettingsThemeControls();
 </script>
 
@@ -505,6 +510,35 @@ const {
           <span
             class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
             :class="useCustomTrayMenu ? 'translate-x-5' : ''"
+          ></span>
+        </span>
+      </label>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.leaderboardTitle }}
+        </span>
+        <SettingHint :text="TEXT.leaderboardHint" />
+      </h2>
+
+      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.leaderboardEnable }}</span>
+        <input
+          type="checkbox"
+          class="sr-only"
+          :checked="showLeaderboard"
+          @change="setShowLeaderboard(($event.target as HTMLInputElement).checked)"
+        />
+        <span
+          class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+          :class="showLeaderboard ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
+        >
+          <span
+            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+            :class="showLeaderboard ? 'translate-x-5' : ''"
           ></span>
         </span>
       </label>
