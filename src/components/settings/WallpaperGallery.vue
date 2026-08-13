@@ -535,7 +535,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 未登录提示（我的上传） -->
-        <div v-if="activeTab === 'mine' && !isLoggedIn" class="flex h-[60vh] flex-col items-center justify-center text-white/40">
+        <div v-if="activeTab === 'mine' && !isLoggedIn" class="min-h-0 flex-1 flex flex-col items-center justify-center py-20 text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="mb-3 h-10 w-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>

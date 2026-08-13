@@ -144,8 +144,8 @@ const ctx = inject<{
     v-else-if="itemKey === 'colorScheme'"
     type="button"
     class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-    title="配色方案"
-    aria-label="配色方案"
+    title="皮肤"
+    aria-label="皮肤"
     @click.stop="ctx.openColorScheme"
   >
     <TopBarControlIcon item-key="colorScheme" class="h-5 w-5" />

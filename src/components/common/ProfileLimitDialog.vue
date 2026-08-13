@@ -5,6 +5,16 @@ import { useProfileLimitDialog } from '../../composables/useProfileLimitDialog';
 const { profileLimitDialogState, resolveProfileLimitDialog } = useProfileLimitDialog();
 
 const dialogCopy = computed(() => {
+  if (profileLimitDialogState.value.target === 'ban') {
+    const targetName = profileLimitDialogState.value.banType === 'device' ? '设备' : '账号';
+    return {
+      title: `${targetName}已被封禁`,
+      desc: profileLimitDialogState.value.message || `你的${targetName}已被管理员封禁，如有疑问请联系管理员。`,
+      badge: '封禁通知',
+      confirmText: '我知道了',
+      note: '账号已无法继续使用，如有疑问请联系管理员申诉。',
+    };
+  }
   if (profileLimitDialogState.value.blocked) {
     const targetName = profileLimitDialogState.value.target === 'avatar' ? '头像' : '昵称';
     return {
@@ -12,6 +22,7 @@ const dialogCopy = computed(() => {
       desc: profileLimitDialogState.value.message || `${targetName}今日已修改过啦，请明天再试。`,
       badge: profileLimitDialogState.value.target === 'avatar' ? '头像限制' : '改名限制',
       confirmText: '我知道了',
+      note: '请确认本次修改内容无误后再继续。',
     };
   }
   if (profileLimitDialogState.value.target === 'avatar') {
@@ -20,6 +31,7 @@ const dialogCopy = computed(() => {
       desc: '头像每日只能修改 1 次，上传后需要等待管理员审核。审核通过前会继续显示当前头像。',
       badge: '头像审核',
       confirmText: '继续选择头像',
+      note: '请确认本次修改内容无误后再继续。',
     };
   }
   return {
@@ -27,6 +39,7 @@ const dialogCopy = computed(() => {
     desc: '昵称每日只能修改 1 次，提交后需要等待管理员审核。审核通过前会继续显示当前昵称。',
     badge: '改名审核',
     confirmText: '继续修改昵称',
+    note: '请确认本次修改内容无误后再继续。',
   };
 });
 
@@ -45,7 +58,6 @@ function cancel() {
       <div
         v-if="profileLimitDialogState.visible"
         class="profile-limit-overlay"
-        @click.self="cancel"
       >
         <div class="profile-limit-card">
           <div class="profile-limit-icon">
@@ -60,7 +72,7 @@ function cancel() {
 
           <div class="profile-limit-note">
             <span class="profile-limit-note-dot"></span>
-            <span>请确认本次修改内容无误后再继续。</span>
+            <span>{{ dialogCopy.note }}</span>
           </div>
 
           <div class="profile-limit-actions" :class="{ 'profile-limit-actions--single': profileLimitDialogState.blocked }">
@@ -86,61 +98,59 @@ function cancel() {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
 }
 
 .profile-limit-card {
-  width: min(92vw, 390px);
+  width: min(90vw, 400px);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 24px;
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.26), 0 8px 24px rgba(236, 65, 65, 0.12);
-  padding: 26px 24px 22px;
-  text-align: center;
   color: #1f2937;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 24px 22px 20px;
+  text-align: center;
 }
 
 .profile-limit-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
-  margin: 0 auto 12px;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
   border-radius: 999px;
   background: rgba(236, 65, 65, 0.1);
   color: #ec4141;
-  box-shadow: inset 0 0 0 1px rgba(236, 65, 65, 0.12);
 }
 
 .profile-limit-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 24px;
+  height: 22px;
   padding: 0 10px;
   margin-bottom: 10px;
   border-radius: 999px;
   background: rgba(236, 65, 65, 0.08);
   color: #ec4141;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .profile-limit-title {
   margin: 0;
-  color: #111827;
-  font-size: 19px;
-  font-weight: 850;
-  letter-spacing: -0.02em;
+  color: #1f2937;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 .profile-limit-desc {
-  margin: 10px 0 0;
-  color: rgba(31, 41, 55, 0.68);
-  font-size: 14px;
-  line-height: 1.7;
+  margin: 8px 0 0;
+  color: rgba(75, 85, 99, 0.9);
+  font-size: 0.85rem;
+  line-height: 1.55;
 }
 
 .profile-limit-note {
@@ -150,10 +160,10 @@ function cancel() {
   gap: 8px;
   margin-top: 16px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(245, 158, 11, 0.1);
   color: #b45309;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .profile-limit-note-dot {
@@ -181,12 +191,12 @@ function cancel() {
 
 .profile-limit-btn {
   height: 40px;
-  border: 0;
-  border-radius: 14px;
-  font-size: 13px;
-  font-weight: 750;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 100ms ease;
 }
 
 .profile-limit-btn:active {
@@ -194,34 +204,33 @@ function cancel() {
 }
 
 .profile-limit-btn--ghost {
-  background: rgba(17, 24, 39, 0.06);
-  color: rgba(31, 41, 55, 0.72);
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
 }
 
 .profile-limit-btn--ghost:hover {
-  background: rgba(17, 24, 39, 0.1);
-  color: #111827;
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31, 41, 55);
 }
 
 .profile-limit-btn--primary {
   background: #ec4141;
-  color: #fff;
-  box-shadow: 0 14px 28px rgba(236, 65, 65, 0.24);
+  color: #ffffff;
 }
 
 .profile-limit-btn--primary:hover {
-  background: #d83a3a;
-  box-shadow: 0 18px 34px rgba(236, 65, 65, 0.3);
+  background: #d13b3b;
 }
 
 .profile-limit-modal-enter-active,
 .profile-limit-modal-leave-active {
-  transition: opacity 0.24s ease;
+  transition: opacity 0.2s ease;
 }
 
 .profile-limit-modal-enter-active .profile-limit-card,
 .profile-limit-modal-leave-active .profile-limit-card {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.22s ease;
 }
 
 .profile-limit-modal-enter-from,
@@ -232,9 +241,8 @@ function cancel() {
 .profile-limit-modal-enter-from .profile-limit-card,
 .profile-limit-modal-leave-to .profile-limit-card {
   opacity: 0;
-  transform: translateY(14px) scale(0.96);
+  transform: scale(0.92) translateY(8px);
 }
-
 </style>
 
 <!-- 深色模式使用非 scoped 选择器，避免 scoped + :global(.dark) 复合选择器构建后丢失目标元素。 -->
@@ -247,7 +255,17 @@ html.dark .profile-limit-card {
   border-color: rgba(255, 255, 255, 0.08);
   background: #262626;
   color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(236, 65, 65, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .profile-limit-icon {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
+}
+
+html.dark .profile-limit-badge {
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
 }
 
 html.dark .profile-limit-title {
@@ -264,12 +282,12 @@ html.dark .profile-limit-note {
 }
 
 html.dark .profile-limit-btn--ghost {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 244, 245, 0.72);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 html.dark .profile-limit-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
 }
 </style>

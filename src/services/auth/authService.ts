@@ -998,3 +998,32 @@ export async function refreshSession(): Promise<AuthPayload | null> {
   }
   return stored;
 }
+
+/**
+ * 检查当前用户账号/设备是否被封禁。
+ * 调用服务器 check_ban_status 接口，传入 ciyuanxi_id 和 device_id。
+ * 返回 { banned, type, reason }，若被封禁则同步清空本地凭证。
+ */
+export async function checkBanStatus(): Promise<{ banned: boolean; type: 'account' | 'device'; reason: string; ciyuanxiId: string; nickname: string }> {
+  const current = getStoredUser();
+  if (!current) return { banned: false, type: 'account', reason: '', ciyuanxiId: '', nickname: '' };
+  try {
+    const data = await requestAction<{ banned: boolean; type?: string; reason?: string }>(
+      'check_ban_status',
+      {
+        ciyuanxi_id: current.ciyuanxi_id ?? current.id,
+        device_id: getDeviceId(),
+      },
+      15_000,
+    );
+    return {
+      banned: data.banned === true,
+      type: (data.type as 'account' | 'device') || 'account',
+      reason: data.reason || '',
+      ciyuanxiId: current.ciyuanxi_id ?? current.id,
+      nickname: current.nickname || '',
+    };
+  } catch {
+    return { banned: false, type: 'account', reason: '', ciyuanxiId: '', nickname: '' };
+  }
+}
