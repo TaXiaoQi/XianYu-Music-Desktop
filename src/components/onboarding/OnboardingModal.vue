@@ -46,8 +46,10 @@ const authStore = useAuthStore();
 const {
   colorScheme,
   materialMode,
+  keepWindowMaterialOnBlur,
   setColorScheme,
   toggleWindowMaterial,
+  setKeepWindowMaterialOnBlur,
   isWindowMaterialButtonDisabled,
   isWindows11,
 } = useSettingsThemeControls();
@@ -861,6 +863,42 @@ onUnmounted(() => {
                         </div>
                       </button>
                     </div>
+
+                    <label
+                      class="mt-[clamp(0.75rem,1.5vw,1.25rem)] flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-black/8 dark:border-white/8 px-[clamp(0.75rem,1.5vw,1rem)] py-[clamp(0.625rem,1vw,0.875rem)] transition-all"
+                      :class="materialMode === 'none'
+                        ? 'cursor-not-allowed opacity-40'
+                        : 'hover:border-[#EC4141]/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]'"
+                    >
+                      <div class="flex flex-col gap-1">
+                        <span
+                          class="font-medium text-black/80 dark:text-white/80"
+                          style="font-size: clamp(14px, 1.1vw, 16px);"
+                        >保持材质</span>
+                        <span
+                          class="text-black/40 dark:text-white/40 font-light"
+                          style="font-size: clamp(11px, 0.9vw, 13px);"
+                        >开启后窗口失焦时不会卸载材质，避免切换时的闪烁</span>
+                      </div>
+                      <span class="flex items-center shrink-0">
+                        <input
+                          type="checkbox"
+                          class="sr-only"
+                          :checked="keepWindowMaterialOnBlur"
+                          :disabled="materialMode === 'none'"
+                          @change="setKeepWindowMaterialOnBlur(($event.target as HTMLInputElement).checked)"
+                        />
+                        <span
+                          class="relative h-6 w-11 rounded-full transition-colors"
+                          :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'bg-[#EC4141]' : 'bg-black/15 dark:bg-white/20'"
+                        >
+                          <span
+                            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
+                            :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'translate-x-5' : ''"
+                          ></span>
+                        </span>
+                      </span>
+                    </label>
                   </div>
 
                   <!-- 步骤 3: 快捷键 -->
