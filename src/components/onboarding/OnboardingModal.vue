@@ -312,6 +312,8 @@ const authHeaderLabel = computed(() =>
 const switchAuthMode = (m: AuthMode) => {
   authMode.value = m;
   authMessage.value = '';
+  // 切换模式时清空密码相关字段，防止登录与注册页之间密码同步
+  authForm.value.password = '';
   authForm.value.confirmPassword = '';
 };
 
@@ -358,7 +360,7 @@ const handleSendCode = async () => {
   codeLoading.value = true;
   authMessage.value = '';
   try {
-    const result = await sendEmailCode(email, type, captchaPayload);
+    const result = await sendEmailCode(email, type, captchaPayload, authForm.value.account.trim() || undefined);
     showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
     startCodeCountdown();
