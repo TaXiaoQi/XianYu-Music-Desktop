@@ -730,6 +730,8 @@ function navigateShortcut(to: string) {
 function switchMode(next: AuthMode) {
   mode.value = next;
   message.value = '';
+  // 切换模式时清空密码相关字段，防止登录与注册页之间密码同步
+  form.value.password = '';
   form.value.confirmPassword = '';
   if (next === 'forgot') {
     agreementAccepted.value = false;

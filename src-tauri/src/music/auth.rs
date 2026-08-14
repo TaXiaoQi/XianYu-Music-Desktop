@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 const DEFAULT_API_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
 /// 官方后端地址
-const OFFICIAL_AUTH_BASE_URL: &str = "http://back.xymusic.cc/api";
+const OFFICIAL_AUTH_BASE_URL: &str = "https://back.xymusic.cc/api";
 
 /// 默认后端地址：测试构建与正式构建统一指向弦予音乐 API
 const DEFAULT_AUTH_BASE_URL: &str = OFFICIAL_AUTH_BASE_URL;
@@ -112,7 +112,8 @@ fn api_secret_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(auth_data_dir(app)?.join("api_secret.txt"))
 }
 
-/// 从文件读取 base_url，不存在时返回默认值
+/// 从文件读取 base_url，不存在时返回默认值。
+/// 自动将旧版 http://back.xymusic.cc 升级为 https，避免 Nginx 重定向丢失 POST 请求体。
 fn read_base_url(app: &AppHandle) -> String {
     match base_url_file_path(app) {
         Ok(path) => {
@@ -124,7 +125,15 @@ fn read_base_url(app: &AppHandle) -> String {
                 if saved.is_empty() {
                     return DEFAULT_AUTH_BASE_URL.to_string();
                 }
-                saved
+                // 迁移：将 http://back.xymusic.cc 自动升级为 https
+                let upgraded = saved.replace(
+                    "http://back.xymusic.cc",
+                    "https://back.xymusic.cc",
+                );
+                if upgraded != saved {
+                    let _ = fs::write(&path, &upgraded);
+                }
+                upgraded
             } else {
                 DEFAULT_AUTH_BASE_URL.to_string()
             }
