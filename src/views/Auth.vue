@@ -40,6 +40,68 @@ const uiStore = useUiStore();
 const mode = ref<AuthMode>('login');
 const form = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const forgotForm = ref({ email: '', code: '', newPassword: '', confirmPassword: '' });
+const fieldErrors = ref<Record<string, string>>({});
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateField(field: string): boolean {
+  let error = '';
+  switch (field) {
+    case 'account': {
+      const val = form.value.account.trim();
+      if (mode.value === 'register') {
+        if (!val) error = '请填写弦予号';
+        else if (!/^[a-zA-Z0-9]{6,20}$/.test(val)) error = '弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合';
+      } else {
+        if (!val) error = '请输入弦予号或邮箱';
+      }
+      break;
+    }
+    case 'nickname':
+      if (mode.value === 'register') {
+        const val = form.value.nickname.trim();
+        if (val && val.length > 20) error = '昵称最多 20 个字符';
+      }
+      break;
+    case 'email':
+      if (mode.value === 'register') {
+        const val = form.value.email.trim();
+        if (!val) error = '请填写邮箱';
+        else if (!EMAIL_RE.test(val)) error = '邮箱格式不正确';
+      }
+      break;
+    case 'code':
+      if (mode.value === 'register' && !form.value.code.trim()) error = '请填写验证码';
+      break;
+    case 'password': {
+      const val = form.value.password;
+      if (!val) error = '请输入密码';
+      else if (mode.value === 'register' && val.length < 6) error = '密码至少 6 位';
+      break;
+    }
+    case 'confirmPassword':
+      if (mode.value === 'register') {
+        const val = form.value.confirmPassword;
+        if (!val) error = '请再次输入密码';
+        else if (val !== form.value.password) error = '两次输入的密码不一致';
+      }
+      break;
+  }
+  if (error) fieldErrors.value[field] = error;
+  else delete fieldErrors.value[field];
+  return !error;
+}
+
+function clearFieldError(field: string) {
+  if (fieldErrors.value[field]) delete fieldErrors.value[field];
+}
+
+function onPasswordInput() {
+  clearFieldError('password');
+  if (form.value.confirmPassword) validateField('confirmPassword');
+}
+
+watch(mode, () => { fieldErrors.value = {}; });
+
 const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
 const loading = ref(false);
@@ -351,32 +413,25 @@ async function onSubmit() {
     return;
   }
   if (mode.value === 'login') {
-    if (!form.value.account.trim()) {
-      showMessage('请输入弦予号或邮箱');
-      showToast('请输入弦予号或邮箱', 'error');
+    if (!validateField('account')) {
+      showMessage(fieldErrors.value.account);
+      showToast(fieldErrors.value.account, 'error');
       return;
     }
   } else if (mode.value === 'register') {
-    const ciyuanxi = form.value.account.trim();
-    if (!ciyuanxi) {
-      showMessage('请填写弦予号');
-      showToast('请填写弦予号', 'error');
+    const fields = ['account', 'nickname', 'email', 'code', 'password', 'confirmPassword'] as const;
+    let allValid = true;
+    for (const f of fields) {
+      if (!validateField(f)) allValid = false;
+    }
+    if (!allValid) {
+      const firstError = Object.values(fieldErrors.value)[0];
+      if (firstError) {
+        showMessage(firstError);
+        showToast(firstError, 'error');
+      }
       return;
     }
-    if (!/^[a-zA-Z0-9]{6,20}$/.test(ciyuanxi)) {
-      showMessage('弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合');
-      showToast('弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合', 'error');
-      return;
-    }
-    if (!form.value.email.trim()) {
-      showMessage('请填写邮箱');
-      showToast('请填写邮箱', 'error');
-      return;
-    }
-  }
-  if (mode.value === 'register' && form.value.password !== form.value.confirmPassword) {
-    showMessage('两次输入的密码不一致');
-    return;
   }
   const captchaPayload = await requestHumanCaptcha(
     mode.value === 'login' ? '登录前验证' : '注册前验证',
@@ -477,6 +532,10 @@ async function handleSendCode() {
   const email = isForgot ? forgotForm.value.email : form.value.email;
   if (!email) {
     showMessage('请先填写邮箱');
+    return;
+  }
+  if (!EMAIL_RE.test(email.trim())) {
+    showMessage('邮箱格式不正确');
     return;
   }
   const type: VerifyCodeType = isForgot ? 'reset_password' : 'register';
@@ -1017,8 +1076,12 @@ async function silentPoll() {
                 type="text"
                 :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，支持纯数字、纯字母或组合'"
                 :autocomplete="mode === 'login' ? 'off' : 'username'"
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                :class="fieldErrors.account ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                @blur="validateField('account')"
+                @input="clearFieldError('account')"
               />
+              <span v-if="fieldErrors.account" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.account }}</span>
             </label>
 
             <template v-if="mode === 'register'">
@@ -1029,8 +1092,12 @@ async function silentPoll() {
                   type="text"
                   placeholder='留空则默认"弦予+弦予号"'
                   autocomplete="nickname"
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  :class="fieldErrors.nickname ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                  @blur="validateField('nickname')"
+                  @input="clearFieldError('nickname')"
                 />
+                <span v-if="fieldErrors.nickname" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.nickname }}</span>
               </label>
               <label class="grid gap-3">
                 <span class="text-black/70 dark:text-white/70 text-[clamp(0.875rem,1.2vw,1.125rem)] font-light tracking-wider">邮箱</span>
@@ -1040,8 +1107,12 @@ async function silentPoll() {
                   placeholder="name@example.com"
                   autocomplete="email"
                   required
-                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                  :class="fieldErrors.email ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                  @blur="validateField('email')"
+                  @input="clearFieldError('email')"
                 />
+                <span v-if="fieldErrors.email" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.email }}</span>
               </label>
 
               <div class="grid grid-cols-[1fr_auto] items-end gap-4">
@@ -1053,8 +1124,12 @@ async function silentPoll() {
                     placeholder="填写验证码"
                     autocomplete="one-time-code"
                     required
-                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                    class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                    :class="fieldErrors.code ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                    @blur="validateField('code')"
+                    @input="clearFieldError('code')"
                   />
+                  <span v-if="fieldErrors.code" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.code }}</span>
                 </label>
                 <button
                   type="button"
@@ -1075,8 +1150,12 @@ async function silentPoll() {
                 placeholder="请输入密码"
                 :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
                 required
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                :class="fieldErrors.password ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                @blur="validateField('password')"
+                @input="onPasswordInput"
               />
+              <span v-if="fieldErrors.password" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.password }}</span>
             </label>
 
             <label v-if="mode === 'register'" class="grid gap-3">
@@ -1087,8 +1166,12 @@ async function silentPoll() {
                 placeholder="再次输入密码"
                 autocomplete="new-password"
                 required
-                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                :class="fieldErrors.confirmPassword ? '!border-[#EC4141]' : 'border-black/15 dark:border-white/15'"
+                @blur="validateField('confirmPassword')"
+                @input="clearFieldError('confirmPassword')"
               />
+              <span v-if="fieldErrors.confirmPassword" class="text-[#EC4141] text-sm -mt-1">{{ fieldErrors.confirmPassword }}</span>
             </label>
 
             <div class="flex items-start gap-3 text-sm text-black/60 dark:text-white/60 select-none">
