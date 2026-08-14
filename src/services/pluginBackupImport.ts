@@ -575,18 +575,24 @@ function detectBackup(data: any): DetectedBackup {
   const version = typeof data?.version === 'number' ? data.version : null;
 
   // 0. 洛雪音乐
-  // 支持三种来源：
-  //   a) v2/v1 备份文件：type 为 allData_v2 / playList_v2 / allData / playList，
+  // 支持以下来源：
+  //   a) v3 备份文件：type 为 allData_v3 / playList_v3，
+  //      全量备份的歌单嵌套在 data.lists 下（defaultList / loveList / userList / tempList），
+  //      列表备份的歌单在 data 数组中，每项 { id, name, list: [...] }
+  //   b) v2/v1 备份文件：type 为 allData_v2 / playList_v2 / allData / playList，
   //      歌单在 playList（全部备份）或 data（列表备份）数组中，每项 { id, name, list: [...] }
-  //   b) 内部存储结构：defaultList / loveList / userList
-  const lxData = data?.type === 'myList' && data?.data ? data.data : data;
+  //   c) 内部存储结构：defaultList / loveList / userList
+  // v3 全量备份的 lists 嵌套在 data.data.lists 下，提取到 lxData 以复用 0b 的内部存储结构解析
+  const lxData = data?.type === 'myList' && data?.data ? data.data
+    : data?.type === 'allData_v3' && data?.data?.lists ? data.data.lists
+    : data;
 
-  // 0a. 洛雪备份文件（allData_v2 / playList_v2 / allData / playList）
+  // 0a. 洛雪备份文件（allData_v2 / playList_v3 / playList_v2 / allData / playList）
   const lxBackupType = data?.type;
   const lxBackupLists: any[] | null =
     (lxBackupType === 'allData_v2' || lxBackupType === 'allData') && Array.isArray(data?.playList)
       ? data.playList
-      : (lxBackupType === 'playList_v2' || lxBackupType === 'playList') && Array.isArray(data?.data)
+      : (lxBackupType === 'playList_v3' || lxBackupType === 'playList_v2' || lxBackupType === 'playList') && Array.isArray(data?.data)
         ? data.data
         : null;
   if (lxBackupLists) {
@@ -602,7 +608,8 @@ function detectBackup(data: any): DetectedBackup {
     return { format: 'lxmusic', sheets, version: null, restoreStringifiedIds: false };
   }
 
-  // 0b. 洛雪内部存储结构（ListDataFull / ListSaveInfo 包装）
+  // 0b. 洛雪内部存储结构 / v3 全量备份（ListDataFull / ListSaveInfo / allData_v3）
+  // v3 全量备份的 lxData 已被提取为 data.data.lists，结构与内部存储一致
   if (Array.isArray(lxData?.defaultList) || Array.isArray(lxData?.loveList) || Array.isArray(lxData?.userList)) {
     const sheets: any[] = [];
     if (Array.isArray(lxData.loveList) && lxData.loveList.length > 0) {

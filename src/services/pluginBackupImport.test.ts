@@ -464,6 +464,52 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
     expect(v1List.importedSongCount).toBe(1);
   });
 
+  it('detects lxmusic format from an allData_v3 backup', () => {
+    // v3 全量备份：type=allData_v3，歌单嵌套在 data.data.lists 下，
+    // 包含 defaultList / loveList / userList / tempList
+    const backup = JSON.stringify({
+      type: 'allData_v3',
+      data: {
+        lists: {
+          defaultList: [song()],
+          loveList: [song({ id: 'song-2' })],
+          userList: [{ id: 'user-1', name: '我的歌单', list: [song({ id: 'song-3' })] }],
+          tempList: [],
+        },
+      },
+    });
+    const result = preparePluginBackupImport(backup, [lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.sourcePlaylistCount).toBe(3);
+    expect(result.totalSongCount).toBe(3);
+    expect(result.importedSongCount).toBe(3);
+    // loveList → 我的收藏, userList → 我的歌单, defaultList → 试听列表
+    expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '我的歌单', '试听列表']);
+    expect(result.playlists[0].songs[0]).toMatchObject({
+      name: '洛雪歌曲',
+      artist: '歌手',
+      plugin_id: 'lx-wy',
+    });
+  });
+
+  it('detects lxmusic format from a playList_v3 backup', () => {
+    // v3 列表备份：type=playList_v3，歌单在 data 数组中
+    const backup = JSON.stringify({
+      type: 'playList_v3',
+      data: [
+        { id: 'love', name: '我的收藏', list: [song()] },
+        { id: 'user-1', name: '我的歌单', list: [song({ id: 'song-2' })] },
+      ],
+    });
+    const result = preparePluginBackupImport(backup, [lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.sourcePlaylistCount).toBe(2);
+    expect(result.importedSongCount).toBe(2);
+    expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '我的歌单']);
+  });
+
   it('detects lxmusic format from the internal defaultList/loveList/userList layout', () => {
     const backup = JSON.stringify({
       loveList: [song()],
