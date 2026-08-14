@@ -120,7 +120,12 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::Destroyed = event {
-                    window.app_handle().exit(0);
+                    // 使用 std::process::exit 强制立即退出，避免后台线程
+                    // （播放器事件循环、任务栏守护、窗口置顶守护）阻塞进程终止。
+                    // app.exit(0) 只请求事件循环退出，但 GetMessageW 等阻塞调用
+                    // 会让线程永远等待，导致进程无法终止，进而使 cargo tauri dev
+                    // 的终端无法自动退出。
+                    std::process::exit(0);
                 }
             }
         })
