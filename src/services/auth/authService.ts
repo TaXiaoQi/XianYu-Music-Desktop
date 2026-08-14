@@ -40,7 +40,7 @@ export type AuthPayload = {
 export type AuthMode = 'login' | 'register' | 'forgot';
 
 /** 验证码场景类型，必须与后续接口匹配 */
-export type VerifyCodeType = 'register' | 'login' | 'reset_password' | 'delete_account';
+export type VerifyCodeType = 'register' | 'login' | 'reset_password' | 'delete_account' | 'change_password';
 
 export type HumanCaptcha = {
   captcha_id: string;
@@ -677,6 +677,7 @@ export async function deleteAccount(
 export async function changePassword(
   oldPassword: string,
   newPassword: string,
+  code: string,
 ): Promise<{ message: string }> {
   const user = getStoredUser();
   const ciyuanxiId = user?.ciyuanxi_id;
@@ -687,6 +688,7 @@ export async function changePassword(
       ciyuanxi_id: ciyuanxiId,
       old_password: oldPassword,
       new_password: newPassword,
+      code,
     });
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || '修改密码失败');

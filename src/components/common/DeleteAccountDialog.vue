@@ -352,6 +352,7 @@ async function handleDelete() {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
 }
 
 .del-account-icon {

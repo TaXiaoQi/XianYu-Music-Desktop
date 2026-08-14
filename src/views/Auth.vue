@@ -11,9 +11,6 @@ import { useToast } from '../composables/toast';
 import { useUiStore } from '../shared/stores/ui';
 import { showProfileLimitDialog, type ProfileLimitDialogTarget } from '../composables/useProfileLimitDialog';
 import {
-  changePassword,
-  deleteAccount,
-  preVerifyDeleteAccount,
   getProfile,
   login,
   logout,
@@ -184,78 +181,7 @@ function onNicknameBlur() {
     cancelNicknameEdit();
   }
 }
-const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
 const profileSaving = ref(false);
-const passwordSaving = ref(false);
-const passwordPanelOpen = ref(false);
-const deleteAccountPanelOpen = ref(false);
-const deleteAccountForm = ref({ password: '', code: '' });
-const deleteAccountCodeLoading = ref(false);
-const deleteAccountCountdown = ref(0);
-let deleteAccountCountdownTimer: ReturnType<typeof setInterval> | null = null;
-function startDeleteAccountCountdown() {
-  deleteAccountCountdown.value = 60;
-  if (deleteAccountCountdownTimer) clearInterval(deleteAccountCountdownTimer);
-  deleteAccountCountdownTimer = setInterval(() => {
-    deleteAccountCountdown.value--;
-    if (deleteAccountCountdown.value <= 0) {
-      deleteAccountCountdown.value = 0;
-      if (deleteAccountCountdownTimer) { clearInterval(deleteAccountCountdownTimer); deleteAccountCountdownTimer = null; }
-    }
-  }, 1000);
-}
-const deleteAccountLoading = ref(false);
-
-type AccountConfirmTone = 'danger' | 'success' | 'info';
-
-const accountConfirmDialog = ref<{
-  visible: boolean;
-  title: string;
-  desc: string;
-  confirmText: string;
-  cancelText: string;
-  showCancel: boolean;
-  tone: AccountConfirmTone;
-  resolver: ((confirmed: boolean) => void) | null;
-}>({
-  visible: false,
-  title: '',
-  desc: '',
-  confirmText: '确认',
-  cancelText: '取消',
-  showCancel: true,
-  tone: 'danger',
-  resolver: null,
-});
-
-function showAccountConfirmDialog(options: {
-  title: string;
-  desc: string;
-  confirmText?: string;
-  cancelText?: string;
-  showCancel?: boolean;
-  tone?: AccountConfirmTone;
-}): Promise<boolean> {
-  return new Promise((resolve) => {
-    accountConfirmDialog.value = {
-      visible: true,
-      title: options.title,
-      desc: options.desc,
-      confirmText: options.confirmText || '确认',
-      cancelText: options.cancelText || '取消',
-      showCancel: options.showCancel !== false,
-      tone: options.tone || 'danger',
-      resolver: resolve,
-    };
-  });
-}
-
-function resolveAccountConfirmDialog(confirmed: boolean) {
-  const resolver = accountConfirmDialog.value.resolver;
-  accountConfirmDialog.value.visible = false;
-  accountConfirmDialog.value.resolver = null;
-  resolver?.(confirmed);
-}
 
 // 头像弹窗
 const avatarMenuOpen = ref(false);
@@ -718,127 +644,6 @@ async function saveAvatarToLocal() {
     showToast(tip, 'error');
   } finally {
     avatarUploading.value = false;
-  }
-}
-
-async function handleChangePassword() {
-  if (!passwordForm.value.oldPassword || !passwordForm.value.newPassword || !passwordForm.value.confirmPassword) {
-    showToast('请填写完整的密码信息', 'error');
-    return;
-  }
-  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
-    showToast('两次新密码不一致', 'error');
-    return;
-  }
-  passwordSaving.value = true;
-  try {
-    await changePassword(
-      passwordForm.value.oldPassword,
-      passwordForm.value.newPassword,
-    );
-    await logout();
-    authStore.reset();
-    stats.value = null;
-    passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' };
-    mode.value = 'login';
-    showToast('密码已修改，请重新登录', 'success');
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '修改密码失败';
-    showToast(tip, 'error');
-  } finally {
-    passwordSaving.value = false;
-  }
-}
-
-async function handleSendDeleteAccountCode() {
-  const email = authStore.user?.email;
-  if (!email) {
-    showToast('未获取到注册邮箱，请重新登录', 'error');
-    return;
-  }
-  const captchaPayload = await requestHumanCaptcha(
-    '发送注销验证码前验证',
-    '完成验证后将向当前账号的注册邮箱发送注销验证码。',
-  );
-  if (!captchaPayload) return;
-  deleteAccountCodeLoading.value = true;
-  try {
-    const result = await sendEmailCode(email, 'delete_account', captchaPayload);
-    showToast(result.message || '注销验证码已发送到注册邮箱', 'success');
-    startDeleteAccountCountdown();
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '注销验证码发送失败';
-    showToast(tip, 'error');
-  } finally {
-    deleteAccountCodeLoading.value = false;
-  }
-}
-
-async function handleDeleteAccount() {
-  const code = deleteAccountForm.value.code.trim();
-  const password = deleteAccountForm.value.password;
-  if (!password) {
-    showToast('请输入登录密码', 'error');
-    return;
-  }
-  if (!code) {
-    showToast('请输入邮箱验证码', 'error');
-    return;
-  }
-
-  // 并行：弹出二级确认弹窗的同时立即发起预验证（密码+验证码），
-  // 用户阅读确认提示期间验证已在进行，点击确认后无需重复等待。
-  let preVerifyError: Error | null = null;
-  const preVerifyPromise = preVerifyDeleteAccount(code, password)
-    .then(() => { /* 预验证通过 */ })
-    .catch((err: unknown) => {
-      preVerifyError = err instanceof Error ? err : new Error(String(err));
-      // 预验证失败时若弹窗仍开着，主动关闭并提示
-      if (accountConfirmDialog.value.visible) {
-        const tip = preVerifyError.message;
-        resolveAccountConfirmDialog(false);
-        showToast(tip, 'error');
-      }
-    });
-
-  const confirmed = await showAccountConfirmDialog({
-    title: '确认注销账号',
-    desc: '注销后账号和云端同步数据将被删除，且无法恢复。确认继续注销当前账号吗？',
-    confirmText: '确认注销',
-    cancelText: '取消',
-    tone: 'danger',
-  });
-  if (!confirmed) return;
-
-  // 用户已确认，等待预验证结果
-  deleteAccountLoading.value = true;
-  try {
-    await preVerifyPromise;
-    if (preVerifyError) {
-      // 预验证已失败（错误提示已在 catch 中显示），直接退出
-      return;
-    }
-    // 预验证通过，执行实际注销
-    const result = await deleteAccount(code, password);
-    deleteAccountLoading.value = false;
-    await showAccountConfirmDialog({
-      title: '账号已注销',
-      desc: result.message || '账号已注销，点击确认后将退出当前登录状态。',
-      confirmText: '确认',
-      showCancel: false,
-      tone: 'success',
-    });
-    authStore.reset();
-    stats.value = null;
-    deleteAccountForm.value = { password: '', code: '' };
-    deleteAccountPanelOpen.value = false;
-    mode.value = 'login';
-    message.value = '';
-  } catch (error) {
-    const tip = error instanceof Error ? error.message : '注销账号失败';
-    showToast(tip, 'error');
-  } finally {
-    deleteAccountLoading.value = false;
   }
 }
 
@@ -1609,142 +1414,6 @@ async function silentPoll() {
           </Transition>
         </Teleport>
 
-        <!-- 修改密码（可折叠） -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 260ms;">
-          <button
-            type="button"
-            class="w-full flex items-center justify-between gap-3 cursor-pointer px-3 py-2 -mx-3 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-            :aria-expanded="passwordPanelOpen"
-            @click="passwordPanelOpen = !passwordPanelOpen"
-          >
-            <span class="text-black dark:text-white text-[clamp(1.05rem,1.5vw,1.25rem)] font-medium tracking-wider">修改密码</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 text-black/50 dark:text-white/50 transition-transform duration-300"
-              :class="{ 'rotate-180': passwordPanelOpen }"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <transition name="password-panel">
-            <div v-if="passwordPanelOpen" class="password-panel-content">
-              <p class="text-black/55 dark:text-white/55 text-[clamp(0.8rem,1vw,0.9rem)] font-light mt-2 mb-3">修改成功后需要重新登录</p>
-              <div class="grid gap-3 max-w-xl">
-                <label class="grid gap-1.5">
-                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">当前密码</span>
-                  <input
-                    v-model="passwordForm.oldPassword"
-                    type="password"
-                    placeholder="输入当前密码"
-                    autocomplete="current-password"
-                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  />
-                </label>
-                <label class="grid gap-1.5">
-                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">新密码</span>
-                  <input
-                    v-model="passwordForm.newPassword"
-                    type="password"
-                    placeholder="输入新密码"
-                    autocomplete="new-password"
-                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  />
-                </label>
-                <label class="grid gap-1.5">
-                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">确认新密码</span>
-                  <input
-                    v-model="passwordForm.confirmPassword"
-                    type="password"
-                    placeholder="再次输入新密码"
-                    autocomplete="new-password"
-                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  />
-                </label>
-                <div class="pt-1">
-                  <button
-                    type="button"
-                    class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-6 py-1.5 rounded-full text-[clamp(0.85rem,1vw,0.95rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                    :disabled="passwordSaving || loading"
-                    @click="handleChangePassword"
-                  >
-                    {{ passwordSaving ? '提交中…' : '更新密码' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </transition>
-        </section>
-
-        <!-- 注销账号（危险操作） -->
-        <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 300ms;">
-          <button
-            type="button"
-            class="w-full flex items-center justify-between gap-3 cursor-pointer px-3 py-2 -mx-3 rounded-lg transition-colors hover:bg-red-50/60 dark:hover:bg-red-500/10"
-            :aria-expanded="deleteAccountPanelOpen"
-            @click="deleteAccountPanelOpen = !deleteAccountPanelOpen"
-          >
-            <span class="text-[#EC4141] text-[clamp(1.05rem,1.5vw,1.25rem)] font-medium tracking-wider">注销账号</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4 text-[#EC4141]/70 transition-transform duration-300"
-              :class="{ 'rotate-180': deleteAccountPanelOpen }"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <transition name="password-panel">
-            <div v-if="deleteAccountPanelOpen" class="password-panel-content">
-              <p class="text-[#EC4141]/80 text-[clamp(0.8rem,1vw,0.9rem)] font-light mt-2 mb-3">
-                注销后账号和云端同步数据将被删除，且无法恢复。需验证登录密码和邮箱验证码，验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}
-              </p>
-              <div class="grid gap-3 max-w-xl">
-                <label class="grid gap-1.5">
-                  <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">登录密码</span>
-                  <input
-                    v-model="deleteAccountForm.password"
-                    type="password"
-                    placeholder="输入当前账号登录密码"
-                    autocomplete="current-password"
-                    class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                  />
-                </label>
-                <div class="grid grid-cols-[1fr_auto] items-end gap-4">
-                  <label class="grid gap-1.5">
-                    <span class="text-black/60 dark:text-white/60 text-[clamp(0.8rem,1vw,0.9rem)] font-light tracking-wider">邮箱验证码</span>
-                    <input
-                      v-model="deleteAccountForm.code"
-                      type="text"
-                      placeholder="输入注销验证码"
-                      autocomplete="one-time-code"
-                      class="h-9 bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(0.9rem,1.1vw,1rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="h-9 px-4 whitespace-nowrap text-[clamp(0.85rem,1vw,0.95rem)] font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="deleteAccountCodeLoading || deleteAccountLoading || deleteAccountCountdown > 0"
-                    @click="handleSendDeleteAccountCode"
-                  >
-                    {{ deleteAccountCodeLoading ? '发送中…' : deleteAccountCountdown > 0 ? `重新发送 (${deleteAccountCountdown}s)` : '发送验证码' }}
-                  </button>
-                </div>
-                <div class="pt-1">
-                  <button
-                    type="button"
-                    class="border border-[#EC4141]/35 bg-[#EC4141]/5 hover:bg-[#EC4141] text-[#EC4141] hover:text-white px-6 py-1.5 rounded-full text-[clamp(0.85rem,1vw,0.95rem)] font-medium transition active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                    :disabled="deleteAccountLoading || !deleteAccountForm.code.trim() || !deleteAccountForm.password"
-                    @click="handleDeleteAccount"
-                  >
-                    {{ deleteAccountLoading ? '注销中…' : '确认注销账号' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </transition>
-        </section>
-
         <!-- 快捷入口 -->
         <section class="px-[clamp(1.5rem,2.8vw,3.5rem)] py-[clamp(0.75rem,1.2vw,1.25rem)] animate-fade-in-up" style="animation-delay: 340ms;">
           <p class="text-black dark:text-white text-[clamp(0.95rem,1.4vw,1.125rem)] font-medium tracking-wider mb-4">快捷入口</p>
@@ -1870,48 +1539,6 @@ async function silentPoll() {
                 @click="submitCiyuanxi"
               >
                 {{ ciyuanxiLoading ? '提交中…' : '确认修改' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- 账号操作确认弹窗 -->
-    <Teleport to="body">
-      <Transition name="avatar-modal">
-        <div
-          v-if="accountConfirmDialog.visible"
-          class="fixed inset-0 z-[205] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          @click.self="accountConfirmDialog.showCancel && resolveAccountConfirmDialog(false)"
-        >
-          <div class="logout-confirm-card">
-            <div class="logout-confirm-icon" :class="{ 'logout-confirm-icon--success': accountConfirmDialog.tone === 'success' }">
-              <svg v-if="accountConfirmDialog.tone === 'success'" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-            </div>
-            <h3 class="logout-confirm-title">{{ accountConfirmDialog.title }}</h3>
-            <p class="logout-confirm-desc">{{ accountConfirmDialog.desc }}</p>
-            <div class="logout-confirm-actions" :class="{ 'logout-confirm-actions--single': !accountConfirmDialog.showCancel }">
-              <button
-                v-if="accountConfirmDialog.showCancel"
-                type="button"
-                class="logout-btn logout-btn--ghost"
-                @click="resolveAccountConfirmDialog(false)"
-              >
-                {{ accountConfirmDialog.cancelText }}
-              </button>
-              <button
-                type="button"
-                class="logout-btn"
-                :class="accountConfirmDialog.tone === 'success' ? 'logout-btn--success' : 'logout-btn--danger'"
-                @click="resolveAccountConfirmDialog(true)"
-              >
-                {{ accountConfirmDialog.confirmText }}
               </button>
             </div>
           </div>
@@ -2221,20 +1848,6 @@ async function silentPoll() {
 
 :global(.dark) .terms-content {
   color: rgba(255, 255, 255, 0.68);
-}
-
-/* 修改密码面板展开/收起动画 */
-.password-panel-content {
-  display: grid;
-  grid-template-rows: 1fr;
-  overflow: hidden;
-  transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-}
-
-.password-panel-enter-from,
-.password-panel-leave-to {
-  grid-template-rows: 0fr;
-  opacity: 0;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
