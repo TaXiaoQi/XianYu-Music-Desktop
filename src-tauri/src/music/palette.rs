@@ -451,16 +451,14 @@ pub async fn extract_palette(
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<String>, String> {
         let bytes = match load_image_bytes(&source) {
             Ok(bytes) => bytes,
-            Err(err) => {
-                eprintln!("[取色] 加载图像失败 ({source}): {err}");
+            Err(_) => {
                 return Ok(fallback_palette(count));
             }
         };
 
         let img = match image::load_from_memory(&bytes) {
             Ok(img) => img,
-            Err(err) => {
-                eprintln!("[取色] 解码图像失败 ({source}): {err}");
+            Err(_) => {
                 return Ok(fallback_palette(count));
             }
         };

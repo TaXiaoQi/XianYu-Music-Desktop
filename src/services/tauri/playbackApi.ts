@@ -84,9 +84,6 @@ export const playbackApi = {
       return tauriInvoke('set_equalizer_settings', { enabled, preamp, gains })
         .then(() => {
           lastSyncedParams = createEqualizerSignature(enabled, preamp, gains);
-          if (import.meta.env.DEV) {
-            console.log(`[PlaybackApi] set_equalizer_settings success. Updated signature: ${lastSyncedParams}`);
-          }
         });
     });
   },
@@ -101,10 +98,7 @@ export const playbackApi = {
       const { enabled, preamp, gains } = nextRequestArgs;
       nextRequestArgs = null;
       lastThrottleTime = Date.now();
-      
-      if (import.meta.env.DEV) {
-        console.log(`[PlaybackApi] Throttled direct EQ sync executed. Preamp: ${preamp.toFixed(1)}`);
-      }
+
       playbackApi.setEqualizerSettings(enabled, preamp, gains);
     };
 
@@ -131,11 +125,7 @@ export const playbackApi = {
       throttleTimer = null;
     }
     nextRequestArgs = null;
-    
-    if (import.meta.env.DEV) {
-      console.log(`[PlaybackApi] Flush final EQ sync requested. Preamp: ${preamp.toFixed(1)}`);
-    }
-    
+
     return playbackApi.setEqualizerSettings(enabled, preamp, gains);
   }
 };

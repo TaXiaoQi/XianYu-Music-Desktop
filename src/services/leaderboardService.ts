@@ -96,10 +96,8 @@ async function reportListenDuration(
       fetchTimeoutMs: 8_000,
       timeoutMs: 10_000,
     });
-    console.log(`${LOG} 上报听歌时长成功: 日=${Math.floor(durations.daily)}s 周=${Math.floor(durations.weekly)}s 总=${Math.floor(durations.total)}s`);
     return data ?? null;
   } catch (e) {
-    // 上报失败不阻断排行榜获取
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`${LOG} 上报听歌时长失败（不影响排行榜获取）: ${msg}`);
     return null;
@@ -111,11 +109,8 @@ async function reportListenDuration(
  */
 async function handleResetSignal(resetAt: string): Promise<void> {
   try {
-    console.log(`${LOG} 检测到服务端重置信号: ${resetAt}，清空本地统计数据...`);
     await statisticsApi.resetLocalStatistics();
-    // 记录已处理的重置时间戳，避免重复处理
     localStorage.setItem(RESET_AT_KEY, resetAt);
-    console.log(`${LOG} 本地统计数据已重置`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`${LOG} 重置本地统计数据失败: ${msg}`);

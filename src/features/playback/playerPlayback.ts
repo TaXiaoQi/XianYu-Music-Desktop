@@ -1016,16 +1016,6 @@ const authStore = useAuthStore();
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
-        if (audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://')) {
-          console.log('[Audio] 在线直链解析完成:', {
-            pathPrefix: audioFilePath.slice(0, 80),
-            headerKeys: pluginHeaders ? Object.keys(pluginHeaders) : [],
-            hasEkey: !!pluginEkey,
-            ekeyLen: pluginEkey?.length ?? 0,
-            hasCek: !!pluginCek,
-            cekLen: pluginCek?.length ?? 0,
-          });
-        }
         if (resolvedOnlineAudio.currentPlayingQuality) {
           playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
         }
@@ -1058,19 +1048,14 @@ const authStore = useAuthStore();
             return;
           }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
-            console.log('[Lyrics] LX 歌词获取成功但已被切歌:', song.path);
             return;
           }
 
           song.lyrics_raw = lyricsRaw;
-          // [修复] 同步更新 library store 中的 songPool 条目。
-          // 当歌曲在 songPool（由 protectedPaths 保护的在线收藏）中时，currentSong computed getter 会返回
-          // songPool 中的对象而非入参 song 或 fallback。若不更新池中对象，
-          // loadLyrics 读到的 currentSong.lyrics_raw 仍为空，导致歌词加载超时。
+          // 同步更新 library store 中的 songPool 条目，否则 loadLyrics 读到的 currentSong.lyrics_raw 仍为空
           libraryStore.patchSongMeta(song.path, { lyrics_raw: lyricsRaw } as Partial<Song>);
           playbackStore.patchQueueSongMeta(song.path, { lyrics_raw: lyricsRaw });
           currentSong.value = {...currentSong.value, lyrics_raw: lyricsRaw};
-          console.log('[Lyrics] LX 歌词设置成功，调用 loadLyrics:', { path: song.path, lyricsLen: lyricsRaw.length });
           void loadLyrics(lyricsRaw);
         })
         .catch(error => {
@@ -1210,22 +1195,6 @@ const authStore = useAuthStore();
       // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
       // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
-        // [诊断] 传给 Rust 的 URL 最终检查：打印 URL 及首尾 charCode
-        if (audioFilePath && (audioFilePath.startsWith('http://') || audioFilePath.startsWith('https://'))) {
-          const first5 = audioFilePath.substring(0, 5).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(',');
-          const last5 = audioFilePath.substring(Math.max(0, audioFilePath.length - 5)).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(',');
-          console.log('[Audio] 传给 Rust 的 URL:', {
-            urlPrefix: audioFilePath.substring(0, 120),
-            urlLen: audioFilePath.length,
-            first5Codes: first5,
-            last5Codes: last5,
-            startsWithHttp: audioFilePath.startsWith('http'),
-          });
-        } else {
-          console.error('[Audio] 传给 Rust 的 URL 不是 http 开头!', {
-            urlPrefix: audioFilePath?.substring(0, 120),
-          });
-        }
         try {
           await playbackApi.playAudio({
             path: audioFilePath,

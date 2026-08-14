@@ -61,12 +61,9 @@ import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
 import { pluginHttpRequest } from './tauri/pluginApi';
 
-// ==================== 日志 ====================
-
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
-  console.log(`[BakaPluginManager] ${msg}`);
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
@@ -388,17 +385,6 @@ function cleanKugouPluginUrl(raw: unknown): string {
       || c === 0x40; // @
     if (isAllowed) break;
     url = url.substring(0, url.length - 1);
-  }
-
-  if (start > 0 || (typeof raw === 'string' && url.length < raw.length - start)) {
-    console.log('[cleanKugouPluginUrl] 酷狗 URL 专用清洗:', {
-      before: raw.substring(0, 150),
-      after: url.substring(0, 150),
-      beforeLen: raw.length,
-      afterLen: url.length,
-      strippedHead: raw.substring(0, start).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
-      strippedTail: raw.substring(start + url.length).split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
-    });
   }
 
   return url;

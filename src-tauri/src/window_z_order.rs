@@ -32,6 +32,14 @@ pub fn stop_topmost_guard() {
     }
 }
 
+/// 关闭窗口置顶守护线程（WM_QUIT），用于应用退出时释放线程。
+pub fn shutdown_topmost_guard() {
+    #[cfg(target_os = "windows")]
+    {
+        shutdown_guard_thread();
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod platform {
     use std::sync::{
@@ -82,6 +90,15 @@ mod platform {
     pub(super) fn stop_window_topmost_guard() {
         TARGET_HWND.store(0, Ordering::SeqCst);
         post_guard_thread_message(WM_TOPMOST_GUARD_STOP);
+    }
+
+    /// 向守护线程发送 WM_QUIT 使其退出消息循环，仅在线程已初始化时生效
+    pub(super) fn shutdown_guard_thread() {
+        if let Some(h) = HOOK_THREAD.get() {
+            unsafe {
+                let _ = PostThreadMessageW(h.thread_id, 0x0012, 0, 0);
+            }
+        }
     }
 
     fn window_hwnd(window: &Window) -> Option<HWND> {
@@ -337,4 +354,7 @@ mod platform {
 }
 
 #[cfg(target_os = "windows")]
-use platform::{refresh_window_topmost, start_window_topmost_guard, stop_window_topmost_guard};
+use platform::{
+    refresh_window_topmost, shutdown_guard_thread, start_window_topmost_guard,
+    stop_window_topmost_guard,
+};

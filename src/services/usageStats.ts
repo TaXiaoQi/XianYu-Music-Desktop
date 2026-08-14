@@ -53,9 +53,7 @@ function parseOsVersion(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const m = ua.match(/Windows NT (\d+\.\d+)/);
   if (m) {
-    const v = parseFloat(m[1]);
-    // NT 10.0+ 在用户 Agent 中同时覆盖 Win10/Win11，无法精确区分，统一标记
-    return v >= 10 ? `Windows NT ${m[1]}` : `Windows NT ${m[1]}`;
+    return `Windows NT ${m[1]}`;
   }
   return 'Windows';
 }

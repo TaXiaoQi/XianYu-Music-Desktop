@@ -300,12 +300,10 @@ export const createPlayerFileManager = ({
   };
 
   const refreshFolder = async (folderPath: string) => {
-    console.log('[RefreshDebug] refreshFolder START', { folderPath });
     const newSongs = await fileApi.scanMusicFolder(
       folderPath,
       settingsStore.settings.libraryMinDurationSeconds,
     );
-    console.log('[RefreshDebug] scanMusicFolder returned', { newSongsCount: newSongs.length, samplePaths: newSongs.slice(0, 3).map(s => s.path) });
     const oldSongsInScope = canonicalSongs.value.filter(song =>
       isSongInFolderScope(folderPath, song.path),
     );
@@ -313,7 +311,6 @@ export const createPlayerFileManager = ({
       .map(song => song.path)
       .filter(path => !newSongs.some(song => song.path === path));
 
-    // Detect if anything actually changed to skip expensive state mutations
     const oldSongByPath = new Map(oldSongsInScope.map(song => [song.path, song]));
     const oldPathSet = new Set(oldSongByPath.keys());
     const hasMetadataChanges = newSongs.some(song =>
@@ -325,24 +322,11 @@ export const createPlayerFileManager = ({
       newSongs.some(song => !oldPathSet.has(song.path)) ||
       hasMetadataChanges;
 
-    console.log('[RefreshDebug] hasChanges analysis', {
-      hasChanges,
-      removedPathsCount: removedPaths.length,
-      newSongsCount: newSongs.length,
-      oldSongsInScopeCount: oldSongsInScope.length,
-      hasMetadataChanges,
-      newPathsNotInOld: newSongs.filter(s => !oldPathSet.has(s.path)).map(s => s.path).slice(0, 5),
-    });
-
     if (!hasChanges) {
       // 即使前端内存数据未变，后端扫描可能已更新数据库（如元数据修正）。
       // 必须清掉文件夹视图路径缓存，否则列表会继续展示旧缓存，用户感觉"刷新没反应"。
-      // 同时递增 libraryDataVersion，作为 Pinia store 级别的响应式触发器，
-      // 确保文件夹视图 watcher 一定能感知到本次刷新。
       clearLibraryPathCaches();
-      const beforeVersion = libraryDataVersion.value;
       libraryDataVersion.value += 1;
-      console.log('[RefreshDebug] !hasChanges branch: cleared caches, incremented libraryDataVersion', { beforeVersion, afterVersion: libraryDataVersion.value });
       return {
         removedCount: 0,
         removedPaths: [],
@@ -355,12 +339,7 @@ export const createPlayerFileManager = ({
     sourceSongs.value = [...sourceSongs.value.filter(keepSong), ...newSongs];
     canonicalSongs.value = [...canonicalSongs.value.filter(keepSong), ...newSongs];
     clearLibraryPathCaches();
-    // hasChanges 为 true 时 updateCanonicalSongPaths 已递增 libraryDataVersion，
-    // 但此处额外递增一次以确保 watcher 一定能触发（覆盖 setCanonicalSongs
-    // 内部 resolveSharedPaths 返回同一引用导致 didChangePaths 为 false 的边界场景）。
-    const beforeVersion = libraryDataVersion.value;
     libraryDataVersion.value += 1;
-    console.log('[RefreshDebug] hasChanges branch: updated songs, cleared caches, incremented libraryDataVersion', { beforeVersion, afterVersion: libraryDataVersion.value });
 
     if (removedPaths.length > 0) {
       const removedPathSet = new Set(removedPaths);

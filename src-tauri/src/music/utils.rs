@@ -1,8 +1,4 @@
-// music/utils.rs - 辅助函数
-
 use std::fs;
-
-// ==================== 整数类型转换 ====================
 
 /// 将 i64 钳位到 u32 范围（负值归零，超限取 MAX）
 pub(crate) fn clamp_i64_to_u32(v: i64) -> u32 {
@@ -37,7 +33,6 @@ pub const SUPPORTED_LIBRARY_EXTENSIONS: &[&str] = &[
 
 pub const CUE_FILE_EXTENSIONS: &[&str] = &["cue"];
 
-/// 路径标准化
 pub fn normalize_path(path_str: &str) -> String {
     if let Ok(p) = fs::canonicalize(path_str) {
         let mut s = p.to_string_lossy().into_owned();

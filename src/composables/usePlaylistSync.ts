@@ -56,8 +56,7 @@ export type SyncDirection = 'upload' | 'download' | 'sync';
 /** 日志前缀，方便在控制台筛选歌单同步相关日志 */
 const LOG = '[usePlaylistSync]';
 
-function logSync(msg: string, ...args: unknown[]) {
-  console.log(`${LOG} ${msg}`, ...args);
+function logSync(_msg: string, ..._args: unknown[]) {
 }
 
 function logSyncError(msg: string, ...args: unknown[]) {

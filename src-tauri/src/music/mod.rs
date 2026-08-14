@@ -1,5 +1,3 @@
-// music/mod.rs - 模块入口，统一导出
-
 pub mod auth;
 pub mod covers;
 pub mod cue;
@@ -16,10 +14,8 @@ pub mod types;
 pub mod url_resolver;
 pub mod utils;
 
-// Re-export types
 pub use types::*;
 
-// Re-export commands for lib.rs registration
 pub use auth::{
     authed_request, clear_auth_credentials, get_auth_api_secret, get_auth_base_url,
     get_auth_credentials, save_auth_credentials, set_auth_api_secret, set_auth_base_url,
@@ -51,7 +47,7 @@ pub use url_resolver::{
     clear_lx_url_cache, find_alternative_lx_source, get_lx_cover, resolve_lx_music_url,
     resolve_lx_with_quality_fallback,
 };
-// Deprecated compatibility exports. Keep registered for legacy data/tools only.
+// Deprecated compatibility exports for legacy data/tools only.
 pub use sidebar::{
     add_sidebar_folder, get_sidebar_folders, get_sidebar_hierarchy, remove_sidebar_folder,
 };

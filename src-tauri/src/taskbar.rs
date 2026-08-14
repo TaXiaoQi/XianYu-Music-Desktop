@@ -595,6 +595,15 @@ mod zorder_guard {
             PLAYER_HWND.store(0, Ordering::Relaxed);
         }
     }
+
+    /// 向守护线程发送 WM_QUIT 使其退出消息循环，释放线程
+    pub fn shutdown() {
+        if let Some(t) = GUARD_THREAD.get() {
+            unsafe {
+                PostThreadMessageW(t.thread_id, 0x0012, 0, 0);
+            }
+        }
+    }
 }
 
 /// 安装任务栏 Z-order 守护。
@@ -655,5 +664,13 @@ pub fn uninstall_taskbar_zorder_guard() {
     #[cfg(target_os = "windows")]
     {
         zorder_guard::uninstall();
+    }
+}
+
+/// 关闭任务栏 Z-order 守护线程（WM_QUIT），用于应用退出时释放线程。
+pub fn shutdown_taskbar_zorder_guard() {
+    #[cfg(target_os = "windows")]
+    {
+        zorder_guard::shutdown();
     }
 }

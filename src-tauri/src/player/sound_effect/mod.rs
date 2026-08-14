@@ -634,12 +634,6 @@ where
         };
         src.prepare_all();
         src.apply_params(&settings);
-        // 构造发生在非音频线程（runtime.rs 构造音效链时），此处日志安全。
-        // 音频线程回调（channels/sample_rate/current_frame_len/next）内严禁 eprintln!。
-        eprintln!(
-            "[SE] SoundEffectSource 构造完成 channels={} sample_rate={} preservesPitch={} pitchShift={} playbackRate={}",
-            src.channels, src.sample_rate, settings.preserves_pitch, settings.pitch_shift, settings.playback_rate
-        );
         src
     }
 

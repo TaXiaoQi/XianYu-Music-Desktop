@@ -1,5 +1,3 @@
-// music/types.rs - 数据结构定义
-
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 

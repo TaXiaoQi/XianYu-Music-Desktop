@@ -301,22 +301,6 @@ async fn do_signed_post(
         }
     })?;
 
-    let code = payload.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
-    let msg = payload.get("msg").and_then(|v| v.as_str()).unwrap_or("");
-    let elapsed = start.elapsed().as_millis();
-
-    println!(
-        "[authed_request] action={}, code={}, msg=\"{}\", elapsed={}ms",
-        action, code, msg, elapsed
-    );
-
-    if code != 200 {
-        eprintln!(
-            "[authed_request] ⚠ 接口返回非200: action={}, code={}, msg=\"{}\"",
-            action, code, msg
-        );
-    }
-
     Ok(payload)
 }
 

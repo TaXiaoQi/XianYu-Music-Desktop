@@ -211,8 +211,7 @@ pub async fn resolve_lx_music_url_inner(
 
     let id = match resolve_song_id(song_info, quality) {
         Ok(id) => id,
-        Err(e) => {
-            eprintln!("[url_resolver] 无法解析歌曲 ID: {}", e);
+        Err(_) => {
             return None;
         }
     };
@@ -231,11 +230,7 @@ pub async fn resolve_lx_music_url_inner(
                 quality: quality.to_string(),
             })
         }
-        Err(e) => {
-            eprintln!(
-                "[url_resolver] 解析失败: {}/{}/{}: {}",
-                source, id, quality, e
-            );
+        Err(_) => {
             None
         }
     }
@@ -260,20 +255,8 @@ async fn resolve_url_via_api(source: &str, id: &str, quality: &str) -> Result<St
                     return Ok(data.to_string());
                 }
             }
-            // code != 0 或 data 为空
-            let msg = body
-                .get("msg")
-                .and_then(|m| m.as_str())
-                .unwrap_or("未知错误");
-            eprintln!(
-                "[url_resolver] 主API返回错误: code={:?}, msg={}",
-                body.get("code"),
-                msg
-            );
         }
-        Err(e) => {
-            eprintln!("[url_resolver] 主API请求失败: {}", e);
-        }
+        Err(_) => {}
     }
 
     // 备用 API
@@ -707,8 +690,7 @@ pub async fn find_alternative_lx_source(
 
         let items = match crate::music::lx_search::lx_search(source, &keyword, 1).await {
             Ok(items) => items,
-            Err(e) => {
-                eprintln!("[url_resolver] 换源搜索 {} 失败: {}", source, e);
+            Err(_) => {
                 continue; // 单个平台失败不中断整体流程
             }
         };

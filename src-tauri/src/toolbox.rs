@@ -222,8 +222,6 @@ pub fn apply_rename(operations: Vec<RenameOperation>) -> Result<u32, String> {
             let dest = parent.join(&op.new_name);
             if fs::rename(&src, &dest).is_ok() {
                 success_count += 1;
-            } else {
-                eprintln!("Failed to rename {:?} to {:?}", src, dest);
             }
         }
     }
@@ -925,25 +923,17 @@ pub async fn download_online_song(
     // 若未提供 ekey 但文件头看起来像 QMC 加密，尝试从文件尾部提取 ekey（QTag/V1 footer）。
     if let Some(ref ek) = ekey {
         if !ek.is_empty() {
-            eprintln!("[Download] 检测到 ekey (长度: {})，开始 QMC2 解密: {}", ek.len(), dest.display());
             match decrypt_qmc_file_inplace(&dest, ek) {
-                Ok(decrypted_size) => {
-                    eprintln!("[Download] QMC2 解密成功，解密后大小: {} bytes", decrypted_size);
-                }
+                Ok(_) => {}
                 Err(e) => {
-                    eprintln!("[Download] QMC2 解密失败: {}，文件可能已损坏或 ekey 不匹配", e);
                     return Err(format!("QMC2 解密失败: {e}"));
                 }
             }
         }
     } else if let Some(extracted_ekey) = try_extract_ekey_from_file(&dest) {
-        eprintln!("[Download] 从文件 footer 提取到 ekey (长度: {})，开始 QMC2 解密", extracted_ekey.len());
         match decrypt_qmc_file_inplace(&dest, &extracted_ekey) {
-            Ok(decrypted_size) => {
-                eprintln!("[Download] QMC2 解密成功（footer ekey），解密后大小: {} bytes", decrypted_size);
-            }
+            Ok(_) => {}
             Err(e) => {
-                eprintln!("[Download] QMC2 解密失败（footer ekey）: {}", e);
                 return Err(format!("QMC2 解密失败（footer ekey）: {e}"));
             }
         }
@@ -1074,16 +1064,9 @@ pub fn decrypt_qmc_file(
     };
 
     if let Some(ek) = actual_ekey {
-        eprintln!("[Decrypt] 开始 QMC2 解密（ekey 长度: {}）: {}", ek.len(), path.display());
         match decrypt_qmc_file_inplace(&path, &ek) {
-            Ok(decrypted_size) => {
-                eprintln!("[Decrypt] QMC2 解密成功，解密后大小: {} bytes", decrypted_size);
-                Ok(true)
-            }
-            Err(e) => {
-                eprintln!("[Decrypt] QMC2 解密失败: {}", e);
-                Err(format!("QMC2 解密失败: {e}"))
-            }
+            Ok(_) => Ok(true),
+            Err(e) => Err(format!("QMC2 解密失败: {e}")),
         }
     } else {
         // 无 ekey 且文件不含 QMC footer，可能是非加密音源，无需解密
@@ -1249,7 +1232,7 @@ pub async fn finalize_download_extras(
             }
             match tokio::fs::write(&dest, text).await {
                 Ok(_) => result.lyrics_saved = true,
-                Err(e) => eprintln!("[finalize_download_extras] 保存歌词失败: {e}"),
+                Err(_) => {}
             }
         }
     }
@@ -1283,13 +1266,13 @@ pub async fn finalize_download_extras(
                             Ok(_) => {
                                 result.cover_saved = true;
                             }
-                            Err(e) => eprintln!("[finalize_download_extras] 保存封面失败: {e}"),
+                            Err(_) => {}
                         }
                     }
                     result.cover_data = Some(img.data);
                     result.cover_mime = img.mime;
                 }
-                Err(e) => eprintln!("[finalize_download_extras] 下载封面失败: {e}"),
+                Err(_) => {}
             }
         }
     }
@@ -1307,12 +1290,10 @@ pub async fn finalize_download_extras(
         match tokio::task::spawn_blocking(move || write_metadata_to_file(&meta)).await {
             Ok(Ok(())) => result.metadata_embedded = true,
             Ok(Err(e)) => {
-                eprintln!("[finalize_download_extras] 元数据嵌入失败: {e}");
                 result.metadata_error = Some(e);
             }
             Err(e) => {
                 let msg = format!("元数据嵌入任务失败: {e}");
-                eprintln!("[finalize_download_extras] {msg}");
                 result.metadata_error = Some(msg);
             }
         }

@@ -15,7 +15,7 @@ export const createLibraryBatch = ({
 }: CreateLibraryBatchDeps) => {
   const libraryStore = useLibraryStore();
   const playbackStore = usePlaybackStore();
-  const { sourceSongs, canonicalSongs } = storeToRefs(libraryStore);
+  const { sourceSongs } = storeToRefs(libraryStore);
   const { playQueue, tempQueue, currentSong } = storeToRefs(playbackStore);
   let libraryScanBatchFlushTimer: ReturnType<typeof setTimeout> | null = null;
   const pendingLibraryScanSongs = new Map<string, Song>();
@@ -51,10 +51,6 @@ export const createLibraryBatch = ({
       return;
     }
 
-    const startTime = import.meta.env.DEV ? performance.now() : 0;
-    const pendingSongsCount = pendingLibraryScanSongs.size;
-    const pendingDeletedCount = pendingLibraryScanDeletedPaths.size;
-
     // 局部增量 Patch 写入，避免 O(N^2) 的全量重建
     libraryStore.patchLibrarySongs({
       songs: Array.from(pendingLibraryScanSongs.values()),
@@ -66,11 +62,6 @@ export const createLibraryBatch = ({
     pendingLibraryScanSongs.clear();
     pendingLibraryScanDeletedPaths.clear();
     pendingLibraryScanFallbackSongs.clear();
-
-    if (import.meta.env.DEV) {
-      const duration = performance.now() - startTime;
-      console.log(`[Profiling] flushBufferedLibraryScanBatch took ${duration.toFixed(2)}ms (added/updated batch: ${pendingSongsCount}, deleted: ${pendingDeletedCount}, total canonical: ${canonicalSongs.value.length})`);
-    }
   };
 
   const scheduleLibraryScanBatchFlush = () => {

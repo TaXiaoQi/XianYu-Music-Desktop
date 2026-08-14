@@ -219,12 +219,9 @@ function buildNativePluginQualityPairs(
   return pairs;
 }
 
-// ==================== 日志 ====================
-
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
-  console.log(`[PluginEngine] ${msg}`);
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 

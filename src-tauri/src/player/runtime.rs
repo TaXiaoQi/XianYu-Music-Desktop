@@ -340,7 +340,7 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
                             });
                             *controls.lock().unwrap_or_else(|e| e.into_inner()) = Some(mc);
                         }
-                        Err(error) => println!("Error initializing MediaControls: {:?}", error),
+                        Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
                     }
                 }
             }
@@ -355,6 +355,7 @@ const REMOTE_STREAM_CHUNK_BYTES: u64 = 2 * 1024 * 1024;
 /// 后台预读线程返回的结果。start 用于校验结果是否对应当前需要的位置，
 /// 避免旧线程的过期结果被误用（seek 后 start 不匹配会被丢弃）。
 /// total 为服务器声明的整曲字节数（从 Content-Range 推断），None 表示未知。
+#[allow(dead_code)]
 enum PrefetchResult {
     Bytes {
         start: u64,
@@ -422,11 +423,6 @@ impl RemoteRangeReader {
             .send()
             .map_err(std::io::Error::other)?;
         if !response.status().is_success() {
-            eprintln!(
-                "[Audio][rust] 整曲下载失败 status={} url={}",
-                response.status(),
-                self.source.url
-            );
             return Err(std::io::Error::other(format!(
                 "远程音频下载失败：{}",
                 response.status()
@@ -446,13 +442,6 @@ impl RemoteRangeReader {
         let mut bytes = Vec::new();
         response.read_to_end(&mut bytes)?;
         if is_html {
-            let preview = String::from_utf8_lossy(&bytes[..bytes.len().min(200)]);
-            eprintln!(
-                "[Audio][rust] 服务器返回非音频内容 (Content-Type: {})，可能为错误页面或试听片段 url={}\n  内容预览: {}",
-                content_type,
-                self.source.url,
-                preview.chars().take(200).collect::<String>()
-            );
             return Err(std::io::Error::other(format!(
                 "服务器返回非音频内容 (Content-Type: {})，可能需要防盗链 headers 或 URL 已失效",
                 content_type
@@ -637,11 +626,7 @@ impl RemoteRangeReader {
                     self.no_range = true;
                     return Ok(());
                 }
-                PrefetchResult::Error {
-                    start: res_start,
-                    message,
-                } if res_start == start => {
-                    eprintln!("[Audio][rust] 预读失败，回退同步下载: {}", message);
+                PrefetchResult::Error { start: res_start, .. } if res_start == start => {
                     // 继续走同步下载
                 }
                 _ => {
@@ -662,11 +647,6 @@ impl RemoteRangeReader {
         if !(response.status().is_success()
             || response.status() == reqwest::StatusCode::PARTIAL_CONTENT)
         {
-            eprintln!(
-                "[Audio][rust] 远程流请求非成功状态 status={} url={}（可能防盗链 403/鉴权失败）",
-                response.status(),
-                self.source.url
-            );
             return Err(std::io::Error::other(format!(
                 "远程音频播放失败：{}",
                 response.status()
@@ -675,10 +655,6 @@ impl RemoteRangeReader {
         if response.status() == reqwest::StatusCode::OK {
             // 服务器忽略 Range 直接返回 200 全量 → 不支持 Range。
             // 直接把整个响应体读入 full_body，后续从内存服务，避免只播首块就中断。
-            eprintln!(
-                "[Audio][rust] 服务器忽略 Range 返回 200，改为整曲下载到内存 url={}",
-                self.source.url
-            );
             let mut bytes = Vec::new();
             response.read_to_end(&mut bytes)?;
             self.len = Some(bytes.len() as u64);
@@ -820,8 +796,7 @@ fn append_decoded_source<R>(
 
         let reader = BufReader::with_capacity(512 * 1024, reader);
         let decoded = Decoder::new(reader);
-        if let Err(ref e) = decoded {
-            eprintln!("[Audio][rust] Decoder::new 解码失败（无法识别音频格式或流读取失败）: {e}");
+        if decoded.is_err() {
             progress.start_failed.store(true, Ordering::Relaxed);
         }
         if let Ok(source) = decoded {
@@ -944,7 +919,6 @@ fn handle_play(
             }
         }
         AudioSource::RemoteWebDav(stream) => {
-            let stream_url = stream.url.clone();
             match RemoteRangeReader::new(stream) {
                 Ok(reader) => append_decoded_source(
                     reader,
@@ -958,10 +932,7 @@ fn handle_play(
                     sound_effect_handle,
                     user_volume,
                 ),
-                Err(e) => {
-                    eprintln!(
-                        "[Audio][rust] 远程流 RemoteRangeReader 创建失败 url={stream_url}: {e}"
-                    );
+                Err(_) => {
                     progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
@@ -982,11 +953,7 @@ fn handle_play(
                     sound_effect_handle,
                     user_volume,
                 ),
-                Err(e) => {
-                    eprintln!(
-                        "[Audio][rust] 流式临时文件 reader 创建失败 path={}: {e}",
-                        state.path
-                    );
+                Err(_) => {
                     progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
@@ -1062,9 +1029,7 @@ fn handle_seek(
                             sound_effect_handle,
                             user_volume,
                         ),
-                        Err(e) => {
-                            eprintln!("[Audio][rust] seek 重建流式临时文件失败: {e}");
-                        }
+                        Err(_) => {}
                     }
                 } else if let Some(stream) = remote_stream.cloned() {
                     match RemoteRangeReader::new(stream) {
@@ -1080,9 +1045,7 @@ fn handle_seek(
                             sound_effect_handle,
                             user_volume,
                         ),
-                        Err(e) => {
-                            eprintln!("[Audio][rust] seek 重建远程流失败: {e}");
-                        }
+                        Err(_) => {}
                     }
                 } else if !current_path.is_empty() {
                     match File::open(current_path) {
@@ -1098,9 +1061,7 @@ fn handle_seek(
                             sound_effect_handle,
                             user_volume,
                         ),
-                        Err(e) => {
-                            eprintln!("[Audio][rust] seek 重建本地文件失败: {e}");
-                        }
+                        Err(_) => {}
                     }
                 }
 

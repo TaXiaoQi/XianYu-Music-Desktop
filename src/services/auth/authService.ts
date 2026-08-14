@@ -896,10 +896,8 @@ export async function uploadAvatar(
   const current = getStoredUser();
   if (!token || !current) throw new Error('未登录');
 
-  console.log('[uploadAvatar] 开始压缩图片, size=', file.size, 'type=', file.type);
   // 前端压缩：256px 宽度，JPEG 质量 75%
   const avatarData = await compressImageToDataUrl(file, 256, 0.75);
-  console.log('[uploadAvatar] 压缩完成, base64 长度=', avatarData.length);
 
   try {
     // 头像上传首次请求可能触发建表/ALTER TABLE，需要更长超时
@@ -922,7 +920,6 @@ export async function uploadAvatar(
       timeoutPromise,
     ]);
 
-    console.log('[uploadAvatar] 上传成功，等待管理员审核');
     return { status: 'pending' };
   } catch (error) {
     console.error('[uploadAvatar] 上传失败:', error);

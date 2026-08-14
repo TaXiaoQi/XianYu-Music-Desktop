@@ -63,8 +63,6 @@ export function useLibraryAllSongPathCache() {
           allViewPathCache.set(cacheKey, paths);
           cacheVersion.value += 1;
           return paths;
-        } else if (import.meta.env.DEV) {
-          console.log(`[useLibraryAllSongPathCache] Discarded in-flight path cache. Version mismatch: request ${requestVersion} vs current ${libraryStore.libraryDataVersion}`);
         }
         throw Object.assign(new Error('Stale library path request'), {
           code: STALE_LIBRARY_PATH_REQUEST,

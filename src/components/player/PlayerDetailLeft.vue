@@ -184,7 +184,7 @@ const handleCoverClick = (event: MouseEvent) => {
         boxShadow: props.isExpanded && isPlaying
           ? `0 30px 60px -12px rgba(0,0,0,0.6), 0 18px 36px -18px rgba(0,0,0,0.7), 0 0 80px -20px ${dominantColors[0]}44`
           : (props.isExpanded ? `0 10px 20px -5px rgba(0,0,0,0.4)` : 'none'),
-        transform: props.isExpanded ? (isPlaying ? 'scale(1)' : 'scale(1)') : 'scale(1)',
+        transform: 'scale(1)',
       }"
       @click="handleCoverClick"
     >

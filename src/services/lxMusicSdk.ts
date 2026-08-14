@@ -306,7 +306,6 @@ function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
     const info = rawData[i];
     const songId = info.MUSICRID.replace('MUSIC_', '');
     if (!info.N_MINFO) {
-      console.log('[LxMusicSdk] KW: N_MINFO is undefined');
       return null;
     }
     const types: LxSearchResultItem['types'] = [];

@@ -222,19 +222,11 @@ impl StreamingTempFileState {
         if let Some(ekey_str) = ekey {
             match crate::player::qmc2::QmcCrypto::from_ekey(&ekey_str) {
                 Ok(crypto) => {
-                    eprintln!(
-                        "[StreamCache] 使用 QMC2 流式解密 reader (ekey 长度: {})",
-                        ekey_str.len()
-                    );
                     Ok(Box::new(crate::player::qmc2::QmcDecryptReader::new(
                         reader, crypto,
                     )))
                 }
-                Err(e) => {
-                    eprintln!(
-                        "[StreamCache] QMC2 ekey 解析失败: {}，使用原始 reader",
-                        e
-                    );
+                Err(_) => {
                     Ok(Box::new(reader))
                 }
             }
@@ -432,9 +424,6 @@ pub fn start_streaming_download(
 ) -> Result<StreamingTempFileState, String> {
     // Rust 端 URL 清洗：移除插件可能返回的反引号、引号、逗号等脏字符
     let cleaned_url = sanitize_stream_url(url);
-    if cleaned_url != url {
-        eprintln!("[StreamCache] URL 清洗: {} -> {}", &url[..url.len().min(120)], &cleaned_url[..cleaned_url.len().min(120)]);
-    }
     let url = cleaned_url.as_str();
     let hash = url_hash(url);
     let mut mgr = cache().lock().map_err(|e| e.to_string())?;
@@ -589,11 +578,6 @@ fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> 
     for key in &priority_keys {
         if let Some(found) = find_url_by_key(&value, key) {
             let ekey = find_ekey_in_json(&value);
-            eprintln!(
-                "[StreamCache] JSON 提取成功(优先字段 '{}'): {}",
-                key,
-                &found[..found.len().min(120)]
-            );
             return Some((found, ekey));
         }
     }
@@ -601,10 +585,6 @@ fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> 
     // 第二轮：递归搜索任意看起来像音频 URL 的字符串
     if let Some(url) = find_any_audio_url(&value) {
         let ekey = find_ekey_in_json(&value);
-        eprintln!(
-            "[StreamCache] JSON 提取成功(音频URL匹配): {}",
-            &url[..url.len().min(120)]
-        );
         return Some((url, ekey));
     }
 
@@ -612,10 +592,6 @@ fn extract_audio_info_from_json(body: &str) -> Option<(String, Option<String>)> 
     // 某些 CDN URL 没有标准音频扩展名，但仍可播放
     if let Some(url) = find_any_http_url(&value) {
         let ekey = find_ekey_in_json(&value);
-        eprintln!(
-            "[StreamCache] JSON 提取成功(回退任意URL): {}",
-            &url[..url.len().min(120)]
-        );
         return Some((url, ekey));
     }
 
@@ -653,27 +629,15 @@ fn extract_audio_info_from_text(body: &str) -> Option<(String, Option<String>)> 
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         // 音频特征检查宽松化：只要不是明显非音频 URL 就接受
         if looks_like_audio_url(&trimmed) || !is_obviously_non_audio_url(&trimmed) {
-            eprintln!(
-                "[StreamCache] 文本直链提取成功: {}",
-                &trimmed[..trimmed.len().min(120)]
-            );
             return Some((trimmed, None));
         }
     }
 
     // 策略 3：从任意文本中扫描第一个 HTTP URL（处理 HTML/错误页等）
     if let Some(url) = extract_url_from_raw_text(body) {
-        eprintln!(
-            "[StreamCache] 原始文本 URL 提取成功: {}",
-            &url[..url.len().min(120)]
-        );
         return Some((url, None));
     }
 
-    eprintln!(
-        "[StreamCache] 文本/JSON URL 提取失败，响应体前500字符: {}",
-        &body[..body.len().min(500)]
-    );
     None
 }
 
@@ -978,26 +942,6 @@ fn apply_stream_request_headers(
     }
 
     if let Some(hdrs) = headers {
-        let mut header_names: Vec<String> = hdrs
-            .keys()
-            .filter(|key| !key.trim().is_empty())
-            .map(|key| key.to_string())
-            .collect();
-        header_names.sort_by_key(|key| key.to_lowercase());
-        eprintln!(
-            "[StreamCache] 应用请求头: keys=[{}], plugin_ua={}, default_ua={}",
-            header_names.join(","),
-            has_plugin_user_agent,
-            !has_plugin_user_agent && user_agent.is_some(),
-        );
-    } else if let Some(ua) = user_agent {
-        eprintln!(
-            "[StreamCache] 应用请求头: keys=[], plugin_ua=false, default_ua={}",
-            !ua.is_empty(),
-        );
-    }
-
-    if let Some(hdrs) = headers {
         for (key, value) in hdrs {
             if !key.trim().is_empty() && !value.trim().is_empty() {
                 if let (Ok(name), Ok(val)) = (
@@ -1026,7 +970,6 @@ fn download_thread(
     download_error: Arc<std::sync::Mutex<Option<String>>>,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
-        eprintln!("[StreamCache] 下载失败: {} url={}", reason, url);
         downloaded_bytes.store(bytes_written, Ordering::Relaxed);
         download_failed.store(true, Ordering::Relaxed);
         if let Ok(mut err) = download_error.lock() {
@@ -1083,10 +1026,6 @@ fn download_thread(
         // 部分 Baka 插件的 getMediaSource 返回的是 API 端点 URL（如酷狗 PHP 接口），
         // 响应可能是 JSON、text/plain 直链、甚至 HTML 页面。
         // 对所有非音频内容类型统一尝试解析正文提取 URL 并重试下载。
-        eprintln!(
-            "[StreamCache] 服务器返回非音频内容 (Content-Type: {}) url={}，尝试提取真实音频 URL",
-            content_type, url
-        );
         let body_text: String = response.text().unwrap_or_default();
         if let Some((real_url, json_ekey)) = extract_audio_info_from_text(&body_text) {
             // 如果 JSON 中包含 ekey，更新共享 ekey 字段供后续 QMC 解密使用
@@ -1094,17 +1033,9 @@ fn download_thread(
                 if let Ok(mut ekey_guard) = ekey.lock() {
                     if ekey_guard.is_none() {
                         *ekey_guard = Some(ek.clone());
-                        eprintln!(
-                            "[StreamCache] JSON 响应中提取到 ekey (长度: {})，已更新共享 ekey",
-                            ek.len()
-                        );
                     }
                 }
             }
-            eprintln!(
-                "[StreamCache] 非音频响应中提取到音频 URL，重试下载: {} -> {}",
-                url, real_url
-            );
             // 用提取到的 URL 重新请求
             let retry_req = apply_stream_request_headers(client.get(&real_url), headers, user_agent);
             match retry_req.send() {
@@ -1122,16 +1053,8 @@ fn download_thread(
                         || retry_ct.contains("text/xml")
                     {
                         // 二次提取：重试 URL 仍返回非音频内容，尝试再次提取
-                        eprintln!(
-                            "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}，尝试二次提取",
-                            retry_ct, real_url
-                        );
                         let retry_body: String = retry_resp.text().unwrap_or_default();
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
-                            eprintln!(
-                                "[StreamCache] 二次提取成功: {} -> {}",
-                                real_url, real_url2
-                            );
                             // 用二次提取的 URL 再次请求
                             let resp2_req = apply_stream_request_headers(
                                 client.get(&real_url2),
@@ -1150,10 +1073,6 @@ fn download_thread(
                                         || ct2.contains("application/json")
                                         || ct2.contains("text/plain")
                                     {
-                                        eprintln!(
-                                            "[StreamCache] 二次提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}",
-                                            ct2, real_url2
-                                        );
                                         fail_download(
                                             &format!(
                                                 "二次提取的 URL 仍返回非音频内容 (Content-Type: {})",
@@ -1163,10 +1082,6 @@ fn download_thread(
                                         );
                                         return;
                                     }
-                                    eprintln!(
-                                        "[StreamCache] 二次提取的 URL 返回音频内容，开始下载: {}",
-                                        real_url2
-                                    );
                                     response = resp2;
                                 }
                                 Ok(resp2) => {
@@ -1185,10 +1100,6 @@ fn download_thread(
                                 }
                             }
                         } else {
-                            eprintln!(
-                                "[StreamCache] 提取的 URL 仍返回非音频内容 (Content-Type: {}) url={}，二次提取失败",
-                                retry_ct, real_url
-                            );
                             fail_download(
                                 &format!(
                                     "提取的 URL 仍返回非音频内容 (Content-Type: {})，二次提取失败",
@@ -1200,19 +1111,10 @@ fn download_thread(
                         }
                     } else {
                         // 重试 URL 返回的是音频内容，直接使用
-                        eprintln!(
-                            "[StreamCache] 提取的 URL 返回音频内容，开始下载: {}",
-                            real_url
-                        );
                         response = retry_resp;
                     }
                 }
                 Ok(retry_resp) => {
-                    eprintln!(
-                        "[StreamCache] 提取的 URL 返回 HTTP {} url={}",
-                        retry_resp.status(),
-                        real_url
-                    );
                     fail_download(
                         &format!("提取的 URL 返回 HTTP {}", retry_resp.status()),
                         0,
@@ -1220,16 +1122,11 @@ fn download_thread(
                     return;
                 }
                 Err(e) => {
-                    eprintln!("[StreamCache] 提取的 URL 请求失败: {} url={}", e, real_url);
                     fail_download(&format!("提取的 URL 请求失败: {}", e), 0);
                     return;
                 }
             }
         } else {
-            eprintln!(
-                "[StreamCache] 非音频内容 URL 提取失败 (Content-Type: {}) url={}",
-                content_type, url
-            );
             fail_download(
                 &format!("服务器返回非音频内容 (Content-Type: {})，URL提取失败", content_type),
                 0,
@@ -1305,14 +1202,6 @@ fn download_thread(
                     .map(|b| format!("{:02x}", b))
                     .collect::<Vec<_>>()
                     .join(" ");
-                let mut preview_buf = [0u8; 200];
-                let _ = verify_file.seek(SeekFrom::Start(0));
-                let preview_len = verify_file.read(&mut preview_buf).unwrap_or(0);
-                let text_preview = String::from_utf8_lossy(&preview_buf[..preview_len]);
-                eprintln!(
-                    "[StreamCache] 下载内容非有效音频格式 (header: {})，文本预览: {}\nurl={}",
-                    header_hex, text_preview, url
-                );
                 fail_download(
                     &format!("下载内容非有效音频格式 (header: {})", header_hex),
                     bytes_written,
@@ -1320,8 +1209,6 @@ fn download_thread(
                 return;
             }
         }
-    } else {
-        eprintln!("[StreamCache] ekey 存在，跳过音频头验证（QMC 加密音源），将由 QmcDecryptReader 流式解密");
     }
 
     download_complete.store(true, Ordering::Relaxed);
@@ -1330,11 +1217,6 @@ fn download_thread(
     if let Ok(mut mgr) = cache().lock() {
         mgr.update_size(hash, bytes_written);
     }
-
-    eprintln!(
-        "[StreamCache] 下载完成: {} bytes (total={:?}) url={}",
-        bytes_written, total_bytes, url
-    );
 }
 
 /// 等待最小缓冲就绪（在 commands.rs 的 async 上下文中用 tokio::time::sleep 轮询）

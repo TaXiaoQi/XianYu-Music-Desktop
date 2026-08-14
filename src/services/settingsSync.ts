@@ -78,8 +78,7 @@ export function areSettingsEqual(local: AppSettings, cloud: AppSettings): boolea
 /** 日志前缀 */
 const LOG = '[SettingsSync]';
 
-function logSync(msg: string, ...args: unknown[]) {
-  console.log(`${LOG} ${msg}`, ...args);
+function logSync(_msg: string, ..._args: unknown[]) {
 }
 
 function logSyncError(msg: string, ...args: unknown[]) {

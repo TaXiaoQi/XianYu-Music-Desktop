@@ -63,18 +63,6 @@ export const sanitizeMediaUrl = (raw: unknown): string => {
 
   if (!url) return '';
 
-  // 诊断：如果原始 URL 有首尾脏字符，打印 charCode 帮助排查
-  if (start > 0 || url.length < raw.length - start) {
-    const firstRaw = raw.substring(0, Math.min(start, 10));
-    const lastRaw = raw.substring(Math.max(start + url.length, raw.length - 10));
-    console.log('[sanitizeMediaUrl] 已清洗:', {
-      before: raw.substring(0, 120),
-      after: url.substring(0, 120),
-      strippedHead: firstRaw.split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
-      strippedTail: lastRaw.split('').map(c => '0x' + c.charCodeAt(0).toString(16)).join(','),
-    });
-  }
-
   // 清理查询参数值末尾的标点
   try {
     const parsed = new URL(url);

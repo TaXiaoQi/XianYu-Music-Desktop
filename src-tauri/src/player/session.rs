@@ -105,14 +105,10 @@ impl PlaybackSessionState {
                 // DB 锁已在上方作用域释放，此处只获取 inner，避免 DB → inner 锁顺序。
                 let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
                 *inner = data;
-                eprintln!("[Session] 从 SQLite 恢复播放会话成功");
+
             }
-            Ok(None) => {
-                eprintln!("[Session] SQLite 中无播放会话记录，使用默认空状态");
-            }
-            Err(e) => {
-                eprintln!("[Session] 加载播放会话失败: {}", e);
-            }
+            Ok(None) => {}
+            Err(_) => {}
         }
         Ok(())
     }
