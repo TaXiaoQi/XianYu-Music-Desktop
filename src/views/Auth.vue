@@ -60,6 +60,7 @@ function validateField(field: string): boolean {
       if (mode.value === 'register') {
         const val = form.value.nickname.trim();
         if (val && val.length > 20) error = '昵称最多 20 个字符';
+        else if (val && !/^[a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(val)) error = '昵称仅支持字母、数字、汉字';
       }
       break;
     case 'email':
@@ -216,6 +217,14 @@ async function saveNicknameEdit() {
   if (!next || next === current) {
     nicknameEditing.value = false;
     nicknameDraft.value = current;
+    return;
+  }
+  if (next.length > 20) {
+    showToast('昵称最多 20 个字符', 'error');
+    return;
+  }
+  if (!/^[a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(next)) {
+    showToast('昵称仅支持字母、数字、汉字', 'error');
     return;
   }
   if (!await confirmProfileLimit('nickname')) {
