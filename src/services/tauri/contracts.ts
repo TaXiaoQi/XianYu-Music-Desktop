@@ -866,6 +866,10 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: string;
   };
+  read_file_bytes: {
+    payload: { path: string };
+    response: string;
+  };
   proxy_image: {
     payload: { url: string; referer?: string | null };
     response: string;

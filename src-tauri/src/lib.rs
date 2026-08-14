@@ -59,7 +59,7 @@ use player::{
 };
 use plugins::{
     download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
-    read_plugin_file,
+    read_file_bytes, read_plugin_file,
 };
 use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
 use remote::{
@@ -104,6 +104,7 @@ use window_theme::set_dark_mode_for_window;
 use window_z_order::{refresh_current_window_topmost, start_topmost_guard, stop_topmost_guard};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(dependency_on_unit_never_type_fallback)]
 pub fn run() {
     #[cfg(target_os = "windows")]
     {
@@ -277,6 +278,7 @@ pub fn run() {
             plugin_http_request,
             plugin_http_request_binary,
             read_plugin_file,
+            read_file_bytes,
             proxy_image,
             download_audio_to_temp,
             recognize_system_audio,

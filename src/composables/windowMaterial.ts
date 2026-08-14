@@ -1,5 +1,5 @@
 import { Effect, getCurrentWindow, type Color } from '@tauri-apps/api/window';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { windowApi, type WindowMaterialCapabilities as TauriWindowMaterialCapabilities } from '../services/tauri/windowApi';
 
 export type WindowMaterialMode = 'none' | 'mica' | 'acrylic' | 'blur';
@@ -83,7 +83,9 @@ function getBlurTint(isDark: boolean, tintValue = 50): Color {
 }
 
 function getBaseWindowColor(isDark: boolean): Color {
-  return isDark ? [18, 18, 18, 255] : [250, 250, 250, 255];
+  // 匹配 DOM 背景色（dark:bg-[#262626] / bg-white），
+  // 使窗口背景与 DOM 半透明背景叠加后的有效颜色一致，消除材质卸载时的色差闪烁
+  return isDark ? [38, 38, 38, 255] : [255, 255, 255, 255];
 }
 
 function getTransparentWindowColor(): Color {
@@ -187,8 +189,27 @@ export async function applyWindowMaterial(
       });
       await trySetWindowShadow(false);
     } else {
-      // 先设置不透明背景色，再清除材质效果，避免清除效果后窗口背景仍为透明导致闪烁
-      await trySetWindowBackgroundColor(getBaseWindowColor(isDark));
+      const baseColor = getBaseWindowColor(isDark);
+      const prev = activeWindowMaterial.value;
+
+      if (prev === 'acrylic' || prev === 'blur') {
+        // 先将材质 tint 调至完全不透明的目标色，使 acrylic/blur 从"半透明模糊桌面"
+        // 变为"纯色"，后续清除材质时不再有可见变化
+        const effect = prev === 'acrylic' ? Effect.Acrylic : Effect.Blur;
+        await appWindow.setEffects({ effects: [effect], color: baseColor });
+        await waitForCompositorFrame();
+        // tint 已为纯色，设置窗口背景（用户不可见，被不透明 tint 遮盖）
+        await trySetWindowBackgroundColor(baseColor);
+      } else {
+        // mica 或无材质：先设置不透明背景色并等待渲染生效
+        await trySetWindowBackgroundColor(baseColor);
+        await waitForCompositorFrame();
+      }
+
+      // 更新 DOM 背景（bg-transparent → bg-white/30 dark:bg-[#262626]/60），
+      // 窗口背景色已与之匹配，不会产生色差
+      activeWindowMaterial.value = 'none';
+      await nextTick();
       await appWindow.clearEffects();
       await trySetWindowShadow(true);
     }

@@ -10,7 +10,7 @@ import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/ba
 import type { ImportedPlaylist } from '../../services/backupImport';
 import {
   describeBackupVersion,
-  preparePluginBackupFile,
+  preparePluginBackupFileContent,
   type PreparedPluginBackupImport,
 } from '../../services/pluginBackupImport';
 import { fileApi } from '../../services/tauri/fileApi';
@@ -79,11 +79,11 @@ const backupPreviewPlaylists = ref<ImportedPlaylist[]>([]);
 const backupImportError = ref('');
 const backupPluginResult = ref<PreparedPluginBackupImport | null>(null);
 
-/** 当前备份是否为 JSON（在线+本地混合模式） */
+/** 当前备份是否为 JSON/ZIP/LXMC（在线+本地混合模式） */
 const backupIsJson = computed(() => {
   if (!backupFilePath.value) return false;
   const ext = backupFilePath.value.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
-  return ext === 'json';
+  return ext === 'json' || ext === 'zip' || ext === 'lxmc';
 });
 
 // 拖放状态
@@ -314,6 +314,7 @@ const handleChooseBackupFile = async () => {
       filters: [
         { name: '所有支持的格式', extensions: SUPPORTED_IMPORT_EXTENSIONS },
         { name: 'JSON 备份', extensions: ['json'] },
+        { name: 'ZIP 压缩包', extensions: ['zip'] },
         { name: 'M3U 播放列表', extensions: ['m3u', 'm3u8'] },
         { name: '椒盐音乐导出', extensions: ['txt'] },
       ],
@@ -339,9 +340,9 @@ async function loadBackupFile(filePath: string) {
   try {
     const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
 
-    if (ext === 'json') {
-      // JSON 备份：自动识别本地文件和在线插件匹配
-      const prepared = await preparePluginBackupFile(filePath, getStoredPlugins());
+    if (ext === 'json' || ext === 'zip' || ext === 'lxmc') {
+      // JSON / ZIP / LXMC 备份：自动识别本地文件和在线插件匹配（含洛雪音乐）
+      const prepared = await preparePluginBackupFileContent(filePath, getStoredPlugins());
       backupPluginResult.value = prepared;
       const missingInfo = prepared.missingPlugins.length > 0
         ? ` · 缺失 ${prepared.missingPlugins.length} 个插件`
@@ -795,7 +796,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                       {{ backupFileName }}
                     </p>
                     <p v-else class="drop-zone-text">
-                      点击选择文件，或拖入 .json / .m3u / .m3u8 / .txt 文件
+                      点击选择文件，或拖入 .json / .zip / .m3u / .m3u8 / .txt 文件
                     </p>
                   </div>
                 </button>
@@ -862,7 +863,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               </div>
 
               <p class="text-xs leading-relaxed text-gray-400 dark:text-white/40">
-                支持 BakaMusic / MusicFree JSON 备份（自动识别本地文件和在线插件）、M3U / M3U8 播放列表、椒盐音乐导出格式。JSON 备份会自动匹配已安装的在线音源插件，有本地文件路径的歌曲直接作为本地歌曲导入。
+                支持 BakaMusic / MusicFree / 洛雪音乐 JSON 备份（自动识别本地文件和在线插件）、ZIP 压缩包、M3U / M3U8 播放列表、椒盐音乐导出格式。JSON 备份会自动匹配已安装的在线音源插件，有本地文件路径的歌曲直接作为本地歌曲导入。
               </p>
 
               <div

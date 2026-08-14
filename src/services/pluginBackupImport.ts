@@ -2,9 +2,11 @@ import { markRaw } from 'vue';
 
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 import type { LxSearchResultItem } from './lxMusicSdk';
-import { readPluginFile } from './tauri/pluginApi';
+import { readFileBytes, readPluginFile } from './tauri/pluginApi';
+import { extractJsonFromZip } from './zipReader';
+import { gunzipSync } from './pureInflate';
 
-export type SupportedPluginBackupFormat = 'bakamusic' | 'musicfree';
+export type SupportedPluginBackupFormat = 'bakamusic' | 'musicfree' | 'lxmusic';
 
 /**
  * BakaMusic 备份格式版本。
@@ -540,9 +542,26 @@ function hasMusicFreeAuthorSignature(data: any): boolean {
 }
 
 /**
+ * 将洛雪音乐备份中歌曲的 meta 字段展平到顶层，使现有提取器能正常工作。
+ * 洛雪歌曲结构：{ id, name, singer, source, interval, meta: { songId, albumName, picUrl, ... } }
+ */
+function flattenLxMeta(rawSong: any): any {
+  if (!rawSong?.meta || typeof rawSong.meta !== 'object') return rawSong;
+  const { meta, ...rest } = rawSong;
+  return {
+    ...meta,
+    qualities: meta._qualitys ?? rest.qualities,
+    img: meta.picUrl ?? rest.img,
+    localPath: meta.filePath ?? rest.localPath,
+    ...rest,
+  };
+}
+
+/**
  * 识别备份格式与版本。
  *
  * 检测策略（按优先级）：
+ * 0. 洛雪音乐：defaultList / loveList / userList 结构
  * 1. schema 字段明确标识 BakaMusic
  * 2. 作者身份：Toskysun → BakaMusic；时迁酱 → MusicFree
  * 3. 结构特征：data.musicSheets（嵌套）→ 倾向 BakaMusic；顶层 musicSheets → 倾向 MusicFree
@@ -554,6 +573,53 @@ function hasMusicFreeAuthorSignature(data: any): boolean {
  */
 function detectBackup(data: any): DetectedBackup {
   const version = typeof data?.version === 'number' ? data.version : null;
+
+  // 0. 洛雪音乐
+  // 支持三种来源：
+  //   a) v2/v1 备份文件：type 为 allData_v2 / playList_v2 / allData / playList，
+  //      歌单在 playList（全部备份）或 data（列表备份）数组中，每项 { id, name, list: [...] }
+  //   b) 内部存储结构：defaultList / loveList / userList
+  const lxData = data?.type === 'myList' && data?.data ? data.data : data;
+
+  // 0a. 洛雪备份文件（allData_v2 / playList_v2 / allData / playList）
+  const lxBackupType = data?.type;
+  const lxBackupLists: any[] | null =
+    (lxBackupType === 'allData_v2' || lxBackupType === 'allData') && Array.isArray(data?.playList)
+      ? data.playList
+      : (lxBackupType === 'playList_v2' || lxBackupType === 'playList') && Array.isArray(data?.data)
+        ? data.data
+        : null;
+  if (lxBackupLists) {
+    const sheets: any[] = [];
+    for (const list of lxBackupLists) {
+      if (!Array.isArray(list?.list) || list.list.length === 0) continue;
+      sheets.push({ name: list.name || '未命名歌单', musicList: list.list.map(flattenLxMeta) });
+    }
+    // 备份存在但歌单为空（如仅设置备份）时抛错，与后续格式识别保持一致
+    if (sheets.length === 0) {
+      throw new Error('洛雪备份中未找到可导入的歌单');
+    }
+    return { format: 'lxmusic', sheets, version: null, restoreStringifiedIds: false };
+  }
+
+  // 0b. 洛雪内部存储结构（ListDataFull / ListSaveInfo 包装）
+  if (Array.isArray(lxData?.defaultList) || Array.isArray(lxData?.loveList) || Array.isArray(lxData?.userList)) {
+    const sheets: any[] = [];
+    if (Array.isArray(lxData.loveList) && lxData.loveList.length > 0) {
+      sheets.push({ name: '我的收藏', musicList: lxData.loveList.map(flattenLxMeta) });
+    }
+    if (Array.isArray(lxData.userList)) {
+      for (const list of lxData.userList) {
+        if (Array.isArray(list?.list) && list.list.length > 0) {
+          sheets.push({ name: list.name || '未命名歌单', musicList: list.list.map(flattenLxMeta) });
+        }
+      }
+    }
+    if (Array.isArray(lxData.defaultList) && lxData.defaultList.length > 0) {
+      sheets.push({ name: '试听列表', musicList: lxData.defaultList.map(flattenLxMeta) });
+    }
+    return { format: 'lxmusic', sheets, version: null, restoreStringifiedIds: false };
+  }
 
   // 1. BakaMusic: schema 字段存在时优先判定（最可靠的标识）
   if (typeof data?.schema === 'string' && data.schema.startsWith('bakamusic')) {
@@ -627,7 +693,7 @@ function detectBackup(data: any): DetectedBackup {
     return { format: 'musicfree', sheets: topLevelSheets, version, restoreStringifiedIds: false };
   }
 
-  throw new Error('无法识别备份格式，请选择 BakaMusic 或 MusicFree 导出的 JSON 文件');
+  throw new Error('无法识别备份格式，请选择 BakaMusic、MusicFree 或洛雪音乐导出的备份文件');
 }
 
 export function preparePluginBackupImport(
@@ -784,7 +850,9 @@ export function preparePluginBackupImport(
  * 「为什么导入后逐字歌词恢复了」。
  */
 export function describeBackupVersion(prepared: PreparedPluginBackupImport): string {
-  const formatName = prepared.format === 'bakamusic' ? 'BakaMusic' : 'MusicFree';
+  const formatName = prepared.format === 'bakamusic' ? 'BakaMusic'
+    : prepared.format === 'musicfree' ? 'MusicFree'
+    : '洛雪音乐';
   if (prepared.backupVersion === null) {
     return `${formatName} 备份（未标注版本）`;
   }
@@ -807,4 +875,29 @@ export async function preparePluginBackupFile(
 ): Promise<PreparedPluginBackupImport> {
   const content = await readPluginFile(filePath);
   return preparePluginBackupImport(content, installedPlugins);
+}
+
+/**
+ * 读取备份文件并准备导入。
+ * - .json 直接读取明文
+ * - .zip 解压后提取其中的 JSON 备份
+ * - .lxmc 洛雪音乐备份（gzip 压缩的 JSON）
+ * 与 preparePluginBackupFile 相同，但额外支持压缩包格式。
+ */
+export async function preparePluginBackupFileContent(
+  filePath: string,
+  installedPlugins: PluginSource[],
+): Promise<PreparedPluginBackupImport> {
+  const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+  let jsonContent: string;
+  if (ext === 'zip') {
+    const bytes = await readFileBytes(filePath);
+    jsonContent = extractJsonFromZip(bytes);
+  } else if (ext === 'lxmc') {
+    const bytes = await readFileBytes(filePath);
+    jsonContent = new TextDecoder().decode(gunzipSync(bytes));
+  } else {
+    jsonContent = await readPluginFile(filePath);
+  }
+  return preparePluginBackupImport(jsonContent, installedPlugins);
 }

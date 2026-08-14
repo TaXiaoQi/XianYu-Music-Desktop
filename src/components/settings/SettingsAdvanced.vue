@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog';
-import { ChevronLeft, ChevronRight, FileDown, FileUp, History, Loader2, Plus, Trash2, X } from 'lucide-vue-next';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { ChevronLeft, ChevronRight, FileDown, FileUp, History, Loader2, Plus, Trash2, UploadCloud, X } from 'lucide-vue-next';
 
 import { useToast } from '../../composables/toast';
 import { useCollectionsStore } from '../../features/collections/store';
@@ -17,7 +18,7 @@ import { getStoredPlugins } from '../../services/pluginEngine';
 import { submitFeedback, getMyFeedback, type MyFeedbackItem } from '../../services/usageStats';
 import {
   describeBackupVersion,
-  preparePluginBackupFile,
+  preparePluginBackupImport,
   type PreparedPluginBackupImport,
 } from '../../services/pluginBackupImport';
 import {
@@ -26,8 +27,11 @@ import {
   importAppBackup,
   type AppBackupImportResult,
 } from '../../services/appBackup';
-import { readPluginFile } from '../../services/tauri/pluginApi';
+import { readPluginFile, readFileBytes } from '../../services/tauri/pluginApi';
+import { extractJsonFromZip } from '../../services/zipReader';
+import { gunzipSync } from '../../services/pureInflate';
 import { debugApi } from '../../services/tauri/debugApi';
+import { modalDragInterceptActive } from '../../composables/dragState';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import BackupImportResultModal from './BackupImportResultModal.vue';
 import AppBackupResultModal from './AppBackupResultModal.vue';
@@ -91,53 +95,23 @@ const importingAppBackup = ref(false);
 const appBackupResult = ref<AppBackupImportResult | null>(null);
 const showAppBackupResult = ref(false);
 
+// 备份导入弹窗（支持拖放 .json / .zip）
+const showImportModal = ref(false);
+const importMode = ref<'app' | 'plugin'>('app');
+const isDragOver = ref(false);
+const importModalBusy = ref(false);
+let unlistenDragDrop: UnlistenFn | null = null;
+let unlistenDragOver: UnlistenFn | null = null;
+let unlistenDragLeave: UnlistenFn | null = null;
+
 const confirmDeleteLogs = () => {
   clearLogs();
   showDeleteConfirmation.value = false;
   showToast('日志已全部删除', 'success');
 };
 
-const importPluginBackup = async () => {
-  if (importingBackup.value) return;
-
-  try {
-    const selected = await open({
-      multiple: false,
-      title: '选择备份文件',
-      filters: [{ name: '音乐软件备份', extensions: ['json'] }],
-    });
-    if (typeof selected !== 'string') return;
-
-    importingBackup.value = true;
-    const prepared = await preparePluginBackupFile(selected, getStoredPlugins());
-    let created = 0;
-
-    for (const playlist of prepared.playlists) {
-      if (playlist.songs.length === 0) continue;
-      const paths = playlist.songs.map(song => song.path);
-      libraryStore.setExtraSongs(playlist.songs);
-      const playlistId = collectionsStore.createPlaylist(playlist.name, paths, playlist.songs);
-      if (playlistId) created += 1;
-    }
-
-    backupImportResult.value = prepared;
-    createdPlaylistCount.value = created;
-    showBackupImportResult.value = true;
-
-    const versionNote = describeBackupVersion(prepared);
-    if (prepared.importedSongCount > 0) {
-      showToast(
-        `${versionNote}｜已导入 ${prepared.importedSongCount} 首歌曲，${prepared.failures.length} 首未导入`,
-        'success',
-      );
-    } else {
-      showToast(`${versionNote}｜没有歌曲可以导入，请查看缺失插件说明`, 'info');
-    }
-  } catch (error: any) {
-    showToast(`导入备份失败：${error?.message || error}`, 'error');
-  } finally {
-    importingBackup.value = false;
-  }
+const importPluginBackup = () => {
+  openImportModal('plugin');
 };
 
 /** 压缩图片为 data URL（JPEG），最大宽度 1600，质量 0.82 */
@@ -363,49 +337,158 @@ const handleExportAppBackup = async () => {
 
 // ==================== 应用备份导入 ====================
 
-const handleImportAppBackup = async () => {
-  if (importingAppBackup.value) return;
+const handleImportAppBackup = () => {
+  openImportModal('app');
+};
 
+// ==================== 备份导入弹窗（拖放 + ZIP 支持）====================
+
+function openImportModal(mode: 'app' | 'plugin') {
+  importMode.value = mode;
+  showImportModal.value = true;
+  isDragOver.value = false;
+  importModalBusy.value = false;
+  // 拦截全局拖放，避免 useExternalPathBridge 把备份文件当音乐文件处理
+  modalDragInterceptActive.value = true;
+}
+
+function closeImportModal() {
+  if (importModalBusy.value) return;
+  showImportModal.value = false;
+  isDragOver.value = false;
+  modalDragInterceptActive.value = false;
+}
+
+async function handleImportFilePick() {
+  if (importModalBusy.value) return;
   try {
     const selected = await open({
       multiple: false,
-      title: '选择应用备份文件',
-      filters: [{ name: '应用备份文件', extensions: ['json'] }],
+      title: importMode.value === 'app' ? '选择应用备份文件' : '选择备份文件',
+      filters: [{ name: '备份文件', extensions: ['json', 'zip', 'lxmc'] }],
     });
     if (typeof selected !== 'string') return;
+    await processImportFile(selected);
+  } catch (error: any) {
+    showToast(`导入失败：${error?.message || error}`, 'error');
+  }
+}
 
+async function processImportFile(filePath: string) {
+  if (importModalBusy.value) return;
+  importModalBusy.value = true;
+
+  if (importMode.value === 'app') {
     importingAppBackup.value = true;
+  } else {
+    importingBackup.value = true;
+  }
 
-    const content = await readPluginFile(selected);
-    const backup = parseAppBackup(content);
+  try {
+    const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+    let jsonContent: string;
 
-    const result = await importAppBackup(backup, collectionsStore, libraryStore, {
-      patchSettings,
-      replaceSettings,
-    }, {
-      includePlaylists: true,
-      includePlugins: true,
-      includeSettings: true,
-    });
-
-    appBackupResult.value = result;
-    showAppBackupResult.value = true;
-
-    const parts: string[] = [];
-    if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
-    if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
-    if (result.settingsApplied) parts.push('设置');
-    if (parts.length > 0) {
-      showToast(`已导入 ${parts.join('、')}`, 'success');
+    if (ext === 'zip') {
+      const bytes = await readFileBytes(filePath);
+      jsonContent = extractJsonFromZip(bytes);
+    } else if (ext === 'lxmc') {
+      const bytes = await readFileBytes(filePath);
+      jsonContent = new TextDecoder().decode(gunzipSync(bytes));
     } else {
-      showToast('备份中无新数据可导入', 'info');
+      jsonContent = await readPluginFile(filePath);
     }
+
+    if (importMode.value === 'app') {
+      const backup = parseAppBackup(jsonContent);
+      const result = await importAppBackup(backup, collectionsStore, libraryStore, {
+        patchSettings,
+        replaceSettings,
+      }, {
+        includePlaylists: true,
+        includePlugins: true,
+        includeSettings: true,
+      });
+
+      appBackupResult.value = result;
+      showAppBackupResult.value = true;
+
+      const parts: string[] = [];
+      if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
+      if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
+      if (result.settingsApplied) parts.push('设置');
+      if (parts.length > 0) {
+        showToast(`已导入 ${parts.join('、')}`, 'success');
+      } else {
+        showToast('备份中无新数据可导入', 'info');
+      }
+    } else {
+      const prepared = await preparePluginBackupImport(jsonContent, getStoredPlugins());
+      let created = 0;
+
+      for (const playlist of prepared.playlists) {
+        if (playlist.songs.length === 0) continue;
+        const paths = playlist.songs.map(song => song.path);
+        libraryStore.setExtraSongs(playlist.songs);
+        const playlistId = collectionsStore.createPlaylist(playlist.name, paths, playlist.songs);
+        if (playlistId) created += 1;
+      }
+
+      backupImportResult.value = prepared;
+      createdPlaylistCount.value = created;
+      showBackupImportResult.value = true;
+
+      const versionNote = describeBackupVersion(prepared);
+      if (prepared.importedSongCount > 0) {
+        showToast(
+          `${versionNote}｜已导入 ${prepared.importedSongCount} 首歌曲，${prepared.failures.length} 首未导入`,
+          'success',
+        );
+      } else {
+        showToast(`${versionNote}｜没有歌曲可以导入，请查看缺失插件说明`, 'info');
+      }
+    }
+
+    showImportModal.value = false;
+    modalDragInterceptActive.value = false;
   } catch (error: any) {
     showToast(`导入备份失败：${error?.message || error}`, 'error');
   } finally {
+    importModalBusy.value = false;
     importingAppBackup.value = false;
+    importingBackup.value = false;
   }
-};
+}
+
+onMounted(async () => {
+  unlistenDragOver = await listen('tauri://drag-over', () => {
+    if (showImportModal.value) isDragOver.value = true;
+  });
+  unlistenDragLeave = await listen('tauri://drag-leave', () => {
+    isDragOver.value = false;
+  });
+  unlistenDragDrop = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+    isDragOver.value = false;
+    if (!showImportModal.value || importModalBusy.value) return;
+
+    const paths = event.payload?.paths ?? [];
+    const supported = paths.find((p) => {
+      const ext = p.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+      return ext === 'json' || ext === 'zip' || ext === 'lxmc';
+    });
+    if (supported) {
+      await processImportFile(supported);
+    } else if (paths.length > 0) {
+      showToast('请拖入 .json / .zip / .lxmc 格式的备份文件', 'error');
+    }
+  });
+});
+
+onUnmounted(() => {
+  unlistenDragDrop?.();
+  unlistenDragOver?.();
+  unlistenDragLeave?.();
+  modalDragInterceptActive.value = false;
+});
 </script>
 
 <template>
@@ -443,7 +526,7 @@ const handleImportAppBackup = async () => {
         </button>
       </div>
       <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
-        导入时会自动恢复歌单、插件（跳过已存在的）和应用设置；在线歌曲需对应插件已安装才能播放。
+        导入时会自动恢复歌单、插件（跳过已存在的）和应用设置；支持拖入 .json 或 .zip 压缩包。
       </p>
     </section>
 
@@ -454,7 +537,7 @@ const handleImportAppBackup = async () => {
           从其他软件导入
         </h2>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
-          从 BakaMusic 或 MusicFree 软件导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
+          从 BakaMusic、MusicFree 或洛雪音乐导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
         </p>
       </div>
       <button
@@ -468,7 +551,7 @@ const handleImportAppBackup = async () => {
         {{ importingBackup ? '正在检查插件并导入…' : '从其他软件导入歌单' }}
       </button>
       <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
-        导入完成后会统一列出成功关联的插件、缺失插件，以及所有未能导入的歌曲。
+        导入完成后会统一列出成功关联的插件、缺失插件，以及所有未能导入的歌曲；支持拖入 .json 或 .zip 压缩包。
       </p>
     </section>
 
@@ -758,6 +841,37 @@ const handleImportAppBackup = async () => {
       :result="appBackupResult"
       @close="showAppBackupResult = false"
     />
+
+    <!-- 备份导入弹窗（拖放 .json / .zip） -->
+    <Teleport to="body">
+      <transition name="modal-fade">
+        <div v-if="showImportModal" class="import-modal-overlay" @click.self="closeImportModal">
+          <div class="import-modal">
+            <div class="import-modal-head">
+              <h3>{{ importMode === 'app' ? '导入应用备份' : '导入歌单备份' }}</h3>
+              <button type="button" class="import-modal-close" @click="closeImportModal">
+                <X class="h-4 w-4" />
+              </button>
+            </div>
+            <div class="import-modal-body">
+              <button
+                type="button"
+                :disabled="importModalBusy"
+                class="import-dropzone"
+                :class="{ 'import-dropzone--active': isDragOver }"
+                @click="handleImportFilePick"
+              >
+                <Loader2 v-if="importModalBusy" class="h-8 w-8 animate-spin text-[#EC4141]" />
+                <UploadCloud v-else class="h-8 w-8 text-[#EC4141]" />
+                <p v-if="importModalBusy" class="import-dropzone-text">正在导入…</p>
+                <p v-else class="import-dropzone-text">拖入文件或点击选择</p>
+                <p class="import-dropzone-hint">支持 .json / .zip 压缩包 / .lxmc（洛雪音乐备份）</p>
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
@@ -1282,5 +1396,124 @@ const handleImportAppBackup = async () => {
 .viewer-fade-enter-from,
 .viewer-fade-leave-to {
   opacity: 0;
+}
+
+/* ─── 备份导入弹窗 ─── */
+.import-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 24px;
+}
+.import-modal {
+  width: 380px;
+  max-width: 92vw;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+:global(.dark) .import-modal,
+.dark .import-modal {
+  background: #262626;
+}
+.import-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+}
+.import-modal-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+}
+:global(.dark) .import-modal-head h3,
+.dark .import-modal-head h3 {
+  color: rgba(255, 255, 255, 0.9);
+}
+.import-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+:global(.dark) .import-modal-close,
+.dark .import-modal-close {
+  color: rgba(255, 255, 255, 0.55);
+}
+.import-modal-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.85);
+}
+:global(.dark) .import-modal-close:hover,
+.dark .import-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+.import-modal-body {
+  padding: 4px 18px 20px;
+}
+.import-dropzone {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 20px;
+  border-radius: 12px;
+  border: 2px dashed rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+:global(.dark) .import-dropzone,
+.dark .import-dropzone {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+}
+.import-dropzone:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.4);
+  background: rgba(236, 65, 65, 0.04);
+}
+.import-dropzone--active {
+  border-color: rgba(236, 65, 65, 0.6);
+  background: rgba(236, 65, 65, 0.08);
+  transform: scale(1.01);
+}
+.import-dropzone:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.import-dropzone-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.7);
+}
+:global(.dark) .import-dropzone-text,
+.dark .import-dropzone-text {
+  color: rgba(255, 255, 255, 0.7);
+}
+.import-dropzone-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+}
+:global(.dark) .import-dropzone-hint,
+.dark .import-dropzone-hint {
+  color: rgba(255, 255, 255, 0.4);
 }
 </style>

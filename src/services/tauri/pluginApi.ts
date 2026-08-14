@@ -210,6 +210,20 @@ export async function readPluginFile(path: string): Promise<string> {
 }
 
 /**
+ * 读取本地文件二进制内容（base64 → Uint8Array）
+ * 后端 command: read_file_bytes
+ */
+export async function readFileBytes(path: string): Promise<Uint8Array> {
+  const base64 = await tauriInvoke('read_file_bytes', { path });
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
  * 通过后端 HTTP 代理获取远程插件脚本
  * 用于 ensurePluginInstance 加载远程 URL 插件
  */
@@ -301,6 +315,7 @@ export const pluginApi = {
   pluginHttpRequest,
   pluginHttpRequestBinary,
   readPluginFile,
+  readFileBytes,
   fetchPluginUrl,
   proxyImage,
   downloadAudioToTemp,

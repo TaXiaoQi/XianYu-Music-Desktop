@@ -380,3 +380,115 @@ describe('preparePluginBackupImport: format detection by song fields', () => {
     expect(result.importedSongCount).toBe(1);
   });
 });
+
+/**
+ * 洛雪音乐备份导入测试
+ *
+ * 洛雪音乐 v2 的"备份与恢复"导出的 .lxmc 文件是 gzip 压缩的 JSON（不加密），
+ * 顶层用 type 字段标识：allData_v2（备份全部数据）/ playList_v2（备份列表）/ setting_v2（备份设置）。
+ * 歌单在 playList（全部备份）或 data（列表备份）数组中，每项 { id, name, list: [...] }。
+ * v1 备份 type 为 allData / playList / setting。
+ * 歌曲结构：{ id, name, singer, source, interval, meta: { songId, albumName, picUrl, ... } }。
+ */
+describe('preparePluginBackupImport: lxmusic backups', () => {
+  const lxWy = plugin({ id: 'lx-wy', name: '落雪网易源', format: 'lx', sources: ['wy'] });
+
+  const song = (overrides: Record<string, unknown> = {}) => ({
+    id: 'song-unique-1',
+    name: '洛雪歌曲',
+    singer: '歌手',
+    source: 'wy',
+    interval: '03:55',
+    meta: {
+      songId: '2748510187',
+      albumName: '专辑',
+      picUrl: 'https://example.com/cover.jpg',
+      _qualitys: { standard: { size: '3MB' } },
+    },
+    ...overrides,
+  });
+
+  it('detects lxmusic format from an allData_v2 backup', () => {
+    const backup = JSON.stringify({
+      type: 'allData_v2',
+      setting: { common: {} },
+      playList: [
+        { id: 'default', name: '试听列表', list: [song()] },
+        { id: 'love', name: '我的收藏', list: [song({ id: 'song-2' })] },
+        { id: 'user-1', name: '我的歌单', list: [song({ id: 'song-3' })] },
+      ],
+    });
+    const result = preparePluginBackupImport(backup, [lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.sourcePlaylistCount).toBe(3);
+    expect(result.totalSongCount).toBe(3);
+    expect(result.importedSongCount).toBe(3);
+    expect(result.playlists.map(p => p.name)).toEqual(['试听列表', '我的收藏', '我的歌单']);
+    expect(result.playlists[0].songs[0]).toMatchObject({
+      name: '洛雪歌曲',
+      artist: '歌手',
+      album: '专辑',
+      plugin_id: 'lx-wy',
+    });
+  });
+
+  it('detects lxmusic format from a playList_v2 backup', () => {
+    const backup = JSON.stringify({
+      type: 'playList_v2',
+      data: [
+        { id: 'love', name: '我的收藏', list: [song()] },
+      ],
+    });
+    const result = preparePluginBackupImport(backup, [lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.sourcePlaylistCount).toBe(1);
+    expect(result.importedSongCount).toBe(1);
+    expect(result.playlists[0].name).toBe('我的收藏');
+  });
+
+  it('detects lxmusic format from v1 allData / playList backups', () => {
+    const v1All = preparePluginBackupImport(JSON.stringify({
+      type: 'allData',
+      playList: [{ id: 'love', name: '我的收藏', list: [song()] }],
+    }), [lxWy]);
+    expect(v1All.format).toBe('lxmusic');
+    expect(v1All.importedSongCount).toBe(1);
+
+    const v1List = preparePluginBackupImport(JSON.stringify({
+      type: 'playList',
+      data: [{ id: 'love', name: '我的收藏', list: [song()] }],
+    }), [lxWy]);
+    expect(v1List.format).toBe('lxmusic');
+    expect(v1List.importedSongCount).toBe(1);
+  });
+
+  it('detects lxmusic format from the internal defaultList/loveList/userList layout', () => {
+    const backup = JSON.stringify({
+      loveList: [song()],
+      userList: [{ id: 'u1', name: '自建', list: [song({ id: 'song-2' })] }],
+    });
+    const result = preparePluginBackupImport(backup, [lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.playlists.map(p => p.name)).toEqual(['我的收藏', '自建']);
+    expect(result.importedSongCount).toBe(2);
+  });
+
+  it('skips empty playlists and reports when a backup has no importable playlist', () => {
+    const noSheet = preparePluginBackupImport(JSON.stringify({
+      type: 'allData_v2',
+      playList: [{ id: 'empty', name: '空歌单', list: [] }],
+    }), [lxWy]);
+    expect(noSheet.format).toBe('lxmusic');
+    expect(noSheet.playlists).toHaveLength(0);
+    expect(noSheet.importedSongCount).toBe(0);
+
+    // 仅设置备份（setting_v2）不含歌单，应报"未找到可导入的歌单"
+    expect(() => preparePluginBackupImport(JSON.stringify({
+      type: 'setting_v2',
+      data: {},
+    }), [lxWy])).toThrow('未找到可导入的歌单');
+  });
+});

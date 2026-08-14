@@ -21,7 +21,9 @@
  */
 
 import type { Song } from '../types';
-import { readPluginFile } from './tauri/pluginApi';
+import { readFileBytes, readPluginFile } from './tauri/pluginApi';
+import { extractJsonFromZip } from './zipReader';
+import { gunzipSync } from './pureInflate';
 
 // ==================== 类型定义 ====================
 
@@ -432,7 +434,34 @@ export function parseBackupContent(jsonContent: string): ImportedPlaylist[] {
 }
 
 /** 支持导入的文件扩展名 */
-export const SUPPORTED_IMPORT_EXTENSIONS = ['json', 'm3u', 'm3u8', 'txt'];
+export const SUPPORTED_IMPORT_EXTENSIONS = ['json', 'm3u', 'm3u8', 'txt', 'zip', 'lxmc'];
+
+/**
+ * 读取备份文件内容。
+ * - .json 直接读取明文
+ * - .zip 解压后提取其中的 JSON 备份
+ * - .lxmc 洛雪音乐备份（gzip 压缩的 JSON）
+ * @param filePath 文件路径
+ * @returns 备份文件文本内容
+ */
+export async function readBackupFileContent(filePath: string): Promise<string> {
+  const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+  if (ext === 'zip') {
+    const bytes = await readFileBytes(filePath);
+    return extractJsonFromZip(bytes);
+  }
+  if (ext === 'lxmc') {
+    const bytes = await readFileBytes(filePath);
+    return decodeLxmc(bytes);
+  }
+  return readPluginFile(filePath);
+}
+
+/** 洛雪音乐 .lxmc 备份：gzip 解压后返回 UTF-8 文本 */
+function decodeLxmc(bytes: Uint8Array): string {
+  const inflated = gunzipSync(bytes);
+  return new TextDecoder().decode(inflated);
+}
 
 /**
  * 归一化文件名（不含扩展名）用于比较。
@@ -640,9 +669,20 @@ export function matchSongsToLocalLibrary(
  * @returns 导入的歌单列表
  */
 export async function importBackupFile(filePath: string): Promise<ImportedPlaylist[]> {
-  const content = await readPluginFile(filePath);
-
   const ext = filePath.toLowerCase().match(/\.([^.]+)$/)?.[1] || '';
+
+  // ZIP 压缩包：解压后提取其中的 JSON 备份再解析
+  if (ext === 'zip') {
+    const jsonContent = await readBackupFileContent(filePath);
+    return parseBackupContent(jsonContent);
+  }
+  // 洛雪音乐 .lxmc：gzip 解压为 JSON 备份再解析
+  if (ext === 'lxmc') {
+    const jsonContent = await readBackupFileContent(filePath);
+    return parseBackupContent(jsonContent);
+  }
+
+  const content = await readPluginFile(filePath);
 
   switch (ext) {
     case 'm3u':
