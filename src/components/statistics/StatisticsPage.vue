@@ -6,7 +6,7 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
-import { fetchLeaderboard, checkForResetSignal, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize, formatListenDuration } from '../../utils/format';
 
@@ -51,11 +51,14 @@ const periodLabel = computed(() => {
   }
 });
 
-async function loadLeaderboard() {
+async function loadLeaderboard(silent = false) {
   const requestId = ++leaderboardRequestId;
-  leaderboard.value = [];
-  leaderboardLoading.value = true;
-  leaderboardError.value = null;
+  // 静默刷新时不清空列表、不显示骨架屏，原地更新数据，避免刷新造成闪烁
+  if (!silent) {
+    leaderboard.value = [];
+    leaderboardLoading.value = true;
+    leaderboardError.value = null;
+  }
   try {
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
@@ -71,11 +74,15 @@ async function loadLeaderboard() {
     if (data.me && !leaderboard.value.some(u => u.isMe)) {
       leaderboard.value.push(data.me);
     }
+    if (silent) leaderboardError.value = null;
   } catch (e) {
     if (requestId !== leaderboardRequestId) return;
-    const msg = e instanceof Error ? e.message : String(e);
-    leaderboardError.value = msg;
-    leaderboard.value = [];
+    // 静默刷新失败时保留已展示的数据，不打断用户
+    if (!silent || leaderboard.value.length === 0) {
+      const msg = e instanceof Error ? e.message : String(e);
+      leaderboardError.value = msg;
+      leaderboard.value = [];
+    }
   } finally {
     if (requestId === leaderboardRequestId) {
       leaderboardLoading.value = false;
@@ -160,18 +167,11 @@ onMounted(async () => {
   void loadLeaderboard();
 
   // 每分钟自动刷新行为统计，「总听歌时长」按分钟粒度更新，
-  // 同时主动检查服务端是否下发了「重置听歌时长」信号，避免管理员重置后首页仍显示旧数据。
+  // 同时静默刷新排行榜（原地更新、不闪骨架屏），使停留页面期间排行榜持续同步最新时长。
   statsRefreshTimer = setInterval(async () => {
     try {
       await statisticsStore.refreshBehaviorOnly('All');
-      // 使用分周期时长上报，确保日/周/总排行榜数据分开统计
-      const durations = await getLocalListenDurations();
-      // 若本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示并重载排行榜
-      const resetApplied = await checkForResetSignal(durations.total);
-      if (resetApplied) {
-        await statisticsStore.refreshBehaviorOnly('All');
-        await loadLeaderboard();
-      }
+      await loadLeaderboard(true);
     } catch {
       // 刷新失败静默处理，不影响用户使用
     }
@@ -319,7 +319,7 @@ const losslessRatio = computed(() => {
               <button
                 type="button"
                 class="text-[clamp(0.7rem,0.9vw,0.8rem)] text-black/60 dark:text-white/60 hover:text-[#EC4141] dark:hover:text-[#EC4141] font-medium transition cursor-pointer"
-                @click="loadLeaderboard"
+                @click="loadLeaderboard()"
               >
                 刷新
               </button>
@@ -346,7 +346,7 @@ const losslessRatio = computed(() => {
             <button
               type="button"
               class="mt-2 text-[clamp(0.7rem,0.9vw,0.8rem)] text-[#EC4141] font-medium transition cursor-pointer"
-              @click="loadLeaderboard"
+              @click="loadLeaderboard()"
             >
               点击重试
             </button>

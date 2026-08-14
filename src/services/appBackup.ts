@@ -18,7 +18,7 @@
  */
 
 import type { Playlist, PluginSource, Song, AppSettings, LibrarySong } from '../types';
-import { getStoredPlugins, getPluginScript, addPluginSource, loadPluginFromScript, pluginsVersion } from './pluginEngine';
+import { getStoredPlugins, getPluginScript, addPluginSource, loadPluginFromScript, persistPluginScriptToDataDir, pluginsVersion } from './pluginEngine';
 import { playerStorage } from './storage/playerStorage';
 
 // ==================== 类型定义 ====================
@@ -327,6 +327,11 @@ export async function importAppBackup(
         // 通过脚本重新加载插件，自动生成 PluginSource
         const loaded = await loadPluginFromScript(entry.script, entry.source.filePath);
         if (loaded) {
+          // 本地文件路径的插件：保存副本到数据目录，避免原文件移动后失效
+          const savedPath = await persistPluginScriptToDataDir(loaded, entry.script);
+          if (savedPath) {
+            loaded.filePath = savedPath;
+          }
           // 保留原始排序和启用状态
           addPluginSource({
             ...loaded,

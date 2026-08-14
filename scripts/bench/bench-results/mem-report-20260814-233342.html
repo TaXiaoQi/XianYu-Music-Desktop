@@ -1,0 +1,43 @@
+﻿<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<title>弦予音乐 内存/CPU 采样报告</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;background:#141414;color:#e6e6e6;padding:24px}
+  h1{font-size:20px;margin:0 0 4px} .sub{color:#999;font-size:12px;margin-bottom:20px}
+  .cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+  .card{background:#1e1e1e;border:1px solid #2c2c2c;border-radius:10px;padding:14px 18px;min-width:150px}
+  .card .k{font-size:12px;color:#999} .card .v{font-size:24px;font-weight:700;margin-top:4px}
+  .card .u{font-size:12px;color:#777;margin-left:2px}
+  .chart{background:#1e1e1e;border:1px solid #2c2c2c;border-radius:10px;padding:14px;margin-bottom:18px}
+  .chart h2{font-size:14px;margin:0 0 8px}
+  svg text{fill:#bbb;font-size:10px}
+</style></head><body>
+<h1>弦予音乐 · WebView2 内存/CPU 采样</h1>
+<div class="sub">时间: 2026-08-14 23:33:45 · 采样 6 点 · 间隔 500ms</div>
+<div class="cards">
+  <div class="card"><div class="k">总内存 基线</div><div class="v">1397.5<span class="u">MB</span></div></div>
+  <div class="card"><div class="k">总内存 均值</div><div class="v">1397.5<span class="u">MB</span></div></div>
+  <div class="card"><div class="k">总内存 峰值</div><div class="v">1397.5<span class="u">MB</span></div></div>
+  <div class="card"><div class="k">WebView2 峰值</div><div class="v">1322.3<span class="u">MB</span></div></div>
+  <div class="card"><div class="k">WebView2 CPU 峰值</div><div class="v">0.8<span class="u">%</span></div></div>
+</div>
+<div class="chart"><h2>WorkingSet 内存曲线 (MB)</h2>
+<svg id="mem" viewBox="0 0 900 260" width="100%"></svg></div>
+<div class="chart"><h2>WebView2 CPU 占用 (%)</h2>
+<svg id="cpu" viewBox="0 0 900 200" width="100%"></svg></div>
+<script>
+const labels=[0.04,0.56,1.08,1.61,2.14,2.68], total=[1397.49,1397.49,1397.49,1397.49,1397.49,1397.46], wv=[1322.33,1322.33,1322.33,1322.33,1322.33,1322.3], main=[75.16,75.16,75.16,75.16,75.16,75.16], cpu=[0,0.2,0.3,0.3,0.8,0.6];
+function line(svgId, series, color, maxOverride){
+  const svg=document.getElementById(svgId); const W=900,H=svgId==='mem'?260:200,P=28;
+  const max= maxOverride || Math.max(...series)*1.15 || 1;
+  const x=i=>P+(W-P*2)*(i/(Math.max(1,series.length-1)));
+  const y=v=>H-P-(H-P*2)*(v/max);
+  let d=''; series.forEach((v,i)=>{d+= (i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1);});
+  const g=document.createElementNS('http://www.w3.org/2000/svg','path');
+  g.setAttribute('d',d); g.setAttribute('fill','none'); g.setAttribute('stroke',color); g.setAttribute('stroke-width','1.6');
+  svg.appendChild(g);
+  for(let i=0;i<=4;i++){const v=max*i/4; const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x','2'); t.setAttribute('y',y(v)+3); t.textContent=Math.round(v)+' '+(svgId==='cpu'?'%':'MB'); svg.appendChild(t);}
+}
+line('mem', total, '#ff6b6b'); line('mem', wv, '#4dabf7'); line('mem', main, '#51cf66');
+line('cpu', cpu, '#ffd43b');
+</script></body></html>

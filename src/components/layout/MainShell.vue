@@ -8,6 +8,7 @@ import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyrics
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
+import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useBanCheck } from '../../composables/useBanCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
@@ -95,6 +96,14 @@ const {
   closeFeedbackNotification,
 } = useFeedbackNotification();
 
+// Nickname change notification logic（后台管理员修改昵称后，通过公告弹窗通知用户并同步本地昵称）
+const {
+  nicknameVisible,
+  currentNicknameNotification,
+  checkNicknameChangeNotification,
+  closeNicknameChangeNotification,
+} = useNicknameChangeNotification();
+
 // Update check logic（启动时自动检查，由全局单例管理弹窗）
 const {
   updateVisible,
@@ -117,6 +126,7 @@ const handleOnboardingComplete = () => {
   completeOnboarding();
   checkAnnouncement();
   checkFeedbackNotification();
+  checkNicknameChangeNotification();
   if (settingsStore.settings.checkUpdateOnStartup) {
     checkUpdateOnStartup();
   }
@@ -127,13 +137,15 @@ onMounted(() => {
     // 初始化流程拥有首次启动的最高展示优先级，完成后再检查其他启动弹窗。
     checkAnnouncement();
     checkFeedbackNotification();
+    checkNicknameChangeNotification();
     if (settingsStore.settings.checkUpdateOnStartup) {
       checkUpdateOnStartup();
     }
   }
-  // 定时轮询反馈完成通知（后台管理员完成反馈后，客户端约在一分钟内收到）
+  // 定时轮询反馈完成通知与昵称变更通知（后台操作后，客户端约在一分钟内收到）
   const feedbackTimer = setInterval(() => {
     checkFeedbackNotification(announcementVisible.value);
+    checkNicknameChangeNotification(announcementVisible.value || feedbackVisible.value);
   }, 60_000);
   onUnmounted(() => clearInterval(feedbackTimer));
 });
@@ -326,6 +338,13 @@ onMounted(() => {
       :visible="feedbackVisible"
       :announcement="currentFeedbackNotification"
       @close="closeFeedbackNotification"
+    />
+
+    <AnnouncementModal
+      v-if="!isMiniMode && nicknameVisible"
+      :visible="nicknameVisible"
+      :announcement="currentNicknameNotification"
+      @close="closeNicknameChangeNotification"
     />
 
     <UpdateModal

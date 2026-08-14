@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::time::Duration;
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct PluginHttpResponse {
@@ -205,6 +206,34 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     }
 
     fs::read_to_string(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))
+}
+
+/// 将插件脚本保存到 app_data_dir/plugins/{id}.js，返回保存后的完整路径。
+/// 插件安装时复制一份到应用数据目录，避免原始文件被移动/删除后插件失效。
+#[tauri::command]
+pub async fn save_plugin_script(
+    app_handle: tauri::AppHandle,
+    id: String,
+    script: String,
+) -> Result<String, String> {
+    let sanitized_id = path_validator::sanitize_filename_component(&id)
+        .map_err(|e| format!("无效的插件 id: {}", e))?;
+    if script.len() > 2 * 1024 * 1024 {
+        return Err(format!("插件脚本过大: {} bytes (上限 2MB)", script.len()));
+    }
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取 app_data_dir 失败: {e}"))?;
+    let plugins_dir = app_dir.join("plugins");
+    tokio::fs::create_dir_all(&plugins_dir)
+        .await
+        .map_err(|e| format!("创建插件目录失败: {e}"))?;
+    let file_path = plugins_dir.join(format!("{sanitized_id}.js"));
+    tokio::fs::write(&file_path, &script)
+        .await
+        .map_err(|e| format!("写入插件脚本失败: {e}"))?;
+    Ok(file_path.to_string_lossy().to_string())
 }
 
 /// 读取本地文件的二进制内容（base64 编码返回）

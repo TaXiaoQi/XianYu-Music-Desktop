@@ -2401,6 +2401,26 @@ export async function getPluginScript(id: string): Promise<string | null> {
 }
 
 /**
+ * 将本地文件路径的插件脚本保存到应用数据目录，返回新的 filePath。
+ * 避免插件安装后原文件被移动/删除导致脚本读取失败。
+ * 非本地路径（builtin/http）或保存失败时返回 null。
+ */
+export async function persistPluginScriptToDataDir(
+  source: PluginSource,
+  script: string,
+): Promise<string | null> {
+  const fp = source.filePath;
+  if (!fp || fp.startsWith('builtin://') || fp.startsWith('http')) return null;
+  try {
+    const savedPath = await pluginApi.savePluginScript(source.id, script);
+    return savedPath;
+  } catch (e: any) {
+    log(`保存插件脚本到数据目录失败 ${source.name}: ${e?.message || e}`);
+    return null;
+  }
+}
+
+/**
  * 从云端同步数据恢复插件
  * 解析脚本、创建实例、持久化元数据
  */
@@ -2418,12 +2438,18 @@ export async function restorePluginFromSync(
     const existing = getStoredPlugins().find(p => p.id === source.id);
     if (existing) {
       // 已存在：更新元数据，保留现有脚本缓存
-      updatePluginSource(source.id, {
+      const updates: Partial<PluginSource> = {
         enabled: source.enabled,
         sortOrder: source.sortOrder,
         name: source.name,
         version: source.version,
-      });
+      };
+      // 本地文件路径的插件：同步一份副本到数据目录，避免原文件移动后失效
+      const savedPath = await persistPluginScriptToDataDir(existing, script);
+      if (savedPath) {
+        updates.filePath = savedPath;
+      }
+      updatePluginSource(source.id, updates);
       log(`restorePluginFromSync: 插件已存在, 更新元数据 ${source.name}`);
       return true;
     }
@@ -2433,6 +2459,12 @@ export async function restorePluginFromSync(
     if (!loadedSource) {
       log(`restorePluginFromSync: 脚本解析失败 ${source.name}`);
       return false;
+    }
+
+    // 本地文件路径的插件：保存副本到数据目录，避免原文件移动后失效
+    const savedPath = await persistPluginScriptToDataDir(loadedSource, script);
+    if (savedPath) {
+      loadedSource.filePath = savedPath;
     }
 
     // 合并同步的元数据（保留 enabled、sortOrder 等用户设置）
