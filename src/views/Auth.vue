@@ -488,7 +488,9 @@ async function handleSendCode() {
   codeLoading.value = true;
   message.value = '';
   try {
-    const result = await sendEmailCode(email, type, captchaPayload);
+    // 注册模式下传入弦予号，服务端在发码前预检查邮箱和弦予号唯一性
+    const ciyuanxiId = isForgot ? undefined : form.value.account.trim() || undefined;
+    const result = await sendEmailCode(email, type, captchaPayload, ciyuanxiId);
     showMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
     startCodeCountdown();

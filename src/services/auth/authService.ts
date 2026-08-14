@@ -563,11 +563,13 @@ export async function sendEmailCode(
   email: string,
   type: VerifyCodeType = 'register',
   captcha: HumanCaptchaPayload,
+  ciyuanxiId?: string,
 ): Promise<{ success: true; message: string }> {
   try {
     const payload = await requestEnvelope<Record<string, unknown>>('send_verify_code', withCaptcha({
       email,
       type,
+      ...(ciyuanxiId ? { ciyuanxi_id: ciyuanxiId } : {}),
     }, captcha));
     if (Number(payload.code) !== 200) {
       throw new Error(payload.msg || '验证码发送失败');
