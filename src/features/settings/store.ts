@@ -204,7 +204,7 @@ export const defaultPluginSettings: PluginSettings = {
 };
 
 export const defaultAutoSyncConfig: AutoSyncConfig = {
-  enabled: false,
+  enabled: true,
   syncIntervalSeconds: 3600,
   maxDelayMinutes: 30,
   delayedCount: 0,
