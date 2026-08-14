@@ -23,15 +23,13 @@ export function formatFileSize(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
-/** 将秒数格式化为中文带单位的听歌时长（显示最显著的两个单位） */
+/** 将秒数格式化为中文带单位的听歌时长（最多显示到分钟，不显示秒） */
 export function formatListenDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0分钟';
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
   if (hours > 0) return `${hours}小时 ${minutes}分钟`;
-  if (minutes > 0) return `${minutes}分钟 ${secs}秒`;
-  return `${secs}秒`;
+  return `${minutes}分钟`;
 }
 
 /** 格式化相对时间（中文） */
