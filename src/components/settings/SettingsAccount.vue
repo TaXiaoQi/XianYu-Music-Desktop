@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
@@ -22,7 +21,6 @@ import SettingHint from './SettingHint.vue';
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
 const { showToast } = useToast();
-const router = useRouter();
 const playlistSync = usePlaylistSync();
 
 /** 两位数字补零 */
@@ -86,10 +84,6 @@ async function handleResetBaseUrl() {
   } catch {
     showToast('默认后端连接配置保存失败，请重试', 'error');
   }
-}
-
-function handleOpenAccount() {
-  void router.push('/auth');
 }
 
 // 退出登录二次确认
@@ -307,25 +301,18 @@ function updateAutoSyncMaxDelay(event: Event) {
           <button
             v-if="authStore.isLoggedIn"
             type="button"
-            class="border border-[#EC4141]/35 bg-[#EC4141]/5 hover:bg-[#EC4141] text-[#EC4141] hover:text-white px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
-            @click="handleDeleteAccount"
-          >
-            注销账号
-          </button>
-          <button
-            v-if="authStore.isLoggedIn"
-            type="button"
             class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
             @click="handleLogout"
           >
             退出登录
           </button>
           <button
+            v-if="authStore.isLoggedIn"
             type="button"
-            class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer flex items-center gap-1.5"
-            @click="handleOpenAccount"
+            class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-4 h-10 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer"
+            @click="handleDeleteAccount"
           >
-            {{ authStore.isLoggedIn ? '前往个人中心' : '前往登录' }}
+            注销账号
           </button>
         </div>
       </div>

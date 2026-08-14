@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onUnmounted, ref, watch } from 'vue';
 import { useChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { useAuthStore } from '../../features/auth/store';
-import { changePassword, logout } from '../../services/auth/authService';
+import {
+  changePassword,
+  logout,
+  sendEmailCode,
+  type HumanCaptchaPayload,
+} from '../../services/auth/authService';
 import { useToast } from '../../composables/toast';
+import HumanCaptchaModal from './HumanCaptchaModal.vue';
 
 const { showToast } = useToast();
 const authStore = useAuthStore();
@@ -13,7 +19,17 @@ const { changePasswordDialogState, resolveChangePasswordDialog } = useChangePass
 const oldPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
+const code = ref('');
 const loading = ref(false);
+const codeLoading = ref(false);
+const countdown = ref(0);
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+// 人机验证
+const captchaOpen = ref(false);
+const captchaTitle = ref('');
+const captchaDescription = ref('');
+let captchaResolver: ((payload: HumanCaptchaPayload | null) => void) | null = null;
 
 watch(
   () => changePasswordDialogState.value.visible,
@@ -22,13 +38,88 @@ watch(
       oldPassword.value = '';
       newPassword.value = '';
       confirmPassword.value = '';
+      code.value = '';
       loading.value = false;
+      codeLoading.value = false;
+      countdown.value = 0;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
     }
   },
 );
 
+onUnmounted(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+});
+
+function startCountdown() {
+  countdown.value = 60;
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdown.value--;
+    if (countdown.value <= 0) {
+      countdown.value = 0;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+    }
+  }, 1000);
+}
+
+function requestHumanCaptcha(title: string, description: string): Promise<HumanCaptchaPayload | null> {
+  captchaTitle.value = title;
+  captchaDescription.value = description;
+  captchaOpen.value = true;
+  return new Promise((resolve) => {
+    captchaResolver = resolve;
+  });
+}
+
+function resolveHumanCaptcha(payload: HumanCaptchaPayload | null) {
+  captchaOpen.value = false;
+  captchaResolver?.(payload);
+  captchaResolver = null;
+}
+
+function handleCaptchaVerified(payload: HumanCaptchaPayload) {
+  resolveHumanCaptcha(payload);
+}
+
+function handleCaptchaCancel() {
+  resolveHumanCaptcha(null);
+}
+
 function cancel() {
   resolveChangePasswordDialog(false);
+}
+
+async function handleSendCode() {
+  const email = authStore.user?.email;
+  if (!email) {
+    showToast('未获取到注册邮箱，请重新登录', 'error');
+    return;
+  }
+  const captchaPayload = await requestHumanCaptcha(
+    '发送修改密码验证码前验证',
+    '完成验证后将向当前账号的注册邮箱发送修改密码验证码。',
+  );
+  if (!captchaPayload) return;
+  codeLoading.value = true;
+  try {
+    const result = await sendEmailCode(email, 'change_password', captchaPayload);
+    showToast(result.message || '验证码已发送到注册邮箱', 'success');
+    startCountdown();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '验证码发送失败', 'error');
+  } finally {
+    codeLoading.value = false;
+  }
 }
 
 async function submit() {
@@ -40,9 +131,13 @@ async function submit() {
     showToast('两次新密码不一致', 'error');
     return;
   }
+  if (!code.value.trim()) {
+    showToast('请输入邮箱验证码', 'error');
+    return;
+  }
   loading.value = true;
   try {
-    await changePassword(oldPassword.value, newPassword.value);
+    await changePassword(oldPassword.value, newPassword.value, code.value.trim());
     await logout();
     authStore.reset();
     showToast('密码已修改，请重新登录', 'success');
@@ -64,7 +159,7 @@ async function submit() {
       >
         <div class="change-pwd-card">
           <h3 class="change-pwd-title">修改密码</h3>
-          <p class="change-pwd-desc">修改成功后需要重新登录，请妥善保管新密码。</p>
+          <p class="change-pwd-desc">修改成功后需要重新登录，验证码将发送到注册邮箱：{{ authStore.user?.email || '未知邮箱' }}</p>
 
           <div class="change-pwd-form">
             <label class="change-pwd-field">
@@ -97,6 +192,26 @@ async function submit() {
                 class="change-pwd-input"
               />
             </label>
+            <div class="change-pwd-code-row">
+              <label class="change-pwd-field change-pwd-code-field">
+                <span class="change-pwd-label">邮箱验证码</span>
+                <input
+                  v-model="code"
+                  type="text"
+                  placeholder="输入验证码"
+                  autocomplete="one-time-code"
+                  class="change-pwd-input"
+                />
+              </label>
+              <button
+                type="button"
+                class="change-pwd-code-btn"
+                :disabled="codeLoading || loading || countdown > 0"
+                @click="handleSendCode"
+              >
+                {{ codeLoading ? '发送中…' : countdown > 0 ? `重新发送 (${countdown}s)` : '发送验证码' }}
+              </button>
+            </div>
           </div>
 
           <div class="change-pwd-actions">
@@ -110,6 +225,15 @@ async function submit() {
         </div>
       </div>
     </transition>
+
+    <!-- 人机验证 -->
+    <HumanCaptchaModal
+      :open="captchaOpen"
+      :title="captchaTitle"
+      :description="captchaDescription"
+      @verified="handleCaptchaVerified"
+      @cancel="handleCaptchaCancel"
+    />
   </Teleport>
 </template>
 
@@ -171,6 +295,7 @@ async function submit() {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
 }
 
 .change-pwd-title {
@@ -178,15 +303,13 @@ async function submit() {
   font-weight: 700;
   color: #1f2937;
   margin: 0 0 6px;
-  text-align: center;
 }
 
 .change-pwd-desc {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   line-height: 1.55;
   color: rgba(75, 85, 99, 0.9);
   margin: 0 0 16px;
-  text-align: center;
 }
 
 .change-pwd-form {
@@ -199,6 +322,7 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  text-align: left;
 }
 
 .change-pwd-label {
@@ -227,6 +351,46 @@ async function submit() {
 .change-pwd-input:focus {
   border-color: #ec4141;
   background: rgba(255, 255, 255, 0.9);
+}
+
+.change-pwd-code-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.change-pwd-code-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.change-pwd-code-btn {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(236, 65, 65, 0.35);
+  background: rgba(236, 65, 65, 0.05);
+  color: #ec4141;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 160ms ease, color 160ms ease, transform 100ms ease;
+}
+
+.change-pwd-code-btn:hover {
+  background: #ec4141;
+  color: #ffffff;
+}
+
+.change-pwd-code-btn:active {
+  transform: scale(0.97);
+}
+
+.change-pwd-code-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .change-pwd-actions {
@@ -309,6 +473,17 @@ html.dark .change-pwd-input::placeholder {
 
 html.dark .change-pwd-input:focus {
   background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .change-pwd-code-btn {
+  border-color: rgba(255, 120, 120, 0.35);
+  background: rgba(236, 65, 65, 0.12);
+  color: #ff8b8b;
+}
+
+html.dark .change-pwd-code-btn:hover {
+  background: #ec4141;
+  color: #ffffff;
 }
 
 html.dark .change-pwd-btn--ghost {
