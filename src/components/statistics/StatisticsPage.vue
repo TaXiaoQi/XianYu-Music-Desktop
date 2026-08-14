@@ -6,7 +6,7 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
-import { fetchLeaderboard, checkForResetSignal, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchLeaderboard, checkForResetSignal, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize, formatListenDuration } from '../../utils/format';
 
@@ -60,9 +60,10 @@ async function loadLeaderboard() {
   leaderboardLoading.value = true;
   leaderboardError.value = null;
   try {
-    // 传递本地统计的听歌时长，先上报到后端再获取排行榜
-    const localDuration = behaviorStats.value?.total_duration ?? 0;
-    const data = await fetchLeaderboard(50, localDuration, currentPeriod.value);
+    // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
+    const durations = await getLocalListenDurations();
+    if (requestId !== leaderboardRequestId) return;
+    const data = await fetchLeaderboard(50, durations, currentPeriod.value);
     if (requestId !== leaderboardRequestId) return;
     leaderboard.value = data.leaderboard;
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
@@ -166,9 +167,10 @@ onMounted(async () => {
   statsRefreshTimer = setInterval(async () => {
     try {
       await statisticsStore.refreshBehaviorOnly('All');
-      const localDuration = behaviorStats.value?.total_duration ?? 0;
+      // 使用分周期时长上报，确保日/周/总排行榜数据分开统计
+      const durations = await getLocalListenDurations();
       // 若本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示并重载排行榜
-      const resetApplied = await checkForResetSignal(localDuration);
+      const resetApplied = await checkForResetSignal(durations.total);
       if (resetApplied) {
         await statisticsStore.refreshBehaviorOnly('All');
         await loadLeaderboard();

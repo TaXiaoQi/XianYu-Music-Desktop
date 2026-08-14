@@ -6,6 +6,9 @@ import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { useToast } from '../../composables/toast';
 import { usePlaylistSync } from '../../composables/usePlaylistSync';
+import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
+import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
+import { logout } from '../../services/auth/authService';
 import {
   DEFAULT_AUTH_API_SECRET,
   DEFAULT_AUTH_BASE_URL,
@@ -96,10 +99,24 @@ function handleLogout() {
   showLogoutConfirm.value = true;
 }
 
-function confirmLogout() {
+async function confirmLogout() {
   showLogoutConfirm.value = false;
+  try {
+    await logout();
+  } catch {
+    // 忽略登出接口异常，本地登出照常执行
+  }
   authStore.reset();
   showToast('已退出登录', 'info');
+}
+
+// 修改密码 / 注销账号弹窗
+function handleChangePassword() {
+  void showChangePasswordDialog();
+}
+
+function handleDeleteAccount() {
+  void showDeleteAccountDialog();
 }
 
 // 上传选项
@@ -272,13 +289,29 @@ function updateAutoSyncMaxDelay(event: Event) {
             </div>
             <div class="text-xs text-gray-500 dark:text-white/50 truncate mt-0.5">
               <template v-if="authStore.isLoggedIn">
-                @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置弦予号' }} · {{ authStore.user?.email }}
+                {{ authStore.user?.ciyuanxi_id ? `弦予号：${authStore.user.ciyuanxi_id}` : authStore.user?.email || '未设置' }}
               </template>
               <template v-else>登录后可同步个人资料到云端服务器</template>
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            v-if="authStore.isLoggedIn"
+            type="button"
+            class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
+            @click="handleChangePassword"
+          >
+            修改密码
+          </button>
+          <button
+            v-if="authStore.isLoggedIn"
+            type="button"
+            class="border border-[#EC4141]/35 bg-[#EC4141]/5 hover:bg-[#EC4141] text-[#EC4141] hover:text-white px-4 h-10 rounded-full text-xs font-medium transition cursor-pointer"
+            @click="handleDeleteAccount"
+          >
+            注销账号
+          </button>
           <button
             v-if="authStore.isLoggedIn"
             type="button"
@@ -799,7 +832,7 @@ function updateAutoSyncMaxDelay(event: Event) {
 /* 退出登录确认弹窗 */
 .logout-confirm-card {
   width: min(86vw, 360px);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.8);
   color: #1f2937;
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
@@ -919,7 +952,7 @@ html.dark .sync-notice {
 }
 
 html.dark .logout-confirm-card {
-  background: #262626;
+  background: rgba(17, 24, 39, 0.9);
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }

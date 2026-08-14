@@ -47,6 +47,19 @@ const message = ref('');
 const messageTone = ref<'error' | 'success'>('error');
 const loading = ref(false);
 const codeLoading = ref(false);
+const codeCountdown = ref(0);
+let codeCountdownTimer: ReturnType<typeof setInterval> | null = null;
+function startCodeCountdown() {
+  codeCountdown.value = 60;
+  if (codeCountdownTimer) clearInterval(codeCountdownTimer);
+  codeCountdownTimer = setInterval(() => {
+    codeCountdown.value--;
+    if (codeCountdown.value <= 0) {
+      codeCountdown.value = 0;
+      if (codeCountdownTimer) { clearInterval(codeCountdownTimer); codeCountdownTimer = null; }
+    }
+  }, 1000);
+}
 const agreementAccepted = ref(false);
 const termsModalOpen = ref(false);
 const termsScrolledToEnd = ref(false);
@@ -178,6 +191,19 @@ const passwordPanelOpen = ref(false);
 const deleteAccountPanelOpen = ref(false);
 const deleteAccountForm = ref({ password: '', code: '' });
 const deleteAccountCodeLoading = ref(false);
+const deleteAccountCountdown = ref(0);
+let deleteAccountCountdownTimer: ReturnType<typeof setInterval> | null = null;
+function startDeleteAccountCountdown() {
+  deleteAccountCountdown.value = 60;
+  if (deleteAccountCountdownTimer) clearInterval(deleteAccountCountdownTimer);
+  deleteAccountCountdownTimer = setInterval(() => {
+    deleteAccountCountdown.value--;
+    if (deleteAccountCountdown.value <= 0) {
+      deleteAccountCountdown.value = 0;
+      if (deleteAccountCountdownTimer) { clearInterval(deleteAccountCountdownTimer); deleteAccountCountdownTimer = null; }
+    }
+  }, 1000);
+}
 const deleteAccountLoading = ref(false);
 
 type AccountConfirmTone = 'danger' | 'success' | 'info';
@@ -411,9 +437,9 @@ async function onSubmit() {
       showToast('请填写弦予号', 'error');
       return;
     }
-    if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
-      showMessage('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线');
-      showToast('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线', 'error');
+    if (!/^[a-zA-Z0-9]{6,20}$/.test(ciyuanxi)) {
+      showMessage('弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合');
+      showToast('弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合', 'error');
       return;
     }
     if (!form.value.email.trim()) {
@@ -539,6 +565,7 @@ async function handleSendCode() {
     const result = await sendEmailCode(email, type, captchaPayload);
     showMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
+    startCodeCountdown();
   } catch (error) {
     const tip = error instanceof Error ? error.message : '验证码发送失败';
     showMessage(tip);
@@ -738,6 +765,7 @@ async function handleSendDeleteAccountCode() {
   try {
     const result = await sendEmailCode(email, 'delete_account', captchaPayload);
     showToast(result.message || '注销验证码已发送到注册邮箱', 'success');
+    startDeleteAccountCountdown();
   } catch (error) {
     const tip = error instanceof Error ? error.message : '注销验证码发送失败';
     showToast(tip, 'error');
@@ -862,16 +890,12 @@ async function submitCiyuanxi() {
     showToast('未获取到当前弦予号，请重新登录', 'error');
     return;
   }
-  if (newId.length < 6) {
-    showToast('弦予号至少 6 个字符', 'error');
+  if (newId.length < 6 || newId.length > 20) {
+    showToast('弦予号需 6-20 位', 'error');
     return;
   }
-  if (!/^[a-zA-Z]/.test(newId)) {
-    showToast('弦予号必须以字母开头', 'error');
-    return;
-  }
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(newId)) {
-    showToast('弦予号需 6-20 位，仅含字母、数字、下划线、中划线', 'error');
+  if (!/^[a-zA-Z0-9]{6,20}$/.test(newId)) {
+    showToast('弦予号仅支持纯数字、纯字母或数字字母组合', 'error');
     return;
   }
   if (!password) {
@@ -1121,10 +1145,10 @@ async function silentPoll() {
               <button
                 type="button"
                 class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="codeLoading"
+                :disabled="codeLoading || codeCountdown > 0"
                 @click="handleSendCode"
               >
-                {{ codeLoading ? '发送中…' : '发送验证码' }}
+                {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
               </button>
             </div>
 
@@ -1182,7 +1206,7 @@ async function silentPoll() {
               <input
                 v-model="form.account"
                 type="text"
-                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，字母开头，同微信号规则'"
+                :placeholder="mode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，支持纯数字、纯字母或组合'"
                 :autocomplete="mode === 'login' ? 'off' : 'username'"
                 class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-[clamp(1rem,1.3vw,1.125rem)] text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
               />
@@ -1226,10 +1250,10 @@ async function silentPoll() {
                 <button
                   type="button"
                   class="h-14 px-6 whitespace-nowrap text-base font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  :disabled="codeLoading"
+                  :disabled="codeLoading || codeCountdown > 0"
                   @click="handleSendCode"
                 >
-                  {{ codeLoading ? '发送中…' : '发送验证码' }}
+                  {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
                 </button>
               </div>
             </template>
@@ -1326,58 +1350,61 @@ async function silentPoll() {
         <!-- 顶部标题区（含头像） -->
         <header class="px-[clamp(1.5rem,2.8vw,3.5rem)] pt-[clamp(1.25rem,1.8vw,2rem)] pb-[clamp(0.5rem,1vw,1rem)] flex items-center justify-between gap-6 flex-wrap animate-fade-in-up">
           <div class="flex items-center gap-[clamp(0.75rem,1.2vw,1.25rem)] min-w-0">
-            <!-- 头像（可点击） -->
-            <div class="relative shrink-0">
-              <button
-                ref="avatarBtnRef"
-                type="button"
-                class="grid h-[clamp(3.5rem,5vw,4.5rem)] w-[clamp(3.5rem,5vw,4.5rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                :disabled="avatarUploading || loading"
-                :title="avatarUploading ? '上传中…' : '点击管理头像'"
-                @click="openAvatarMenu"
+            <!-- 头像 + 审核状态（垂直排列） -->
+            <div class="flex flex-col items-center gap-1 shrink-0">
+              <!-- 头像（可点击） -->
+              <div class="relative shrink-0">
+                <button
+                  ref="avatarBtnRef"
+                  type="button"
+                  class="grid h-[clamp(3.5rem,5vw,4.5rem)] w-[clamp(3.5rem,5vw,4.5rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  :disabled="avatarUploading || loading"
+                  :title="avatarUploading ? '上传中…' : '点击管理头像'"
+                  @click="openAvatarMenu"
+                >
+                  <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
+                  <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
+                </button>
+                <!-- 编辑角标 -->
+                <span class="pointer-events-none absolute bottom-0 right-0 grid h-[clamp(1rem,1.4vw,1.25rem)] w-[clamp(1rem,1.4vw,1.25rem)] place-items-center rounded-full bg-[#EC4141] text-white shadow-sm ring-2 ring-white dark:ring-neutral-900">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-[60%] w-[60%]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </span>
+                <!-- 隐藏的文件输入 -->
+                <input
+                  ref="avatarInputRef"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                  class="hidden"
+                  :disabled="avatarUploading || loading"
+                  @change="handleAvatarFileChange"
+                />
+              </div>
+              <!-- 头像审核状态提示（头像下方） -->
+              <div
+                v-if="avatarStatus === 'pending'"
+                class="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
               >
-                <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
-                <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
-              </button>
-              <!-- 编辑角标 -->
-              <span class="pointer-events-none absolute bottom-0 right-0 grid h-[clamp(1rem,1.4vw,1.25rem)] w-[clamp(1rem,1.4vw,1.25rem)] place-items-center rounded-full bg-[#EC4141] text-white shadow-sm ring-2 ring-white dark:ring-neutral-900">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-[60%] w-[60%]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </span>
-              <!-- 隐藏的文件输入 -->
-              <input
-                ref="avatarInputRef"
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
-                class="hidden"
-                :disabled="avatarUploading || loading"
-                @change="handleAvatarFileChange"
-              />
-            </div>
-            <!-- 头像审核状态提示 -->
-            <div
-              v-if="avatarStatus === 'pending'"
-              class="ml-2 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300"
-            >
-              <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              头像审核中
-              <button
-                type="button"
-                class="ml-1 flex items-center gap-0.5 underline-offset-2 hover:underline"
-                :disabled="refreshingAvatarStatus"
-                @click="refreshAvatarStatus"
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                审核中
+                <button
+                  type="button"
+                  class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="refreshingAvatarStatus"
+                  @click="refreshAvatarStatus"
+                >
+                  <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  刷新
+                </button>
+              </div>
+              <div
+                v-else-if="avatarStatus === 'rejected'"
+                class="flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
               >
-                <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                刷新
-              </button>
-            </div>
-            <div
-              v-else-if="avatarStatus === 'rejected'"
-              class="ml-2 flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-[10px] text-rose-600 dark:text-rose-300"
-            >
-              <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-              头像审核未通过
+                <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                未通过
+              </div>
             </div>
             <!-- 昵称 + 副信息 -->
             <div class="min-w-0">
@@ -1430,29 +1457,30 @@ async function silentPoll() {
               <!-- 改名审核状态提示 -->
               <div
                 v-if="nicknameStatus === 'pending'"
-                class="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600 dark:text-amber-300"
+                class="mt-1.5 flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300 w-fit"
               >
                 <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 改名审核中
                 <button
                   type="button"
-                  class="ml-1 underline-offset-2 hover:underline"
+                  class="ml-0.5 flex items-center gap-0.5 underline-offset-2 hover:underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="refreshingAvatarStatus"
                   @click="refreshAvatarStatus"
                 >
+                  <svg v-if="refreshingAvatarStatus" class="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   刷新
                 </button>
               </div>
               <div
                 v-else-if="nicknameStatus === 'rejected'"
-                class="mt-1.5 inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-[10px] text-rose-600 dark:text-rose-300"
+                class="mt-1.5 flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-600 dark:text-rose-300 w-fit"
               >
                 <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 改名审核未通过
               </div>
               <div class="flex items-center gap-2 mt-1.5 min-w-0">
                 <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate">
-                  @{{ authStore.user?.ciyuanxi_id || authStore.user?.username || '未设置弦予号' }} · {{ authStore.user?.email }}
+                  {{ authStore.user?.ciyuanxi_id ? `弦予号：${authStore.user.ciyuanxi_id}` : authStore.user?.email || '未设置' }}
                 </p>
                 <button
                   type="button"
@@ -1696,10 +1724,10 @@ async function silentPoll() {
                   <button
                     type="button"
                     class="h-9 px-4 whitespace-nowrap text-[clamp(0.85rem,1vw,0.95rem)] font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    :disabled="deleteAccountCodeLoading || deleteAccountLoading"
+                    :disabled="deleteAccountCodeLoading || deleteAccountLoading || deleteAccountCountdown > 0"
                     @click="handleSendDeleteAccountCode"
                   >
-                    {{ deleteAccountCodeLoading ? '发送中…' : '发送验证码' }}
+                    {{ deleteAccountCodeLoading ? '发送中…' : deleteAccountCountdown > 0 ? `重新发送 (${deleteAccountCountdown}s)` : '发送验证码' }}
                   </button>
                 </div>
                 <div class="pt-1">
@@ -1810,7 +1838,7 @@ async function silentPoll() {
                 <input
                   v-model="ciyuanxiForm.newId"
                   type="text"
-                  placeholder="6-20 位，字母开头"
+                  placeholder="6-20 位，支持纯数字、纯字母或组合"
                   spellcheck="false"
                   class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
                 />

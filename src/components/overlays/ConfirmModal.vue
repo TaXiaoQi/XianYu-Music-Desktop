@@ -11,7 +11,7 @@ const emit = defineEmits(['confirm', 'cancel']);
 <template>
   <Teleport to="body">
     <div v-if="visible" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] select-none" @click.self="emit('cancel')">
-      <div class="bg-white dark:bg-[#262626] rounded-lg shadow-xl w-80 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div class="bg-white/80 dark:bg-gray-900/90 rounded-lg shadow-xl w-80 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
         <div class="px-6 pt-6 pb-2 text-center">
           <h3 class="text-lg font-bold text-gray-800 dark:text-white">{{ title }}</h3>

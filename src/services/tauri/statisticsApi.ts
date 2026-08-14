@@ -2,6 +2,7 @@ import type {
   BehaviorStats,
   FormatDistribution,
   LibraryStats,
+  ListenDurations,
   QualityDistribution,
   StatisticsExportResult,
   StatisticsImportPreview,
@@ -36,6 +37,9 @@ export const statisticsApi = {
   getLibraryStats: (): Promise<LibraryStats> => tauriInvoke('get_library_stats'),
   getBehaviorStats: (timeRange: TimeRange): Promise<BehaviorStats> =>
     tauriInvoke('get_behavior_stats', { timeRange }),
+  /** 获取日/周/总三个周期的听歌时长（秒），用于排行榜分周期上报 */
+  getListenDurations: (): Promise<ListenDurations> =>
+    tauriInvoke('get_listen_durations'),
   getQualityDistribution: (): Promise<QualityDistribution> =>
     tauriInvoke('get_quality_distribution'),
   getFormatDistribution: (): Promise<FormatDistribution> =>

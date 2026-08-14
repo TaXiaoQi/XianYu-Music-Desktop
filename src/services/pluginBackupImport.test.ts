@@ -522,6 +522,24 @@ describe('preparePluginBackupImport: lxmusic backups', () => {
     expect(result.importedSongCount).toBe(2);
   });
 
+  it('prefers lx plugins over musicfree plugins for lxmusic backups', () => {
+    // 同时安装了 LX 和 MusicFree 的网易插件，LX 备份应优先匹配 LX 插件
+    const mfWy = plugin({ id: 'mf-wy', name: '网易云音乐', sources: ['网易云音乐'] });
+    const backup = JSON.stringify({
+      type: 'allData_v2',
+      playList: [{ id: 'love', name: '我的收藏', list: [song()] }],
+    });
+    const result = preparePluginBackupImport(backup, [mfWy, lxWy]);
+
+    expect(result.format).toBe('lxmusic');
+    expect(result.importedSongCount).toBe(1);
+    expect(result.playlists[0].songs[0].plugin_id).toBe('lx-wy');
+    expect(result.playlists[0].songs[0].path).toMatch(/^lx:\/\//);
+    expect(result.associations).toEqual([
+      expect.objectContaining({ pluginId: 'lx-wy', songCount: 1 }),
+    ]);
+  });
+
   it('skips empty playlists and reports when a backup has no importable playlist', () => {
     const noSheet = preparePluginBackupImport(JSON.stringify({
       type: 'allData_v2',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
@@ -161,6 +161,12 @@ const toggleFullscreen = async () => {
     // 进入全屏：系统原生全屏会覆盖整个显示器（包括任务栏区域）。
     fullscreenAnimState.value = 'entering';
     enableCursorAutoHide();
+    // 等待 Vue 将 fs-entering CSS 类应用到 DOM 并由浏览器完成一帧绘制。
+    // 从最大化进入全屏时，Rust 侧无 220ms maximize 动画延迟，
+    // 原生窗口样式/尺寸变更几乎瞬间完成，若 CSS 动画尚未绘制到屏幕，
+    // 则无法覆盖原生重绘，导致窗口闪烁。
+    await nextTick();
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
     try {
       await applyImmersiveFullscreen(true);
     } catch (error) {

@@ -7,6 +7,9 @@
  * 在获取排行榜前，先将本地统计的听歌时长上报到后端（report_listen_stats），
  * 确保云端数据与本地一致。
  *
+ * 上报时同时发送 daily/weekly/total 三个周期的时长，
+ * 后端按 period 参数分别统计日榜、周榜、总榜。
+ *
  * 复用 authService 的签名机制（MD5）。
  */
 
@@ -42,17 +45,37 @@ export interface LeaderboardData {
   totalUsers: number;
 }
 
+/** 三个周期的听歌时长（秒） */
+export interface ListenDurations {
+  daily: number;
+  weekly: number;
+  total: number;
+}
+
+/**
+ * 从本地统计获取日/周/总三个周期的听歌时长
+ */
+export async function getLocalListenDurations(): Promise<ListenDurations> {
+  try {
+    return await statisticsApi.getListenDurations();
+  } catch {
+    return { daily: 0, weekly: 0, total: 0 };
+  }
+}
+
 /**
  * 上报本地听歌时长到后端（report_listen_stats）
- * 后端采用「最大值覆盖」策略，只增不减。
+ *
+ * 同时发送 daily/weekly/total 三个周期的时长，后端分别存储用于不同周期的排行榜。
+ * `duration` 字段保持为 total 值以兼容旧后端（最大值覆盖策略）。
  * 如果服务端存在待处理的重置信号，会返回 reset_at 时间戳。
  *
- * @param listenDuration 本地累计听歌时长（秒）
+ * @param durations 三个周期的听歌时长
  * @param uniqueSongsCount 本地累计聆听新歌数（可选）
  * @returns 服务端返回的 data，可能包含 reset_at 字段
  */
 async function reportListenDuration(
-  listenDuration: number,
+  durations: ListenDurations,
   uniqueSongsCount = 0,
 ): Promise<{ reset_at?: string } | null> {
   const ciyuanxiId = getCiyuanxiId();
@@ -62,13 +85,18 @@ async function reportListenDuration(
   try {
     const data = await signedRequest<{ reset_at?: string }>('report_listen_stats', {
       ciyuanxi_id: ciyuanxiId,
-      duration: Math.floor(listenDuration),
+      // 兼容字段：旧后端使用 duration（总时长，最大值覆盖）
+      duration: Math.floor(durations.total),
+      // 新字段：分周期时长，后端分别存储
+      daily_duration: Math.floor(durations.daily),
+      weekly_duration: Math.floor(durations.weekly),
+      total_duration: Math.floor(durations.total),
       unique_songs_count: uniqueSongsCount,
     }, {
       fetchTimeoutMs: 8_000,
       timeoutMs: 10_000,
     });
-    console.log(`${LOG} 上报听歌时长成功: ${Math.floor(listenDuration)}秒`);
+    console.log(`${LOG} 上报听歌时长成功: 日=${Math.floor(durations.daily)}s 周=${Math.floor(durations.weekly)}s 总=${Math.floor(durations.total)}s`);
     return data ?? null;
   } catch (e) {
     // 上报失败不阻断排行榜获取
@@ -98,18 +126,18 @@ async function handleResetSignal(resetAt: string): Promise<void> {
  * 上报本地听歌时长，并处理服务端下发的重置信号。
  * 若检测到更新重置信号，会清空本地统计并重新上报 0 同步服务端，返回 true。
  *
- * @param localDuration 本地累计听歌时长（秒）
+ * @param durations 三个周期的听歌时长
  * @returns 是否实际触发了本地统计重置
  */
-async function reportAndHandleReset(localDuration: number): Promise<boolean> {
-  const result = await reportListenDuration(localDuration);
+async function reportAndHandleReset(durations: ListenDurations): Promise<boolean> {
+  const result = await reportListenDuration(durations);
   // 检查是否有服务端下发的重置信号
   if (result?.reset_at) {
     const lastResetAt = localStorage.getItem(RESET_AT_KEY);
     if (!lastResetAt || result.reset_at > lastResetAt) {
       await handleResetSignal(result.reset_at);
       // 重置后重新上报（此时本地数据已清零，上报 0 确保服务端同步）
-      await reportListenDuration(0, 0);
+      await reportListenDuration({ daily: 0, weekly: 0, total: 0 }, 0);
       return true;
     }
   }
@@ -120,13 +148,15 @@ async function reportAndHandleReset(localDuration: number): Promise<boolean> {
  * 主动检查服务端是否有待处理的重置信号（用于首页定时轮询）。
  * 会将当前本地时长上报给服务端，若检测到重置信号则清空本地统计并返回 true。
  *
- * @param localDuration 本地累计听歌时长（秒）
+ * @param localDuration 本地累计听歌时长（秒），向后兼容
  * @returns 是否实际触发了本地统计重置
  */
 export async function checkForResetSignal(localDuration: number): Promise<boolean> {
   const ciyuanxiId = getCiyuanxiId();
   if (!ciyuanxiId) return false;
-  return reportAndHandleReset(localDuration);
+  // 向后兼容：localDuration 作为 total，daily/weekly 由本地统计补全
+  const durations = await getLocalListenDurations();
+  return reportAndHandleReset({ ...durations, total: localDuration || durations.total });
 }
 
 /** 排行榜时间周期 */
@@ -135,15 +165,15 @@ export type LeaderboardPeriod = 'daily' | 'weekly' | 'total';
 /**
  * 获取听歌排行榜
  *
- * 会先上报本地听歌时长到后端，再获取排行榜数据。
+ * 会先上报本地听歌时长（日/周/总）到后端，再获取排行榜数据。
  *
  * @param limit 返回的排行数量，默认 50
- * @param localDuration 本地统计的听歌时长（秒），上报到后端用于排行榜
+ * @param durations 三个周期的听歌时长，上报到后端用于分周期排行榜
  * @param period 排行榜时间周期：daily（日榜）、weekly（周榜）、total（总榜），默认 total
  */
 export async function fetchLeaderboard(
   limit = 50,
-  localDuration?: number,
+  durations?: ListenDurations,
   period: LeaderboardPeriod = 'total',
 ): Promise<LeaderboardData & { resetApplied?: boolean }> {
   const ciyuanxiId = getCiyuanxiId();
@@ -153,7 +183,7 @@ export async function fetchLeaderboard(
 
   // 只有登录用户才上报个人听歌时长；公共排行榜无需登录即可获取。
   if (ciyuanxiId) {
-    resetApplied = await reportAndHandleReset(localDuration ?? 0);
+    resetApplied = await reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 });
   }
 
   try {

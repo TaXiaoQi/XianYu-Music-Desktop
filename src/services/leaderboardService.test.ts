@@ -30,12 +30,12 @@ describe('fetchLeaderboard', () => {
   it('loads the public ranking without a logged-in user', async () => {
     getCiyuanxiIdMock.mockReturnValue(null);
 
-    const result = await fetchLeaderboard(50, 600);
+    const result = await fetchLeaderboard(50, { daily: 100, weekly: 300, total: 600 });
 
     expect(signedRequestMock).toHaveBeenCalledTimes(1);
     expect(signedRequestMock).toHaveBeenCalledWith(
       'get_leaderboard',
-      { limit: 50 },
+      { limit: 50, period: 'total' },
       expect.any(Object),
     );
     expect(result.leaderboard).toHaveLength(1);

@@ -332,7 +332,15 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                 if was_maximized {
                     let _ = window.maximize();
                 } else {
-                    // 退出到小窗状态：清除保存的小窗尺寸（窗口已在正确位置，后续不需要）
+                    // 退出到小窗状态：同步 tao 内部 is_maximized 状态。
+                    // 进入全屏时调用了 ShowWindow(SW_MAXIMIZE)，tao 据此将 is_maximized 设为 true。
+                    // 退出时 SetWindowPlacement(SW_SHOWNORMAL) 虽恢复窗口位置，
+                    // 但 tao 的 is_maximized 可能未被正确更新（WM_SIZE 时序问题），
+                    // 导致后续 minimize/restore 使用错误的窗口状态，窗口位置乱飞。
+                    // 显式调用 unmaximize() 强制同步 tao 状态。
+                    // 窗口已由 SetWindowPlacement 恢复到正确位置，unmaximize() 视觉上为空操作。
+                    let _ = window.unmaximize();
+                    // 清除保存的小窗尺寸（窗口已在正确位置，后续不需要）
                     *SAVED_NORMAL_RECT.lock().map_err(|e| e.to_string())? = None;
                 }
                 Ok(false)

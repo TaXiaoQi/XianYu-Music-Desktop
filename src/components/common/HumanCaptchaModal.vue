@@ -286,14 +286,14 @@ watch(
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 24px;
   padding: 24px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.8);
   color: #111827;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
 }
 
 :global(.dark) .human-captcha-card {
   border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(24, 24, 27, 0.94);
+  background: rgba(17, 24, 39, 0.9);
   color: #f9fafb;
 }
 

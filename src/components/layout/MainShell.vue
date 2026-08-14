@@ -25,6 +25,9 @@ const Toast = defineAsyncComponent(() => import('../common/Toast.vue'));
 const SettingsConflictDialog = defineAsyncComponent(() => import('../common/SettingsConflictDialog.vue'));
 const ProfileLimitDialog = defineAsyncComponent(() => import('../common/ProfileLimitDialog.vue'));
 const BanDialog = defineAsyncComponent(() => import('../common/BanDialog.vue'));
+const CiyuanxiDialog = defineAsyncComponent(() => import('../common/CiyuanxiDialog.vue'));
+const ChangePasswordDialog = defineAsyncComponent(() => import('../common/ChangePasswordDialog.vue'));
+const DeleteAccountDialog = defineAsyncComponent(() => import('../common/DeleteAccountDialog.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
@@ -330,6 +333,9 @@ onMounted(() => {
     <SettingsConflictDialog />
     <ProfileLimitDialog />
     <BanDialog />
+    <CiyuanxiDialog />
+    <ChangePasswordDialog />
+    <DeleteAccountDialog />
     <CustomSkinModal v-if="uiStore.showCustomSkinModal" @close="uiStore.showCustomSkinModal = false" />
   </div>
 </template>

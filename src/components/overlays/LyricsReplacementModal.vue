@@ -196,7 +196,7 @@ const handleApplyCandidate = async (candidate: LyricsSearchCandidate) => {
         @mousedown.self="close"
         @contextmenu.prevent
       >
-        <section class="lyrics-replacement-card flex max-h-[min(760px,calc(100vh-40px))] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white/95 text-gray-900 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl dark:bg-[#262626]/95 dark:text-gray-100 dark:ring-white/10">
+        <section class="lyrics-replacement-card flex max-h-[min(760px,calc(100vh-40px))] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white/80 text-gray-900 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl dark:bg-gray-900/90 dark:text-gray-100 dark:ring-white/10">
           <header class="flex items-start justify-between border-b border-black/5 px-6 py-4 dark:border-white/5">
             <div class="min-w-0">
               <h2 class="text-base font-semibold">更改歌词 (LRC)</h2>

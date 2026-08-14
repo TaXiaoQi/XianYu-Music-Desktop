@@ -133,14 +133,14 @@ function cancelAll() {
             >
               保留云端
             </button>
+            <button
+              type="button"
+              class="conflict-cancel"
+              @click="cancelAll"
+            >
+              取消
+            </button>
           </div>
-          <button
-            type="button"
-            class="conflict-cancel"
-            @click="cancelAll"
-          >
-            取消
-          </button>
         </div>
       </div>
     </Transition>
@@ -217,13 +217,15 @@ function cancelAll() {
 /* ==================== 主弹窗 ==================== */
 .conflict-card {
   width: min(90vw, 400px);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: #1f2937;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .conflict-icon {
@@ -285,9 +287,13 @@ function cancelAll() {
 
 .conflict-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
-  margin-bottom: 10px;
+  margin: 0 -22px -20px;
+  padding: 12px 22px;
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 0 0 16px 16px;
 }
 
 .conflict-btn {
@@ -334,6 +340,8 @@ function cancelAll() {
   font-size: 0.78rem;
   cursor: pointer;
   padding: 4px 12px;
+  width: 100%;
+  margin-top: 2px;
   transition: color 160ms ease;
 }
 
@@ -344,13 +352,15 @@ function cancelAll() {
 /* ==================== 二级确认弹窗 ==================== */
 .confirm-card {
   width: min(92vw, 440px);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: #1f2937;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22), 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22), 0 4px 16px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .confirm-icon {
@@ -475,6 +485,10 @@ function cancelAll() {
   display: flex;
   gap: 10px;
   justify-content: center;
+  margin: 0 -22px -20px;
+  padding: 12px 22px;
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 0 0 16px 16px;
 }
 
 .confirm-btn {
@@ -564,9 +578,9 @@ function cancelAll() {
 <style>
 /* ==================== 深色模式 - 主弹窗 ==================== */
 html.dark .conflict-card {
-  background: #262626;
+  background: rgba(17, 24, 39, 0.9);
   color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 html.dark .conflict-icon {
@@ -624,11 +638,19 @@ html.dark .conflict-cancel:hover {
   color: rgba(255, 255, 255, 0.9);
 }
 
+html.dark .conflict-actions {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html.dark .confirm-actions {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* ==================== 深色模式 - 二级确认弹窗 ==================== */
 html.dark .confirm-card {
-  background: #262626;
+  background: rgba(17, 24, 39, 0.9);
   color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 html.dark .confirm-icon--local {
