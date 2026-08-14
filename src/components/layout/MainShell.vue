@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted } from 'vue';
+import { defineAsyncComponent, onMounted, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
@@ -132,9 +132,10 @@ onMounted(() => {
     }
   }
   // 定时轮询反馈完成通知（后台管理员完成反馈后，客户端约在一分钟内收到）
-  setInterval(() => {
+  const feedbackTimer = setInterval(() => {
     checkFeedbackNotification(announcementVisible.value);
   }, 60_000);
+  onUnmounted(() => clearInterval(feedbackTimer));
 });
 </script>
 

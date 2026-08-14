@@ -138,6 +138,8 @@ if (currentWindowLabel === 'main') {
     }
 
     const closeRequestedUnlisten = await getCurrentWindow().onCloseRequested(async (event) => {
+      // 开发模式下直接关闭，不走托盘隐藏，避免 Vite dev server 和后台定时器残留
+      if (import.meta.env.DEV) return;
       if (settings.value.closeToTray) {
         event.preventDefault();
         await enterTraySleep();
