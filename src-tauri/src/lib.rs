@@ -107,16 +107,10 @@ use window_z_order::{
 
 /// 优雅退出：先向后台守护线程发送 WM_QUIT 使其退出消息循环，
 /// 再调用 app.exit(0) 触发 Tauri 事件循环退出（让 cargo tauri dev 能正常清理 Vite）。
-/// 若 2 秒内事件循环仍未退出（如播放器线程或 single-instance 插件阻塞），
-/// 兜底线程强制 std::process::exit(0) 终止进程。
 pub fn graceful_shutdown(app: &tauri::AppHandle) {
     shutdown_topmost_guard();
     shutdown_taskbar_zorder_guard();
     app.exit(0);
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        std::process::exit(0);
-    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
