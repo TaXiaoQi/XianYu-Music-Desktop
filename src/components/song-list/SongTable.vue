@@ -35,6 +35,8 @@ const isOnlineSong = (song: Song) => {
 const onlineQualityLabel = (song: Song) => {
   // 若有本地元数据，QualityBadge 会自动渲染，无需回退
   if (song.bitrate || song.format || song.codec || song.container) return '';
+  // 有音质档位时由 QualityBadge 渲染 12 档标签，不再回退到 HQ
+  if (getOnlineQualityKey(song)) return '';
   // 在线歌曲默认显示 HQ（高品质）
   return 'HQ';
 };
@@ -63,7 +65,22 @@ const { settings } = useSettings();
 const songClickAction = computed(() => settings.value.songClickAction || 'double');
 const libraryStore = useLibraryStore();
 const { libraryScanProgress, lastLibraryScanError } = storeToRefs(libraryStore);
-const { currentSong, isPlaying, formatDuration } = usePlaybackController();
+const { currentSong, isPlaying, formatDuration, currentPlayingQuality } = usePlaybackController();
+
+/**
+ * 获取在线歌曲的音质档位：
+ * - 当前正在播放的歌曲：使用实时解析的 currentPlayingQuality
+ * - 其他在线歌曲：使用已缓存的 remote_actual_quality（搜索/详情页预解析时写入）
+ * - 本地歌曲或未知：返回 undefined，QualityBadge 回退到文件元数据判断
+ */
+const getOnlineQualityKey = (song: Song): string | undefined => {
+  if (!isOnlineSong(song)) return undefined;
+  // 当前播放歌曲优先使用实时音质
+  if (currentSong.value?.path === song.path && currentPlayingQuality.value) {
+    return currentPlayingQuality.value;
+  }
+  return song.remote_actual_quality;
+};
 
 const props = defineProps<{
   songs: Song[];
@@ -862,6 +879,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
                 :format="song.format || ''"
                 :codec="song.codec || ''"
                 :container="song.container || ''"
+                :quality-key="getOnlineQualityKey(song)"
               />
               <!-- 在线歌曲无本地元数据时显示默认 HQ 音质标记（已下载的在线歌曲不显示） -->
               <span

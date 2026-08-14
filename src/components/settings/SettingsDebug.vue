@@ -6,6 +6,10 @@ import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { showProfileLimitDialog } from '../../composables/useProfileLimitDialog';
 import { showBanDialog } from '../../composables/useBanDialog';
+import { showCiyuanxiDialog } from '../../composables/useCiyuanxiDialog';
+import { useAuthStore } from '../../features/auth/store';
+
+const authStore = useAuthStore();
 
 const { disableDeveloperMode } = useDeveloperMode();
 const { triggerOnboarding } = useOnboarding();
@@ -39,6 +43,14 @@ function testAppealDialog() {
     'account',
     '涉嫌违规使用，已被管理员封禁。如有疑问请联系管理员。',
     { ciyuanxiId: 'CN00000001', nickname: '测试用户' },
+    { debug: true },
+  );
+}
+
+function testCiyuanxiDialog() {
+  // 调试模式：仅测试修改弦予号弹窗与流程，不发送服务器
+  void showCiyuanxiDialog(
+    authStore.user?.ciyuanxi_id || authStore.user?.username || 'CN00000001',
     { debug: true },
   );
 }
@@ -159,6 +171,20 @@ function testAppealDialog() {
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
           @click="testAppealDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">修改弦予号弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试修改弦予号弹窗与流程，确认修改不会发送到服务器</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testCiyuanxiDialog"
         >
           弹出
         </button>

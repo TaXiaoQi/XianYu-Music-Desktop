@@ -123,11 +123,18 @@ function describePlatform(value: unknown): PlatformDescriptor {
   };
 }
 
-function pluginMatchScore(plugin: PluginSource, platform: PlatformDescriptor): number {
+function pluginMatchScore(
+  plugin: PluginSource,
+  platform: PlatformDescriptor,
+  format?: SupportedPluginBackupFormat,
+): number {
   if (plugin.format !== 'musicfree' && plugin.format !== 'lx') return 0;
 
+  // 洛雪备份的歌曲用 LX source code（如 'wy'）标识来源，
+  // LX 插件原生支持这些 code，应优先于 MusicFree 插件匹配。
+  // 提升到 150 确保 LX 插件击败 MusicFree 的 canonical 匹配（130）和精确匹配（140）。
   if (plugin.format === 'lx' && platform.lxSource && plugin.sources.includes(platform.lxSource)) {
-    return 120;
+    return format === 'lxmusic' ? 150 : 120;
   }
 
   let best = 0;
@@ -150,14 +157,19 @@ function pluginMatchScore(plugin: PluginSource, platform: PlatformDescriptor): n
 function findMatchingPlugin(
   platform: PlatformDescriptor,
   installedPlugins: PluginSource[],
+  format?: SupportedPluginBackupFormat,
 ): PluginSource | null {
   return installedPlugins
-    .map(plugin => ({ plugin, score: pluginMatchScore(plugin, platform) }))
+    .map(plugin => ({ plugin, score: pluginMatchScore(plugin, platform, format) }))
     .filter(item => item.score > 0)
     .sort((a, b) => {
       if (a.plugin.enabled !== b.plugin.enabled) return a.plugin.enabled ? -1 : 1;
       if (a.score !== b.score) return b.score - a.score;
-      if (a.plugin.format !== b.plugin.format) return a.plugin.format === 'musicfree' ? -1 : 1;
+      // 洛雪备份优先选择 LX 插件，其他备份优先 MusicFree 插件
+      if (a.plugin.format !== b.plugin.format) {
+        if (format === 'lxmusic') return a.plugin.format === 'lx' ? -1 : 1;
+        return a.plugin.format === 'musicfree' ? -1 : 1;
+      }
       return (a.plugin.sortOrder ?? 0) - (b.plugin.sortOrder ?? 0);
     })[0]?.plugin ?? null;
 }
@@ -601,11 +613,13 @@ function detectBackup(data: any): DetectedBackup {
       if (!Array.isArray(list?.list) || list.list.length === 0) continue;
       sheets.push({ name: list.name || '未命名歌单', musicList: list.list.map(flattenLxMeta) });
     }
-    // 备份存在但歌单为空（如仅设置备份）时抛错，与后续格式识别保持一致
-    if (sheets.length === 0) {
-      throw new Error('洛雪备份中未找到可导入的歌单');
-    }
+    // 歌单全部为空时返回空结果（不抛错），让上层正常返回 0 歌单
     return { format: 'lxmusic', sheets, version: null, restoreStringifiedIds: false };
+  }
+
+  // 0a-1. 洛雪设置备份（setting_v2 / setting）不含歌单
+  if (lxBackupType === 'setting_v2' || lxBackupType === 'setting') {
+    throw new Error('未找到可导入的歌单');
   }
 
   // 0b. 洛雪内部存储结构 / v3 全量备份（ListDataFull / ListSaveInfo / allData_v3）
@@ -782,7 +796,7 @@ export function preparePluginBackupImport(
         continue;
       }
 
-      const plugin = findMatchingPlugin(platform, installedPlugins);
+      const plugin = findMatchingPlugin(platform, installedPlugins, format);
       if (!plugin) {
         failures.push({
           playlist: playlistName,

@@ -426,6 +426,16 @@ export interface BehaviorStats {
   recent_activity: number[];
 }
 
+/** 听歌时长（按周期），用于排行榜分周期上报 */
+export interface ListenDurations {
+  /** 今日听歌时长（秒） */
+  daily: number;
+  /** 最近 7 天听歌时长（秒） */
+  weekly: number;
+  /** 累计听歌时长（秒） */
+  total: number;
+}
+
 export interface TopSong {
   song_path: string;
   play_count: number;
@@ -973,6 +983,7 @@ export interface TauriCommandMap {
   // ============ 统计 ============
   get_library_stats: { payload: undefined; response: LibraryStats };
   get_behavior_stats: { payload: { timeRange: TimeRange }; response: BehaviorStats };
+  get_listen_durations: { payload: undefined; response: ListenDurations };
   get_quality_distribution: { payload: undefined; response: QualityDistribution };
   get_format_distribution: { payload: undefined; response: FormatDistribution };
   reset_local_statistics: { payload: undefined; response: void };

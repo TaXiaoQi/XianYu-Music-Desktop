@@ -104,11 +104,13 @@ function cancel() {
 
 .profile-limit-card {
   width: min(90vw, 400px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 16px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: #1f2937;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   text-align: center;
 }
@@ -178,7 +180,10 @@ function cancel() {
   display: grid;
   grid-template-columns: 1fr 1.25fr;
   gap: 10px;
-  margin-top: 20px;
+  margin: 20px -22px -20px;
+  padding: 12px 22px;
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 0 0 16px 16px;
 }
 
 .profile-limit-actions--single {
@@ -252,10 +257,14 @@ html.dark .profile-limit-overlay {
 }
 
 html.dark .profile-limit-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: #262626;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(17, 24, 39, 0.9);
   color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+html.dark .profile-limit-actions {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 html.dark .profile-limit-icon {

@@ -10,6 +10,8 @@ const props = withDefaults(defineProps<{
   codec?: string;
   container?: string;
   variant?: 'simple' | 'detailed';
+  /** 在线歌曲的实际音质档位（QualityKey），传入后优先使用 12 档映射 */
+  qualityKey?: string;
 }>(), {
   variant: 'simple'
 });
@@ -19,13 +21,76 @@ const isHovered = ref(false);
 const badgeRef = ref<HTMLElement | null>(null);
 const tooltipStyle = ref({});
 
-// 1. 判断音质等级 (HR / SQ / HQ)
+// ==================== 在线歌曲 12 档音质映射 ====================
+
+/** 音质档位 → 按钮缩写（与 PlayerFooter 的 QUALITY_ABBR 一致） */
+const QUALITY_ABBR: Record<string, string> = {
+  mgg: 'LQ',
+  '128k': '128',
+  '192k': '192',
+  '320k': 'HQ',
+  flac: 'SQ',
+  flac24bit: 'HR',
+  hires: 'HRA',
+  vinyl: 'VL',
+  dolby: 'DA',
+  atmos: 'AT',
+  atmos_plus: 'AT+',
+  master: 'MS',
+};
+
+/** 音质档位 → 中文标签（tooltip 用） */
+const QUALITY_TITLE: Record<string, string> = {
+  mgg: '低品质',
+  '128k': '标准音质',
+  '192k': '较高品质',
+  '320k': '高品质音乐',
+  flac: '标准无损',
+  flac24bit: '高解析无损',
+  hires: '高解析度',
+  vinyl: '黑胶音质',
+  dolby: '杜比全景声',
+  atmos: '臻品音质',
+  atmos_plus: '臻品全景声',
+  master: '臻品母带',
+};
+
+/** 音质档位 → 详细标签文本（detailed variant 用） */
+const QUALITY_DETAILED: Record<string, string> = {
+  mgg: 'LOW',
+  '128k': 'STANDARD',
+  '192k': 'HIGH',
+  '320k': 'HIGH',
+  flac: 'LOSSLESS',
+  flac24bit: 'HI-RES LOSSLESS',
+  hires: 'HI-RES AUDIO',
+  vinyl: 'VINYL',
+  dolby: 'DOLBY ATMOS',
+  atmos: 'ATMOS',
+  atmos_plus: 'ATMOS+',
+  master: 'MASTER',
+};
+
+/** 是否为高级音质档位（rank >= 9，用于紫色样式） */
+const PREMIUM_KEYS = new Set(['dolby', 'atmos', 'atmos_plus', 'master']);
+/** 是否为高解析档位（rank 6-8，用于金色样式） */
+const HIRES_KEYS = new Set(['flac24bit', 'hires', 'vinyl']);
+
+// ==================== 音质等级判定 ====================
+
+// 1. 判断音质等级
 const badgeType = computed(() => {
+  // 优先使用在线音质档位
+  if (props.qualityKey && QUALITY_ABBR[props.qualityKey]) {
+    return QUALITY_ABBR[props.qualityKey];
+  }
+
+  // 本地文件：基于元数据判断 HR / SQ / HQ
   const losslessFormats = ['aif', 'aiff', 'flac', 'wav', 'alac', 'ape', 'pcm'];
   const audioType = (props.codec || props.format).toLowerCase();
   const isLossless = losslessFormats.includes(audioType);
   const hasAudioInfo = Boolean(audioType || props.bitrate || props.sampleRate || props.bitDepth);
-  
+
   // HR: 无损格式 且 (位深 > 16bit 或 采样率 > 44.1kHz) - 只要有一项超越 CD 即视为高解析
   if (isLossless && ((props.bitDepth && props.bitDepth > 16) || props.sampleRate > 44100)) {
     return 'HR';
@@ -47,6 +112,10 @@ const badgeType = computed(() => {
 
 // 1.1 详细标签文本 (仅用于 detailed variant)
 const detailedLabel = computed(() => {
+  // 在线歌曲使用 12 档详细标签
+  if (props.qualityKey && QUALITY_DETAILED[props.qualityKey]) {
+    return QUALITY_DETAILED[props.qualityKey];
+  }
   switch (badgeType.value) {
     case 'HR': return 'HI-RES LOSSLESS';
     case 'SQ': return 'LOSSLESS'; // 或根据偏好改为 CD LOSSLESS
@@ -58,21 +127,35 @@ const detailedLabel = computed(() => {
 // 2. 定义颜色样式
 const badgeColorClass = computed(() => {
   const common = 'font-bold px-[3px] rounded-[3px] border';
+
+  // 在线歌曲：根据档位选择颜色
+  if (props.qualityKey && QUALITY_ABBR[props.qualityKey]) {
+    if (PREMIUM_KEYS.has(props.qualityKey)) {
+      // 高级档位（杜比/全景声/母带）：紫色渐变
+      return `${common} bg-gradient-to-br from-purple-100 to-violet-200 text-purple-700 border-transparent dark:from-purple-900/40 dark:to-violet-600/20 dark:text-purple-300`;
+    }
+    if (HIRES_KEYS.has(props.qualityKey)) {
+      // 高解析档位：金色（同 HR）
+      return `${common} bg-gradient-to-br from-[#FEF3C7] to-[#FDE68A] text-[#92400E] border-transparent dark:from-amber-900/40 dark:to-amber-600/20 dark:text-[#FCD34D]`;
+    }
+    if (props.qualityKey === 'flac') {
+      // 标准无损：青色（同 SQ）
+      return `${common} bg-cyan-100 text-cyan-600 border-transparent dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-transparent`;
+    }
+    // 有损档位：橙色（同 HQ）
+    return `${common} bg-orange-100 text-orange-800 border-transparent dark:bg-orange-500/20 dark:text-orange-300 dark:border-transparent`;
+  }
+
+  // 本地文件：原有 3 档颜色
   switch (badgeType.value) {
     case 'HR':
       // Premium Gold (Kobe Style) - Gradient for luxury feel
-      // Light: Gradient Amber-100 to Amber-200, Text Amber-800
-      // Dark: Gradient Amber-500/30 to Amber-600/30, Text Amber-300
       return `${common} bg-gradient-to-br from-[#FEF3C7] to-[#FDE68A] text-[#92400E] border-transparent dark:from-amber-900/40 dark:to-amber-600/20 dark:text-[#FCD34D]`;
     case 'SQ':
-      // Soft Filled Cyan (match image: light bg, dark text)
-      // Light: bg-cyan-100 text-cyan-600
-      // Dark: bg-cyan-500/20 text-cyan-300
+      // Soft Filled Cyan
       return `${common} bg-cyan-100 text-cyan-600 border-transparent dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-transparent`;
     case 'HQ':
-      // Soft Filled Beige/Brown (match image)
-      // Light: bg-orange-100 text-orange-800
-      // Dark: bg-orange-500/20 text-orange-300
+      // Soft Filled Beige/Brown
       return `${common} bg-orange-100 text-orange-800 border-transparent dark:bg-orange-500/20 dark:text-orange-300 dark:border-transparent`;
     default:
       return '';
@@ -81,10 +164,22 @@ const badgeColorClass = computed(() => {
 
 // 4. 生成分级提示内容 (Tiered Tooltip Content)
 const tooltipContent = computed(() => {
+  // 在线歌曲：使用 12 档标签
+  if (props.qualityKey && QUALITY_TITLE[props.qualityKey]) {
+    const isPremium = PREMIUM_KEYS.has(props.qualityKey);
+    return {
+      emoji: '',
+      title: QUALITY_TITLE[props.qualityKey],
+      subtitle: QUALITY_DETAILED[props.qualityKey] || props.qualityKey,
+      isMaster: isPremium,
+    };
+  }
+
+  // 本地文件：基于元数据生成
   const fmt = (props.codec || props.format || '').toUpperCase();
   const container = props.container?.toUpperCase() || '';
   const kbps = props.bitrate || 0;
-  
+
   // 统一模板: {bitDepth}-bit · {sampleRate} kHz · {codec} · {bitrate} kbps
   let sub = '';
   if (props.bitDepth) sub += `${props.bitDepth}-bit · `;
@@ -102,7 +197,7 @@ const tooltipContent = computed(() => {
       emoji: '',
       title: '高解析无损',
       subtitle: sub,
-      isMaster: true 
+      isMaster: true
     };
   }
 

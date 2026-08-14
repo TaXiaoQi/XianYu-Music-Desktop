@@ -354,7 +354,7 @@ const handleDownload = async () => {
         class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
         @click.self="emit('close')"
       >
-        <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[380px] max-w-[84vw] overflow-hidden">
+        <div class="modal-content bg-white/80 dark:bg-gray-900/90 rounded-xl shadow-2xl w-[380px] max-w-[84vw] overflow-hidden">
           <!-- 标题栏 -->
           <div class="px-3.5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
             <h3

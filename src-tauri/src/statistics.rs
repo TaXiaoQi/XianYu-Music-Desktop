@@ -2698,6 +2698,58 @@ pub fn get_behavior_stats(
     })
 }
 
+/// 听歌时长（按周期），用于排行榜上报
+#[derive(Serialize)]
+pub struct ListenDurations {
+    /// 今日听歌时长（秒）
+    pub daily: i64,
+    /// 最近 7 天听歌时长（秒）
+    pub weekly: i64,
+    /// 累计听歌时长（秒）
+    pub total: i64,
+}
+
+/// 获取三个周期的听歌时长（日/周/总），用于排行榜分周期上报
+#[tauri::command]
+pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // 今日：从 daily_stats 表取今天的 play_time_ms
+    let daily_ms: i64 = conn
+        .query_row(
+            "SELECT COALESCE(play_time_ms, 0) FROM daily_stats
+             WHERE date = strftime('%Y-%m-%d', 'now', 'localtime')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    // 最近 7 天：从 daily_stats 表取最近 7 天（含今天）的 play_time_ms 总和
+    let weekly_ms: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(play_time_ms), 0) FROM daily_stats
+             WHERE date >= strftime('%Y-%m-%d', 'now', 'localtime', '-6 days')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    // 累计：从 global_stats 表取 total_play_time_ms
+    let total_ms: i64 = conn
+        .query_row(
+            "SELECT COALESCE(total_play_time_ms, 0) FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    Ok(ListenDurations {
+        daily: daily_ms / 1000,
+        weekly: weekly_ms / 1000,
+        total: total_ms / 1000,
+    })
+}
+
 #[cfg(test)]
 mod playback_count_tests {
     use super::*;

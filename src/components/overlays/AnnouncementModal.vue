@@ -160,6 +160,24 @@ watch(
   opacity: 0;
   transform: scale(0.92) translateY(8px);
 }
+
+.announcement-modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.announcement-modal-leave-active .announcement-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+              transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.announcement-modal-leave-to {
+  opacity: 0;
+}
+
+.announcement-modal-leave-to .announcement-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
 </style>
 
 <!-- 深色模式使用非 scoped style 块，原因同 SettingsConflictDialog -->
@@ -167,13 +185,15 @@ watch(
 /* ==================== 主弹窗 ==================== */
 .announcement-card {
   width: min(90vw, 400px);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: #1f2937;
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   padding: 24px 22px 20px;
   text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .announcement-icon {
@@ -232,6 +252,13 @@ watch(
   white-space: pre-line;
 }
 
+.announcement-footer {
+  margin: 16px -22px -20px;
+  padding: 12px 22px;
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 0 0 16px 16px;
+}
+
 .announcement-hint {
   font-size: 0.72rem;
   color: rgba(107, 114, 128, 0.7);
@@ -267,7 +294,7 @@ watch(
 
 /* ==================== 深色模式 ==================== */
 html.dark .announcement-card {
-  background: #262626;
+  background: rgba(17, 24, 39, 0.9);
   color: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -305,6 +332,10 @@ html.dark .announcement-desc {
 
 html.dark .announcement-hint {
   color: rgba(255, 255, 255, 0.45);
+}
+
+html.dark .announcement-footer {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 html.dark .announcement-btn {

@@ -277,6 +277,19 @@ const authMode = ref<AuthMode>('login');
 const authForm = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
 const authLoading = ref(false);
 const codeLoading = ref(false);
+const codeCountdown = ref(0);
+let codeCountdownTimer: ReturnType<typeof setInterval> | null = null;
+function startCodeCountdown() {
+  codeCountdown.value = 60;
+  if (codeCountdownTimer) clearInterval(codeCountdownTimer);
+  codeCountdownTimer = setInterval(() => {
+    codeCountdown.value--;
+    if (codeCountdown.value <= 0) {
+      codeCountdown.value = 0;
+      if (codeCountdownTimer) { clearInterval(codeCountdownTimer); codeCountdownTimer = null; }
+    }
+  }, 1000);
+}
 const captchaModalOpen = ref(false);
 const captchaModalTitle = ref('人机验证');
 const captchaModalDescription = ref('请先完成验证，验证通过后将继续当前操作。');
@@ -348,6 +361,7 @@ const handleSendCode = async () => {
     const result = await sendEmailCode(email, type, captchaPayload);
     showAuthMessage(result.message || '验证码已发送到邮箱', 'success');
     showToast(result.message || '验证码已发送到邮箱', 'success');
+    startCodeCountdown();
   } catch (error) {
     const tip = error instanceof Error ? error.message : '验证码发送失败';
     showAuthMessage(tip);
@@ -364,8 +378,8 @@ const handleAuthSubmit = async () => {
       showAuthMessage('请填写弦予号');
       return;
     }
-    if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
-      showAuthMessage('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线');
+    if (!/^[a-zA-Z0-9]{6,20}$/.test(ciyuanxi)) {
+      showAuthMessage('弦予号需 6-20 位，支持纯数字、纯字母或数字字母组合');
       return;
     }
     if (!authForm.value.email.trim()) {
@@ -1159,7 +1173,7 @@ onUnmounted(() => {
                             <input
                               v-model="authForm.account"
                               type="text"
-                              :placeholder="authMode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，字母开头，同微信号规则'"
+                              :placeholder="authMode === 'login' ? '输入弦予号或邮箱登录' : '6-20位，支持纯数字、纯字母或组合'"
                               autocomplete="username"
                               required
                               class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
@@ -1218,10 +1232,10 @@ onUnmounted(() => {
                                 type="button"
                                 class="h-[clamp(2.75rem,4vw,3.5rem)] px-6 whitespace-nowrap font-medium text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 style="font-size: clamp(14px, 1.1vw, 16px);"
-                                :disabled="codeLoading"
+                                :disabled="codeLoading || codeCountdown > 0"
                                 @click="handleSendCode"
                               >
-                                {{ codeLoading ? '发送中…' : '发送验证码' }}
+                                {{ codeLoading ? '发送中…' : codeCountdown > 0 ? `重新发送 (${codeCountdown}s)` : '发送验证码' }}
                               </button>
                             </div>
                           </template>
@@ -1351,7 +1365,7 @@ onUnmounted(() => {
                 @click.self="cancelSkipLogin"
               >
                 <div
-                  class="bg-white dark:bg-[#262626] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+                  class="bg-white/80 dark:bg-gray-900/90 rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
                 >
                   <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -1437,7 +1451,7 @@ onUnmounted(() => {
             @click.self="showCustomUnsupported = false"
           >
             <div
-              class="bg-white dark:bg-[#262626] rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
+              class="bg-white/80 dark:bg-gray-900/90 rounded-2xl shadow-2xl border border-black/10 dark:border-white/10 px-8 py-7 max-w-sm w-[90%] text-center"
             >
               <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#EC4141]/10 flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#EC4141]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

@@ -122,7 +122,7 @@ const handleConfirmCreate = (name: string) => {
   <Teleport to="body">
     <Transition name="modal-pop">
       <div v-if="visible" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="emit('close')">
-        <div class="modal-content bg-white rounded-xl shadow-2xl w-80 overflow-hidden">
+        <div class="modal-content bg-white/80 dark:bg-gray-900/90 rounded-xl shadow-2xl w-80 overflow-hidden">
           <div class="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
             <h3 class="font-bold text-gray-800 text-sm">收藏到歌单</h3>
             <button @click="emit('close')" class="text-gray-400 hover:text-gray-600">✕</button>
