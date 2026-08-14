@@ -1,3 +1,5 @@
+import { applyThemeColorToDocument, DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor';
+
 const SETTINGS_KEY = 'player_settings';
 const DARK_STARTUP_COLOR = '#262626';
 const LIGHT_STARTUP_COLOR = '#fafafa';
@@ -7,11 +9,17 @@ const MAIN_WINDOW_LABEL = 'main';
 type PersistedSettings = {
   theme?: {
     mode?: unknown;
+    accentColor?: unknown;
     customBackground?: {
       foregroundStyle?: unknown;
     };
   };
 };
+
+export function applyPersistedThemeColor() {
+  const accentColor = readPersistedSettings()?.theme?.accentColor;
+  return applyThemeColorToDocument(normalizeThemeColor(accentColor, DEFAULT_THEME_COLOR));
+}
 
 const readPersistedSettings = (): PersistedSettings | null => {
   if (typeof localStorage === 'undefined') {
@@ -61,7 +69,9 @@ export function applyPersistedStartupTheme() {
     return;
   }
 
-  const isDark = isPersistedDarkTheme(readPersistedSettings());
+  const settings = readPersistedSettings();
+  applyThemeColorToDocument(normalizeThemeColor(settings?.theme?.accentColor, DEFAULT_THEME_COLOR));
+  const isDark = isPersistedDarkTheme(settings);
   const startupColor = isDark ? DARK_STARTUP_COLOR : LIGHT_STARTUP_COLOR;
 
   document.documentElement.classList.toggle('dark', isDark);

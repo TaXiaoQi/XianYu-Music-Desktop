@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useWindowMaterial } from './windowMaterial';
 import { useThemeSettings } from './useThemeSettings';
 import { windowApi } from '../services/tauri/windowApi';
+import { applyThemeColorToDocument } from '../utils/themeColor';
 
 export function useAppThemeSync() {
   const {
@@ -168,6 +169,12 @@ export function useAppThemeSync() {
     () => {
       void syncThemeAndMaterial();
     },
+    { immediate: true },
+  );
+
+  watch(
+    () => theme.value.accentColor,
+    accentColor => applyThemeColorToDocument(accentColor),
     { immediate: true },
   );
 

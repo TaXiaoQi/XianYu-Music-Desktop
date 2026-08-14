@@ -29,6 +29,46 @@ describe('settings store', () => {
     expect(settingsStore.theme.customBackground.maskColor).toBe('#000000');
   });
 
+  it('normalizes theme colors and rejects invalid persisted values', () => {
+    const settingsStore = useSettingsStore();
+
+    settingsStore.patchTheme({ accentColor: '#3b82f6' });
+    expect(settingsStore.theme.accentColor).toBe('#3B82F6');
+
+    settingsStore.patchTheme({ accentColor: 'not-a-color' });
+    expect(settingsStore.theme.accentColor).toBe('#3B82F6');
+  });
+
+  it('stores the player detail cover behavior and last in-page choice', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
+    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(true);
+    settingsStore.patchTheme({
+      playerDetailCoverBehavior: 'remember',
+      lastPlayerDetailCoverVisible: false,
+    });
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
+    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
+
+    settingsStore.patchTheme({
+      playerDetailCoverBehavior: 'invalid' as 'remember',
+      lastPlayerDetailCoverVisible: 'invalid' as unknown as boolean,
+    });
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
+    expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
+  });
+
+  it('migrates the previous player detail cover boolean', () => {
+    const settingsStore = useSettingsStore();
+
+    settingsStore.patchTheme({
+      showPlayerDetailCoverByDefault: false,
+    } as Parameters<typeof settingsStore.patchTheme>[0]);
+
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('hide');
+  });
+
   it('replaces theme through the settings domain instead of mutating ui state', () => {
     const settingsStore = useSettingsStore();
 

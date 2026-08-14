@@ -30,7 +30,7 @@ const {
   closePlayerDetail,
 } = usePlaybackController();
 
-const { settings } = useSettings();
+const { settings, patchTheme } = useSettings();
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
 
 // 歌词页首次打开时再渲染重型外壳；打开后保持常驻，避免收起再展开时丢封面或歌词状态。
@@ -398,15 +398,21 @@ const coverHidden = ref(false);
 
 const handleToggleCover = () => {
   coverHidden.value = !coverHidden.value;
+  patchTheme({ lastPlayerDetailCoverVisible: !coverHidden.value });
 };
 
-// 退出详情页时重置纯歌词模式。
+// 打开时应用用户的封面默认偏好；退出时恢复封面，避免底栏封面被一起隐藏。
 // 详情页封面与底栏封面是同一个元素（靠 isExpanded 切换位置/大小），
 // 若不重置，收起后该元素仍带着 opacity-0，会导致底栏封面也看不见。
 watch(showPlayerDetail, (visible) => {
   if (!visible) {
     coverHidden.value = false;
+    return;
   }
+
+  const { playerDetailCoverBehavior, lastPlayerDetailCoverVisible } = settings.value.theme;
+  coverHidden.value = playerDetailCoverBehavior === 'hide'
+    || (playerDetailCoverBehavior === 'remember' && !lastPlayerDetailCoverVisible);
 });
 
 const handleContextMenu = (e: MouseEvent) => {

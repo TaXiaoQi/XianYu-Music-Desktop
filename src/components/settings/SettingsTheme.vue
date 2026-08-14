@@ -16,6 +16,17 @@ const TEXT = {
   customTitle: '\u81ea\u5b9a\u4e49\u76ae\u80a4',
   customHint: '\u4f7f\u7528\u56fe\u7247\u3001\u906e\u7f69\u548c\u524d\u666f\u6837\u5f0f',
   customShort: '\u81ea\u5b9a\u4e49',
+  accentTitle: '\u4e3b\u9898\u8272',
+  accentHint: '\u7528\u4e8e\u6309\u94ae\u3001\u9009\u4e2d\u72b6\u6001\u548c\u754c\u9762\u5f3a\u8c03\u5143\u7d20',
+  accentCustom: '\u81ea\u5b9a\u4e49\u989c\u8272',
+  accentHex: 'HEX \u8272\u503c',
+  accentReset: '\u6062\u590d\u9ed8\u8ba4',
+  playerDetailCoverTitle: '\u6b4c\u8bcd\u9875\u5c01\u9762',
+  playerDetailCoverHint: '\u8bbe\u7f6e\u6bcf\u6b21\u6253\u5f00\u64ad\u653e\u8be6\u60c5\u9875\u65f6\u7684\u9ed8\u8ba4\u5c55\u793a\u65b9\u5f0f',
+  playerDetailCoverLabel: '\u6253\u5f00\u64ad\u653e\u8be6\u60c5\u9875\u65f6',
+  playerDetailCoverShow: '\u59cb\u7ec8\u5c55\u793a\u5c01\u9762',
+  playerDetailCoverHide: '\u59cb\u7ec8\u9690\u85cf\u5c01\u9762',
+  playerDetailCoverRemember: '\u8ddf\u968f\u4e0a\u6b21\u9009\u62e9',
   dynamicTitle: '\u52a8\u6001\u80cc\u666f',
   dynamicHint: '\u8ddf\u968f\u5c01\u9762\u53d8\u5316',
   dynamicOff: '\u5173\u95ed',
@@ -65,6 +76,17 @@ const BLUR_TEXT = {
   toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03',
 };
 
+const ACCENT_COLOR_PRESETS = [
+  { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' },
+  { label: '\u73ca\u745a', value: '#F9735B' },
+  { label: '\u7425\u73c0', value: '#F59E0B' },
+  { label: '\u7fe1\u7fe0', value: '#22C55E' },
+  { label: '\u9752\u7eff', value: '#06B6D4' },
+  { label: '\u6e56\u84dd', value: '#3B82F6' },
+  { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' },
+  { label: '\u8537\u8587', value: '#EC4899' },
+];
+
 const {
   theme,
   colorScheme,
@@ -72,6 +94,7 @@ const {
   keepWindowMaterialOnBlur,
   useCustomTrayMenu,
   showLeaderboard,
+  playerDetailCoverBehavior,
   isWindowMaterialDisabled,
   isWindowMaterialButtonDisabled,
   getWindowMaterialModeDisabledReason,
@@ -80,6 +103,8 @@ const {
   showFlowTuning,
   showBlurTuning,
   setColorScheme,
+  setAccentColor,
+  resetAccentColor,
   setDynamicType,
   toggleWindowMaterial,
   openCustomModal,
@@ -93,7 +118,14 @@ const {
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
   setShowLeaderboard,
+  setPlayerDetailCoverBehavior,
 } = useSettingsThemeControls();
+
+const commitAccentColor = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  setAccentColor(input.value);
+  input.value = theme.value.accentColor;
+};
 </script>
 
 <template>
@@ -143,6 +175,118 @@ const {
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg>
             <span class="text-sm font-semibold">{{ TEXT.customShort }}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.playerDetailCoverTitle }}
+        </span>
+        <SettingHint :text="TEXT.playerDetailCoverHint" />
+      </h2>
+
+      <label class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
+        <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {{ TEXT.playerDetailCoverLabel }}
+        </span>
+        <span class="relative w-52 shrink-0">
+          <select
+            :value="playerDetailCoverBehavior"
+            class="h-9 w-full cursor-pointer appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-xs font-medium text-gray-700 outline-none transition focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200"
+            @change="setPlayerDetailCoverBehavior(($event.target as HTMLSelectElement).value as 'show' | 'hide' | 'remember')"
+          >
+            <option value="show">{{ TEXT.playerDetailCoverShow }}</option>
+            <option value="hide">{{ TEXT.playerDetailCoverHide }}</option>
+            <option value="remember">{{ TEXT.playerDetailCoverRemember }}</option>
+          </select>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </span>
+      </label>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.accentTitle }}
+        </span>
+        <SettingHint :text="TEXT.accentHint" />
+      </h2>
+
+      <div class="rounded-2xl border border-gray-200/40 bg-white/20 p-4 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="grid grid-cols-4 gap-3 sm:grid-cols-8">
+          <button
+            v-for="preset in ACCENT_COLOR_PRESETS"
+            :key="preset.value"
+            type="button"
+            class="group flex min-w-0 flex-col items-center gap-2 rounded-xl border px-2 py-3 transition-all"
+            :class="theme.accentColor === preset.value
+              ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm'
+              : 'border-gray-200/50 bg-white/25 hover:-translate-y-0.5 hover:border-[#EC4141]/40 hover:bg-white/40 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10'"
+            :aria-pressed="theme.accentColor === preset.value"
+            @click="setAccentColor(preset.value)"
+          >
+            <span
+              class="h-7 w-7 rounded-full border-2 border-white shadow-sm ring-1 ring-black/10 transition-transform group-hover:scale-110 dark:ring-white/20"
+              :style="{ backgroundColor: preset.value }"
+            ></span>
+            <span class="w-full truncate text-center text-[11px] font-medium text-gray-600 dark:text-white/60">
+              {{ preset.label }}
+            </span>
+          </button>
+        </div>
+
+        <div class="mt-4 flex flex-col gap-3 border-t border-gray-200/40 pt-4 sm:flex-row sm:items-end dark:border-white/10">
+          <label class="flex min-w-0 flex-1 items-center gap-3">
+            <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentCustom }}</span>
+            <span class="relative h-9 w-12 shrink-0 overflow-hidden rounded-lg border border-black/10 shadow-sm dark:border-white/15">
+              <input
+                :value="theme.accentColor"
+                type="color"
+                class="absolute -inset-2 h-14 w-16 cursor-pointer border-0 bg-transparent p-0"
+                :aria-label="TEXT.accentCustom"
+                @input="commitAccentColor"
+              />
+            </span>
+          </label>
+
+          <label class="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentHex }}</span>
+            <input
+              :value="theme.accentColor"
+              type="text"
+              maxlength="7"
+              spellcheck="false"
+              class="h-9 rounded-lg border border-black/10 bg-white/45 px-3 font-mono text-xs uppercase text-gray-800 outline-none transition focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
+              placeholder="#EC4141"
+              @change="commitAccentColor"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+            />
+          </label>
+
+          <button
+            type="button"
+            class="h-9 shrink-0 rounded-lg border border-gray-200/60 bg-white/30 px-3 text-xs font-medium text-gray-600 transition hover:border-[#EC4141]/40 hover:text-[#EC4141] dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+            :disabled="theme.accentColor === '#EC4141'"
+            :class="theme.accentColor === '#EC4141' ? 'cursor-not-allowed opacity-40' : ''"
+            @click="resetAccentColor"
+          >
+            {{ TEXT.accentReset }}
           </button>
         </div>
       </div>

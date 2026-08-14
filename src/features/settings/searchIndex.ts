@@ -67,6 +67,19 @@ const makeItems = (
 });
 
 const staticItems: SettingsSearchItem[] = [
+  ...makeItems('theme', '\u4e3b\u9898\u8272', [
+    {
+      label: '\u4e3b\u9898\u8272',
+      keywords: '\u54c1\u724c\u8272 \u5f3a\u8c03\u8272 \u989c\u8272 HEX \u9884\u8bbe \u81ea\u5b9a\u4e49',
+    },
+  ]),
+  ...makeItems('theme', '\u6b4c\u8bcd\u9875\u5c01\u9762', [
+    {
+      label: '\u9ed8\u8ba4\u5c55\u793a\u5c01\u9762',
+      target: '\u6b4c\u8bcd\u9875\u5c01\u9762',
+      keywords: '\u64ad\u653e\u8be6\u60c5\u9875 \u6b4c\u8bcd \u5c01\u9762 \u5206\u680f \u5c45\u4e2d \u9690\u85cf',
+    },
+  ]),
   ...makeItems('general', '常规与启动', [
     { label: '开机自动运行', keywords: '启动 自启动' },
     { label: '启动检测更新', keywords: '更新 检查 版本' },

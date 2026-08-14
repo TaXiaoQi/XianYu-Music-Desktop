@@ -61,6 +61,9 @@ describe('useAppThemeSync', () => {
           contains: vi.fn(() => false),
           remove: vi.fn(),
         },
+        style: {
+          setProperty: vi.fn(),
+        },
       },
     });
     setTheme.mockClear();
@@ -86,6 +89,18 @@ describe('useAppThemeSync', () => {
     await flushThemeSync();
 
     expect(refreshWindowMaterialActiveState).toHaveBeenCalledWith(true);
+  });
+
+  it('applies accent color changes to root CSS variables', async () => {
+    const settingsStore = useSettingsStore();
+    scope?.run(() => useAppThemeSync());
+    await flushThemeSync();
+
+    settingsStore.patchTheme({ accentColor: '#3B82F6' });
+    await flushThemeSync();
+
+    expect(document.documentElement.style.setProperty).toHaveBeenCalledWith('--theme-color', '#3B82F6');
+    expect(document.documentElement.style.setProperty).toHaveBeenCalledWith('--theme-color-rgb', '59 130 246');
   });
 
   afterEach(() => {

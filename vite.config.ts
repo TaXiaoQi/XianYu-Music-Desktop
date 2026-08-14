@@ -1,6 +1,6 @@
 
 
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
@@ -8,8 +8,25 @@ import { fileURLToPath, URL } from "node:url";
 
 const host = process.env.TAURI_DEV_HOST;
 
+const preserveRuntimeThemeAlpha = (): Plugin => ({
+  name: 'xianyu-preserve-runtime-theme-alpha',
+  enforce: 'post' as const,
+  generateBundle(_options, bundle) {
+    Object.values(bundle).forEach((asset) => {
+      if (asset.type !== 'asset' || !asset.fileName.endsWith('.css') || typeof asset.source !== 'string') {
+        return;
+      }
+
+      asset.source = asset.source.replace(
+        /:#ec4141([0-9a-f]{2})(?=!important|[;}])/gi,
+        (_match, alphaHex) => `:rgb(var(--theme-color-rgb) / ${(Number.parseInt(alphaHex, 16) / 255).toFixed(4)})`,
+      );
+    });
+  },
+});
+
 export default defineConfig(async () => ({
-  plugins: [vue(), wasm(), topLevelAwait()],
+  plugins: [vue(), wasm(), topLevelAwait(), preserveRuntimeThemeAlpha()],
   resolve: {
     alias: {
       path: fileURLToPath(new URL('./src/shims/pathBrowser.ts', import.meta.url)),

@@ -11,6 +11,7 @@
 }
 
 :root {
+  --theme-color: #EC4141;
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
   /* 防止整个窗口出现滚动条，我们只让中间区域滚动 */

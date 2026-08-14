@@ -20,9 +20,19 @@ const createClassList = () => {
 
 const installDomStubs = () => {
   const store = new Map<string, string>();
+  const rootStyle = {
+    backgroundColor: '',
+    values: new Map<string, string>(),
+    setProperty(name: string, value: string) {
+      this.values.set(name, value);
+    },
+    getPropertyValue(name: string) {
+      return this.values.get(name) ?? '';
+    },
+  };
   const documentElement = {
     classList: createClassList(),
-    style: { backgroundColor: '' },
+    style: rootStyle,
     attributes: new Set<string>(),
     setAttribute(name: string) {
       this.attributes.add(name);
@@ -89,6 +99,20 @@ describe('startup theme bootstrap', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
     expect(document.documentElement.style.backgroundColor).toBe('#fafafa');
     expect(document.body.style.backgroundColor).toBe('#fafafa');
+  });
+
+  it('restores a persisted accent color before Vue mounts', () => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      theme: {
+        mode: 'light',
+        accentColor: '#3b82f6',
+      },
+    }));
+
+    applyPersistedStartupTheme();
+
+    expect(document.documentElement.style.getPropertyValue('--theme-color')).toBe('#3B82F6');
+    expect(document.documentElement.style.getPropertyValue('--theme-color-rgb')).toBe('59 130 246');
   });
 
   it('applies dark startup paint when persisted theme is system and OS is dark', () => {
