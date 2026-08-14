@@ -86,12 +86,15 @@ function getDeviceInfo(): DeviceInfo {
 }
 
 /**
- * 上报软件打开事件（启动时调用一次）。
+ * 上报软件打开事件（启动时调用一次，登录成功后也会重新上报以关联设备）。
  * 后端写入 app_open_log，同时作为设备连接数的来源（按 device_id 去重）。
+ * 携带当前登录账号的弦予号，供后台设备管理页自动关联账号。
  */
 export function reportAppOpen(): void {
   const info = getDeviceInfo();
-  void signedRequest('open', { ...info })
+  const auth = getStoredAuth();
+  const ciyuanxiId = auth?.user?.ciyuanxi_id ?? '';
+  void signedRequest('open', { ...info, ciyuanxi_id: ciyuanxiId })
     .then(() => {
       /* 上报成功，静默 */
     })
