@@ -1474,16 +1474,14 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 PlaybackBufferPayload { buffering: false },
                             );
                         }
+                        // 暂停即释放音频设备：drop sink 与输出后端（共享 OutputStream /
+                        // 独占 IAudioClient），让其他应用能使用音频设备；恢复播放时再重建。
+                        // current_path 与播放进度被保留，用于恢复时续播。
+                        current_sink = None;
+                        current_normalizer_handle = None;
+                        output = None;
                         #[cfg(target_os = "windows")]
-                        if let Some(playback) = &exclusive_playback {
-                            playback.pause();
-                        } else if let Some(sink) = &current_sink {
-                            sink.pause();
-                        }
-                        #[cfg(not(target_os = "windows"))]
-                        if let Some(sink) = &current_sink {
-                            sink.pause();
-                        }
+                        stop_exclusive_playback(&mut exclusive_playback);
                     }
                     AudioCommand::Stop => {
                         is_playing_flag = false;
@@ -1501,22 +1499,106 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         if let Some(sink) = &current_sink {
                             sink.stop();
                         }
+                        // 停止同样释放音频设备（含共享 OutputStream），避免空闲时仍占用。
                         current_sink = None;
+                        current_normalizer_handle = None;
+                        output = None;
                         #[cfg(target_os = "windows")]
                         stop_exclusive_playback(&mut exclusive_playback);
                     }
                     AudioCommand::Resume => {
                         is_playing_flag = true;
+                        if current_path.is_empty() {
+                            continue;
+                        }
+                        // 暂停/停止时已释放音频设备，此处按需重建（共享 OutputStream 或独占 IAudioClient）。
                         #[cfg(target_os = "windows")]
-                        if let Some(playback) = &exclusive_playback {
-                            playback.resume();
-                        } else if let Some(sink) = &current_sink {
-                            sink.play();
+                        let source_is_remote =
+                            current_remote_stream.is_some() || current_streaming_state.is_some();
+                        #[cfg(target_os = "windows")]
+                        if requested_output_mode == AudioOutputMode::WasapiExclusive
+                            && !source_is_remote
+                        {
+                            match start_exclusive_playback(
+                                current_path.clone(),
+                                selected_device_name.clone(),
+                                current_volume,
+                                true,
+                                progress_duration(&thread_progress),
+                                &thread_progress,
+                                current_volume_balance_gain,
+                                thread_eq_handle.clone(),
+                                thread_user_volume.clone(),
+                            ) {
+                                Ok(playback) => {
+                                    if selected_device_name.is_none() {
+                                        last_default_device_name =
+                                            default_output_device_name(&host);
+                                    }
+                                    active_device_name =
+                                        Some(playback.active_device_name().to_string());
+                                    active_output_mode = AudioOutputMode::WasapiExclusive;
+                                    fallback_reason = None;
+                                    exclusive_playback = Some(playback);
+                                    current_sink = None;
+                                    output = None;
+                                    current_normalizer_handle = None;
+                                    emit_output_status(
+                                        &thread_app_handle,
+                                        &thread_output_status,
+                                        selected_device_name.clone(),
+                                        active_device_name.clone(),
+                                        requested_output_mode,
+                                        active_output_mode,
+                                        fallback_reason.clone(),
+                                    );
+                                    continue;
+                                }
+                                Err(error) => {
+                                    fallback_reason = Some(error);
+                                }
+                            }
                         }
-                        #[cfg(not(target_os = "windows"))]
-                        if let Some(sink) = &current_sink {
-                            sink.play();
+
+                        // 共享模式：重建输出后端并沿用 restore 机制恢复播放链续播
+                        output = SharedOutputBackend::open(&host, selected_device_name.as_deref())
+                            .ok();
+                        if selected_device_name.is_none() {
+                            last_default_device_name = default_output_device_name(&host);
                         }
+                        active_device_name = output
+                            .as_ref()
+                            .map(|output| output.active_device_name().to_string());
+                        active_output_mode = AudioOutputMode::Shared;
+                        restore_current_playback(
+                            &output,
+                            &mut current_sink,
+                            &current_path,
+                            true,
+                            &thread_progress,
+                            thread_eq_handle.clone(),
+                            thread_se_handle.clone(),
+                            thread_user_volume.clone(),
+                            current_volume_balance_gain,
+                            &mut current_normalizer_handle,
+                            current_remote_stream.as_ref(),
+                            current_streaming_state.as_ref(),
+                        );
+                        // 恢复后重新应用播放倍速
+                        if current_speed != 1.0 {
+                            if let Some(sink) = &current_sink {
+                                sink.set_speed(current_speed);
+                            }
+                        }
+                        emit_output_status(
+                            &thread_app_handle,
+                            &thread_output_status,
+                            selected_device_name.clone(),
+                            active_device_name.clone(),
+                            requested_output_mode,
+                            active_output_mode,
+                            fallback_reason.clone(),
+                        );
                     }
                     AudioCommand::Seek {
                         time,

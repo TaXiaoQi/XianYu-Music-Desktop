@@ -37,8 +37,6 @@ pub(crate) struct ExclusivePlayRequest {
 }
 
 enum ExclusiveCommand {
-    Pause,
-    Resume,
     Seek { time: Duration, is_playing: bool },
     Stop,
     SetVolumeBalance { enabled: bool, target_gain: f32 },
@@ -89,14 +87,6 @@ impl WasapiExclusivePlayback {
 
     pub(crate) fn active_device_name(&self) -> &str {
         &self.active_device_name
-    }
-
-    pub(crate) fn pause(&self) {
-        let _ = self.tx.send(ExclusiveCommand::Pause);
-    }
-
-    pub(crate) fn resume(&self) {
-        let _ = self.tx.send(ExclusiveCommand::Resume);
     }
 
     pub(crate) fn seek(&self, time: Duration, is_playing: bool) {
@@ -411,20 +401,6 @@ fn run_exclusive_playback(
     loop {
         while let Ok(command) = command_rx.try_recv() {
             match command {
-                ExclusiveCommand::Pause => {
-                    if is_playing {
-                        let _ = audio_client.stop_stream();
-                    }
-                    is_playing = false;
-                }
-                ExclusiveCommand::Resume => {
-                    if !is_playing {
-                        audio_client
-                            .start_stream()
-                            .map_err(|error| error.to_string())?;
-                    }
-                    is_playing = true;
-                }
                 ExclusiveCommand::Seek {
                     time,
                     is_playing: next_playing,
