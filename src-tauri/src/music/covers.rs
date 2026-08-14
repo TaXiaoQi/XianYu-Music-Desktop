@@ -68,7 +68,6 @@ pub fn run_cache_cleanup(app: &AppHandle) {
             let mut total_size: u64 = files.iter().map(|&(_, len, _)| len).sum();
 
             if total_size > max_size {
-                println!("缓存清理开始: 当前 {} MB", total_size / 1024 / 1024);
                 for (path, len, _) in files {
                     if total_size <= max_size {
                         break;
@@ -77,7 +76,6 @@ pub fn run_cache_cleanup(app: &AppHandle) {
                         total_size = total_size.saturating_sub(len);
                     }
                 }
-                println!("缓存清理结束: 剩余 {} MB", total_size / 1024 / 1024);
             }
         }
     });
@@ -480,7 +478,6 @@ pub fn save_artist_avatar_auto(bytes: &[u8], covers_dir: &std::path::Path) -> Op
     };
 
     let Some(ext) = ext else {
-        eprintln!("[头像缓存] 警告：不支持的图片格式，跳过提取。");
         return None;
     };
 
@@ -489,11 +486,7 @@ pub fn save_artist_avatar_auto(bytes: &[u8], covers_dir: &std::path::Path) -> Op
     let target_path = covers_dir.join(target_filename);
 
     if !covers_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(covers_dir) {
-            eprintln!(
-                "[头像缓存] 警告：创建缓存目录失败: {}, 路径: {:?}",
-                e, covers_dir
-            );
+        if std::fs::create_dir_all(covers_dir).is_err() {
             return None;
         }
     }

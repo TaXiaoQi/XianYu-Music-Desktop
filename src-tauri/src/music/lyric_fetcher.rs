@@ -1072,7 +1072,6 @@ async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
             match decode_kg_krc(&content) {
                 Ok(decoded) => return Ok(Some(kg_parse_lyric(&decoded))),
                 Err(error) => {
-                    eprintln!("[lyric_fetcher][kg] KRC 解码失败，尝试 LRC/下一候选回退: {}", error);
                     last_error = Some(error);
                     if let Some((fallback_fmt, fallback_content)) =
                         download_kg_lyric_content(&id_value, accesskey, "lrc").await?
@@ -1098,9 +1097,7 @@ async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         }
     }
 
-    if let Some(error) = last_error {
-        eprintln!("[lyric_fetcher][kg] 所有候选歌词均失败: {}", error);
-    }
+    if let Some(_error) = last_error {}
     Ok(None)
 }
 
@@ -2148,18 +2145,14 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         match fetch_wy_lyric_by_id(&song_id).await {
             Ok(Some(result)) => return Ok(Some(result)),
             Ok(None) => {
-                eprintln!("[lyric_fetcher][wy] 歌词为空，尝试下一个 ID: {}", song_id);
             }
             Err(error) => {
-                eprintln!("[lyric_fetcher][wy] 获取歌词失败，尝试下一个 ID: {} - {}", song_id, error);
                 last_error = Some(error);
             }
         }
     }
 
-    if let Some(error) = last_error {
-        eprintln!("[lyric_fetcher][wy] 所有 ID 歌词获取均失败: {}", error);
-    }
+    if let Some(_error) = last_error {}
     Ok(None)
 }
 

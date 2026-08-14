@@ -1,16 +1,5 @@
 use std::path::{Component, Path, PathBuf};
 
-#[cfg(windows)]
-fn metadata_is_symlink_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    metadata.file_type().is_symlink() || (metadata.file_attributes() & 0x400) != 0
-}
-
-#[cfg(not(windows))]
-fn metadata_is_symlink_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
-    metadata.file_type().is_symlink()
-}
-
 fn canonicalize_path_or_parent(path: &Path) -> Result<PathBuf, String> {
     if path.exists() {
         return path
@@ -33,19 +22,6 @@ fn canonicalize_path_or_parent(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-#[allow(dead_code)]
-fn contains_symlink_component(path: &Path) -> bool {
-    for ancestor in path.ancestors() {
-        if std::fs::symlink_metadata(ancestor)
-            .map(|metadata| metadata_is_symlink_or_reparse_point(&metadata))
-            .unwrap_or(false)
-        {
-            return true;
-        }
-    }
-    false
-}
-
 /// Validate that a path is safe and within allowed directories.
 ///
 /// # Security
@@ -64,12 +40,10 @@ fn contains_symlink_component(path: &Path) -> bool {
 pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<PathBuf, String> {
     let path = PathBuf::from(input);
 
-    // Reject empty paths
     if input.trim().is_empty() {
         return Err("路径不能为空".to_string());
     }
 
-    // Check for path traversal components
     for component in path.components() {
         if matches!(component, Component::ParentDir) {
             return Err(format!("路径包含非法目录遍历: {}", input));
@@ -78,13 +52,11 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
 
     let canonical = canonicalize_path_or_parent(&path)?;
 
-    // If allowed_roots provided, canonicalize and verify
     if let Some(roots) = allowed_roots {
         if roots.is_empty() {
             return Err("未配置允许的根目录".to_string());
         }
 
-        // Check the canonical path starts with one of the allowed roots
         let mut found = false;
         for root in roots {
             let canonical_root = canonicalize_path_or_parent(root)?;
@@ -108,12 +80,8 @@ pub fn validate_path(input: &str, allowed_roots: Option<&[PathBuf]>) -> Result<P
 
         Ok(canonical)
     } else {
-        // No allowed_roots - just return the canonical path.
         // Symlink check is skipped because there are no directory restrictions to enforce.
-        // The path is already canonicalized (symlinks resolved by canonicalize_path_or_parent),
-        // and directory traversal (..) is already rejected above.
-        // This allows reading user-selected files from OneDrive/junction-managed folders
-        // while still preventing traversal attacks.
+        // The path is already canonicalized and directory traversal (..) is already rejected above.
         Ok(canonical)
     }
 }
@@ -138,17 +106,14 @@ pub fn sanitize_filename_component(name: &str) -> Result<String, String> {
         return Err("文件名不能为空".to_string());
     }
 
-    // Reject any path separators
     if name.contains('/') || name.contains('\\') {
         return Err(format!("文件名不能包含路径分隔符: {}", name));
     }
 
-    // Reject parent directory references
     if name == ".." || name == "." {
         return Err("文件名不能为目录引用".to_string());
     }
 
-    // Check for null bytes
     if name.contains('\0') {
         return Err("文件名包含非法字符".to_string());
     }
@@ -195,7 +160,6 @@ pub fn sanitize_filename_component(name: &str) -> Result<String, String> {
         return Err(format!("文件名为 Windows 保留名称: {}", name));
     }
 
-    // Check length
     if name.len() > 255 {
         return Err("文件名过长".to_string());
     }

@@ -328,9 +328,6 @@ export async function resolveLxUrl(
   if (!cachedInfo) return null;
   const rustResult = await resolveLxUrlViaRust(cachedInfo, tryQualities);
   if (rustResult) {
-    console.log(
-      `[LXUrlResolver] Rust 回退解析成功: lx://${lxSource}/${songmid} quality=${rustResult.quality}`,
-    );
     return rustResult;
   }
 

@@ -16,7 +16,6 @@ const { triggerOnboarding } = useOnboarding();
 const { simulateAnnouncement } = useAnnouncement();
 const { simulateUpdate } = useUpdateCheck();
 
-/** 测试设置同步冲突弹窗 */
 function testConflictDialog() {
   void showSettingsConflict(new Date().toISOString());
 }

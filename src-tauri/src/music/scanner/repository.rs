@@ -150,9 +150,6 @@ fn apply_insert_batch(
         return Ok(());
     }
 
-    #[cfg(debug_assertions)]
-    let start_time = std::time::Instant::now();
-
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     {
         let mut insert_stmt = tx
@@ -262,16 +259,6 @@ fn apply_insert_batch(
     }
 
     tx.commit().map_err(|error| error.to_string())?;
-
-    #[cfg(debug_assertions)]
-    {
-        let duration = start_time.elapsed();
-        println!(
-            "[Profiling] apply_insert_batch took {:?} (chunk size: {})",
-            duration,
-            songs.len()
-        );
-    }
 
     Ok(())
 }
@@ -411,9 +398,6 @@ pub(crate) fn apply_scan_changes(
         return Ok(());
     }
 
-    #[cfg(debug_assertions)]
-    let start_time = std::time::Instant::now();
-
     // 智能判定首次导入高载环境（数据为空且本批次新增歌曲量 >= 500）
     let existing_song_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM songs", [], |row| row.get(0))
@@ -459,18 +443,6 @@ pub(crate) fn apply_scan_changes(
     }
 
     cleanup_unused_artists(conn);
-
-    #[cfg(debug_assertions)]
-    {
-        let duration = start_time.elapsed();
-        println!(
-            "[Profiling] apply_scan_changes took {:?} (to_add: {}, to_update: {}, to_delete: {})",
-            duration,
-            to_add.len(),
-            to_update.len(),
-            to_delete.len()
-        );
-    }
 
     Ok(())
 }

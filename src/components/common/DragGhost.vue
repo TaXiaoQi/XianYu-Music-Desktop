@@ -7,11 +7,9 @@ const ghostCover = ref('');
 const { loadCover } = useCoverCache();
 let ghostRequestId = 0;
 
-// 🟢 监听拖拽状态和类型
 watch([() => dragSession.active, () => dragSession.type], async ([active, type]) => {
   const requestId = ++ghostRequestId;
   if (active) {
-    // 1. 歌曲类型
     if (type === 'song' && dragSession.songs.length > 0) {
       try {
         const coverUrl = await loadCover(dragSession.songs[0].path);
@@ -21,17 +19,8 @@ watch([() => dragSession.active, () => dragSession.type], async ([active, type])
         if (requestId !== ghostRequestId) return;
         ghostCover.value = '';
       }
-    } 
-    // 2. 专辑类型 (如果有 data.name) - 这里假设 data 包含 name
-    else if (type === 'album' && dragSession.data?.name) {
-       // 专辑可以尝试获取第一首歌的封面，或者显示默认图标
-       // 暂时显示默认图标或尝试获取封面(如果有路径)
-       // 如果 data 里有 firstSongPath，可以尝试加载
-       ghostCover.value = ''; 
-    }
-    // 3. 其他类型 (Folder/Playlist/Artist) 暂不需要异步加载图片，使用默认图标
-    else {
-       ghostCover.value = '';
+    } else {
+      ghostCover.value = '';
     }
   } else {
     ghostCover.value = '';
@@ -43,7 +32,6 @@ const ghostStyle = computed(() => ({
   left: `${dragSession.mouseX + 10}px`,
 }));
 
-// 🟢 计算显示内容
 const title = computed(() => {
   if (dragSession.type === 'song' && dragSession.songs.length > 0) return dragSession.songs[0].title || dragSession.songs[0].name;
   if (dragSession.type === 'playlist') return dragSession.data?.name || '未知歌单';

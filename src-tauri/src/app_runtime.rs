@@ -481,8 +481,8 @@ pub(crate) fn consume_pending_open_paths(
 }
 
 #[tauri::command]
-pub(crate) fn exit_app(_app: tauri::AppHandle) {
-    std::process::exit(0);
+pub(crate) fn exit_app(app: tauri::AppHandle) {
+    crate::graceful_shutdown(&app);
 }
 
 #[tauri::command]

@@ -130,10 +130,7 @@ export interface PlaylistImportResult {
   info: PlaylistInfo;
 }
 
-// ==================== 日志 ====================
-
-function log(msg: string) {
-  console.log(`[PlaylistImport] ${msg}`);
+function log(_msg: string) {
 }
 
 // ==================== 工具函数 ====================

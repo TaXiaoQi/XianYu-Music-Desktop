@@ -21,8 +21,7 @@ const LOG = '[AutoSync]';
 /** 最小同步间隔（毫秒），防止用户设置 0 导致无限循环 */
 const MIN_INTERVAL_MS = 60_000; // 1 分钟
 
-function log(msg: string, ...args: unknown[]) {
-  console.log(`${LOG} ${msg}`, ...args);
+function log(_msg: string, ..._args: unknown[]) {
 }
 
 function logWarn(msg: string, ...args: unknown[]) {

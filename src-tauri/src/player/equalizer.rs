@@ -611,13 +611,7 @@ where
         if ax > 1.0 {
             self.clip_count += 1;
         }
-        // 每 10 秒（约 882000 样本 @ 44100 stereo）输出一次统计
-        if self.total_count % 882000 == 0 && self.clip_count > 0 {
-            eprintln!(
-                "[ClipGuard] 过去 10s: clip={} / total={} max_peak={:.4}",
-                self.clip_count, self.total_count, self.max_seen
-            );
-        }
+
         // 安全限幅：±1.0 以内完全透传（零失真），超出时硬限幅保护 DAC
         Some(sample.clamp(-1.0, 1.0))
     }

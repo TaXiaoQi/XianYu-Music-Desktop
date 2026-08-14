@@ -551,12 +551,10 @@ const toggleProgressVisibility = () => {
   localStorage.setItem(FOOTER_PROGRESS_HIDDEN_KEY, isProgressHidden.value.toString());
 };
 
-// 不再使用单独的模糊样式 -> 全透明
-
 // --- 进度条拖拽逻辑 ---
 const isDraggingProgress = ref(false);
 const progressBarRef = ref<HTMLElement | null>(null);
-const dragTime = ref(0); 
+const dragTime = ref(0);
 
 const displayProgress = computed(() => {
   if (!currentSong.value || currentSong.value.duration <= 0) return 0;
@@ -564,17 +562,9 @@ const displayProgress = computed(() => {
   return Math.max(0, Math.min(100, (time / currentSong.value.duration) * 100));
 });
 
-const progressFillClass = computed(() => (
-  showPlayerDetail.value
-    ? 'bg-zinc-300/30'
-    : 'bg-zinc-300/30'
-));
+const progressFillClass = computed(() => 'bg-zinc-300/30');
 
-const progressTrackClass = computed(() => (
-  showPlayerDetail.value
-    ? 'bg-transparent'
-    : 'bg-transparent'
-));
+const progressTrackClass = computed(() => 'bg-transparent');
 
 const progressThumbClass = computed(() => (
   showPlayerDetail.value
@@ -744,7 +734,6 @@ const handleVolumeLeave = () => {
   volumeTimer = setTimeout(() => {
     if (!isDraggingVolume.value) {
       showVolumeSlider.value = false;
-      // If we left the volume slider, check if we should start footer idle timer
       startIdleTimer();
     }
   }, 300);

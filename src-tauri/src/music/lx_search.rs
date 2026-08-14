@@ -15,8 +15,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-// ==================== Types ====================
-
 /// 搜索结果项（与前端 LxSearchResultItem 对应）
 #[derive(Serialize, Clone, Debug)]
 pub struct LxSearchItem {
@@ -46,8 +44,6 @@ pub struct LxTypeTuple {
     pub size: Option<String>,
     pub hash: Option<String>,
 }
-
-// ==================== Search Cache ====================
 
 struct SearchCacheEntry {
     items: Vec<LxSearchItem>,
@@ -123,8 +119,6 @@ pub async fn clear_lx_search_cache() {
     let mut cache = search_cache().write().await;
     cache.clear();
 }
-
-// ==================== Utility Functions ====================
 
 fn format_play_time(seconds: f64) -> String {
     if seconds.is_nan() || seconds <= 0.0 {
@@ -236,8 +230,6 @@ fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
     Some(u)
 }
 
-// ==================== HTTP Helpers ====================
-
 /// 全局 HTTP 客户端单例：复用连接池 / TLS 会话，避免每次请求重建 Client。
 ///
 /// 保持默认 TLS 证书校验，避免搜索和解析链路被中间人篡改。
@@ -292,8 +284,6 @@ async fn http_post_json(
     serde_json::from_str(&body_text).map_err(|e| format!("Invalid JSON: {}", e))
 }
 
-// ==================== TX (QQ音乐) Signing ====================
-
 const TX_PART_1_INDEXES: [usize; 8] = [23, 14, 6, 36, 16, 40, 7, 19];
 const TX_PART_2_INDEXES: [usize; 8] = [16, 1, 32, 12, 19, 27, 8, 5];
 const TX_SCRAMBLE_VALUES: [u8; 20] = [
@@ -338,8 +328,6 @@ fn zzc_sign(text: &str) -> String {
     format!("zzc{}{}{}", part1, b64_clean, part2).to_lowercase()
 }
 
-// ==================== MG (咪咕) Signing ====================
-
 fn mg_create_signature(time: &str, text: &str) -> (String, String) {
     let device_id = "963B7AA0D21511ED807EE5846EC87D20";
     let signature_md5 = "6cdc72a439cef99a3418d2a78aa28c73";
@@ -350,8 +338,6 @@ fn mg_create_signature(time: &str, text: &str) -> (String, String) {
     let sign = format!("{:x}", md5::compute(input.as_bytes()));
     (sign, device_id.to_string())
 }
-
-// ==================== KW (酷我) Search ====================
 
 const KW_MINFO_REGEX: &str = r"level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)";
 
@@ -514,8 +500,6 @@ async fn search_kw(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
     kw_handle_result(result.get("abslist").unwrap_or(&serde_json::Value::Null))
         .ok_or_else(|| "KW search: N_MINFO missing".to_string())
 }
-
-// ==================== KG (酷狗) Search ====================
 
 fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
     let mut types = Vec::new();
@@ -720,8 +704,6 @@ async fn search_kg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         .unwrap_or(&serde_json::Value::Null);
     Ok(kg_handle_result(lists))
 }
-
-// ==================== TX (QQ音乐) Search ====================
 
 fn tx_string_field(item: &serde_json::Value, keys: &[&str]) -> String {
     for key in keys {
@@ -1007,7 +989,7 @@ async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         return Ok(result);
     }
 
-    eprintln!("[lx_search] TX Desktop search empty, trying Mobile fallback");
+
     let mobile_request_data = serde_json::json!({
         "comm": {
             "ct": "24", "cv": "4747474", "v": "4747474", "tmeAppID": "qqmusic",
@@ -1071,8 +1053,6 @@ fn chrono_like_random() -> u64 {
     val = val.wrapping_mul(1000) + (val % 900);
     val
 }
-
-// ==================== WY (网易云) Search ====================
 
 async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let url = format!(
@@ -1209,8 +1189,6 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
 
     Ok(list)
 }
-
-// ==================== MG (咪咕) Search ====================
 
 fn mg_filter_data(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
     let mut list = Vec::new();
@@ -1417,8 +1395,6 @@ async fn search_mg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         .unwrap_or(&serde_json::Value::Null);
     Ok(mg_filter_data(result_list))
 }
-
-// ==================== Public API ====================
 
 /// 搜索 LX 音源
 ///

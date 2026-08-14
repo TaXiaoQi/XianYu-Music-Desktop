@@ -37,8 +37,6 @@ const TEXT = {
   you: '你',
 };
 
-// 听歌排行榜：LeaderboardEntry 类型从 leaderboardService 导入
-
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
@@ -55,7 +53,6 @@ const periodLabel = computed(() => {
 
 async function loadLeaderboard() {
   const requestId = ++leaderboardRequestId;
-  // 先清空数据并显示骨架屏
   leaderboard.value = [];
   leaderboardLoading.value = true;
   leaderboardError.value = null;

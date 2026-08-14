@@ -203,17 +203,12 @@ export function useHomeFolderManagement({
   };
 
   const handleRefreshFolder = async () => {
-    console.log('[RefreshDebug] handleRefreshFolder CALLED', {
-      currentFolderFilter: currentFolderFilter.value,
-    });
     if (!currentFolderFilter.value) {
-      console.log('[RefreshDebug] handleRefreshFolder SKIP: currentFolderFilter is empty');
       return;
     }
 
     try {
       const summary = await refreshFolder(currentFolderFilter.value);
-      console.log('[RefreshDebug] handleRefreshFolder got summary', summary);
       // refreshFolder (libraryCoreActions) already calls fetchFolderTree when changes are detected
       if (summary && typeof summary === 'object' && 'removedCount' in summary) {
         const removedCount = Number(summary.removedCount) || 0;
@@ -228,7 +223,6 @@ export function useHomeFolderManagement({
 
       showToast('刷新成功', 'success');
     } catch (error: any) {
-      console.log('[RefreshDebug] handleRefreshFolder ERROR', error);
       showToast(`刷新失败: ${error?.message || error}`, 'error');
     }
   };

@@ -32,12 +32,9 @@ import type {
   HttpProxyResponse,
 } from './pluginSandboxTypes';
 
-// ==================== 日志 ====================
-
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
-  console.log(`[SandboxManager] ${msg}`);
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
 
@@ -181,7 +178,6 @@ async function handleProxyRequest(request: ProxyRequest): Promise<ProxyResponse>
         const msg = payload.message || '';
         if (level === 'error') console.error(`[SandboxProxy] ${msg}`);
         else if (level === 'warn') console.warn(`[SandboxProxy] ${msg}`);
-        else console.log(`[SandboxProxy] ${msg}`);
         data = null;
         break;
       }
@@ -272,7 +268,6 @@ function handleWorkerMessage(sandbox: ManagedSandbox, e: MessageEvent): void {
       const msg = event.message || '';
       if (event.level === 'error') console.error(msg);
       else if (event.level === 'warn') console.warn(msg);
-      else console.log(msg);
       try { _logCallback?.(msg); } catch { /* ignore */ }
       break;
     }
@@ -483,18 +478,7 @@ export async function callSandboxMethod(
 
   const callId = ++_callIdCounter;
 
-  // 每次方法调用前获取最新用户变量（如卡密），推送到 Worker 刷新
-  // 解决沙箱中 env.getUserVariables() 返回加载时快照的问题
   const freshUserVars = _userVarsProvider?.(pluginId) || {};
-
-  // [诊断] 追踪用户变量从主线程到 Worker 的传递链路
-  const varKeys = Object.keys(freshUserVars);
-  if (method === 'getMediaSource' || method === 'getLyric') {
-    log(`[callSandboxMethod] pluginId=${pluginId.substring(0, 12)}... method=${method} userVarKeys=[${varKeys.join(',')}] userVarCount=${varKeys.length}`);
-    if (varKeys.length > 0) {
-      log(`[callSandboxMethod] userVar values preview: ${varKeys.map(k => `${k}=${freshUserVars[k] ? '(已设置,' + String(freshUserVars[k]).length + '字符)' : '(空)'}`).join(', ')}`);
-    }
-  }
 
   // postMessage 使用结构化克隆算法，无法传递 Vue reactive proxy、函数、
   // Symbol、循环引用等对象。调用方传入的 musicItem 等参数常来自 Vue 响应式

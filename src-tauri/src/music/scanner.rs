@@ -1,5 +1,3 @@
-// music/scanner.rs - scan module entrypoint
-
 use super::tags::extract_text_metadata;
 use super::types::Song;
 use regex::Regex;

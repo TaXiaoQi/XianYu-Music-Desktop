@@ -34,10 +34,7 @@ export interface ImportedPlaylist {
 
 type BackupFormat = 'bakamusic' | 'musicfree' | 'unknown';
 
-// ==================== 工具函数 ====================
-
-function log(msg: string) {
-  console.log(`[BackupImport] ${msg}`);
+function log(_msg: string) {
 }
 
 /**

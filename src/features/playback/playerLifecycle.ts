@@ -44,8 +44,6 @@ interface LibraryScanBatchPayload {
   folder_total: number;
 }
 
-interface LibraryScanProgressPayload extends LibraryScanProgress {}
-
 interface CreatePlayerLifecycleDeps {
   bootstrapLibrary: () => Promise<void>;
   togglePlay: () => void | Promise<void>;
@@ -257,14 +255,7 @@ export const createPlayerLifecycle = ({
     const lastSynced = playbackApi.getLastSyncedParams();
     
     if (currentParamsSignature === lastSynced) {
-      if (import.meta.env.DEV) {
-        console.log(`[playerLifecycle] EQ params already synced (${currentParamsSignature}), skipping duplicate IPC.`);
-      }
       return;
-    }
-    
-    if (import.meta.env.DEV) {
-      console.log(`[playerLifecycle] EQ params changed from store. Triggering IPC. Signature: ${currentParamsSignature}`);
     }
 
     await playbackApi.setEqualizerSettings(
@@ -306,7 +297,7 @@ export const createPlayerLifecycle = ({
       listen<LibraryScanBatchPayload>('library-scan-batch', event => {
         applyLibraryScanBatch(event.payload);
       }),
-      listen<LibraryScanProgressPayload>('library-scan-progress', event => {
+      listen<LibraryScanProgress>('library-scan-progress', event => {
         libraryStore.setLibraryScanProgress({
           ...event.payload,
           message: event.payload.message ?? null,
@@ -658,20 +649,9 @@ export const createPlayerLifecycle = ({
 
       collectionsStore.setPlaylists(await playerStorage.readPlaylistsAsync());
 
-      // 诊断：检查恢复的歌单是否包含 songs 缓存
-      const restoredPls = collectionsStore.playlists;
-      const withSongs = restoredPls.filter(p => p.songs && p.songs.length > 0);
-      console.log(`[restore] playlists: ${restoredPls.length} total, ${withSongs.length} with songs cache`);
-      for (const pl of restoredPls) {
-        if (pl.songPaths.some(p => p.startsWith('plugin://') || p.startsWith('lx://'))) {
-          console.log(`[restore] playlist "${pl.name}": songPaths=${pl.songPaths.length}, songs=${pl.songs?.length ?? 0}`);
-        }
-      }
-
       // 恢复歌单后，将 playlist.songs 缓存中的在线歌曲注入 songPool，
       // 确保 songLookup 能找到这些歌曲（在线歌曲不在本地库中，重启后会丢失）
-      // 批量合并所有歌单的在线歌曲，仅递增一次 songCatalogVersion
-      const playlistSongGroups = restoredPls
+      const playlistSongGroups = collectionsStore.playlists
         .filter(pl => pl.songs && pl.songs.length > 0)
         .map(pl => pl.songs!);
       if (playlistSongGroups.length > 0) {

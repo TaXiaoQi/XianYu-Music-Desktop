@@ -79,7 +79,7 @@ use statistics::{
 use system_fonts::get_system_fonts;
 use taskbar::{
     get_taskbar_tray_geometry, install_taskbar_zorder_guard, refresh_taskbar_window_topmost,
-    setup_taskbar_window, uninstall_taskbar_zorder_guard,
+    setup_taskbar_window, shutdown_taskbar_zorder_guard, uninstall_taskbar_zorder_guard,
 };
 use tauri::Manager;
 use toolbox::{
@@ -101,7 +101,23 @@ use window_fullscreen::{
 };
 use window_material::{get_window_material_capabilities, refresh_window_material_active_state};
 use window_theme::set_dark_mode_for_window;
-use window_z_order::{refresh_current_window_topmost, start_topmost_guard, stop_topmost_guard};
+use window_z_order::{
+    refresh_current_window_topmost, shutdown_topmost_guard, start_topmost_guard, stop_topmost_guard,
+};
+
+/// 优雅退出：先向后台守护线程发送 WM_QUIT 使其退出消息循环，
+/// 再调用 app.exit(0) 触发 Tauri 事件循环退出（让 cargo tauri dev 能正常清理 Vite）。
+/// 若 2 秒内事件循环仍未退出（如播放器线程或 single-instance 插件阻塞），
+/// 兜底线程强制 std::process::exit(0) 终止进程。
+pub fn graceful_shutdown(app: &tauri::AppHandle) {
+    shutdown_topmost_guard();
+    shutdown_taskbar_zorder_guard();
+    app.exit(0);
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::process::exit(0);
+    });
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(dependency_on_unit_never_type_fallback)]
@@ -120,12 +136,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::Destroyed = event {
-                    // 使用 std::process::exit 强制立即退出，避免后台线程
-                    // （播放器事件循环、任务栏守护、窗口置顶守护）阻塞进程终止。
-                    // app.exit(0) 只请求事件循环退出，但 GetMessageW 等阻塞调用
-                    // 会让线程永远等待，导致进程无法终止，进而使 cargo tauri dev
-                    // 的终端无法自动退出。
-                    std::process::exit(0);
+                    graceful_shutdown(window.app_handle());
                 }
             }
         })

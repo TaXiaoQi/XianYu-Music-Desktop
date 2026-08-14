@@ -377,20 +377,8 @@ export function useLibraryCurrentViewSongs({
     ],
     async ([viewMode, folderFilter, query, sortMode]) => {
       const requestId = ++folderViewRequestId;
-      console.log('[RefreshDebug] folderView watcher FIRED', {
-        requestId,
-        viewMode,
-        folderFilter,
-        query,
-        sortMode,
-        cacheVersion: libraryFolderSongPathCacheVersion.value,
-        libraryDataVersion: libraryStore.libraryDataVersion,
-      });
 
       if (viewMode !== 'folder' || !folderFilter || sortMode === 'custom') {
-        console.log('[RefreshDebug] folderView watcher SKIP (viewMode/folderFilter/sortMode)', {
-          viewMode, folderFilter, sortMode,
-        });
         folderViewSongPaths.value = [];
         return;
       }
@@ -402,27 +390,12 @@ export function useLibraryCurrentViewSongs({
           sortMode,
         });
 
-        console.log('[RefreshDebug] folderView watcher got paths from backend', {
-          requestId,
-          currentRequestId: folderViewRequestId,
-          pathsCount: nextPaths.length,
-          samplePaths: nextPaths.slice(0, 3),
-          isStale: requestId !== folderViewRequestId,
-        });
-
         if (requestId !== folderViewRequestId) {
-          console.log('[RefreshDebug] folderView watcher result STALE (discarded)', {
-            requestId, folderViewRequestId,
-          });
           return;
         }
 
         folderViewSongPaths.value = nextPaths;
-        console.log('[RefreshDebug] folderView watcher SET folderViewSongPaths', {
-          pathsCount: nextPaths.length,
-        });
       } catch (error) {
-        console.log('[RefreshDebug] folderView watcher ERROR', { requestId, error });
         if (requestId !== folderViewRequestId) {
           return;
         }

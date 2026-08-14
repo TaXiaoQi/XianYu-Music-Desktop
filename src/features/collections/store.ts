@@ -54,8 +54,6 @@ export const useCollectionsStore = defineStore('collections', () => {
       songs: fullSongs?.length ? [...fullSongs] : undefined,
     };
 
-    console.log(`[createPlaylist] name="${name}", songPaths=${playlist.songPaths.length}, songs=${playlist.songs?.length ?? 0}`);
-
     playlists.value.push(playlist);
     return playlist.id;
   };

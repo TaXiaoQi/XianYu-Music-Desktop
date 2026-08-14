@@ -80,10 +80,7 @@ export interface AppBackupImportResult {
   errors: string[];
 }
 
-// ==================== 工具函数 ====================
-
-function log(msg: string) {
-  console.log(`[AppBackup] ${msg}`);
+function log(_msg: string) {
 }
 
 /**

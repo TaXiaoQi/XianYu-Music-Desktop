@@ -234,7 +234,6 @@ export const useLibraryStore = defineStore('library', () => {
   };
 
   const normalizeSongCollection = (songs: LibrarySong[]) => {
-    const startTime = import.meta.env.DEV ? performance.now() : 0;
     const nextPaths: string[] = [];
     const seenPaths = new Set<string>();
     let changed = false;
@@ -252,11 +251,6 @@ export const useLibraryStore = defineStore('library', () => {
         changed = true;
       }
     });
-
-    if (import.meta.env.DEV) {
-      const duration = performance.now() - startTime;
-      console.log(`[Profiling] normalizeSongCollection took ${duration.toFixed(2)}ms (input songs: ${songs.length}, changed: ${changed})`);
-    }
 
     return { paths: nextPaths, changed };
   };
@@ -521,7 +515,6 @@ export const useLibraryStore = defineStore('library', () => {
   };
 
   const patchLibrarySongs = (payload: { songs: LibrarySong[]; deleted_paths: string[] }) => {
-    const startTime = import.meta.env.DEV ? performance.now() : 0;
     const incomingSongs = payload.songs ?? [];
     const incomingDeleted = payload.deleted_paths ?? [];
 
@@ -587,15 +580,9 @@ export const useLibraryStore = defineStore('library', () => {
       songCatalogVersion.value += 1;
       libraryDataVersion.value += 1;
     }
-
-    if (import.meta.env.DEV) {
-      const duration = performance.now() - startTime;
-      console.log(`[Profiling] patchLibrarySongs took ${duration.toFixed(2)}ms (added/updated payload: ${incomingSongs.length}, deleted: ${incomingDeleted.length})`);
-    }
   };
 
   const setCanonicalSongOrder = (paths: string[]) => {
-    const startTime = import.meta.env.DEV ? performance.now() : 0;
     if (!Array.isArray(paths)) {
       return;
     }
@@ -610,11 +597,6 @@ export const useLibraryStore = defineStore('library', () => {
     canonicalSongPaths.value = validPaths;
     songCatalogVersion.value += 1;
     libraryDataVersion.value += 1;
-
-    if (import.meta.env.DEV) {
-      const duration = performance.now() - startTime;
-      console.log(`[Profiling] setCanonicalSongOrder took ${duration.toFixed(2)}ms (input order paths: ${paths.length}, filtered valid: ${validPaths.length})`);
-    }
   };
 
   return {

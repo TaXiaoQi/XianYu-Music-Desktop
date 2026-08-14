@@ -23,8 +23,7 @@ import {
 /** 日志前缀 */
 const LOG = '[PluginSync]';
 
-function logSync(msg: string, ...args: unknown[]) {
-  console.log(`${LOG} ${msg}`, ...args);
+function logSync(_msg: string, ..._args: unknown[]) {
 }
 
 function logSyncError(msg: string, ...args: unknown[]) {

@@ -159,32 +159,11 @@ function normalizeLxLyricResponse(response: any): {
   };
 }
 
-// ==================== 日志 ====================
-
 let _logCallback: ((msg: string) => void) | null = null;
-const _nativeLog = console.log.bind(console);
-
-// [DEBUG]: 全局调试日志数组，供应用内调试面板显示
-interface DebugLogEntry {
-  time: string;
-  msg: string;
-}
-const _debugLogsHolder: any = typeof window !== 'undefined' ? window : {};
-if (!_debugLogsHolder.__lxDebugLogs) {
-  _debugLogsHolder.__lxDebugLogs = [];
-}
-const debugLogs: DebugLogEntry[] = _debugLogsHolder.__lxDebugLogs;
 
 function log(msg: string) {
-  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
-  _nativeLog(`[LxPluginEngine] ${msg}`);
-  // [DEBUG]: 记录到全局数组，供应用内调试面板显示
-  debugLogs.push({ time, msg: `[LxPluginEngine] ${msg}` });
-  if (debugLogs.length > 500) debugLogs.shift(); // 限制最多 500 条
   try { _logCallback?.(msg); } catch { /* ignore */ }
 }
-
-// ==================== 类型 ====================
 
 export interface LxSourceInfo {
   type: 'music';
@@ -214,41 +193,33 @@ export interface LxPluginState {
 
 // ==================== 插件实例缓存 ====================
 
-// [修复防御]: 挂载到 window 防止 Vite HMR 重置缓存
+// 挂载到 window 防止 Vite HMR 重置缓存
 const _g = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {} as any);
 if (!_g.__lxPlugins) {
   _g.__lxPlugins = new Map<string, LxPluginState>();
 }
 const lxPlugins: Map<string, LxPluginState> = _g.__lxPlugins;
 
-// [新方案]: 初始化锁 —— 直接在主窗口 eval 脚本时，globalThis.lx 是共享的
-// 必须串行初始化，确保同一时间只有一个插件在设置 globalThis.lx
+// 初始化锁：多插件共享 globalThis.lx，必须串行初始化
 if (!_g.__lxInitLock) {
   _g.__lxInitLock = Promise.resolve();
 }
 let _initLock: Promise<unknown> = _g.__lxInitLock;
 
-// [修复防御]: 请求锁 —— 多插件共享 globalThis.lx，必须串行调用 requestHandler
-// 避免插件A的 requestHandler 执行中 globalThis.lx 被插件B覆盖
+// 请求锁：避免插件A的 requestHandler 执行中 globalThis.lx 被插件B覆盖
 if (!_g.__lxRequestLock) {
   _g.__lxRequestLock = Promise.resolve();
 }
 let _requestLock: Promise<unknown> = _g.__lxRequestLock;
 
-// [修复防御]: ensureLxPluginInstance 并发初始化锁
-// 首次播放时 fetchLxSongLyricsRaw（歌词获取）与 lxPluginGetMusicUrl（URL解析）会并发调用
-// ensureLxPluginInstance，没有此锁时两个调用都会进入 loadLxPluginFromScript，
-// 第二个调用会销毁第一个正在 loading 的实例（loadLxPluginFromScript 第 822-824 行），
-// 导致第一个调用（歌词获取）的 initPromise 永远无法 resolve，歌词加载失败。
-// 切换音质时插件已初始化完成，所以歌词能正常获取——这就是"切换音质才能显示歌词"的根因。
+// 并发初始化锁：首次播放时歌词获取与URL解析会并发调用 ensureLxPluginInstance，
+// 没有此锁时第二个调用会销毁第一个正在 loading 的实例，导致歌词加载失败
 if (!_g.__lxEnsureLock) {
   _g.__lxEnsureLock = new Map<string, Promise<LxPluginState | null>>();
 }
 const _ensureLock: Map<string, Promise<LxPluginState | null>> = _g.__lxEnsureLock;
 
-// [修复防御]: 脚本内容缓存 —— 避免同一脚本被反复 fetch
-// 首次启动时 loadPlugins / ensureLxPluginInstance 等入口可能请求同一脚本
-// 没有缓存时 N 次初始化 = N 次网络请求，有缓存后仅首次需要网络
+// 脚本内容缓存：避免同一脚本被反复 fetch
 if (!_g.__lxScriptCache) {
   _g.__lxScriptCache = new Map<string, string>();
 }

@@ -5,13 +5,13 @@ use std::time::UNIX_EPOCH;
 
 fn get_table_columns(conn: &Connection, table_name: &str) -> Result<Vec<String>, String> {
     let query = format!("PRAGMA table_info({table_name})");
-    conn.prepare(&query)
+    let result = conn.prepare(&query)
         .map_err(|e| e.to_string())?
         .query_map([], |row| row.get::<_, String>(1))
         .map_err(|e| e.to_string())?
         .filter_map(|result| result.ok())
-        .collect::<Vec<_>>()
-        .pipe(Ok)
+        .collect::<Vec<_>>();
+    Ok(result)
 }
 
 fn migrate_library_folders(conn: &Connection) -> Result<(), String> {
@@ -394,14 +394,6 @@ fn migrate_song_backgrounds(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Failed to create song_backgrounds table: {}", e))?;
     Ok(())
 }
-
-trait Pipe: Sized {
-    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
-        f(self)
-    }
-}
-
-impl<T> Pipe for T {}
 
 #[cfg(test)]
 mod tests {
