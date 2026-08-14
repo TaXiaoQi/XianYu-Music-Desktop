@@ -59,7 +59,7 @@ use player::{
 };
 use plugins::{
     download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
-    read_file_bytes, read_plugin_file,
+    read_file_bytes, read_plugin_file, save_plugin_script,
 };
 use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
 use remote::{
@@ -289,6 +289,7 @@ pub fn run() {
             plugin_http_request,
             plugin_http_request_binary,
             read_plugin_file,
+            save_plugin_script,
             read_file_bytes,
             proxy_image,
             download_audio_to_temp,

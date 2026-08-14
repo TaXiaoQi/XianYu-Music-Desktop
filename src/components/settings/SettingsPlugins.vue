@@ -5,7 +5,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import type { PluginSource, PluginSubscription } from '../../types';
-import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/pluginEngine';
+import { getStoredPlugins, addPluginSource, removePluginSource, togglePlugin, loadPlugins, reorderPlugins, checkPluginUpdate, performPluginUpdate, checkAllPluginUpdates, type PluginUpdateCheckResult, getSubscriptions, addSubscription, updateSubscription, removeSubscription, installFromSubscriptionUrl, installAllSubscriptions, isValidSubscriptionUrl, loadPluginFromScript, persistPluginScriptToDataDir, getPluginUserVariables, getPluginUserVariableValues, setPluginUserVariableValues, reloadPluginInstance, ensurePluginUserVariables, refreshUserVariableBadges, pluginsVersion, type PluginUserVariable, isBakaPlugin } from '../../services/pluginEngine';
 import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
@@ -497,6 +497,12 @@ async function installPluginFromScript(script: string, filePath: string) {
   if (!source) {
     showToast('插件加载失败', 'error');
     return;
+  }
+
+  // 本地文件安装：保存一份副本到数据目录，避免原文件被移动/删除后插件失效
+  const savedPath = await persistPluginScriptToDataDir(source, script);
+  if (savedPath) {
+    source.filePath = savedPath;
   }
 
   // 版本校验：检查是否已存在同名插件且版本更高或相同

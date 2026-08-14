@@ -876,6 +876,10 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: string;
   };
+  save_plugin_script: {
+    payload: { id: string; script: string };
+    response: string;
+  };
   read_file_bytes: {
     payload: { path: string };
     response: string;

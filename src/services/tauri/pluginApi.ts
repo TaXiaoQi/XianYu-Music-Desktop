@@ -210,6 +210,14 @@ export async function readPluginFile(path: string): Promise<string> {
 }
 
 /**
+ * 将插件脚本保存到应用数据目录，返回保存后的完整路径
+ * 后端 command: save_plugin_script
+ */
+export async function savePluginScript(id: string, script: string): Promise<string> {
+  return tauriInvoke('save_plugin_script', { id, script });
+}
+
+/**
  * 读取本地文件二进制内容（base64 → Uint8Array）
  * 后端 command: read_file_bytes
  */
@@ -315,6 +323,7 @@ export const pluginApi = {
   pluginHttpRequest,
   pluginHttpRequestBinary,
   readPluginFile,
+  savePluginScript,
   readFileBytes,
   fetchPluginUrl,
   proxyImage,
