@@ -6,7 +6,7 @@ import '@applemusic-like-lyrics/core/style.css'
 import './utils/requestIdleCallbackPolyfill'
 import App from './App.vue'
 import router from './router'
-import { applyPersistedStartupTheme, shouldApplyStartupThemePaint } from './composables/startupTheme'
+import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartupThemePaint } from './composables/startupTheme'
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger'
 import { reportError } from './services/usageStats'
@@ -20,6 +20,8 @@ const currentWindowLabel = (() => {
 })()
 
 installApplicationLogger(currentWindowLabel)
+
+applyPersistedThemeColor()
 
 if (shouldApplyStartupThemePaint(currentWindowLabel)) {
   applyPersistedStartupTheme()

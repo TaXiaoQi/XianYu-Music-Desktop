@@ -240,6 +240,9 @@ export interface LibraryScanSession {
 
 export interface ThemeSettings {
   mode: 'light' | 'dark' | 'custom' | 'system';
+  accentColor: string;
+  playerDetailCoverBehavior: 'show' | 'hide' | 'remember';
+  lastPlayerDetailCoverVisible: boolean;
   dynamicBgType: 'none' | 'flow' | 'blur';
   windowMaterial: 'none' | 'mica' | 'acrylic' | 'blur';
   keepWindowMaterialOnBlur: boolean;

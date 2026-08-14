@@ -20,6 +20,7 @@ import type {
   UploadSettings,
 } from '../../types';
 import { ALL_QUALITY_KEYS } from '../../types';
+import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../../utils/themeColor';
 // 直接从 constants.ts 叶子模块导入，避免经由 index → state → settings/store 形成循环依赖
 import {
   createDefaultDesktopLyricsSettings,
@@ -95,6 +96,9 @@ export const normalizeForegroundStyle = (
 
 export const defaultThemeSettings: ThemeSettings = {
   mode: 'light',
+  accentColor: DEFAULT_THEME_COLOR,
+  playerDetailCoverBehavior: 'show',
+  lastPlayerDetailCoverVisible: true,
   dynamicBgType: 'none',
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: false,
@@ -411,6 +415,20 @@ export const mergeThemeSettings = (
   base: ThemeSettings,
   patch: ThemeSettingsPatch,
 ): ThemeSettings => {
+  const legacyPatch = patch as ThemeSettingsPatch & {
+    showPlayerDetailCoverByDefault?: unknown;
+  };
+  const {
+    showPlayerDetailCoverByDefault: legacyShowPlayerDetailCover,
+    ...normalizedPatch
+  } = legacyPatch;
+  const playerDetailCoverBehavior = ['show', 'hide', 'remember'].includes(
+    patch.playerDetailCoverBehavior ?? '',
+  )
+    ? patch.playerDetailCoverBehavior!
+    : typeof legacyShowPlayerDetailCover === 'boolean'
+      ? legacyShowPlayerDetailCover ? 'show' : 'hide'
+      : base.playerDetailCoverBehavior;
   const mergedCustomBackground = {
     ...base.customBackground,
     ...(patch.customBackground ?? {}),
@@ -418,7 +436,13 @@ export const mergeThemeSettings = (
 
   return {
     ...base,
-    ...patch,
+    ...normalizedPatch,
+    accentColor: normalizeThemeColor(patch.accentColor, base.accentColor),
+    playerDetailCoverBehavior,
+    lastPlayerDetailCoverVisible:
+      typeof patch.lastPlayerDetailCoverVisible === 'boolean'
+        ? patch.lastPlayerDetailCoverVisible
+        : base.lastPlayerDetailCoverVisible,
     customBackground: {
       ...mergedCustomBackground,
       foregroundStyle: normalizeForegroundStyle(mergedCustomBackground.foregroundStyle),

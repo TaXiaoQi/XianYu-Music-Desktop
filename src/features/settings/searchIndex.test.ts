@@ -38,4 +38,16 @@ describe('settings search index', () => {
       { kind: 'section', label: '动态背景', tab: 'theme' },
     ]);
   });
+
+  it('indexes the accent color setting on the appearance page', () => {
+    expect(searchSettings('\u4e3b\u9898\u8272')).toMatchObject([
+      { kind: 'section', label: '\u4e3b\u9898\u8272', tab: 'theme' },
+    ]);
+  });
+
+  it('indexes the player detail cover preference on the appearance page', () => {
+    expect(searchSettings('\u6b4c\u8bcd\u9875\u5c01\u9762')).toMatchObject([
+      { kind: 'section', label: '\u6b4c\u8bcd\u9875\u5c01\u9762', tab: 'theme' },
+    ]);
+  });
 });

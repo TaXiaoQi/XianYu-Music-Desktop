@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useThemeSettings } from './useThemeSettings';
 import { useWindowMaterial, type WindowMaterialMode } from './windowMaterial';
 import { useUiStore } from '../shared/stores/ui';
+import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../utils/themeColor';
 
 const clampFlowValue = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
 type SelectableWindowMaterialMode = Exclude<WindowMaterialMode, 'none'>;
@@ -50,6 +51,12 @@ export function useSettingsThemeControls() {
       patchTheme({ showLeaderboard: value });
     },
   });
+  const playerDetailCoverBehavior = computed({
+    get: () => theme.value.playerDetailCoverBehavior,
+    set: (value: 'show' | 'hide' | 'remember') => {
+      patchTheme({ playerDetailCoverBehavior: value });
+    },
+  });
 
   const isWindows11 = computed(
     () => capabilities.value.isWindows && (capabilities.value.windowsBuildNumber ?? 0) >= 22000,
@@ -80,6 +87,14 @@ export function useSettingsThemeControls() {
 
   const setColorScheme = (mode: 'light' | 'dark' | 'custom' | 'system') => {
     colorScheme.value = mode;
+  };
+
+  const setAccentColor = (value: string) => {
+    patchTheme({ accentColor: normalizeThemeColor(value, theme.value.accentColor) });
+  };
+
+  const resetAccentColor = () => {
+    patchTheme({ accentColor: DEFAULT_THEME_COLOR });
   };
 
   const setDynamicType = (type: 'none' | 'flow' | 'blur') => {
@@ -196,6 +211,10 @@ export function useSettingsThemeControls() {
     showLeaderboard.value = value;
   };
 
+  const setPlayerDetailCoverBehavior = (value: 'show' | 'hide' | 'remember') => {
+    playerDetailCoverBehavior.value = value;
+  };
+
   onMounted(() => {
     void loadWindowMaterialCapabilities();
   });
@@ -208,6 +227,7 @@ export function useSettingsThemeControls() {
     keepWindowMaterialOnBlur,
     useCustomTrayMenu,
     showLeaderboard,
+    playerDetailCoverBehavior,
     isWindows11,
     hasWindowMaterialSelected,
     isWindowMaterialDisabled,
@@ -218,6 +238,8 @@ export function useSettingsThemeControls() {
     showFlowTuning,
     showBlurTuning,
     setColorScheme,
+    setAccentColor,
+    resetAccentColor,
     setDynamicType,
     toggleWindowMaterial,
     openCustomModal,
@@ -231,5 +253,6 @@ export function useSettingsThemeControls() {
     setKeepWindowMaterialOnBlur,
     setUseCustomTrayMenu,
     setShowLeaderboard,
+    setPlayerDetailCoverBehavior,
   };
 }
