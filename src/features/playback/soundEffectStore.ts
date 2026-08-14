@@ -304,7 +304,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   const ssCenterLevel = ref(100)   // %: 0~200
 
   // ===== AB 对比旁通 =====
-  const bypassAll = ref(false)
+  const bypassAll = ref(true)
 
   // ===== 音频增强增益 =====
   // 0-100 映射到 Rust 侧 0~6dB 增益。默认必须为 0，避免未开启音效时仍被放大、
