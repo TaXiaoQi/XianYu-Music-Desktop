@@ -207,6 +207,38 @@ pub fn read_plugin_file(path: String) -> Result<String, String> {
     fs::read_to_string(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))
 }
 
+/// 读取本地文件的二进制内容（base64 编码返回）
+/// 支持 .json / .zip / .lxmc 格式，用于备份导入的压缩包支持
+#[tauri::command]
+pub fn read_file_bytes(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let validated = path_validator::validate_path(&path, None)
+        .map_err(|e| format!("路径校验失败: {} (路径: {})", e, path))?;
+    let path_obj = validated.as_path();
+    if !path_obj.is_file() {
+        return Err(format!("文件不存在: {}", path));
+    }
+
+    let ext = path_obj
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(ext.as_str(), "json" | "zip" | "lxmc") {
+        return Err(format!("不支持的文件类型: .{} (仅支持 .json/.zip/.lxmc)", ext));
+    }
+
+    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
+    let max_size = 50 * 1024 * 1024;
+    if metadata.len() > max_size {
+        return Err(format!("文件过大: {} MB (上限 {} MB)", metadata.len() / 1024 / 1024, max_size / 1024 / 1024));
+    }
+
+    let bytes = fs::read(path_obj).map_err(|error| format!("读取文件内容失败: {}", error))?;
+    Ok(general_purpose::STANDARD.encode(&bytes))
+}
+
 /// 代理图片请求 —— 自动添加 Referer 头，解决 B站等 CDN 403 问题
 #[tauri::command]
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {

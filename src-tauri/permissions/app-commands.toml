@@ -164,6 +164,7 @@ commands.allow = [
   "plugin_http_request_binary",
   "parse_lyrics_text",
   "read_plugin_file",
+  "read_file_bytes",
   "proxy_image",
   "download_audio_to_temp",
   "recognize_system_audio",
