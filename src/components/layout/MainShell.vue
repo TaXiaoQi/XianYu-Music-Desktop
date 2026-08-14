@@ -3,6 +3,7 @@ import { defineAsyncComponent, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useAppShell } from '../../composables/useAppShell';
+import { useWindowMaterial } from '../../composables/windowMaterial';
 import { useDesktopLyricsWindowBridge } from '../../composables/useDesktopLyricsWindowBridge';
 import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
@@ -73,6 +74,7 @@ const {
 } = useDownloadDialog();
 const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
 const uiStore = useUiStore();
+const { materialTransitionMaskVisible, materialSwitching } = useWindowMaterial();
 
 useDesktopLyricsWindowBridge();
 
@@ -139,6 +141,7 @@ onMounted(() => {
 <template>
   <div
     class="flex flex-col h-screen w-full text-gray-800 dark:text-gray-200 relative overflow-hidden font-sans"
+    :class="{ 'material-switching': materialSwitching }"
   >
     <template v-if="!sleep">
     <template v-if="showOnboarding">
@@ -181,6 +184,13 @@ onMounted(() => {
           </div>
         </div>
       </div>
+    </transition>
+
+    <transition name="material-transition-mask">
+      <div
+        v-if="materialTransitionMaskVisible && !isMiniMode"
+        class="material-transition-mask fixed inset-0 z-[9999] pointer-events-none bg-white dark:bg-[#262626]"
+      ></div>
     </transition>
 
     <transition name="drop-overlay">
@@ -401,6 +411,29 @@ onMounted(() => {
 .startup-composition-mask-enter-from,
 .startup-composition-mask-leave-to {
   opacity: 0;
+}
+
+/* 材质卸载过渡遮罩：瞬间出现，平滑淡出 */
+.material-transition-mask-enter-active {
+  transition: none;
+}
+
+.material-transition-mask-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.material-transition-mask-leave-to {
+  opacity: 0;
+}
+
+/*
+ * 材质切换期间禁用所有子元素的 CSS 过渡（排除遮罩自身）。
+ * 防止 GlobalBackground / Sidebar / 主容器 / Footer 的 transition-colors duration-500
+ * 在切换期间产生半透明背景，导致文字透出重叠。
+ */
+.material-switching,
+.material-switching *:not(.material-transition-mask) {
+  transition: none !important;
 }
 
 .startup-composition-mask {

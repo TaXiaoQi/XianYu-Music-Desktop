@@ -33,10 +33,11 @@ use windows_sys::Win32::{
     Foundation::{HWND, RECT},
     Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST},
     UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowPlacement, IsZoomed, SetWindowLongW, SetWindowPlacement,
-        SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWNORMAL, SW_SHOWMAXIMIZED,
-        WINDOWPLACEMENT, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
+        GetClientRect, GetWindowLongW, GetWindowPlacement, IsZoomed, SendMessageW,
+        SetWindowLongW, SetWindowPlacement, SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_MAXIMIZE,
+        SW_SHOWNORMAL, SW_SHOWMAXIMIZED, WINDOWPLACEMENT, WM_SIZE, WS_CAPTION, WS_MAXIMIZE,
+        WS_THICKFRAME,
     },
 };
 
@@ -336,10 +337,20 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
                     // 进入全屏时调用了 ShowWindow(SW_MAXIMIZE)，tao 据此将 is_maximized 设为 true。
                     // 退出时 SetWindowPlacement(SW_SHOWNORMAL) 虽恢复窗口位置，
                     // 但 tao 的 is_maximized 可能未被正确更新（WM_SIZE 时序问题），
-                    // 导致后续 minimize/restore 使用错误的窗口状态，窗口位置乱飞。
-                    // 显式调用 unmaximize() 强制同步 tao 状态。
-                    // 窗口已由 SetWindowPlacement 恢复到正确位置，unmaximize() 视觉上为空操作。
-                    let _ = window.unmaximize();
+                    // 导致后续 minimize/restore 使用错误的窗口状态。
+                    //
+                    // 不使用 window.unmaximize()（内部调用 ShowWindow(SW_RESTORE)），
+                    // 因为 SW_RESTORE 会改变 Windows 的最小化动画起点缓存，
+                    // 导致后续点击最小化时窗口先往反方向飞一下再回到任务栏。
+                    //
+                    // 改用 SendMessageW 直接发送 WM_SIZE(SIZE_RESTORED)，
+                    // 同步 tao 内部 is_maximized = false，且不触发 ShowWindow 的副作用。
+                    let mut client_rc: RECT = std::mem::zeroed();
+                    if GetClientRect(hwnd, &mut client_rc) != 0 {
+                        // WM_SIZE 的 lParam: LOWORD = 宽度, HIWORD = 高度
+                        let lparam = ((client_rc.bottom as isize) << 16) | (client_rc.right as isize & 0xFFFF);
+                        SendMessageW(hwnd, WM_SIZE, 0, lparam);
+                    }
                     // 清除保存的小窗尺寸（窗口已在正确位置，后续不需要）
                     *SAVED_NORMAL_RECT.lock().map_err(|e| e.to_string())? = None;
                 }

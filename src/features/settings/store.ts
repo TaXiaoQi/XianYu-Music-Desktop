@@ -27,7 +27,7 @@ import {
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics/constants';
+} from '../../composables/lyrics';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,
@@ -130,7 +130,7 @@ export const defaultSidebarSettings: SidebarSettings = {
   showFolders: true,
   showStatistics: true,
   showPlugins: true,
-  showAccount: true,
+  showAccount: false,
   order: [...DEFAULT_SIDEBAR_ORDER],
 };
 
