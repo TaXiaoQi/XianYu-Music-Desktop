@@ -159,7 +159,7 @@ onMounted(async () => {
   isLeaderboardReady.value = true;
   void loadLeaderboard();
 
-  // 每 30 秒自动刷新行为统计，让「总听歌时长」准实时更新，
+  // 每分钟自动刷新行为统计，「总听歌时长」按分钟粒度更新，
   // 同时主动检查服务端是否下发了「重置听歌时长」信号，避免管理员重置后首页仍显示旧数据。
   statsRefreshTimer = setInterval(async () => {
     try {
@@ -175,7 +175,7 @@ onMounted(async () => {
     } catch {
       // 刷新失败静默处理，不影响用户使用
     }
-  }, 30_000);
+  }, 60_000);
 });
 
 onUnmounted(() => {
