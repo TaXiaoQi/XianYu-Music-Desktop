@@ -608,6 +608,25 @@ onScopeDispose(() => {
         </div>
         <div class="desktop-setting-row">
           <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放时阻止电脑睡眠</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-label="播放时阻止电脑睡眠"
+            :aria-checked="settings.preventSleepWhilePlaying"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+            :class="settings.preventSleepWhilePlaying ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="patchSettings({ preventSleepWhilePlaying: !settings.preventSleepWhilePlaying })"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
+              :class="settings.preventSleepWhilePlaying ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放设备</div>
           </div>
           <button
