@@ -195,7 +195,7 @@ function selectWordTimeEntries(
   return best?.entries ?? [];
 }
 
-function convertLxLyricToEnhancedLrc(lxlyric: string): string {
+export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
   const lines = lxlyric.split(/\r?\n/);
   const result: string[] = [];
   let convertedCount = 0;
