@@ -94,7 +94,32 @@ export function resolveLxCachedInfo(
   songmid: string,
 ): LxSearchResultItem | null {
   const persistedInfo = song.rawData?.source === lxSource ? song.rawData : null;
-  return getCachedLxSong(lxSource, songmid) ?? persistedInfo;
+  const cached = getCachedLxSong(lxSource, songmid) ?? persistedInfo;
+  if (cached) return cached;
+
+  // [兜底] 缓存未命中时，从 Song 自定义属性（_hash/_types/_copyrightId 等）合成元信息，
+  // 保证从歌单/收藏等非搜索路径进入的歌曲也能拿到完整 songInfo 参与解析。
+  const anySong = song as any;
+  if (anySong._hash || anySong._types || anySong._copyrightId || anySong._strMediaMid) {
+    return {
+      name: song.name || '',
+      singer: song.artist || '',
+      albumName: song.album || '',
+      albumId: anySong._albumId,
+      albumMid: anySong._albumMid,
+      songmid,
+      source: lxSource as any,
+      interval: '',
+      img: null,
+      types: [],
+      _types: anySong._types,
+      hash: anySong._hash,
+      copyrightId: anySong._copyrightId,
+      strMediaMid: anySong._strMediaMid,
+      songId: anySong._songId,
+    };
+  }
+  return null;
 }
 
 /**
@@ -223,7 +248,11 @@ export async function resolveLxUrlViaPlugin(
       );
       const musicUrl = urlResult?.url;
       if (musicUrl && /^https?:/.test(musicUrl)) {
-        return { url: musicUrl, quality, source: 'plugin' };
+        // 优先采用插件实际报告的音质（type 字段），而不是请求档位。
+        // 插件对某首歌可能静默降级（如请求 flac 实际只给 320k），
+        // 若不采用其报告的档位，底部栏会显示一个高于实际播放的音质。
+        const reported = normalizeQualityKey(urlResult?.type);
+        return { url: musicUrl, quality: reported ?? quality, source: 'plugin' };
       }
     } catch (urlErr) {
       // LxSongLevelError 表示歌曲本身不可用（无版权/已下架等），换音质无法解决
@@ -241,24 +270,34 @@ export async function resolveLxUrlViaPlugin(
   return null;
 }
 
+/** 单次音质解析结果（下载场景用） */
+export interface LxSingleQualityResolveResult {
+  url: string;
+  /** 插件实际报告的音质（对应插件返回的 type 字段），无法识别时回退到请求档位 */
+  quality: QualityKey;
+}
+
 /**
  * 通过 LX 插件解析单个音质的直链（下载场景使用）
  *
  * 与 resolveLxUrlViaPlugin 不同，此函数只解析指定音质，不遍历候选列表。
  * 下载场景需要逐档尝试以便在下载失败时回退到下一档。
  *
+ * 返回插件实际报告的音质：插件可能把请求档位静默降级（如请求 flac 实际给 320k），
+ * 若不采用其报告的档位，底部栏/命中档位会显示一个高于实际播放的音质。
+ *
  * @param plugin LX 插件
  * @param lxSource LX 音源标识
  * @param songInfo 插件所需的歌曲信息
  * @param quality 目标音质
- * @returns URL 字符串，失败返回 null
+ * @returns 解析结果，失败返回 null
  */
 export async function resolveLxUrlForSingleQuality(
   plugin: PluginSource,
   lxSource: string,
   songInfo: Record<string, unknown>,
   quality: QualityKey,
-): Promise<string | null> {
+): Promise<LxSingleQualityResolveResult | null> {
   const urlResult = await lxPluginGetMusicUrl(
     plugin,
     lxSource,
@@ -267,7 +306,8 @@ export async function resolveLxUrlForSingleQuality(
   );
   const url = urlResult?.url;
   if (!url || !/^https?:/.test(url)) return null;
-  return url;
+  const reported = normalizeQualityKey(urlResult?.type);
+  return { url, quality: reported ?? quality };
 }
 
 /**

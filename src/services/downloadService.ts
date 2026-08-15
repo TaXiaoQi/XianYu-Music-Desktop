@@ -230,24 +230,28 @@ async function prepareResolveContext(
  * 额外校验：部分 lx 插件对没有对应版权的歌曲会「静默降级」，例如请求 flac/flac24bit
  * 时直接返回一个 .mp3 直链。若不校验，就会把降级后的 mp3 用 .flac 扩展名保存，
  * 表现为「下载无损却比高品还小」。这里通过 URL 扩展名识别降级并跳过该档位。
+ *
+ * 音质上报采用插件实际报告的档位（type 字段），而非请求档位：
+ * 插件可能把 320k 请求降级为 128k，若不采用其报告档位，底部栏会显示一个高于实际播放的音质。
  */
 async function resolveLxAudioForQuality(
   ctx: ResolveDownloadContext,
   q: LxQuality,
 ): Promise<ResolvedOnlineQualityUrl | null> {
-  const url = await resolveLxUrlForSingleQuality(
+  const resolved = await resolveLxUrlForSingleQuality(
     ctx.matchedPlugin,
     ctx.lxSource,
     ctx.baseSongInfo,
     q,
   );
-  if (!url) return null;
+  if (!resolved) return null;
+  const { url, quality: reportedQuality } = resolved;
 
   if (isDegradedLossless(q, url)) {
     console.warn(`[Download] ${q} 请求被音源降级为 ${extFromUrl(url)}，跳过该档位`);
     return null;
   }
-  return { quality: resolveActualQuality(q, url), url };
+  return { quality: resolveActualQuality(reportedQuality, url), url };
 }
 
 async function resolveUrlForQuality(
@@ -427,6 +431,28 @@ export async function resolveOnlineQualityUrl(
     if (resolved?.url) return resolved;
   }
 
+  // [LX 播放兜底] 插件解析全部失败时回退到 Rust 后端批量音质解析。
+  // 播放链路此前只走插件，插件沙箱/直链解析失败会导致整首歌无法播放；
+  // Rust 侧走独立的音源实现，往往能解析出插件拿不到的直链。
+  if (!isPlugin && ctx) {
+    const path = song.cue_source_path || song.path;
+    const pathInfo = parseLxPath(path || '');
+    const cachedInfo = pathInfo ? resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid) : null;
+    if (cachedInfo) {
+      console.info('[Audio] LX 插件解析全部失败，尝试 Rust 兜底直链');
+      const rustResult = await resolveLxUrlViaRust(cachedInfo, candidates);
+      if (rustResult?.url) {
+        return {
+          quality: rustResult.quality,
+          url: rustResult.url,
+          headers: null,
+          ekey: undefined,
+          cek: undefined,
+        };
+      }
+    }
+  }
+
   return null;
 }
 
@@ -531,6 +557,20 @@ export async function probeDownloadableQualities(
   await Promise.all(Array.from({ length: concurrency }, worker));
 
   if (options?.signal?.aborted) return empty;
+
+  // [LX 兜底] 插件单档解析全部失败时，回退到 Rust 后端批量音质解析，
+  // 避免插件沙箱异常导致探测显示 0 档可用（实际 Rust 侧可解析出直链）。
+  if (!isPlugin && Object.keys(resolvedUrls).length === 0) {
+    const path = song.cue_source_path || song.path;
+    const pathInfo = parseLxPath(path || '');
+    const cachedInfo = pathInfo ? resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid) : null;
+    if (cachedInfo) {
+      const rustResult = await resolveLxUrlViaRust(cachedInfo, targets);
+      if (rustResult?.url) {
+        resolvedUrls[rustResult.quality] = rustResult.url;
+      }
+    }
+  }
 
   const available = ALL_QUALITY_KEYS.filter(k => Boolean(resolvedUrls[k]));
   console.info(

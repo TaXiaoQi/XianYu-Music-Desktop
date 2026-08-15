@@ -32,6 +32,10 @@ export const playbackApi = {
   getPlaybackDuration: (): Promise<number> => tauriInvoke('get_playback_duration'),
   getPlaybackReady: (): Promise<boolean> => tauriInvoke('get_playback_ready'),
   getPlaybackStartFailed: (): Promise<boolean> => tauriInvoke('get_playback_start_failed'),
+  getPlaybackStartFailedReason: (): Promise<string | null> =>
+    tauriInvoke('get_playback_start_failed_reason'),
+  getPlaybackStartFailedInfo: (): Promise<{ failed: boolean; reason: string | null }> =>
+    tauriInvoke('get_playback_start_failed_info'),
   getAudioVisualizerSamples: (): Promise<number[]> =>
     tauriInvoke('get_audio_visualizer_samples'),
   recordPlay: (payload: {

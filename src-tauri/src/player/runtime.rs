@@ -53,6 +53,9 @@ fn reset_playback_progress(progress: &Arc<SharedProgress>) {
     progress.sample_rate.store(0, Ordering::Relaxed);
     progress.channels.store(0, Ordering::Relaxed);
     progress.start_failed.store(false, Ordering::Relaxed);
+    if let Ok(mut reason) = progress.start_failed_reason.lock() {
+        *reason = None;
+    }
     progress.buffered.starved.store(false, Ordering::Relaxed);
     progress.buffered.produced.store(false, Ordering::Relaxed);
     progress.visualizer.reset();
@@ -788,6 +791,7 @@ fn append_decoded_source<R>(
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    source_ctx: Option<String>,
 ) where
     R: Read + Seek + Send + Sync + 'static,
 {
@@ -796,7 +800,13 @@ fn append_decoded_source<R>(
 
         let reader = BufReader::with_capacity(512 * 1024, reader);
         let decoded = Decoder::new(reader);
-        if decoded.is_err() {
+        if let Err(e) = &decoded {
+            if let Ok(mut reason) = progress.start_failed_reason.lock() {
+                *reason = Some(match source_ctx {
+                    Some(ctx) => format!("解码器初始化失败: {e}（{ctx}）"),
+                    None => format!("解码器初始化失败: {e}"),
+                });
+            }
             progress.start_failed.store(true, Ordering::Relaxed);
         }
         if let Ok(source) = decoded {
@@ -915,6 +925,7 @@ fn handle_play(
                     equalizer_handle,
                     sound_effect_handle,
                     user_volume,
+                    None,
                 );
             }
         }
@@ -931,8 +942,12 @@ fn handle_play(
                     equalizer_handle,
                     sound_effect_handle,
                     user_volume,
+                    None,
                 ),
-                Err(_) => {
+                Err(err) => {
+                    if let Ok(mut reason) = progress.start_failed_reason.lock() {
+                        *reason = Some(format!("远程流读取器构建失败: {err}"));
+                    }
                     progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
@@ -941,19 +956,38 @@ fn handle_play(
             // [在线播放重构] 从流式临时文件创建 reader，边下边播
             // 若 ekey 存在（QMC 加密音源），自动包装 QmcDecryptReader 进行流式解密
             match state.new_reader_with_decryption() {
-                Ok(reader) => append_decoded_source(
-                    reader,
-                    output,
-                    current_sink,
-                    progress,
-                    start_offset,
-                    volume_balance_gain,
-                    current_normalizer_handle,
-                    equalizer_handle,
-                    sound_effect_handle,
-                    user_volume,
-                ),
-                Err(_) => {
+                Ok(reader) => {
+                    let size = state.downloaded_bytes();
+                    let status = if state.is_download_finished() {
+                        if state.download_complete.load(Ordering::Relaxed) {
+                            "下载完成".to_string()
+                        } else {
+                            format!(
+                                "下载失败: {}",
+                                state.download_error().unwrap_or_else(|| "未知原因".to_string())
+                            )
+                        }
+                    } else {
+                        "下载中".to_string()
+                    };
+                    append_decoded_source(
+                        reader,
+                        output,
+                        current_sink,
+                        progress,
+                        start_offset,
+                        volume_balance_gain,
+                        current_normalizer_handle,
+                        equalizer_handle,
+                        sound_effect_handle,
+                        user_volume,
+                        Some(format!("已下载 {size} bytes，{status}")),
+                    )
+                }
+                Err(err) => {
+                    if let Ok(mut reason) = progress.start_failed_reason.lock() {
+                        *reason = Some(format!("流式临时文件读取器构建失败: {err}"));
+                    }
                     progress.start_failed.store(true, Ordering::Relaxed);
                 }
             }
@@ -1028,6 +1062,7 @@ fn handle_seek(
                             equalizer_handle,
                             sound_effect_handle,
                             user_volume,
+                            None,
                         ),
                         Err(_) => {}
                     }
@@ -1044,6 +1079,7 @@ fn handle_seek(
                             equalizer_handle,
                             sound_effect_handle,
                             user_volume,
+                            None,
                         ),
                         Err(_) => {}
                     }
@@ -1060,6 +1096,7 @@ fn handle_seek(
                             equalizer_handle,
                             sound_effect_handle,
                             user_volume,
+                            None,
                         ),
                         Err(_) => {}
                     }
@@ -1203,6 +1240,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         channels: Arc::new(AtomicU32::new(2)),
         visualizer: Arc::new(SharedVisualizer::new()),
         start_failed: Arc::new(AtomicBool::new(false)),
+        start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
         buffered: Arc::new(BufferedMonitor::new()),
         total_duration_secs: Arc::new(AtomicU64::new(0u64)),
     });
@@ -2226,6 +2264,7 @@ mod tests {
             channels: Arc::new(AtomicU32::new(channels)),
             visualizer: Arc::new(SharedVisualizer::new()),
             start_failed: Arc::new(AtomicBool::new(false)),
+            start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
             buffered: Arc::new(BufferedMonitor::new()),
             total_duration_secs: Arc::new(AtomicU64::new(0u64)),
         })

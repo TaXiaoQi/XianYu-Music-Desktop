@@ -33,6 +33,7 @@ import {
   callSandboxMethod,
   isSandboxReady,
   destroySandbox,
+  linkSandboxAlias,
 } from './pluginSandboxManager';
 
 // ==================== 常量 ====================
@@ -866,6 +867,7 @@ export async function lxPluginRequest(
       // 响应格式验证（与直接调用路径一致）
       switch (action) {
         case 'musicUrl':
+          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${typeof response === 'string' ? response.substring(0, 100) : (response === null ? 'null' : JSON.stringify(response)?.substring(0, 100))}`);
           if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
             throw new Error('Invalid musicUrl response');
           }
@@ -1097,6 +1099,13 @@ export async function ensureLxPluginInstance(source: PluginSource): Promise<LxPl
           const newState = lxPlugins.get(result.id);
           if (newState) {
             lxPlugins.set(source.id, newState);
+            // [修复] 重新加载得到的 hash 与外部存储的 source.id 可能不一致，
+            // 若不把 source.id 也标记为沙箱并注册别名，lxPluginRequest 会走
+            // 直接调用路径（沙箱实例 requestHandler 为 null），导致直链解析静默失败。
+            if (_sandboxedPlugins.has(result.id)) {
+              _sandboxedPlugins.add(source.id);
+              linkSandboxAlias(source.id, result.id);
+            }
           }
         }
       }
@@ -1177,6 +1186,10 @@ export async function initLxPlugin(source: PluginSource): Promise<boolean> {
         const newState = lxPlugins.get(result.id);
         if (newState) {
           lxPlugins.set(source.id, newState);
+          if (_sandboxedPlugins.has(result.id)) {
+            _sandboxedPlugins.add(source.id);
+            linkSandboxAlias(source.id, result.id);
+          }
         }
       }
       log(`[initLxPlugin] 初始化成功: ${source.name}`);

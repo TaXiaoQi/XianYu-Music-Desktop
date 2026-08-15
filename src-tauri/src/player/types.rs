@@ -169,6 +169,8 @@ pub struct SharedProgress {
     /// 本次播放启动是否失败（远程取流 403/不支持 Range/解码失败等）。
     /// 供前端「在线走 Rust 起播探测」实时感知硬失败，无需死等超时即可回退 H5。
     pub start_failed: Arc<AtomicBool>,
+    /// 起播失败的具体原因（供前端诊断，定位解码失败/取流失败根因）。
+    pub start_failed_reason: Arc<std::sync::Mutex<Option<String>>>,
     /// 解码/取流缓冲监控。网络或磁盘 I/O 跟不上播放进度时，播放线程看门狗
     /// 据此自动暂停 → 等待缓冲 → 自动恢复，并向前端发射 `playback:buffer` 事件。
     pub buffered: Arc<BufferedMonitor>,
