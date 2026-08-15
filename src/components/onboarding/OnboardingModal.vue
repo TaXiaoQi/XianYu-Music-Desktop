@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useToast } from '../../composables/toast';
@@ -20,6 +20,7 @@ import {
   login,
   register,
   sendEmailCode,
+  getUserAgreement,
   type AuthMode,
   type HumanCaptchaPayload,
   type VerifyCodeType,
@@ -376,6 +377,10 @@ const handleSendCode = async () => {
 };
 
 const handleAuthSubmit = async () => {
+  if (!agreementAccepted.value) {
+    showAuthMessage('请先阅读并同意用户协议');
+    return;
+  }
   if (authMode.value === 'register') {
     const ciyuanxi = authForm.value.account.trim();
     if (!ciyuanxi) {
@@ -438,6 +443,93 @@ const handleAuthSubmit = async () => {
   }
 };
 
+// --- 用户协议 ---
+const agreementAccepted = ref(false);
+const agreementTitle = ref('弦予音乐用户协议');
+const agreementContent = ref('');
+const termsModalOpen = ref(false);
+const termsScrolledToEnd = ref(false);
+const termsBodyRef = ref<HTMLElement | null>(null);
+
+const defaultAgreementContent = `一、协议范围
+本协议适用于弦予音乐客户端账号系统及相关云端同步、资料管理、统计上报、风控安全服务。用户注册、登录或继续使用账号功能，即表示已阅读并同意本协议。
+
+二、账号注册与使用
+用户应使用真实、有效的邮箱完成注册，并妥善保管账号、密码和邮箱验证码。因用户主动泄露、共享账号或使用非官方客户端造成的损失，由用户自行承担。
+
+三、本地数据读取说明
+为提供账号登录、设备安全识别、播放统计、同步和故障排查功能，账号系统可能读取或生成以下本地数据：本机设备标识、客户端版本、操作系统版本、设备型号、登录状态凭证、用户主动上传的头像、本地收藏、歌单、播放历史、听歌时长等音乐使用数据，以及软件运行错误日志。上述数据仅用于账号服务、安全风控、功能同步、异常定位和产品维护。
+
+四、数据上报与安全
+客户端启动、登录、注册、搜索、播放统计、错误反馈等行为可能向服务器上报必要信息，包括设备ID、IP地址、账号ID、客户端版本、操作系统版本、设备型号、行为时间和必要的请求参数。我们将尽合理努力保护数据安全，不会主动出售用户个人信息。
+
+五、禁止行为
+用户不得利用账号系统进行恶意攻击、批量注册、刷量、破解、逆向、绕过限制、上传违法违规内容、干扰服务器稳定性或侵犯他人权益。发现异常行为时，平台有权限制、封禁账号或设备。
+
+六、封禁与申诉
+若账号或设备因违反协议、安全风控或恶意行为被封禁，登录时将提示封禁状态及原因。用户如认为处理有误，可联系管理员并提供账号、设备ID及相关说明进行核查。
+
+七、协议更新
+平台可根据功能调整、安全要求或法律合规需要更新本协议。更新后继续使用账号功能，视为接受更新后的协议内容。`;
+
+async function loadUserAgreement() {
+  try {
+    const agreement = await getUserAgreement();
+    if (agreement.title.trim()) {
+      agreementTitle.value = agreement.title.trim();
+    }
+    if (agreement.content.trim()) {
+      agreementContent.value = agreement.content.trim();
+    } else {
+      agreementContent.value = defaultAgreementContent;
+    }
+  } catch {
+    agreementTitle.value = '弦予音乐用户协议';
+    agreementContent.value = defaultAgreementContent;
+  }
+}
+
+async function openTermsModal() {
+  termsScrolledToEnd.value = false;
+  termsModalOpen.value = true;
+  await nextTick();
+  refreshTermsScrollState();
+}
+
+function closeTermsModal() {
+  termsModalOpen.value = false;
+}
+
+function refreshTermsScrollState() {
+  const el = termsBodyRef.value;
+  if (!el) return;
+  const hasScrollableContent = el.scrollHeight > el.clientHeight + 4;
+  if (!hasScrollableContent) {
+    termsScrolledToEnd.value = true;
+    return;
+  }
+  termsScrolledToEnd.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
+}
+
+function handleAgreementCheckboxChange(event: Event) {
+  const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+  if (!checked) {
+    agreementAccepted.value = false;
+    return;
+  }
+  agreementAccepted.value = false;
+  void openTermsModal();
+}
+
+function acceptTerms() {
+  if (!termsScrolledToEnd.value) {
+    showToast('请先阅读并滚动到用户协议底部', 'error');
+    return;
+  }
+  agreementAccepted.value = true;
+  termsModalOpen.value = false;
+}
+
 const clearSplashTimers = () => {
   if (splashHintTimer) {
     clearTimeout(splashHintTimer);
@@ -490,6 +582,7 @@ watch(
 
 onMounted(() => {
   if (props.visible) startSplashTimers();
+  void loadUserAgreement();
 });
 
 onUnmounted(() => {
@@ -1312,6 +1405,27 @@ onUnmounted(() => {
                             />
                           </label>
 
+                          <!-- 用户协议勾选 -->
+                          <div class="flex items-start gap-3 text-black/60 dark:text-white/60 select-none" style="font-size: clamp(12px, 1vw, 14px);">
+                            <input
+                              v-model="agreementAccepted"
+                              type="checkbox"
+                              class="mt-1 h-4 w-4 accent-[#EC4141] cursor-pointer"
+                              @change="handleAgreementCheckboxChange"
+                            />
+                            <span>
+                              我已阅读并同意
+                              <button
+                                type="button"
+                                class="text-[#EC4141] hover:text-[#d13b3b] underline underline-offset-4 cursor-pointer"
+                                @click="openTermsModal"
+                              >
+                                用户协议
+                              </button>
+                              ，并知悉账号系统会读取必要的本地数据用于登录、安全风控、同步和统计。
+                            </span>
+                          </div>
+
                           <!-- 消息条 -->
                           <div
                             v-if="authMessage"
@@ -1329,7 +1443,7 @@ onUnmounted(() => {
                               type="submit"
                               class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                               style="font-size: clamp(14px, 1.1vw, 16px);"
-                              :disabled="authLoading"
+                              :disabled="authLoading || !agreementAccepted"
                             >
                               {{ authLoading ? '提交中…' : authMode === 'login' ? '登录' : '注册' }}
                             </button>
@@ -1527,6 +1641,46 @@ onUnmounted(() => {
     </transition>
   </Teleport>
 
+  <!-- 用户协议弹窗 -->
+  <Teleport to="body">
+    <Transition name="avatar-modal">
+      <div
+        v-if="termsModalOpen"
+        class="fixed inset-0 z-[12000] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+        @click.self="closeTermsModal"
+      >
+        <div class="terms-card">
+          <div class="terms-header">
+            <div>
+              <p>弦予音乐账号系统</p>
+              <h3>{{ agreementTitle }}</h3>
+            </div>
+            <button type="button" class="terms-close" aria-label="关闭" @click="closeTermsModal">×</button>
+          </div>
+          <div
+            ref="termsBodyRef"
+            class="terms-body custom-scrollbar"
+            @scroll="refreshTermsScrollState"
+          >
+            <div class="terms-content">{{ agreementContent }}</div>
+          </div>
+          <div v-if="!termsScrolledToEnd" class="terms-scroll-tip">请先滚动阅读至协议底部后再同意</div>
+          <div class="terms-actions">
+            <button type="button" class="terms-btn terms-btn--ghost" @click="closeTermsModal">关闭</button>
+            <button
+              type="button"
+              class="terms-btn terms-btn--danger"
+              :disabled="!termsScrolledToEnd"
+              @click="acceptTerms"
+            >
+              {{ termsScrolledToEnd ? '已阅读并同意' : '请先读完协议' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
   <HumanCaptchaModal
     :open="captchaModalOpen"
     :title="captchaModalTitle"
@@ -1648,5 +1802,173 @@ onUnmounted(() => {
 .confirm-fade-leave-to > div {
   opacity: 0;
   transform: scale(0.92);
+}
+
+/* 用户协议弹窗 */
+.terms-card {
+  width: min(92vw, 680px);
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22), 0 6px 20px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.terms-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.terms-header p {
+  margin: 0 0 4px;
+  color: rgba(236, 65, 65, 0.9);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.terms-header h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.terms-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  color: rgba(31, 41, 55, 0.75);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.terms-close:hover {
+  background: rgba(236, 65, 65, 0.1);
+  color: #EC4141;
+}
+
+.terms-body {
+  flex: 1;
+  padding: 4px 22px 18px;
+  overflow-y: auto;
+  min-height: 220px;
+}
+
+.terms-content {
+  white-space: pre-wrap;
+  color: rgba(75, 85, 99, 0.92);
+  font-size: 0.9rem;
+  line-height: 1.8;
+  padding: 14px 0 4px;
+}
+
+.terms-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.terms-scroll-tip {
+  padding: 10px 22px 0;
+  color: #EC4141;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.terms-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  border: 1px solid transparent;
+  max-width: 160px;
+}
+
+.terms-btn--ghost {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.terms-btn--ghost:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: rgb(31 41 55);
+}
+
+.terms-btn--danger {
+  background: #EC4141;
+  color: #ffffff;
+}
+
+.terms-btn--danger:hover {
+  background: #d13b3b;
+}
+
+.terms-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.terms-btn--danger:disabled,
+.terms-btn--danger:disabled:hover {
+  background: rgba(236, 65, 65, 0.45);
+}
+
+/* 弹窗过渡动画 */
+.avatar-modal-enter-active .terms-card,
+.avatar-modal-leave-active .terms-card {
+  transition: opacity 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.avatar-modal-enter-from .terms-card,
+.avatar-modal-leave-to .terms-card {
+  opacity: 0;
+  transform: scale(0.92) translateY(8px);
+}
+
+/* 深色模式 */
+:global(.dark) .terms-card {
+  background: #262626;
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .terms-header,
+:global(.dark) .terms-actions {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global(.dark) .terms-close {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+:global(.dark) .terms-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:global(.dark) .terms-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+:global(.dark) .terms-content {
+  color: rgba(255, 255, 255, 0.68);
 }
 </style>
