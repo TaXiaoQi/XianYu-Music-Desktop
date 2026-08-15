@@ -82,3 +82,12 @@ AGENTS.md
 # --- NarraFork 计划/临时文件 ---
 .narrafork/
 
+/_console.ps1
+/_console2.ps1
+/_console3.ps1
+/_copy_logs.ps1
+/_debug.ps1
+/_find_windows.ps1
+/_reopen_devtools.ps1
+/_test_sendkeys.ps1
+/_uia.ps1

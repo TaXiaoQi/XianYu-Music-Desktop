@@ -1888,6 +1888,37 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
     }
 }
 
+/// 网易云 eapi 响应解密：响应体与请求体一样是 AES-ECB 加密的 hex 密文，
+/// 需 hex 解码 → AES-ECB 解密 → PKCS7 unpad 后才能得到 JSON 明文。
+fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
+    use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
+
+    let hex_str = body.trim();
+    let cipher_bytes = hex::decode(hex_str).ok()?;
+    if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
+        return None;
+    }
+
+    let key = GenericArray::from_slice(WY_EAPI_KEY);
+    let cipher = aes::Aes128::new(key);
+
+    let mut decrypted = Vec::with_capacity(cipher_bytes.len());
+    for chunk in cipher_bytes.chunks(16) {
+        let mut block = GenericArray::from_slice(chunk).clone();
+        cipher.decrypt_block(&mut block);
+        decrypted.extend_from_slice(&block);
+    }
+
+    // PKCS7 unpad
+    let pad_len = *decrypted.last()? as usize;
+    if pad_len == 0 || pad_len > 16 {
+        return None;
+    }
+    decrypted.truncate(decrypted.len() - pad_len);
+
+    serde_json::from_slice(&decrypted).ok()
+}
+
 /// WY eapi POST request helper: encrypts params and sends POST to the given eapi endpoint
 async fn wy_eapi_post(
     eapi_path: &str,
@@ -1909,6 +1940,11 @@ async fn wy_eapi_post(
     let resp = http_fetch_text(&api_url, "POST", &headers, Some(&body)).await?;
     if resp.status != 200 {
         return Ok(None);
+    }
+    // eapi 响应体为 AES-ECB hex 密文，优先解密后解析；若解密失败（响应已是明文/非 hex），
+    // 回退到直接 JSON 解析，保证兼容性。
+    if let Some(v) = wy_eapi_decrypt_response(&resp.body) {
+        return Ok(Some(v));
     }
     match serde_json::from_str::<serde_json::Value>(&resp.body) {
         Ok(v) => Ok(Some(v)),
@@ -2127,6 +2163,15 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
             }
         }
     }
+
+    // [诊断] 确认 wy 直接 API 是否真的拿到了逐字歌词（normalizeLxLyricResponse 之后 lxlyric 会经前端转换）
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] wy song_id={} lxlyric_len={} word_markers={}",
+        song_id,
+        final_lxlyric.len(),
+        final_lxlyric.matches('<').count()
+    );
 
     Ok(Some(LyricResult {
         lyric: fixed_lrc,
