@@ -60,6 +60,8 @@ export const playbackApi = {
     tauriInvoke('set_audio_output_mode', { outputMode }),
   setOutputDevice: (deviceId: string | null) =>
     tauriInvoke('set_output_device', { deviceId }),
+  setPreventSleep: (active: boolean): Promise<void> =>
+    tauriInvoke('set_prevent_sleep', { active }),
   getOutputDevices: (): Promise<AudioDevice[]> => tauriInvoke('get_output_devices'),
   getCurrentOutputDevice: (): Promise<AudioOutputStatus> =>
     tauriInvoke('get_current_output_device'),

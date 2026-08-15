@@ -12,6 +12,17 @@ describe('settings store', () => {
     setActivePinia(createPinia());
   });
 
+  it('enables sleep prevention by default and preserves an explicit disabled value', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.settings.preventSleepWhilePlaying).toBe(true);
+
+    const merged = mergeAppSettings(settingsStore.settings, {
+      preventSleepWhilePlaying: false,
+    });
+    expect(merged.preventSleepWhilePlaying).toBe(false);
+  });
+
   it('patches theme settings without losing nested custom background fields', () => {
     const settingsStore = useSettingsStore();
 

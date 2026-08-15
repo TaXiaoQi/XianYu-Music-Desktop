@@ -55,6 +55,7 @@ commands.allow = [
   "get_current_output_device",
   "set_output_device",
   "set_audio_output_mode",
+  "set_prevent_sleep",
   "set_stream_cache_max_size",
   "get_stream_cache_info",
   "clear_stream_cache",
