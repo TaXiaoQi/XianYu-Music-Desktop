@@ -20,6 +20,7 @@ import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
 import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
+import {getDisplayCoverUrl} from '../../utils/coverProxy';
 import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
 
 interface PlaySongOptions {
@@ -889,7 +890,13 @@ const authStore = useAuthStore();
     const cachedFullCover = getFullCoverUrl(coverLookupPath);
     const immediateCover = cachedCover || persistedCover;
     if (immediateCover) {
-      currentCover.value = immediateCover;
+      // B站等需代理的封面：先显示原始 URL，异步代理完成后刷新底部栏/歌词封面
+      const displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+        currentCover.value = dataUrl;
+        currentCoverFull.value = dataUrl;
+      });
+      currentCover.value = displayCover;
       currentCoverPath.value = coverLookupPath;
     }
     currentCoverFull.value = cachedFullCover || immediateCover || '';
@@ -1027,6 +1034,18 @@ const authStore = useAuthStore();
         }
         if (!song.cover_thumb_path && resolvedOnlineAudio.coverThumbPath) {
           song.cover_thumb_path = resolvedOnlineAudio.coverThumbPath;
+          // [封面] 播放时异步取回的封面同步到底栏/歌词页（含 B站等需代理的 URL）。
+          // 此前仅写入 song.cover_thumb_path，未更新 currentCover，导致晚获取的封面不显示。
+          if (requestId === playRequestId && currentSong.value?.path === song.path) {
+            const displayCover = getDisplayCoverUrl(resolvedOnlineAudio.coverThumbPath, (dataUrl) => {
+              if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+              currentCover.value = dataUrl;
+              currentCoverFull.value = dataUrl;
+            });
+            currentCover.value = displayCover;
+            currentCoverPath.value = song.path;
+            currentCoverFull.value = displayCover;
+          }
         }
       }
 
