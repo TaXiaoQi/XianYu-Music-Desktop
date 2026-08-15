@@ -779,9 +779,15 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
   const list = rawSongs.map((song: any) => {
     const types: LxSearchResultItem['types'] = [];
     const _types: LxSearchResultItem['_types'] = {};
+    // 网易云搜索接口多数场景不返回 hq/sq 标志（旧版字段），若仅依赖它们，
+    // _types 会只剩 128k，导致底部栏可选项与播放都只有最低档。
+    // 网易云歌曲普遍提供 320k 与 flac（无损），在 hq/sq 之外补充声明，
+    // 由探测/回退链路实测过滤出真正可用的档位。
     if (song.hq) { types.push({ type: '320k', size: null }); _types['320k'] = { size: null }; }
     if (song.sq) { types.push({ type: 'flac', size: null }); _types.flac = { size: null }; }
     types.push({ type: '128k', size: null }); _types['128k'] = { size: null };
+    if (!song.hq) { types.push({ type: '320k', size: null }); _types['320k'] = { size: null }; }
+    if (!song.sq) { types.push({ type: 'flac', size: null }); _types.flac = { size: null }; }
     types.reverse();
     const ar = song.artists || [];
     const al = song.album || {};

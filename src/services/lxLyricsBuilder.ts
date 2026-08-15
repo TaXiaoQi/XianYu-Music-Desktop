@@ -129,7 +129,10 @@ function buildWordTimeCandidate(
     let wordEndMs: number;
 
     if (mode === 'kuwo') {
-      wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2)));
+      // 酷我 <a,b> 解码结果是"相对行首"的时间（首字 a+b=0 → 相对0）。
+      // 必须加上该行行首时间，否则后续行（行首非0）的逐字时间戳会远小于
+      // 实际播放时间，播放器判定所有字已"过去"，整行高亮成逐行。
+      wordStartMs = Math.abs(Math.floor((a + b) / (kuwoOffset * 2))) + (lineStartMs ?? 0);
       wordEndMs = Math.abs(Math.floor((a - b) / (kuwoOffset2 * 2))) + wordStartMs;
     } else {
       wordStartMs = (lineStartMs as number) + a;
@@ -195,7 +198,7 @@ function selectWordTimeEntries(
   return best?.entries ?? [];
 }
 
-function convertLxLyricToEnhancedLrc(lxlyric: string): string {
+export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
   const lines = lxlyric.split(/\r?\n/);
   const result: string[] = [];
   let convertedCount = 0;
