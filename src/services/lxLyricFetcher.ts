@@ -173,8 +173,10 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
     if (matchedPlugin) {
       await ensureLxPluginInstance(matchedPlugin);
       const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
+      console.log(`[LX Lyrics][diag] source=${source} songmid=${songmid} 插件=${matchedPlugin.name} 匹配源=${matchedPlugin.sources?.join(',')} 返回=${pluginLyrics ? '有' : 'null'}`);
       if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc || pluginLyrics.eslrc)) {
         const result = buildLxLyricsRaw(pluginLyrics);
+        console.log(`[LX Lyrics][diag] 插件 build 结果 len=${result?.length} hasWordLevel=${hasWordLevelContent(result || '')}`);
         if (result && result.trim()) {
           // 插件结果已含逐字内容（独立逐字字段，或内嵌在 lyric 字段的 LX 原生
           // <offset,duration> 标记经 buildLxLyricsRaw 转成 Enhanced LRC），视为已处理。
@@ -184,8 +186,10 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
             return result;
           }
           const directLyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+          console.log(`[LX Lyrics][diag] 插件无逐字，尝试 direct API 返回=${directLyrics ? '有' : 'null'}`);
           if (directLyrics) {
             const directResult = buildLxLyricsRaw(directLyrics);
+            console.log(`[LX Lyrics][diag] direct build 结果 len=${directResult?.length} hasWordLevel=${hasWordLevelContent(directResult || '')}`);
             if (directResult && directResult.trim() && hasWordLevelContent(directResult)) {
               return directResult;
             }
@@ -193,6 +197,8 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
           return result;
         }
       }
+    } else {
+      console.log(`[LX Lyrics][diag] source=${source} 无匹配插件，直接走 direct API`);
     }
   } catch (e) {
     console.warn('[fetchLxSongLyricsRaw] LX 插件歌词获取失败，尝试直接 API 后备:', e);
@@ -200,8 +206,10 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
 
   if (LX_SOURCES.has(source)) {
     const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+    console.log(`[LX Lyrics][diag] 兜底 direct API 返回=${lyrics ? '有' : 'null'}`);
     if (lyrics) {
       const result = buildLxLyricsRaw(lyrics);
+      console.log(`[LX Lyrics][diag] 兜底 build 结果 len=${result?.length} hasWordLevel=${hasWordLevelContent(result || '')}`);
       return result;
     }
   }
@@ -213,9 +221,11 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
 /** 判断歌词文本是否包含逐字时间信息（Enhanced LRC 内联时间戳 / YRC 行格式）。 */
 function hasWordLevelContent(text: string): boolean {
   if (!text) return false;
-  // Enhanced LRC：<mm:ss.ms> 内联时间戳
+  // Enhanced LRC：<mm:ss.ms> 内联绝对时间戳
   if (/<\d+:\d{2}(?:\.\d{1,3})?>/.test(text)) return true;
-  // YRC：行首 [ms,ms] 且正文含 (start,dur,n) 逐字标记
-  if (/^\[\d+,\d+\]/.test(text)) return true;
+  // YRC（网易云）：行首 [mm:ss.mmm] 或 [ms,ms]，正文含 (start,dur,count) 逐字标记
+  if (/^\[\d+:\d{2}(?:\.\d+)?\]\(/.test(text) || /^\[\d+,\d+\]/.test(text)) return true;
+  // LX 原生逐字标记 <offset,dur>（无冒号，区别于 Enhanced LRC）
+  if (/<\d+,\d+>/.test(text)) return true;
   return false;
 }

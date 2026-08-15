@@ -709,32 +709,29 @@ fn decode_kw_lyric(body_base64: &str) -> Result<String, String> {
 // ==================== WY eapi Encryption (NetEase) ====================
 
 const WY_EAPI_KEY: &[u8] = b"e82ckenh8dichen8";
+const WY_EAPI_IV: &[u8] = b"0102030405060708";
 
 fn wy_eapi_encrypt(url: &str, data: &str) -> Result<String, String> {
-    use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+    use aes::cipher::block_padding::Pkcs7;
+    use aes::cipher::{BlockEncryptMut, KeyIvInit};
+    use aes::Aes128;
+    use cbc::Encryptor;
     let message = format!("nobody{}use{}md5forencrypt", url, data);
     let digest = md5::compute(message.as_bytes());
     let digest_hex = format!("{:x}", digest);
     let data_str = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", url, data, digest_hex);
 
-    // AES-ECB encrypt
-    let key = GenericArray::from_slice(WY_EAPI_KEY);
-    let cipher = aes::Aes128::new(key);
+    // 网易云 eapi 使用 AES-CBC（iv=0102030405060708）+ PKCS7 填充。
+    // 此前误用 ECB 导致服务端返回 "wrong params"，逐字歌词(yrc)取不到。
+    let cipher = Encryptor::<Aes128>::new_from_slices(WY_EAPI_KEY, WY_EAPI_IV)
+        .map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; data_str.len() + 16];
+    let n = cipher
+        .encrypt_padded_mut::<Pkcs7>(&mut buf, data_str.len())
+        .map_err(|e| e.to_string())?
+        .len();
 
-    // PKCS7 pad
-    let data_bytes = data_str.as_bytes();
-    let pad_len = 16 - (data_bytes.len() % 16);
-    let mut padded = data_bytes.to_vec();
-    padded.extend(vec![pad_len as u8; pad_len]);
-
-    let mut encrypted = Vec::new();
-    for chunk in padded.chunks(16) {
-        let mut block = GenericArray::from_slice(chunk).clone();
-        cipher.encrypt_block(&mut block);
-        encrypted.extend_from_slice(&block);
-    }
-
-    let hex_str: String = encrypted.iter().map(|b| format!("{:02X}", b)).collect();
+    let hex_str: String = buf[..n].iter().map(|b| format!("{:02X}", b)).collect();
     Ok(hex_str)
 }
 
@@ -1252,6 +1249,15 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         return Ok(None);
     }
 
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] kw songmid={} lyric_len={} lxlyric_len={} word_markers={}",
+        song_info.songmid,
+        lrc_info.lyric.len(),
+        lrc_info.lxlyric.len(),
+        lrc_info.lxlyric.matches('<').count()
+    );
+
     Ok(Some(lrc_info))
 }
 
@@ -1514,6 +1520,7 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
 
     if resp.status == 200 {
         if let Ok(body) = serde_json::from_str::<serde_json::Value>(&resp.body) {
+            eprintln!("[lyric_fetcher] tx 响应结构 code={:?} req_code={:?} data_keys={:?} lyric_field={:?}", body.get("code").and_then(|v| v.as_i64()), body.get("req").and_then(|v| v.get("code")).and_then(|v| v.as_i64()), body.get("req").and_then(|v| v.get("data")).and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()), body.get("req").and_then(|v| v.get("data")).and_then(|v| v.get("lyric")).and_then(|v| v.as_str()).map(|s| s.len()));
             if body.get("code").and_then(|v| v.as_i64()) == Some(0) {
                 if let Some(data) = body.get("req").and_then(|v| v.get("data")) {
                     if let Some(lyric_hex) = data.get("lyric").and_then(|v| v.as_str()) {
@@ -1546,8 +1553,11 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         }
     }
 
+    eprintln!("[lyric_fetcher] tx songmid={} status={} lxlyric_len={} lyric_len={} word_markers={}", songmid, resp.status, lxlyric.len(), lyric.len(), lxlyric.matches('<').count());
+
     // Fallback to old API
     if lyric.is_empty() && lxlyric.is_empty() {
+        eprintln!("[lyric_fetcher] tx qrc路径失败，回退旧API songmid={} status={}", songmid, resp.status);
         let old_url = format!(
             "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={}&g_tk=5381&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq",
             songmid
@@ -1588,6 +1598,15 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     if lyric.is_empty() && lxlyric.is_empty() {
         return Ok(None);
     }
+
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] tx songmid={} lyric_len={} lxlyric_len={} word_markers={}",
+        songmid,
+        lyric.len(),
+        lxlyric.len(),
+        lxlyric.matches('<').count()
+    );
 
     Ok(Some(LyricResult {
         lyric,
@@ -1888,6 +1907,26 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
     }
 }
 
+/// 网易云 eapi 响应解密：响应体与请求体一样是 AES-CBC 加密的 hex 密文，
+/// 需 hex 解码 → AES-CBC 解密 → PKCS7 unpad 后才能得到 JSON 明文。
+fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
+    use aes::cipher::block_padding::Pkcs7;
+    use aes::cipher::{BlockDecryptMut, KeyIvInit};
+    use aes::Aes128;
+    use cbc::Decryptor;
+
+    let hex_str = body.trim();
+    let cipher_bytes = hex::decode(hex_str).ok()?;
+    if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
+        return None;
+    }
+
+    let cipher = Decryptor::<Aes128>::new_from_slices(WY_EAPI_KEY, WY_EAPI_IV).ok()?;
+    let mut buf = cipher_bytes.to_vec();
+    let pt = cipher.decrypt_padded_mut::<Pkcs7>(&mut buf).ok()?;
+    serde_json::from_slice(pt).ok()
+}
+
 /// WY eapi POST request helper: encrypts params and sends POST to the given eapi endpoint
 async fn wy_eapi_post(
     eapi_path: &str,
@@ -1903,12 +1942,19 @@ async fn wy_eapi_post(
         ("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"),
         ("origin", "https://music.163.com"),
         ("Content-Type", "application/x-www-form-urlencoded"),
+        // eapi 接口通常要求 os=pc cookie，缺失可能导致校验失败或返回异常
+        ("Cookie", "os=pc; appver=8.9.75; osver=; deviceId=pyncm!"),
     ];
     headers.extend_from_slice(extra_headers);
 
     let resp = http_fetch_text(&api_url, "POST", &headers, Some(&body)).await?;
     if resp.status != 200 {
         return Ok(None);
+    }
+    // eapi 响应体为 AES-ECB hex 密文，优先解密后解析；若解密失败（响应已是明文/非 hex），
+    // 回退到直接 JSON 解析，保证兼容性。
+    if let Some(v) = wy_eapi_decrypt_response(&resp.body) {
+        return Ok(Some(v));
     }
     match serde_json::from_str::<serde_json::Value>(&resp.body) {
         Ok(v) => Ok(Some(v)),
@@ -1926,7 +1972,7 @@ async fn wyy_get_karaoke(song_id: &str) -> String {
     let data1 = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
-    if let Ok(Some(body)) = wy_eapi_post("/api/song/lyric/v1", data1, &[]).await {
+    if let Ok(Some(body)) = wy_eapi_post("/eapi/song/lyric/v1", data1, &[]).await {
         let yrc = try_extract_yrc(&body);
         if !yrc.is_empty() {
             return yrc;
@@ -1944,11 +1990,11 @@ async fn wyy_get_karaoke(song_id: &str) -> String {
     });
     // Override User-Agent for this request
     let data_str = serde_json::to_string(&data2).unwrap_or_default();
-    let params = match wy_eapi_encrypt("/api/song/lyric/v1", &data_str) {
+    let params = match wy_eapi_encrypt("/eapi/song/lyric/v1", &data_str) {
         Ok(p) => p,
         Err(_) => return String::new(),
     };
-    let api_url = "https://interface3.music.163.com/api/song/lyric/v1";
+    let api_url = "https://interface3.music.163.com/eapi/song/lyric/v1";
     let body = format!("params={}", params);
     let resp = http_fetch_text(
         &api_url,
@@ -2065,14 +2111,15 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         .map(serde_json::Value::from)
         .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
 
-    // Use /api/song/lyric/v1 with POST (matching frontend's proven approach)
+    // Use /eapi/song/lyric/v1 with POST. eapi 路径必须带 /eapi/ 前缀，
+    // 否则服务端校验 "wrong params"，拿不到 yrc 逐字。
     // kv=0 + yv=0 lets the API return yrc field for YRC word-by-word lyrics
     let data = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
     // eapi 任一失败（网络错误/非200/空响应）都回退 legacy 明文接口，
     // 避免 eapi key 失效或接口限流时整条歌词链路失败。
-    let body = match wy_eapi_post("/api/song/lyric/v1", data, &[]).await {
+    let body = match wy_eapi_post("/eapi/song/lyric/v1", data, &[]).await {
         Ok(Some(b)) => b,
         Ok(None) | Err(_) => return fetch_wy_legacy_lyric(song_id).await,
     };
@@ -2094,6 +2141,8 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
     if final_lxlyric.is_empty() {
         final_lxlyric = wyy_get_karaoke(song_id).await;
     }
+
+    eprintln!("[lyric_fetcher] wy song_id={} lxlyric_len={} word_markers={} lrc_len={}", song_id, final_lxlyric.len(), final_lxlyric.matches('<').count(), body.get("lrc").and_then(|v| v.get("lyric")).and_then(|v| v.as_str()).unwrap_or("").len());
 
     // Get plain lyrics
     let lrc = body
@@ -2127,6 +2176,15 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
             }
         }
     }
+
+    // [诊断] 确认 wy 直接 API 是否真的拿到了逐字歌词（normalizeLxLyricResponse 之后 lxlyric 会经前端转换）
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] wy song_id={} lxlyric_len={} word_markers={}",
+        song_id,
+        final_lxlyric.len(),
+        final_lxlyric.matches('<').count()
+    );
 
     Ok(Some(LyricResult {
         lyric: fixed_lrc,
