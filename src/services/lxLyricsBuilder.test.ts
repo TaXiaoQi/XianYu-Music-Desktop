@@ -33,6 +33,17 @@ describe('buildLxLyricsRaw', () => {
     ].join('\n'));
   });
 
+  it('带 [kuwo:] 标签时全文统一按酷我公式解析', () => {
+    const result = buildLxLyricsRaw({
+      lxlyric: [
+        '[kuwo:0]',
+        '[00:01.000]天<1000,1200>外<1600,1800>',
+      ].join('\n'),
+    });
+
+    expect(result).toBe('[00:01.000]<00:01.100>天<00:01.700>外<00:01.800>');
+  });
+
   it('混合标准相对偏移时后续行仍保持逐字解析', () => {
     const result = buildLxLyricsRaw({
       lxlyric: [
@@ -63,5 +74,29 @@ describe('buildLxLyricsRaw', () => {
     });
 
     expect(result).toBe('[10000,1000]天(0,500)外(500,500)');
+  });
+
+  it('插件把逐字放在 lyric 字段（LX 原生标记）时转为 Enhanced LRC', () => {
+    const result = buildLxLyricsRaw({
+      lyric: '[00:10.000]<0,500>天<500,500>外',
+    });
+
+    expect(result).toBe('[00:10.000]<00:10.000>天<00:10.500>外<00:11.000>');
+  });
+
+  it('插件把逐字放在 lyric 字段（yrc 风格）时原样保留', () => {
+    const result = buildLxLyricsRaw({
+      lyric: '[10000,1000](10000,500,0)天(10500,500,0)外',
+    });
+
+    expect(result).toBe('[10000,1000](10000,500,0)天(10500,500,0)外');
+  });
+
+  it('插件 lyric 字段无逐字标记时原样保留普通 LRC', () => {
+    const result = buildLxLyricsRaw({
+      lyric: '[00:10.00]天外',
+    });
+
+    expect(result).toBe('[00:10.00]天外');
   });
 });

@@ -1535,6 +1535,35 @@ export async function pluginGetCover(
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
+  const rawItem = item.rawData || item;
+  // 网易云检测：音源标识、插件名，或 rawData 携带网易云专属的 al 专辑结构
+  const neteaseSource =
+    (source.sources && source.sources.includes('wy')) ||
+    /网易云|netease/i.test(source.name || '') ||
+    !!rawItem?.al?.id ||
+    !!rawItem?.al?.picId_str ||
+    !!rawItem?.al?.pic;
+  const tryNeteaseAlbumCover = async (): Promise<string | null> => {
+    if (!neteaseSource) return null;
+    const raw = item.rawData || item;
+    const albumId = raw?.al?.id ?? raw?.album?.id ?? raw?.albumId;
+    const songmid = String(item.platformId || raw?.id || raw?.songmid || '');
+    if (!albumId || !songmid) return null;
+    try {
+      const cover = await pluginApi.getLxCover({
+        songmid,
+        source: 'wy',
+        albumId: String(albumId),
+        name: item.title,
+        singer: item.artist,
+        albumName: item.album,
+      });
+      return cover || null;
+    } catch {
+      return null;
+    }
+  };
+
   try {
     if (typeof inst.instance.getMusicInfo === 'function') {
       const musicItem = item.rawData
@@ -1544,9 +1573,18 @@ export async function pluginGetCover(
       // 兼容多种封面字段名（不同插件返回的字段名可能不同）
       const coverUrl = extractCoverUrl(result);
       if (coverUrl) return coverUrl;
+      // getMusicInfo 无封面时，网易云走专辑接口兜底（song/detail 常被限流）
+      const albumCover = await tryNeteaseAlbumCover();
+      if (albumCover) return albumCover;
+      return item.coverUrl || null;
     }
+    // 插件未提供 getMusicInfo 时，网易云同样走专辑接口兜底
+    const albumCover = await tryNeteaseAlbumCover();
+    if (albumCover) return albumCover;
     return item.coverUrl || null;
   } catch {
+    const albumCover = await tryNeteaseAlbumCover();
+    if (albumCover) return albumCover;
     return item.coverUrl || null;
   }
 }

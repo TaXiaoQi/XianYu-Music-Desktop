@@ -60,13 +60,17 @@ export function extractNeteasePicId(item: any): string | number | null {
   const candidates = [
     item.al?.picId_str,
     item.al?.pic_str,
+    item.al?.picId,
     item.album?.picId_str,
     item.album?.pic_str,
+    item.album?.picId,
     item.picId_str,
     item.pic_str,
-    item.al?.picId,
-    item.album?.picId,
     item.picId,
+    // 网易云 album/al 常用 pic 字段（超大数字 number 已丢精度，isReliableNeteasePicId 会拒绝）
+    item.al?.pic,
+    item.album?.pic,
+    item.pic,
   ];
   for (const c of candidates) {
     if (isReliableNeteasePicId(c)) return c;
