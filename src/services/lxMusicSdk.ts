@@ -536,6 +536,11 @@ function pickArrayFromTxNode(node: any): any[] {
     ?? node.itemlist
     ?? node.items
     ?? node.item_song
+    ?? node.item_audio
+    ?? node.grp
+    ?? node.song
+    ?? node.songInfo
+    ?? node.musicInfo
     ?? node.item
     ?? node.docs
     ?? node.records
@@ -545,6 +550,20 @@ function pickArrayFromTxNode(node: any): any[] {
     ?? node.values
     ?? node.data;
   return Array.isArray(direct) ? direct : [];
+}
+
+// 从 direct_result / direct_result2 直达结果中提取歌曲列表。
+// 该字段可能是对象（{ song:{list}, item_song:{list} }），也可能是数组（直接结果分组，
+// 每组形如 { type:'song', grp:[...] }，仅歌曲类型分组内是真正可播放的歌曲）。
+function pickTxDirectResultList(dr: any): any[] {
+  if (!dr || typeof dr !== 'object') return [];
+  const groups = Array.isArray(dr) ? dr : [dr];
+  for (const g of groups) {
+    if (!g || typeof g !== 'object') continue;
+    const arr = pickArrayFromTxNode(g?.grp ?? g?.song ?? g?.item_song ?? g?.item_audio ?? g);
+    if (arr.length > 0 && txHandleResult(arr).length > 0) return arr;
+  }
+  return [];
 }
 
 function findTxSongListDeep(root: any, maxDepth = 6): any[] {
@@ -572,7 +591,7 @@ function findTxSongListDeep(root: any, maxDepth = 6): any[] {
     if (depth >= maxDepth) continue;
 
     const priorityKeys = [
-      'song', 'songlist', 'item_song', 'item_audio',
+      'song', 'songlist', 'item_song', 'item_audio', 'grp',
       'direct_result', 'direct_result2', 'musicInfo', 'songInfo',
       'list', 'items', 'data', 'docs', 'records', 'result',
     ];
@@ -637,6 +656,15 @@ function pickTxSearchRawList(data: any): any[] {
     if (list.length > 0 && txHandleResult(list).length > 0) return list;
   }
 
+  // direct_result / direct_result2 常以“直接结果分组数组”形式返回精确匹配的歌曲，
+  // 此时常规候选（song.list / item_song 等）可能为空，需从分组里提取。
+  const direct = pickTxDirectResultList(body?.direct_result)
+    ?? pickTxDirectResultList(body?.direct_result2);
+  if (direct.length > 0) return direct;
+  const directTop = pickTxDirectResultList(data?.direct_result)
+    ?? pickTxDirectResultList(data?.direct_result2);
+  if (directTop.length > 0) return directTop;
+
   return findTxSongListDeep(body ?? data);
 }
 
@@ -655,17 +683,21 @@ function getTxSearchTotal(data: any, fallbackCount: number, limit: number): numb
   return fallbackCount || limit;
 }
 
-function createTxSearchRequestData(method: 'DoSearchForQQMusicDesktop' | 'DoSearchForQQMusicMobile', str: string, page: number, limit: number) {
+function createTxSearchRequestData(str: string, page: number, limit: number) {
+  // 仅使用移动端接口（落雪官方验证有效）。需携带完整设备参数，
+  // 否则会返回降级响应，常规 item_song 为空、歌曲只出现在 direct_result2 直达结果里。
   return {
     comm: {
-      ct: '24', cv: '4747474', v: '4747474', tmeAppID: 'qqmusic',
-      format: 'json', inCharset: 'utf-8', outCharset: 'utf-8',
-      platform: 'yqq.json', needNewCode: 0,
-      uin: '0', guid: '0',
+      ct: '11', cv: '14090508', v: '14090508', tmeAppID: 'qqmusic',
+      phonetype: 'EBG-AN10', deviceScore: '553.47', devicelevel: '50', newdevicelevel: '20',
+      rom: 'HuaWei/EMOTION/EmotionUI_14.2.0', os_ver: '12',
+      OpenUDID: '0', OpenUDID2: '0', QIMEI36: '0', udid: '0', chid: '0', aid: '0',
+      oaid: '0', taid: '0', tid: '0', wid: '0', uid: '0', sid: '0',
+      modeSwitch: '6', teenMode: '0', ui_mode: '2', nettype: '1020', v4ip: '',
     },
     req: {
       module: 'music.search.SearchCgiService',
-      method,
+      method: 'DoSearchForQQMusicMobile',
       param: {
         search_type: 0,
         searchid: Math.random().toString().slice(2),
@@ -678,54 +710,18 @@ function createTxSearchRequestData(method: 'DoSearchForQQMusicDesktop' | 'DoSear
   };
 }
 
-async function requestTxSearch(method: 'DoSearchForQQMusicDesktop' | 'DoSearchForQQMusicMobile', str: string, page: number, limit: number): Promise<any> {
-  const requestData = createTxSearchRequestData(method, str, page, limit);
+async function requestTxSearch(str: string, page: number, limit: number): Promise<any> {
+  const requestData = createTxSearchRequestData(str, page, limit);
   const sign = await zzcSign(JSON.stringify(requestData));
   const url = `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`;
-  const isMobile = method === 'DoSearchForQQMusicMobile';
   return httpPostJson(url, JSON.stringify(requestData), {
-    'User-Agent': isMobile
-      ? 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36'
-      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36',
     'Content-Type': 'application/json',
     'Referer': 'https://y.qq.com/',
   });
 }
 
-async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 3) throw new Error('TX search: 搜索失败');
-  let body = await requestTxSearch('DoSearchForQQMusicDesktop', str, page, limit);
-  if (!body || !body.req || body.code != 0 || body.req.code != 0) {
-    console.warn('[LxMusicSdk] TX search API error', { bodyCode: body?.code, reqCode: body?.req?.code, retry: retryNum });
-    // 增加重试延迟，避免连续请求被 QQ 音乐风控返回 reqCode 2001
-    await new Promise(r => setTimeout(r, 800 * (retryNum + 1)));
-    return searchTx(str, page, limit, ++retryNum);
-  }
-  let data = body.req.data;
-  // Desktop 接口通常返回 body.song.list；部分接口/插件环境会返回 body.songlist 或 item_song。
-  let rawList = pickTxSearchRawList(data);
-  if (!Array.isArray(rawList) || rawList.length === 0) {
-    console.warn('[LxMusicSdk] TX search: song list missing/empty, data keys:', data ? Object.keys(data) : null, 'body keys:', data?.body ? Object.keys(data.body) : null, 'song keys:', data?.body?.song ? Object.keys(data.body.song) : null, 'songlist keys:', data?.body?.songlist && typeof data.body.songlist === 'object' ? Object.keys(data.body.songlist) : null, 'nested keys:', describeTxSearchBody(data?.body));
-    try {
-      const mobileBody = await requestTxSearch('DoSearchForQQMusicMobile', str, page, limit);
-      if (mobileBody?.code === 0 && mobileBody?.req?.code === 0) {
-        const mobileData = mobileBody.req.data;
-        const mobileRawList = pickTxSearchRawList(mobileData);
-        if (mobileRawList.length > 0) {
-          console.warn('[LxMusicSdk] TX search: Desktop empty, using Mobile fallback list:', mobileRawList.length);
-          body = mobileBody;
-          data = mobileData;
-          rawList = mobileRawList;
-        } else {
-          console.warn('[LxMusicSdk] TX search: Mobile fallback also empty, data keys:', mobileData ? Object.keys(mobileData) : null, 'body keys:', mobileData?.body ? Object.keys(mobileData.body) : null, 'nested keys:', describeTxSearchBody(mobileData?.body));
-        }
-      } else {
-        console.warn('[LxMusicSdk] TX search: Mobile fallback API error', { bodyCode: mobileBody?.code, reqCode: mobileBody?.req?.code });
-      }
-    } catch (e) {
-      console.warn('[LxMusicSdk] TX search: Mobile fallback request failed', e);
-    }
-  }
+function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearchResult {
   const list = txHandleResult(rawList);
   if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {
     console.warn(`[LxMusicSdk] TX search: all ${rawList.length} items filtered out, sample:`, JSON.stringify(rawList[0]).slice(0, 300));
@@ -738,6 +734,30 @@ async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promis
     total,
     source: 'tx',
   };
+}
+
+async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
+  if (retryNum > 4) throw new Error('TX search: 搜索失败');
+
+  // 仅使用 Mobile 接口（落雪官方验证有效）。请求两次会累积 QQ 音乐的风控（reqCode 2001），
+  // 导致结果随机失败，故完全移除已失效的 Desktop 兜底请求。
+  const mobileBody = await requestTxSearch(str, page, limit);
+  const reqCode = mobileBody?.req?.code;
+  const mobileOk = mobileBody?.code === 0 && reqCode === 0;
+  const mobileRaw = mobileOk ? pickTxSearchRawList(mobileBody.req.data) : [];
+  if (mobileRaw.length > 0) {
+    return txBuildSearchResult(mobileBody.req.data, mobileRaw, limit);
+  }
+
+  // 风控(2001)/空列表时等待重试：2001 表示被风控，需更长间隔；空列表通常是降级响应，稍后重试。
+  console.warn('[LxMusicSdk] TX search: Mobile 接口失败/为空，等待重试', {
+    code: mobileBody?.code, reqCode, retry: retryNum,
+    bodyKeys: mobileBody?.req?.data?.body ? Object.keys(mobileBody.req.data.body) : null,
+    nested: describeTxSearchBody(mobileBody?.req?.data?.body),
+  });
+  const backoff = reqCode === 2001 ? 2000 * (retryNum + 1) : 500 * (retryNum + 1);
+  await new Promise(r => setTimeout(r, backoff));
+  return searchTx(str, page, limit, ++retryNum);
 }
 
 // ==================== WY (网易云) Search ====================
@@ -765,11 +785,13 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
     types.reverse();
     const ar = song.artists || [];
     const al = song.album || {};
-    // 优先 picUrl；其次可靠的 picId_str（大整数 number 会丢精度，neteasePicIdToUrl 会拒绝）
+    // 优先完整 picUrl（网易云返回 http://，统一转 https，避免走后端代理失败导致无封面）；
+    // 其次可靠的字符串 picId（大整数 number 会丢精度，neteasePicIdToUrl 会拒绝），
+    // 覆盖网易云 album 的 pic / pic_str / picId / picId_str 多种字段名。
     // 都没有则保持 null，交给 triggerCoverLoading → lxGetPic 走 song/detail
     const img =
-      al.picUrl
-      || neteasePicIdToUrl(al.picId_str || al.pic_str || al.picId)
+      (al.picUrl && String(al.picUrl).replace(/^http:\/\//i, 'https://'))
+      || neteasePicIdToUrl(al.picId_str || al.pic_str || al.picId || al.pic)
       || null;
     // 网易云搜索接口 artists[].img1v1Url 为歌手头像，提取供歌手搜索页使用
     const singerAvatars: Record<string, string> = {};

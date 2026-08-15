@@ -130,6 +130,7 @@ function normalizeLxLyricResponse(response: any): {
   lxlyric: string | null;
   yrc: string | null;
   qrc: string | null;
+  eslrc: string | null;
 } {
   if (typeof response !== 'object' || response === null) {
     throw new Error('lyric response is not an object');
@@ -141,11 +142,26 @@ function normalizeLxLyricResponse(response: any): {
   const lxlyric = pickString(response.lxlyric);
   const yrc = pickString(response.yrc);
   const qrc = pickString(response.qrc);
+  // 有些 LX 插件把逐字歌词放在 eslrc（Enhanced LRC）字段，而非 yrc/qrc/lxlyric。
+  // 若此处不捕获，buildLxLyricsRaw 会丢掉逐字内容，回退到普通 LRC，导致无逐字。
+  const eslrc = pickString(response.eslrc, response.enhancedLrc, response.enh_lrc);
 
-  if (!lyric && !lxlyric && !yrc && !qrc) {
+  // [诊断] 输出插件返回的歌词字段，便于定位逐字歌词缺失问题
+  const keyList = Object.keys(response).join(',');
+  log(`[normalizeLxLyricResponse] 插件返回字段 keys=[${keyList}] lyric=${lyric.length} lxlyric=${lxlyric.length} yrc=${yrc.length} qrc=${qrc.length} eslrc=${eslrc.length}`);
+  if (lxlyric) log(`[normalizeLxLyricResponse] lxlyric 预览: ${lxlyric.substring(0, 200)}`);
+  if (yrc) log(`[normalizeLxLyricResponse] yrc 预览: ${yrc.substring(0, 200)}`);
+  if (qrc) log(`[normalizeLxLyricResponse] qrc 预览: ${qrc.substring(0, 200)}`);
+  if (eslrc) log(`[normalizeLxLyricResponse] eslrc 预览: ${eslrc.substring(0, 200)}`);
+  // lyric 也可能是逐字来源（内嵌 <offset,duration> 或 yrc 风格标记），单独预览便于诊断
+  if (!lxlyric && !yrc && !qrc && !eslrc && lyric) {
+    log(`[normalizeLxLyricResponse] lyric 预览: ${lyric.substring(0, 200)}`);
+  }
+
+  if (!lyric && !lxlyric && !yrc && !qrc && !eslrc) {
     throw new Error(`lyric response missing or empty: ${JSON.stringify(response).substring(0, 100)}`);
   }
-  if (lyric.length > 51200 || lxlyric.length > 51200 || yrc.length > 51200 || qrc.length > 51200) {
+  if (lyric.length > 51200 || lxlyric.length > 51200 || yrc.length > 51200 || qrc.length > 51200 || eslrc.length > 51200) {
     throw new Error('lyric response too large');
   }
 
@@ -156,6 +172,7 @@ function normalizeLxLyricResponse(response: any): {
     lxlyric: lxlyric.length < 51200 ? lxlyric : null,
     yrc: yrc.length < 51200 ? yrc : null,
     qrc: qrc.length < 51200 ? qrc : null,
+    eslrc: eslrc.length < 51200 ? eslrc : null,
   };
 }
 
@@ -1002,9 +1019,10 @@ export async function lxPluginGetLyric(
   lxlyric: string | null;
   yrc: string | null;
   qrc: string | null;
+  eslrc: string | null;
 } | null> {
   const result = await lxPluginRequest(source, 'lyric', { source: sourceKey, musicInfo: songInfo });
-  // [修复防御]: lxPluginRequest 现在返回 { source, action, data: { lyric, tlyric, rlyric, lxlyric, yrc, qrc } }
+  // [修复防御]: lxPluginRequest 现在返回 { source, action, data: { lyric, tlyric, rlyric, lxlyric, yrc, qrc, eslrc } }
   // data 层已由 lxPluginRequest 的 lyric 分支构造，无需额外解包
   if (!result?.data) return null;
   return result.data as {
@@ -1014,6 +1032,7 @@ export async function lxPluginGetLyric(
     lxlyric: string | null;
     yrc: string | null;
     qrc: string | null;
+    eslrc: string | null;
   };
 }
 

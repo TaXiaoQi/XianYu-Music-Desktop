@@ -2070,9 +2070,11 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
     let data = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
-    let body = match wy_eapi_post("/api/song/lyric/v1", data, &[]).await? {
-        Some(b) => b,
-        None => return fetch_wy_legacy_lyric(song_id).await,
+    // eapi 任一失败（网络错误/非200/空响应）都回退 legacy 明文接口，
+    // 避免 eapi key 失效或接口限流时整条歌词链路失败。
+    let body = match wy_eapi_post("/api/song/lyric/v1", data, &[]).await {
+        Ok(Some(b)) => b,
+        Ok(None) | Err(_) => return fetch_wy_legacy_lyric(song_id).await,
     };
 
     // Try YRC first, then KRC
