@@ -40,7 +40,7 @@ export type AuthPayload = {
 export type AuthMode = 'login' | 'register' | 'forgot';
 
 /** 验证码场景类型，必须与后续接口匹配 */
-export type VerifyCodeType = 'register' | 'login' | 'reset_password' | 'delete_account' | 'change_password';
+export type VerifyCodeType = 'register' | 'login' | 'reset_password' | 'delete_account' | 'change_password' | 'bind';
 
 export type HumanCaptcha = {
   captcha_id: string;
@@ -556,7 +556,28 @@ export async function updateCiyuanxiId(
 }
 
 /**
- * 发送邮箱验证码（注册 / 登录 / 找回密码三种场景，通过 type 区分）
+ * 绑定邮箱（通过 type='bind' 的邮箱验证码）
+ * POST /api/?action=bind_email
+ */
+export async function bindEmail(
+  ciyuanxiId: string,
+  email: string,
+  verifyCode: string,
+): Promise<{ message: string; email: string }> {
+  try {
+    const data = await requestAction<{ email?: string }>('bind_email', {
+      ciyuanxi_id: ciyuanxiId,
+      email,
+      verify_code: verifyCode,
+    });
+    return { message: '邮箱绑定成功', email: String(data.email ?? email) };
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '邮箱绑定失败'), { cause: error });
+  }
+}
+
+/**
+ * 发送邮箱验证码（注册 / 登录 / 找回密码 / 绑定邮箱等场景，通过 type 区分）
  * POST /api/?action=send_verify_code
  */
 export async function sendEmailCode(

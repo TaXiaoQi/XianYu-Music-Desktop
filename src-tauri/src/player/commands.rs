@@ -502,6 +502,27 @@ pub fn get_playback_start_failed(state: tauri::State<PlayerState>) -> bool {
     state.progress.start_failed.load(Ordering::Relaxed)
 }
 
+/// 起播失败的具体原因（解码失败/取流失败/流式读取失败），供前端诊断。
+#[tauri::command]
+pub fn get_playback_start_failed_reason(state: tauri::State<PlayerState>) -> Option<String> {
+    state.progress.start_failed_reason.lock().ok().and_then(|r| r.clone())
+}
+
+/// 起播失败探测信息：失败标志 + 具体原因一次性返回，避免两次 IPC 之间的竞态
+/// （前端先读 failed=true，再读 reason 时可能已被下一次 reset 清空）。
+#[derive(serde::Serialize)]
+pub struct PlaybackStartFailedInfo {
+    pub failed: bool,
+    pub reason: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_playback_start_failed_info(state: tauri::State<PlayerState>) -> PlaybackStartFailedInfo {
+    let failed = state.progress.start_failed.load(Ordering::Relaxed);
+    let reason = state.progress.start_failed_reason.lock().ok().and_then(|r| r.clone());
+    PlaybackStartFailedInfo { failed, reason }
+}
+
 #[tauri::command]
 pub fn get_audio_visualizer_samples(state: tauri::State<PlayerState>) -> Vec<f32> {
     let visualizer = &state.progress.visualizer;

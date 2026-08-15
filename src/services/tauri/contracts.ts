@@ -578,6 +578,11 @@ export interface TauriCommandMap {
   get_playback_duration: { payload: undefined; response: number };
   get_playback_ready: { payload: undefined; response: boolean };
   get_playback_start_failed: { payload: undefined; response: boolean };
+  get_playback_start_failed_reason: { payload: undefined; response: string | null };
+  get_playback_start_failed_info: {
+    payload: undefined;
+    response: { failed: boolean; reason: string | null };
+  };
   get_audio_visualizer_samples: { payload: undefined; response: number[] };
   record_play: {
     payload: {

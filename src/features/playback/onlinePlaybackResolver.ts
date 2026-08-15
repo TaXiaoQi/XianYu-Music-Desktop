@@ -86,6 +86,7 @@ export const resolveOnlineAudio = async ({
   song,
   requestedQuality,
   fallbackBehavior,
+  availableQualities,
   preFetchedUrl,
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
   if (audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://')) {
@@ -99,7 +100,7 @@ export const resolveOnlineAudio = async ({
         song,
         requestedQuality,
         fallbackBehavior,
-        null,
+        availableQualities,
         preResolvedUrls,
         { includePlaybackExtras: true },
       );

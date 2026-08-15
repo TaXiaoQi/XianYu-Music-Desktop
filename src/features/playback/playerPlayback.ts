@@ -1237,12 +1237,18 @@ const authStore = useAuthStore();
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) {
             return true; // 已被新切歌请求接管，无需回退
           }
+          // [诊断] 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时。
+          // 独立 try/catch：即使该命令异常，也绝不阻断下方的 ready 探测。
           try {
-            // 硬失败（403 / 不支持 Range / 解码失败）：后端已置位，立即回退，不必死等超时
-            if (await playbackApi.getPlaybackStartFailed()) {
-              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错）');
+            const failInfo = await playbackApi.getPlaybackStartFailedInfo();
+            if (failInfo.failed) {
+              console.warn('[Audio] 在线直链走 Rust 起播失败（后端报错）:', failInfo.reason ?? '(无详细原因)');
               return false;
             }
+          } catch (e) {
+            console.warn('[Audio] 起播失败探测命令异常（忽略，继续探测 ready）:', e);
+          }
+          try {
             if (!ready) {
               ready = await playbackApi.getPlaybackReady();
             }

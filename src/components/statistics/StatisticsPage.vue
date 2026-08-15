@@ -63,7 +63,7 @@ async function loadLeaderboard(silent = false) {
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
     if (requestId !== leaderboardRequestId) return;
-    const data = await fetchLeaderboard(50, durations, currentPeriod.value);
+    const data = await fetchLeaderboard(15, durations, currentPeriod.value);
     if (requestId !== leaderboardRequestId) return;
     leaderboard.value = data.leaderboard;
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示

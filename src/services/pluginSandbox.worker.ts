@@ -1391,9 +1391,11 @@ async function callLxMethod(
     if (method === 'request') {
       // 调用 requestHandler
       if (!state.requestHandler) {
+        log('warn', `LX 插件未注册 request 处理器: ${pluginId} (action=${args[0]?.action})`);
         return { success: false, error: 'LX 插件未注册 request 处理器' };
       }
       const result = await state.requestHandler(args[0]);
+      log('log', `LX request(action=${args[0]?.action}) 返回: type=${typeof result} len=${typeof result === 'string' ? result.length : 'n/a'} preview=${typeof result === 'string' ? result.substring(0, 100) : (result === null ? 'null' : JSON.stringify(result)?.substring(0, 100))}`);
       return { success: true, data: result };
     }
     return { success: false, error: `未知的 LX 方法: ${method}` };

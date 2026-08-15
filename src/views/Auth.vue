@@ -20,6 +20,7 @@ import {
   updateProfile,
   uploadAvatar,
   updateCiyuanxiId,
+  bindEmail,
   getAvatarStatus,
   getNicknameStatus,
   getAvatarChangeLimitStatus,
@@ -191,11 +192,11 @@ function openAvatarMenu() {
   avatarMenuPos.value = { top, left };
   avatarMenuOpen.value = true;
 }
-// 昵称行内编辑
-const nicknameEditing = ref(false);
+// 昵称弹窗修改
+const showNicknameModal = ref(false);
 const nicknameInputRef = ref<HTMLInputElement | null>(null);
 
-async function startNicknameEdit() {
+async function openNicknameEditModal() {
   // 改名审核中时禁止再次编辑
   if (nicknameStatus.value === 'pending') {
     await showProfileLimitDialog('nickname', {
@@ -204,19 +205,18 @@ async function startNicknameEdit() {
     });
     return;
   }
-  nicknameEditing.value = true;
+  nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
+  showNicknameModal.value = true;
   await nextTick();
   nicknameInputRef.value?.focus();
   nicknameInputRef.value?.select();
 }
 
-async function saveNicknameEdit() {
-  if (!nicknameEditing.value) return;
+async function submitNicknameEdit() {
   const next = nicknameDraft.value.trim();
   const current = authStore.user?.nickname || authStore.user?.username || '';
   if (!next || next === current) {
-    nicknameEditing.value = false;
-    nicknameDraft.value = current;
+    showNicknameModal.value = false;
     return;
   }
   if (next.length > 20) {
@@ -227,25 +227,20 @@ async function saveNicknameEdit() {
     showToast('昵称仅支持字母、数字、汉字', 'error');
     return;
   }
-  if (!await confirmProfileLimit('nickname')) {
-    nicknameDraft.value = current;
-    nicknameEditing.value = false;
-    return;
-  }
+  if (!await confirmProfileLimit('nickname')) return;
   await handleSaveProfile();
-  nicknameEditing.value = false;
+  showNicknameModal.value = false;
 }
 
 function cancelNicknameEdit() {
-  if (!nicknameEditing.value) return;
-  nicknameEditing.value = false;
+  if (!showNicknameModal.value) return;
+  showNicknameModal.value = false;
   nicknameDraft.value = authStore.user?.nickname || authStore.user?.username || '';
 }
 
 function onNicknameBlur() {
-  // 光标离开时：未修改内容则关闭编辑框恢复显示；有修改则保留编辑状态由用户主动保存
-  // （避免误触丢失输入，也避免 blur 自动保存因网络失败导致用户无感知）
-  if (!nicknameEditing.value) return;
+  // 弹窗内输入框失焦：未修改内容则关闭弹窗
+  if (!showNicknameModal.value) return;
   const next = nicknameDraft.value.trim();
   const current = authStore.user?.nickname || authStore.user?.username || '';
   if (!next || next === current) {
@@ -793,6 +788,96 @@ async function submitCiyuanxi() {
   }
 }
 
+// 绑定邮箱（仅无邮箱账号显示入口）
+const showBindEmailModal = ref(false);
+const bindEmailForm = ref({ email: '', code: '' });
+const bindEmailLoading = ref(false);
+const bindCodeLoading = ref(false);
+const bindCodeCountdown = ref(0);
+let bindCodeTimer: ReturnType<typeof setInterval> | null = null;
+
+function startBindCodeCountdown() {
+  bindCodeCountdown.value = 60;
+  if (bindCodeTimer) clearInterval(bindCodeTimer);
+  bindCodeTimer = setInterval(() => {
+    bindCodeCountdown.value--;
+    if (bindCodeCountdown.value <= 0) {
+      bindCodeCountdown.value = 0;
+      if (bindCodeTimer) {
+        clearInterval(bindCodeTimer);
+        bindCodeTimer = null;
+      }
+    }
+  }, 1000);
+}
+
+function openBindEmailModal() {
+  bindEmailForm.value = { email: '', code: '' };
+  bindCodeCountdown.value = 0;
+  showBindEmailModal.value = true;
+}
+
+async function sendBindCode() {
+  const email = bindEmailForm.value.email.trim();
+  if (!email) {
+    showToast('请输入邮箱', 'error');
+    return;
+  }
+  if (!EMAIL_RE.test(email)) {
+    showToast('邮箱格式不正确', 'error');
+    return;
+  }
+  const captchaPayload = await requestHumanCaptcha('发送验证码前验证', '完成验证后将向邮箱发送绑定验证码。');
+  if (!captchaPayload) return;
+  bindCodeLoading.value = true;
+  try {
+    const ciyuanxiId = authStore.user?.ciyuanxi_id || authStore.user?.username || '';
+    const result = await sendEmailCode(email, 'bind', captchaPayload, ciyuanxiId || undefined);
+    showToast(result.message || '验证码已发送到邮箱', 'success');
+    startBindCodeCountdown();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '验证码发送失败', 'error');
+  } finally {
+    bindCodeLoading.value = false;
+  }
+}
+
+async function submitBindEmail() {
+  const ciyuanxiId = authStore.user?.ciyuanxi_id || authStore.user?.username || '';
+  const email = bindEmailForm.value.email.trim();
+  const code = bindEmailForm.value.code.trim();
+  if (!ciyuanxiId) {
+    showToast('未获取到当前账号，请重新登录', 'error');
+    return;
+  }
+  if (!email) {
+    showToast('请输入邮箱', 'error');
+    return;
+  }
+  if (!EMAIL_RE.test(email)) {
+    showToast('邮箱格式不正确', 'error');
+    return;
+  }
+  if (!code) {
+    showToast('请输入邮箱验证码', 'error');
+    return;
+  }
+  bindEmailLoading.value = true;
+  try {
+    const res = await bindEmail(ciyuanxiId, email, code);
+    showToast(res.message || '邮箱绑定成功', 'success');
+    showBindEmailModal.value = false;
+    const user = authStore.user;
+    if (user) {
+      authStore.setUser({ ...user, email: res.email });
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '邮箱绑定失败', 'error');
+  } finally {
+    bindEmailLoading.value = false;
+  }
+}
+
 function navigateShortcut(to: string) {
   void router.push(to);
 }
@@ -852,6 +937,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopPolling();
+  if (bindCodeTimer) {
+    clearInterval(bindCodeTimer);
+    bindCodeTimer = null;
+  }
 });
 
 // 定时轮询审核状态：当头像/昵称审核通过后自动更新
@@ -1258,7 +1347,7 @@ async function silentPoll() {
                 <button
                   ref="avatarBtnRef"
                   type="button"
-                  class="grid h-[clamp(3.5rem,5vw,4.5rem)] w-[clamp(3.5rem,5vw,4.5rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  class="grid h-[clamp(6rem,7vw,7rem)] w-[clamp(6rem,7vw,7rem)] place-items-center overflow-hidden rounded-full bg-black/5 dark:bg-white/10 text-[#EC4141] text-[clamp(1.25rem,2vw,1.75rem)] font-black ring-2 ring-transparent hover:ring-[#EC4141]/30 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   :disabled="avatarUploading || loading"
                   :title="avatarUploading ? '上传中…' : '点击管理头像'"
                   @click="openAvatarMenu"
@@ -1266,12 +1355,6 @@ async function silentPoll() {
                   <img v-if="avatarDraft || authStore.user?.avatar" :src="avatarDraft || authStore.user?.avatar || ''" alt="" class="h-full w-full object-cover" />
                   <span v-else>{{ (authStore.user?.nickname || authStore.user?.username || '?').slice(0, 1).toUpperCase() }}</span>
                 </button>
-                <!-- 编辑角标 -->
-                <span class="pointer-events-none absolute bottom-0 right-0 grid h-[clamp(1rem,1.4vw,1.25rem)] w-[clamp(1rem,1.4vw,1.25rem)] place-items-center rounded-full bg-[#EC4141] text-white shadow-sm ring-2 ring-white dark:ring-neutral-900">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-[60%] w-[60%]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </span>
                 <!-- 隐藏的文件输入 -->
                 <input
                   ref="avatarInputRef"
@@ -1309,51 +1392,15 @@ async function silentPoll() {
             </div>
             <!-- 昵称 + 副信息 -->
             <div class="min-w-0">
-              <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.95vw,0.8rem)] font-light tracking-wider mb-1">个人中心</p>
-              <!-- 昵称：QQ式点击编辑 -->
+              <!-- 昵称：点击弹窗修改 -->
               <div class="flex items-center gap-2 min-w-0">
-                <input
-                  v-if="nicknameEditing"
-                  ref="nicknameInputRef"
-                  v-model="nicknameDraft"
-                  type="text"
-                  placeholder="输入昵称"
-                  maxlength="64"
-                  class="min-w-0 flex-1 bg-transparent border-b border-[#EC4141] text-black dark:text-white text-[clamp(1.25rem,2.6vw,2rem)] font-black tracking-tight leading-none outline-none"
-                  @blur="onNicknameBlur"
-                  @keydown.enter.prevent="saveNicknameEdit"
-                  @keydown.esc.prevent="cancelNicknameEdit"
-                />
                 <h2
-                  v-else
-                  class="text-black dark:text-white text-[clamp(1.25rem,2.6vw,2rem)] font-black tracking-tight leading-none truncate cursor-text"
-                  :title="authStore.user?.nickname || authStore.user?.username"
-                  @click="startNicknameEdit"
+                  class="text-black dark:text-white text-[clamp(1.1rem,2.2vw,1.7rem)] font-black tracking-tight leading-none truncate cursor-pointer hover:text-[#EC4141] transition"
+                  :title="authStore.user?.nickname || authStore.user?.username || '点击修改昵称'"
+                  @click="openNicknameEditModal"
                 >
                   {{ authStore.user?.nickname || authStore.user?.username }}
                 </h2>
-                <button
-                  v-if="!nicknameEditing"
-                  type="button"
-                  class="shrink-0 grid place-items-center h-7 w-7 rounded-md text-black/40 dark:text-white/40 hover:text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 transition cursor-pointer"
-                  title="编辑昵称"
-                  aria-label="编辑昵称"
-                  @click="startNicknameEdit"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                </button>
-                <!-- 保存按钮：仅在有修改时弹出 -->
-                <button
-                  v-if="nicknameEditing"
-                  type="button"
-                  class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.8rem,1.1vw,0.95rem)] font-semibold px-1 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  :disabled="profileSaving || !nicknameDraft.trim() || nicknameDraft.trim() === (authStore.user?.nickname || authStore.user?.username)"
-                  @click="saveNicknameEdit"
-                >
-                  {{ profileSaving ? '保存中…' : '保存' }}
-                </button>
               </div>
               <!-- 改名审核状态提示 -->
               <div
@@ -1379,17 +1426,37 @@ async function silentPoll() {
                 <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 改名审核未通过
               </div>
-              <div class="flex items-center gap-2 mt-1.5 min-w-0">
-                <p class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate">
-                  {{ authStore.user?.ciyuanxi_id ? `弦予号：${authStore.user.ciyuanxi_id}` : authStore.user?.email || '未设置' }}
-                </p>
-                <button
-                  type="button"
-                  class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium underline-offset-2 hover:underline transition cursor-pointer"
-                  title="修改弦予号"
+              <div class="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
+                <!-- 弦予号：点击本体修改 -->
+                <p
+                  v-if="authStore.user?.ciyuanxi_id"
+                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate cursor-pointer hover:text-[#EC4141] transition"
+                  title="点击修改弦予号"
                   @click="openCiyuanxiModal"
                 >
-                  修改弦予号
+                  弦予号：{{ authStore.user.ciyuanxi_id }}
+                </p>
+                <p
+                  v-else-if="authStore.user?.email"
+                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate"
+                >
+                  {{ authStore.user.email }}
+                </p>
+                <p
+                  v-else
+                  class="text-black/60 dark:text-white/60 text-[clamp(0.7rem,0.95vw,0.825rem)] font-light truncate"
+                >
+                  未设置
+                </p>
+                <!-- 无邮箱时显示绑定邮箱入口 -->
+                <button
+                  v-if="!authStore.user?.email"
+                  type="button"
+                  class="shrink-0 text-[#EC4141] hover:text-[#d13b3b] text-[clamp(0.65rem,0.85vw,0.75rem)] font-medium transition cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10"
+                  title="绑定邮箱"
+                  @click="openBindEmailModal"
+                >
+                  绑定邮箱
                 </button>
               </div>
               <!-- 数据统计 -->
@@ -1589,16 +1656,6 @@ async function silentPoll() {
             <p class="logout-confirm-desc">弦予号是登录账号的唯一标识（参考微信号），每月仅可修改一次，请谨慎设置。</p>
             <div class="flex flex-col gap-3 mt-4">
               <label class="flex flex-col gap-1.5">
-                <span class="text-xs text-gray-500 dark:text-white/50">当前弦予号</span>
-                <input
-                  v-model="ciyuanxiForm.oldId"
-                  type="text"
-                  readonly
-                  spellcheck="false"
-                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none dark:border-white/10 dark:bg-white/5 dark:text-gray-100"
-                />
-              </label>
-              <label class="flex flex-col gap-1.5">
                 <span class="text-xs text-gray-500 dark:text-white/50">新弦予号</span>
                 <input
                   v-model="ciyuanxiForm.newId"
@@ -1635,6 +1692,123 @@ async function silentPoll() {
                 @click="submitCiyuanxi"
               >
                 {{ ciyuanxiLoading ? '提交中…' : '确认修改' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 绑定邮箱弹窗 -->
+    <Teleport to="body">
+      <Transition name="avatar-modal">
+        <div
+          v-if="showBindEmailModal"
+          class="fixed inset-0 z-[211] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="showBindEmailModal = false"
+        >
+          <div class="logout-confirm-card">
+            <h3 class="logout-confirm-title">绑定邮箱</h3>
+            <p class="logout-confirm-desc">绑定邮箱后可用于登录与找回密码，请填写常用且可接收邮件的地址。</p>
+            <div class="flex flex-col gap-3 mt-4">
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">邮箱</span>
+                <input
+                  v-model="bindEmailForm.email"
+                  type="email"
+                  placeholder="请输入邮箱"
+                  spellcheck="false"
+                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                />
+              </label>
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">邮箱验证码</span>
+                <div class="flex gap-2">
+                  <input
+                    v-model="bindEmailForm.code"
+                    type="text"
+                    placeholder="请输入验证码"
+                    spellcheck="false"
+                    class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                  />
+                  <button
+                    type="button"
+                    class="shrink-0 h-8 px-3 rounded-lg border border-[#EC4141]/30 text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="bindCodeLoading || bindCodeCountdown > 0"
+                    @click="sendBindCode"
+                  >
+                    {{ bindCodeLoading ? '发送中…' : bindCodeCountdown > 0 ? `重新发送 (${bindCodeCountdown}s)` : '发送验证码' }}
+                  </button>
+                </div>
+              </label>
+            </div>
+            <div class="logout-confirm-actions mt-5">
+              <button
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                :disabled="bindEmailLoading"
+                @click="showBindEmailModal = false"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-btn logout-btn--danger"
+                :disabled="bindEmailLoading"
+                @click="submitBindEmail"
+              >
+                {{ bindEmailLoading ? '提交中…' : '确认绑定' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 修改昵称弹窗 -->
+    <Teleport to="body">
+      <Transition name="avatar-modal">
+        <div
+          v-if="showNicknameModal"
+          class="fixed inset-0 z-[212] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          @click.self="cancelNicknameEdit"
+        >
+          <div class="logout-confirm-card">
+            <h3 class="logout-confirm-title">修改昵称</h3>
+            <p class="logout-confirm-desc">昵称修改后需管理员审核，审核通过后才会正式生效。</p>
+            <div class="flex flex-col gap-3 mt-4">
+              <label class="flex flex-col gap-1.5">
+                <span class="text-xs text-gray-500 dark:text-white/50">新昵称</span>
+                <input
+                  ref="nicknameInputRef"
+                  v-model="nicknameDraft"
+                  type="text"
+                  placeholder="最多 20 个字符，支持字母、数字、汉字"
+                  maxlength="64"
+                  spellcheck="false"
+                  class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                  @blur="onNicknameBlur"
+                  @keydown.enter.prevent="submitNicknameEdit"
+                  @keydown.esc.prevent="cancelNicknameEdit"
+                />
+              </label>
+            </div>
+            <div class="logout-confirm-actions mt-5">
+              <button
+                type="button"
+                class="logout-btn logout-btn--ghost"
+                :disabled="profileSaving"
+                @click="cancelNicknameEdit"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-btn logout-btn--danger"
+                :disabled="profileSaving"
+                @click="submitNicknameEdit"
+              >
+                {{ profileSaving ? '提交中…' : '确认修改' }}
               </button>
             </div>
           </div>
