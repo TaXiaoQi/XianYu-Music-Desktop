@@ -275,6 +275,33 @@ function convertKugouKrcToEnhancedLrc(krc: string): string {
   const linePattern = /^\[(\d+),(\d+)](.*)$/;
   const wordTimePattern = /\((-?\d+),(-?\d+)(?:,-?\d+)?\)/g;
 
+  // [JOOX 修复] JOOX 插件的"KRC"逐字歌词中，词偏移量是绝对时间（相对歌曲开头），
+  // 而非标准酷狗 KRC 的相对行内偏移。若仍按 行时间+偏移 计算，词时间会翻倍
+  // （表现为"只有第一行有逐字高亮"）。判定依据：多数行第一个词的偏移量≈行时间戳。
+  // 标准酷狗 KRC 的首词偏移通常为 0 或很小，不会集中在行时间戳附近。
+  let absoluteOffset = false;
+  {
+    let alignedLines = 0;
+    let countedLines = 0;
+    // 使用独立的非全局正则：全局正则的 lastIndex 会在多次 exec 间残留，
+    // 导致后续行从错误位置开始匹配、取不到真正的首词偏移，使对齐统计严重偏低。
+    const detectLinePattern = /^\[(\d+),(\d+)](.*)$/;
+    const detectWordTimePattern = /\((-?\d+),(-?\d+)(?:,-?\d+)?\)/;
+    for (const rawLine of lines) {
+      const lineMatch = detectLinePattern.exec(rawLine.trim());
+      if (!lineMatch) continue;
+      const lineStartMs = Number(lineMatch[1]);
+      const body = lineMatch[3] ?? '';
+      detectWordTimePattern.lastIndex = 0;
+      const firstMatch = detectWordTimePattern.exec(body);
+      if (!firstMatch || !Number.isFinite(lineStartMs)) continue;
+      countedLines++;
+      if (Math.abs(Number(firstMatch[1]) - lineStartMs) <= 150) alignedLines++;
+    }
+    absoluteOffset = countedLines >= 2 && alignedLines >= countedLines / 2;
+    console.info(`[Baka歌词] KRC 绝对偏移检测: absoluteOffset=${absoluteOffset}, countedLines=${countedLines}, alignedLines=${alignedLines}`);
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -296,7 +323,7 @@ function convertKugouKrcToEnhancedLrc(krc: string): string {
       const offset = Number(wordTime[1]);
       const duration = Number(wordTime[2]);
       if (!Number.isFinite(offset) || !Number.isFinite(duration)) continue;
-      const startMs = lineStartMs + offset;
+      const startMs = absoluteOffset ? offset : lineStartMs + offset;
       entries.push({
         index: wordTime.index ?? 0,
         endIndex: (wordTime.index ?? 0) + wordTime[0].length,
@@ -320,6 +347,7 @@ function isKugouKrcLike(content: string): boolean {
 }
 
 export interface BakaMfLyricsPayload {
+  ttml?: string | null;
   lyric?: string | null;
   tlyric?: string | null;
   rlyric?: string | null;
@@ -332,6 +360,7 @@ export interface BakaMfLyricsPayload {
 export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
   const parts: string[] = [];
 
+  const ttml = payload.ttml?.trim();
   const yrc = payload.yrc?.trim();
   const qrc = payload.qrc?.trim();
   const eslrc = payload.eslrc?.trim();
@@ -339,16 +368,27 @@ export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
   const lyric = payload.lyric?.trim();
 
   let wordLevelContent = '';
-  if (yrc) {
+  // ttml 是 Baka 插件（JOOX 等）的 XML 逐字歌词，后端 AMLL 的 parseTTML 可直接解析，原样透传。
+  if (ttml) {
+    wordLevelContent = ttml;
+    console.info(`[Baka歌词] 走 ttml 原样透传, len=${ttml.length}`);
+  } else if (yrc) {
     wordLevelContent = yrc;
+    console.info(`[Baka歌词] 走 yrc 原样透传, len=${yrc.length}`);
   } else if (qrc) {
     wordLevelContent = qrc;
+    console.info(`[Baka歌词] 走 qrc 原样透传, len=${qrc.length}`);
   } else if (eslrc) {
     wordLevelContent = eslrc;
+    console.info(`[Baka歌词] 走 eslrc 原样透传, len=${eslrc.length}`);
   } else if (lxlyric) {
     wordLevelContent = convertPluginLxLyricToEnhancedLrc(lxlyric);
+    console.info(`[Baka歌词] 走 lxlyric 转换, len=${lxlyric.length}`);
   } else if (lyric && isKugouKrcLike(lyric)) {
     wordLevelContent = convertKugouKrcToEnhancedLrc(lyric);
+    console.info(`[Baka歌词] 走 KRC 转换, len=${lyric.length}`);
+  } else if (lyric) {
+    console.info(`[Baka歌词] 保留纯 LRC, len=${lyric.length}`);
   }
 
   if (wordLevelContent) {

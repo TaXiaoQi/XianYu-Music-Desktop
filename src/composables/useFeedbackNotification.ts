@@ -13,7 +13,10 @@ interface FeedbackNotificationRaw {
   title: string;
   content: string;
   assignee: string;
+  replied_by: string;
+  status: string;
   resolve_note: string;
+  reject_reason: string;
   replied_at: string;
   updated_at: string;
 }
@@ -62,11 +65,16 @@ export function useFeedbackNotification() {
       const list = await fetchFeedbackNotifications();
       if (list.length > 0) {
         const item = list[0];
+        const isRejected = item.status === 'rejected';
+        const operator = item.replied_by || item.assignee || '管理员';
+        const title = isRejected ? '反馈已被拒绝' : '反馈处理完成';
+        const reason = isRejected ? item.reject_reason : item.resolve_note;
+        const reasonLabel = isRejected ? '拒绝理由' : '完成说明';
         currentFeedbackNotification.value = {
           id: `feedback-${item.id}`,
-          title: '反馈处理完成',
-          content: `您提交的反馈「${item.title || '无标题'}」已处理完成。\n\n处理管理员：${item.assignee || '管理员'}\n完成说明：${item.resolve_note || '（无说明）'}`,
-          type: 'info',
+          title,
+          content: `您提交的反馈「${item.title || '无标题'}」${isRejected ? '已被拒绝' : '已处理完成'}。\n\n处理管理员：${operator}\n${reasonLabel}：${reason || '（无说明）'}`,
+          type: isRejected ? 'warning' : 'info',
           date: formatDate(item.replied_at),
           updatedAt: item.updated_at,
         };

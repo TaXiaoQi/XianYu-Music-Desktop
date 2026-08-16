@@ -19,6 +19,8 @@ const ENHANCED_TIMESTAMP_PATTERN = /<(\d+:\d{2}(?:\.\d+)?)>/g;
 const ENHANCED_TIMESTAMP_TEXT_PATTERN = /<\d+:\d{2}(?:\.\d+)?>/;
 const LRC_LINE_TIMESTAMP_PATTERN = /^\[(\d+:\d{2}(?:\.\d+)?)](.*)$/;
 const ENHANCED_EMPTY_BACKWARD_TOLERANCE_MS = 5;
+/** 兼容「最后时间戳后带文本」的逐字行时，为最后一个词推断的时长（毫秒） */
+const ENHANCED_TRAILING_WORD_DURATION_MS = 400;
 
 type ParserSource = ParsedLineSourceFormat;
 
@@ -132,7 +134,18 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
     const text = body.slice(currentMarkerEnd, nextMarkerIndex);
 
     if (!nextMarker) {
-      if (text.length > 0) return null;
+      if (text.length > 0) {
+        // 兼容 JOOX 等插件格式：最后一个时间戳后仍带文本（如 <00:42.590>单）。
+        // 这种格式没有显式的行结束标记，把尾随文本作为最后一个词，
+        // endTime 用当前时间 + 一个合理间隔推断，避免整行被丢弃导致歌词后半段黑屏。
+        words.push({
+          startTime: currentStart,
+          endTime: currentStart + ENHANCED_TRAILING_WORD_DURATION_MS,
+          word: text,
+          romanWord: '',
+        });
+        continue;
+      }
       explicitEndTime = currentStart;
       continue;
     }
@@ -173,14 +186,23 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
 
 export function parseEnhancedLrc(source: string): AmlLyricLine[] {
   const lines: AmlLyricLine[] = [];
+  let dropped = 0;
+  const droppedSamples: string[] = [];
 
   for (const rawLine of source.split('\n')) {
     if (!isEnhancedLrcLine(rawLine)) continue;
 
     const parsedLine = parseEnhancedLrcLine(rawLine);
     if (parsedLine) lines.push(parsedLine);
+    else {
+      dropped++;
+      if (droppedSamples.length < 3) droppedSamples.push(rawLine.slice(0, 160));
+    }
   }
 
+  if (dropped > 0) {
+    console.info(`[Lyrics] parseEnhancedLrc 丢弃 ${dropped} 行: 样本=${droppedSamples.join(' || ')}`);
+  }
   return lines;
 }
 
@@ -241,7 +263,23 @@ export function mergeEnhancedLinesIntoBaseLines(
     });
 }
 
+/** 真正的逐字歌词格式：应始终优先于普通 LRC。
+ * 否则当歌词里夹杂非逐字行（如间奏标注、纯文本行）时，parseLrc 收集的行数
+ * 更多、得分更高，会把逐字候选顶掉，导致逐字歌词被显示成逐行。 */
+const WORD_LEVEL_SOURCES: ReadonlySet<ParserSource> = new Set([
+  'enhanced_lrc',
+  'ttml',
+  'yrc',
+  'qrc',
+]);
+
 function compareParserCandidates(left: ParserCandidate, right: ParserCandidate): number {
+  const leftWordLevel = WORD_LEVEL_SOURCES.has(left.source);
+  const rightWordLevel = WORD_LEVEL_SOURCES.has(right.source);
+  if (leftWordLevel !== rightWordLevel) {
+    return leftWordLevel ? -1 : 1;
+  }
+
   const scoreDiff = scoreParsedLines(right.lines) - scoreParsedLines(left.lines);
   if (scoreDiff !== 0) return scoreDiff;
 

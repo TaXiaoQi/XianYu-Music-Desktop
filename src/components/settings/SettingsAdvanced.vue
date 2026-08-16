@@ -757,8 +757,12 @@ onUnmounted(() => {
                     <div class="fb-my-left">
                       <p class="fb-my-content">{{ item.content }}</p>
                       <div v-if="item.status === 'resolved' && item.resolveNote" class="fb-my-reply">
-                        <span class="fb-my-reply-label">处理说明（{{ item.assignee || '管理员' }}）</span>
+                        <span class="fb-my-reply-label">处理说明（{{ item.repliedBy || item.assignee || '管理员' }}）</span>
                         <span>{{ item.resolveNote }}</span>
+                      </div>
+                      <div v-else-if="item.status === 'rejected' && item.rejectReason" class="fb-my-reply fb-my-reply-reject">
+                        <span class="fb-my-reply-label">拒绝理由（{{ item.repliedBy || item.assignee || '管理员' }}）</span>
+                        <span>{{ item.rejectReason }}</span>
                       </div>
                       <div class="fb-my-meta">
                         <span>{{ item.createdAt }}</span>
@@ -1264,6 +1268,22 @@ onUnmounted(() => {
 :global(.dark) .fb-my-reply-label,
 .dark .fb-my-reply-label {
   color: #5fe589;
+}
+.fb-my-reply-reject {
+  background: rgba(255, 59, 48, 0.08);
+  border-color: rgba(255, 59, 48, 0.18);
+}
+:global(.dark) .fb-my-reply-reject,
+.dark .fb-my-reply-reject {
+  background: rgba(255, 59, 48, 0.14);
+  border-color: rgba(255, 59, 48, 0.28);
+}
+.fb-my-reply-reject .fb-my-reply-label {
+  color: #ff3b30;
+}
+:global(.dark) .fb-my-reply-reject .fb-my-reply-label,
+.dark .fb-my-reply-reject .fb-my-reply-label {
+  color: #ff6b62;
 }
 .fb-my-reply span:last-child {
   font-size: 12px;
