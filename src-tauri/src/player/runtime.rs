@@ -1367,7 +1367,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                     } => {
                         requested_output_mode = output_mode;
                         current_volume_balance_gain = volume_balance_gain;
-                        let source_is_remote = source.is_remote();
+                        let source_is_network_backed = source.is_network_backed();
                         let display_path = source.display_path();
                         // 记住当前远程流信息：seek 失败需要重建解码链时，远程流不能用
                         // File::open(current_path)（那是 URL），必须用 RemoteRangeReader 重建
@@ -1382,8 +1382,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             _ => None,
                         };
                         // [缓冲降级] 网络/磁盘流才启用看门狗；进入新播放时复位降级状态。
-                        network_backed =
-                            current_remote_stream.is_some() || current_streaming_state.is_some();
+                        network_backed = source_is_network_backed;
                         watchdog_sink_paused = false;
                         watchdog_buffering_active = false;
                         watchdog_starved_since = None;
@@ -1397,7 +1396,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         stop_exclusive_playback(&mut exclusive_playback);
 
                         #[cfg(target_os = "windows")]
-                        if output_mode == AudioOutputMode::WasapiExclusive && !source_is_remote {
+                        if output_mode == AudioOutputMode::WasapiExclusive
+                            && !source_is_network_backed
+                        {
                             let exclusive_start =
                                 start_offset_ms.map_or(Duration::ZERO, Duration::from_millis);
                             match start_exclusive_playback(
@@ -1444,10 +1445,11 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             }
                         }
                         #[cfg(target_os = "windows")]
-                        if output_mode == AudioOutputMode::WasapiExclusive && source_is_remote {
+                        if output_mode == AudioOutputMode::WasapiExclusive
+                            && source_is_network_backed
+                        {
                             active_output_mode = AudioOutputMode::Shared;
-                            fallback_reason =
-                                Some("远程 WebDAV 音频使用共享模式流式播放".to_string());
+                            fallback_reason = Some("网络音频使用共享模式缓冲播放".to_string());
                         }
 
                         #[cfg(not(target_os = "windows"))]
@@ -1551,11 +1553,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         }
                         // 暂停/停止时已释放音频设备，此处按需重建（共享 OutputStream 或独占 IAudioClient）。
                         #[cfg(target_os = "windows")]
-                        let source_is_remote =
-                            current_remote_stream.is_some() || current_streaming_state.is_some();
+                        let source_is_network_backed = network_backed;
                         #[cfg(target_os = "windows")]
                         if requested_output_mode == AudioOutputMode::WasapiExclusive
-                            && !source_is_remote
+                            && !source_is_network_backed
                         {
                             match start_exclusive_playback(
                                 current_path.clone(),

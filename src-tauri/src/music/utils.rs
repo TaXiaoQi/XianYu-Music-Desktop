@@ -1,5 +1,24 @@
 use std::fs;
 
+fn normalize_windows_path(path: &str) -> String {
+    let path = path.replace('/', "\\");
+
+    if let Some(unc_path) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{unc_path}");
+    }
+
+    if let Some(local_path) = path.strip_prefix(r"\\?\") {
+        return local_path.to_string();
+    }
+
+    // 兼容旧版本错误移除 `\\?\` 后遗留的 `UNC\server\share` 路径。
+    if let Some(unc_path) = path.strip_prefix(r"UNC\") {
+        return format!(r"\\{unc_path}");
+    }
+
+    path
+}
+
 /// 将 i64 钳位到 u32 范围（负值归零，超限取 MAX）
 pub(crate) fn clamp_i64_to_u32(v: i64) -> u32 {
     if v <= 0 {
@@ -35,18 +54,60 @@ pub const CUE_FILE_EXTENSIONS: &[&str] = &["cue"];
 
 pub fn normalize_path(path_str: &str) -> String {
     if let Ok(p) = fs::canonicalize(path_str) {
-        let mut s = p.to_string_lossy().into_owned();
-        if cfg!(windows) && s.starts_with(r"\\?\") {
-            s = s[4..].to_string();
-        }
-        return s;
+        let path = p.to_string_lossy().into_owned();
+        return if cfg!(windows) {
+            normalize_windows_path(&path)
+        } else {
+            path
+        };
     }
-    let s = path_str.to_string();
+
     if cfg!(windows) {
-        s.replace("/", "\\")
+        normalize_windows_path(path_str)
     } else {
-        s
+        path_str.to_string()
     }
+}
+
+/// 返回当前规范 UNC 路径在旧版本中可能被错误保存成的值。
+pub fn legacy_unc_path(path_str: &str) -> Option<String> {
+    path_str
+        .strip_prefix(r"\\")
+        .filter(|path| !path.starts_with(r"?\") && !path.starts_with(r".\"))
+        .map(|path| format!(r"UNC\{path}"))
+}
+
+/// 判断路径是否来自 Windows 局域网共享（UNC 或映射网络驱动器）。
+pub fn is_network_share_path(path_str: &str) -> bool {
+    let path = path_str.trim();
+    if path.starts_with(r"\\?\UNC\")
+        || (path.starts_with(r"\\") && !path.starts_with(r"\\?\") && !path.starts_with(r"\\.\"))
+        || path.starts_with("//")
+    {
+        return true;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::iter;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+
+        const WINDOWS_DRIVE_REMOTE: u32 = 4;
+
+        let bytes = path.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            let drive_root = format!("{}:\\", bytes[0] as char);
+            let wide = OsStr::new(&drive_root)
+                .encode_wide()
+                .chain(iter::once(0))
+                .collect::<Vec<_>>();
+            return unsafe { GetDriveTypeW(wide.as_ptr()) } == WINDOWS_DRIVE_REMOTE;
+        }
+    }
+
+    false
 }
 
 /// Escape special characters for SQL LIKE pattern with `ESCAPE '^'`.
@@ -93,6 +154,39 @@ pub fn is_lossless_audio(codec: Option<&str>, format: &str) -> bool {
         normalized.as_str(),
         "aif" | "aiff" | "alac" | "ape" | "dsd" | "flac" | "pcm" | "wav" | "wv"
     )
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::{is_network_share_path, legacy_unc_path, normalize_windows_path};
+
+    #[test]
+    fn converts_windows_verbatim_unc_to_regular_unc() {
+        assert_eq!(
+            normalize_windows_path(r"\\?\UNC\NAS\Music\song.flac"),
+            r"\\NAS\Music\song.flac"
+        );
+    }
+
+    #[test]
+    fn restores_legacy_broken_unc_prefix() {
+        assert_eq!(
+            normalize_windows_path(r"UNC\NAS\Music\song.flac"),
+            r"\\NAS\Music\song.flac"
+        );
+        assert_eq!(
+            legacy_unc_path(r"\\NAS\Music"),
+            Some(r"UNC\NAS\Music".to_string())
+        );
+    }
+
+    #[test]
+    fn recognizes_unc_network_share_paths() {
+        assert!(is_network_share_path(r"\\NAS\Music\song.flac"));
+        assert!(is_network_share_path(r"\\?\UNC\NAS\Music\song.flac"));
+        assert!(is_network_share_path("//NAS/Music/song.flac"));
+        assert!(!is_network_share_path(r"C:\Music\song.flac"));
+    }
 }
 
 pub fn format_distribution_bucket(

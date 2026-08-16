@@ -230,8 +230,22 @@ impl AudioSource {
         }
     }
 
-    pub fn is_remote(&self) -> bool {
-        matches!(self, AudioSource::RemoteWebDav(_))
+    pub fn is_network_backed(&self) -> bool {
+        match self {
+            AudioSource::LocalFile(path) => crate::music::utils::is_network_share_path(path),
+            AudioSource::RemoteWebDav(_) | AudioSource::StreamingTempFile(_) => true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod audio_source_tests {
+    use super::AudioSource;
+
+    #[test]
+    fn treats_unc_local_files_as_network_backed() {
+        assert!(AudioSource::LocalFile(r"\\NAS\Music\song.flac".to_string()).is_network_backed());
+        assert!(!AudioSource::LocalFile(r"C:\Music\song.flac".to_string()).is_network_backed());
     }
 }
 

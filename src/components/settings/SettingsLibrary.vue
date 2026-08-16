@@ -28,6 +28,21 @@
         </div>
       </button>
 
+      <div class="network-share-row">
+        <div class="network-share-copy">
+          <div class="network-share-title">局域网共享文件夹</div>
+          <div class="network-share-desc">支持 NAS、SMB 共享和映射网络驱动器，例如 \\NAS\Music。</div>
+        </div>
+        <button
+          type="button"
+          class="network-share-button"
+          :disabled="isScanning"
+          @click="showNetworkShareInput = true"
+        >
+          输入共享路径
+        </button>
+      </div>
+
       <div class="short-audio-filter">
         <div class="short-audio-copy">
           <div class="short-audio-title">排除短音频</div>
@@ -104,6 +119,13 @@
       @confirm="confirmRemove"
       @cancel="showConfirm = false"
     />
+    <ModernInputModal
+      v-model:visible="showNetworkShareInput"
+      title="添加局域网共享文件夹"
+      placeholder="\\NAS\Music"
+      confirm-text="添加"
+      @confirm="handleAddNetworkShare"
+    />
   </div>
 </template>
 
@@ -118,9 +140,12 @@ import {
   useSettingsStore,
 } from '../../features/settings/store';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
+import ModernInputModal from '../common/ModernInputModal.vue';
 import SettingsRemoteLibrary from './SettingsRemoteLibrary.vue';
+import { useToast } from '../../composables/toast';
 
 const { addLibraryFolderLinked, removeLibraryFolderLinked } = usePlayer();
+const { showToast } = useToast();
 const libraryStore = useLibraryStore();
 const settingsStore = useSettingsStore();
 const { libraryFolders, libraryScanProgress, lastLibraryScanError } = storeToRefs(libraryStore);
@@ -159,6 +184,7 @@ const scanStatusLabel = computed(() => {
   }
 });
 const showConfirm = ref(false);
+const showNetworkShareInput = ref(false);
 const folderToRemove = ref('');
 const confirmContent = ref('');
 
@@ -176,6 +202,30 @@ const handleAddLibraryFolder = async () => {
         sourcePath: selected,
       },
     });
+  }
+};
+
+const handleAddNetworkShare = async (rawPath: string) => {
+  const path = rawPath.trim().replace(/^"|"$/g, '');
+  const isUncPath = path.startsWith('\\\\') || path.startsWith('//');
+  if (!isUncPath) {
+    showToast('请输入 UNC 共享路径，例如 \\\\NAS\\Music', 'error');
+    return;
+  }
+
+  try {
+    const isFirstImport = libraryFolders.value.length === 0;
+    await addLibraryFolderLinked(path, {
+      showToast: true,
+      scanOptions: {
+        trigger: isFirstImport ? 'first-import' : 'folder-add',
+        visibility: isFirstImport ? 'hero' : 'silent',
+        sourcePath: path,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to add network share:', error);
+    showToast(`添加局域网共享失败: ${error}`, 'error');
   }
 };
 
@@ -262,6 +312,58 @@ const confirmRemove = async () => {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.network-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.network-share-copy {
+  min-width: 0;
+}
+
+.network-share-title {
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.network-share-desc {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.network-share-button {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(236, 65, 65, 0.28);
+  border-radius: 8px;
+  background: rgba(236, 65, 65, 0.08);
+  color: #ec4141;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.network-share-button:hover:not(:disabled) {
+  border-color: rgba(236, 65, 65, 0.5);
+  background: rgba(236, 65, 65, 0.14);
+}
+
+.network-share-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .short-audio-filter {

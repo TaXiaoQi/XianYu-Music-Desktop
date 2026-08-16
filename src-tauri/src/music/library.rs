@@ -3,7 +3,10 @@
 use super::scanner::ScanOptions;
 use super::scanner::{scan_folder_recursive, scan_single_directory_internal};
 use super::types::{AlbumCatalogItem, ArtistCatalogItem, FolderNode, LibraryFolder, LibrarySong};
-use super::utils::{clamp_i64_to_u32, descendant_like_patterns, i64_to_u64_opt, i64_to_u8_opt, normalize_path};
+use super::utils::{
+    clamp_i64_to_u32, descendant_like_patterns, i64_to_u64_opt, i64_to_u8_opt, legacy_unc_path,
+    normalize_path,
+};
 use crate::database::DbState;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -62,8 +65,12 @@ fn remove_library_folder_from_conn(
     folder_path: &str,
 ) -> Result<Vec<String>, String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM library_folders WHERE path = ?1", [folder_path])
-        .map_err(|e| e.to_string())?;
+    let legacy_path = legacy_unc_path(folder_path).unwrap_or_else(|| folder_path.to_string());
+    tx.execute(
+        "DELETE FROM library_folders WHERE path = ?1 OR path = ?2",
+        rusqlite::params![folder_path, legacy_path],
+    )
+    .map_err(|e| e.to_string())?;
 
     let remaining_roots = {
         let mut stmt = tx
@@ -73,6 +80,7 @@ fn remove_library_folder_from_conn(
             .query_map([], |row| row.get::<_, String>(0))
             .map_err(|e| e.to_string())?
             .filter_map(Result::ok)
+            .map(|path| normalize_path(&path))
             .collect::<Vec<_>>();
         rows
     };
@@ -334,9 +342,10 @@ pub async fn get_library_folders(
             .map_err(|e| e.to_string())?;
 
         let paths: Vec<String> = stmt
-            .query_map([], |row| row.get(0))
+            .query_map([], |row| row.get::<_, String>(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
+            .map(|path| normalize_path(&path))
             .collect();
 
         let mut song_stmt = conn
@@ -374,7 +383,16 @@ pub async fn add_library_folder(path: String, db_state: State<'_, DbState>) -> R
     let normalized = normalize_path(&path);
 
     tauri::async_runtime::spawn_blocking(move || {
+        let folder = PathBuf::from(&normalized);
+        if !folder.is_dir() || std::fs::read_dir(&folder).is_err() {
+            return Err("无法访问音乐文件夹，请检查局域网连接、共享路径和访问权限".to_string());
+        }
+
         let conn = db_conn.lock().map_err(|e| e.to_string())?;
+        if let Some(legacy_path) = legacy_unc_path(&normalized) {
+            conn.execute("DELETE FROM library_folders WHERE path = ?1", [legacy_path])
+                .map_err(|e| e.to_string())?;
+        }
         conn.execute(
             "INSERT OR REPLACE INTO library_folders (path, added_at) VALUES (?1, ?2)",
             [

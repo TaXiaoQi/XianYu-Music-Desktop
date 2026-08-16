@@ -213,6 +213,7 @@ const staticItems: SettingsSearchItem[] = [
 
   ...makeItems('library', '本地音乐库', [
     { label: '导入音乐文件夹', target: '点击导入文件夹', keywords: '添加 扫描 拖入 音频' },
+    { label: '局域网共享文件夹', keywords: 'NAS SMB UNC 网络共享 映射驱动器' },
     { label: '排除短音频', keywords: '最短时长 秒 过滤' },
   ]),
   ...makeItems('library', '远程音乐库', [
