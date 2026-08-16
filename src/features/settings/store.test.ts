@@ -12,6 +12,16 @@ describe('settings store', () => {
     setActivePinia(createPinia());
   });
 
+  it('uses Chinese by default and validates persisted app languages', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.settings.language).toBe('zh-CN');
+    expect(mergeAppSettings(settingsStore.settings, { language: 'en-US' }).language).toBe('en-US');
+    expect(mergeAppSettings(settingsStore.settings, {
+      language: 'fr-FR' as unknown as 'zh-CN',
+    }).language).toBe('zh-CN');
+  });
+
   it('enables sleep prevention by default and preserves an explicit disabled value', () => {
     const settingsStore = useSettingsStore();
 

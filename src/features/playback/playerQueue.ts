@@ -29,10 +29,18 @@ export const createPlayerQueue = ({
   const { currentSong, isPlaying, playMode, playQueue, tempQueue } = storeToRefs(playbackStore);
   const shuffleHistory: string[] = [];
   const shuffleFuture: string[] = [];
+  const shuffleRemaining: string[] = [];
+  const shuffleCyclePlayed = new Set<string>();
+  let shuffleKnownPaths = new Set<string>();
+  let shuffleInitialized = false;
 
   const resetShuffleState = () => {
     shuffleHistory.length = 0;
     shuffleFuture.length = 0;
+    shuffleRemaining.length = 0;
+    shuffleCyclePlayed.clear();
+    shuffleKnownPaths = new Set<string>();
+    shuffleInitialized = false;
   };
 
   const runPlaySong = (song: Song, options?: QueuePlaySongOptions) => {
@@ -48,6 +56,26 @@ export const createPlayerQueue = ({
     }
   };
 
+  const shufflePaths = (paths: string[]) => {
+    const shuffled = [...paths];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
+  };
+
+  const replaceShuffleRemaining = (paths: string[]) => {
+    shuffleRemaining.splice(0, shuffleRemaining.length, ...paths);
+  };
+
+  const removeFromShuffleRemaining = (path: string) => {
+    const index = shuffleRemaining.indexOf(path);
+    if (index >= 0) {
+      shuffleRemaining.splice(index, 1);
+    }
+  };
+
   const handleBeforePlay = (song: Song, options: QueuePlaySongOptions = {}) => {
     const shouldUpdateShuffleHistory = options.updateShuffleHistory ?? true;
     const shouldClearShuffleFuture = options.clearShuffleFuture ?? true;
@@ -55,13 +83,19 @@ export const createPlayerQueue = ({
 
     if (
       playMode.value === 2 &&
-      shouldUpdateShuffleHistory &&
-      previousSong &&
-      previousSong.path !== song.path
+      previousSong?.path !== song.path
     ) {
-      pushBounded(shuffleHistory, previousSong.path);
-      if (shouldClearShuffleFuture) {
-        shuffleFuture.length = 0;
+      if (previousSong) {
+        shuffleCyclePlayed.add(previousSong.path);
+      }
+      shuffleCyclePlayed.add(song.path);
+      removeFromShuffleRemaining(song.path);
+
+      if (shouldUpdateShuffleHistory && previousSong) {
+        pushBounded(shuffleHistory, previousSong.path);
+        if (shouldClearShuffleFuture) {
+          shuffleFuture.length = 0;
+        }
       }
     }
   };
@@ -89,14 +123,72 @@ export const createPlayerQueue = ({
     return null;
   };
 
-  const pickRandomSong = (list: Song[]) => {
+  const syncShuffleRemaining = (list: Song[]) => {
+    const paths = [...new Set(list.map(song => song.path))];
+    const validPaths = new Set(paths);
+    const currentPath = currentSong.value?.path;
+
+    for (const playedPath of shuffleCyclePlayed) {
+      if (!validPaths.has(playedPath)) {
+        shuffleCyclePlayed.delete(playedPath);
+      }
+    }
+
+    const retained = shuffleRemaining.filter(path => (
+      validPaths.has(path) &&
+      path !== currentPath &&
+      !shuffleCyclePlayed.has(path)
+    ));
+    replaceShuffleRemaining(retained);
+
+    if (!shuffleInitialized) {
+      shuffleInitialized = true;
+      if (currentPath && validPaths.has(currentPath)) {
+        shuffleCyclePlayed.add(currentPath);
+      }
+      replaceShuffleRemaining(shufflePaths(
+        paths.filter(path => path !== currentPath && !shuffleCyclePlayed.has(path)),
+      ));
+    } else {
+      const newlyAdded = paths.filter(path => (
+        !shuffleKnownPaths.has(path) &&
+        path !== currentPath &&
+        !shuffleCyclePlayed.has(path) &&
+        !shuffleRemaining.includes(path)
+      ));
+      if (newlyAdded.length > 0) {
+        replaceShuffleRemaining(shufflePaths([...shuffleRemaining, ...newlyAdded]));
+      }
+    }
+
+    shuffleKnownPaths = validPaths;
+
+    // 一轮全部播放后重新洗牌；排除当前歌曲，避免跨轮立即重复。
+    if (shuffleRemaining.length === 0 && paths.some(path => path !== currentPath)) {
+      shuffleCyclePlayed.clear();
+      if (currentPath) {
+        shuffleCyclePlayed.add(currentPath);
+      }
+      replaceShuffleRemaining(shufflePaths(paths.filter(path => path !== currentPath)));
+    }
+  };
+
+  const takePseudoRandomSong = (list: Song[]) => {
     if (list.length === 0) return null;
     if (list.length === 1) return list[0];
 
-    const currentPath = currentSong.value?.path;
-    const candidates = currentPath ? list.filter(song => song.path !== currentPath) : list;
-    if (candidates.length === 0) return list[0];
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    syncShuffleRemaining(list);
+    while (shuffleRemaining.length > 0) {
+      const nextPath = shuffleRemaining.shift();
+      const nextSong = findSongByPath(nextPath, list);
+      if (nextSong && nextSong.path !== currentSong.value?.path) {
+        // 先占用本轮名额，避免快速连续点击“下一首”时重复抽到同一首。
+        shuffleCyclePlayed.add(nextSong.path);
+        return nextSong;
+      }
+    }
+
+    return list.find(song => song.path !== currentSong.value?.path) ?? list[0];
   };
 
   const nextSong = () => {
@@ -117,13 +209,18 @@ export const createPlayerQueue = ({
       const futureSong = findSongByPath(futurePath, navigationList);
       if (futureSong) {
         shuffleFuture.pop();
+        if (currentSong.value && currentSong.value.path !== futureSong.path) {
+          pushBounded(shuffleHistory, currentSong.value.path);
+        }
+        shuffleCyclePlayed.add(futureSong.path);
+        removeFromShuffleRemaining(futureSong.path);
         runPlaySong(futureSong, { updateShuffleHistory: false, clearShuffleFuture: false });
         return;
       }
 
-      const randomSong = pickRandomSong(navigationList);
-      if (randomSong) {
-        runPlaySong(randomSong);
+      const pseudoRandomSong = takePseudoRandomSong(navigationList);
+      if (pseudoRandomSong) {
+        runPlaySong(pseudoRandomSong);
       }
       return;
     }
@@ -148,9 +245,9 @@ export const createPlayerQueue = ({
         return;
       }
 
-      const randomSong = pickRandomSong(navigationList);
-      if (randomSong) {
-        runPlaySong(randomSong);
+      const pseudoRandomSong = takePseudoRandomSong(navigationList);
+      if (pseudoRandomSong) {
+        runPlaySong(pseudoRandomSong);
       }
       return;
     }

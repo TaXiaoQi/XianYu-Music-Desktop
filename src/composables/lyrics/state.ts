@@ -131,14 +131,6 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
 
       if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
 
-      const parsedCount = (payload?.displayLines ?? []).length;
-      const rawLineCount = lyricsRaw.split(/\r?\n/).length;
-      if (parsedCount < rawLineCount) {
-        console.info(`[Lyrics] parseLyricsText: rawLines=${rawLineCount} parsedLines=${parsedCount}（丢弃 ${rawLineCount - parsedCount} 行）first=${payload?.displayLines?.[0]?.text ?? ''} last=${payload?.displayLines?.[parsedCount - 1]?.text ?? ''}`);
-      } else {
-        console.info(`[Lyrics] parseLyricsText: rawLines=${rawLineCount} parsedLines=${parsedCount}`);
-      }
-
       rawLyrics.value = lyricsRaw;
       lyricDocument.value = payload?.document ?? null;
       semanticLyrics.value = payload?.semanticLines ?? [];

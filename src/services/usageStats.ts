@@ -340,9 +340,7 @@ export interface MyFeedbackItem {
   status: 'pending' | 'processing' | 'resolved' | 'rejected';
   category: string;
   assignee: string;
-  repliedBy: string;
   resolveNote: string;
-  rejectReason: string;
   hasErrorLogs: boolean;
   hasAllLogs: boolean;
   createdAt: string;
