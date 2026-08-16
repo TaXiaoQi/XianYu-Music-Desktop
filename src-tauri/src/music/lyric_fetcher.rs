@@ -709,30 +709,41 @@ fn decode_kw_lyric(body_base64: &str) -> Result<String, String> {
 // ==================== WY eapi Encryption (NetEase) ====================
 
 const WY_EAPI_KEY: &[u8] = b"e82ckenh8dichen8";
-const WY_EAPI_IV: &[u8] = b"0102030405060708";
 
 fn wy_eapi_encrypt(url: &str, data: &str) -> Result<String, String> {
-    use aes::cipher::block_padding::Pkcs7;
-    use aes::cipher::{BlockEncryptMut, KeyIvInit};
-    use aes::Aes128;
-    use cbc::Encryptor;
-    let message = format!("nobody{}use{}md5forencrypt", url, data);
+    use aes::cipher::{BlockEncrypt, KeyInit};
+    use aes::{Aes128Enc, Block};
+    // eapi 加密摘要中的路径需用 /api/ 前缀（Web 端逻辑路径），与 POST 目标
+    // /eapi/ 不同，否则 message 摘要不一致，服务端解不开请求参数。
+    let sign_url = url
+        .strip_prefix("/eapi/")
+        .map(|r| format!("/api/{}", r))
+        .unwrap_or_else(|| url.to_string());
+    let message = format!("nobody{}use{}md5forencrypt", sign_url, data);
     let digest = md5::compute(message.as_bytes());
     let digest_hex = format!("{:x}", digest);
-    let data_str = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", url, data, digest_hex);
+    let data_str = format!(
+        "{}-36cd479b6b5-{}-36cd479b6b5-{}",
+        sign_url, data, digest_hex
+    );
 
-    // 网易云 eapi 使用 AES-CBC（iv=0102030405060708）+ PKCS7 填充。
-    // 此前误用 ECB 导致服务端返回 "wrong params"，逐字歌词(yrc)取不到。
-    let cipher = Encryptor::<Aes128>::new_from_slices(WY_EAPI_KEY, WY_EAPI_IV)
-        .map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; data_str.len() + 16];
-    let n = cipher
-        .encrypt_padded_mut::<Pkcs7>(&mut buf, data_str.len())
-        .map_err(|e| e.to_string())?
-        .len();
+    // 网易云 eapi 标准加密：AES-ECB(key=e82ckenh8dichen8, PKCS7) 单重加密，
+    // 输出 hex 大写作为单个 params。此前误用 AES-CBC+双重+encSecKey，
+    // 服务端解不开请求参数，导致总是返回空体(body_len=0)。
+    let cipher = Aes128Enc::new_from_slice(WY_EAPI_KEY).map_err(|e| e.to_string())?;
+    let block_size = 16usize;
+    let padding = block_size - (data_str.len() % block_size);
+    let mut padded = data_str.as_bytes().to_vec();
+    padded.resize(data_str.len() + padding, padding as u8);
 
-    let hex_str: String = buf[..n].iter().map(|b| format!("{:02X}", b)).collect();
-    Ok(hex_str)
+    let mut out = Vec::with_capacity(padded.len());
+    for chunk in padded.chunks(block_size) {
+        let mut block = Block::default();
+        block.copy_from_slice(chunk);
+        cipher.encrypt_block(&mut block);
+        out.extend_from_slice(&block);
+    }
+    Ok(hex::encode_upper(out))
 }
 
 // ==================== HTTP Fetching ====================
@@ -1968,21 +1979,58 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
 /// 网易云 eapi 响应解密：响应体与请求体一样是 AES-CBC 加密的 hex 密文，
 /// 需 hex 解码 → AES-CBC 解密 → PKCS7 unpad 后才能得到 JSON 明文。
 fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
-    use aes::cipher::block_padding::Pkcs7;
-    use aes::cipher::{BlockDecryptMut, KeyIvInit};
-    use aes::Aes128;
-    use cbc::Decryptor;
+    use aes::cipher::{BlockDecrypt, KeyInit};
+    use aes::{Aes128Dec, Block};
 
     let hex_str = body.trim();
-    let cipher_bytes = hex::decode(hex_str).ok()?;
+    let cipher_bytes = match hex::decode(hex_str) {
+        Ok(b) => b,
+        Err(_) => {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[lyric_fetcher] wy eapi 响应 hex 解码失败 len={} head={:?}",
+                hex_str.len(),
+                &hex_str.as_bytes()[..hex_str.len().min(40)]
+            );
+            return None;
+        }
+    };
     if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[lyric_fetcher] wy eapi 响应长度非法 bytes_len={}",
+            cipher_bytes.len()
+        );
         return None;
     }
 
-    let cipher = Decryptor::<Aes128>::new_from_slices(WY_EAPI_KEY, WY_EAPI_IV).ok()?;
-    let mut buf = cipher_bytes.to_vec();
-    let pt = cipher.decrypt_padded_mut::<Pkcs7>(&mut buf).ok()?;
-    serde_json::from_slice(pt).ok()
+    let cipher = Aes128Dec::new_from_slice(WY_EAPI_KEY).ok()?;
+    let mut dec = Vec::with_capacity(cipher_bytes.len());
+    for chunk in cipher_bytes.chunks(16) {
+        let mut block = Block::default();
+        block.copy_from_slice(chunk);
+        cipher.decrypt_block(&mut block);
+        dec.extend_from_slice(&block);
+    }
+    // 去 PKCS7 填充
+    let last = *dec.last()?;
+    let pad = last as usize;
+    if pad == 0 || pad > 16 {
+        return None;
+    }
+    dec.truncate(dec.len() - pad);
+    match serde_json::from_slice(&dec) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[lyric_fetcher] wy eapi 响应解密后 JSON 解析失败 err={:?} pt_head={:?}",
+                e,
+                &dec[..dec.len().min(80)]
+            );
+            None
+        }
+    }
 }
 
 /// WY eapi POST request helper: encrypts params and sends POST to the given eapi endpoint
@@ -1994,18 +2042,29 @@ async fn wy_eapi_post(
     let data_str = serde_json::to_string(&data).unwrap_or_default();
     let params = wy_eapi_encrypt(eapi_path, &data_str)?;
     let api_url = format!("https://interface3.music.163.com{}", eapi_path);
+    // params 为 hex 大写（仅 [0-9A-F]），不含 + / = 等特殊字符，可原样放入表单
     let body = format!("params={}", params);
 
+    // 对齐网页端真实请求：不带假 cookie，Referer/Origin 指向 y.music.163.com，
+    // 避免被风控识别为脚本而返回空体。
     let mut headers: Vec<(&str, &str)> = vec![
         ("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"),
-        ("origin", "https://music.163.com"),
+        ("Referer", "https://y.music.163.com/"),
+        ("Origin", "https://y.music.163.com/"),
+        ("authority", "music.163.com"),
         ("Content-Type", "application/x-www-form-urlencoded"),
-        // eapi 接口通常要求 os=pc cookie，缺失可能导致校验失败或返回异常
-        ("Cookie", "os=pc; appver=8.9.75; osver=; deviceId=pyncm!"),
     ];
     headers.extend_from_slice(extra_headers);
 
     let resp = http_fetch_text(&api_url, "POST", &headers, Some(&body)).await?;
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] wy eapi_post {} status={} body_len={} body_head={}",
+        eapi_path,
+        resp.status,
+        resp.body.len(),
+        resp.body.chars().take(200).collect::<String>(),
+    );
     if resp.status != 200 {
         return Ok(None);
     }
@@ -2013,6 +2072,14 @@ async fn wy_eapi_post(
     // 回退到直接 JSON 解析，保证兼容性。
     if let Some(v) = wy_eapi_decrypt_response(&resp.body) {
         return Ok(Some(v));
+    }
+    #[cfg(debug_assertions)]
+    {
+        let is_json = serde_json::from_str::<serde_json::Value>(&resp.body).is_ok();
+        eprintln!(
+            "[lyric_fetcher] wy eapi_post {} 解密失败 is_json={}",
+            eapi_path, is_json
+        );
     }
     match serde_json::from_str::<serde_json::Value>(&resp.body) {
         Ok(v) => Ok(Some(v)),
@@ -2058,8 +2125,10 @@ async fn wyy_get_karaoke(song_id: &str) -> String {
         &api_url,
         "POST",
         &[
-            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/2.10.2.200154"),
-            ("Cookie", "os=pc; appver=8.9.75; osver=; deviceId=pyncm!"),
+            ("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36"),
+            ("Referer", "https://y.music.163.com/"),
+            ("Origin", "https://y.music.163.com/"),
+            ("authority", "music.163.com"),
             ("Content-Type", "application/x-www-form-urlencoded"),
         ],
         Some(&body),
@@ -2107,6 +2176,37 @@ async fn fetch_wy_legacy_lyric(song_id: &str) -> Result<Option<LyricResult>, Str
         Ok(value) => value,
         Err(_) => return Ok(None),
     };
+
+    #[cfg(debug_assertions)]
+    {
+        let keys: Vec<String> = body
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        let code = body.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let yrc_len = body
+            .get("yrc")
+            .and_then(|v| v.get("lyric"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        let klyric_len = body
+            .get("klyric")
+            .and_then(|v| v.get("lyric"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        let lrc_len = body
+            .get("lrc")
+            .and_then(|v| v.get("lyric"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        eprintln!(
+            "[lyric_fetcher] wy legacy song_id={} code={} keys={:?} lrc_len={} yrc_len={} klyric_len={}",
+            song_id, code, keys, lrc_len, yrc_len, klyric_len
+        );
+    }
 
     let final_lxlyric = {
         let yrc = try_extract_yrc(&body);
@@ -2170,8 +2270,8 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         .unwrap_or_else(|_| serde_json::Value::from(song_id.to_string()));
 
     // Use /eapi/song/lyric/v1 with POST. eapi 路径必须带 /eapi/ 前缀，
-    // 否则服务端校验 "wrong params"，拿不到 yrc 逐字。
-    // kv=0 + yv=0 lets the API return yrc field for YRC word-by-word lyrics
+    // 参数对齐网页端/Baka 插件的标准写法（tv/lv/rv/kv/yv/ytv/yrv=0），
+    // 服务端会返回逐字 yrc 与普通 lrc。此前误用 -1 是加密错误时的错误归因。
     let data = serde_json::json!({
         "id": song_id_value, "cp": false, "tv": 0, "lv": 0, "rv": 0, "kv": 0, "yv": 0, "ytv": 0, "yrv": 0,
     });
@@ -2179,8 +2279,45 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
     // 避免 eapi key 失效或接口限流时整条歌词链路失败。
     let body = match wy_eapi_post("/eapi/song/lyric/v1", data, &[]).await {
         Ok(Some(b)) => b,
-        Ok(None) | Err(_) => return fetch_wy_legacy_lyric(song_id).await,
+        Ok(None) => {
+            eprintln!(
+                "[lyric_fetcher] wy eapi song_id={} 解析为空/非200，回退 legacy",
+                song_id
+            );
+            return fetch_wy_legacy_lyric(song_id).await;
+        }
+        Err(e) => {
+            eprintln!(
+                "[lyric_fetcher] wy eapi song_id={} 请求失败 err={}，回退 legacy",
+                song_id, e
+            );
+            return fetch_wy_legacy_lyric(song_id).await;
+        }
     };
+
+    #[cfg(debug_assertions)]
+    {
+        let keys: Vec<String> = body
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        let yrc_len = body
+            .get("yrc")
+            .and_then(|v| v.get("lyric"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        let klyric_len = body
+            .get("klyric")
+            .and_then(|v| v.get("lyric"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+        eprintln!(
+            "[lyric_fetcher] wy eapi song_id={} keys={:?} yrc_len={} klyric_len={}",
+            song_id, keys, yrc_len, klyric_len
+        );
+    }
 
     // Try YRC first, then KRC
     let lxlyric = try_extract_yrc(&body);
