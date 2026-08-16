@@ -1087,6 +1087,12 @@ const authStore = useAuthStore();
 
     // [歌词获取] plugin:// 歌曲：通过 pluginGetLyric 补获歌词（支持逐字歌词）
     // 播放入口可能已通过 pluginGetMusicInfo 获取歌词并设置到 lyrics_raw，此处仅在为空时补获
+    if (song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
+      console.info(`[Lyrics] plugin:// 歌词补获: lyrics_raw 为空, 开始 getLyric, path=${song.path.slice(0, 60)}, hasRawData=${!!song.rawData}, pluginId=${(song.rawData as any)?.pluginId}`);
+    } else if (song.path.startsWith('plugin://') && song.lyrics_raw?.trim()) {
+      const lines = song.lyrics_raw.split(/\r?\n/);
+      console.info(`[Lyrics] plugin:// 歌词已存在, 跳过 getLyric: lyrics_raw 长度=${song.lyrics_raw.length} 行数=${lines.length}, 前1500字符=${song.lyrics_raw.slice(0, 1500).replace(/\n/g, '\\n')}`);
+    }
     if (!usingDownloadedAudioFile && song.path.startsWith('plugin://') && !song.lyrics_raw?.trim()) {
       clearOnlineLyricsUnavailable(song.path);
       const pluginSearchResult = song.rawData;

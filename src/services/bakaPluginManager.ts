@@ -1166,6 +1166,7 @@ class BakaPluginManagerClass {
     const ekey = firstStringField(result, ['ekey', 'eKey', 'encryptKey', 'encryptionKey', 'qmcKey', 'qmc2Key']);
     const cek = firstStringField(result, ['cek', 'cKey', 'contentKey', 'decryptKey', 'decryptionKey', 'cencKey']);
     const lyric = result.lyric || result.rawLrc || result.lrc || '';
+    const ttml = result.ttml || '';
     const tlyric = result.tlyric || result.translation || '';
     const lxlyric = result.lxlyric || '';
     const yrc = result.yrc || '';
@@ -1185,18 +1186,19 @@ class BakaPluginManagerClass {
     const requestedSuccessQuality = successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined;
     const resultQuality = normalizeQualityKey(result.quality);
     const actualQuality = resultQuality ?? inferActualQualityFromMediaUrl(url, requestedSuccessQuality);
-    const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
-      ? buildBakaMfLyricsRaw({ lyric, tlyric, lxlyric, yrc, qrc, eslrc })
+    const lyricsRaw = (ttml || lyric || tlyric || lxlyric || yrc || qrc || eslrc)
+      ? buildBakaMfLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
       : '';
 
     const headerKeys = Object.keys(headers);
-    log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, actualQuality=${actualQuality}`);
+    log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], ekey=${ekey ? '有' : '无'}, cek=${cek ? '有' : '无'}, lyricLen=${lyric.length}, ttmlLen=${ttml.length}, actualQuality=${actualQuality}`);
     return {
       url,
       headers,
       ekey: ekey || undefined,
       cek: cek || undefined,
       lyric,
+      ttml: ttml || undefined,
       tlyric,
       lxlyric,
       yrc,
@@ -1225,7 +1227,7 @@ class BakaPluginManagerClass {
   async getLyric(
     source: PluginSource,
     item: PluginSearchResult,
-  ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; lyricsRaw?: string; format?: BakaLyricFormat } | null> {
+  ): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; ttml?: string; lyricsRaw?: string; format?: BakaLyricFormat } | null> {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;
 
@@ -1251,6 +1253,7 @@ class BakaPluginManagerClass {
 
       // 兼容多种字段名
       const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+      const ttml = lrcSource.ttml || '';
       const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
       const romanization = lrcSource.romanization || lrcSource.rlyric || '';
       const lxlyric = lrcSource.lxlyric || '';
@@ -1259,8 +1262,9 @@ class BakaPluginManagerClass {
       const eslrc = lrcSource.eslrc || '';
 
       // [诊断] 输出完整的歌词数据信息，帮助定位逐字歌词缺失问题
-      log(`[getLyric] ${source.name} 原始返回字段: keys=[${Object.keys(lrcSource).join(',')}], format=${lrcSource.format ?? '(none)'}, rawLrcLen=${rawLrc.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}`);
+      log(`[getLyric] ${source.name} 原始返回字段: keys=[${Object.keys(lrcSource).join(',')}], format=${lrcSource.format ?? '(none)'}, rawLrcLen=${rawLrc.length}, ttmlLen=${ttml.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}`);
       if (rawLrc) log(`[getLyric] rawLrc 预览: ${rawLrc.substring(0, 200)}`);
+      if (ttml) log(`[getLyric] ttml 预览: ${ttml.substring(0, 200)}`);
       if (lxlyric) log(`[getLyric] lxlyric 预览: ${lxlyric.substring(0, 200)}`);
       if (yrc) log(`[getLyric] yrc 预览: ${yrc.substring(0, 200)}`);
       if (qrc) log(`[getLyric] qrc 预览: ${qrc.substring(0, 200)}`);
@@ -1270,6 +1274,8 @@ class BakaPluginManagerClass {
       let format: BakaLyricFormat | undefined;
       if (lrcSource.format) {
         format = lrcSource.format as BakaLyricFormat;
+      } else if (ttml) {
+        format = 'ttml';
       } else if (yrc) {
         format = 'yrc';
       } else if (qrc) {
@@ -1282,12 +1288,13 @@ class BakaPluginManagerClass {
         format = detectLyricFormat(rawLrc);
       }
 
-      if (!rawLrc && !lxlyric && !yrc && !qrc && !eslrc) {
+      if (!rawLrc && !ttml && !lxlyric && !yrc && !qrc && !eslrc) {
         log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
         return null;
       }
 
       const lyricsRaw = buildBakaMfLyricsRaw({
+        ttml,
         lyric: rawLrc,
         tlyric: translation,
         rlyric: romanization,
@@ -1296,8 +1303,8 @@ class BakaPluginManagerClass {
         qrc,
         eslrc,
       });
-      log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, format=${format}`);
-      return { lyric: rawLrc, tlyric: translation, lxlyric, yrc, qrc, eslrc, lyricsRaw, format };
+      log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, ttml长度=${ttml.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, format=${format}`);
+      return { lyric: rawLrc, tlyric: translation, lxlyric, yrc, qrc, eslrc, ttml, lyricsRaw, format };
     } catch (e) {
       log(`获取歌词失败: ${source.name} ${e}`);
       return null;

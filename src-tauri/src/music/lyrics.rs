@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 const MAX_GROUP_TOLERANCE_MS: u32 = 50;
+/// 兼容「最后时间戳后带文本」的逐字行（如 JOOX 格式）时，为最后一个词推断的时长（毫秒）
+const ENHANCED_TRAILING_WORD_DURATION_MS: u32 = 400;
 
 // ==================== Regex caches (module-level, compiled once) ====================
 static XML_TAG_RE: OnceLock<Regex> = OnceLock::new();
@@ -891,7 +893,7 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
     let (_, body_start, line_start_ms) = *leading.first()?;
     let body = &line[body_start..];
     let markers = collect_markers(body, '<', '>');
-    if markers.len() < 2 {
+    if markers.is_empty() {
         return None;
     }
 
@@ -921,6 +923,21 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
         });
     }
 
+    // 兼容 JOOX 等插件格式的最后时间戳后带文本（如 <00:42.590>单）。
+    // 该格式没有显式行结束标记，把尾随文本作为最后一个词，
+    // end 用当前时间 + 一个合理间隔推断，避免整行被丢弃导致歌词后半段黑屏。
+    if let Some((_, last_marker_end, last_start_ms)) = markers.last() {
+        let trailing_text = sanitize_word_text(&body[*last_marker_end..]);
+        if !trailing_text.is_empty() {
+            words.push(ParsedWord {
+                text: trailing_text,
+                start_ms: *last_start_ms,
+                end_ms: last_start_ms + ENHANCED_TRAILING_WORD_DURATION_MS,
+                roman_text: None,
+            });
+        }
+    }
+
     if words.is_empty() {
         return None;
     }
@@ -932,10 +949,12 @@ fn parse_enhanced_lrc_line(line: &str, source_index: usize) -> Option<ParsedLine
             .collect::<String>(),
     );
     let (explicit_role, normalized_text) = detect_explicit_role(&text);
+    let last_word_end = words.last().map(|word| word.end_ms).unwrap_or(line_start_ms);
     let end_ms = markers
         .last()
         .map(|marker| marker.2)
-        .unwrap_or(line_start_ms);
+        .unwrap_or(line_start_ms)
+        .max(last_word_end);
 
     Some(ParsedLine {
         start_ms: line_start_ms,
@@ -3543,7 +3562,7 @@ pub fn build_structured_lyrics_payload(raw_lyrics: String) -> StructuredLyricsPa
 mod tests {
     use super::{
         build_structured_lyrics_payload, parse_raw_lyrics, score_romanized_latin_text,
-        ParsedLineSourceFormat,
+        ENHANCED_TRAILING_WORD_DURATION_MS, ParsedLineSourceFormat,
     };
 
     #[test]
@@ -3690,6 +3709,30 @@ mod tests {
                 .unwrap_or_default(),
             vec!["其", "实"]
         );
+    }
+
+    #[test]
+    fn parses_joox_trailing_text_after_last_timestamp() {
+        // JOOX 等插件格式：最后时间戳后仍带文本（无显式行结束标记），
+        // 修复前该行会被丢弃导致歌词后半段黑屏。
+        let parsed = parse_raw_lyrics(
+            [
+                "[00:00.728]<00:01.456>租<00:03.450>購<00:03.980> - <00:04.510>薛<00:06.148>之<00:07.597>謙<00:08.292>",
+                "[00:07.564]<00:15.128>詞",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].text, "租購 - 薛之謙");
+        assert_eq!(parsed[1].text, "詞");
+        assert_eq!(parsed[1].source_format, ParsedLineSourceFormat::EnhancedLrc);
+        let words = parsed[1].words.as_ref().unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text, "詞");
+        assert_eq!(words[0].start_ms, 15128);
+        assert_eq!(words[0].end_ms, 15128 + ENHANCED_TRAILING_WORD_DURATION_MS);
     }
 
     #[test]

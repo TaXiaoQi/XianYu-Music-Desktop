@@ -1361,6 +1361,7 @@ export async function pluginGetMusicInfo(
   // [修复防御]: 提取插件 getMediaSource 返回的歌词和封面
   // 兼容多种字段名：lyric / rawLrc / lrc（不同插件返回字段名可能不同）
   const lyric = result.lyric || result.rawLrc || result.lrc || '';
+  const ttml = result.ttml || '';
   const tlyric = result.tlyric || result.translation || '';
   const lxlyric = result.lxlyric || '';
   // 逐字歌词：兼容 yrc（网易云）/ qrc（QQ 音乐，可能为 hex 加密串）/ eslrc（Baka 增强）字段
@@ -1382,17 +1383,18 @@ export async function pluginGetMusicInfo(
   const requestedSuccessQuality = successQualityKey ?? (successPairIdx >= 0 ? tryPairs[successPairIdx].qualityKey : undefined);
   const actualQuality = inferActualQualityFromPluginResult(result, url, requestedSuccessQuality);
 
-  // 使用 Baka/MF 专用构建器构建歌词文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）
-  const lyricsRaw = (lyric || tlyric || lxlyric || yrc || qrc || eslrc)
-    ? buildBakaMfLyricsRaw({ lyric, tlyric, lxlyric, yrc, qrc, eslrc })
+  // 使用 Baka/MF 专用构建器构建歌词文本（优先级：ttml > yrc > qrc > eslrc > lxlyric > lyric）
+  const lyricsRaw = (ttml || lyric || tlyric || lxlyric || yrc || qrc || eslrc)
+    ? buildBakaMfLyricsRaw({ ttml, lyric, tlyric, lxlyric, yrc, qrc, eslrc })
     : '';
 
   const headerKeys = Object.keys(headers);
-  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}, actualQuality=${actualQuality}`);
+  log(`[getMediaSource] 成功: url=${url.substring(0, 100)}, headers=[${headerKeys.join(',')}], lyricLen=${lyric.length}, ttmlLen=${ttml.length}, lxlyricLen=${lxlyric.length}, yrcLen=${yrc.length}, qrcLen=${qrc.length}, eslrcLen=${eslrc.length}, actualQuality=${actualQuality}`);
   return {
     url,
     headers: headers as Record<string, string>,
     lyric,
+    ttml: ttml || undefined,
     tlyric,
     lxlyric,
     yrc,
@@ -1452,7 +1454,7 @@ export async function pluginGetBakaMusicInfo(
 export async function pluginGetLyric(
   source: PluginSource,
   item: PluginSearchResult,
-): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; lyricsRaw?: string } | null> {
+): Promise<{ lyric: string; tlyric?: string; lxlyric?: string; yrc?: string; qrc?: string; eslrc?: string; ttml?: string; lyricsRaw?: string } | null> {
   const inst = await ensurePluginInstance(source);
   if (!inst) return null;
 
@@ -1485,6 +1487,7 @@ export async function pluginGetLyric(
 
     // 兼容多种字段名：rawLrc / lyric / lrc（标准 MF 返回 rawLrc，部分插件返回 lyric 或 lrc）
     const rawLrc = lrcSource.rawLrc || lrcSource.lyric || lrcSource.lrc || '';
+    const ttml = lrcSource.ttml || '';
     // 兼容多种翻译字段名：translation / tlyric / translateLyric
     const translation = lrcSource.translation || lrcSource.tlyric || lrcSource.translateLyric || '';
     // 罗马音字段（Baka 插件扩展）
@@ -1496,13 +1499,14 @@ export async function pluginGetLyric(
     const qrc = lrcSource.qrc || '';
     const eslrc = lrcSource.eslrc || '';
 
-    if (!rawLrc && !lxlyric && !yrc && !qrc && !eslrc) {
+    if (!rawLrc && !ttml && !lxlyric && !yrc && !qrc && !eslrc) {
       log(`[getLyric] ${source.name} rawLrc 为空, lrcSource keys: ${Object.keys(lrcSource).join(',')}`);
       return null;
     }
-    // 使用 Baka/MF 专用构建器构建歌词文本（优先级：yrc > qrc > eslrc > lxlyric > lyric）
+    // 使用 Baka/MF 专用构建器构建歌词文本（优先级：ttml > yrc > qrc > eslrc > lxlyric > lyric）
     // 罗马音作为附加轨道（与翻译一样由后端按时间戳聚类）
     const lyricsRaw = buildBakaMfLyricsRaw({
+      ttml,
       lyric: rawLrc,
       tlyric: translation,
       rlyric: romanization || null,
@@ -1511,9 +1515,9 @@ export async function pluginGetLyric(
       qrc,
       eslrc,
     });
-    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
+    log(`[getLyric] ${source.name} 成功, rawLrc长度=${rawLrc.length}, ttml长度=${ttml.length}, lxlyric长度=${lxlyric.length}, yrc长度=${yrc.length}, qrc长度=${qrc.length}, eslrc长度=${eslrc.length}`);
 
-    return { lyric: rawLrc, tlyric: translation, lxlyric, yrc, qrc, eslrc, lyricsRaw };
+    return { lyric: rawLrc, tlyric: translation, lxlyric, yrc, qrc, eslrc, ttml, lyricsRaw };
   } catch (e) {
     log(`获取歌词失败: ${source.name} ${e}`);
     return null;

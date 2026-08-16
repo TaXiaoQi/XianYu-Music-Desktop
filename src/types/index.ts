@@ -952,6 +952,8 @@ export interface PluginMusicInfo {
   qrc?: string;
   /** Baka ESLRC 增强逐字歌词 */
   eslrc?: string;
+  /** Baka MP3/XML 逐字歌词（JOOX 等平台），由 Baka 插件提供 */
+  ttml?: string;
   /** 构建好的歌词文本（优先使用逐字歌词），可直接赋值给 song.lyrics_raw */
   lyricsRaw?: string;
   coverUrl?: string;

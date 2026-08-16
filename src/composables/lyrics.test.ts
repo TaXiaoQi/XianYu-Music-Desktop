@@ -158,8 +158,11 @@ describe('enhanced lrc parser', async () => {
       '[00:41.000]plain line',
     ].join('\n'));
 
-    expect(parsed).toHaveLength(1);
+    expect(parsed).toHaveLength(2);
     expect(parsed[0].startTime).toBe(36111);
+    // 最后时间戳后带文本的行（JOOX 等格式）现在也能解析，不再被整体丢弃
+    expect(parsed[1].startTime).toBe(40000);
+    expect(parsed[1].words.map((word) => word.word)).toEqual(['Broken', 'Line']);
   });
 
   it('merges enhanced lines into a plain lrc baseline without dropping ordinary lines', () => {
