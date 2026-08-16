@@ -6,6 +6,7 @@ mod foreground_window;
 mod music;
 mod player;
 mod plugins;
+mod power;
 mod recognize;
 mod remote;
 mod security;
@@ -62,6 +63,7 @@ use plugins::{
     download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
     read_file_bytes, read_plugin_file, save_plugin_script,
 };
+use power::set_prevent_sleep;
 use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
 use remote::{
     add_remote_source, clear_remote_cache, get_remote_cache_usage, get_remote_sources,
@@ -208,6 +210,7 @@ pub fn run() {
             get_current_output_device,
             set_output_device,
             set_audio_output_mode,
+            set_prevent_sleep,
             set_stream_cache_max_size,
             get_stream_cache_info,
             clear_stream_cache,

@@ -225,6 +225,7 @@ export const defaultLogSettings: LogSettings = {
 
 export const defaultAppSettings: AppSettings = {
   closeToTray: true,
+  preventSleepWhilePlaying: true,
   showDesktopLyrics: false,
   showQualityBadges: true,
   showSongComments: true,
@@ -576,6 +577,7 @@ export const mergeAppSettings = (
   const {
     minimizeToTray: _deprecated,
     libraryMinDurationSeconds,
+    preventSleepWhilePlaying,
     ...rest
   } = patch;
 
@@ -583,6 +585,9 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
+    preventSleepWhilePlaying: typeof preventSleepWhilePlaying === 'boolean'
+      ? preventSleepWhilePlaying
+      : base.preventSleepWhilePlaying,
     lyricsSyncOffset: normalizeLyricsSyncOffsetSeconds(
       patch.lyricsSyncOffset ?? base.lyricsSyncOffset,
     ),

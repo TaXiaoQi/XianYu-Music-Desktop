@@ -733,6 +733,7 @@ export interface LogSettings {
 
 export interface AppSettings {
   closeToTray: boolean;
+  preventSleepWhilePlaying: boolean;
   showDesktopLyrics: boolean;
   showQualityBadges: boolean;
   showSongComments: boolean;

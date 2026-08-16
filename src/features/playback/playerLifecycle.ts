@@ -577,6 +577,16 @@ export const createPlayerLifecycle = ({
       }
     });
 
+    watch(
+      [isPlaying, () => settings.value.preventSleepWhilePlaying],
+      ([playing, preventSleepWhilePlaying]) => {
+        playbackApi.setPreventSleep(playing && preventSleepWhilePlaying).catch(error => {
+          console.warn('Failed to update system sleep prevention:', error);
+        });
+      },
+      { immediate: true },
+    );
+
     const playbackTimePersistTimer = setInterval(persistCurrentPlaybackTime, 2000);
 
     const beforeUnloadHandler = () => {
@@ -723,6 +733,7 @@ export const createPlayerLifecycle = ({
         remoteAutoSyncStartupTimer = null;
       }
       persistCurrentPlaybackTime();
+      void playbackApi.setPreventSleep(false).catch(() => {});
       clearInterval(playbackTimePersistTimer);
       dominantColorTaskId += 1;
       dominantColorSignature = '';
