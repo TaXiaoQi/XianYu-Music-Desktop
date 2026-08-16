@@ -44,6 +44,8 @@ commands.allow = [
   "get_playback_duration",
   "get_playback_ready",
   "get_playback_start_failed",
+  "get_playback_start_failed_reason",
+  "get_playback_start_failed_info",
   "get_audio_visualizer_samples",
   "get_track_loudness_info",
   "update_loudness_settings",
