@@ -108,423 +108,423 @@ fn pad_base64(input: &str) -> String {
     s
 }
 
-// ==================== 3DES / QRC Decryption (QQ Music) ====================
+// ==================== QRC 解密（腾讯非标准 3DES + zlib inflate）====================
+//
+// 腾讯 QRC 逐字歌词使用"非标准 DES 变体"（S2[23]=15、S4[53]=10，与标准 DES 不同，
+// 标准值分别为 14、1），因此标准 3DES（RustCrypto des 等）无法解密。
+// 以下为 lx-music qrc_decode 原生插件 1:1 移植的纯 Rust 实现。
 
-const SBOX: [[u8; 64]; 8] = [
+const QRC_SBOX: [[u8; 64]; 8] = [
     [
-        14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7, 0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12,
-        11, 9, 5, 3, 8, 4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0, 15, 12, 8, 2, 4, 9,
-        1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
+        14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7, 0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8,
+        4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0, 15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
     ],
     [
-        15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10, 3, 13, 4, 7, 15, 2, 8, 15, 12, 0, 1,
-        10, 6, 9, 11, 5, 0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15, 13, 8, 10, 1, 3, 15,
-        4, 2, 11, 6, 7, 12, 0, 5, 14, 9,
+        15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10, 3, 13, 4, 7, 15, 2, 8, 15, 12, 0, 1, 10, 6, 9, 11, 5,
+        0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15, 13, 8, 10, 1, 3, 15, 4, 2, 11, 6, 7, 12, 0, 5, 14, 9,
     ],
     [
-        10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8, 13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5,
-        14, 12, 11, 15, 1, 13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7, 1, 10, 13, 0, 6,
-        9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12,
+        10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8, 13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1,
+        13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7, 1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12,
     ],
     [
-        7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15, 13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2,
-        12, 1, 10, 14, 9, 10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4, 3, 15, 0, 6, 10,
-        10, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14,
+        7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15, 13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2, 12, 1, 10, 14, 9,
+        10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4, 3, 15, 0, 6, 10, 10, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14,
     ],
     [
-        2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9, 14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15,
-        10, 3, 9, 8, 6, 4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14, 11, 8, 12, 7, 1, 14,
-        2, 13, 6, 15, 0, 9, 10, 4, 5, 3,
+        2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9, 14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15, 10, 3, 9, 8, 6,
+        4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14, 11, 8, 12, 7, 1, 14, 2, 13, 6, 15, 0, 9, 10, 4, 5, 3,
     ],
     [
-        12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11, 10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13,
-        14, 0, 11, 3, 8, 9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6, 4, 3, 2, 12, 9, 5,
-        15, 10, 11, 14, 1, 7, 6, 0, 8, 13,
+        12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11, 10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13, 14, 0, 11, 3, 8,
+        9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6, 4, 3, 2, 12, 9, 5, 15, 10, 11, 14, 1, 7, 6, 0, 8, 13,
     ],
     [
-        4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1, 13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5,
-        12, 2, 15, 8, 6, 1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2, 6, 11, 13, 8, 1, 4,
-        10, 7, 9, 5, 0, 15, 14, 2, 3, 12,
+        4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1, 13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5, 12, 2, 15, 8, 6,
+        1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2, 6, 11, 13, 8, 1, 4, 10, 7, 9, 5, 0, 15, 14, 2, 3, 12,
     ],
     [
-        13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7, 1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6,
-        11, 0, 14, 9, 2, 7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8, 2, 1, 14, 7, 4, 10,
-        8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
+        13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7, 1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6, 11, 0, 14, 9, 2,
+        7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8, 2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
     ],
 ];
 
-#[inline]
-fn bitnum(a: &[u8], b: usize, c: u32) -> u32 {
-    let index = (b / 32) * 4 + 3 - (b % 32) / 8;
-    let shift = 7 - (b % 8);
-    (((a[index] >> shift) & 1) as u32) << c
+const QRC_KEY_RND_SHIFT: [u32; 16] = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
+const QRC_KEY_PERM_C: [u32; 28] = [
+    56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35,
+];
+const QRC_KEY_PERM_D: [u32; 28] = [
+    62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37, 29, 21, 13, 5, 60, 52, 44, 36, 28, 20, 12, 4, 27, 19, 11, 3,
+];
+const QRC_KEY_COMPRESSION: [u32; 48] = [
+    13, 16, 10, 23, 0, 4, 2, 27, 14, 5, 20, 9, 22, 18, 11, 3, 25, 7, 15, 6, 26, 19, 12, 1, 40, 51, 30, 36, 46,
+    54, 29, 39, 50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31,
+];
+const QRC_KEY: [u8; 24] = [
+    0x21, 0x40, 0x23, 0x29, 0x28, 0x2a, 0x24, 0x25, 0x31, 0x32, 0x33, 0x5a, 0x58, 0x43, 0x21, 0x40, 0x21, 0x40, 0x23,
+    0x29, 0x28, 0x4e, 0x48, 0x4c,
+];
+
+type QrcSchedule = [[u8; 6]; 16];
+
+fn qrc_bitnum(a: &[u8], b: u32, c: u32) -> u32 {
+    let idx = ((b / 32) * 4 + 3 - ((b % 32) / 8)) as usize;
+    (((a[idx] >> (7 - (b % 8))) & 1) as u32) << c
 }
 
-#[inline]
-fn bitnum_intr(a: u32, b: u32, c: u32) -> u32 {
-    ((a >> (31 - b)) & 1) << c
+fn qrc_bitnum_intr(a: u32, b: u32, c: u32) -> u32 {
+    (((a >> (31 - b)) & 1) as u32) << c
 }
 
-#[inline]
-fn bitnum_intl(a: u32, b: u32, c: u32) -> u32 {
-    ((a << b) & 0x80000000) >> c
+fn qrc_bitnum_intl(a: u32, b: u32, c: u32) -> u32 {
+    (a.wrapping_shl(b) & 0x8000_0000) >> c
 }
 
-#[inline]
-fn sbox_bit(a: u32) -> usize {
+fn qrc_sbox_bit(a: u8) -> usize {
     ((a & 32) | ((a & 31) >> 1) | ((a & 1) << 4)) as usize
 }
 
-fn initial_permutation(input: &[u8]) -> (u32, u32) {
-    let s0 = bitnum(input, 57, 31)
-        | bitnum(input, 49, 30)
-        | bitnum(input, 41, 29)
-        | bitnum(input, 33, 28)
-        | bitnum(input, 25, 27)
-        | bitnum(input, 17, 26)
-        | bitnum(input, 9, 25)
-        | bitnum(input, 1, 24)
-        | bitnum(input, 59, 23)
-        | bitnum(input, 51, 22)
-        | bitnum(input, 43, 21)
-        | bitnum(input, 35, 20)
-        | bitnum(input, 27, 19)
-        | bitnum(input, 19, 18)
-        | bitnum(input, 11, 17)
-        | bitnum(input, 3, 16)
-        | bitnum(input, 61, 15)
-        | bitnum(input, 53, 14)
-        | bitnum(input, 45, 13)
-        | bitnum(input, 37, 12)
-        | bitnum(input, 29, 11)
-        | bitnum(input, 21, 10)
-        | bitnum(input, 13, 9)
-        | bitnum(input, 5, 8)
-        | bitnum(input, 63, 7)
-        | bitnum(input, 55, 6)
-        | bitnum(input, 47, 5)
-        | bitnum(input, 39, 4)
-        | bitnum(input, 31, 3)
-        | bitnum(input, 23, 2)
-        | bitnum(input, 15, 1)
-        | bitnum(input, 7, 0);
-
-    let s1 = bitnum(input, 56, 31)
-        | bitnum(input, 48, 30)
-        | bitnum(input, 40, 29)
-        | bitnum(input, 32, 28)
-        | bitnum(input, 24, 27)
-        | bitnum(input, 16, 26)
-        | bitnum(input, 8, 25)
-        | bitnum(input, 0, 24)
-        | bitnum(input, 58, 23)
-        | bitnum(input, 50, 22)
-        | bitnum(input, 42, 21)
-        | bitnum(input, 34, 20)
-        | bitnum(input, 26, 19)
-        | bitnum(input, 18, 18)
-        | bitnum(input, 10, 17)
-        | bitnum(input, 2, 16)
-        | bitnum(input, 60, 15)
-        | bitnum(input, 52, 14)
-        | bitnum(input, 44, 13)
-        | bitnum(input, 36, 12)
-        | bitnum(input, 28, 11)
-        | bitnum(input, 20, 10)
-        | bitnum(input, 12, 9)
-        | bitnum(input, 4, 8)
-        | bitnum(input, 62, 7)
-        | bitnum(input, 54, 6)
-        | bitnum(input, 46, 5)
-        | bitnum(input, 38, 4)
-        | bitnum(input, 30, 3)
-        | bitnum(input, 22, 2)
-        | bitnum(input, 14, 1)
-        | bitnum(input, 6, 0);
-
+fn qrc_initial_permutation(input: &[u8]) -> (u32, u32) {
+    let s0 = qrc_bitnum(input, 57, 31)
+        | qrc_bitnum(input, 49, 30)
+        | qrc_bitnum(input, 41, 29)
+        | qrc_bitnum(input, 33, 28)
+        | qrc_bitnum(input, 25, 27)
+        | qrc_bitnum(input, 17, 26)
+        | qrc_bitnum(input, 9, 25)
+        | qrc_bitnum(input, 1, 24)
+        | qrc_bitnum(input, 59, 23)
+        | qrc_bitnum(input, 51, 22)
+        | qrc_bitnum(input, 43, 21)
+        | qrc_bitnum(input, 35, 20)
+        | qrc_bitnum(input, 27, 19)
+        | qrc_bitnum(input, 19, 18)
+        | qrc_bitnum(input, 11, 17)
+        | qrc_bitnum(input, 3, 16)
+        | qrc_bitnum(input, 61, 15)
+        | qrc_bitnum(input, 53, 14)
+        | qrc_bitnum(input, 45, 13)
+        | qrc_bitnum(input, 37, 12)
+        | qrc_bitnum(input, 29, 11)
+        | qrc_bitnum(input, 21, 10)
+        | qrc_bitnum(input, 13, 9)
+        | qrc_bitnum(input, 5, 8)
+        | qrc_bitnum(input, 63, 7)
+        | qrc_bitnum(input, 55, 6)
+        | qrc_bitnum(input, 47, 5)
+        | qrc_bitnum(input, 39, 4)
+        | qrc_bitnum(input, 31, 3)
+        | qrc_bitnum(input, 23, 2)
+        | qrc_bitnum(input, 15, 1)
+        | qrc_bitnum(input, 7, 0);
+    let s1 = qrc_bitnum(input, 56, 31)
+        | qrc_bitnum(input, 48, 30)
+        | qrc_bitnum(input, 40, 29)
+        | qrc_bitnum(input, 32, 28)
+        | qrc_bitnum(input, 24, 27)
+        | qrc_bitnum(input, 16, 26)
+        | qrc_bitnum(input, 8, 25)
+        | qrc_bitnum(input, 0, 24)
+        | qrc_bitnum(input, 58, 23)
+        | qrc_bitnum(input, 50, 22)
+        | qrc_bitnum(input, 42, 21)
+        | qrc_bitnum(input, 34, 20)
+        | qrc_bitnum(input, 26, 19)
+        | qrc_bitnum(input, 18, 18)
+        | qrc_bitnum(input, 10, 17)
+        | qrc_bitnum(input, 2, 16)
+        | qrc_bitnum(input, 60, 15)
+        | qrc_bitnum(input, 52, 14)
+        | qrc_bitnum(input, 44, 13)
+        | qrc_bitnum(input, 36, 12)
+        | qrc_bitnum(input, 28, 11)
+        | qrc_bitnum(input, 20, 10)
+        | qrc_bitnum(input, 12, 9)
+        | qrc_bitnum(input, 4, 8)
+        | qrc_bitnum(input, 62, 7)
+        | qrc_bitnum(input, 54, 6)
+        | qrc_bitnum(input, 46, 5)
+        | qrc_bitnum(input, 38, 4)
+        | qrc_bitnum(input, 30, 3)
+        | qrc_bitnum(input, 22, 2)
+        | qrc_bitnum(input, 14, 1)
+        | qrc_bitnum(input, 6, 0);
     (s0, s1)
 }
 
-fn inverse_permutation(s0: u32, s1: u32) -> [u8; 8] {
-    let mut data = [0u8; 8];
-    data[3] = (bitnum_intr(s1, 7, 7)
-        | bitnum_intr(s0, 7, 6)
-        | bitnum_intr(s1, 15, 5)
-        | bitnum_intr(s0, 15, 4)
-        | bitnum_intr(s1, 23, 3)
-        | bitnum_intr(s0, 23, 2)
-        | bitnum_intr(s1, 31, 1)
-        | bitnum_intr(s0, 31, 0)) as u8;
-    data[2] = (bitnum_intr(s1, 6, 7)
-        | bitnum_intr(s0, 6, 6)
-        | bitnum_intr(s1, 14, 5)
-        | bitnum_intr(s0, 14, 4)
-        | bitnum_intr(s1, 22, 3)
-        | bitnum_intr(s0, 22, 2)
-        | bitnum_intr(s1, 30, 1)
-        | bitnum_intr(s0, 30, 0)) as u8;
-    data[1] = (bitnum_intr(s1, 5, 7)
-        | bitnum_intr(s0, 5, 6)
-        | bitnum_intr(s1, 13, 5)
-        | bitnum_intr(s0, 13, 4)
-        | bitnum_intr(s1, 21, 3)
-        | bitnum_intr(s0, 21, 2)
-        | bitnum_intr(s1, 29, 1)
-        | bitnum_intr(s0, 29, 0)) as u8;
-    data[0] = (bitnum_intr(s1, 4, 7)
-        | bitnum_intr(s0, 4, 6)
-        | bitnum_intr(s1, 12, 5)
-        | bitnum_intr(s0, 12, 4)
-        | bitnum_intr(s1, 20, 3)
-        | bitnum_intr(s0, 20, 2)
-        | bitnum_intr(s1, 28, 1)
-        | bitnum_intr(s0, 28, 0)) as u8;
-    data[7] = (bitnum_intr(s1, 3, 7)
-        | bitnum_intr(s0, 3, 6)
-        | bitnum_intr(s1, 11, 5)
-        | bitnum_intr(s0, 11, 4)
-        | bitnum_intr(s1, 19, 3)
-        | bitnum_intr(s0, 19, 2)
-        | bitnum_intr(s1, 27, 1)
-        | bitnum_intr(s0, 27, 0)) as u8;
-    data[6] = (bitnum_intr(s1, 2, 7)
-        | bitnum_intr(s0, 2, 6)
-        | bitnum_intr(s1, 10, 5)
-        | bitnum_intr(s0, 10, 4)
-        | bitnum_intr(s1, 18, 3)
-        | bitnum_intr(s0, 18, 2)
-        | bitnum_intr(s1, 26, 1)
-        | bitnum_intr(s0, 26, 0)) as u8;
-    data[5] = (bitnum_intr(s1, 1, 7)
-        | bitnum_intr(s0, 1, 6)
-        | bitnum_intr(s1, 9, 5)
-        | bitnum_intr(s0, 9, 4)
-        | bitnum_intr(s1, 17, 3)
-        | bitnum_intr(s0, 17, 2)
-        | bitnum_intr(s1, 25, 1)
-        | bitnum_intr(s0, 25, 0)) as u8;
-    data[4] = (bitnum_intr(s1, 0, 7)
-        | bitnum_intr(s0, 0, 6)
-        | bitnum_intr(s1, 8, 5)
-        | bitnum_intr(s0, 8, 4)
-        | bitnum_intr(s1, 16, 3)
-        | bitnum_intr(s0, 16, 2)
-        | bitnum_intr(s1, 24, 1)
-        | bitnum_intr(s0, 24, 0)) as u8;
-    data
+fn qrc_inverse_permutation(s0: u32, s1: u32, out: &mut [u8]) {
+    out[3] = (qrc_bitnum_intr(s1, 7, 7)
+        | qrc_bitnum_intr(s0, 7, 6)
+        | qrc_bitnum_intr(s1, 15, 5)
+        | qrc_bitnum_intr(s0, 15, 4)
+        | qrc_bitnum_intr(s1, 23, 3)
+        | qrc_bitnum_intr(s0, 23, 2)
+        | qrc_bitnum_intr(s1, 31, 1)
+        | qrc_bitnum_intr(s0, 31, 0)) as u8;
+    out[2] = (qrc_bitnum_intr(s1, 6, 7)
+        | qrc_bitnum_intr(s0, 6, 6)
+        | qrc_bitnum_intr(s1, 14, 5)
+        | qrc_bitnum_intr(s0, 14, 4)
+        | qrc_bitnum_intr(s1, 22, 3)
+        | qrc_bitnum_intr(s0, 22, 2)
+        | qrc_bitnum_intr(s1, 30, 1)
+        | qrc_bitnum_intr(s0, 30, 0)) as u8;
+    out[1] = (qrc_bitnum_intr(s1, 5, 7)
+        | qrc_bitnum_intr(s0, 5, 6)
+        | qrc_bitnum_intr(s1, 13, 5)
+        | qrc_bitnum_intr(s0, 13, 4)
+        | qrc_bitnum_intr(s1, 21, 3)
+        | qrc_bitnum_intr(s0, 21, 2)
+        | qrc_bitnum_intr(s1, 29, 1)
+        | qrc_bitnum_intr(s0, 29, 0)) as u8;
+    out[0] = (qrc_bitnum_intr(s1, 4, 7)
+        | qrc_bitnum_intr(s0, 4, 6)
+        | qrc_bitnum_intr(s1, 12, 5)
+        | qrc_bitnum_intr(s0, 12, 4)
+        | qrc_bitnum_intr(s1, 20, 3)
+        | qrc_bitnum_intr(s0, 20, 2)
+        | qrc_bitnum_intr(s1, 28, 1)
+        | qrc_bitnum_intr(s0, 28, 0)) as u8;
+    out[7] = (qrc_bitnum_intr(s1, 3, 7)
+        | qrc_bitnum_intr(s0, 3, 6)
+        | qrc_bitnum_intr(s1, 11, 5)
+        | qrc_bitnum_intr(s0, 11, 4)
+        | qrc_bitnum_intr(s1, 19, 3)
+        | qrc_bitnum_intr(s0, 19, 2)
+        | qrc_bitnum_intr(s1, 27, 1)
+        | qrc_bitnum_intr(s0, 27, 0)) as u8;
+    out[6] = (qrc_bitnum_intr(s1, 2, 7)
+        | qrc_bitnum_intr(s0, 2, 6)
+        | qrc_bitnum_intr(s1, 10, 5)
+        | qrc_bitnum_intr(s0, 10, 4)
+        | qrc_bitnum_intr(s1, 18, 3)
+        | qrc_bitnum_intr(s0, 18, 2)
+        | qrc_bitnum_intr(s1, 26, 1)
+        | qrc_bitnum_intr(s0, 26, 0)) as u8;
+    out[5] = (qrc_bitnum_intr(s1, 1, 7)
+        | qrc_bitnum_intr(s0, 1, 6)
+        | qrc_bitnum_intr(s1, 9, 5)
+        | qrc_bitnum_intr(s0, 9, 4)
+        | qrc_bitnum_intr(s1, 17, 3)
+        | qrc_bitnum_intr(s0, 17, 2)
+        | qrc_bitnum_intr(s1, 25, 1)
+        | qrc_bitnum_intr(s0, 25, 0)) as u8;
+    out[4] = (qrc_bitnum_intr(s1, 0, 7)
+        | qrc_bitnum_intr(s0, 0, 6)
+        | qrc_bitnum_intr(s1, 8, 5)
+        | qrc_bitnum_intr(s0, 8, 4)
+        | qrc_bitnum_intr(s1, 16, 3)
+        | qrc_bitnum_intr(s0, 16, 2)
+        | qrc_bitnum_intr(s1, 24, 1)
+        | qrc_bitnum_intr(s0, 24, 0)) as u8;
 }
 
-fn des_f(state: u32, key: &[u8; 6]) -> u32 {
-    let t1 = bitnum_intl(state, 31, 0)
-        | ((state & 0xf0000000) >> 1)
-        | bitnum_intl(state, 4, 5)
-        | bitnum_intl(state, 3, 6)
-        | ((state & 0x0f000000) >> 3)
-        | bitnum_intl(state, 8, 11)
-        | bitnum_intl(state, 7, 12)
-        | ((state & 0x00f00000) >> 5)
-        | bitnum_intl(state, 12, 17)
-        | bitnum_intl(state, 11, 18)
-        | ((state & 0x000f0000) >> 7)
-        | bitnum_intl(state, 16, 23);
-
-    let t2 = bitnum_intl(state, 15, 0)
-        | ((state & 0x0000f000) << 15)
-        | bitnum_intl(state, 20, 5)
-        | bitnum_intl(state, 19, 6)
-        | ((state & 0x00000f00) << 13)
-        | bitnum_intl(state, 24, 11)
-        | bitnum_intl(state, 23, 12)
-        | ((state & 0x000000f0) << 11)
-        | bitnum_intl(state, 28, 17)
-        | bitnum_intl(state, 27, 18)
-        | ((state & 0x0000000f) << 9)
-        | bitnum_intl(state, 0, 23);
-
-    let lrgstate: [u8; 6] = [
-        ((t1 >> 24) & 0xff) as u8,
-        ((t1 >> 16) & 0xff) as u8,
-        ((t1 >> 8) & 0xff) as u8,
-        ((t2 >> 24) & 0xff) as u8,
-        ((t2 >> 16) & 0xff) as u8,
-        ((t2 >> 8) & 0xff) as u8,
+fn qrc_des_f(state: u32, key: &[u8]) -> u32 {
+    let t1 = qrc_bitnum_intl(state, 31, 0)
+        | ((state & 0xF0000000) >> 1)
+        | qrc_bitnum_intl(state, 4, 5)
+        | qrc_bitnum_intl(state, 3, 6)
+        | ((state & 0x0F000000) >> 3)
+        | qrc_bitnum_intl(state, 8, 11)
+        | qrc_bitnum_intl(state, 7, 12)
+        | ((state & 0x00F00000) >> 5)
+        | qrc_bitnum_intl(state, 12, 17)
+        | qrc_bitnum_intl(state, 11, 18)
+        | ((state & 0x000F0000) >> 7)
+        | qrc_bitnum_intl(state, 16, 23);
+    let t2 = qrc_bitnum_intl(state, 15, 0)
+        | (state & 0x0000F000) << 15
+        | qrc_bitnum_intl(state, 20, 5)
+        | qrc_bitnum_intl(state, 19, 6)
+        | (state & 0x00000F00) << 13
+        | qrc_bitnum_intl(state, 24, 11)
+        | qrc_bitnum_intl(state, 23, 12)
+        | (state & 0x000000F0) << 11
+        | qrc_bitnum_intl(state, 28, 17)
+        | qrc_bitnum_intl(state, 27, 18)
+        | (state & 0x0000000F) << 9
+        | qrc_bitnum_intl(state, 0, 23);
+    let mut lrgstate = [
+        ((t1 >> 24) & 0xFF) as u8,
+        ((t1 >> 16) & 0xFF) as u8,
+        ((t1 >> 8) & 0xFF) as u8,
+        ((t2 >> 24) & 0xFF) as u8,
+        ((t2 >> 16) & 0xFF) as u8,
+        ((t2 >> 8) & 0xFF) as u8,
     ];
-
-    let xor_state: [u8; 6] = [
-        lrgstate[0] ^ key[0],
-        lrgstate[1] ^ key[1],
-        lrgstate[2] ^ key[2],
-        lrgstate[3] ^ key[3],
-        lrgstate[4] ^ key[4],
-        lrgstate[5] ^ key[5],
-    ];
-
-    let output_state = (SBOX[0][sbox_bit((xor_state[0] >> 2) as u32)] as u32) << 28
-        | (SBOX[1][sbox_bit((((xor_state[0] & 0x03) << 4) | (xor_state[1] >> 4)) as u32)] as u32)
-            << 24
-        | (SBOX[2][sbox_bit((((xor_state[1] & 0x0f) << 2) | (xor_state[2] >> 6)) as u32)] as u32)
-            << 20
-        | (SBOX[3][sbox_bit((xor_state[2] & 0x3f) as u32)] as u32) << 16
-        | (SBOX[4][sbox_bit((xor_state[3] >> 2) as u32)] as u32) << 12
-        | (SBOX[5][sbox_bit((((xor_state[3] & 0x03) << 4) | (xor_state[4] >> 4)) as u32)] as u32)
-            << 8
-        | (SBOX[6][sbox_bit((((xor_state[4] & 0x0f) << 2) | (xor_state[5] >> 6)) as u32)] as u32)
-            << 4
-        | SBOX[7][sbox_bit((xor_state[5] & 0x3f) as u32)] as u32;
-
-    bitnum_intl(output_state, 15, 0)
-        | bitnum_intl(output_state, 6, 1)
-        | bitnum_intl(output_state, 19, 2)
-        | bitnum_intl(output_state, 20, 3)
-        | bitnum_intl(output_state, 28, 4)
-        | bitnum_intl(output_state, 11, 5)
-        | bitnum_intl(output_state, 27, 6)
-        | bitnum_intl(output_state, 16, 7)
-        | bitnum_intl(output_state, 0, 8)
-        | bitnum_intl(output_state, 14, 9)
-        | bitnum_intl(output_state, 22, 10)
-        | bitnum_intl(output_state, 25, 11)
-        | bitnum_intl(output_state, 4, 12)
-        | bitnum_intl(output_state, 17, 13)
-        | bitnum_intl(output_state, 30, 14)
-        | bitnum_intl(output_state, 9, 15)
-        | bitnum_intl(output_state, 1, 16)
-        | bitnum_intl(output_state, 7, 17)
-        | bitnum_intl(output_state, 23, 18)
-        | bitnum_intl(output_state, 13, 19)
-        | bitnum_intl(output_state, 31, 20)
-        | bitnum_intl(output_state, 26, 21)
-        | bitnum_intl(output_state, 2, 22)
-        | bitnum_intl(output_state, 8, 23)
-        | bitnum_intl(output_state, 18, 24)
-        | bitnum_intl(output_state, 12, 25)
-        | bitnum_intl(output_state, 29, 26)
-        | bitnum_intl(output_state, 5, 27)
-        | bitnum_intl(output_state, 21, 28)
-        | bitnum_intl(output_state, 10, 29)
-        | bitnum_intl(output_state, 3, 30)
-        | bitnum_intl(output_state, 24, 31)
-}
-
-fn des_crypt(input: &[u8], key: &[[u8; 6]; 16]) -> [u8; 8] {
-    let (mut s0, mut s1) = initial_permutation(input);
-    for idx in 0..15 {
-        let prev_s1 = s1;
-        s1 = des_f(s1, &key[idx]) ^ s0;
-        s0 = prev_s1;
+    for i in 0..6 {
+        lrgstate[i] ^= key[i];
     }
-    s0 = des_f(s1, &key[15]) ^ s0;
-    inverse_permutation(s0, s1)
+    let s = (QRC_SBOX[0][qrc_sbox_bit(lrgstate[0] >> 2)] as u32) << 28
+        | (QRC_SBOX[1][qrc_sbox_bit(((lrgstate[0] & 0x03) << 4) | (lrgstate[1] >> 4))] as u32) << 24
+        | (QRC_SBOX[2][qrc_sbox_bit(((lrgstate[1] & 0x0F) << 2) | (lrgstate[2] >> 6))] as u32) << 20
+        | (QRC_SBOX[3][qrc_sbox_bit(lrgstate[2] & 0x3F)] as u32) << 16
+        | (QRC_SBOX[4][qrc_sbox_bit(lrgstate[3] >> 2)] as u32) << 12
+        | (QRC_SBOX[5][qrc_sbox_bit(((lrgstate[3] & 0x03) << 4) | (lrgstate[4] >> 4))] as u32) << 8
+        | (QRC_SBOX[6][qrc_sbox_bit(((lrgstate[4] & 0x0F) << 2) | (lrgstate[5] >> 6))] as u32) << 4
+        | QRC_SBOX[7][qrc_sbox_bit(lrgstate[5] & 0x3F)] as u32;
+    qrc_bitnum_intl(s, 15, 0)
+        | qrc_bitnum_intl(s, 6, 1)
+        | qrc_bitnum_intl(s, 19, 2)
+        | qrc_bitnum_intl(s, 20, 3)
+        | qrc_bitnum_intl(s, 28, 4)
+        | qrc_bitnum_intl(s, 11, 5)
+        | qrc_bitnum_intl(s, 27, 6)
+        | qrc_bitnum_intl(s, 16, 7)
+        | qrc_bitnum_intl(s, 0, 8)
+        | qrc_bitnum_intl(s, 14, 9)
+        | qrc_bitnum_intl(s, 22, 10)
+        | qrc_bitnum_intl(s, 25, 11)
+        | qrc_bitnum_intl(s, 4, 12)
+        | qrc_bitnum_intl(s, 17, 13)
+        | qrc_bitnum_intl(s, 30, 14)
+        | qrc_bitnum_intl(s, 9, 15)
+        | qrc_bitnum_intl(s, 1, 16)
+        | qrc_bitnum_intl(s, 7, 17)
+        | qrc_bitnum_intl(s, 23, 18)
+        | qrc_bitnum_intl(s, 13, 19)
+        | qrc_bitnum_intl(s, 31, 20)
+        | qrc_bitnum_intl(s, 26, 21)
+        | qrc_bitnum_intl(s, 2, 22)
+        | qrc_bitnum_intl(s, 8, 23)
+        | qrc_bitnum_intl(s, 18, 24)
+        | qrc_bitnum_intl(s, 12, 25)
+        | qrc_bitnum_intl(s, 29, 26)
+        | qrc_bitnum_intl(s, 5, 27)
+        | qrc_bitnum_intl(s, 21, 28)
+        | qrc_bitnum_intl(s, 10, 29)
+        | qrc_bitnum_intl(s, 3, 30)
+        | qrc_bitnum_intl(s, 24, 31)
 }
 
-fn des_key_schedule(key: &[u8], mode: u32) -> [[u8; 6]; 16] {
+fn qrc_des_crypt(input: &[u8], schedule: &QrcSchedule, output: &mut [u8]) {
+    let (mut s0, mut s1) = qrc_initial_permutation(input);
+    for i in 0..15 {
+        let prev = s1;
+        s1 = qrc_des_f(s1, &schedule[i]) ^ s0;
+        s0 = prev;
+    }
+    s0 = qrc_des_f(s1, &schedule[15]) ^ s0;
+    qrc_inverse_permutation(s0, s1, output);
+}
+
+fn qrc_key_schedule(key: &[u8], decrypt: bool) -> QrcSchedule {
     let mut schedule = [[0u8; 6]; 16];
-    let key_rnd_shift = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
-    let key_perm_c = [
-        56, 48, 40, 32, 24, 16, 8, 0, 57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2,
-        59, 51, 43, 35,
-    ];
-    let key_perm_d = [
-        62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37, 29, 21, 13, 5, 60, 52, 44, 36, 28, 20, 12,
-        4, 27, 19, 11, 3,
-    ];
-    let key_compression = [
-        13, 16, 10, 23, 0, 4, 2, 27, 14, 5, 20, 9, 22, 18, 11, 3, 25, 7, 15, 6, 26, 19, 12, 1, 40,
-        51, 30, 36, 46, 54, 29, 39, 50, 44, 32, 47, 43, 48, 38, 55, 33, 52, 45, 41, 49, 35, 28, 31,
-    ];
-
     let mut c: u32 = 0;
-    for i in 0..28 {
-        c |= bitnum(key, key_perm_c[i], 31 - i as u32);
-    }
     let mut d: u32 = 0;
     for i in 0..28 {
-        d |= bitnum(key, key_perm_d[i], 31 - i as u32);
+        c |= qrc_bitnum(key, QRC_KEY_PERM_C[i], 31 - i as u32);
+        d |= qrc_bitnum(key, QRC_KEY_PERM_D[i], 31 - i as u32);
     }
-
     for i in 0..16 {
-        let shift = key_rnd_shift[i];
-        c = ((c << shift) | (c >> (28 - shift))) & 0x0fffffff;
-        d = ((d << shift) | (d >> (28 - shift))) & 0x0fffffff;
-        let togen = if mode == 0 { 15 - i } else { i };
-        for j in 0..6 {
-            schedule[togen][j] = 0;
-        }
+        let shift = QRC_KEY_RND_SHIFT[i];
+        c = (((c << shift) | (c >> (28 - shift))) & 0xFFFF_FFF0) as u32;
+        d = (((d << shift) | (d >> (28 - shift))) & 0xFFFF_FFF0) as u32;
+        let togen = if decrypt { 15 - i } else { i };
         for j in 0..24 {
-            schedule[togen][j / 8] |=
-                (bitnum_intr(c, key_compression[j], 7 - (j % 8) as u32)) as u8;
+            schedule[togen][(j / 8) as usize] |=
+                (qrc_bitnum_intr(c, QRC_KEY_COMPRESSION[j], 7 - (j % 8) as u32)) as u8;
         }
         for j in 24..48 {
-            schedule[togen][j / 8] |=
-                (bitnum_intr(d, key_compression[j] - 27, 7 - (j % 8) as u32)) as u8;
+            schedule[togen][(j / 8) as usize] |=
+                (qrc_bitnum_intr(d, QRC_KEY_COMPRESSION[j] - 27, 7 - (j % 8) as u32)) as u8;
         }
     }
     schedule
 }
 
-type DesSchedule = [[u8; 6]; 16];
-
-fn triple_des_key_setup(key: &[u8], mode: u32) -> [DesSchedule; 3] {
-    let key0 = &key[0..8];
-    let key8 = &key[8..16];
-    let key16 = &key[16..24];
-    if mode == 1 {
-        [
-            des_key_schedule(key0, 1),
-            des_key_schedule(key8, 0),
-            des_key_schedule(key16, 1),
-        ]
-    } else {
-        [
-            des_key_schedule(key16, 0),
-            des_key_schedule(key8, 1),
-            des_key_schedule(key0, 0),
-        ]
-    }
+fn qrc_tripledes_key_setup(key: &[u8]) -> [QrcSchedule; 3] {
+    [
+        qrc_key_schedule(&key[16..24], true),
+        qrc_key_schedule(&key[8..16], false),
+        qrc_key_schedule(&key[0..8], true),
+    ]
 }
 
-fn triple_des_crypt(data: &[u8], key_schedule: &[DesSchedule; 3]) -> [u8; 8] {
-    let mut temp = [0u8; 8];
-    temp.copy_from_slice(&data[0..8]);
-    for i in 0..3 {
-        temp = des_crypt(&temp, &key_schedule[i]);
-    }
-    temp
+fn qrc_tripledes_crypt(input: &[u8], schedule: &[QrcSchedule; 3], output: &mut [u8]) {
+    let mut buf = [0u8; 8];
+    qrc_des_crypt(input, &schedule[0], &mut buf);
+    qrc_des_crypt(&buf, &schedule[1], output);
+    qrc_des_crypt(output, &schedule[2], &mut buf);
+    output.copy_from_slice(&buf);
 }
 
 fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
-    let encrypted_bytes = hex_to_bytes(encrypted_hex);
-    if encrypted_bytes.is_empty() {
+    let encrypted_hex = encrypted_hex.trim();
+    if encrypted_hex.is_empty() || encrypted_hex.len() % 2 != 0 {
+        return Err("Invalid hex data".to_string());
+    }
+    let mut encrypted = hex_to_bytes(encrypted_hex);
+    if encrypted.is_empty() {
         return Err("No data to decrypt".to_string());
     }
-    let qrc_key = b"!@#)(*$%123ZXC!@!@#)(NHL";
-    let schedule = triple_des_key_setup(qrc_key, 0);
-
-    let mut decrypted_bytes = vec![0u8; encrypted_bytes.len()];
+    let schedule = qrc_tripledes_key_setup(&QRC_KEY);
+    let mut block = [0u8; 8];
     let mut i = 0;
-    while i < encrypted_bytes.len() {
-        let block_len = std::cmp::min(8, encrypted_bytes.len() - i);
-        let mut block = [0u8; 8];
-        block[..block_len].copy_from_slice(&encrypted_bytes[i..i + block_len]);
-        let decrypted = triple_des_crypt(&block, &schedule);
-        decrypted_bytes[i..i + block_len].copy_from_slice(&decrypted[..block_len]);
+    while i + 8 <= encrypted.len() {
+        qrc_tripledes_crypt(&encrypted[i..i + 8], &schedule, &mut block);
+        encrypted[i..i + 8].copy_from_slice(&block);
         i += 8;
     }
 
-    decompress_deflate_to_string(&decrypted_bytes)
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] qrc 3DES输出 head={:?} len={}",
+        &encrypted.iter().take(10).collect::<Vec<_>>(),
+        encrypted.len()
+    );
+
+    for attempt in [
+        decompress_zlib_sync_flush(&encrypted),
+        decompress_zlib_to_bytes(&encrypted),
+        decompress_deflate_to_bytes(&encrypted),
+        decompress_zlib_to_bytes_skip_header(&encrypted),
+        decompress_gzip_to_bytes(&encrypted),
+    ] {
+        if let Ok(bytes) = attempt {
+            if !bytes.is_empty() {
+                return String::from_utf8(bytes).map_err(|e| e.to_string());
+            }
+        }
+    }
+    Err("decompression failed".to_string())
 }
 
 // ==================== Deflate/Zlib Decompression ====================
 
-fn decompress_deflate_to_string(bytes: &[u8]) -> Result<String, String> {
-    use flate2::read::DeflateDecoder;
-    use std::io::Read;
-    let mut decoder = DeflateDecoder::new(bytes);
-    let mut result = String::new();
-    decoder
-        .read_to_string(&mut result)
-        .map_err(|e| e.to_string())?;
-    Ok(result)
+// 与 JS inflateSync(…, { finishFlush: 2 /* Z_SYNC_FLUSH */ }) 等价：
+// 容忍尾部不完整的 zlib 流，读到流结束后即返回，不因尾部残留而报错。
+fn decompress_zlib_sync_flush(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::{Decompress, FlushDecompress, Status};
+    let mut d = Decompress::new(true);
+    let mut out = Vec::with_capacity(bytes.len() * 3 + 64);
+    let mut buf = [0u8; 16384];
+    let mut in_pos = 0usize;
+    let mut guard = 0usize;
+    loop {
+        guard += 1;
+        if guard > 1_000_000 {
+            return Err("zlib inflate loop limit".to_string());
+        }
+        let before = d.total_out();
+        let available_in = bytes.len().saturating_sub(in_pos);
+        let status = d
+            .decompress(&bytes[in_pos..in_pos + available_in], &mut buf, FlushDecompress::Sync)
+            .map_err(|e| e.to_string())?;
+        let produced = (d.total_out() - before) as usize;
+        out.extend_from_slice(&buf[..produced.min(buf.len())]);
+        in_pos = d.total_in() as usize;
+        match status {
+            Status::StreamEnd => break,
+            Status::BufError => break,
+            Status::Ok => {
+                if produced == 0 && in_pos >= bytes.len() {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn decompress_deflate_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
@@ -1477,83 +1477,141 @@ fn tx_parse(lrc: &str, tlrc: &str, rlrc: &str) -> LyricResult {
 }
 
 async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
-    let song_id = song_info
+    let song_id_num = song_info
         .song_id
         .as_ref()
-        .map(|v| v.as_str().unwrap_or("").to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| Some(song_info.songmid.clone()))
-        .unwrap_or_default();
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+        .unwrap_or(0);
     let songmid = &song_info.songmid;
-
-    let req_body = serde_json::json!({
-        "comm": { "uin": "0", "format": "json", "ct": "19", "cv": "1859" },
-        "req": {
-            "module": "music.musichallSong.PlayLyricInfo",
-            "method": "GetPlayLyricInfo",
-            "param": {
-                "songMID": songmid,
-                "songID": song_id.parse::<u64>().unwrap_or(0),
-                "songType": 0,
-                "qrc": 1,
-                "qrc_t": 1,
-            },
-        },
-    });
-
-    let resp = http_fetch_text(
-        "https://u.y.qq.com/cgi-bin/musicu.fcg",
-        "POST",
-        &[
-            ("referer", "https://y.qq.com"),
-            ("user-agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"),
-            ("Content-Type", "application/json"),
-        ],
-        Some(&req_body.to_string()),
-    )
-    .await?;
+    let interval_sec = song_info
+        .interval_ms
+        .map(|ms| (ms / 1000) as i64)
+        .or_else(|| song_info.interval.as_ref().and_then(|s| s.parse::<i64>().ok()))
+        .unwrap_or(0);
+    let album_mid = song_info.album_mid.clone().unwrap_or_default();
 
     let mut lxlyric = String::new();
     let mut lyric = String::new();
     let mut tlyric = String::new();
     let mut rlyric = String::new();
 
+    // 主接口：musicu.fcg + GetPlayLyricInfo，qrc=1&crypt=1 请求逐字 QRC。
+    // lyric_download.fcg 会被 QQ 风控包装成 <command-lable-xwl78-qq-music> 且 content 为空，
+    // 改用音乐统一接口（LDDC 同款），逐字数据在 data.lyric 字段（qrc_t 指示逐字）。
+    let body_json = serde_json::json!({
+        "comm": { "g_tk": 5381, "uin": 0, "format": "json", "ct": 24, "cv": 0, "platform": "yqq.json", "needNewCode": 1 },
+        "req_0": {
+            "module": "music.musichallSong.PlayLyricInfo",
+            "method": "GetPlayLyricInfo",
+            "param": {
+                "songMID": songmid,
+                "songID": song_id_num,
+                "albumMID": album_mid,
+                "trans": 1,
+                "roma": 1,
+                "platform": "yqq",
+                "qrc": 1,
+                "crypt": 1,
+                "lrc_t": 0,
+                "qrc_t": 0,
+                "cv": 2111,
+                "ct": 19,
+                "interval": interval_sec
+            }
+        }
+    });
+    let body_json_str = body_json.to_string();
+    let resp = http_fetch_text(
+        "https://u.y.qq.com/cgi-bin/musicu.fcg",
+        "POST",
+        &[
+            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"),
+            ("Referer", "https://y.qq.com/"),
+            ("Origin", "https://y.qq.com"),
+            ("Content-Type", "application/json"),
+        ],
+        Some(&body_json_str),
+    )
+    .await?;
+
     if resp.status == 200 {
         if let Ok(body) = serde_json::from_str::<serde_json::Value>(&resp.body) {
-            eprintln!("[lyric_fetcher] tx 响应结构 code={:?} req_code={:?} data_keys={:?} lyric_field={:?}", body.get("code").and_then(|v| v.as_i64()), body.get("req").and_then(|v| v.get("code")).and_then(|v| v.as_i64()), body.get("req").and_then(|v| v.get("data")).and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()), body.get("req").and_then(|v| v.get("data")).and_then(|v| v.get("lyric")).and_then(|v| v.as_str()).map(|s| s.len()));
-            if body.get("code").and_then(|v| v.as_i64()) == Some(0) {
-                if let Some(data) = body.get("req").and_then(|v| v.get("data")) {
-                    if let Some(lyric_hex) = data.get("lyric").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(lyric_hex) {
+            if let Some(data) = body.get("req_0").and_then(|v| v.get("data")) {
+                let lyric_field = data
+                    .get("lyric")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let trans_field = data
+                    .get("trans")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let roma_field = data
+                    .get("roma")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let qrc_t = data.get("qrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
+                let lrc_t = data.get("lrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[lyric_fetcher] tx musicu songmid={} lyric_len={} qrc_t={} lrc_t={} trans_len={} roma_len={}",
+                    songmid,
+                    lyric_field.len(),
+                    qrc_t,
+                    lrc_t,
+                    trans_field.len(),
+                    roma_field.len(),
+                );
+                if !lyric_field.trim().is_empty() {
+                    match qrc_decrypt(lyric_field.trim()) {
+                        Ok(decrypted) => {
                             let parsed = tx_parse(&decrypted, "", "");
                             lyric = parsed.lyric;
                             lxlyric = parsed.lxlyric;
+                            #[cfg(debug_assertions)]
+                            eprintln!(
+                                "[lyric_fetcher] tx musicu lyric 解密成功 len={} head={}",
+                                decrypted.len(),
+                                decrypted.chars().take(120).collect::<String>()
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("[lyric_fetcher] tx musicu lyric 解密失败 err={}", e);
                         }
                     }
-                    if let Some(trans_hex) = data.get("trans").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(trans_hex) {
-                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
-                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
-                            tlyric = re2
-                                .replace_all(&re1.replace_all(&decrypted, ""), "")
-                                .to_string();
-                        }
+                }
+                if !trans_field.trim().is_empty() {
+                    if let Ok(decrypted) = qrc_decrypt(trans_field.trim()) {
+                        let cleaned = tx_remove_tag(&decrypted);
+                        tlyric = tx_fix_tlrc_time_tag(&cleaned, &lyric);
                     }
-                    if let Some(roma_hex) = data.get("roma").and_then(|v| v.as_str()) {
-                        if let Ok(decrypted) = qrc_decrypt(roma_hex) {
-                            let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
-                            let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
-                            rlyric = re2
-                                .replace_all(&re1.replace_all(&decrypted, ""), "")
-                                .to_string();
-                        }
+                }
+                if !roma_field.trim().is_empty() {
+                    if let Ok(decrypted) = qrc_decrypt(roma_field.trim()) {
+                        let cleaned = tx_remove_tag(&decrypted);
+                        let pr = tx_parse_rlyric(&cleaned);
+                        rlyric = tx_fix_rlrc_time_tag(&pr, &lyric);
                     }
                 }
             }
         }
+    } else {
+        eprintln!(
+            "[lyric_fetcher] tx musicu 失败 status={}",
+            resp.status
+        );
     }
 
-    eprintln!("[lyric_fetcher] tx songmid={} status={} lxlyric_len={} lyric_len={} word_markers={}", songmid, resp.status, lxlyric.len(), lyric.len(), lxlyric.matches('<').count());
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[lyric_fetcher] tx songmid={} musicu lxlyric_len={} lyric_len={} word_markers={}",
+        songmid,
+        lxlyric.len(),
+        lyric.len(),
+        lxlyric.matches('<').count()
+    );
 
     // Fallback to old API
     if lyric.is_empty() && lxlyric.is_empty() {
