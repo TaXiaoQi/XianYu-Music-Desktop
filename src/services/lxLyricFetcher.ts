@@ -150,6 +150,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   // 此处统一转换为毫秒值。
   const rawInterval = cached?._interval || (song.duration > 0 ? Math.round(song.duration) : undefined);
   const intervalMs = rawInterval ? rawInterval * 1000 : undefined;
+
   const songInfo: LxSongInfo = {
     songmid: cached?.songmid || extendedSong._songmid || songmid,
     hash: cached?.hash || extendedSong._hash,
@@ -175,6 +176,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
       const pluginLyrics = await lxPluginGetLyric(matchedPlugin, source, songInfo as any);
       console.log(`[LX Lyrics][diag] source=${source} songmid=${songmid} 插件=${matchedPlugin.name} 匹配源=${matchedPlugin.sources?.join(',')} 返回=${pluginLyrics ? '有' : 'null'}`);
       if (pluginLyrics && (pluginLyrics.lyric || pluginLyrics.lxlyric || pluginLyrics.yrc || pluginLyrics.qrc || pluginLyrics.eslrc)) {
+        console.log(`[LX Lyrics][diag] 插件字段 yrc=${(pluginLyrics.yrc||'').length} qrc=${(pluginLyrics.qrc||'').length} eslrc=${(pluginLyrics.eslrc||'').length} lxlyric=${(pluginLyrics.lxlyric||'').length} lyric=${(pluginLyrics.lyric||'').length} | yrcHead=${(pluginLyrics.yrc||'').slice(0,80)} | lxHead=${(pluginLyrics.lxlyric||'').slice(0,80)} | lyHead=${(pluginLyrics.lyric||'').slice(0,80)}`);
         const result = buildLxLyricsRaw(pluginLyrics);
         console.log(`[LX Lyrics][diag] 插件 build 结果 len=${result?.length} hasWordLevel=${hasWordLevelContent(result || '')}`);
         if (result && result.trim()) {
