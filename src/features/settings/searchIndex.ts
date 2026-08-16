@@ -153,6 +153,7 @@ const staticItems: SettingsSearchItem[] = [
   ]),
   ...makeItems('audioOutput', '播放设置', [
     { label: '自动播放', keywords: '启动 播放' },
+    { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' },
     { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' },
     { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' },
     { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },

@@ -655,6 +655,7 @@ export interface TauriCommandMap {
   seek_audio: { payload: SeekAudioOptions; response: void };
   set_audio_output_mode: { payload: { outputMode: AudioOutputMode }; response: void };
   set_output_device: { payload: { deviceId: string | null }; response: void };
+  set_prevent_sleep: { payload: { active: boolean }; response: void };
   get_output_devices: { payload: undefined; response: AudioDevice[] };
   get_current_output_device: { payload: undefined; response: AudioOutputStatus };
   add_to_history: { payload: { songPath: string }; response: void };
