@@ -11,6 +11,7 @@ import { windowApi } from '../../services/tauri/windowApi';
 import { useAuthStore } from '../../features/auth/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { useSettings } from '../../features/settings/useSettings';
+import { useI18n } from '../../features/i18n';
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
@@ -28,6 +29,7 @@ const toggleRecognition = () => {
 const { searchQuery, setSearch, isMiniMode } = usePlayerViewState();
 const appWindow = getCurrentWindow();
 const { settings, topBarLayout } = useSettings();
+const { t } = useI18n();
 const { theme, isDarkTheme, toggleThemeMode, setThemeMode } = useThemeSettings();
 const uiStore = useUiStore();
 const { manualCheckAnnouncement, isFetchingAnnouncement } = useAnnouncement();
@@ -42,10 +44,10 @@ const hasCustomBackground = computed(() => (
 ));
 const themeToggleTitle = computed(() => {
   if (hasCustomBackground.value) {
-    return isDarkTheme.value ? '切换深色字体' : '切换浅色字体';
+    return isDarkTheme.value ? t('topbar.darkText') : t('topbar.lightText');
   }
 
-  return isDarkTheme.value ? '切换浅色' : '切换深色';
+  return isDarkTheme.value ? t('topbar.lightTheme') : t('topbar.darkTheme');
 });
 
 // --- 顶部栏容器化布局 ---
@@ -55,8 +57,8 @@ const rightControls = computed(() => layout.value.right);
 
 const accountTitle = computed(() =>
   authStore.isLoggedIn
-    ? (authStore.user?.nickname || authStore.user?.username || '个人中心')
-    : '登录 / 注册',
+    ? (authStore.user?.nickname || authStore.user?.username || t('topbar.profile'))
+    : t('topbar.login'),
 );
 const accountAvatar = computed(() => (authStore.isLoggedIn ? authStore.user?.avatar ?? null : null));
 const accountInitial = computed(() =>
@@ -197,7 +199,7 @@ onUnmounted(() => {
       <input
         ref="searchInputRef"
         type="text"
-        placeholder="搜索音乐..."
+        :placeholder="t('topbar.search')"
         class="bg-transparent outline-none min-w-0 w-full placeholder-gray-700 dark:placeholder-gray-300 text-gray-800 dark:text-gray-100 text-sm font-medium"
         :value="searchQuery"
         @input="handleInput"
@@ -217,8 +219,8 @@ onUnmounted(() => {
       <button
         @click.stop="toggleRecognition"
         class="text-gray-500 dark:text-gray-400 hover:text-[#EC4141] ml-1 shrink-0 cursor-pointer transition-colors"
-        title="听歌识曲"
-        aria-label="听歌识曲"
+        :title="t('topbar.recognize')"
+        :aria-label="t('topbar.recognize')"
       >
         <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
       </button>
@@ -229,11 +231,11 @@ onUnmounted(() => {
         <div class="px-3 py-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
           <div class="flex items-center text-xs text-black/50 dark:text-white/50 font-medium tracking-wide">
             <Clock class="h-3.5 w-3.5 mr-1.5" />
-            搜索历史
+            {{ t('topbar.searchHistory') }}
           </div>
           <button @click="handleClearHistory" class="text-[11px] text-black/40 dark:text-white/40 hover:text-[#EC4141] flex items-center transition-colors cursor-pointer">
             <Trash2 class="h-3 w-3 mr-0.5" />
-            清空
+            {{ t('topbar.clearHistory') }}
           </button>
         </div>
         <div class="py-1">
@@ -260,14 +262,14 @@ onUnmounted(() => {
       <TopBarControlItem v-for="key in rightControls" :key="key" :item-key="key" />
       <div class="h-4 w-px bg-gray-400/30 mx-2"></div>
       <div class="flex items-center gap-1">
-        <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" title="Mini 模式">
+        <button @click.stop="isMiniMode = true" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.miniMode')">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /><rect x="12" y="12" width="6" height="4" rx="1" stroke-width="2" /></svg>
         </button>
-        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button>
+        <button @click.stop="minimize" class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer" :title="t('topbar.minimize')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" /></svg></button>
         <button
           @click.stop="toggleMaximize"
           :disabled="isMaximizeDisabled"
-          :title="isMaximizeDisabled ? '全屏模式下不可用' : '最大化'"
+          :title="isMaximizeDisabled ? t('topbar.maximizeUnavailable') : t('topbar.maximize')"
           :class="[
             'p-2 rounded-md transition-colors',
             isMaximizeDisabled
@@ -275,7 +277,7 @@ onUnmounted(() => {
               : 'text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer',
           ]"
         ><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="2" /></svg></button>
-        <button @click.stop="closeWindow" class="p-2 text-gray-900 dark:text-gray-100 hover:text-white hover:bg-[#EC4141] rounded-md transition-colors cursor-pointer"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <button @click.stop="closeWindow" class="p-2 text-gray-900 dark:text-gray-100 hover:text-white hover:bg-[#EC4141] rounded-md transition-colors cursor-pointer" :title="t('topbar.close')"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
       </div>
     </div>
   </div>

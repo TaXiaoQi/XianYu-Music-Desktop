@@ -224,6 +224,7 @@ export const defaultLogSettings: LogSettings = {
 };
 
 export const defaultAppSettings: AppSettings = {
+  language: 'zh-CN',
   closeToTray: true,
   preventSleepWhilePlaying: true,
   showDesktopLyrics: false,
@@ -578,6 +579,7 @@ export const mergeAppSettings = (
     minimizeToTray: _deprecated,
     libraryMinDurationSeconds,
     preventSleepWhilePlaying,
+    language,
     ...rest
   } = patch;
 
@@ -585,6 +587,7 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
+    language: language === 'zh-CN' || language === 'en-US' ? language : base.language,
     preventSleepWhilePlaying: typeof preventSleepWhilePlaying === 'boolean'
       ? preventSleepWhilePlaying
       : base.preventSleepWhilePlaying,
