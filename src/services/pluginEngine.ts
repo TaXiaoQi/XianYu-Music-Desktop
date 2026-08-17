@@ -819,6 +819,52 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const MF_EMPTY_SEARCH_RETRY_DELAY_MS = 450;
 
+/** 加载日志：直接输出到浏览器 console，便于前端排查插件目录（歌单/歌手/专辑）间歇加载问题 */
+const catalogLog = (msg: string) => {
+  console.log(`[CatalogLoad] ${msg}`);
+  log(msg);
+};
+
+/** 汇总一次插件返回的结构，便于日志中人工判断返回了什么 */
+const describeResult = (r: any): string => {
+  if (!r || typeof r !== 'object') return `type=${typeof r}`;
+  const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
+  let len = 0;
+  try { len = extractResultList(r).length; } catch { /* ignore */ }
+  return `keys=[${keys}] extractedLen=${len}`;
+};
+
+/** 调用插件方法，若结果为空则短延迟后重试一次，缓解 QQ 等源接口偶发返回空的问题 */
+async function retryOnEmpty<T>(
+  label: string,
+  fn: () => Promise<T>,
+  isEmpty: (val: T) => boolean,
+  delay: number = MF_EMPTY_SEARCH_RETRY_DELAY_MS,
+): Promise<T> {
+  try {
+    const val1 = await fn();
+    catalogLog(`${label} 第1次 → ${describeResult(val1)}`);
+    if (!isEmpty(val1)) return val1;
+    catalogLog(`${label} 第1次为空，${delay}ms后重试`);
+  } catch (e: any) {
+    catalogLog(`${label} 第1次异常: ${e?.message || e}`);
+    catalogLog(`${label} 异常后 ${delay}ms重试`);
+    await sleep(delay);
+    try {
+      const val2 = await fn();
+      catalogLog(`${label} 第2次 → ${describeResult(val2)}`);
+      return val2;
+    } catch (e2: any) {
+      catalogLog(`${label} 第2次异常: ${e2?.message || e2}`);
+      throw e2;
+    }
+  }
+  await sleep(delay);
+  const val2 = await fn();
+  catalogLog(`${label} 第2次 → ${describeResult(val2)}`);
+  return val2;
+}
+
 /** 音乐搜索诊断版：保留初始化、能力和接口错误，供歌词选择页直接展示原因。 */
 export async function pluginMusicSearchWithDiagnostics(
   source: PluginSource,
@@ -1004,8 +1050,13 @@ export async function pluginGetPlaylistDetail(
   try {
     // 优先用 getMusicSheetInfo 获取歌单曲目
     if (typeof inst.instance.getMusicSheetInfo === 'function') {
+      const getSheetInfo = inst.instance.getMusicSheetInfo;
       try {
-        const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
+        const result = await retryOnEmpty(
+          `[${source.name}] getMusicSheetInfo sheet="${stripHtmlTags(sheetItem?.title || sheetItem?.name || '')}"`,
+          () => getSheetInfo(sheetItem, page),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1052,8 +1103,13 @@ export async function pluginGetArtistWorks(
   try {
     // 优先用 getArtistWorks 获取歌手作品
     if (typeof inst.instance.getArtistWorks === 'function') {
+      const getWorks = inst.instance.getArtistWorks;
       try {
-        const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
+        const result = await retryOnEmpty(
+          `[${source.name}] getArtistWorks(music) artist="${stripHtmlTags(artistItem?.name || artistItem?.title || '')}"`,
+          () => getWorks(artistItem, page, 'music'),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1110,7 +1166,12 @@ export async function pluginGetArtistAlbums(
   try {
     if (typeof inst.instance.getArtistWorks !== 'function') return [];
 
-    const result = await inst.instance.getArtistWorks(artistItem, page, 'album');
+    const getWorks = inst.instance.getArtistWorks;
+    const result = await retryOnEmpty(
+      `[${source.name}] getArtistWorks(album) artist="${stripHtmlTags(artistItem?.name || artistItem?.title || '')}"`,
+      () => getWorks(artistItem, page, 'album'),
+      (r) => extractResultList(r).length === 0,
+    );
     const list = extractResultList(result);
     if (list.length === 0) return [];
 
@@ -1154,8 +1215,13 @@ export async function pluginGetAlbumSongs(
   try {
     // 优先用 getAlbumInfo 获取专辑曲目
     if (typeof inst.instance.getAlbumInfo === 'function') {
+      const getAlbumInfo = inst.instance.getAlbumInfo;
       try {
-        const result = await inst.instance.getAlbumInfo(albumItem, page);
+        const result = await retryOnEmpty(
+          `[${source.name}] getAlbumInfo album="${stripHtmlTags(albumItem?.title || albumItem?.name || '')}"`,
+          () => getAlbumInfo(albumItem, page),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1649,43 +1715,60 @@ export async function pluginArtistSearch(
 
   try {
     if (typeof inst.instance.search !== 'function') return [];
+    const doSearch = inst.instance.search;
 
-    // 直接尝试搜索；Baka 插件可能未声明 artist 但实际支持
-    let result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
-    let list = extractResultList(result);
-    // 部分 MusicFree QQ 插件 artist 搜索偶发返回空，短延迟后重试一次再回退
-    if (list.length === 0) {
-      log(`[pluginArtistSearch] ${source.name} artist 第 1 次返回空，${MF_EMPTY_SEARCH_RETRY_DELAY_MS}ms 后重试`);
-      await sleep(MF_EMPTY_SEARCH_RETRY_DELAY_MS);
-      result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
-      list = extractResultList(result);
+    const artistLabel = `[${source.name}] artistSearch w="${keyword}" p=${page}`;
+    // Baka 插件可能未声明 artist 但实际支持；MF 的 QQ 插件偶发返回空或把歌曲当 artist 返回
+    let result: any;
+    try {
+      result = await retryOnEmpty(
+        artistLabel,
+        () => doSearch(keyword, page, 'artist'),
+        (r) => {
+          const list = extractResultList(r);
+          if (list.length === 0) return true;
+          // 列表非空但没有任何有效 artist 字段 → 视为无效（疑似把歌曲当 artist 返回），重试
+          return list.every(
+            (it: any) => !it?.name && !it?.title && !it?.artist && !it?.singername && !it?.singer,
+          );
+        },
+      );
+    } catch (e: any) {
+      catalogLog(`${artistLabel} 异常：${e?.message || e}`);
+      result = {};
     }
+    const list = extractResultList(result ?? {});
     if (list.length > 0) {
-      return list.map((item: any) => {
-        resetMediaItem(item, source.name);
-        const id = item.id || item.artistId || item.singerId || '';
-        const name = stripHtmlTags(item.name || item.title || item.artist || '');
-        const avatarUrl = extractArtistAvatarUrl(item);
-        return {
-          id,
-          name,
-          avatarUrl,
-          description: item.description || item.desc || '',
-          songCount: item.songCount || item.musicCount || undefined,
-          albumCount: item.albumCount || undefined,
-          platform: item.platform || source.name,
-          platformId: id,
-          pluginId: source.id,
-          rawData: item,
-        };
-      });
+      const valid = list
+        .map((item: any) => {
+          resetMediaItem(item, source.name);
+          const id = item.id || item.artistId || item.singerId || item.sid || '';
+          const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
+          if (!name) return null;
+          const avatarUrl = extractArtistAvatarUrl(item);
+          return {
+            id,
+            name,
+            avatarUrl,
+            description: item.description || item.desc || '',
+            songCount: item.songCount || item.musicCount || undefined,
+            albumCount: item.albumCount || undefined,
+            platform: item.platform || source.name,
+            platformId: id,
+            pluginId: source.id,
+            rawData: item,
+          } as PluginArtistResult;
+        })
+        .filter(Boolean) as PluginArtistResult[];
+      if (valid.length > 0) return valid;
+      catalogLog(`${artistLabel} 提取出 ${list.length} 条但无有效 artist 字段`);
     }
 
     // 回退：artist 搜索返回空，从音乐搜索结果中提取去重艺术家
     if (page === 1) {
-      log(`[pluginArtistSearch] ${source.name} artist 搜索为空，回退到音乐搜索提取艺术家`);
+      catalogLog(`${artistLabel} 回退：从音乐搜索结果提取艺术家`);
       const songResults = await pluginSearch(source, keyword, 1, 30);
-      if (songResults.length === 0) return [];
+      if (songResults.length === 0) { catalogLog(`${artistLabel} 音乐搜索也为空`); return []; }
 
       const artistMap = new Map<string, PluginArtistResult>();
       for (const song of songResults) {

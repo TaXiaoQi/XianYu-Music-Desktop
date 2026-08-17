@@ -1341,6 +1341,7 @@ const needsProxy = (url: string): boolean => {
     'bilivideo.com',
     'y.gtimg.cn',
     'qpic.cn',
+    'sycdn.kuwo.cn',
   ];
   return proxyDomains.some(domain => url.includes(domain));
 };

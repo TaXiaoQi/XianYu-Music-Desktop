@@ -16,6 +16,7 @@ const PROXY_COVER_DOMAINS = [
   'bilivideo.com',
   'y.gtimg.cn',
   'qpic.cn',
+  'sycdn.kuwo.cn',
 ];
 
 /** 封面代理缓存（原始 URL → data: URL） */

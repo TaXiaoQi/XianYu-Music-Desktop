@@ -721,6 +721,27 @@ async function requestTxSearch(str: string, page: number, limit: number): Promis
   });
 }
 
+/** 经典 Web 搜索接口兜底：不依赖新签名(Mobile)风控体系，Mobile 被持续风控时使用 */
+async function txSearchWebFallback(str: string, page: number, limit: number): Promise<LxSearchResult> {
+  const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&inCharset=utf-8&outCharset=utf-8&cr=1&platform=h5&catZhida=0&w=${encodeURIComponent(str)}&p=${page}&n=${limit}`;
+  const result = await httpGetJson(url, {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://y.qq.com/',
+  });
+  const song = result?.data?.song;
+  const rawList = song?.list || [];
+  const items = txHandleResult(rawList);
+  if (items.length === 0) throw new Error('TX web fallback: 无有效歌曲');
+  const total = Number(song?.totalnum || song?.num || rawList.length) || items.length;
+  return {
+    list: items,
+    allPage: Math.ceil(total / limit),
+    limit,
+    total,
+    source: 'tx',
+  };
+}
+
 function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearchResult {
   const list = txHandleResult(rawList);
   if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {
@@ -737,7 +758,11 @@ function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearch
 }
 
 async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 4) throw new Error('TX search: 搜索失败');
+  if (retryNum > 4) {
+    // Mobile 接口被持续风控(reqCode 2001)，走经典 Web 接口兜底，避免直接失败
+    console.warn('[LxMusicSdk] TX search: Mobile 重试耗尽，尝试 Web 兜底接口');
+    return txSearchWebFallback(str, page, limit);
+  }
 
   // 仅使用 Mobile 接口（落雪官方验证有效）。请求两次会累积 QQ 音乐的风控（reqCode 2001），
   // 导致结果随机失败，故完全移除已失效的 Desktop 兜底请求。
