@@ -34,7 +34,7 @@ lofty = "0.21"
 id3 = "1.14"
 encoding_rs = "0.8"
 base64 = "0.22.1"
-rodio = { version = "0.20", default-features = false, features = ["wav", "mp3", "symphonia-aac", "symphonia-aiff", "symphonia-alac", "symphonia-flac", "symphonia-isomp4", "symphonia-vorbis"] }
+rodio = { version = "0.20", default-features = false, features = ["wav", "mp3", "symphonia-aac", "symphonia-aiff", "symphonia-alac", "symphonia-flac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-opus", "dsd"] }
 symphonia = { version = "0.5.5", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 image = { version = "0.25", features = ["jpeg", "png", "webp"] }
 urlencoding = "2"
