@@ -2,6 +2,9 @@
 import { computed, defineAsyncComponent } from 'vue';
 
 import type { FolderNode, Song } from '../../types';
+import { useI18n } from '../../features/i18n';
+
+const { isEnglish } = useI18n();
 
 const DetailHeader = defineAsyncComponent(() => import('../headers/DetailHeader.vue'));
 const FoldersHeader = defineAsyncComponent(() => import('../headers/FoldersHeader.vue'));
@@ -81,7 +84,7 @@ const isManagementModeModel = computed({
     v-else-if="localViewMode === 'playlist'"
     v-model:isBatchMode="isBatchModeModel"
     :title="playlistDetail?.name || ''"
-    :subtitle="playlistDetail?.date ? `创建于 ${playlistDetail.date}` : ''"
+    :subtitle="playlistDetail?.date ? `${isEnglish ? 'Created on' : '创建于'} ${playlistDetail.date}` : ''"
     :songs="localSongList"
     :selectedCount="selectedCount"
     :totalSongCount="localSongPaths?.length ?? localSongList.length"

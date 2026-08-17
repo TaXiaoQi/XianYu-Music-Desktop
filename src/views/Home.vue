@@ -90,29 +90,29 @@
     <ModernModal
       v-if="showSongPhysicalDeleteConfirm"
       v-model:visible="showSongPhysicalDeleteConfirm"
-      title="永久删除文件"
-      :content="`确定要从磁盘中永久删除歌曲 '${songToPhysicalDelete?.title}' 吗？此操作不可逆！`"
+      :title="isEnglish ? 'Permanently Delete File' : '永久删除文件'"
+      :content="isEnglish ? `Permanently delete '${songToPhysicalDelete?.title}' from disk? This cannot be undone.` : `确定要从磁盘中永久删除歌曲 '${songToPhysicalDelete?.title}' 吗？此操作不可逆！`"
       type="danger"
-      confirm-text="永久删除"
+      :confirm-text="isEnglish ? 'Delete Permanently' : '永久删除'"
       @confirm="executeSongPhysicalDelete"
     />
 
     <ModernModal
       v-if="showFolderDeleteConfirm"
       v-model:visible="showFolderDeleteConfirm"
-      title="删除文件夹"
-      :content="`确定要删除文件夹 '${folderToDeletePath}' 吗？这也将移除其中的本地文件。`"
+      :title="isEnglish ? 'Delete Folder' : '删除文件夹'"
+      :content="isEnglish ? `Delete the folder '${folderToDeletePath}'? Its local files will also be removed from the library.` : `确定要删除文件夹 '${folderToDeletePath}' 吗？这也将移除其中的本地文件。`"
       type="danger"
-      confirm-text="删除文件夹"
+      :confirm-text="isEnglish ? 'Delete Folder' : '删除文件夹'"
       @confirm="executeDeleteFolder"
     />
 
     <ModernInputModal
       v-if="showCreateFolderModal"
       :visible="showCreateFolderModal"
-      title="新建文件夹"
-      placeholder="请输入文件夹名称"
-      confirm-text="创建"
+      :title="isEnglish ? 'New Folder' : '新建文件夹'"
+      :placeholder="isEnglish ? 'Enter a folder name' : '请输入文件夹名称'"
+      :confirm-text="isEnglish ? 'Create' : '创建'"
       @cancel="showCreateFolderModal = false"
       @confirm="confirmCreateFolder"
     />
@@ -134,6 +134,9 @@ defineOptions({ name: 'Home' });
 
 import { defineAsyncComponent } from 'vue';
 import { useHomePageModel } from '../composables/useHomePageModel';
+import { useI18n } from '../features/i18n';
+
+const { isEnglish } = useI18n();
 
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
 const HomeViewPane = defineAsyncComponent(() => import('../components/home/HomeViewPane.vue'));

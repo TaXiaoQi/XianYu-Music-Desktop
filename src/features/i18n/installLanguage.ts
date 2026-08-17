@@ -3,6 +3,8 @@ import { playerStorage, playerStorageKeys } from '../../services/storage/playerS
 import type { AppLanguage } from '../../types';
 
 const SUPPORTED: AppLanguage[] = ['zh-CN', 'zh-TW', 'en-US'];
+let latestRequestedLanguage: AppLanguage | null = null;
+let installerSyncQueue: Promise<void> = Promise.resolve();
 
 function isSupported(value: unknown): value is AppLanguage {
   return typeof value === 'string' && (SUPPORTED as string[]).includes(value);
@@ -45,12 +47,24 @@ export async function consumeInstallLanguage(): Promise<AppLanguage | null> {
  * - 写回 AppLanguage / Installer Language，使卸载器语言跟随主程序当前语言；
  * - 更新本地“已消费值”，避免下次启动把用户选择误判为新安装值。
  */
-export async function syncLanguageToInstaller(language: AppLanguage): Promise<void> {
-  if (!isSupported(language)) return;
+export function syncLanguageToInstaller(language: AppLanguage): Promise<void> {
+  if (!isSupported(language)) return Promise.resolve();
+
+  latestRequestedLanguage = language;
   playerStorage.setString(playerStorageKeys.consumedInstallLanguage, language);
-  try {
-    await appApi.setInstallLanguage(language);
-  } catch {
-    /* 非 Windows 或写入失败时静默忽略，不影响界面语言 */
-  }
+
+  // 注册表写入必须串行。快速连续切换时，旧请求即使较慢，也不能在新请求之后完成并覆盖最终值。
+  const task = installerSyncQueue.then(async () => {
+    // 尚未开始的旧请求可直接跳过，只写入用户最新选择。
+    if (latestRequestedLanguage !== language) return;
+    try {
+      await appApi.setInstallLanguage(language);
+    } catch {
+      /* 非 Windows 或写入失败时静默忽略，不影响界面语言 */
+    }
+  });
+
+  // 即使单次同步异常，后续语言切换仍应继续执行。
+  installerSyncQueue = task.catch(() => {});
+  return task;
 }
