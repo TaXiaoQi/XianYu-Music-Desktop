@@ -976,6 +976,9 @@ export interface TauriCommandMap {
   run_installer: { payload: { path: string }; response: void };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
+  // ============ 安装语言 ============
+  get_install_language: { payload: undefined; response: string | null };
+  set_install_language: { payload: { language: string }; response: boolean };
   // ============ 歌词字体 ============
   read_lyrics_font_data_url: { payload: { fontPath: string }; response: string };
   import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };
