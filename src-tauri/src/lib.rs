@@ -3,6 +3,7 @@ mod custom_fonts;
 mod database;
 pub mod error;
 mod foreground_window;
+mod install_language;
 mod music;
 mod player;
 mod plugins;
@@ -29,6 +30,7 @@ use app_runtime::{
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
+use install_language::{get_install_language, set_install_language};
 use music::{
     add_library_folder, add_sidebar_folder, authed_request, batch_move_music_files,
     clear_auth_credentials, clear_cover_cache, clear_lx_all_cache, clear_lx_url_cache,
@@ -349,6 +351,8 @@ pub fn run() {
             get_playback_session,
             update_playback_position,
             flush_playback_session,
+            get_install_language,
+            set_install_language,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -79,9 +79,11 @@
         "installMode": "perMachine",
         "languages": [
           "SimpChinese",
+          "TradChinese",
           "English"
         ],
         "displayLanguageSelector": true,
+        "installerHooks": "installer-hooks.nsh",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "headerImage": "icons/header.bmp",
