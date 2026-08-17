@@ -1413,6 +1413,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 &thread_progress,
                                 current_volume_balance_gain,
                                 thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                             ) {
                                 Ok(playback) => {
@@ -1570,6 +1571,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 &thread_progress,
                                 current_volume_balance_gain,
                                 thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                             ) {
                                 Ok(playback) => {

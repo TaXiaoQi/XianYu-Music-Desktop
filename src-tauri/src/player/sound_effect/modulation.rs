@@ -28,6 +28,8 @@ pub struct ModulationRack {
     phaser_ap: [[Biquad; 4]; 2],
     phaser_lfo: Lfo,
     phaser_fb: [f32; 2],
+    /// allpass 系数更新计数器：LFO 变化缓慢，每 8 样本更新一次系数即可
+    phaser_update_counter: usize,
     // Delay：长延迟线 + 反馈
     delay_dl: [DelayLine; 2],
 }
@@ -65,6 +67,7 @@ impl ModulationRack {
             ],
             phaser_lfo: Lfo::new(0.5, 44100.0),
             phaser_fb: [0.0; 2],
+            phaser_update_counter: 0,
             delay_dl: [DelayLine::new(192000), DelayLine::new(192000)],
         }
     }
@@ -206,13 +209,20 @@ impl ModulationRack {
             let lfo = self.phaser_lfo.tick_sine() * 0.5 + 0.5;
             // 中心频率 200..2000Hz 调制
             let center = 200.0 + lfo * 1800.0 * depth.max(0.1);
-            for i in 0..2 {
-                for ap in &mut self.phaser_ap[i] {
-                    ap.set_allpass(center, sr, 0.707);
+            // LFO 变化缓慢，每 8 样本更新一次 allpass 系数即可，避免 8 次 sin/cos/样本
+            self.phaser_update_counter += 1;
+            if self.phaser_update_counter >= 8 {
+                self.phaser_update_counter = 0;
+                for i in 0..2 {
+                    for ap in &mut self.phaser_ap[i] {
+                        ap.set_allpass(center, sr, 0.707);
+                    }
                 }
+            }
+            for i in 0..2 {
                 let mut y = frame[i] + self.phaser_fb[i] * fb;
                 for ap in &mut self.phaser_ap[i] {
-                    y = ap.process(y, 0);
+                    y = ap.process(y, i);
                 }
                 self.phaser_fb[i] = y;
                 let wet = frame[i] * (1.0 - mix) + y * mix;
@@ -227,18 +237,26 @@ impl ModulationRack {
             let fb = (s.delay.feedback / 100.0).clamp(0.0, 0.9);
             let mix = (s.delay.mix / 100.0).clamp(0.0, 1.0);
             let pingpong = s.delay.delay_type == super::DelayType::Pingpong;
-            for i in 0..2 {
-                let delayed = self.delay_dl[i].read(time_samp);
-                self.delay_dl[i].write(frame[i] + delayed * fb);
-                let _ = pingpong;
-                let wet = frame[i] * (1.0 - mix) + delayed * mix;
-                frame[i] = lerp(frame[i], soft_clip(wet), w);
-            }
-            // 乒乓：交换两声道延迟反馈
+
+            let in_l = frame[0];
+            let in_r = frame[1];
+            let delayed_l = self.delay_dl[0].read(time_samp);
+            let delayed_r = self.delay_dl[1].read(time_samp);
+
             if pingpong {
-                let tmp = self.delay_dl[0].read(time_samp);
-                let _ = tmp;
+                // 乒乓：左声道的延迟输出反馈到右延迟线，右声道的延迟输出反馈到左延迟线
+                self.delay_dl[0].write(in_l + delayed_r * fb);
+                self.delay_dl[1].write(in_r + delayed_l * fb);
+            } else {
+                // 单次：各自独立反馈
+                self.delay_dl[0].write(in_l + delayed_l * fb);
+                self.delay_dl[1].write(in_r + delayed_r * fb);
             }
+
+            let wet_l = in_l * (1.0 - mix) + delayed_l * mix;
+            let wet_r = in_r * (1.0 - mix) + delayed_r * mix;
+            frame[0] = lerp(in_l, soft_clip(wet_l), w);
+            frame[1] = lerp(in_r, soft_clip(wet_r), w);
         }
     }
 }

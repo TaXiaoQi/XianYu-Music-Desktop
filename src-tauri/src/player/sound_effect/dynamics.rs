@@ -79,6 +79,8 @@ pub struct DynamicsRack {
     deess_shelf: [Biquad; 2],
     deess_env: EnvelopeFollower,
     deess_reduction: f32,
+    /// 上次写入 shelf 的增益值（dB），用于避免每样本重算 biquad 系数
+    deess_last_gain: f32,
     // 多段：LR 分频 + 各段增益
     mb_low_lp: LinkwitzRiley,
     mb_mid_hp: LinkwitzRiley,
@@ -114,6 +116,7 @@ impl DynamicsRack {
             deess_shelf: [Biquad::new(2), Biquad::new(2)],
             deess_env: EnvelopeFollower::new(2.0, 80.0, 44100.0),
             deess_reduction: 0.0,
+            deess_last_gain: 0.0,
             mb_low_lp: LinkwitzRiley::new(),
             mb_mid_hp: LinkwitzRiley::new(),
             mb_mid_lp: LinkwitzRiley::new(),
@@ -182,6 +185,7 @@ impl DynamicsRack {
         self.limiter_gain = 1.0;
         self.agc_gain = 1.0;
         self.deess_reduction = 0.0;
+        self.deess_last_gain = 0.0;
         self.mb_gain = [1.0; 3];
     }
 
@@ -401,13 +405,17 @@ impl DynamicsRack {
             };
             self.deess_reduction =
                 smooth_db_reduction(self.deess_reduction, target_red, 2.0, 80.0, sr);
-            for i in 0..2 {
-                self.deess_shelf[i].set_highshelf(
-                    s.de_esser.frequency,
-                    sr,
-                    self.deess_reduction,
-                    0.707,
-                );
+            // 仅在衰减量变化超过 0.1dB 时才重算 shelf 系数，避免每样本 sin/cos 开销
+            if (self.deess_reduction - self.deess_last_gain).abs() > 0.1 {
+                for i in 0..2 {
+                    self.deess_shelf[i].set_highshelf(
+                        s.de_esser.frequency,
+                        sr,
+                        self.deess_reduction,
+                        0.707,
+                    );
+                }
+                self.deess_last_gain = self.deess_reduction;
             }
             let nl = self.deess_shelf[0].process(frame[0], 0);
             let nr = self.deess_shelf[1].process(frame[1], 1);

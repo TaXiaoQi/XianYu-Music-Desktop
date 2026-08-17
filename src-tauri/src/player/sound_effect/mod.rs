@@ -20,6 +20,7 @@
 //! - `pitch`：变调变速（OLA 时间拉伸 + 线性重采样 / 改 sample_rate）
 
 pub mod channel;
+pub mod convolution;
 pub mod dsp;
 pub mod dynamics;
 pub mod modulation;
