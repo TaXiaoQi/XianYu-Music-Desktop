@@ -587,7 +587,7 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
-    language: language === 'zh-CN' || language === 'en-US' ? language : base.language,
+    language: language === 'zh-CN' || language === 'zh-TW' || language === 'en-US' ? language : base.language,
     preventSleepWhilePlaying: typeof preventSleepWhilePlaying === 'boolean'
       ? preventSleepWhilePlaying
       : base.preventSleepWhilePlaying,

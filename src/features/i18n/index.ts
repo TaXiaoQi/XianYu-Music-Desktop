@@ -3,12 +3,14 @@ import { storeToRefs } from 'pinia';
 
 import type { AppLanguage } from '../../types';
 import { useSettingsStore } from '../settings/store';
+import { toTraditional } from './traditional';
 
 const zhCN = {
   'language.section': '语言',
   'language.label': '软件语言',
   'language.description': '选择界面显示语言，切换后立即生效。',
   'language.zhCN': '简体中文',
+  'language.zhTW': '繁體中文',
   'language.enUS': 'English',
 
   'settings.account': '账号',
@@ -106,6 +108,7 @@ const enUS: Record<I18nKey, string> = {
   'language.label': 'App language',
   'language.description': 'Choose the interface language. Changes apply immediately.',
   'language.zhCN': '简体中文',
+  'language.zhTW': '繁體中文',
   'language.enUS': 'English',
 
   'settings.account': 'Account',
@@ -198,6 +201,8 @@ const enUS: Record<I18nKey, string> = {
 
 const messages: Record<AppLanguage, Record<I18nKey, string>> = {
   'zh-CN': zhCN,
+  // 繁体词条由简体运行时转换生成，避免维护第三份词表。
+  'zh-TW': zhCN,
   'en-US': enUS,
 };
 
@@ -209,7 +214,9 @@ export const translate = (
   params: TranslationParams = {},
 ): string => {
   const template = messages[language]?.[key] ?? zhCN[key] ?? key;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => (
+  // 繁体：先取简体模板再整体转换（含插值后的中文参数由调用方自理）。
+  const resolved = language === 'zh-TW' ? toTraditional(template) : template;
+  return resolved.replace(/\{(\w+)\}/g, (match, name: string) => (
     Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
   ));
 };
@@ -217,6 +224,7 @@ export const translate = (
 export interface I18nContext {
   language: ComputedRef<AppLanguage>;
   isEnglish: ComputedRef<boolean>;
+  isTraditional: ComputedRef<boolean>;
   t: (key: I18nKey, params?: TranslationParams) => string;
 }
 
@@ -228,6 +236,7 @@ export const useI18n = (): I18nContext => {
   return {
     language,
     isEnglish: computed(() => language.value === 'en-US'),
+    isTraditional: computed(() => language.value === 'zh-TW'),
     t: (key, params) => translate(language.value, key, params),
   };
 };
