@@ -24,6 +24,7 @@ import {
   type SettingsTabId,
 } from '../features/settings/searchIndex';
 import { clamp } from '../utils/math';
+import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
@@ -32,6 +33,7 @@ const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'a
 const route = useRoute();
 const router = useRouter();
 const { isDeveloperMode } = useDeveloperMode();
+const { t } = useI18n();
 
 const canOpenTab = (tab: string): tab is SettingsViewTabId => (
   VALID_TABS.includes(tab as SettingsViewTabId) && (tab !== 'debug' || isDeveloperMode.value)
@@ -255,28 +257,28 @@ onBeforeUnmount(() => {
   stopSidebarResize();
 });
 
-const baseTabs: Array<{ id: SettingsViewTabId; name: string }> = [
-  { id: 'account', name: '账号' },
-  { id: 'general', name: '常规' },
-  { id: 'plugins', name: '插件' },
-  { id: 'theme', name: '外观' },
-  { id: 'audioOutput', name: '播放' },
-  { id: 'download', name: '下载' },
-  { id: 'library', name: '音乐库' },
-  { id: 'toolbox', name: '工具箱' },
-  { id: 'desktopLyrics', name: '桌面歌词' },
-  { id: 'shortcuts', name: '快捷键' },
-  { id: 'advanced', name: '高级设置' },
-  { id: 'about', name: '关于' },
-];
+const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [
+  { id: 'account', name: t('settings.account') },
+  { id: 'general', name: t('settings.general') },
+  { id: 'plugins', name: t('settings.plugins') },
+  { id: 'theme', name: t('settings.theme') },
+  { id: 'audioOutput', name: t('settings.playback') },
+  { id: 'download', name: t('settings.download') },
+  { id: 'library', name: t('settings.library') },
+  { id: 'toolbox', name: t('settings.toolbox') },
+  { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
+  { id: 'shortcuts', name: t('settings.shortcuts') },
+  { id: 'advanced', name: t('settings.advanced') },
+  { id: 'about', name: t('settings.about') },
+]);
 
 const tabs = computed(() => {
-  if (!isDeveloperMode.value) return baseTabs;
-  const aboutIndex = baseTabs.findIndex(tab => tab.id === 'about');
+  if (!isDeveloperMode.value) return baseTabs.value;
+  const aboutIndex = baseTabs.value.findIndex(tab => tab.id === 'about');
   return [
-    ...baseTabs.slice(0, aboutIndex),
-    { id: 'debug' as const, name: '调试' },
-    ...baseTabs.slice(aboutIndex),
+    ...baseTabs.value.slice(0, aboutIndex),
+    { id: 'debug' as const, name: t('settings.debug') },
+    ...baseTabs.value.slice(aboutIndex),
   ];
 });
 </script>
@@ -296,8 +298,8 @@ const tabs = computed(() => {
           v-model="settingsQuery"
           type="search"
           autocomplete="off"
-          placeholder="搜索设置"
-          aria-label="搜索设置"
+          :placeholder="t('settings.search')"
+          :aria-label="t('settings.search')"
           class="settings-search-input h-8 w-full rounded-lg border border-black/10 bg-white/45 pl-8 pr-7 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           @keydown="handleSearchKeydown"
         />
@@ -305,7 +307,7 @@ const tabs = computed(() => {
           v-if="settingsQuery"
           type="button"
           class="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
-          aria-label="清除设置搜索"
+          :aria-label="t('settings.clearSearch')"
           @click="clearSettingsSearch"
         >
           <X class="h-3 w-3" />
@@ -318,7 +320,7 @@ const tabs = computed(() => {
         aria-live="polite"
       >
         <div class="mb-2 px-1 text-[11px] font-medium text-gray-500 dark:text-white/45">
-          {{ searchResults.length > 0 ? `找到 ${searchResults.length} 项设置` : '没有找到相关设置' }}
+          {{ searchResults.length > 0 ? t('settings.results', { count: searchResults.length }) : t('settings.noResults') }}
         </div>
         <div v-if="searchResults.length" class="space-y-1">
           <button
@@ -337,7 +339,7 @@ const tabs = computed(() => {
           </button>
         </div>
         <div v-else class="px-2 py-6 text-center text-xs leading-5 text-gray-400 dark:text-white/35">
-          试试搜索“音质”“歌词”或“缓存”
+          {{ t('settings.searchHint') }}
         </div>
       </div>
 
@@ -360,7 +362,7 @@ const tabs = computed(() => {
       <!-- 侧边栏宽度可拖拽手柄 -->
       <div
         class="group absolute -right-1 top-0 bottom-0 z-20 w-2 cursor-col-resize touch-none flex items-center justify-center"
-        title="按住拖拽调整侧边栏宽度，双击恢复默认"
+        :title="t('settings.resizeHint')"
         @pointerdown="startSidebarResize"
         @dblclick="resetSidebarWidth"
       >
@@ -388,8 +390,8 @@ const tabs = computed(() => {
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
           <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
-            <div class="text-4xl opacity-50">施工中</div>
-            <div>当前设置模块正在整理中。</div>
+            <div class="text-4xl opacity-50">{{ t('settings.building') }}</div>
+            <div>{{ t('settings.buildingHint') }}</div>
           </div>
         </transition>
       </div>

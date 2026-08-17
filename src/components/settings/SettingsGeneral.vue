@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { ChevronDown } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
@@ -8,6 +9,8 @@ import { appApi } from '../../services/tauri/appApi';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
+import { useI18n } from '../../features/i18n';
+import type { AppLanguage } from '../../types';
 
 const { settings } = useSettings();
 const {
@@ -15,6 +18,14 @@ const {
   libraryScanProgress,
 } = usePlayer();
 const { showToast } = useToast();
+const { t } = useI18n();
+
+const appLanguage = computed({
+  get: () => settings.value.language,
+  set: (value: AppLanguage) => {
+    settings.value.language = value;
+  },
+});
 
 const launchOnStartup = ref(false);
 
@@ -26,10 +37,10 @@ async function handleGpuAccelerationChange() {
 
   try {
     await toolboxApi.setGpuAcceleration(next);
-    showToast('GPU 加速设置已更新，重启软件后生效', 'success');
+    showToast(t('toast.gpuUpdated'), 'success');
   } catch (error) {
     settings.value.gpuAcceleration = previous;
-    showToast('GPU 加速设置保存失败', 'error');
+    showToast(t('toast.gpuFailed'), 'error');
     console.error('Failed to update GPU acceleration setting:', error);
   }
 }
@@ -76,10 +87,10 @@ const handleClearStreamCache = async () => {
   try {
     await playbackApi.clearStreamCache();
     await refreshStreamCacheInfo();
-    showToast('在线播放缓存已清理', 'success');
+    showToast(t('toast.cacheCleared'), 'success');
   } catch (error) {
     console.error('Failed to clear stream cache:', error);
-    showToast('清理在线播放缓存失败', 'error');
+    showToast(t('toast.cacheClearFailed'), 'error');
   } finally {
     isClearingStreamCache.value = false;
   }
@@ -108,7 +119,7 @@ const handleClearAllData = async () => {
     window.location.reload();
   } catch (error) {
     console.error('Failed to clear all app data:', error);
-    showToast('清除所有数据失败，请重试', 'error');
+    showToast(t('toast.resetFailed'), 'error');
     showClearAllDataConfirm.value = false;
     isClearingAllData.value = false;
   }
@@ -123,17 +134,48 @@ onMounted(() => {
 
 <template>
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    
+
+    <!-- Language -->
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        {{ t('language.section') }}
+      </h2>
+      <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="flex items-center justify-between gap-5 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
+              {{ t('language.label') }}
+            </div>
+            <div class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {{ t('language.description') }}
+            </div>
+          </div>
+          <div class="relative w-40 shrink-0 sm:w-44">
+            <select
+              v-model="appLanguage"
+              :aria-label="t('language.label')"
+              class="language-select h-9 w-full appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-sm font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              <option value="zh-CN">{{ t('language.zhCN') }}</option>
+              <option value="en-US">{{ t('language.enUS') }}</option>
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Startup & Behavior -->
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        常规与启动
+        {{ t('general.section') }}
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">开机自动运行</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartup') }}</div>
           </div>
           <button @click="launchOnStartup = !launchOnStartup" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="launchOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="launchOnStartup ? 'translate-x-6' : 'translate-x-1'" />
@@ -142,7 +184,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启动检测更新</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.checkUpdates') }}</div>
           </div>
           <button @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.checkUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.checkUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
@@ -151,7 +193,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">GPU 加速</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.gpuAcceleration') }}</div>
           </div>
           <button @click="handleGpuAccelerationChange" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.gpuAcceleration ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.gpuAcceleration ? 'translate-x-6' : 'translate-x-1'" />
@@ -160,7 +202,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">关闭时最小化至托盘</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.closeToTray') }}</div>
           </div>
           <button @click="settings.closeToTray = !settings.closeToTray" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.closeToTray ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.closeToTray ? 'translate-x-6' : 'translate-x-1'" />
@@ -169,7 +211,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">显示音质标识</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showQualityBadges') }}</div>
           </div>
           <button @click="settings.showQualityBadges = !settings.showQualityBadges" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.showQualityBadges ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.showQualityBadges ? 'translate-x-6' : 'translate-x-1'" />
@@ -178,7 +220,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">显示歌曲注释</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.showSongComments') }}</div>
           </div>
           <button @click="settings.showSongComments = !settings.showSongComments" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.showSongComments ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.showSongComments ? 'translate-x-6' : 'translate-x-1'" />
@@ -187,7 +229,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">打开一键回顶按钮</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.scrollToTop') }}</div>
           </div>
           <button @click="settings.enableScrollToTopButton = !settings.enableScrollToTopButton" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.enableScrollToTopButton ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.enableScrollToTopButton ? 'translate-x-6' : 'translate-x-1'" />
@@ -196,7 +238,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">启用任务栏快捷播控</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.taskbarControls') }}</div>
           </div>
           <button @click="settings.showTaskbarPlayer = !settings.showTaskbarPlayer" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="settings.showTaskbarPlayer ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.showTaskbarPlayer ? 'translate-x-6' : 'translate-x-1'" />
@@ -205,10 +247,10 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">修改歌手头像时同步写回音频标签</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.writeArtistAvatar') }}</div>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint severity="warning" text="开启后，手动修改歌手头像时会同步修改本地音频文件（注意：多歌手合作歌曲、远程歌曲、CUE分轨、只读文件会被自动跳过）" />
+            <SettingHint severity="warning" :text="t('general.writeArtistAvatarHint')" />
             <button @click="settings.writeArtistAvatarToTags = !settings.writeArtistAvatarToTags" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.writeArtistAvatarToTags ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
               <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.writeArtistAvatarToTags ? 'translate-x-6' : 'translate-x-1'" />
             </button>
@@ -217,7 +259,7 @@ onMounted(() => {
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">歌曲播放触发方式</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.songClickAction') }}</div>
           </div>
           <div class="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-white/10 p-0.5">
             <button
@@ -225,14 +267,14 @@ onMounted(() => {
               class="px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap"
               :class="settings.songClickAction === 'single' ? 'bg-white dark:bg-white/20 text-[#EC4141] shadow-sm' : 'text-gray-600 dark:text-gray-400'"
             >
-              单击
+              {{ t('general.singleClick') }}
             </button>
             <button
               @click="settings.songClickAction = 'double'"
               class="px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap"
               :class="settings.songClickAction === 'double' || !settings.songClickAction ? 'bg-white dark:bg-white/20 text-[#EC4141] shadow-sm' : 'text-gray-600 dark:text-gray-400'"
             >
-              双击
+              {{ t('general.doubleClick') }}
             </button>
           </div>
         </div>
@@ -241,16 +283,16 @@ onMounted(() => {
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        存储空间
+        {{ t('general.storage') }}
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
         <!-- 播放缓存上限 -->
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放缓存上限</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.cacheLimit') }}</div>
           </div>
           <div class="flex shrink-0 items-center gap-3">
-            <SettingHint text="在线歌曲流式下载后缓存到本地，再次播放无需重新下载。缓存满后自动清理最久未播放的曲目。" />
+            <SettingHint :text="t('general.cacheLimitHint')" />
             <label class="stream-cache-input-wrap">
               <input
                 :value="settings.audio.streamCacheSizeMB"
@@ -271,14 +313,14 @@ onMounted(() => {
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
-              清理在线播放缓存
+              {{ t('general.clearCache') }}
               <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                 {{ formatStreamCacheBytes(streamCacheCurrent) }} / {{ formatStreamCacheBytes(streamCacheMax) }}
               </span>
             </div>
           </div>
           <div class="flex items-center gap-3">
-            <SettingHint text="清理后正在播放的在线歌曲不受影响，但已缓存的其他曲目需重新下载。" />
+            <SettingHint :text="t('general.clearCacheHint')" />
             <button
               type="button"
               :disabled="isClearingStreamCache || streamCacheCurrent === 0"
@@ -288,14 +330,14 @@ onMounted(() => {
                 ? 'settings-action-button--disabled'
                 : 'settings-action-button--solid'"
             >
-              {{ isClearingStreamCache ? '清理中...' : '清理' }}
+              {{ isClearingStreamCache ? t('general.clearing') : t('general.clear') }}
             </button>
           </div>
         </div>
 
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">重置数据</div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.resetData') }}</div>
           </div>
           <button
             type="button"
@@ -306,7 +348,7 @@ onMounted(() => {
               ? 'settings-action-button--disabled'
               : 'settings-action-button--solid'"
           >
-            {{ isClearingAllData ? '重置中...' : isLibraryScanActive ? '扫描中不可用' : '重置' }}
+            {{ isClearingAllData ? t('general.resetting') : isLibraryScanActive ? t('general.scanUnavailable') : t('general.reset') }}
           </button>
         </div>
       </div>
@@ -314,8 +356,8 @@ onMounted(() => {
 
     <ConfirmModal
       :visible="showClearAllDataConfirm"
-      title="重置数据"
-      content="此操作会清空媒体库、播放记录、收藏和设置，并恢复初始状态，但不会删除你的音乐文件。确定继续吗？"
+      :title="t('general.resetData')"
+      :content="t('general.resetConfirm')"
       @cancel="!isClearingAllData && (showClearAllDataConfirm = false)"
       @confirm="handleClearAllData"
     />
@@ -323,6 +365,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.language-select {
+  color-scheme: light;
+}
+
+:global(.dark) .language-select {
+  color-scheme: dark;
+}
+
 .settings-action-button {
   min-height: 38px;
   padding: 0 16px;
