@@ -149,6 +149,10 @@ version = "0.5.4"
 optional = true
 default-features = false
 
+[dependencies.symphonia-adapter-libopus]
+version = "0.2"
+optional = true
+
 [dependencies.tracing]
 version = "0.1.40"
 optional = true
@@ -179,6 +183,7 @@ default = [
     "wav",
     "mp3",
 ]
+dsd = []
 experimental = ["dep:atomic_float"]
 flac = ["claxon"]
 minimp3 = ["dep:minimp3_fixed"]
@@ -204,6 +209,7 @@ symphonia-all = [
 symphonia-flac = ["symphonia/flac"]
 symphonia-isomp4 = ["symphonia/isomp4"]
 symphonia-mp3 = ["symphonia/mp3"]
+symphonia-opus = ["dep:symphonia-adapter-libopus", "symphonia/ogg"]
 symphonia-vorbis = ["symphonia/vorbis"]
 symphonia-wav = [
     "symphonia/wav",

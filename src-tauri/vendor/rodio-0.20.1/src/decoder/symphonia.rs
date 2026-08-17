@@ -95,7 +95,22 @@ impl SymphoniaDecoder {
             .find(|track| track.id == track_id)
             .unwrap();
 
-        let mut decoder = symphonia::default::get_codecs()
+        #[cfg(feature = "symphonia-opus")]
+        let codecs = {
+            use std::sync::OnceLock;
+            use symphonia::core::codecs::CodecRegistry;
+            static REGISTRY: OnceLock<CodecRegistry> = OnceLock::new();
+            REGISTRY.get_or_init(|| {
+                let mut registry = CodecRegistry::new();
+                symphonia::default::register_enabled_codecs(&mut registry);
+                registry.register_all::<symphonia_adapter_libopus::OpusDecoder>();
+                registry
+            })
+        };
+        #[cfg(not(feature = "symphonia-opus"))]
+        let codecs = symphonia::default::get_codecs();
+
+        let mut decoder = codecs
             .make(&track.codec_params, &DecoderOptions::default())?;
         let total_duration = stream
             .codec_params
