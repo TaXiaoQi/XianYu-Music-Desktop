@@ -1,5 +1,6 @@
 use crate::player::equalizer::{EqualizerHandle, EqualizerSettings};
 use crate::player::output::OutputError;
+use crate::player::sound_effect::{SoundEffectHandle, SoundEffectSettings};
 use crate::player::types::{SharedProgress, SharedVisualizer};
 use rodio::{Decoder, Source};
 use std::fs::File;
@@ -33,6 +34,7 @@ pub(crate) struct ExclusivePlayRequest {
     pub start_time: Duration,
     pub volume_balance_gain: f32,
     pub equalizer_handle: Arc<EqualizerHandle>,
+    pub sound_effect_handle: Arc<SoundEffectHandle>,
     pub user_volume: Arc<AtomicU32>,
 }
 
@@ -41,6 +43,7 @@ enum ExclusiveCommand {
     Stop,
     SetVolumeBalance { enabled: bool, target_gain: f32 },
     SetEqualizerSettings { settings: EqualizerSettings },
+    SetSoundEffectSettings { settings: SoundEffectSettings },
 }
 
 impl WasapiExclusivePlayback {
@@ -106,6 +109,12 @@ impl WasapiExclusivePlayback {
             .send(ExclusiveCommand::SetEqualizerSettings { settings });
     }
 
+    pub(crate) fn set_sound_effect_settings(&self, settings: SoundEffectSettings) {
+        let _ = self
+            .tx
+            .send(ExclusiveCommand::SetSoundEffectSettings { settings });
+    }
+
     pub(crate) fn stop(&mut self) {
         let _ = self.tx.send(ExclusiveCommand::Stop);
         if let Some(join_handle) = self.join_handle.take() {
@@ -162,6 +171,7 @@ impl ExclusiveSource {
         progress: Arc<SharedProgress>,
         volume_balance_gain: f32,
         equalizer_handle: Arc<EqualizerHandle>,
+        sound_effect_handle: Arc<SoundEffectHandle>,
         user_volume: Arc<AtomicU32>,
     ) -> Result<(Self, u32, u16), String> {
         let file = File::open(path).map_err(|error| error.to_string())?;
@@ -179,7 +189,7 @@ impl ExclusiveSource {
             .store(samples_at_target, Ordering::Relaxed);
         progress.visualizer.reset();
 
-        // 按照管线顺序装配: Decoder -> VolumeNormalizer -> Equalizer -> UserVolumeSource -> ClipGuardSource
+        // 按照管线顺序装配: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> UserVolumeSource -> ClipGuardSource
         let decoded = decoder.convert_samples::<f32>().skip_duration(start_time);
         let (normalized, normalizer_handle) = crate::player::loudness::VolumeNormalizer::new(
             decoded,
@@ -187,7 +197,9 @@ impl ExclusiveSource {
             100, // ramp 100ms
         );
         let eq_source = crate::player::equalizer::Equalizer::new(normalized, equalizer_handle);
-        let vol_source = crate::player::equalizer::UserVolumeSource::new(eq_source, user_volume);
+        let se_source =
+            crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
+        let vol_source = crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
         let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
 
         Ok((
@@ -332,6 +344,7 @@ fn run_exclusive_playback(
         request.progress.clone(),
         current_volume_balance_gain,
         request.equalizer_handle.clone(),
+        request.sound_effect_handle.clone(),
         request.user_volume.clone(),
     )?;
 
@@ -417,6 +430,7 @@ fn run_exclusive_playback(
                         request.progress.clone(),
                         current_volume_balance_gain,
                         request.equalizer_handle.clone(),
+                        request.sound_effect_handle.clone(),
                         request.user_volume.clone(),
                     )?
                     .0;
@@ -450,6 +464,9 @@ fn run_exclusive_playback(
                 }
                 ExclusiveCommand::SetEqualizerSettings { settings } => {
                     request.equalizer_handle.set_settings(settings);
+                }
+                ExclusiveCommand::SetSoundEffectSettings { settings } => {
+                    request.sound_effect_handle.set_settings(settings);
                 }
             }
         }

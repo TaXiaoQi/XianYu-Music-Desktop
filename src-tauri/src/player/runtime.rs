@@ -87,6 +87,7 @@ fn start_exclusive_playback(
     progress: &Arc<SharedProgress>,
     volume_balance_gain: f32,
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
+    sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
 ) -> Result<WasapiExclusivePlayback, String> {
     WasapiExclusivePlayback::start(ExclusivePlayRequest {
@@ -98,6 +99,7 @@ fn start_exclusive_playback(
         start_time,
         volume_balance_gain,
         equalizer_handle,
+        sound_effect_handle,
         user_volume,
     })
     .map_err(|error| error.to_string())
@@ -142,6 +144,7 @@ fn restore_preferred_output(
             progress,
             volume_balance_gain,
             equalizer_handle.clone(),
+            sound_effect_handle.clone(),
             user_volume.clone(),
         ) {
             Ok(playback) => {
@@ -1824,9 +1827,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         }
                     }
                     AudioCommand::SetSoundEffectSettings { settings } => {
-                        // 阶段 1：仅更新共享句柄（SoundEffectSource 直通占位）。
-                        // WASAPI 独占模式有独立音频链，暂未接入音效（后续阶段视需要扩展）。
-                        thread_se_handle.set_settings(settings);
+                        // 共享与 WASAPI 独占模式都应用音效设置（两者拥有独立音频链，都需要同步）。
+                        thread_se_handle.set_settings(settings.clone());
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref playback) = exclusive_playback {
+                            playback.set_sound_effect_settings(settings);
+                        }
                     }
                 },
                 Err(RecvTimeoutError::Timeout) => {
