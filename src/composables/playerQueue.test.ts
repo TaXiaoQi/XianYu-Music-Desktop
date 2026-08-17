@@ -110,6 +110,82 @@ describe('player queue domain', () => {
     expect(played).toEqual(['/music/first.flac']);
   });
 
+  it('plays every candidate once before starting a new pseudo-random cycle', () => {
+    const played: string[] = [];
+    const playbackStore = usePlaybackStore();
+    const songs = Array.from({ length: 5 }, (_, index) => makeSong({
+      path: `/music/${index}.flac`,
+      title: `Song ${index}`,
+    }));
+    let playerQueue: ReturnType<typeof createPlayerQueue>;
+
+    playerQueue = createPlayerQueue({
+      playSong: (song) => {
+        playerQueue.handleBeforePlay(song);
+        playbackStore.currentSong = song;
+        played.push(song.path);
+      },
+      stopPlaybackRuntime: vi.fn(),
+      showToast: vi.fn(),
+    });
+
+    playbackStore.playMode = 2;
+    playbackStore.playQueue = songs;
+    playbackStore.currentSong = songs[0];
+
+    for (let index = 0; index < songs.length - 1; index += 1) {
+      playerQueue.nextSong();
+    }
+
+    expect(new Set(played).size).toBe(songs.length - 1);
+    expect(played).not.toContain(songs[0].path);
+
+    const lastPathInFirstCycle = played.at(-1);
+    playerQueue.nextSong();
+
+    expect(played).toHaveLength(songs.length);
+    expect(played.at(-1)).not.toBe(lastPathInFirstCycle);
+  });
+
+  it('keeps backward and forward history while using pseudo-random playback', () => {
+    const played: string[] = [];
+    const playbackStore = usePlaybackStore();
+    const songs = Array.from({ length: 4 }, (_, index) => makeSong({
+      path: `/music/${index}.flac`,
+      title: `Song ${index}`,
+    }));
+    let playerQueue: ReturnType<typeof createPlayerQueue>;
+
+    playerQueue = createPlayerQueue({
+      playSong: (song, options) => {
+        playerQueue.handleBeforePlay(song, options);
+        playbackStore.currentSong = song;
+        played.push(song.path);
+      },
+      stopPlaybackRuntime: vi.fn(),
+      showToast: vi.fn(),
+    });
+
+    playbackStore.playMode = 2;
+    playbackStore.playQueue = songs;
+    playbackStore.currentSong = songs[0];
+
+    playerQueue.nextSong();
+    const secondPath = playbackStore.currentSong.path;
+    playerQueue.nextSong();
+    const thirdPath = playbackStore.currentSong.path;
+
+    playerQueue.prevSong();
+    expect(playbackStore.currentSong.path).toBe(secondPath);
+
+    playerQueue.nextSong();
+    expect(playbackStore.currentSong.path).toBe(thirdPath);
+
+    playerQueue.prevSong();
+    expect(playbackStore.currentSong.path).toBe(secondPath);
+    expect(played).toHaveLength(5);
+  });
+
   it('caps shuffle history to the most recent 256 entries', () => {
     const played: string[] = [];
     const playbackStore = usePlaybackStore();

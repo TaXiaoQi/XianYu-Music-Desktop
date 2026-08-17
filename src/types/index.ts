@@ -722,6 +722,7 @@ export interface PluginSettings {
 }
 
 export type SongClickAction = 'double' | 'single';
+export type AppLanguage = 'zh-CN' | 'en-US';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -732,6 +733,7 @@ export interface LogSettings {
 }
 
 export interface AppSettings {
+  language: AppLanguage;
   closeToTray: boolean;
   preventSleepWhilePlaying: boolean;
   showDesktopLyrics: boolean;

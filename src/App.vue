@@ -21,6 +21,7 @@ import { clearPaletteCache } from './composables/colorExtraction';
 import { clearPreblurredBackgroundCache } from './composables/preblurredBackgroundCache';
 import { useCoverCache } from './composables/useCoverCache';
 import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
+import { useI18n } from './features/i18n';
 
 const currentWindowLabel = (() => {
   try {
@@ -44,6 +45,11 @@ const TaskbarControlWindow = defineAsyncComponent(() => import('./components/lay
 const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layout/VolumePopoverWindow.vue'));
 
 const { settings } = useSettings();
+const { language, t } = useI18n();
+watch(language, value => {
+  document.documentElement.lang = value;
+  document.documentElement.dataset.language = value;
+}, { immediate: true });
 watch(
   () => ({ ...settings.value.logging }),
   logging => configureApplicationLogger(logging),
@@ -132,7 +138,7 @@ if (currentWindowLabel === 'main') {
 
     try {
       const version = await getVersion();
-      showToast(`欢迎使用弦予音乐，当前版本 v${version}`, 'info');
+      showToast(t('toast.welcome', { version }), 'info');
     } catch (error) {
       console.error('Failed to get version for welcome toast:', error);
     }
