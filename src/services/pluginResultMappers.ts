@@ -1,6 +1,6 @@
 import type { PluginSearchResult, PluginSource, QualityKey } from '../types';
 import { qualityKeyToBakaPluginQuality } from '../types';
-import { extractNeteasePicId, neteasePicIdToUrl } from '../utils/coverUrl';
+import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../utils/coverUrl';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -27,6 +27,11 @@ export const extractCoverUrl = (item: any): string => {
   }
   if (url && typeof url === 'string' && url.startsWith('http://')) {
     url = url.replace('http://', 'https://');
+  }
+  // 酷我第三方(mf/baka)插件会直接返回证书异常的 CDN 域名（如 imgN.sycdn.kuwo.cn），
+  // 统一归一化到证书有效的 img3.kuwo.cn，保证所有渲染路径可直连显示。
+  if (url && typeof url === 'string' && /kuwo\.cn/i.test(url)) {
+    url = normalizeKuwoCoverUrl(url) || url;
   }
   return typeof url === 'string' ? url : '';
 };
