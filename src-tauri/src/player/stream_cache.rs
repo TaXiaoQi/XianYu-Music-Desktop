@@ -871,6 +871,13 @@ fn looks_like_audio_url(url: &str) -> bool {
         // 咪咕音乐
         || lower.contains("migu.cn")
         || lower.contains("miguvideo")
+        // 汽水音乐（字节跳动/抖音）
+        || lower.contains("douyin.com")
+        || lower.contains("pglstatp-toutiao.com")
+        || lower.contains("pangolin-sdk-toutiao.com")
+        || lower.contains("bytescm.com")
+        || lower.contains("pstatp.com")
+        || lower.contains("bytecdn.cn")
         // 第三方 API 代理域名
         || lower.contains("haitangw")
         || lower.contains("musicapi")

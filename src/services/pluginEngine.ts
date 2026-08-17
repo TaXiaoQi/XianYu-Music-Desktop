@@ -44,6 +44,7 @@ import {
   extractArtist,
   extractCoverUrl,
   extractResultList,
+  extractArtistAvatarUrl,
   qualityKeyToPluginString,
   resetMediaItem,
   stripHtmlTags,
@@ -953,9 +954,13 @@ export async function pluginPlaylistSearch(
   try {
     if (typeof inst.instance.search !== 'function') return [];
 
-    // 直接尝试搜索；Baka 插件可能未声明 sheet 但实际支持
-    const result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
-    const list = extractResultList(result);
+    // 尝试 'sheet' 类型；部分插件使用 'playlist' 类型
+    let result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
+    let list = extractResultList(result);
+    if (list.length === 0) {
+      result = (await inst.instance.search(keyword, page, 'playlist')) ?? {};
+      list = extractResultList(result);
+    }
     if (list.length === 0) return [];
 
     return list.map((item: any) => {
@@ -989,6 +994,10 @@ export async function pluginGetPlaylistDetail(
   sheetItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getPlaylistDetail(source, sheetItem, page);
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -1033,6 +1042,10 @@ export async function pluginGetArtistWorks(
   artistItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getArtistWorks(source, artistItem, page, 'music');
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -1077,6 +1090,20 @@ export async function pluginGetArtistAlbums(
   artistItem: any,
   page: number = 1,
 ): Promise<PluginAlbumResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    const results = await BakaPluginManager.getArtistWorks(source, artistItem, page, 'album');
+    return results.map((item: any) => ({
+      id: item.id || '',
+      name: item.title || '',
+      artist: item.artist || '',
+      coverUrl: item.coverUrl || '',
+      platform: item.platform || source.name,
+      platformId: item.id || '',
+      pluginId: source.id,
+      rawData: item.rawData,
+    }));
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -1117,6 +1144,10 @@ export async function pluginGetAlbumSongs(
   albumItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getAlbumSongs(source, albumItem, page);
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
@@ -1620,28 +1651,75 @@ export async function pluginArtistSearch(
     if (typeof inst.instance.search !== 'function') return [];
 
     // 直接尝试搜索；Baka 插件可能未声明 artist 但实际支持
-    const result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
-    const list = extractResultList(result);
-    if (list.length === 0) return [];
+    let result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
+    let list = extractResultList(result);
+    // 部分 MusicFree QQ 插件 artist 搜索偶发返回空，短延迟后重试一次再回退
+    if (list.length === 0) {
+      log(`[pluginArtistSearch] ${source.name} artist 第 1 次返回空，${MF_EMPTY_SEARCH_RETRY_DELAY_MS}ms 后重试`);
+      await sleep(MF_EMPTY_SEARCH_RETRY_DELAY_MS);
+      result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
+      list = extractResultList(result);
+    }
+    if (list.length > 0) {
+      return list.map((item: any) => {
+        resetMediaItem(item, source.name);
+        const id = item.id || item.artistId || item.singerId || '';
+        const name = stripHtmlTags(item.name || item.title || item.artist || '');
+        const avatarUrl = extractArtistAvatarUrl(item);
+        return {
+          id,
+          name,
+          avatarUrl,
+          description: item.description || item.desc || '',
+          songCount: item.songCount || item.musicCount || undefined,
+          albumCount: item.albumCount || undefined,
+          platform: item.platform || source.name,
+          platformId: id,
+          pluginId: source.id,
+          rawData: item,
+        };
+      });
+    }
 
-    return list.map((item: any) => {
-      resetMediaItem(item, source.name);
-      const id = item.id || item.artistId || item.singerId || '';
-      const name = stripHtmlTags(item.name || item.title || item.artist || '');
-      const avatarUrl = extractCoverUrl(item) || item.avatar || '';
-      return {
-        id,
-        name,
-        avatarUrl,
-        description: item.description || item.desc || '',
-        songCount: item.songCount || item.musicCount || undefined,
-        albumCount: item.albumCount || undefined,
-        platform: item.platform || source.name,
-        platformId: id,
-        pluginId: source.id,
-        rawData: item,
-      };
-    });
+    // 回退：artist 搜索返回空，从音乐搜索结果中提取去重艺术家
+    if (page === 1) {
+      log(`[pluginArtistSearch] ${source.name} artist 搜索为空，回退到音乐搜索提取艺术家`);
+      const songResults = await pluginSearch(source, keyword, 1, 30);
+      if (songResults.length === 0) return [];
+
+      const artistMap = new Map<string, PluginArtistResult>();
+      for (const song of songResults) {
+        const artistName = song.artist || '';
+        if (!artistName) continue;
+        const key = artistName.toLowerCase();
+        if (artistMap.has(key)) continue;
+        const rd = song.rawData || {};
+        // 从歌曲原数据里提取歌手头像，常见于 wy 的 art 数组、QQ 的 singer 等
+        const avatarUrl =
+          extractArtistAvatarUrl(rd)
+          || extractArtistAvatarUrl(rd.singer)
+          || extractArtistAvatarUrl(rd.artist)
+          || (Array.isArray(rd.artists)
+            ? extractArtistAvatarUrl(rd.artists.find((a: any) => a?.name === artistName) || rd.artists[0])
+            : '')
+          || (Array.isArray(rd.ar)
+            ? extractArtistAvatarUrl(rd.ar.find((a: any) => a?.name === artistName) || rd.ar[0])
+            : '');
+        artistMap.set(key, {
+          id: String(rd?.singerId || rd?.artistId || artistName),
+          name: artistName,
+          avatarUrl,
+          description: '',
+          platform: song.platform || source.name,
+          platformId: String(rd?.singerId || rd?.artistId || artistName),
+          pluginId: source.id,
+          rawData: { name: artistName, artist: artistName, avatar: avatarUrl || undefined },
+        });
+      }
+      return Array.from(artistMap.values());
+    }
+
+    return [];
   } catch (e: any) {
     log(`[pluginArtistSearch] ${source.name} 失败: ${e?.message || e}`);
     return [];

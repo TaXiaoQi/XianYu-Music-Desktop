@@ -1339,6 +1339,8 @@ const needsProxy = (url: string): boolean => {
   const proxyDomains = [
     'hdslb.com',
     'bilivideo.com',
+    'y.gtimg.cn',
+    'qpic.cn',
   ];
   return proxyDomains.some(domain => url.includes(domain));
 };
@@ -1988,10 +1990,14 @@ const handlePluginImgError = (e: Event) => {
       try {
         const dataUrl = await pluginApi.proxyImage(src);
         coverProxyCache.set(src, dataUrl);
-        // 刷新对应的结果列表
+        // 代理成功：立即用 data: URL 替换，避免隐藏
+        img.src = dataUrl;
+        img.style.removeProperty('display');
+        // 刷新对应的结果列表，保证其它已挂载的该 URL 也已命中缓存
         if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
         else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
         else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
+        return;
       } catch { /* ignore */ }
     })();
   }
