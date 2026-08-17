@@ -15,6 +15,7 @@ import { launchFlyingCover } from '../composables/useFlyingCover';
 import {
   pluginGetArtistWorks,
   pluginGetArtistAlbums,
+  pluginGetArtistInfo,
   pluginGetAlbumSongs,
   pluginGetPlaylistDetail,
   pluginGetMusicInfo,
@@ -85,6 +86,7 @@ const contextMenuTargetSong = ref<Song | null>(null);
 const title = computed(() => ctx.value?.title || '');
 const subtitle = computed(() => ctx.value?.subtitle || '');
 const coverUrl = computed(() => ctx.value?.coverUrl || '');
+const artistDescription = computed(() => ctx.value?.description || '');
 const isLxEngine = computed(() => ctx.value?.engineType === 'lx');
 
 // 将 PluginSearchResult 转换为 Song 用于展示和播放
@@ -211,8 +213,9 @@ async function fetchMissingMfCovers() {
         const cover = await pluginGetCover(pluginSource, item);
         if (version !== mfCoverFetchVersion) return;
         if (cover && songs.value[index]) {
-          // 响应式更新：替换数组项以触发 computed 重算
-          songs.value[index] = { ...songs.value[index], coverUrl: cover };
+          // 升级 https，避免 http 封面被 WebView2 混合内容拦截；响应式更新触发 computed 重算
+          const normalizedCover = String(cover).replace(/^http:\/\//i, 'https://');
+          songs.value[index] = { ...songs.value[index], coverUrl: normalizedCover };
         }
       } catch { /* ignore */ }
     }
@@ -654,6 +657,7 @@ async function handleOnlineViewArtist(song: Song) {
         type: 'artist',
         title: artist.name,
         subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+        description: artist.description || '',
         coverUrl: artist.avatarUrl,
         pluginSource: ctx.value.pluginSource,
         rawData: artist.rawData,
@@ -789,6 +793,28 @@ watch(artistActiveTab, () => {
     void loadData(1);
   }
 });
+
+// 进入歌手详情且尚无简介时，调用插件 getArtistInfo 拉取简介并写回（lx 源无简介接口，跳过）
+watch(
+  () =>
+    detailType.value === 'artist' && ctx.value
+      ? `${ctx.value.title}|${ctx.value.rawData?.id ?? ''}`
+      : '',
+  async (key) => {
+    if (!key) return;
+    const c = ctx.value;
+    if (!c || c.engineType === 'lx') return;
+    if ((c.description || '').trim()) return;
+    if (!c.pluginSource || !c.rawData) return;
+    try {
+      const desc = await pluginGetArtistInfo(c.pluginSource, c.rawData);
+      if (desc && ctx.value === c) c.description = desc;
+    } catch {
+      /* 拿不到简介则留空，不影响现有功能 */
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -842,6 +868,8 @@ watch(artistActiveTab, () => {
             v-model:isBatchMode="isBatchMode"
             v-model:activeTab="artistActiveTab"
             :artistName="title"
+            :description="artistDescription"
+            :rawData="ctx?.rawData"
             :songs="songList"
             :selectedCount="selectedPaths.size"
             :totalSongCount="songList.length"

@@ -22,6 +22,10 @@ const props = defineProps<{
   readOnly?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
+  /** 歌手简介（展示在简介框中） */
+  description?: string;
+  /** 歌手原始数据（description 为空时回退 artistDesc/intro/desc 等字段） */
+  rawData?: any;
 }>();
 
 const emit = defineEmits([
@@ -194,6 +198,20 @@ const displayedCover = computed(() => {
     return convertFileSrc(currentArtist.value.avatarPath);
   }
   return coverUrl.value;
+});
+
+/** 歌手简介：优先使用显式传入的 description，缺失时从原始数据回退常见简介字段 */
+const displayDescription = computed(() => {
+  const explicit = (props.description || '').trim();
+  if (explicit) return explicit;
+  const rd = props.rawData;
+  if (rd && typeof rd === 'object') {
+    return (
+      rd.artistDesc || rd.artist_intro || rd.intro || rd.briefDesc
+      || rd.description || rd.desc || ''
+    ).trim();
+  }
+  return '';
 });
 
 const isSavingAvatar = ref(false);
@@ -542,6 +560,13 @@ const handlePlayAll = () => {
              管理
            </button>
         </div>
+      </div>
+    </div>
+
+    <!-- 歌手简介展示框 -->
+    <div v-if="displayDescription" class="mb-5 px-1 -mt-1">
+      <div class="text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 max-w-3xl whitespace-pre-line break-words">
+        {{ displayDescription }}
       </div>
     </div>
 

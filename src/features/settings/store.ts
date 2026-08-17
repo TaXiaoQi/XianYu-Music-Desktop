@@ -154,6 +154,8 @@ export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
 
 export const defaultAudioSettings: AudioSettings = {
   outputMode: 'shared',
+  outputBitPerfect: false,
+  dsdNativePassthrough: true,
   volumeBalance: {
     enabled: false,
     gainOffsetDb: 0,
@@ -535,6 +537,12 @@ export const mergeAudioSettings = (
   return {
     ...base,
     outputMode: nextOutputMode,
+    outputBitPerfect: typeof patch.outputBitPerfect === 'boolean'
+      ? patch.outputBitPerfect
+      : (base.outputBitPerfect ?? false),
+    dsdNativePassthrough: typeof patch.dsdNativePassthrough === 'boolean'
+      ? patch.dsdNativePassthrough
+      : (base.dsdNativePassthrough ?? true),
     volumeBalance: {
       enabled,
       gainOffsetDb,

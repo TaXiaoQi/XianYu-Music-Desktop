@@ -23,6 +23,8 @@ export interface OnlineDetailContext {
   subtitle: string;
   /** 封面 URL */
   coverUrl: string;
+  /** 歌手简介（仅 artist 类型使用，来源 pluginArtistSearch/artist 详情接口） */
+  description?: string;
   /** 插件来源（musicfree/baka 系使用） */
   pluginSource: PluginSource;
   /** 插件搜索结果的 rawData（用于调用 getArtistWorks/getAlbumInfo/getMusicSheetInfo） */

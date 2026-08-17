@@ -113,6 +113,26 @@ function localizeLyricLine(line: LyricLine): LyricLine {
   };
 }
 
+/**
+ * 纯文本歌词（无任何时间戳，如 m4a 内嵌的 iTunes ©lyr）无法从文件中获得逐行节奏。
+ * 这里按歌曲时长把每行均匀铺开，生成"假时间轴"LyricLine，交给 AMLL 做逐行匀速滚动。
+ * 若拿不到时长或没有有效行，返回空数组（此时走整段静态兜底显示）。
+ */
+function synthesizeUniformPlainLyricLines(raw: string, durationSec: number): LyricLine[] {
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  if (lines.length === 0 || !(durationSec > 0)) return [];
+
+  const durationMs = durationSec * 1000;
+  const step = durationMs / lines.length;
+  return lines.map((text, index) => ({
+    time: index * step,
+    endTime: (index + 1) * step,
+    text,
+    translation: '',
+    romaji: '',
+  }));
+}
+
 export async function loadLyrics(overrideLyricsRaw?: string) {
   ensureSongPathWatcher();
   const requestId = ++loadRequestId;
@@ -219,6 +239,17 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       romaji: line.romaji || '',
       secondary: line.secondary ? [...line.secondary] : undefined,
     } as LyricLine));
+    // [纯文本匀速滚动]: 若文件里是纯文本歌词（无同步行），按歌曲时长匀出伪时间轴，
+    // 交给 AMLL 逐行滚动；无法合成时保持空态走整段静态兜底。
+    if (parsedLyrics.value.length === 0) {
+      const synthesized = synthesizeUniformPlainLyricLines(
+        rawLyrics.value,
+        playbackStore.currentSong?.duration ?? 0,
+      );
+      if (synthesized.length > 0) {
+        parsedLyrics.value = synthesized.map(localizeLyricLine);
+      }
+    }
     lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
   } catch (error) {
     if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
@@ -353,5 +384,6 @@ export function useLyrics() {
     lyricDocument,
     loadLyrics,
     semanticLyrics,
+    rawLyrics,
   };
 }

@@ -51,8 +51,9 @@ use music::{
     search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder, signed_post_json,
 };
 use player::{
-    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_visualizer_samples,
-    get_current_output_device, get_output_devices, get_playback_duration, get_playback_progress,
+    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_device_formats,
+    get_audio_visualizer_samples, get_current_output_device, get_output_devices,
+    get_playback_duration, get_playback_progress,
     get_playback_ready, get_playback_session, get_playback_start_failed,
     get_playback_start_failed_reason, get_playback_start_failed_info, get_stream_cache_info,
     get_track_loudness_info, is_stream_cached, load_playback_session, pause_audio, play_audio,
@@ -210,6 +211,7 @@ pub fn run() {
             apply_rename,
             get_output_devices,
             get_current_output_device,
+            get_audio_device_formats,
             set_output_device,
             set_audio_output_mode,
             set_prevent_sleep,

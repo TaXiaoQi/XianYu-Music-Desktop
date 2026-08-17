@@ -65,6 +65,7 @@ const {
   lyricsSettings,
   lyricsStatus,
   showLyricsPlayerSettingsPanel,
+  rawLyrics,
 } = useLyrics();
 const { seekTo, currentTime, isPlaying, currentSongPath } = usePlayer();
 const { audioDelay } = storeToRefs(useSettingsStore());
@@ -132,6 +133,19 @@ const emptyStateText = computed(() => {
   if (lyricsStatus.value === 'error') return 'Lyrics unavailable';
   return 'No synchronized lyrics';
 });
+
+// 无时间轴的纯文本歌词（如 m4a 内嵌的 iTunes ©lyr 纯文本）在 state.ts 已按歌曲时长
+// 合成伪时间轴交由 AMLL 逐行匀速滚动。这里仅在无法合成（拿不到时长）时兜底：
+// 整段居中静态展示原文，而非静默显示 "No synchronized lyrics"。
+const plainLyricLines = computed(() =>
+  rawLyrics.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0),
+);
+const showPlainLyrics = computed(() =>
+  plainLyricLines.value.length > 0
+  && parsedLyrics.value.length === 0
+  && lyricsStatus.value !== 'loading'
+  && lyricsStatus.value !== 'error',
+);
 
 const fontScalePercent = computed(() => `${Math.round(lyricsSettings.playerFontScale * 100)}%`);
 const lineGapPercent = computed(() => `${Math.round(lyricsSettings.playerLineGap * 100)}%`);
@@ -981,9 +995,17 @@ watch(() => props.coverHidden, async () => {
 
     <div
       v-else
-      class="no-lyrics flex h-full items-center justify-center text-2xl font-medium text-white/30"
+      class="no-lyrics flex h-full w-full items-center justify-center px-10 text-2xl font-medium text-white/30"
     >
-      {{ emptyStateText }}
+      <div
+        v-if="showPlainLyrics"
+        class="plain-lyrics h-full w-full overflow-y-auto py-6 text-center text-xl font-normal leading-relaxed text-white/70"
+      >
+        <p v-for="(line, index) in plainLyricLines" :key="index" class="whitespace-pre-line">
+          {{ line }}
+        </p>
+      </div>
+      <template v-else>{{ emptyStateText }}</template>
     </div>
 
     <Teleport to="body">

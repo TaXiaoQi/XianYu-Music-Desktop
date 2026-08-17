@@ -845,6 +845,15 @@ async function loadMusicFreePlugin(
       fetch: proxyFetch,
     });
 
+    // 以全局变量形式提供 Buffer/CryptoJS，供插件以自由变量方式直接引用。
+    // 不能用模块作用域 const 注入：插件自身若声明 const Buffer/CryptoJS（如
+    // kw/qq 插件的 const { Buffer } = require("buffer")）会与注入声明冲突，
+    // 导致 "Identifier has already been declared" 加载失败。全局变量可被
+    // 模块内自由变量解析，同时被模块内同名声明遮蔽，互不冲突。
+    (globalThis as any).Buffer = Buffer;
+    (globalThis as any).CryptoJs = CryptoJs;
+    (globalThis as any).CryptoJS = CryptoJs;
+
     const moduleSource = `
       'use strict';
       const runtime = globalThis.${PLUGIN_RUNTIME_KEY}.get(${JSON.stringify(runtimeId)});

@@ -70,8 +70,11 @@ pub async fn play_audio(
     headers: Option<std::collections::HashMap<String, String>>,
     // QMC2 加密密钥（Baka 插件加密音源，如 QQ 音乐 L2），由前端从插件 getMediaSource 响应中提取
     ekey: Option<String>,
-    // CENC 内容密钥（Baka 插件可能返回，如酷狗加密音源）。当前先透传并记录，后续由解密链路消费。
-    _cek: Option<String>,
+    // CENC 内容密钥（汽水音乐等音源加密音轨），由插件从 PlayAuth 解密得到。
+    // 下载完成后在 stream_cache 中用 CEK 解密样本并将 enca 补丁为 mp4a。
+    cek: Option<String>,
+    // DSD 原生 DoP 直通开关：仅对 .dsf + WASAPI 独占生效，默认开启。
+    dsd_native_passthrough: Option<bool>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
     state: tauri::State<'_, PlayerState>,
@@ -113,6 +116,7 @@ pub async fn play_audio(
             headers.as_ref(),
             Some(DEFAULT_STREAM_USER_AGENT),
             ekey.as_deref(),
+            cek.as_deref(),
         )
         .map_err(|e| format!("在线音频缓存启动失败: {}", e))?;
 
@@ -185,6 +189,7 @@ pub async fn play_audio(
         output_mode: selected_output_mode,
         start_offset_ms,
         volume_balance_gain,
+        dsd_native_passthrough: dsd_native_passthrough.unwrap_or(true),
     })
     .map_err(|e| e.to_string())?;
 

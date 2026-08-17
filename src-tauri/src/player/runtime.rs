@@ -89,6 +89,7 @@ fn start_exclusive_playback(
     equalizer_handle: Arc<crate::player::equalizer::EqualizerHandle>,
     sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
+    dsd_native_passthrough: bool,
 ) -> Result<WasapiExclusivePlayback, String> {
     WasapiExclusivePlayback::start(ExclusivePlayRequest {
         path,
@@ -101,6 +102,7 @@ fn start_exclusive_playback(
         equalizer_handle,
         sound_effect_handle,
         user_volume,
+        dsd_native_passthrough,
     })
     .map_err(|error| error.to_string())
 }
@@ -127,6 +129,7 @@ fn restore_preferred_output(
     current_normalizer_handle: &mut Option<VolumeNormalizerHandle>,
     current_remote_stream: Option<&RemoteStreamSource>,
     current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
+    dsd_native_passthrough: bool,
 ) {
     *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
     *active_device_name = output
@@ -146,6 +149,7 @@ fn restore_preferred_output(
             equalizer_handle.clone(),
             sound_effect_handle.clone(),
             user_volume.clone(),
+            dsd_native_passthrough,
         ) {
             Ok(playback) => {
                 *active_device_name = Some(playback.active_device_name().to_string());
@@ -1283,6 +1287,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
             .map(|output| output.active_device_name().to_string());
         let mut current_normalizer_handle: Option<VolumeNormalizerHandle> = None;
         let mut current_volume_balance_gain = 1.0;
+        // DSD 原生 DoP 直通开关（仅 .dsf + WASAPI 独占生效），在 Play 时按设置记忆，供重连/恢复复用
+        let mut current_dsd_native_passthrough = true;
         // 上次发射 playback:progress 事件的时间，用于节流
         let mut last_progress_emit = std::time::Instant::now();
         // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
@@ -1367,9 +1373,11 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         output_mode,
                         start_offset_ms,
                         volume_balance_gain,
+                        dsd_native_passthrough,
                     } => {
                         requested_output_mode = output_mode;
                         current_volume_balance_gain = volume_balance_gain;
+                        current_dsd_native_passthrough = dsd_native_passthrough;
                         let source_is_network_backed = source.is_network_backed();
                         let display_path = source.display_path();
                         // 记住当前远程流信息：seek 失败需要重建解码链时，远程流不能用
@@ -1415,6 +1423,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 thread_eq_handle.clone(),
                                 thread_se_handle.clone(),
                                 thread_user_volume.clone(),
+                                current_dsd_native_passthrough,
                             ) {
                                 Ok(playback) => {
                                     if selected_device_name.is_none() {
@@ -1573,6 +1582,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 thread_eq_handle.clone(),
                                 thread_se_handle.clone(),
                                 thread_user_volume.clone(),
+                                current_dsd_native_passthrough,
                             ) {
                                 Ok(playback) => {
                                     if selected_device_name.is_none() {
@@ -1731,6 +1741,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &mut current_normalizer_handle,
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
+                            current_dsd_native_passthrough,
                         );
                         // 设备切换后重新应用播放倍速
                         if current_speed != 1.0 {
@@ -1784,6 +1795,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             &mut current_normalizer_handle,
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
+                            current_dsd_native_passthrough,
                         );
                         // 输出模式切换后重新应用播放倍速
                         if current_speed != 1.0 {
@@ -1904,6 +1916,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 &mut current_normalizer_handle,
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
+                                current_dsd_native_passthrough,
                             );
                             #[cfg(target_os = "windows")]
                             if !force_shared_after_exclusive_device_change {
@@ -1925,11 +1938,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                     thread_eq_handle.clone(),
                                     thread_se_handle.clone(),
                                     thread_user_volume.clone(),
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
-                                );
-                            }
+                                &mut current_normalizer_handle,
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
+                                current_dsd_native_passthrough,
+                            );
+                        }
 
                             emit_output_status(
                                 &thread_app_handle,

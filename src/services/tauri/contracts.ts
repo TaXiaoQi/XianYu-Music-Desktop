@@ -26,6 +26,19 @@ export interface AudioDevice {
   name: string;
 }
 
+export interface AudioDeviceFormat {
+  sample_format: string;
+  min_sample_rate: number;
+  max_sample_rate: number;
+  channels: number;
+}
+
+export interface AudioDeviceFormats {
+  id: string;
+  name: string;
+  formats: AudioDeviceFormat[];
+}
+
 export interface AudioOutputStatus {
   selected_device_id: string | null;
   active_device_name: string | null;
@@ -147,6 +160,8 @@ export interface PlayAudioOptions {
   ekey?: string;
   /** CENC 内容密钥（Baka 插件可能返回，如酷狗加密音源），透传给 Rust 后端 */
   cek?: string;
+  /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效（关闭则走常规 PCM 解码） */
+  dsdNativePassthrough?: boolean;
 }
 
 export interface UpdateLoudnessSettingsOptions {
@@ -658,6 +673,7 @@ export interface TauriCommandMap {
   set_prevent_sleep: { payload: { active: boolean }; response: void };
   get_output_devices: { payload: undefined; response: AudioDevice[] };
   get_current_output_device: { payload: undefined; response: AudioOutputStatus };
+  get_audio_device_formats: { payload: undefined; response: AudioDeviceFormats[] };
   add_to_history: { payload: { songPath: string }; response: void };
   remove_from_recent_history: { payload: { songPaths: string[] }; response: void };
   remove_songs_from_history_and_statistics: { payload: { songPaths: string[] }; response: void };
