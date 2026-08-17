@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { ChevronDown } from 'lucide-vue-next';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { Check, ChevronDown } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
@@ -32,6 +32,37 @@ const languageOptions = computed<{ value: AppLanguage; label: string }[]>(() => 
   { value: 'zh-TW', label: t('language.zhTW') },
   { value: 'en-US', label: t('language.enUS') },
 ]);
+
+const isLanguageDropdownOpen = ref(false);
+const languageDropdownRef = ref<HTMLElement | null>(null);
+
+const currentLanguageLabel = computed(() => {
+  const current = languageOptions.value.find((opt) => opt.value === appLanguage.value);
+  return current?.label ?? t('language.zhCN');
+});
+
+const selectLanguageOption = (value: AppLanguage) => {
+  appLanguage.value = value;
+  isLanguageDropdownOpen.value = false;
+};
+
+const handleLanguageDropdownOutsideClick = (event: MouseEvent) => {
+  if (
+    isLanguageDropdownOpen.value
+    && languageDropdownRef.value
+    && !languageDropdownRef.value.contains(event.target as Node)
+  ) {
+    isLanguageDropdownOpen.value = false;
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('mousedown', handleLanguageDropdownOutsideClick);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('mousedown', handleLanguageDropdownOutsideClick);
+});
 
 const launchOnStartup = ref(false);
 
@@ -142,13 +173,13 @@ onMounted(() => {
   <div class="w-full space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
     <!-- Language -->
-    <section class="space-y-3">
+    <section class="relative z-20 space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
         <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
         {{ t('language.section') }}
       </h2>
-      <div class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-        <div class="flex items-center justify-between gap-5 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+      <div class="rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="flex items-center justify-between gap-5 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10 rounded-xl">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
               {{ t('language.label') }}
@@ -157,21 +188,44 @@ onMounted(() => {
               {{ t('language.description') }}
             </div>
           </div>
-          <div class="relative w-40 shrink-0 sm:w-44">
-            <select
-              v-model="appLanguage"
+          <div ref="languageDropdownRef" class="relative w-40 shrink-0 sm:w-44">
+            <button
+              type="button"
+              :aria-expanded="isLanguageDropdownOpen"
               :aria-label="t('language.label')"
-              class="language-select h-9 w-full cursor-pointer appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-sm font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+              @click="isLanguageDropdownOpen = !isLanguageDropdownOpen"
+              class="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             >
-              <option
-                v-for="option in languageOptions"
-                :key="option.value"
-                :value="option.value"
+              <span class="truncate">{{ currentLanguageLabel }}</span>
+              <ChevronDown
+                class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+                :class="{ 'rotate-180': isLanguageDropdownOpen }"
+              />
+            </button>
+
+            <Transition name="settings-dropdown">
+              <div
+                v-if="isLanguageDropdownOpen"
+                class="absolute right-0 top-full z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 bg-white/90 p-1 text-xs shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#262626]/95"
               >
-                {{ option.label }}
-              </option>
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                <button
+                  v-for="option in languageOptions"
+                  :key="option.value"
+                  type="button"
+                  @click="selectLanguageOption(option.value)"
+                  class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left font-medium transition-colors"
+                  :class="appLanguage === option.value
+                    ? 'bg-[#EC4141]/10 text-[#EC4141] dark:bg-[#EC4141]/20 dark:text-[#ff8b8b]'
+                    : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                >
+                  <span class="truncate">{{ option.label }}</span>
+                  <Check
+                    v-if="appLanguage === option.value"
+                    class="h-3.5 w-3.5 shrink-0 text-[#EC4141] dark:text-[#ff8b8b]"
+                  />
+                </button>
+              </div>
+            </Transition>
           </div>
         </div>
       </div>
@@ -444,18 +498,15 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.55);
 }
 
-.language-select {
-  color-scheme: light;
+.settings-dropdown-enter-active,
+.settings-dropdown-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+  transform-origin: top right;
 }
 
-:global(.dark) .language-select {
-  color-scheme: dark;
-}
-
-/* 深色模式下明确设置展开面板的 option 背景与文字，
-   避免 WebView2 上 color-scheme 对原生下拉面板不完全生效导致白底浅字看不清。 */
-:global(.dark) .language-select option {
-  background-color: #262626;
-  color: rgba(255, 255, 255, 0.92);
+.settings-dropdown-enter-from,
+.settings-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
 }
 </style>
