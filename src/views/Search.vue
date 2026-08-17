@@ -1342,6 +1342,8 @@ const needsProxy = (url: string): boolean => {
     'y.gtimg.cn',
     'qpic.cn',
     'sycdn.kuwo.cn',
+    'music.126.net',
+    '163.com',
   ];
   return proxyDomains.some(domain => url.includes(domain));
 };
@@ -1883,6 +1885,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
       type: 'artist',
       title: artist.name,
       subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+      description: artist.description || '',
       coverUrl: artist.avatarUrl,
       pluginSource: selectedSourceItem.value.source!,
       rawData: artist.rawData,
@@ -1902,6 +1905,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     type: 'artist',
     title: artist.name,
     subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+    description: artist.description || '',
     coverUrl: artist.avatarUrl,
     pluginSource,
     rawData: artist.rawData,

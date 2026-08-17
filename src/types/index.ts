@@ -663,6 +663,10 @@ export interface EqualizerSettings {
 
 export interface AudioSettings {
   outputMode: AudioOutputMode;
+  /** bit-perfect 输出：强制 WASAPI 独占 + 关闭音量/均衡器/音效 DSP，按源采样率直出 */
+  outputBitPerfect?: boolean;
+  /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效，关闭则走常规 PCM 解码 */
+  dsdNativePassthrough?: boolean;
   volumeBalance: {
     enabled: boolean;
     gainOffsetDb: number;

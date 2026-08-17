@@ -8,8 +8,105 @@ import { showProfileLimitDialog } from '../../composables/useProfileLimitDialog'
 import { showBanDialog } from '../../composables/useBanDialog';
 import { showCiyuanxiDialog } from '../../composables/useCiyuanxiDialog';
 import { useAuthStore } from '../../features/auth/store';
+import { usePlaybackStore } from '../../features/playback/store';
+import { useSettingsStore } from '../../features/settings/store';
+import { resolveOnlineQualityUrl, isDownloadableOnlineSong } from '../../services/downloadService';
+import type { QualityKey, Song, OnlineQualityFallbackBehavior } from '../../types';
+import { ref } from 'vue';
 
 const authStore = useAuthStore();
+const playbackStore = usePlaybackStore();
+const settingsStore = useSettingsStore();
+
+const qualityProbe = ref('');
+const qualityProbing = ref(false);
+
+const LOSSESS_QUALITIES: ReadonlySet<string> = new Set([
+  'flac', 'flac24bit', 'hires', 'vinyl', 'master',
+]);
+
+function detectContainer(buf: Uint8Array): string {
+  const head = new TextDecoder().decode(buf.slice(0, 12));
+  if (head.startsWith('fLaC')) return 'FLAC';
+  if (head.startsWith('OggS')) return 'Ogg/Opus';
+  if (head.startsWith('ID3') || (buf[0] === 0xff && (buf[1] === 0xfb || buf[1] === 0xf3 || buf[1] === 0xf2))) return 'MP3';
+  if (head.startsWith('RIFF')) return (head.slice(0, 4) === 'RIFF' && head.slice(8, 12) === 'WAVE') ? 'WAV' : 'RIFF(WAV/AVI)';
+  if (head.startsWith('FORM')) return 'AIFF';
+  if (head.slice(4, 8) === 'ftyp') {
+    return head.slice(8, 12).includes('M4A') ? 'M4A' : 'MP4/MOV';
+  }
+  if (head.startsWith('DSD ')) return 'DSF';
+  return `未知(前12字节 ${Array.from(buf.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ')})`;
+}
+
+async function probeContainer(url: string, headers: Record<string, string> | null | undefined): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { Range: 'bytes=0-262143', ...(headers ?? {}) },
+    });
+    if (!res.ok && res.status !== 206) {
+      return `探测请求失败(HTTP ${res.status})`;
+    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const ct = res.headers.get('content-type') || '';
+    return `${detectContainer(buf)}${ct ? ` (Content-Type: ${ct})` : ''}`;
+  } catch (err) {
+    return `探测请求被拦截(${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
+async function verifyCurrentSongQuality() {
+  const song = playbackStore.currentSong as Song | null;
+  if (!song) {
+    qualityProbe.value = '没有正在播放的歌曲。';
+    return;
+  }
+  if (!isDownloadableOnlineSong(song)) {
+    qualityProbe.value = `当前歌曲不是在线歌曲：${song.title || song.path}`;
+    return;
+  }
+
+  qualityProbing.value = true;
+  qualityProbe.value = '';
+  try {
+    const requested = (playbackStore.sessionQualityOverride
+      || settingsStore.settings.audio.onlineDefaultQuality || '320k') as QualityKey;
+    const fallback = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
+    const lines: string[] = [`歌曲: ${song.title || song.name}`, `请求档位: ${requested}`, `回退行为: ${fallback}`, ''];
+
+    const resolved = await resolveOnlineQualityUrl(
+      song,
+      requested,
+      fallback as OnlineQualityFallbackBehavior,
+      null,
+    );
+    if (!resolved) {
+      lines.push('解析失败：未拿到任何可播放直链。');
+      qualityProbe.value = lines.join('\n');
+      return;
+    }
+
+    lines.push(`解析命中档位: ${resolved.quality}`);
+    lines.push(`直链: ${resolved.url}`);
+    const sniff = await probeContainer(resolved.url, resolved.headers);
+    lines.push(`实际编码探测: ${sniff}`);
+
+    const promisedLossless = LOSSESS_QUALITIES.has(resolved.quality);
+    const sniffedLossy = /MP3|M4A|\/MP4|\/Ogg|\/AA?C/i.test(sniff);
+    if (promisedLossless && sniffedLossy) {
+      lines.push('⚠ 无损档位实际返回了有损编码 → 存在静默降级。');
+    } else if (promisedLossless && /FLAC|WAV|AIFF|DSF/.test(sniff)) {
+      lines.push('✓ 无损档位，实测为无损编码，正常。');
+    } else {
+      lines.push(`（档位=${resolved.quality}，期望与实测编码一致，无降级）`);
+    }
+    qualityProbe.value = lines.join('\n');
+  } catch (err) {
+    qualityProbe.value = `探测出错：${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    qualityProbing.value = false;
+  }
+}
 
 const { disableDeveloperMode } = useDeveloperMode();
 const { triggerOnboarding } = useOnboarding();
@@ -216,6 +313,27 @@ function testCiyuanxiDialog() {
           弹出
         </button>
       </div>
+    </section>
+
+    <section class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">验证当前歌曲实际音质</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">与播放走同一链路解析在线直链，并下载前256KB探测真实编码</p>
+        </div>
+        <button
+          type="button"
+          :disabled="qualityProbing"
+          class="shrink-0 rounded-lg bg-[#EC4141] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#d83b3b] active:scale-95 disabled:opacity-50"
+          @click="verifyCurrentSongQuality"
+        >
+          {{ qualityProbing ? '解析中…' : '验证' }}
+        </button>
+      </div>
+      <pre
+        v-if="qualityProbe"
+        class="mx-5 mb-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-black/5 p-3 font-mono text-xs leading-relaxed text-gray-700 dark:bg-white/5 dark:text-gray-200"
+      >{{ qualityProbe }}</pre>
     </section>
   </div>
 </template>

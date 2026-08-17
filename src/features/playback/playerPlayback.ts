@@ -889,9 +889,10 @@ const authStore = useAuthStore();
       : primeCoverPath(coverLookupPath, song.cover_thumb_path);
     const cachedFullCover = getFullCoverUrl(coverLookupPath);
     const immediateCover = cachedCover || persistedCover;
+    let displayCover = '';
     if (immediateCover) {
       // B站等需代理的封面：先显示原始 URL，异步代理完成后刷新底部栏/歌词封面
-      const displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
+      displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
         currentCover.value = dataUrl;
         currentCoverFull.value = dataUrl;
@@ -899,7 +900,8 @@ const authStore = useAuthStore();
       currentCover.value = displayCover;
       currentCoverPath.value = coverLookupPath;
     }
-    currentCoverFull.value = cachedFullCover || immediateCover || '';
+    // 展开大图同样优先用代理后的封面，避免网易云等防盗链封面白屏
+    currentCoverFull.value = cachedFullCover || displayCover || immediateCover || '';
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
     // [落雪] lx:// 歌曲跳过本地封面加载（loadCover 会调用后端读取本地文件）
     const currentThumbnailLoad = isLxSong
@@ -952,6 +954,11 @@ const authStore = useAuthStore();
 
     stopPlaybackRuntime();
     reanchorPlaybackClock(resumeTime);
+    // [进度同步] 提前启动播放时钟和 playback:progress 监听器，不必等 Rust 起播探测完成。
+    // 之前在线歌曲的 startPlaybackRuntime 在 tryPlayOnlineViaRust 之后才调用（最长 20 秒），
+    // 期间 currentTime 卡在 0，但实际音频已在 Rust 后端播放，导致"有声音但进度条不动"。
+    // 提前启动后，动画时钟从 0 开始走动，首个 playback:progress 事件到达时自动修正到正确位置。
+    startPlaybackRuntime();
     accumulatedTime = 0;
     sessionStartTime = null;
     lastRawProgress = -1;
@@ -1183,7 +1190,11 @@ const authStore = useAuthStore();
         isSongLoaded.value = true;
         sessionStartTime = Date.now();
         loadLyrics();
-        startPlaybackRuntime();
+        // [进度同步] 起播确认后立即将时钟锚定到实际起播位置（resumeTime），
+        // 消除下载/探测期间 rAF 时钟超前导致的进度与声音不匹配。
+        // 不再重复 startPlaybackRuntime()：早期启动的 rAF 时钟与 playback:progress
+        // 监听器继续沿用，避免重复订阅导致事件丢失或时钟被重置到超前位置。
+        reanchorPlaybackClock(resumeTime);
         recordStartedSongToHistory();
 
         void currentThumbnailLoad
@@ -1231,6 +1242,7 @@ const authStore = useAuthStore();
             headers: pluginHeaders,
             ekey: pluginEkey,
             cek: pluginCek,
+            dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
           });
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));
@@ -1365,6 +1377,7 @@ const authStore = useAuthStore();
           volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
           gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
           preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
+          dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
         };
 
         if (playBeforeFlyCover) {

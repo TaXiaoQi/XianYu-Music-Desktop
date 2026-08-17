@@ -17,6 +17,8 @@ const PROXY_COVER_DOMAINS = [
   'y.gtimg.cn',
   'qpic.cn',
   'sycdn.kuwo.cn',
+  'music.126.net',
+  '163.com',
 ];
 
 /** 封面代理缓存（原始 URL → data: URL） */

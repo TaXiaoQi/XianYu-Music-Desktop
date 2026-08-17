@@ -1065,7 +1065,7 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
     seen.add(dedupeKey);
 
     const creator = raw.creator;
-    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'PIC']) || '');
+    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'pic_url', 'PIC', 'album_pic_url']) || '');
     if (coverUrl.startsWith('//')) coverUrl = `https:${coverUrl}`;
     else if (coverUrl.startsWith('http://')) coverUrl = coverUrl.replace('http://', 'https://');
     results.push({
@@ -1080,6 +1080,28 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
   }
 
   return results;
+}
+
+// ==================== LX 歌单搜索 Web 兜底 ====================
+
+/**
+ * 经典 Web 歌单搜索兜底：不依赖新签名(musics.fcg)风控体系。
+ * Mobile 歌单搜索被风控/降级返回空时使用，maintains 小秋/QQ 歌单搜索结果可用。
+ */
+async function txSheetSearchWebFallback(keyword: string, page = 1, limit = 30): Promise<any[]> {
+  const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&new_json=1&inCharset=utf-8&outCharset=utf-8&cr=1&platform=h5&catZhida=0&t=3&w=${encodeURIComponent(keyword)}&p=${page}&n=${limit}`;
+  const result = await httpGetJson(url, {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://y.qq.com/',
+  });
+  const data = result?.data || {};
+  // t=3 时列表可能位于 song.list / songlist / list / items 等不同路径，需兼容读取
+  const list: any[] = data?.song?.list || data?.songlist || data?.list || data?.items || [];
+  if (!Array.isArray(list) || list.length === 0) {
+    console.warn('[LxMusicSdk] TX 歌单 Web 兜底无结果, data keys=', data ? Object.keys(data) : null);
+    throw new Error('TX sheet web fallback: 无有效歌单');
+  }
+  return list;
 }
 
 async function searchLxPlaylists(source: LxSourceId, keyword: string, page: number, limit: number): Promise<LxPlaylistSearchResult[]> {
@@ -1137,14 +1159,26 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
         },
       },
     };
-    const sign = await zzcSign(JSON.stringify(requestData));
-    const data = await httpPostJson(
-      `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
-      JSON.stringify(requestData),
-      { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
-    );
-    const body = data?.req?.data?.body;
-    return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || body?.songlist || []);
+    // 该接口与 searchTx 同属新签名(Mobile)风控体系，被风控/降级时 body 为空，走经典 Web 兜底
+    let list: any[];
+    try {
+      const sign = await zzcSign(JSON.stringify(requestData));
+      const data = await httpPostJson(
+        `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+        JSON.stringify(requestData),
+        { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
+      );
+      const body = data?.req?.data?.body;
+      list = body?.item_songlist || body?.songlist?.list || body?.songlist || [];
+    } catch (e: any) {
+      console.warn(`[LxMusicSdk] TX 歌单搜索接口异常，尝试 Web 兜底: ${e?.message || e}`);
+      list = [];
+    }
+    if (list.length === 0) {
+      console.warn('[LxMusicSdk] TX 歌单搜索 Mobile 为空，尝试 Web 兜底');
+      list = await txSheetSearchWebFallback(keyword, page, limit);
+    }
+    return normalizeLxPlaylistResults(source, list);
   }
 
   const time = Date.now().toString();
@@ -1402,6 +1436,31 @@ export async function lxGetAlbumSongs(
   return [];
 }
 
+// ==================== LX 歌单详情 Web 兜底 ====================
+
+/**
+ * 经典 Web 歌单详情兜底：不依赖新签名(musics.fcg)风控体系。
+ * Mobile 歌单详情被风控/降级返回空时使用，避免小秋/QQ 歌单页空白。
+ */
+async function txSheetTracksWebFallback(
+  playlistId: string,
+  page: number,
+  limit: number,
+): Promise<LxSearchResultItem[]> {
+  const url = `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(playlistId)}&format=json&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=jq&needNewCode=0`;
+  const result = await httpGetJson(url, {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://y.qq.com/',
+  });
+  const cdlist: any[] = result?.data?.cdlist || [];
+  const first: any = cdlist[0] || {};
+  const songAll: any[] = first.songlist || [];
+  const start = (page - 1) * limit;
+  const songlist = songAll.slice(start, start + limit);
+  if (songlist.length === 0) console.warn(`[LxMusicSdk] TX playlist web fallback ${playlistId}: empty songlist`);
+  return txHandleResult(songlist);
+}
+
 /**
  * 获取落雪音源歌单曲目列表
  * @param playlistRawData 来自 normalizeLxPlaylistResults 的 rawData（原始 API 响应项）
@@ -1459,14 +1518,25 @@ export async function lxGetPlaylistTracks(
             },
           },
         };
-        const sign = await zzcSign(JSON.stringify(requestData));
-        const resp = await httpPostJson(
-          `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
-          JSON.stringify(requestData),
-          { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
-        );
+        // 该接口与 searchTx 同属新签名(Mobile)风控体系：被风控(reqCode 2001)或降级时返回空 songlist，
+        // 无结果时走经典 Web 接口兜底（不依赖这套风控），否则用户在歌单页一直空白。
+        const fallback = (reason: string) => {
+          console.warn(`[LxMusicSdk] TX playlist ${playlistId}: ${reason}，尝试 Web 兜底`);
+          return txSheetTracksWebFallback(playlistId, page, limit);
+        };
+        let resp: any;
+        try {
+          const sign = await zzcSign(JSON.stringify(requestData));
+          resp = await httpPostJson(
+            `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+            JSON.stringify(requestData),
+            { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
+          );
+        } catch (e: any) {
+          return fallback(`Mobile 接口异常(${e?.message || e})`);
+        }
         const songlist: any[] = resp?.req?.data?.songlist || [];
-        if (songlist.length === 0) console.warn(`[LxMusicSdk] TX playlist ${playlistId}: empty songlist`);
+        if (songlist.length === 0) return fallback('empty songlist');
         return txHandleResult(songlist);
       }
       case 'wy': {

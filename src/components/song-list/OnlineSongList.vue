@@ -4,6 +4,8 @@ import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { getDisplayCoverUrl } from '../../utils/coverProxy';
+import { pluginApi } from '../../services/tauri/pluginApi';
 
 const { settings } = useSettings();
 const { currentSong, isPlaying } = usePlaybackController();
@@ -25,8 +27,38 @@ const formatDuration = (seconds: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+/** 封面显示 URL 缓存（原始 URL → 代理后的 data: URL） */
+const coverDisplayMap = ref(new Map<string, string>());
+const coverAttempted = new Set<string>();
+
+/** 返回可直接用于 <img> 的封面 URL：需要代理的域名走后端代理，代理完成后自动刷新回 data: URL */
+const getCover = (item: Song): string => {
+  const url = item.cover_thumb_path || '';
+  if (!url || url.startsWith('data:')) return url;
+  const cached = coverDisplayMap.value.get(url);
+  if (cached) return cached;
+  const display = getDisplayCoverUrl(url, (dataUrl) => {
+    coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, dataUrl);
+  });
+  if (display !== url) {
+    coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, display);
+  }
+  return display;
+};
+
 const handleImgError = (e: Event) => {
-  (e.target as HTMLImageElement).style.display = 'none';
+  const img = e.target as HTMLImageElement;
+  const src = img.src;
+  // 原始 URL（非 data:）加载失败 → 走后端代理回退，避免网易云等防盗链封面白屏
+  if (src && !src.startsWith('data:') && !coverAttempted.has(src)) {
+    coverAttempted.add(src);
+    (async () => {
+      try {
+        const dataUrl = await pluginApi.proxyImage(src);
+        coverDisplayMap.value = new Map(coverDisplayMap.value).set(src, dataUrl);
+      } catch { /* ignore */ }
+    })();
+  }
 };
 
 /** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
@@ -124,8 +156,8 @@ onBeforeUnmount(() => {
           <td class="py-2 px-2">
             <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
               <img
-                v-if="item.cover_thumb_path"
-                :src="item.cover_thumb_path"
+                v-if="getCover(item)"
+                :src="getCover(item)"
                 class="w-full h-full object-cover"
                 alt=""
                 loading="lazy"

@@ -834,35 +834,45 @@ const describeResult = (r: any): string => {
   return `keys=[${keys}] extractedLen=${len}`;
 };
 
-/** 调用插件方法，若结果为空则短延迟后重试一次，缓解 QQ 等源接口偶发返回空的问题 */
+/**
+ * 调用插件方法，若结果为空则等待后重试。
+ * 参考落雪(lx) 的加载方式：失败时用增量退避拉长每次间隔，延后放弃，让加载转圈持续更久、命中率更高；
+ * 不做短固定间隔的快速重试。delay 可传固定值或返回每次等待时长的函数。
+ */
 async function retryOnEmpty<T>(
   label: string,
   fn: () => Promise<T>,
   isEmpty: (val: T) => boolean,
-  delay: number = MF_EMPTY_SEARCH_RETRY_DELAY_MS,
+  delay: number | ((attempt: number) => number) = (i: number) => MF_EMPTY_SEARCH_RETRY_DELAY_MS * 2 * i,
+  attempts: number = 6,
 ): Promise<T> {
-  try {
-    const val1 = await fn();
-    catalogLog(`${label} 第1次 → ${describeResult(val1)}`);
-    if (!isEmpty(val1)) return val1;
-    catalogLog(`${label} 第1次为空，${delay}ms后重试`);
-  } catch (e: any) {
-    catalogLog(`${label} 第1次异常: ${e?.message || e}`);
-    catalogLog(`${label} 异常后 ${delay}ms重试`);
-    await sleep(delay);
+  const getDelay = (i: number) => (typeof delay === 'function' ? delay(i) : delay);
+  let result: T | undefined;
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    const wait = getDelay(i);
     try {
-      const val2 = await fn();
-      catalogLog(`${label} 第2次 → ${describeResult(val2)}`);
-      return val2;
-    } catch (e2: any) {
-      catalogLog(`${label} 第2次异常: ${e2?.message || e2}`);
-      throw e2;
+      result = await fn();
+      catalogLog(`${label} 第${i}次 → ${describeResult(result)}`);
+      if (!isEmpty(result)) return result;
+      if (i < attempts) {
+        catalogLog(`${label} 第${i}次为空，${wait}ms后重试(共${attempts}次)`);
+        await sleep(wait);
+      }
+    } catch (e: any) {
+      lastErr = e;
+      catalogLog(`${label} 第${i}次异常: ${e?.message || e}`);
+      if (i < attempts) {
+        catalogLog(`${label} 异常后 ${wait}ms重试(共${attempts}次)`);
+        await sleep(wait);
+      }
     }
   }
-  await sleep(delay);
-  const val2 = await fn();
-  catalogLog(`${label} 第2次 → ${describeResult(val2)}`);
-  return val2;
+  // 所有尝试都用尽且每次结果都判空 → 抛错由调用方决定兜底策略
+  if (result === undefined || isEmpty(result as T)) {
+    throw lastErr ?? new Error(`${label} 多次尝试后仍为空`);
+  }
+  return result as T;
 }
 
 /** 音乐搜索诊断版：保留初始化、能力和接口错误，供歌词选择页直接展示原因。 */
@@ -927,11 +937,17 @@ export async function pluginMusicSearchWithDiagnostics(
     let { result, list } = await callSearch(1);
 
     // 部分 MusicFree QQ 插件的上游接口会偶发正常响应但 data=[]。
-    // 这种情况下不应立刻判定无结果，短延迟后重试一次即可大幅降低“有时有、有时空”的体验问题。
+    // 参考落雪(lx) 的增量退避：不做短固定间隔的快速放弃，逐步拉长间隔反复重试，共 6 次约 12s
     if (list.length === 0) {
-      log(`[pluginSearch] ${source.name} 第 1 次返回空列表，${MF_EMPTY_SEARCH_RETRY_DELAY_MS}ms 后重试一次`);
-      await sleep(MF_EMPTY_SEARCH_RETRY_DELAY_MS);
-      ({ result, list } = await callSearch(2));
+      const attempts = 6;
+      let attempt = 2;
+      while (list.length === 0 && attempt <= attempts) {
+        const wait = 800 * (attempt - 1);
+        log(`[pluginSearch] ${source.name} 第 ${attempt - 1} 次返回空列表，${wait}ms 后重试(共 ${attempts} 次)`);
+        await sleep(wait);
+        ({ result, list } = await callSearch(attempt));
+        attempt++;
+      }
     }
 
     if (list.length > 0) {
@@ -956,7 +972,7 @@ export async function pluginMusicSearchWithDiagnostics(
       results: [],
       status: Array.isArray(result?.data) ? 'empty' : 'invalid_response',
       reason: Array.isArray(result?.data)
-        ? `插件连续两次搜索成功但没有找到与“${keyword}”匹配的歌曲`
+        ? `插件多次搜索（最多 6 次）均未找到与“${keyword}”匹配的歌曲`
         : `插件 search 返回格式无效或为空：实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
       searchType,
       supportsLyrics: true,
@@ -1196,6 +1212,56 @@ export async function pluginGetArtistAlbums(
     log(`[${source.name}] 获取歌手专辑失败: ${e?.message}`);
     return [];
   }
+}
+
+/** 从歌手条目/详情对象中尽力提取简介，兼容各平台常见字段（含嵌套子对象） */
+function extractArtistDescription(raw: any): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const candidates = [
+    'artistDesc', 'artistIntro', 'artist_intro', 'briefDesc', 'briefdesc',
+    'intro', 'desc', 'description', 'profile', 'bio', 'biography',
+    'aDesc', 'aDes',
+  ];
+  for (const key of candidates) {
+    const v = raw[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const inner = extractArtistDescription(v);
+      if (inner) return inner;
+    }
+  }
+  return '';
+}
+
+/**
+ * 获取歌手简介：调用插件的 getArtistInfo（如未实现则返回空字符串，不影响现有功能）。
+ * 歌手的 search('artist') 列表通常不带简介，简介在歌手详情接口里。
+ */
+export async function pluginGetArtistInfo(
+  source: PluginSource,
+  artistItem: any,
+): Promise<string> {
+  if (!source || !artistItem) return '';
+  let info: any = null;
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    info = await BakaPluginManager.getArtistInfo(source, artistItem);
+  } else {
+    const inst = await ensurePluginInstance(source);
+    if (!inst) return '';
+    try {
+      const fn = inst.instance.getArtistInfo;
+      if (typeof fn === 'function') {
+        const p = fn(artistItem);
+        info = p && typeof p.catch === 'function' ? (await p.catch(() => null)) : p;
+      }
+    } catch {
+      info = null;
+    }
+  }
+  const desc = extractArtistDescription(info);
+  catalogLog(`[${source.name}] getArtistInfo → ${desc ? `简介 ${desc.length} 字符` : '无简介'}`);
+  return desc;
 }
 
 // ==================== 专辑详情 ====================
@@ -1718,7 +1784,8 @@ export async function pluginArtistSearch(
     const doSearch = inst.instance.search;
 
     const artistLabel = `[${source.name}] artistSearch w="${keyword}" p=${page}`;
-    // Baka 插件可能未声明 artist 但实际支持；MF 的 QQ 插件偶发返回空或把歌曲当 artist 返回
+    // 同一 artistSearch 路径可间歇性成功（风控/节流），因此多尝试几次成功路径本身，
+    // 而不是退化到"从音乐搜索结果拼歌手"（后者拿不到完整 artist 元数据，多为假数据）。
     let result: any;
     try {
       result = await retryOnEmpty(
@@ -1732,77 +1799,42 @@ export async function pluginArtistSearch(
             (it: any) => !it?.name && !it?.title && !it?.artist && !it?.singername && !it?.singer,
           );
         },
+        // 参考落雪(lx) 的增量退避：800/1600/2400/...ms，累积约 12s 才放弃，加载转圈持续更久
+        (i) => 800 * i,
+        6,
       );
     } catch (e: any) {
-      catalogLog(`${artistLabel} 异常：${e?.message || e}`);
-      result = {};
+      catalogLog(`${artistLabel} 多次尝试后仍为空/异常，放弃本次 artist 结果: ${e?.message || e}`);
+      return [];
     }
     const list = extractResultList(result ?? {});
-    if (list.length > 0) {
-      const valid = list
-        .map((item: any) => {
-          resetMediaItem(item, source.name);
-          const id = item.id || item.artistId || item.singerId || item.sid || '';
-          const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
-          if (!name) return null;
-          const avatarUrl = extractArtistAvatarUrl(item);
-          return {
-            id,
-            name,
-            avatarUrl,
-            description: item.description || item.desc || '',
-            songCount: item.songCount || item.musicCount || undefined,
-            albumCount: item.albumCount || undefined,
-            platform: item.platform || source.name,
-            platformId: id,
-            pluginId: source.id,
-            rawData: item,
-          } as PluginArtistResult;
-        })
-        .filter(Boolean) as PluginArtistResult[];
-      if (valid.length > 0) return valid;
-      catalogLog(`${artistLabel} 提取出 ${list.length} 条但无有效 artist 字段`);
-    }
-
-    // 回退：artist 搜索返回空，从音乐搜索结果中提取去重艺术家
-    if (page === 1) {
-      catalogLog(`${artistLabel} 回退：从音乐搜索结果提取艺术家`);
-      const songResults = await pluginSearch(source, keyword, 1, 30);
-      if (songResults.length === 0) { catalogLog(`${artistLabel} 音乐搜索也为空`); return []; }
-
-      const artistMap = new Map<string, PluginArtistResult>();
-      for (const song of songResults) {
-        const artistName = song.artist || '';
-        if (!artistName) continue;
-        const key = artistName.toLowerCase();
-        if (artistMap.has(key)) continue;
-        const rd = song.rawData || {};
-        // 从歌曲原数据里提取歌手头像，常见于 wy 的 art 数组、QQ 的 singer 等
-        const avatarUrl =
-          extractArtistAvatarUrl(rd)
-          || extractArtistAvatarUrl(rd.singer)
-          || extractArtistAvatarUrl(rd.artist)
-          || (Array.isArray(rd.artists)
-            ? extractArtistAvatarUrl(rd.artists.find((a: any) => a?.name === artistName) || rd.artists[0])
-            : '')
-          || (Array.isArray(rd.ar)
-            ? extractArtistAvatarUrl(rd.ar.find((a: any) => a?.name === artistName) || rd.ar[0])
-            : '');
-        artistMap.set(key, {
-          id: String(rd?.singerId || rd?.artistId || artistName),
-          name: artistName,
+    if (list.length === 0) return [];
+    const valid = list
+      .map((item: any) => {
+        resetMediaItem(item, source.name);
+        const id = item.id || item.artistId || item.singerId || item.sid || '';
+        const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
+        if (!name) return null;
+        const avatarUrl = extractArtistAvatarUrl(item);
+        return {
+          id,
+          name,
           avatarUrl,
-          description: '',
-          platform: song.platform || source.name,
-          platformId: String(rd?.singerId || rd?.artistId || artistName),
+          description: extractArtistDescription(item),
+          songCount: item.songCount || item.musicCount || undefined,
+          albumCount: item.albumCount || undefined,
+          platform: item.platform || source.name,
+          platformId: id,
           pluginId: source.id,
-          rawData: { name: artistName, artist: artistName, avatar: avatarUrl || undefined },
-        });
-      }
-      return Array.from(artistMap.values());
+          rawData: item,
+        } as PluginArtistResult;
+      })
+      .filter(Boolean) as PluginArtistResult[];
+    if (valid.length === 0) {
+      catalogLog(`${artistLabel} 提取出 ${list.length} 条但无有效 artist 字段`);
+      return [];
     }
-
-    return [];
+    return valid;
   } catch (e: any) {
     log(`[pluginArtistSearch] ${source.name} 失败: ${e?.message || e}`);
     return [];

@@ -2,14 +2,15 @@
 import { Check, ChevronDown, CircleAlert, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
+import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
-import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import { computed, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { playbackApi } from '../../services/tauri/playbackApi';
-import type { AudioOutputStatus, AudioDevice } from '../../services/tauri/contracts';
+import type { AudioOutputStatus, AudioDevice, AudioDeviceFormats } from '../../services/tauri/contracts';
+import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { playerStorage, playerStorageKeys } from '../../services/storage/playerStorage';
 import {
   buildAudioOutputDeviceOptions,
@@ -25,6 +26,7 @@ import {
 
 const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
+const soundEffectStore = useSoundEffectStore();
 const { showToast } = useToast();
 const { isEnglish } = useI18n();
 
@@ -185,10 +187,14 @@ const applyAudioOutputStatus = (status: AudioOutputStatus) => {
   // 后端在 WASAPI 独占设备断开/失败时会把 requested_output_mode 强制切回 shared。
   // 前端必须同步设置 store，否则开关仍显示“独占模式已开启”，下一首也会继续请求独占模式。
   if (settings.value.audio.outputMode !== status.requested_output_mode) {
+    // 独占被强制切回 shared 时，依赖独占的 DSD 直通与 Bit-perfect 一并关闭
+    const isShared = status.requested_output_mode === 'shared';
     patchSettings({
       audio: {
         ...settings.value.audio,
         outputMode: status.requested_output_mode,
+        dsdNativePassthrough: isShared ? false : settings.value.audio.dsdNativePassthrough,
+        outputBitPerfect: isShared ? false : settings.value.audio.outputBitPerfect,
       },
     });
   }
@@ -230,14 +236,129 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
 };
 
 const toggleWasapiExclusive = async () => {
-  const outputMode = isWasapiExclusiveEnabled.value ? 'shared' : 'wasapiExclusive';
-  settings.value.audio.outputMode = outputMode;
+  const next = isWasapiExclusiveEnabled.value ? 'shared' : 'wasapiExclusive';
+  const isNowShared = next === 'shared';
+  settings.value.audio.outputMode = next;
+  // 关闭独占模式时，自动关闭依赖独占的 DSD 直通与 Bit-perfect
+  if (isNowShared) {
+    if (isDsdNativePassthroughEnabled.value) {
+      settings.value.audio.dsdNativePassthrough = false;
+    }
+    if (isBitPerfectEnabled.value) {
+      settings.value.audio.outputBitPerfect = false;
+    }
+  }
   try {
-    await playbackApi.setAudioOutputMode(outputMode);
+    await playbackApi.setAudioOutputMode(next);
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
     showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error');
+  }
+};
+
+// --- Bit-perfect 输出 ---
+const isBitPerfectEnabled = computed(() => settings.value.audio.outputBitPerfect === true);
+
+// --- DSD 原生直通 ---
+const isDsdNativePassthroughEnabled = computed(
+  () => settings.value.audio.dsdNativePassthrough === true,
+);
+const dsdNativePassthroughTip = isEnglish.value
+  ? 'When enabled, DSF (DSD) files are streamed via DoP 1.0 (1-bit DSD packed into 24-bit PCM frames) directly to a DSD-DAC. Only works with .dsf files + WASAPI exclusive mode (DSD64→353kHz / DSD128→705kHz). Opening this switch automatically enables WASAPI exclusive mode. Falls back to PCM if the device does not support DoP rates.'
+  : '开启后，播放 DSF (DSD) 文件时以 DoP 1.0 协议将 1-bit DSD 原生码流封装进 24-bit PCM，直接交给支持 DoP 的 DSD-DAC 逐位解码输出。仅对 .dsf 文件 + WASAPI 独占模式生效（DSD64→353kHz / DSD128→705kHz），开启时会自动切到 WASAPI 独占模式。当前设备不支持 DoP 采样率时仍会自动回退到 PCM。';
+
+const toggleDsdNativePassthrough = async () => {
+  const next = !isDsdNativePassthroughEnabled.value;
+  if (next) {
+    // 先确保 WASAPI 独占已开启并等待切换完成，再应用 DSD 直通，避免独占未就绪导致无声/卡死
+    const exclusiveOk = await ensureWasapiExclusive();
+    if (!exclusiveOk) {
+      showToast(
+        isEnglish.value
+          ? 'Could not enable WASAPI exclusive mode; DSD passthrough stays off'
+          : '无法开启 WASAPI 独占模式，原生 DSD 直通未启用',
+        'error',
+      );
+      return;
+    }
+    settings.value.audio.dsdNativePassthrough = true;
+    showToast(
+      isEnglish.value
+        ? 'DSD passthrough enabled: audio output switched to WASAPI exclusive mode'
+        : '已开启原生 DSD 直通：音频输出已切换为 WASAPI 独占模式',
+      'info',
+    );
+  } else {
+    settings.value.audio.dsdNativePassthrough = false;
+  }
+};
+const audioDeviceFormats = ref<AudioDeviceFormats[]>([]);
+const bitPerfectTip = isEnglish.value
+  ? 'Forces WASAPI exclusive output: samples are output at the source sample rate (no resampling); lossless FLAC/WAV/AIFF are output as native integer depth, others as Float32. Enabling this switch automatically turns off all sound effects (including EQ); your volume is left untouched. Only works when the source sample rate is natively supported by the device; otherwise the exclusive request fails and falls back automatically.'
+  : '强制使用 WASAPI 独占输出：解码样本按源采样率(不重采样)直接输出；对 FLAC/WAV/AIFF 无损会按源原生位深以整数直出，其余按 Float32。开启时会自动关闭所有音效（含均衡器），不修改你的音量。仅当源采样率被设备原生支持时才可实现；设备不支持该采样率时独占会请求失败并自动回退。';
+
+const summaryDeviceFormats = computed(() => {
+  const id = selectedOutputDeviceId.value || audioOutputStatus.value?.selected_device_id || '';
+  const entry = audioDeviceFormats.value.find(d => d.id === id)
+    || audioDeviceFormats.value.find(d => d.name === audioOutputStatus.value?.active_device_name)
+    || audioDeviceFormats.value[0];
+  if (!entry) return null;
+  const rates = new Set<number>();
+  entry.formats.forEach(f => {
+    rates.add(f.min_sample_rate);
+    rates.add(f.max_sample_rate);
+  });
+  const formats = new Set(entry.formats.map(f => f.sample_format));
+  return {
+    name: entry.name,
+    rates: [...rates].sort((a, b) => a - b),
+    formats: [...formats].sort(),
+  };
+});
+
+const loadAudioDeviceFormats = async () => {
+  audioDeviceFormats.value = await playbackApi.getAudioDeviceFormats().catch(() => []);
+};
+
+/** 确保 WASAPI 独占已开启：未开启则先切换并等待完成，返回当前是否处于独占模式 */
+const ensureWasapiExclusive = async (): Promise<boolean> => {
+  if (isWasapiExclusiveEnabled.value) return true;
+  try {
+    await playbackApi.setAudioOutputMode('wasapiExclusive');
+    applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
+    return isWasapiExclusiveEnabled.value;
+  } catch (error) {
+    console.error('Failed to force exclusive mode:', error);
+    return false;
+  }
+};
+
+const toggleBitPerfect = async () => {
+  const next = !isBitPerfectEnabled.value;
+  if (next) {
+    // 先确保 WASAPI 独占已开启并等待切换完成，再应用 bit-perfect，避免独占未就绪导致无声/卡死
+    const exclusiveOk = await ensureWasapiExclusive();
+    if (!exclusiveOk) {
+      showToast(
+        isEnglish.value
+          ? 'Could not enable WASAPI exclusive mode; Bit-perfect stays off'
+          : '无法开启 WASAPI 独占模式，Bit-perfect 未启用',
+        'error',
+      );
+      return;
+    }
+    settings.value.audio.outputBitPerfect = true;
+    // 逐位直出要求 DSP 全旁通：自动关闭所有音效（含均衡器），不修改用户音量
+    soundEffectStore.bypassAll = true;
+    showToast(
+      isEnglish.value
+        ? 'Bit-perfect output enabled: all sound effects turned off'
+        : '已开启 Bit-perfect 输出：已自动关闭所有音效',
+      'info',
+    );
+  } else {
+    settings.value.audio.outputBitPerfect = false;
   }
 };
 
@@ -253,6 +374,7 @@ onMounted(async () => {
   await loadAudioOutputDevices().catch(error => {
     console.warn('Failed to load audio output devices:', error);
   });
+  await loadAudioDeviceFormats();
   unlistenAudioOutput = await listen<AudioOutputStatus>('audio-output-device-changed', event => {
     applyAudioOutputStatus(event.payload);
   });
@@ -673,6 +795,62 @@ onScopeDispose(() => {
             <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
               <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
             </button>
+          </div>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">原生 DSD 直通</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <SettingHint :text="dsdNativePassthroughTip" />
+            <button
+              type="button"
+              role="switch"
+              aria-label="原生 DSD 直通"
+              :aria-checked="isDsdNativePassthroughEnabled"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleDsdNativePassthrough"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">Bit-perfect 输出</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <SettingHint :text="bitPerfectTip" />
+            <button
+              type="button"
+              role="switch"
+              aria-label="Bit-perfect 输出"
+              :aria-checked="isBitPerfectEnabled"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleBitPerfect"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
+        <div v-if="isBitPerfectEnabled || summaryDeviceFormats" class="px-5 pb-4">
+          <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
+            <p class="mb-1 text-gray-700 dark:text-gray-200">
+              设备原生能力（
+              {{ summaryDeviceFormats?.name || '当前设备' }}
+              ）：
+            </p>
+            <p>
+              采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
+            </p>
+            <p>
+              样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
+            </p>
+            <p class="mt-1">
+              仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
+            </p>
           </div>
         </div>
         <div>
