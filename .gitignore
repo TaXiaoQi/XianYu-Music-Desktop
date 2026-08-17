@@ -97,3 +97,5 @@ AGENTS.md
 /verify_wy_eapi_cbc.ps1
 /verify_wy_krc.ps1
 /verify_wy_legacy.ps1
+/tsconfig.node.tsbuildinfo
+/tsconfig.tsbuildinfo
