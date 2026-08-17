@@ -51,8 +51,6 @@ let wheelHandler: ((event: WheelEvent) => void) | null = null;
 let frameId = 0;
 let recoveryFrameId = 0;
 let seekBurstFrameId = 0;
-let lastDiagTime = -1;
-
 function stopAnimationLoop() {
   if (frameId !== 0) {
     cancelAnimationFrame(frameId);
@@ -356,16 +354,6 @@ watch(() => props.layoutVersion, () => {
 watch(() => props.lyricLines, (value) => {
   if (!player) return;
 
-  // [诊断] 打印最终喂给 AMLL 的行结构与每个词的时间戳，确认逐字时间是否完整
-  console.info('[AmlDiag] setLyricLines', value.length, '行, 前3行:',
-    value.slice(0, 3).map((l) => ({
-      start: l.startTime, end: l.endTime,
-      words: l.words?.length,
-      firstWord: l.words?.[0] ? [l.words[0].startTime, l.words[0].endTime] : null,
-      lastWord: l.words?.[l.words.length - 1] ? [l.words[l.words.length - 1].startTime, l.words[l.words.length - 1].endTime] : null,
-    })),
-  );
-
   player.setLyricLines(value, Math.trunc(props.currentTime));
   // [修复] setLyricLines 内部会强制 setCurrentTime(0, force=true)，把热行重置回首行。
   // 若当前播放进度恰好未变化，currentTime watcher 不会再次触发，导致歌词永远停在首行。
@@ -382,46 +370,6 @@ watch(() => props.lyricLines, (value) => {
 watch(() => props.currentTime, (value) => {
   if (!player || props.disabled) return;
   player.setCurrentTime(Math.trunc(value));
-
-  // [诊断] 节流打印播放器内部热行状态，确认 currentTime 推进时热行是否跟随
-  if (value - lastDiagTime >= 1000) {
-    lastDiagTime = value;
-    const p = player as unknown as {
-      currentTime: number; scrollToIndex: number; isNonDynamic: boolean;
-      hotLines: Set<number>; bufferedLines: Set<number>;
-      currentLyricLineObjects: Array<{
-        getLine: () => { startTime: number; endTime: number };
-        lineTransforms?: { posY: { getCurrentPosition: () => number }; scale: { getCurrentPosition: () => number } };
-        getElement?: () => HTMLElement;
-      }>;
-      processedLines: Array<{ startTime: number; endTime: number; words: unknown[] }>;
-    };
-    const active = [...p.hotLines].map((i) => {
-      const l = p.processedLines[i];
-      return l ? `#${i}[${l.startTime},${l.endTime}]` : `#${i}[?]`;
-    });
-    // [诊断] 采样当前热行的逐字高亮状态：词数、已高亮数、首词元素时间
-    const hotIdx = [...p.hotLines][0];
-    let wordDiag = '(无热行)';
-    if (hotIdx !== undefined && p.currentLyricLineObjects[hotIdx]) {
-      const lineObj = p.currentLyricLineObjects[hotIdx];
-      const el = typeof lineObj.getElement === 'function' ? lineObj.getElement.call(lineObj) : null;
-      const wordSpans = el ? Array.from(el.querySelectorAll<HTMLElement>('[class*="emphasize"]')) : [];
-      const allWords = el ? Array.from(el.querySelectorAll('span')).filter((s) => s.childNodes.length === 1) : [];
-      const hl = wordSpans.length;
-      wordDiag = `#${hotIdx} 词DOM:${allWords.length} 高亮:${hl}`;
-      const highlightColor = el ? getComputedStyle(el).color : '';
-      // 采样第1、2个词的时间轴，判断是否有偏移
-      const wordTimes = (el?.querySelectorAll<HTMLElement>('span') == null)
-        ? []
-        : Array.from(el.querySelectorAll<HTMLElement>('span'))
-            .map((s) => ({ cls: s.className, child: s.childNodes.length }))
-            .slice(0, 3);
-      console.info(`[AmlDiag] t=${p.currentTime}ms hot=${active.join(',')} 当前行色=${highlightColor} ${wordDiag}`, wordTimes);
-    } else {
-      console.info(`[AmlDiag] t=${p.currentTime}ms hot=${active.join(',') || '(空)'} ${wordDiag}, scrollTo=${p.scrollToIndex}`);
-    }
-  }
 });
 
 

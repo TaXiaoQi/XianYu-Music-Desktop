@@ -439,7 +439,6 @@ export async function resolveOnlineQualityUrl(
     const pathInfo = parseLxPath(path || '');
     const cachedInfo = pathInfo ? resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid) : null;
     if (cachedInfo) {
-      console.info('[Audio] LX 插件解析全部失败，尝试 Rust 兜底直链');
       const rustResult = await resolveLxUrlViaRust(cachedInfo, candidates);
       if (rustResult?.url) {
         return {
@@ -573,10 +572,6 @@ export async function probeDownloadableQualities(
   }
 
   const available = ALL_QUALITY_KEYS.filter(k => Boolean(resolvedUrls[k]));
-  console.info(
-    `[Probe] 声明 ${targets.length} 档，实测可用 ${available.length} 档:`,
-    available.join(', ') || '（无）',
-  );
 
   return { available, resolvedUrls };
 }
@@ -947,7 +942,6 @@ export async function downloadSong(
               options.onProgress?.(100);
               filePath = destPath;
               hitQuality = q;
-              console.info(`[Download] 命中播放缓存，直接复制：${q}`);
               break;
             } catch (e: any) {
               console.warn(`[Download] 复制缓存失败，回退到正常下载:`, e?.message || e);
@@ -1008,7 +1002,6 @@ export async function downloadSong(
     if (pathInfo) {
       const cachedInfo = resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid);
       if (cachedInfo) {
-        console.info('[Download] 插件解析全部失败，尝试 Rust 兜底');
         const rustResult = await resolveLxUrlViaRust(cachedInfo, lxCtx.candidates);
         if (rustResult) {
           const q = rustResult.quality;
@@ -1016,7 +1009,6 @@ export async function downloadSong(
           try {
             filePath = await downloadFromUrl(rustResult.url, destPath, options.onProgress);
             hitQuality = q;
-            console.info(`[Download] Rust 兜底成功：${q}`);
           } catch (e: any) {
             const msg = typeof e === 'string' ? e : (e?.message || String(e));
             errors.push(`Rust 兜底(${q}): 下载失败 ${msg}`);

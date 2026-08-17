@@ -7,13 +7,6 @@ export const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const MAX_LOG_ENTRIES = 100;
 const MAX_ERROR_LOG_ENTRIES = 10;
 
-const LEVEL_RANK: Record<LogLevel, number> = {
-  debug: 0,
-  info: 1,
-  warn: 2,
-  error: 3,
-};
-
 export interface ApplicationLogEntry {
   id: string;
   timestamp: number;
@@ -40,50 +33,10 @@ const defaultConfig: LogSettings = {
 };
 
 let activeConfig: LogSettings = { ...defaultConfig };
-let installed = false;
-let sequence = 0;
-let pendingEntries: ApplicationLogEntry[] = [];
-let isLogFlushScheduled = false;
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
-// setTimeout 将 flush 推到宏任务，打破 queueMicrotask 导致的渲染→日志→flush→重渲染微任务级循环。
-// 200ms 同时充当节流：无论 console 调用多频繁，每秒最多 5 次响应式更新。
-// 模板已改为不直接依赖 entries（使用本地 ref + 防抖 watcher），因此 flush 时机
-// 不会干扰 transition 状态机。
-const FLUSH_DELAY = 200;
-const PERSIST_DELAY = 2000;
 
 const isLogLevel = (value: unknown): value is LogLevel => (
   typeof value === 'string' && LOG_LEVELS.includes(value as LogLevel)
 );
-
-const sanitizeText = (value: string) => value
-  .replace(/(authorization\s*[:=]\s*)([^\s,;]+)/gi, '$1[REDACTED]')
-  .replace(/(bearer\s+)[a-z0-9._~+/-]+=*/gi, '$1[REDACTED]')
-  .replace(/((?:password|token|secret|cookie)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
-
-const serializeLogValue = (value: unknown): string => {
-  if (typeof value === 'string') return sanitizeText(value);
-  if (value instanceof Error) return sanitizeText(value.stack || `${value.name}: ${value.message}`);
-  if (typeof value === 'undefined') return 'undefined';
-  if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
-
-  const seen = new WeakSet<object>();
-  try {
-    const serialized = JSON.stringify(value, (key, nestedValue: unknown) => {
-      if (/(password|token|secret|authorization|cookie|credential)/i.test(key)) {
-        return '[REDACTED]';
-      }
-      if (nestedValue && typeof nestedValue === 'object') {
-        if (seen.has(nestedValue as object)) return '[Circular]';
-        seen.add(nestedValue as object);
-      }
-      return nestedValue;
-    });
-    return sanitizeText(serialized ?? String(value));
-  } catch {
-    return sanitizeText(String(value));
-  }
-};
 
 const normalizeStoredEntry = (value: unknown): ApplicationLogEntry | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -149,101 +102,9 @@ const persistEntries = () => {
   }
 };
 
-const schedulePersist = () => {
-  if (typeof localStorage === 'undefined') return;
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    persistEntries();
-  }, PERSIST_DELAY);
-};
-
-const resolveCategory = (args: unknown[]) => {
-  const first = args[0];
-  if (typeof first === 'string') {
-    const taggedCategory = first.match(/^\[([^\]]{1,48})]/)?.[1]?.trim();
-    if (taggedCategory) return taggedCategory;
-  }
-  if (first instanceof Error && first.name) return first.name;
-  return 'application';
-};
-
-const flushPendingEntries = () => {
-  isLogFlushScheduled = false;
-  if (pendingEntries.length === 0) return;
-
-  const entriesToAppend = pendingEntries;
-  pendingEntries = [];
-  const now = Date.now();
-  logEntries.value = filterLogEntriesForRetention(
-    [...logEntries.value, ...entriesToAppend],
-    activeConfig.retentionDays,
-    now,
-  );
-  // 防抖写入 localStorage，避免每次 flush 都执行 JSON.stringify 大量日志
-  schedulePersist();
-};
-
-const recordLog = (level: LogLevel, scope: string, args: unknown[]) => {
-  if (LEVEL_RANK[level] < LEVEL_RANK[activeConfig.minimumLevel]) return;
-
-  const now = Date.now();
-  pendingEntries.push({
-    id: `${now}-${sequence++}`,
-    timestamp: now,
-    level,
-    category: resolveCategory(args),
-    scope,
-    message: args.map(serializeLogValue).join(' '),
-  });
-
-  // console may be called while Vue is rendering components that depend on
-  // logEntries. Using queueMicrotask would mutate the reactive source within
-  // the same microtask batch as Vue's re-render, creating a tight loop:
-  //   render → console.log → recordLog → microtask flush → logEntries mutated
-  //   → Vue schedules re-render → console.log → ... (never yields to paint)
-  //
-  // setTimeout pushes the flush to a macrotask, letting the browser paint
-  // between cycles. The 300ms delay also acts as a throttle: at most ~3
-  // reactive updates per second regardless of how many console calls fire.
-  if (!isLogFlushScheduled) {
-    isLogFlushScheduled = true;
-    setTimeout(flushPendingEntries, FLUSH_DELAY);
-  }
-};
-
-export function installApplicationLogger(scope = 'main') {
-  if (installed || typeof console === 'undefined') return;
-  installed = true;
-
-  const original = {
-    debug: console.debug.bind(console),
-    info: console.info.bind(console),
-    log: console.log.bind(console),
-    warn: console.warn.bind(console),
-    error: console.error.bind(console),
-  };
-
-  console.debug = (...args: unknown[]) => {
-    original.debug(...args);
-    recordLog('debug', scope, args);
-  };
-  console.info = (...args: unknown[]) => {
-    original.info(...args);
-    recordLog('info', scope, args);
-  };
-  console.log = (...args: unknown[]) => {
-    original.log(...args);
-    recordLog('info', scope, args);
-  };
-  console.warn = (...args: unknown[]) => {
-    original.warn(...args);
-    recordLog('warn', scope, args);
-  };
-  console.error = (...args: unknown[]) => {
-    original.error(...args);
-    recordLog('error', scope, args);
-  };
+export function installApplicationLogger(_scope = 'main') {
+  // 已移除对 console.* 的劫持/过滤/截断，恢复浏览器控制台原生完整输出。
+  // 保留空函数签名以兼容 main.ts 调用点。
 }
 
 export function configureApplicationLogger(config: LogSettings) {
@@ -257,7 +118,6 @@ export function configureApplicationLogger(config: LogSettings) {
 }
 
 export function clearApplicationLogs() {
-  pendingEntries = [];
   logEntries.value = [];
   persistEntries();
 }

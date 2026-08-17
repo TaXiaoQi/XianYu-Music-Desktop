@@ -64,7 +64,7 @@ import { pluginHttpRequest } from './tauri/pluginApi';
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
-  try { _logCallback?.(msg); } catch { /* ignore */ }
+  try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
 
 const firstStringField = (source: any, keys: string[]): string => {

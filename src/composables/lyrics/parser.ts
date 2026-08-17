@@ -186,23 +186,14 @@ export function parseEnhancedLrcLine(line: string): AmlLyricLine | null {
 
 export function parseEnhancedLrc(source: string): AmlLyricLine[] {
   const lines: AmlLyricLine[] = [];
-  let dropped = 0;
-  const droppedSamples: string[] = [];
 
   for (const rawLine of source.split('\n')) {
     if (!isEnhancedLrcLine(rawLine)) continue;
 
     const parsedLine = parseEnhancedLrcLine(rawLine);
     if (parsedLine) lines.push(parsedLine);
-    else {
-      dropped++;
-      if (droppedSamples.length < 3) droppedSamples.push(rawLine.slice(0, 160));
-    }
   }
 
-  if (dropped > 0) {
-    console.info(`[Lyrics] parseEnhancedLrc 丢弃 ${dropped} 行: 样本=${droppedSamples.join(' || ')}`);
-  }
   return lines;
 }
 
