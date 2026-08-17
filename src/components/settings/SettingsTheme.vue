@@ -1,13 +1,58 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
+
+const { isEnglish } = useI18n();
 
 const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
 const SettingsTopBarLayout = defineAsyncComponent(() => import('./SettingsTopBarLayout.vue'));
 
-const TEXT = {
+const TEXT = computed(() => isEnglish.value ? {
+  paletteTitle: 'Color Scheme',
+  darkScheme: 'Dark',
+  lightScheme: 'Light',
+  systemScheme: 'Use System Setting',
+  customEmoji: '🎨',
+  customTitle: 'Custom Skin',
+  customHint: 'Use an image, overlay, and foreground styles',
+  customShort: 'Custom',
+  accentTitle: 'Accent Color',
+  accentHint: 'Used for buttons, selections, and interface accents',
+  accentCustom: 'Custom Color',
+  accentHex: 'HEX Value',
+  accentReset: 'Reset to Default',
+  playerDetailCoverTitle: 'Lyrics Page Cover',
+  playerDetailCoverHint: 'Choose what to show whenever the Now Playing page opens',
+  playerDetailCoverLabel: 'When opening the Now Playing page',
+  playerDetailCoverShow: 'Always Show Cover',
+  playerDetailCoverHide: 'Always Hide Cover',
+  playerDetailCoverRemember: 'Remember Last Choice',
+  dynamicTitle: 'Dynamic Background',
+  dynamicHint: 'Changes with the album cover',
+  dynamicOff: 'Off',
+  dynamicFlow: 'Flowing Light',
+  dynamicBlur: 'Static Blur',
+  dynamicDisabledHint: 'Dynamic backgrounds are disabled while a custom skin or window material is active.',
+  windowMaterialTitle: 'Window Material',
+  windowMaterialBlur: 'Acrylic Blur',
+  windowMaterialUnsupportedHint: 'Supported on Windows 10 and 11 only.',
+  windowMaterialTransparencyHint: 'Enable transparency effects in Windows settings first.',
+  windowMaterialConflictHint: 'Available after turning off the dynamic background or custom skin.',
+  windowMaterialWin11Only: 'Windows 11 only',
+  keepWindowMaterialOnBlur: 'Keep Material When Unfocused',
+  keepWindowMaterialOnBlurHint: 'Keep the current material effect when the window loses focus whenever possible.',
+  trayMenuTitle: 'Tray Menu',
+  customTrayMenu: 'Use Custom Tray Menu',
+  customTrayMenuHint: 'Use the tray menu drawn by XY-Music. Turn this off to use the native system menu.',
+  customTrayMenuOn: 'Custom',
+  customTrayMenuOff: 'System',
+  leaderboardTitle: 'Home Leaderboard',
+  leaderboardEnable: 'Show the listening leaderboard on Home',
+  leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
+} : {
   paletteTitle: '\u914d\u8272\u65b9\u6848',
   darkScheme: '\u6df1\u8272',
   lightScheme: '\u6d45\u8272',
@@ -49,9 +94,24 @@ const TEXT = {
   leaderboardTitle: '\u9996\u9875\u6392\u884c\u699c',
   leaderboardEnable: '\u662f\u5426\u5728\u9996\u9875\u5c55\u793a\u542c\u6b4c\u6392\u884c\u699c',
   leaderboardHint: '\u5173\u95ed\u540e\u9996\u9875\u5c06\u4e0d\u518d\u663e\u793a\u542c\u6b4c\u6392\u884c\u699c\u3002',
-};
+});
 
-const FLOW_TEXT = {
+const FLOW_TEXT = computed(() => isEnglish.value ? {
+  panelTitle: 'Flowing Light Tuning',
+  colorBoost: 'Color Intensity',
+  depth: 'Light and Dark Depth',
+  speed: 'Flow Speed',
+  texture: 'Texture Intensity',
+  subtle: 'Subtle',
+  vivid: 'Vivid',
+  airy: 'Airy',
+  deep: 'Deep',
+  calm: 'Calm',
+  brisk: 'Lively',
+  clean: 'Clean',
+  textured: 'Textured',
+  toggleLabel: 'Expand or collapse Flowing Light tuning',
+} : {
   panelTitle: '\u6d41\u5149\u5fae\u8c03',
   colorBoost: '\u8272\u5f69\u5f3a\u5ea6',
   depth: '\u660e\u6697\u6df1\u5ea6',
@@ -66,17 +126,32 @@ const FLOW_TEXT = {
   clean: '\u5e72\u51c0',
   textured: '\u7ec6\u817b',
   toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6d41\u5149\u5fae\u8c03',
-};
+});
 
-const BLUR_TEXT = {
+const BLUR_TEXT = computed(() => isEnglish.value ? {
+  panelTitle: 'Overlay Intensity',
+  tint: 'Overlay Opacity',
+  clear: 'Clear',
+  solid: 'Solid',
+  toggleLabel: 'Expand or collapse Static Blur tuning',
+} : {
   panelTitle: '\u906e\u7f69\u6d53\u5ea6',
   tint: '\u906e\u7f69\u6d53\u6de1',
   clear: '\u901a\u900f',
   solid: '\u5b9e\u8272',
   toggleLabel: '\u5c55\u5f00\u6216\u6536\u8d77\u6bdb\u73bb\u7483\u5fae\u8c03',
-};
+});
 
-const ACCENT_COLOR_PRESETS = [
+const ACCENT_COLOR_PRESETS = computed(() => isEnglish.value ? [
+  { label: 'Classic Red', value: '#EC4141' },
+  { label: 'Coral', value: '#F9735B' },
+  { label: 'Amber', value: '#F59E0B' },
+  { label: 'Emerald', value: '#22C55E' },
+  { label: 'Cyan', value: '#06B6D4' },
+  { label: 'Lake Blue', value: '#3B82F6' },
+  { label: 'Iris', value: '#8B5CF6' },
+  { label: 'Rose', value: '#EC4899' },
+] : [
   { label: '\u7ecf\u5178\u7ea2', value: '#EC4141' },
   { label: '\u73ca\u745a', value: '#F9735B' },
   { label: '\u7425\u73c0', value: '#F59E0B' },
@@ -85,7 +160,7 @@ const ACCENT_COLOR_PRESETS = [
   { label: '\u6e56\u84dd', value: '#3B82F6' },
   { label: '\u9e22\u5c3e\u7d2b', value: '#8B5CF6' },
   { label: '\u8537\u8587', value: '#EC4899' },
-];
+]);
 
 const {
   theme,

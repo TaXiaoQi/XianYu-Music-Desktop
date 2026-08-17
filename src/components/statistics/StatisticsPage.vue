@@ -6,19 +6,47 @@ import { useStatisticsStore } from '../../features/statistics/store';
 import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
+import { useI18n } from '../../features/i18n';
 import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
-import { formatFileSize, formatListenDuration } from '../../utils/format';
+import { formatFileSize } from '../../utils/format';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const { theme } = useSettings();
+const { isEnglish } = useI18n();
 
 const hasCustomBackground = computed(() => (
   theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
 ));
 
-const TEXT = {
+const TEXT = computed(() => isEnglish.value ? {
+  totalListenDuration: 'Total Listening Time',
+  songTotalDuration: 'Library Duration',
+  librarySize: 'Library Size',
+  losslessRatio: 'Lossless Ratio',
+  totalSongs: 'Total Songs',
+  playCount: 'Plays',
+  longestPlayed: 'Most Played',
+  hourlyDistribution: 'Listening by Hour',
+  leaderboard: 'Listening Leaderboard',
+  loadFailed: 'Failed to load: ',
+  retry: 'Retry',
+  refresh: 'Refresh',
+  noLeaderboard: 'No leaderboard data yet',
+  leaderboardFailed: 'Failed to load leaderboard',
+  clickToRetry: 'Click to retry',
+  unknownSong: 'Unknown Song',
+  unknownArtist: 'Unknown Artist',
+  deletedSong: 'Deleted Song',
+  you: 'You',
+  loginAria: 'Go to sign in and view your ranking',
+  loginTitle: 'Sign in to view your ranking',
+  loginInitial: '?',
+  notLoggedIn: 'Not signed in',
+  viewAfterLogin: 'Sign in to view your ranking',
+  goToLogin: 'Sign In',
+} : {
   totalListenDuration: '总听歌时长',
   songTotalDuration: '歌曲总时长',
   librarySize: '库大小',
@@ -28,14 +56,23 @@ const TEXT = {
   longestPlayed: '常听歌曲',
   hourlyDistribution: '24小时播放分布',
   leaderboard: '听歌排行榜',
-  leaderboardSubtitle: '单日听歌时长排行',
   loadFailed: '加载失败：',
   retry: '重试',
+  refresh: '刷新',
+  noLeaderboard: '暂无排行榜数据',
+  leaderboardFailed: '排行榜加载失败',
+  clickToRetry: '点击重试',
   unknownSong: '未知歌曲',
   unknownArtist: '未知艺术家',
   deletedSong: '已删除歌曲',
   you: '你',
-};
+  loginAria: '前往登录页面查看个人排名',
+  loginTitle: '登录后查看个人排名',
+  loginInitial: '未',
+  notLoggedIn: '未登录',
+  viewAfterLogin: '登录后查看个人排名',
+  goToLogin: '去登录',
+});
 
 const leaderboard = ref<LeaderboardEntry[]>([]);
 const leaderboardLoading = ref(true);
@@ -45,9 +82,9 @@ let leaderboardRequestId = 0;
 
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
-    case 'daily': return '单日听歌时长排行';
-    case 'weekly': return '本周听歌时长排行';
-    default: return '累计听歌时长排行';
+    case 'daily': return isEnglish.value ? 'Daily listening time' : '单日听歌时长排行';
+    case 'weekly': return isEnglish.value ? 'Weekly listening time' : '本周听歌时长排行';
+    default: return isEnglish.value ? 'All-time listening time' : '累计听歌时长排行';
   }
 });
 
@@ -96,11 +133,15 @@ function switchPeriod(period: LeaderboardPeriod) {
   void loadLeaderboard();
 }
 
-const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
+const PERIOD_OPTIONS = computed<{ value: LeaderboardPeriod; label: string }[]>(() => isEnglish.value ? [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'total', label: 'All Time' },
+] : [
   { value: 'daily', label: '日榜' },
   { value: 'weekly', label: '周榜' },
   { value: 'total', label: '总榜' },
-];
+]);
 
 // 前15名 + 始终返回自己的排名（用于底部固定显示）
 const leaderboardDisplay = computed(() => {
@@ -112,8 +153,20 @@ const leaderboardDisplay = computed(() => {
 function formatLeaderboardDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
+  if (isEnglish.value) {
+    if (h > 0) return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+    return `${m} min`;
+  }
   if (h > 0) return `${h}小时${m > 0 ? `${m}分` : ''}`;
   return `${m}分钟`;
+}
+
+function formatStatisticsDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return isEnglish.value ? '0 min' : '0分钟';
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (isEnglish.value) return hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
+  return hours > 0 ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`;
 }
 
 const statisticsStore = useStatisticsStore();
@@ -205,16 +258,16 @@ const longestPlayed = computed(() => {
 
   if (song) {
     return {
-      title: song.title || song.name || TEXT.unknownSong,
-      artist: song.artist || TEXT.unknownArtist,
+      title: song.title || song.name || TEXT.value.unknownSong,
+      artist: song.artist || TEXT.value.unknownArtist,
       playCount: top.play_count,
     };
   }
 
-  const fileName = top.song_path.split(/[/\\]/).pop() || TEXT.deletedSong;
+  const fileName = top.song_path.split(/[/\\]/).pop() || TEXT.value.deletedSong;
   return {
     title: fileName,
-    artist: TEXT.unknownArtist,
+    artist: TEXT.value.unknownArtist,
     playCount: top.play_count,
   };
 });
@@ -261,7 +314,7 @@ const losslessRatio = computed(() => {
             <div class="flex-1 grid grid-cols-3 gap-[clamp(0.5rem,1.5vw,2rem)] min-w-0">
               <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.songTotalDuration }}</p>
-                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatListenDuration(stats.total_duration) }}</p>
+                <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatStatisticsDuration(stats.total_duration) }}</p>
               </div>
               <div class="flex flex-col justify-end">
                 <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.librarySize }}</p>
@@ -279,7 +332,7 @@ const losslessRatio = computed(() => {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-[clamp(0.5rem,1vw,0.875rem)]">
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 100ms;">
             <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatListenDuration(behaviorStats.total_duration) }}</p>
+            <p class="text-black dark:text-white text-[clamp(1.625rem,3.25vw,2rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatStatisticsDuration(behaviorStats.total_duration) }}</p>
           </section>
 
           <section class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start md:ml-[clamp(3.25rem,5.75vw,5.5rem)]" style="animation-delay: 200ms;">
@@ -290,7 +343,7 @@ const losslessRatio = computed(() => {
           <section v-if="longestPlayed" class="px-[clamp(1rem,2.2vw,2.5rem)] py-[clamp(0.5rem,1vw,0.875rem)] animate-fade-in-up flex flex-col justify-start" style="animation-delay: 300ms;">
             <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.longestPlayed }}</p>
             <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-tight mb-1 truncate">{{ longestPlayed.title }}</p>
-            <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ longestPlayed.playCount }}次</p>
+            <p class="text-black/70 dark:text-white/70 text-[clamp(0.8rem,1.1vw,1rem)] font-medium truncate">{{ longestPlayed.artist }} · {{ longestPlayed.playCount }}{{ isEnglish ? ' plays' : '次' }}</p>
           </section>
         </div>
 
@@ -321,7 +374,7 @@ const losslessRatio = computed(() => {
                 class="text-[clamp(0.7rem,0.9vw,0.8rem)] text-black/60 dark:text-white/60 hover:text-[#EC4141] dark:hover:text-[#EC4141] font-medium transition cursor-pointer"
                 @click="loadLeaderboard()"
               >
-                刷新
+                {{ TEXT.refresh }}
               </button>
             </div>
           </div>
@@ -337,18 +390,18 @@ const losslessRatio = computed(() => {
 
           <!-- 无数据提示 -->
           <div v-else-if="leaderboardDisplay.top.length === 0 && !leaderboardError" class="py-8 text-center">
-            <p class="text-black/50 dark:text-white/50 text-sm">暂无排行榜数据</p>
+            <p class="text-black/50 dark:text-white/50 text-sm">{{ TEXT.noLeaderboard }}</p>
           </div>
 
           <!-- 加载失败提示 -->
           <div v-else-if="leaderboardError && leaderboardDisplay.top.length === 0" class="py-8 text-center">
-            <p class="text-black/50 dark:text-white/50 text-sm">排行榜加载失败</p>
+            <p class="text-black/50 dark:text-white/50 text-sm">{{ TEXT.leaderboardFailed }}</p>
             <button
               type="button"
               class="mt-2 text-[clamp(0.7rem,0.9vw,0.8rem)] text-[#EC4141] font-medium transition cursor-pointer"
               @click="loadLeaderboard()"
             >
-              点击重试
+              {{ TEXT.clickToRetry }}
             </button>
           </div>
 
@@ -424,19 +477,19 @@ const losslessRatio = computed(() => {
               type="button"
               class="leaderboard-row leaderboard-row--login is-me is-sticky w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC4141]/50"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
-              aria-label="前往登录页面查看个人排名"
-              title="登录后查看个人排名"
+              :aria-label="TEXT.loginAria"
+              :title="TEXT.loginTitle"
               @click="openLoginPage"
             >
               <div class="leaderboard-rank rank-normal">—</div>
               <div class="leaderboard-avatar">
-                <span>未</span>
+                <span>{{ TEXT.loginInitial }}</span>
               </div>
               <div class="leaderboard-info">
-                <div class="leaderboard-name text-gray-800 dark:text-white/90">未登录</div>
-                <div class="leaderboard-username text-black/45 dark:text-white/45">登录后查看个人排名</div>
+                <div class="leaderboard-name text-gray-800 dark:text-white/90">{{ TEXT.notLoggedIn }}</div>
+                <div class="leaderboard-username text-black/45 dark:text-white/45">{{ TEXT.viewAfterLogin }}</div>
               </div>
-              <div class="leaderboard-duration text-[#EC4141]">去登录</div>
+              <div class="leaderboard-duration text-[#EC4141]">{{ TEXT.goToLogin }}</div>
             </button>
           </template>
         </section>

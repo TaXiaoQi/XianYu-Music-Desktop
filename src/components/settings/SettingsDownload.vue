@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { open } from '@tauri-apps/plugin-dialog';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
+import { useI18n } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
 import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
+const { isEnglish } = useI18n();
 
 const showDownloadQualityModal = ref(false);
 const showDownloadBehaviorModal = ref(false);
@@ -15,31 +17,56 @@ const showFileNameStyleModal = ref(false);
 const showLyricsFormatModal = ref(false);
 const showLyricsStyleModal = ref(false);
 
-const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
+const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'artist-title', label: 'Artist - Title', description: 'Artist first, followed by the song title' },
+  { value: 'title-artist', label: 'Title - Artist', description: 'Song title first, followed by the artist' },
+  { value: 'title-artist-album', label: 'Title - Artist - Album', description: 'Includes the album name' },
+] : [
   { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前，歌名在后' },
   { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前，艺术家在后' },
   { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑信息' },
-];
+]);
 
-const DOWNLOAD_BEHAVIOR_OPTIONS: { value: DownloadBehavior; label: string; description: string }[] = [
+const DOWNLOAD_BEHAVIOR_OPTIONS = computed<{ value: DownloadBehavior; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'default', label: 'Use Defaults', description: 'Choose only the quality in the bottom bar; use the location and content settings on this page' },
+  { value: 'ask', label: 'Ask Every Time', description: 'Open the detailed dialog for every download so the location and content can be changed' },
+] : [
   { value: 'default', label: '默认安装', description: '底部下载栏只选择音质，下载位置和内容应用本页设置' },
   { value: 'ask', label: '每次询问我', description: '每次下载都打开详细弹窗，可临时自定义位置和下载内容' },
-];
+]);
 
-const QUALITY_FALLBACK_OPTIONS: { value: DownloadQualityFallbackBehavior; label: string; description: string }[] = [
+const QUALITY_FALLBACK_OPTIONS = computed<{ value: DownloadQualityFallbackBehavior; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'lower', label: 'Download Lower Quality', description: 'Automatically use the nearest lower available quality' },
+  { value: 'higher', label: 'Download Higher Quality', description: 'Automatically use the nearest higher available quality' },
+] : [
   { value: 'lower', label: '下载更低音质', description: '自动降级到可用的更低音质' },
   { value: 'higher', label: '下载更高音质', description: '自动升级到可用的更高音质' },
-];
+]);
 
-const LYRICS_FORMAT_OPTIONS = [
+const LYRICS_FORMAT_OPTIONS = computed(() => isEnglish.value ? [
+  { value: 'lrc' as const, label: 'LRC', description: 'Time-synced lyrics with timestamps' },
+  { value: 'txt' as const, label: 'TXT', description: 'Plain-text lyrics without timestamps' },
+] : [
   { value: 'lrc', label: 'LRC', description: '带时间标签的歌词文件，支持同步显示' },
   { value: 'txt', label: 'TXT', description: '纯文本歌词，不带时间标签' },
-] as const;
+] as const);
 
-const LYRICS_STYLE_OPTIONS: { value: DownloadLyricsStyle; label: string; description: string }[] = [
+const LYRICS_STYLE_OPTIONS = computed<{ value: DownloadLyricsStyle; label: string; description: string }[]>(() => isEnglish.value ? [
+  { value: 'word-by-word', label: 'Word by Word', description: 'Prefer word-synced lyrics and fall back to line-synced lyrics' },
+  { value: 'line-by-line', label: 'Line by Line', description: 'Download standard line-synced lyrics only' },
+] : [
   { value: 'word-by-word', label: '内置逐字', description: '优先下载逐字歌词（无逐字时回退到逐行）' },
   { value: 'line-by-line', label: '逐行', description: '仅下载标准逐行歌词' },
-];
+]);
+
+const ENGLISH_QUALITY_LABELS: Partial<Record<DownloadQuality, string>> = {
+  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
+  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos',
+  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master',
+};
+const qualityLabel = (key: DownloadQuality) => (
+  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
+);
 
 const patchDownloadQuality = (value: DownloadQuality) => {
   patchSettings({ download: { ...settings.value.download, quality: value } });
@@ -92,13 +119,13 @@ const handleLyricsStyleSelect = (value: DownloadLyricsStyle) => {
 };
 
 const chooseDir = async () => {
-  const selected = await open({ directory: true, multiple: false, title: '选择下载目录' });
+  const selected = await open({ directory: true, multiple: false, title: isEnglish.value ? 'Choose Download Folder' : '选择下载目录' });
   if (selected && typeof selected === 'string') {
     patchSettings({ download: { ...settings.value.download, downloadPath: selected } });
   }
 };
 
-const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择下载目录';
+const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Choose to select a download folder.' : '未设置，点击右侧按钮选择下载目录');
 </script>
 
 <template>
@@ -224,7 +251,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
             class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
             @click="showDownloadQualityModal = true"
           >
-            <span>{{ QUALITY_META[settings.download.quality].label }}</span>
+            <span>{{ qualityLabel(settings.download.quality) }}</span>
             <span class="text-xs text-gray-400">{{ QUALITY_META[settings.download.quality].description }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
@@ -275,7 +302,7 @@ const dirLabel = (path: string) => path || '未设置，点击右侧按钮选择
                   :title="QUALITY_META[key].description"
                   @click="handleDownloadQualitySelect(key)"
                 >
-                  <span>{{ QUALITY_META[key].label }}</span>
+                  <span>{{ qualityLabel(key) }}</span>
                   <span
                     class="text-[10px] font-normal opacity-75"
                     :class="settings.download.quality === key ? '' : 'text-gray-400 dark:text-gray-500'"

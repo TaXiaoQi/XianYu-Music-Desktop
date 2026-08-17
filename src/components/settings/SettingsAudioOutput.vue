@@ -2,6 +2,7 @@
 import { Check, ChevronDown, CircleAlert, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
+import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
@@ -25,6 +26,7 @@ import {
 const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
 const { showToast } = useToast();
+const { isEnglish } = useI18n();
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 
@@ -32,16 +34,32 @@ const showQualityModal = ref(false);
 const showFailureBehaviorModal = ref(false);
 const showFallbackBehaviorModal = ref(false);
 
-const FAILURE_BEHAVIOR_OPTIONS: { label: string; description: string; value: OnlineFailureBehavior }[] = [
+const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
+  { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' },
+] : [
   { label: '跳到下一首', description: '自动播放队列中的下一首歌曲', value: 'skip' },
   { label: '停止播放',   description: '停止播放，等待用户手动操作', value: 'stop' },
-];
+]);
 
-const QUALITY_FALLBACK_OPTIONS: { label: string; description: string; value: OnlineQualityFallbackBehavior }[] = [
+const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Pause', description: 'Do not try another quality; pause and wait for manual action', value: 'pause' },
+  { label: 'Play Lower Quality', description: 'Automatically use the nearest lower available quality', value: 'lower' },
+  { label: 'Play Higher Quality', description: 'Automatically use the nearest higher available quality', value: 'higher' },
+] : [
   { label: '暂停',         description: '不尝试其他音质，暂停等待用户操作', value: 'pause' },
   { label: '播放更低音质', description: '自动降级到可用的更低音质',         value: 'lower' },
   { label: '播放更高音质', description: '自动升级到可用的更高音质',         value: 'higher' },
-];
+]);
+
+const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = {
+  mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
+  flac24bit: 'Hi-Res', hires: 'Hi-Res', vinyl: 'Vinyl', dolby: 'Dolby Atmos',
+  atmos: 'Premium', atmos_plus: 'Premium Atmos', master: 'Master',
+};
+const qualityLabel = (key: OnlineDefaultQuality) => (
+  isEnglish.value ? ENGLISH_QUALITY_LABELS[key] ?? QUALITY_META[key].label : QUALITY_META[key].label
+);
 
 /** 检查当前是否正在播放在线歌曲 */
 const isPlayingOnlineSong = () => {
@@ -61,9 +79,11 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
   if (isPlayingOnlineSong()) {
     const available = playbackStore.currentAvailableQualities;
     if (available && !available.includes(value)) {
-      showToast(`当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info');
+      showToast(isEnglish.value
+        ? `This track does not support ${qualityLabel(value)}. The new setting will apply to the next track.`
+        : `当前歌曲不支持 ${QUALITY_META[value].label}，新设置将在下一首生效`, 'info');
     } else {
-      showToast('音质设置将在下一首歌曲生效', 'info');
+      showToast(isEnglish.value ? 'The quality setting will apply to the next track' : '音质设置将在下一首歌曲生效', 'info');
     }
   }
 };
@@ -90,7 +110,7 @@ const handleFallbackBehaviorSelect = (value: OnlineQualityFallbackBehavior) => {
 const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   patchSettings({ audio: { ...settings.value.audio, onlineQualityFallbackBehavior: value } });
   if (isPlayingOnlineSong()) {
-    showToast('回退行为将在下一首歌曲生效', 'info');
+    showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info');
   }
 };
 
@@ -143,13 +163,18 @@ const isWasapiExclusiveEnabled = computed(
   () => settings.value.audio.outputMode === 'wasapiExclusive',
 );
 
-const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions(audioOutputDevices.value));
+const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认');
+const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions(
+  audioOutputDevices.value,
+  defaultOutputDeviceName.value,
+));
 
 const selectedOutputDeviceLabel = computed(() => (
   getSelectedOutputDeviceLabel(
     outputDeviceOptions.value,
     selectedOutputDeviceId.value,
     audioOutputStatus.value,
+    defaultOutputDeviceName.value,
   )
 ));
 
@@ -197,7 +222,7 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output device:', error);
-    showToast('切换播放设备失败', 'error');
+    showToast(isEnglish.value ? 'Could not switch the playback device' : '切换播放设备失败', 'error');
     selectedOutputDeviceId.value = audioOutputStatus.value?.selected_device_id ?? '';
   } finally {
     isChangingOutputDevice.value = false;
@@ -212,7 +237,7 @@ const toggleWasapiExclusive = async () => {
     applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
-    showToast('切换音频输出模式失败', 'error');
+    showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error');
   }
 };
 
@@ -402,7 +427,7 @@ onScopeDispose(() => {
             class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
             @click="showQualityModal = true"
           >
-            <span>{{ QUALITY_META[settings.audio.onlineDefaultQuality].label }}</span>
+            <span>{{ qualityLabel(settings.audio.onlineDefaultQuality) }}</span>
             <span class="text-xs text-gray-400">{{ QUALITY_META[settings.audio.onlineDefaultQuality].description }}</span>
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
@@ -496,7 +521,7 @@ onScopeDispose(() => {
                   :title="QUALITY_META[key].description"
                   @click="handleQualitySelect(key)"
                 >
-                  <span>{{ QUALITY_META[key].label }}</span>
+                  <span>{{ qualityLabel(key) }}</span>
                   <span
                     class="text-[10px] font-normal opacity-75"
                     :class="settings.audio.onlineDefaultQuality === key ? '' : 'text-gray-400 dark:text-gray-500'"

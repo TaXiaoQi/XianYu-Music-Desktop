@@ -22,8 +22,9 @@ import { clearPreblurredBackgroundCache } from './composables/preblurredBackgrou
 import { useCoverCache } from './composables/useCoverCache';
 import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
 import { useI18n } from './features/i18n';
-import { useGlobalTraditional } from './features/i18n/useGlobalTraditional';
+import { useGlobalInterfaceLanguage } from './features/i18n/useGlobalInterfaceLanguage';
 import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n/installLanguage';
+import { playerStorage } from './services/storage/playerStorage';
 
 const currentWindowLabel = (() => {
   try {
@@ -49,21 +50,12 @@ const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layo
 const { settings } = useSettings();
 const { language, t } = useI18n();
 
-// 全局界面简繁转换：语言为 zh-TW 时原地把简体文本转换为繁体。
-useGlobalTraditional();
+// 为尚未迁移到类型安全词条的旧界面提供全局英文与繁体转换。
+useGlobalInterfaceLanguage();
 
-let previousLanguage: string | null = null;
 watch(language, value => {
   document.documentElement.lang = value;
   document.documentElement.dataset.language = value;
-
-  // 从繁体切回简体/英文时，无法从繁体反推原始文本，刷新页面重新渲染。
-  if (previousLanguage === 'zh-TW' && value !== 'zh-TW') {
-    previousLanguage = value;
-    window.location.reload();
-    return;
-  }
-  previousLanguage = value;
 }, { immediate: true });
 watch(
   () => ({ ...settings.value.logging }),
@@ -159,9 +151,19 @@ if (currentWindowLabel === 'main') {
 
     // 消费安装器写入的语言：新安装/重新安装时使界面语言与安装选择一致。
     try {
+      const languageBeforeInstallRead = settings.value.language;
       const installLanguage = await consumeInstallLanguage();
-      if (installLanguage && settings.value.language !== installLanguage) {
+      // 注册表读取是异步的。期间若用户已手动切换语言，不得用较早的安装器值覆盖。
+      if (
+        installLanguage
+        && settings.value.language === languageBeforeInstallRead
+        && settings.value.language !== installLanguage
+      ) {
         settings.value.language = installLanguage;
+        playerStorage.writeSettings(settings.value);
+      } else if (installLanguage && settings.value.language !== languageBeforeInstallRead) {
+        // consumeInstallLanguage 已更新消费标记；重新写回用户的最新选择以保持两端一致。
+        void syncLanguageToInstaller(settings.value.language);
       }
     } catch (error) {
       console.error('Failed to consume install language:', error);
@@ -262,12 +264,16 @@ if (currentWindowLabel === 'main') {
 </script>
 
 <template>
-  <DesktopLyricsWindow v-if="isDesktopLyricsWindow" />
-  <MiniPlayerWindow v-else-if="isMiniPlayerWindow" />
-  <TrayMenuWindow v-else-if="isTrayMenuWindow" />
-  <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" />
-  <VolumePopoverWindow v-else-if="isVolumePopoverWindow" />
-  <MainShell v-else :sleep="isMainShellSleeping" />
+  <!--
+    语言变化时重建界面树，让尚未迁移到 t() 的旧模板重新生成原始中文节点。
+    Pinia/播放器状态位于组件树外，不会因重建丢失；同时避免依赖整页刷新恢复文案。
+  -->
+  <DesktopLyricsWindow v-if="isDesktopLyricsWindow" :key="language" />
+  <MiniPlayerWindow v-else-if="isMiniPlayerWindow" :key="language" />
+  <TrayMenuWindow v-else-if="isTrayMenuWindow" :key="language" />
+  <TaskbarControlWindow v-else-if="isTaskbarPlayerWindow" :key="language" />
+  <VolumePopoverWindow v-else-if="isVolumePopoverWindow" :key="language" />
+  <MainShell v-else :key="language" :sleep="isMainShellSleeping" />
 </template>
 
 <style>
