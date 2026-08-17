@@ -38,6 +38,16 @@ function log(msg: string) {
   try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
 
+let _lastSandboxError: string | null = null;
+
+export function clearLastSandboxError(): void {
+  _lastSandboxError = null;
+}
+
+export function getLastSandboxError(): string | null {
+  return _lastSandboxError;
+}
+
 // ==================== 类型 ====================
 
 interface PendingCall {
@@ -268,6 +278,9 @@ function handleWorkerMessage(sandbox: ManagedSandbox, e: MessageEvent): void {
       const msg = event.message || '';
       if (event.level === 'error') console.error(msg);
       else if (event.level === 'warn') console.warn(msg);
+      if (msg.includes('获取播放源错误') || msg.includes('PlayAuth') || msg.includes('playauth')) {
+        _lastSandboxError = msg;
+      }
       try { _logCallback?.(msg); } catch { /* ignore */ }
       break;
     }

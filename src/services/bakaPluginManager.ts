@@ -47,7 +47,7 @@ import {
 } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
-import { callSandboxMethod, isSandboxReady, getSandboxInstance } from './pluginSandboxManager';
+import { callSandboxMethod, isSandboxReady, getSandboxInstance, clearLastSandboxError, getLastSandboxError } from './pluginSandboxManager';
 import {
   resetMediaItem,
   extractCoverUrl,
@@ -55,6 +55,7 @@ import {
   stripHtmlTags,
   toPluginSearchResult,
   extractResultList,
+  extractArtistAvatarUrl,
   qualityKeyToPluginString,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
@@ -1052,6 +1053,7 @@ class BakaPluginManagerClass {
       attemptedPluginQualities.add(q);
 
       try {
+        clearLastSandboxError();
         result = await inst.getMediaSource(attemptMusicItem, q);
         if (result?.url) {
           if (await shouldAcceptMediaResult(result, pairIdx, q)) {
@@ -1060,8 +1062,15 @@ class BakaPluginManagerClass {
           result = null;
         }
 
+        const sandboxErr = getLastSandboxError();
+        if (!result?.url && sandboxErr && isFatalMediaSourceError(sandboxErr)) {
+          log(`[getMediaSource] 沙箱日志检测到致命错误，跳过剩余音质: ${sandboxErr}`);
+          songLevelErrorDetected = true;
+          break;
+        }
+
         // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）。
-        // 当用户选择“暂停/不回退”时，不再尝试旧键，避免绕过设置继续刷请求。
+        // 当用户选择"暂停/不回退"时，不再尝试旧键，避免绕过设置继续刷请求。
         const legacyQ = fallbackBehavior === 'pause' ? undefined : newToLegacyQualityMap[q];
         if (!result?.url && legacyQ && legacyQ !== q) {
           if (attemptedPluginQualities.has(legacyQ)) {
@@ -1069,12 +1078,19 @@ class BakaPluginManagerClass {
           } else {
             attemptedPluginQualities.add(legacyQ);
             log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
+            clearLastSandboxError();
             result = await inst.getMediaSource(attemptMusicItem, legacyQ);
             if (result?.url) {
               if (await shouldAcceptMediaResult(result, pairIdx, legacyQ)) {
                 break;
               }
               result = null;
+            }
+            const legacySandboxErr = getLastSandboxError();
+            if (!result?.url && legacySandboxErr && isFatalMediaSourceError(legacySandboxErr)) {
+              log(`[getMediaSource] 沙箱日志检测到致命错误(legacy)，跳过剩余音质: ${legacySandboxErr}`);
+              songLevelErrorDetected = true;
+              break;
             }
           }
         }
@@ -1451,7 +1467,7 @@ class BakaPluginManagerClass {
         return {
           id: item.id || item.artistId || item.singerId || '',
           name: stripHtmlTags(item.name || item.title || item.artist || ''),
-          avatarUrl: extractCoverUrl(item) || item.avatar || '',
+          avatarUrl: extractArtistAvatarUrl(item),
           description: item.description || item.desc || '',
           songCount: item.songCount || item.musicCount || undefined,
           albumCount: item.albumCount || undefined,
@@ -1549,8 +1565,8 @@ class BakaPluginManagerClass {
       // 优先使用 getAlbumInfo
       if (typeof inst.getAlbumInfo === 'function') {
         const result = (await inst.getAlbumInfo(albumItem, page)) ?? {};
-        const list = result?.musicList || result?.data || result?.list || [];
-        if (Array.isArray(list) && list.length > 0) {
+        const list = extractResultList(result);
+        if (list.length > 0) {
           return list.map((item: any) => {
             resetMediaItem(item, source.name);
             return toPluginSearchResult(item, source);
@@ -1576,29 +1592,46 @@ class BakaPluginManagerClass {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
 
+    const fetchDetail = async (): Promise<any[]> => {
+      if (typeof inst.getMusicSheetInfo !== 'function') return [];
+      const result = (await inst.getMusicSheetInfo(sheetItem, page)) ?? {};
+      return extractResultList(result);
+    };
+
+    let list: any[];
     try {
-      if (typeof inst.getMusicSheetInfo === 'function') {
-        const result = (await inst.getMusicSheetInfo(sheetItem, page)) ?? {};
-        const list = result?.musicList || result?.data || result?.list || [];
-        if (Array.isArray(list) && list.length > 0) {
-          return list.map((item: any) => {
-            resetMediaItem(item, source.name);
-            return toPluginSearchResult(item, source);
-          });
-        }
+      list = await fetchDetail();
+      // QQ 音乐等插件偶发返回空/异常（防盗链、限流），重试一次
+      if (list.length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        list = await fetchDetail();
       }
-      // 回退到搜索
-      if (page === 1) {
-        const sheetName = sheetItem.title || sheetItem.name || '';
-        if (sheetName) {
-          return this.searchMusic(source, sheetName, 1);
-        }
-      }
-      return [];
     } catch (e: any) {
-      log(`[getPlaylistDetail] ${source.name} 失败: ${e?.message || e}`);
-      return [];
+      log(`[getPlaylistDetail] ${source.name} getMusicSheetInfo 失败: ${e?.message || e}`);
+      list = [];
+      try {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        list = await fetchDetail();
+      } catch (e2: any) {
+        log(`[getPlaylistDetail] ${source.name} getMusicSheetInfo 重试失败: ${e2?.message || e2}`);
+      }
     }
+
+    if (list.length > 0) {
+      return list.map((item: any) => {
+        resetMediaItem(item, source.name);
+        return toPluginSearchResult(item, source);
+      });
+    }
+
+    // 回退到搜索
+    if (page === 1) {
+      const sheetName = sheetItem.title || sheetItem.name || '';
+      if (sheetName) {
+        return this.searchMusic(source, sheetName, 1);
+      }
+    }
+    return [];
   }
 
   /** 获取歌手作品 */

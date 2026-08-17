@@ -139,6 +139,14 @@ export const normalizeMediaRequestHeaders = (
     const isJooxLike = host.includes('joox.com')
       || host.includes('music.joox.com')
       || path.includes('/joox/');
+    const isQishuiLike = host.includes('douyin.com')
+      || host.includes('pglstatp-toutiao.com')
+      || host.includes('pangolin-sdk-toutiao.com')
+      || host.includes('bytescm.com')
+      || host.includes('pstatp.com')
+      || host.includes('bytecdn.cn')
+      || host.includes('toutiao.com')
+      || path.includes('/qishui/');
 
     if (isKugouLike) {
       const referer = host.includes('haitangw.cc')
@@ -156,6 +164,10 @@ export const normalizeMediaRequestHeaders = (
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     } else if (isJooxLike) {
       const referer = 'https://www.joox.com/';
+      setHeaderIfMissing(headers, 'Referer', referer);
+      setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
+    } else if (isQishuiLike) {
+      const referer = 'https://www.douyin.com/';
       setHeaderIfMissing(headers, 'Referer', referer);
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     }
