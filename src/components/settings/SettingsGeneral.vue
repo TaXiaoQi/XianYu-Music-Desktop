@@ -27,6 +27,12 @@ const appLanguage = computed({
   },
 });
 
+const languageOptions = computed<{ value: AppLanguage; label: string }[]>(() => [
+  { value: 'zh-CN', label: t('language.zhCN') },
+  { value: 'zh-TW', label: t('language.zhTW') },
+  { value: 'en-US', label: t('language.enUS') },
+]);
+
 const launchOnStartup = ref(false);
 
 async function handleGpuAccelerationChange() {
@@ -155,12 +161,17 @@ onMounted(() => {
             <select
               v-model="appLanguage"
               :aria-label="t('language.label')"
-              class="language-select h-9 w-full appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-sm font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/10"
+              class="language-select h-9 w-full cursor-pointer appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-sm font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
             >
-              <option value="zh-CN">{{ t('language.zhCN') }}</option>
-              <option value="en-US">{{ t('language.enUS') }}</option>
+              <option
+                v-for="option in languageOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
           </div>
         </div>
       </div>
@@ -365,14 +376,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.language-select {
-  color-scheme: light;
-}
-
-:global(.dark) .language-select {
-  color-scheme: dark;
-}
-
 .settings-action-button {
   min-height: 38px;
   padding: 0 16px;
@@ -439,5 +442,20 @@ onMounted(() => {
 
 :global(.dark) .stream-cache-input-wrap {
   color: rgba(255, 255, 255, 0.55);
+}
+
+.language-select {
+  color-scheme: light;
+}
+
+:global(.dark) .language-select {
+  color-scheme: dark;
+}
+
+/* 深色模式下明确设置展开面板的 option 背景与文字，
+   避免 WebView2 上 color-scheme 对原生下拉面板不完全生效导致白底浅字看不清。 */
+:global(.dark) .language-select option {
+  background-color: #262626;
+  color: rgba(255, 255, 255, 0.92);
 }
 </style>

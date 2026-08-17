@@ -22,6 +22,8 @@ import { clearPreblurredBackgroundCache } from './composables/preblurredBackgrou
 import { useCoverCache } from './composables/useCoverCache';
 import { setMainWindowRenderingSnapshot } from './composables/renderingPower';
 import { useI18n } from './features/i18n';
+import { useGlobalTraditional } from './features/i18n/useGlobalTraditional';
+import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n/installLanguage';
 
 const currentWindowLabel = (() => {
   try {
@@ -46,9 +48,22 @@ const VolumePopoverWindow = defineAsyncComponent(() => import('./components/layo
 
 const { settings } = useSettings();
 const { language, t } = useI18n();
+
+// 全局界面简繁转换：语言为 zh-TW 时原地把简体文本转换为繁体。
+useGlobalTraditional();
+
+let previousLanguage: string | null = null;
 watch(language, value => {
   document.documentElement.lang = value;
   document.documentElement.dataset.language = value;
+
+  // 从繁体切回简体/英文时，无法从繁体反推原始文本，刷新页面重新渲染。
+  if (previousLanguage === 'zh-TW' && value !== 'zh-TW') {
+    previousLanguage = value;
+    window.location.reload();
+    return;
+  }
+  previousLanguage = value;
 }, { immediate: true });
 watch(
   () => ({ ...settings.value.logging }),
@@ -72,6 +87,12 @@ watch(isImmersiveFullscreen, (fs) => {
 if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
   const { clearCoverCaches } = useCoverCache();
+
+  // 主程序语言变化时同步到注册表，使卸载器语言跟随主程序当前语言。
+  watch(language, (value) => {
+    void syncLanguageToInstaller(value);
+  });
+
   let handleDevtoolsKeyDown: ((event: KeyboardEvent) => void) | null = null;
   let unlistenCloseRequested: (() => void) | null = null;
   let unlistenFocusChanged: (() => void) | null = null;
@@ -135,6 +156,16 @@ if (currentWindowLabel === 'main') {
   onMounted(async () => {
     // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
     reportAppOpen();
+
+    // 消费安装器写入的语言：新安装/重新安装时使界面语言与安装选择一致。
+    try {
+      const installLanguage = await consumeInstallLanguage();
+      if (installLanguage && settings.value.language !== installLanguage) {
+        settings.value.language = installLanguage;
+      }
+    } catch (error) {
+      console.error('Failed to consume install language:', error);
+    }
 
     try {
       const version = await getVersion();

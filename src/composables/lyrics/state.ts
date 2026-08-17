@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { useLyricsSettingsStore } from '../../features/lyricsSettings/store';
+import { toTraditional } from '../../features/i18n/traditional';
 import { getCurrentLyricDisplayLines } from './converters';
 import type {
   CurrentLyricDisplayState,
@@ -93,6 +94,25 @@ export const desktopLyricsSettings = createSettingsProxy<DesktopLyricsSettings>(
   (patch) => useLyricsSettingsStore().patchDesktopLyricsSettings(patch),
 );
 
+/**
+ * 繁体模式下把歌词行文本（主词、翻译、逐字、次要行）转换为繁体。
+ * romaji（罗马音）为拉丁字母，转换函数对其无副作用（原样返回）。
+ * 非繁体语言直接原样返回，避免不必要的开销。
+ */
+function localizeLyricLine(line: LyricLine): LyricLine {
+  if (useSettingsStore().settings.language !== 'zh-TW') return line;
+
+  return {
+    ...line,
+    text: toTraditional(line.text),
+    translation: line.translation ? toTraditional(line.translation) : line.translation,
+    secondary: line.secondary ? line.secondary.map(toTraditional) : line.secondary,
+    words: line.words
+      ? line.words.map((word) => ({ ...word, text: toTraditional(word.text) }))
+      : line.words,
+  };
+}
+
 export async function loadLyrics(overrideLyricsRaw?: string) {
   ensureSongPathWatcher();
   const requestId = ++loadRequestId;
@@ -136,12 +156,12 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
       semanticLyrics.value = payload?.semanticLines ?? [];
       // [修复]: 不再生成假逐字时间，直接使用后端解析的真实逐字时间
       // 如果歌词没有逐字时间（普通 LRC），words 为 undefined，整行高亮
-      parsedLyrics.value = (payload?.displayLines ?? []).map((line) => ({
+      parsedLyrics.value = (payload?.displayLines ?? []).map((line) => localizeLyricLine({
         ...line,
         translation: line.translation || '',
         romaji: line.romaji || '',
         secondary: line.secondary ? [...line.secondary] : undefined,
-      })) as LyricLine[];
+      } as LyricLine));
       lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
       onlineLyricsRetryCount = 0; // 歌词加载成功，重置重试计数器
       unavailableOnlineLyricsPaths.delete(song.path);
@@ -193,12 +213,12 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
     lyricDocument.value = payload?.document ?? null;
     semanticLyrics.value = payload?.semanticLines ?? [];
     // [修复]: 不再生成假逐字时间，直接使用后端解析的真实逐字时间
-    parsedLyrics.value = (payload?.displayLines ?? []).map((line) => ({
+    parsedLyrics.value = (payload?.displayLines ?? []).map((line) => localizeLyricLine({
       ...line,
       translation: line.translation || '',
       romaji: line.romaji || '',
       secondary: line.secondary ? [...line.secondary] : undefined,
-    })) as LyricLine[];
+    } as LyricLine));
     lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
   } catch (error) {
     if (requestId !== loadRequestId || playbackStore.currentSong?.path !== song.path) return;
