@@ -6,6 +6,40 @@
  */
 import { DomLyricPlayer } from '@applemusic-like-lyrics/core';
 
+/** 兼容核心的 CJK 判定：纯统一表意文字（含扩展区） */
+function isCjkWord(word: string): boolean {
+  return /^[\p{Unified_Ideograph}\u0800-\u9FFC]+$/u.test(word);
+}
+
+/**
+ * 覆盖歌词行基类 `shouldEmphasize` 静态方法。
+ * 上游对 CJK 词要求时长 >= 1000ms 才允许逐字辉光/显色；
+ * 但 JOOX/Baka 的 KRC 把每个汉字拆成单字词、时长常在 0.2~0.8s，
+ * 全部触不到 1s 门槛，导致这些行整行不做逐字。这里对 CJK 放宽时长。
+ * 注意：核心内部是直接引用基类 `q.shouldEmphasize` 而非实例，
+ * 因此必须改到真正拥有该静态方法的基类上，沿 constructor 原型链上溯。
+ */
+function patchShouldEmphasize(lineObj: unknown): void {
+  const ctor = (lineObj as { constructor?: unknown }).constructor;
+  let cls: any = typeof ctor === 'function' ? ctor : undefined;
+  while (cls && !Object.prototype.hasOwnProperty.call(cls, 'shouldEmphasize')) {
+    cls = Object.getPrototypeOf(cls);
+  }
+  if (cls && typeof cls.shouldEmphasize === 'function' && !cls.__xyShouldEmphasizePatched) {
+    cls.__xyShouldEmphasizePatched = true;
+    cls.shouldEmphasize = (word: { word?: string; startTime: number; endTime: number }) => {
+      const text = (word.word ?? '').trim();
+      const duration = word.endTime - word.startTime;
+      if (isCjkWord(text)) {
+        // 中文逐字：放宽时长门槛，让偏短的单字词也能逐字变色辉光
+        return duration >= 200 && text.length > 0;
+      }
+      // 非中文保持上游规则，避免英文每词都辉光
+      return duration >= 1000 && text.length <= 7 && text.length > 1;
+    };
+  }
+}
+
 export class PatchedLyricPlayer extends DomLyricPlayer {
   private lineGap = 1;
   private restoreScrollFrameId = 0;
@@ -442,6 +476,10 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
 
   override setLyricLines(...args: Parameters<DomLyricPlayer['setLyricLines']>): void {
     super.setLyricLines(...args);
+    const firstLine = this.currentLyricLineObjects[0];
+    if (firstLine) {
+      patchShouldEmphasize(firstLine);
+    }
     this.patchLineElementLayout();
     this.syncLineTransformsToDom();
     this.syncAuxiliaryTransformsToDom();

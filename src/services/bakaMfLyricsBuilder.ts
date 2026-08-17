@@ -268,39 +268,98 @@ function convertPluginLxLyricToEnhancedLrc(lxlyric: string): string {
   return convertedCount > 0 ? result.join('\n') : '';
 }
 
+/**
+ * 把「(偏移,时长)」标记的词时间解释为绝对词起始时间。
+ * JOOX qrc 的词偏移是相对整曲的绝对时间；结构自洽地逐行判定（见 scoreKrcMode）。
+ * 用 walking-max 保证行内时间单调递增，避免 AMLL 因时间回退丢弃整行。
+ */
+function buildKrcWordTimes(
+  markers: RegExpMatchArray[],
+  lineStartMs: number,
+  mode: 'absolute' | 'relative',
+): WordTimeEntry[] {
+  const entries: WordTimeEntry[] = [];
+  let previousStart = -Infinity;
+
+  for (const marker of markers) {
+    const offset = Number(marker[1]);
+    const duration = Number(marker[2]);
+    if (!Number.isFinite(offset) || !Number.isFinite(duration)) continue;
+
+    const base = mode === 'absolute' ? offset : lineStartMs + offset;
+    const startMs = Math.max(previousStart, base);
+    const endMs = Math.max(startMs, base + Math.max(0, duration));
+    previousStart = startMs;
+
+    entries.push({
+      index: marker.index ?? 0,
+      endIndex: (marker.index ?? 0) + marker[0].length,
+      startMs,
+      endMs,
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * 逐行评估某一种解释（绝对/相对）在结构上的自洽程度，分数越高越可信：
+ *  - 词起始时间早于行首 → 绝对解释的重大嫌疑（标准酷狗相对偏移首词≈0，远远早于行首）；
+ *  - 词起始时间越过行窗口 → 修正次要解释；
+ *  - 行内时间回退 → 解释错误（真实标记不会倒序）；
+ *  - 首词偏移对齐微调：绝对偏好「首词偏移≈行首」，相对偏好「首词偏移≈0」。
+ */
+function scoreKrcMode(
+  mode: 'absolute' | 'relative',
+  markers: RegExpMatchArray[],
+  times: WordTimeEntry[],
+  lineStartMs: number,
+  lineDurMs: number,
+): number {
+  let score = 0;
+  let previousStart = -Infinity;
+  let backward = 0;
+  let beforeLineStart = 0;
+  let beyondWindow = 0;
+
+  for (const entry of times) {
+    if (entry.startMs < previousStart) backward++;
+    previousStart = entry.startMs;
+    if (entry.startMs < lineStartMs) beforeLineStart++;
+    if (entry.startMs > lineStartMs + lineDurMs) beyondWindow++;
+  }
+
+  score -= beforeLineStart * 1_000_000;
+  score -= beyondWindow * 50_000;
+  score -= backward * 10_000;
+
+  const firstOffset = markers.length > 0 ? Number(markers[0][1]) : NaN;
+  if (Number.isFinite(firstOffset)) {
+    score -= mode === 'absolute'
+      ? Math.abs(firstOffset - lineStartMs)
+      : Math.abs(firstOffset);
+  }
+
+  return score;
+}
+
+/**
+ * 将"KRC 风格"逐字歌词转换为 AMLL 可消费的 Enhanced LRC。
+ *
+ * JOOX 插件的 qrc 与标准酷狗 KRC 结构相同（`[行首,行内时长](词偏移,词时长)文字...`），
+ * 但 JOOX 的词偏移是绝对时间（相对整曲），酷狗是相对行内的偏移。二者仅解释不同，
+ * 且是逐行语义而非整份文件同一种解释。旧实现用「整份歌词一个全局布尔值」判定，
+ * 一旦有少数几行（如前奏间隔、首词带引导文字）不满足多数对齐阈值，整份就被判成
+ * 相对偏移，导致后半段全部翻倍错位（表现为"只首行显示/其他全黑"）。
+ *
+ * 这里改为对每一行分别评估绝对/相对两种解释，选结构上更自洽的一种，逐行各自正确。
+ */
 function convertKugouKrcToEnhancedLrc(krc: string): string {
   const lines = krc.split(/\r?\n/);
   const result: string[] = [];
   let convertedCount = 0;
   const linePattern = /^\[(\d+),(\d+)](.*)$/;
   const wordTimePattern = /\((-?\d+),(-?\d+)(?:,-?\d+)?\)/g;
-
-  // [JOOX 修复] JOOX 插件的"KRC"逐字歌词中，词偏移量是绝对时间（相对歌曲开头），
-  // 而非标准酷狗 KRC 的相对行内偏移。若仍按 行时间+偏移 计算，词时间会翻倍
-  // （表现为"只有第一行有逐字高亮"）。判定依据：多数行第一个词的偏移量≈行时间戳。
-  // 标准酷狗 KRC 的首词偏移通常为 0 或很小，不会集中在行时间戳附近。
-  let absoluteOffset = false;
-  {
-    let alignedLines = 0;
-    let countedLines = 0;
-    // 使用独立的非全局正则：全局正则的 lastIndex 会在多次 exec 间残留，
-    // 导致后续行从错误位置开始匹配、取不到真正的首词偏移，使对齐统计严重偏低。
-    const detectLinePattern = /^\[(\d+),(\d+)](.*)$/;
-    const detectWordTimePattern = /\((-?\d+),(-?\d+)(?:,-?\d+)?\)/;
-    for (const rawLine of lines) {
-      const lineMatch = detectLinePattern.exec(rawLine.trim());
-      if (!lineMatch) continue;
-      const lineStartMs = Number(lineMatch[1]);
-      const body = lineMatch[3] ?? '';
-      detectWordTimePattern.lastIndex = 0;
-      const firstMatch = detectWordTimePattern.exec(body);
-      if (!firstMatch || !Number.isFinite(lineStartMs)) continue;
-      countedLines++;
-      if (Math.abs(Number(firstMatch[1]) - lineStartMs) <= 150) alignedLines++;
-    }
-    absoluteOffset = countedLines >= 2 && alignedLines >= countedLines / 2;
-    console.info(`[Baka歌词] KRC 绝对偏移检测: absoluteOffset=${absoluteOffset}, countedLines=${countedLines}, alignedLines=${alignedLines}`);
-  }
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -310,30 +369,24 @@ function convertKugouKrcToEnhancedLrc(krc: string): string {
     if (!lineMatch) continue;
 
     const lineStartMs = Number(lineMatch[1]);
-    const lineDurationMs = Number(lineMatch[2]);
+    const lineDurMs = Number(lineMatch[2]);
     const body = lineMatch[3] ?? '';
-    if (!Number.isFinite(lineStartMs) || !Number.isFinite(lineDurationMs) || !body) continue;
+    if (!Number.isFinite(lineStartMs) || !Number.isFinite(lineDurMs) || !body) continue;
 
     wordTimePattern.lastIndex = 0;
     const wordTimes = [...body.matchAll(wordTimePattern)];
     if (wordTimes.length === 0) continue;
 
-    const entries: WordTimeEntry[] = [];
-    for (const wordTime of wordTimes) {
-      const offset = Number(wordTime[1]);
-      const duration = Number(wordTime[2]);
-      if (!Number.isFinite(offset) || !Number.isFinite(duration)) continue;
-      const startMs = absoluteOffset ? offset : lineStartMs + offset;
-      entries.push({
-        index: wordTime.index ?? 0,
-        endIndex: (wordTime.index ?? 0) + wordTime[0].length,
-        startMs,
-        endMs: startMs + Math.max(0, duration),
-      });
-    }
-    if (entries.length === 0) continue;
+    const absoluteTimes = buildKrcWordTimes(wordTimes, lineStartMs, 'absolute');
+    if (absoluteTimes.length === 0) continue;
 
-    const convertedBody = buildEnhancedBody(body, entries);
+    const relativeTimes = buildKrcWordTimes(wordTimes, lineStartMs, 'relative');
+    const absoluteScore = scoreKrcMode('absolute', wordTimes, absoluteTimes, lineStartMs, lineDurMs);
+    const relativeScore = scoreKrcMode('relative', wordTimes, relativeTimes, lineStartMs, lineDurMs);
+    // 平手时取绝对解释：JOOX 是绝对偏移的原始来源；对首行（行首≈0）两种解释结果一致。
+    const chosen = absoluteScore >= relativeScore ? absoluteTimes : relativeTimes;
+
+    const convertedBody = buildEnhancedBody(body, chosen);
     if (!convertedBody) continue;
     result.push(`[${msToTimestamp(lineStartMs)}]${convertedBody}`);
     convertedCount++;
@@ -371,24 +424,18 @@ export function buildBakaMfLyricsRaw(payload: BakaMfLyricsPayload): string {
   // ttml 是 Baka 插件（JOOX 等）的 XML 逐字歌词，后端 AMLL 的 parseTTML 可直接解析，原样透传。
   if (ttml) {
     wordLevelContent = ttml;
-    console.info(`[Baka歌词] 走 ttml 原样透传, len=${ttml.length}`);
   } else if (yrc) {
     wordLevelContent = yrc;
-    console.info(`[Baka歌词] 走 yrc 原样透传, len=${yrc.length}`);
   } else if (qrc) {
     wordLevelContent = qrc;
-    console.info(`[Baka歌词] 走 qrc 原样透传, len=${qrc.length}`);
   } else if (eslrc) {
     wordLevelContent = eslrc;
-    console.info(`[Baka歌词] 走 eslrc 原样透传, len=${eslrc.length}`);
   } else if (lxlyric) {
     wordLevelContent = convertPluginLxLyricToEnhancedLrc(lxlyric);
-    console.info(`[Baka歌词] 走 lxlyric 转换, len=${lxlyric.length}`);
   } else if (lyric && isKugouKrcLike(lyric)) {
     wordLevelContent = convertKugouKrcToEnhancedLrc(lyric);
-    console.info(`[Baka歌词] 走 KRC 转换, len=${lyric.length}`);
   } else if (lyric) {
-    console.info(`[Baka歌词] 保留纯 LRC, len=${lyric.length}`);
+    // 无逐字字段，保留纯 LRC 走普通行
   }
 
   if (wordLevelContent) {

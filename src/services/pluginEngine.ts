@@ -222,7 +222,7 @@ function buildNativePluginQualityPairs(
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
-  try { _logCallback?.(msg); } catch { /* ignore */ }
+  try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
 
 // ==================== 插件状态版本号 ====================
