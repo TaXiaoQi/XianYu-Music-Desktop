@@ -36,7 +36,9 @@ describe('StatisticsPage leaderboard sticky row', () => {
     expect(source).toContain("const router = useRouter();");
     expect(source).toContain("void router.push('/auth');");
     expect(source).toContain('@click="openLoginPage"');
-    expect(source).toContain('aria-label="前往登录页面查看个人排名"');
+    expect(source).toContain(':aria-label="TEXT.loginAria"');
+    expect(source).toContain("loginAria: 'Go to sign in and view your ranking'");
     expect(source).toContain('去登录');
+    expect(source).toContain("goToLogin: 'Sign In'");
   });
 });

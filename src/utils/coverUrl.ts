@@ -98,9 +98,7 @@ export function buildKuwoAlbumCoverUrl(
 
 /**
  * 把酷我旧 CDN 域名换成更稳定的 img3.kuwo.cn。
- * artistpicserver 仍可能返回 img1.kwcdn.kuwo.cn，前端/代理侧更容易失败；
- * 第三方(mf/baka)插件还会直接返回证书异常的 imgN.sycdn.kuwo.cn。
- * 统一改成 img3.kuwo.cn（证书有效、LX 引擎已验证可直连渲染），img3/img4 本身不会被二次改写。
+ * artistpicserver 仍可能返回 img1.kwcdn.kuwo.cn，前端/代理侧更容易失败。
  */
 export function normalizeKuwoCoverUrl(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -108,8 +106,8 @@ export function normalizeKuwoCoverUrl(url: string | null | undefined): string | 
   if (!out) return null;
   out = out.replace(/^http:\/\//i, 'https://');
   out = out.replace(
-    /^https:\/\/[^\/]+\.kuwo\.cn\/(.+)$/i,
-    (_m, path: string) => `https://img3.kuwo.cn/${path}`,
+    /^https:\/\/img\d+\.kwcdn\.kuwo\.cn\//i,
+    'https://img3.kuwo.cn/',
   );
   return out;
 }

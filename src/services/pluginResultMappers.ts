@@ -1,6 +1,6 @@
 import type { PluginSearchResult, PluginSource, QualityKey } from '../types';
 import { qualityKeyToBakaPluginQuality } from '../types';
-import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../utils/coverUrl';
+import { extractNeteasePicId, neteasePicIdToUrl } from '../utils/coverUrl';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -27,11 +27,6 @@ export const extractCoverUrl = (item: any): string => {
   }
   if (url && typeof url === 'string' && url.startsWith('http://')) {
     url = url.replace('http://', 'https://');
-  }
-  // 酷我第三方(mf/baka)插件会直接返回证书异常的 CDN 域名（如 imgN.sycdn.kuwo.cn），
-  // 统一归一化到证书有效的 img3.kuwo.cn，保证所有渲染路径可直连显示。
-  if (url && typeof url === 'string' && /kuwo\.cn/i.test(url)) {
-    url = normalizeKuwoCoverUrl(url) || url;
   }
   return typeof url === 'string' ? url : '';
 };
@@ -102,55 +97,27 @@ export const parseDuration = (val: any): number => {
   return 0;
 };
 
-/** 从艺术家条目中提取头像 URL，兼容各平台常见字段（含嵌套对象） */
-export const extractArtistAvatarUrl = (item: any): string => {
-  if (!item || typeof item !== 'object') return '';
-  const candidates = [
-    'avatarUrl', 'avatar', 'avatar_url', 'picUrl', 'pic_url', 'pic',
-    'img1v1Url', 'img1v1', 'headUrl', 'head_url', 'face', 'artistPic',
-    'artist_pic', 'coverUrl', 'cover', 'img',
-  ];
-  for (const key of candidates) {
-    const v = item[key];
-    if (typeof v === 'string' && v) return v;
-  }
-  // 嵌套对象：avatar?.url / img?.url / cover?.picUrl 等
-  for (const key of candidates) {
-    const inner = item[key];
-    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-      const url =
-        (typeof inner.url === 'string' && inner.url)
-        || (typeof inner.picUrl === 'string' && inner.picUrl)
-        || (typeof inner.coverUrl === 'string' && inner.coverUrl);
-      if (url) return url;
-    }
-  }
-  return extractCoverUrl(item);
-};
-
 /** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
 export const extractResultList = (result: any): any[] => {
   if (!result) return [];
+  // 常见格式: { data: [...] }
+  if (Array.isArray(result.data)) return result.data;
+  // MusicFree 部分插件格式: { musicList: [...] }
+  if (Array.isArray(result.musicList)) return result.musicList;
+  // Baka 插件可能使用 list/albumList/songList 等字段
+  if (Array.isArray(result.list)) return result.list;
+  if (Array.isArray(result.albumList)) return result.albumList;
+  if (Array.isArray(result.songList)) return result.songList;
+  if (Array.isArray(result.songs)) return result.songs;
+  if (Array.isArray(result.tracks)) return result.tracks;
+  // 嵌套格式: { data: { list/songs/... } }
+  if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+    if (Array.isArray(result.data.list)) return result.data.list;
+    if (Array.isArray(result.data.songs)) return result.data.songs;
+    if (Array.isArray(result.data.musicList)) return result.data.musicList;
+    if (Array.isArray(result.data.albumList)) return result.data.albumList;
+  }
+  // 直接返回数组
   if (Array.isArray(result)) return result;
-
-  // 从对象节点中查找歌曲列表：尝试常见字段（含大小写变体），再深入一层嵌套
-  const songFields = [
-    'musicList', 'musiclist', 'songList', 'songlist', 'song_list',
-    'songs', 'tracks', 'dataList', 'list', 'items', 'data', 'resData',
-  ];
-  for (const field of songFields) {
-    const val = result[field];
-    if (Array.isArray(val) && val.length > 0) return val;
-  }
-  for (const field of songFields) {
-    if (
-      result[field]
-      && typeof result[field] === 'object'
-      && !Array.isArray(result[field])
-    ) {
-      const inner = extractResultList(result[field]);
-      if (inner.length > 0) return inner;
-    }
-  }
   return [];
 };

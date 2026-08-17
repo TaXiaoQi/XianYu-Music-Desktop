@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Check, ChevronDown } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
+import { playerStorage } from '../../services/storage/playerStorage';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
 import { usePlayer } from '../../features/playback';
 import { useToast } from '../../composables/toast';
@@ -12,7 +13,7 @@ import SettingHint from './SettingHint.vue';
 import { useI18n } from '../../features/i18n';
 import type { AppLanguage } from '../../types';
 
-const { settings } = useSettings();
+const { settings, patchSettings } = useSettings();
 const {
   pauseSong,
   libraryScanProgress,
@@ -23,7 +24,10 @@ const { t } = useI18n();
 const appLanguage = computed({
   get: () => settings.value.language,
   set: (value: AppLanguage) => {
-    settings.value.language = value;
+    if (settings.value.language === value) return;
+    patchSettings({ language: value });
+    // 常规设置由播放器生命周期防抖保存；语言切换必须立即落盘，避免退出或旧版刷新逻辑造成回滚。
+    playerStorage.writeSettings(settings.value);
   },
 });
 

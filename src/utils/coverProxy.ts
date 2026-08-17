@@ -10,14 +10,8 @@
  */
 import { pluginApi } from '../services/tauri/pluginApi';
 
-/** 需要走后端代理的封面域名 */
-const PROXY_COVER_DOMAINS = [
-  'hdslb.com',
-  'bilivideo.com',
-  'y.gtimg.cn',
-  'qpic.cn',
-  'sycdn.kuwo.cn',
-];
+/** 需要走后端代理的 B站封面域名 */
+const PROXY_COVER_DOMAINS = ['hdslb.com', 'bilivideo.com'];
 
 /** 封面代理缓存（原始 URL → data: URL） */
 const coverProxyCache = new Map<string, string>();

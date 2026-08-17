@@ -47,8 +47,7 @@ pub(crate) fn i64_to_bool(v: Option<i64>) -> bool {
 }
 
 pub const SUPPORTED_LIBRARY_EXTENSIONS: &[&str] = &[
-    "aac", "aif", "aiff", "dff", "dsf", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "opus",
-    "wav",
+    "aac", "aif", "aiff", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "wav",
 ];
 
 pub const CUE_FILE_EXTENSIONS: &[&str] = &["cue"];
@@ -153,7 +152,7 @@ pub fn is_lossless_audio(codec: Option<&str>, format: &str) -> bool {
     let normalized = codec.unwrap_or(format).to_lowercase();
     matches!(
         normalized.as_str(),
-        "aif" | "aiff" | "alac" | "ape" | "dff" | "dsd" | "dsf" | "flac" | "pcm" | "wav" | "wv"
+        "aif" | "aiff" | "alac" | "ape" | "dsd" | "flac" | "pcm" | "wav" | "wv"
     )
 }
 
@@ -205,8 +204,6 @@ pub fn format_distribution_bucket(
         "alac" => return "alac",
         "aac" => return "aac",
         "vorbis" => return "ogg",
-        "opus" => return "opus",
-        "dsd" => return "dsd",
         _ => {}
     }
 
@@ -223,8 +220,6 @@ pub fn format_distribution_bucket(
             "aif" | "aiff" => "aiff",
             "aac" | "m4a" | "m4b" | "mp4" => "aac",
             "ogg" | "oga" => "ogg",
-            "opus" => "opus",
-            "dsf" | "dff" => "dsd",
             _ => "other",
         },
     }
