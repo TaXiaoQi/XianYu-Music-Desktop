@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, Clock, Trash2 } from 'lucide-vue-next';
+import { X, Clock, Trash2, Flame } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, provide, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
@@ -14,6 +14,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useI18n } from '../../features/i18n';
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
+import { fetchHotSearch, type HotSearchItem } from '../../services/usageStats';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
 import TopBarControlItem from './TopBarControlItem.vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';
@@ -69,6 +70,24 @@ const accountInitial = computed(() =>
 const showHistory = ref(false);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
+// --- 热搜（大家都在搜） ---
+const searchTab = ref<'hot' | 'history'>('hot');
+const hotSearchList = ref<HotSearchItem[]>([]);
+const hotSearchLoading = ref(false);
+let hotSearchLoadedAt = 0;
+const HOT_SEARCH_CACHE_MS = 5 * 60 * 1000;
+
+const loadHotSearch = async () => {
+  if (hotSearchLoading.value) return;
+  const now = Date.now();
+  if (hotSearchList.value.length && now - hotSearchLoadedAt < HOT_SEARCH_CACHE_MS) return;
+  hotSearchLoading.value = true;
+  const list = await fetchHotSearch(10);
+  hotSearchList.value = list;
+  hotSearchLoadedAt = Date.now();
+  hotSearchLoading.value = false;
+};
+
 const handleInput = (e: Event) => {
   setSearch((e.target as HTMLInputElement).value);
 };
@@ -83,6 +102,7 @@ const handleSearchEnter = () => {
 
 const handleSearchFocus = () => {
   showHistory.value = true;
+  void loadHotSearch();
 };
 
 let searchBlurTimer: ReturnType<typeof setTimeout> | null = null;
@@ -225,36 +245,80 @@ onUnmounted(() => {
         <TopBarControlIcon item-key="recognize" class="h-5 w-5" />
       </button>
 
-      <!-- 搜索历史下拉 -->
+      <!-- 搜索历史下拉（热搜 / 记录 双 Tab） -->
       <Transition name="search-history-fade">
-        <div v-if="showHistory && navigationStore.searchHistory.length" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-60 overflow-y-auto overflow-x-hidden">
-        <div class="px-3 py-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
-          <div class="flex items-center text-xs text-black/50 dark:text-white/50 font-medium tracking-wide">
-            <Clock class="h-3.5 w-3.5 mr-1.5" />
-            {{ t('topbar.searchHistory') }}
+        <div v-if="showHistory" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-72 overflow-y-auto overflow-x-hidden">
+          <!-- 顶部 Tab 切换：热搜左 / 记录右 -->
+          <div class="px-3 pt-2 pb-1.5 border-b border-black/5 dark:border-white/5 flex items-center gap-1 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
+            <button
+              @click="searchTab = 'hot'"
+              :class="searchTab === 'hot' ? 'bg-[#EC4141]/10 text-[#EC4141] font-medium' : 'text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70'"
+              class="px-3 py-1 rounded-full text-xs transition-colors cursor-pointer"
+            >{{ t('topbar.hotSearch') }}</button>
+            <button
+              @click="searchTab = 'history'"
+              :class="searchTab === 'history' ? 'bg-[#EC4141]/10 text-[#EC4141] font-medium' : 'text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70'"
+              class="px-3 py-1 rounded-full text-xs transition-colors cursor-pointer"
+            >{{ t('topbar.history') }}</button>
           </div>
-          <button @click="handleClearHistory" class="text-[11px] text-black/40 dark:text-white/40 hover:text-[#EC4141] flex items-center transition-colors cursor-pointer">
-            <Trash2 class="h-3 w-3 mr-0.5" />
-            {{ t('topbar.clearHistory') }}
-          </button>
-        </div>
-        <div class="py-1">
-          <button
-            v-for="item in navigationStore.searchHistory"
-            :key="item"
-            class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
-            @click="handleSelectHistory(item)"
-          >
-            <span class="truncate">{{ item }}</span>
-            <span
-              class="text-black/30 dark:text-white/30 group-hover:text-[#EC4141] p-0.5 shrink-0 transition-colors"
-              @click.stop="handleRemoveHistory($event, item)"
+
+          <!-- 热搜页 -->
+          <div v-if="searchTab === 'hot'" class="py-1">
+            <div class="px-3 py-1.5 flex items-center text-xs text-black/40 dark:text-white/40 font-medium tracking-wide">
+              <Flame class="h-3.5 w-3.5 mr-1.5 text-[#EC4141]" />
+              {{ t('topbar.everyoneSearching') }}
+            </div>
+            <div v-if="hotSearchLoading && !hotSearchList.length" class="px-3 py-4 text-center text-xs text-black/40 dark:text-white/40">
+              {{ t('topbar.hotSearchLoading') }}
+            </div>
+            <div v-else-if="!hotSearchList.length" class="px-3 py-4 text-center text-xs text-black/40 dark:text-white/40">
+              {{ t('topbar.hotSearchEmpty') }}
+            </div>
+            <button
+              v-for="(item, index) in hotSearchList"
+              :key="item.keyword"
+              class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center gap-2 cursor-pointer transition-colors group"
+              @click="handleSelectHistory(item.keyword)"
             >
-              <X class="h-3 w-3" />
-            </span>
-          </button>
+              <span
+                :class="index < 3 ? 'text-[#EC4141]' : 'text-black/30 dark:text-white/30'"
+                class="w-4 shrink-0 text-center text-xs font-bold"
+              >{{ index + 1 }}</span>
+              <span class="truncate">{{ item.keyword }}</span>
+            </button>
+          </div>
+
+          <!-- 记录页 -->
+          <div v-else class="py-1">
+            <div class="px-3 py-1.5 flex items-center justify-between">
+              <div class="flex items-center text-xs text-black/50 dark:text-white/50 font-medium tracking-wide">
+                <Clock class="h-3.5 w-3.5 mr-1.5" />
+                {{ t('topbar.searchHistory') }}
+              </div>
+              <button @click="handleClearHistory" class="text-[11px] text-black/40 dark:text-white/40 hover:text-[#EC4141] flex items-center transition-colors cursor-pointer">
+                <Trash2 class="h-3 w-3 mr-0.5" />
+                {{ t('topbar.clearHistory') }}
+              </button>
+            </div>
+            <div v-if="!navigationStore.searchHistory.length" class="px-3 py-4 text-center text-xs text-black/40 dark:text-white/40">
+              {{ t('topbar.historyEmpty') }}
+            </div>
+            <button
+              v-for="item in navigationStore.searchHistory"
+              :key="item"
+              class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
+              @click="handleSelectHistory(item)"
+            >
+              <span class="truncate">{{ item }}</span>
+              <span
+                class="text-black/30 dark:text-white/30 group-hover:text-[#EC4141] p-0.5 shrink-0 transition-colors"
+                @click.stop="handleRemoveHistory($event, item)"
+              >
+                <X class="h-3 w-3" />
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
       </Transition>
     </div>
 
