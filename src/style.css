@@ -119,6 +119,38 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+/* 🟢 深浅色切换渐变过渡
+ *
+ * 仅在切换瞬间由 themeTransition.ts 挂上 .theme-transitioning，动画结束即摘除，
+ * 不做常驻的全局 transition，避免拖慢 hover 等高频交互的响应。
+ *
+ * 只过渡颜色类属性：transform/opacity 等交给各组件自己的动效，
+ * 混在一起会让弹窗、页面切换动画被这里的时长覆盖。
+ */
+html.theme-transitioning,
+html.theme-transitioning body,
+html.theme-transitioning *:not(svg):not(svg *) {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow, text-decoration-color, outline-color;
+  transition-duration: 320ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 切换期间禁用元素自带的 transition-delay，否则局部延迟会让整体过渡显得散乱 */
+html.theme-transitioning * {
+  transition-delay: 0ms !important;
+}
+
+/* 尊重系统"减少动态效果"设置：themeTransition.ts 里已跳过挂类，
+ * 这里再兜一层，防止其它路径意外挂上该类时仍产生动画 */
+@media (prefers-reduced-motion: reduce) {
+
+  html.theme-transitioning,
+  html.theme-transitioning body,
+  html.theme-transitioning *:not(svg):not(svg *) {
+    transition-duration: 0ms;
+  }
+}
+
 /* 🟢 统一弹窗开/关过渡动效（遮罩淡入淡出 + 内容缩放位移） */
 .modal-pop-enter-active,
 .modal-pop-leave-active {

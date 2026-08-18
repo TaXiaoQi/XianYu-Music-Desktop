@@ -245,8 +245,17 @@ export async function applyWindowMaterial(
       // 禁用 CSS 过渡：activeWindowMaterial 变更会触发多个组件的
       // transition-colors duration-500，导致背景在 500ms 内处于半透明态，
       // 造成文字透出重叠。禁用后背景色瞬间切换到不透明。
-      materialSwitching.value = true;
-      await nextTick();
+      //
+      // 仅在材质确实发生变化（prev !== 'none'）时才禁用。none → none 属于
+      // 无材质下的常规重同步（深浅色切换、窗口聚焦都会走到这里），此时并没有
+      // 半透明中间态需要规避；若照样置 true，MainShell 的
+      // `.material-switching * { transition: none !important }` 会把整棵树的
+      // 过渡一并掐掉，深浅色切换的渐变就永远不生效。
+      const shouldSuppressTransitions = needsTransitionMask;
+      if (shouldSuppressTransitions) {
+        materialSwitching.value = true;
+        await nextTick();
+      }
 
       try {
         // 更新 DOM 背景（bg-transparent → bg-white/30 dark:bg-[#262626]/60），
@@ -258,7 +267,9 @@ export async function applyWindowMaterial(
         await waitForCompositorFrame();
       } finally {
         // 原生侧已稳定（或出错），先恢复 CSS 过渡（无值变化，不会触发动画）
-        materialSwitching.value = false;
+        if (shouldSuppressTransitions) {
+          materialSwitching.value = false;
+        }
         // 再淡出遮罩（此时背景已完全不透明，遮罩下无可透内容）
         if (needsTransitionMask) {
           await hideTransitionMask();

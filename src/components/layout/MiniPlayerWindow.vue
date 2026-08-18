@@ -8,6 +8,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getNextWheelVolume } from '../../features/playback';
 import { clamp } from '../../utils/math';
 import { applyWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
+import { applyDarkClassWithTransition } from '../../composables/themeTransition';
 import {
   MINI_PLAYER_ACTION_EVENT,
   MINI_PLAYER_BOUNDS_EVENT,
@@ -286,11 +287,7 @@ watch([showMiniPlaylist], () => {
 });
 
 watch([windowMaterial, windowBlurTint, isDarkTheme], async () => {
-  if (isDarkTheme.value) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
+  applyDarkClassWithTransition(isDarkTheme.value);
 
   try {
     await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
