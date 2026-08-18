@@ -7,27 +7,50 @@ export const stripHtmlTags = (str: unknown): string => {
   return str.replace(/<[^>]*>/g, '');
 };
 
-export const extractCoverUrl = (item: any): string => {
-  if (!item || typeof item !== 'object') return '';
-  const raw = item.rawData || item.raw || item;
+/** 单节点封面提取：直接字段 + 网易云专辑嵌套 + picId 兜底 */
+const extractCoverFromNode = (node: any): string => {
+  if (!node || typeof node !== 'object') return '';
+  const raw = node.rawData || node.raw || node;
   let url =
-    item.artwork || item.cover || item.coverImg || item.coverUrl || item.cover_url || item.pic || item.picurl || item.img || item.imgurl || item.imgUrl || item.albumPic || item.picture ||
+    node.artwork || node.cover || node.coverImg || node.coverUrl || node.cover_url || node.pic || node.picurl || node.img || node.imgurl || node.imgUrl || node.albumPic || node.picture ||
     raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || '';
 
   // 过滤非字符串真值：网易云搜索的 al.pic 是超大整数，JSON 解析后丢精度，
   // 不能当 URL 用；清空后走下方 picId 加密拼 CDN 兜底
   if (url && typeof url !== 'string') url = '';
 
-  if (!url && (item.al?.picUrl || raw.al?.picUrl)) url = item.al?.picUrl || raw.al?.picUrl;
-  if (!url && (item.album?.picUrl || raw.album?.picUrl)) url = item.album?.picUrl || raw.album?.picUrl;
-  if (!url && (item.album?.blurPicUrl || raw.album?.blurPicUrl)) url = item.album?.blurPicUrl || raw.album?.blurPicUrl;
-  if (!url && (item.coverImgUrl || raw.coverImgUrl)) url = item.coverImgUrl || raw.coverImgUrl;
-  if (!url && (item.picUrl || raw.picUrl)) url = item.picUrl || raw.picUrl;
+  if (!url && (node.al?.picUrl || raw.al?.picUrl)) url = node.al?.picUrl || raw.al?.picUrl;
+  if (!url && (node.album?.picUrl || raw.album?.picUrl)) url = node.album?.picUrl || raw.album?.picUrl;
+  if (!url && (node.album?.blurPicUrl || raw.album?.blurPicUrl)) url = node.album?.blurPicUrl || raw.album?.blurPicUrl;
+  if (!url && (node.coverImgUrl || raw.coverImgUrl)) url = node.coverImgUrl || raw.coverImgUrl;
+  if (!url && (node.picUrl || raw.picUrl)) url = node.picUrl || raw.picUrl;
 
   // 网易云 weapi/search 常只给 picId 不给 picUrl；直接加密拼 CDN，避免再打 getMusicInfo
   if (!url) {
-    const picId = extractNeteasePicId(item) ?? extractNeteasePicId(raw);
+    const picId = extractNeteasePicId(node) ?? extractNeteasePicId(raw);
     if (picId !== null) url = neteasePicIdToUrl(picId);
+  }
+  return typeof url === 'string' ? url : '';
+};
+
+/** 网易云类插件把数据藏在一层嵌套（song/data/music…）里，需递归一层再取封面 */
+const NESTED_ITEM_KEYS = ['song', 'data', 'music', 'musicInfo', 'detail'];
+
+export const extractCoverUrl = (item: any): string => {
+  if (!item || typeof item !== 'object') return '';
+  let url = extractCoverFromNode(item);
+  for (const k of NESTED_ITEM_KEYS) {
+    if (!url && item[k] && typeof item[k] === 'object') {
+      url = extractCoverFromNode(item[k]);
+    }
+  }
+  if (!url && item.rawData && typeof item.rawData === 'object') {
+    for (const k of NESTED_ITEM_KEYS) {
+      if (item.rawData[k] && typeof item.rawData[k] === 'object') {
+        url = extractCoverFromNode(item.rawData[k]);
+        if (url) break;
+      }
+    }
   }
   if (url && typeof url === 'string' && url.startsWith('http://')) {
     url = url.replace('http://', 'https://');
@@ -58,7 +81,7 @@ export const toPluginSearchResult = (item: any, source: PluginSource): PluginSea
   const artist = extractArtist(item);
   const album = extractAlbum(item);
   const coverUrl = extractCoverUrl(item);
-  const duration = parseDuration(item.duration || item.interval || item.dt);
+  const duration = extractDurationMs(item);
 
   return {
     id,
@@ -102,6 +125,45 @@ export const parseDuration = (val: any): number => {
     if (parts.length >= 2) return (parseInt(parts[0]) * 60 + parseInt(parts[1])) * 1000;
     const n = parseInt(val);
     return n > 1000 ? n : n * 1000;
+  }
+  return 0;
+};
+
+/** 时长字段名（覆盖 MusicFree/网易云原生/第三方变体） */
+const DURATION_KEYS = ['duration', 'durationMs', 'interval', 'dt', 'dur', 'len'] as const;
+
+/** 时长单节点扫描：直接字段，返回毫秒（0 表示缺） */
+const scanDurationNode = (node: any): number => {
+  if (!node || typeof node !== 'object') return 0;
+  for (const k of DURATION_KEYS) {
+    const v = node[k];
+    if (v !== undefined && v !== null && v !== '') {
+      const ms = parseDuration(v);
+      if (ms) return ms;
+    }
+  }
+  return 0;
+};
+
+/**
+ * 从插件条目/详情结果提取时长（毫秒）。
+ * 网易云类插件常把数据藏在一层嵌套里（song/data/music…），与封面一样需要穿透。
+ */
+export const extractDurationMs = (item: any): number => {
+  if (!item || typeof item !== 'object') return 0;
+  let ms = scanDurationNode(item);
+  if (ms) return ms;
+  for (const k of ['rawData', 'raw']) {
+    if (item[k] && typeof item[k] === 'object') {
+      ms = scanDurationNode(item[k]);
+      if (ms) return ms;
+    }
+  }
+  for (const k of NESTED_ITEM_KEYS) {
+    if (item[k] && typeof item[k] === 'object') {
+      ms = scanDurationNode(item[k]);
+      if (ms) return ms;
+    }
   }
   return 0;
 };
