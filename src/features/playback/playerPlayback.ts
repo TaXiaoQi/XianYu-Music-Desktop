@@ -2,6 +2,7 @@ import {storeToRefs} from 'pinia';
 import {watch} from 'vue';
 import {listen} from '@tauri-apps/api/event';
 import type {QualityKey, Song} from '../../types';
+import type {AudioOutputStatus} from '../../services/tauri/contracts';
 import {playbackApi} from '../../services/tauri/playbackApi';
 import {pluginApi} from '../../services/tauri/pluginApi';
 import {usePlaybackStore} from './store';
@@ -95,6 +96,13 @@ let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
 let currentPlayCountRecorded = false;
+// [统计] 当前是否有音频输出设备（由 audio-output-device-changed 事件维护）。
+// 无设备或音量<1 时播放无实际声音输出，这段时间不计入播放时长统计、不上报。
+let hasAudioOutputDevice = true;
+// [统计] 上次结算时的输出有效性（有设备且音量>=1），用于在状态翻转时精确结算有效时长
+let lastOutputValid = true;
+let deviceStatusUnlisten: (() => void) | null = null;
+let volumeValidityWatcher: ReturnType<typeof watch> | null = null;
 let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
@@ -247,6 +255,48 @@ const authStore = useAuthStore();
     currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
+
+  // [统计] 输出有效性（有设备且音量>=1）翻转时精确结算统计会话：
+  // 变为无效（静音/无设备）→ 结算当前有效 session 到 accumulatedTime，避免无效时段混入；
+  // 恢复有效 → 若正在播放重新开始统计会话（不含无效时段）。
+  const syncStatisticsValidity = () => {
+    const valid = playbackStore.volume >= 1 && hasAudioOutputDevice;
+    if (valid === lastOutputValid) return;
+    lastOutputValid = valid;
+    if (valid) {
+      if (isPlaying.value) sessionStartTime = Date.now();
+    } else if (isPlaying.value && sessionStartTime) {
+      accumulatedTime += (Date.now() - sessionStartTime) / 1000;
+      sessionStartTime = null;
+    }
+  };
+
+  // [统计] 仅在输出有效（有设备且音量>=1）时开启统计会话。
+  // 起播/恢复/周期刷新若在无效时段无条件重置 sessionStartTime，会把静音/无设备时段
+  // 重新计入统计，故统一走此入口：无效时置 null，由 syncStatisticsValidity 在恢复有效时接管。
+  const startStatisticsSession = () => {
+    sessionStartTime = (playbackStore.volume >= 1 && hasAudioOutputDevice) ? Date.now() : null;
+  };
+
+  // [统计] 订阅音频输出设备变更事件，维护 hasAudioOutputDevice 状态。
+  // 无设备时播放不出声，不应计入播放时长。
+  listen<AudioOutputStatus>('audio-output-device-changed', (event) => {
+    hasAudioOutputDevice = event.payload.active_device_name != null;
+    syncStatisticsValidity();
+  }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
+
+  // [统计] 应用启动时主动获取一次设备状态（事件仅在设备变化时发射，启动时可能无事件）
+  playbackApi.getCurrentOutputDevice()
+    .then(status => {
+      hasAudioOutputDevice = status.active_device_name != null;
+      syncStatisticsValidity();
+    })
+    .catch(() => {});
+
+  // [统计] 音量变化时同步统计会话有效性（静音/恢复）
+  volumeValidityWatcher = watch(() => playbackStore.volume, () => {
+    syncStatisticsValidity();
+  });
 
   const setManagedTimeout = (callback: () => void, delay: number) => {
     const timerId = setTimeout(() => {
@@ -587,7 +637,7 @@ const authStore = useAuthStore();
     periodicFlushTimerId = setInterval(() => {
       if (isPlaying.value && currentSong.value) {
         flushPlaySession();
-        sessionStartTime = Date.now();
+        startStatisticsSession();
       }
     }, 30_000);
 
@@ -684,6 +734,13 @@ const authStore = useAuthStore();
   const flushPlaySession = () => {
     const song = currentSong.value;
     if (!song) return;
+
+    // [统计] 无有效音频输出（无输出设备或音量<1）时，这段播放时长不计入统计、不上报。
+    // 丢弃当前会话起点，避免静音/无设备时段被后续 flush 累计。
+    if (playbackStore.volume < 1 || !hasAudioOutputDevice) {
+      sessionStartTime = null;
+      return;
+    }
 
     let currentSession = 0;
     if (isPlaying.value && sessionStartTime) {
@@ -1375,7 +1432,7 @@ const authStore = useAuthStore();
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
-        sessionStartTime = Date.now();
+        startStatisticsSession();
         loadLyrics();
         // [进度同步] 起播确认后立即将时钟锚定到实际起播位置（resumeTime），
         // 消除下载/探测期间 rAF 时钟超前导致的进度与声音不匹配。
@@ -1632,7 +1689,7 @@ const authStore = useAuthStore();
         }
 
         isSongLoaded.value = true;
-        sessionStartTime = Date.now();
+        startStatisticsSession();
         loadLyrics();
         startPlaybackRuntime();
         recordStartedSongToHistory();
@@ -1811,12 +1868,12 @@ const authStore = useAuthStore();
       }
       if (myToken !== togglePlayToken) return;
       await playbackApi.resumeAudio();
-      sessionStartTime = Date.now();
+      startStatisticsSession();
       startPlaybackRuntime();
       void fadeVolumeTo(targetVol, fadeDuration, startVol);
     } else {
       await playbackApi.resumeAudio();
-      sessionStartTime = Date.now();
+      startStatisticsSession();
       startPlaybackRuntime();
     }
   };
@@ -1910,6 +1967,10 @@ const authStore = useAuthStore();
     clearManagedShortTimers();
     progressUnlisten = null;
     progressListeningActive = false;
+    deviceStatusUnlisten?.();
+    deviceStatusUnlisten = null;
+    volumeValidityWatcher?.();
+    volumeValidityWatcher = null;
     currentBackendVolume = playbackStore.volume / 100;
     togglePlayToken += 1;
     playRequestId += 1;

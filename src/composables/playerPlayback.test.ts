@@ -78,6 +78,14 @@ vi.mock('../services/tauri/playbackApi', () => ({
     recordPlay: vi.fn().mockResolvedValue(undefined),
     getPlaybackReady: vi.fn().mockResolvedValue(true),
     getPlaybackStartFailed: vi.fn().mockResolvedValue(false),
+    getCurrentOutputDevice: vi.fn().mockResolvedValue({
+      selected_device_id: null,
+      active_device_name: 'Default Output',
+      follows_system_default: true,
+      requested_output_mode: 'shared',
+      active_output_mode: 'shared',
+      fallback_reason: null,
+    }),
   },
 }));
 
@@ -115,6 +123,7 @@ import type { Song } from '../types';
 import { usePlaybackStore } from '../features/playback';
 import { playbackApi } from '../services/tauri/playbackApi';
 import { pluginApi } from '../services/tauri/pluginApi';
+import { reportUserBehavior } from '../services/usageStats';
 import { createPlayerPlayback } from '../features/playback/playerPlayback';
 import { useUiStore } from '../shared/stores/ui';
 import { setMainWindowRenderingSnapshot } from './renderingPower';
@@ -285,6 +294,141 @@ describe('player playback domain', () => {
     const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
     expect(recordedPayloads.filter(payload => payload.countAsPlay)).toHaveLength(2);
     expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(390_000);
+
+    playerPlayback.dispose();
+    dateNow.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not count or report listening time while no audio output device is active', async () => {
+    const song = makeSong({ duration: 195 });
+    let periodicFlush: (() => void) | undefined;
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
+      if (delay === 30_000) periodicFlush = callback;
+      return delay;
+    }));
+    vi.stubGlobal('clearInterval', vi.fn());
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    expect(periodicFlush).toBeDefined();
+
+    // 起播后立即断开设备（此刻有效时长为 0），之后无设备时段不应计入统计
+    tauriEventListeners.get('audio-output-device-changed')?.({ payload: { active_device_name: null } });
+
+    // 无设备期间播放 90 秒
+    for (let index = 1; index <= 3; index += 1) {
+      dateNow.mockReturnValue(100_000 + index * 30_000);
+      periodicFlush?.();
+    }
+
+    dateNow.mockReturnValue(190_000);
+    await playerPlayback.pauseSong();
+
+    expect(playbackApi.recordPlay).not.toHaveBeenCalled();
+    expect(reportUserBehavior).not.toHaveBeenCalled();
+
+    playerPlayback.dispose();
+    dateNow.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not count or report listening time while volume is below 1', async () => {
+    const playbackStore = usePlaybackStore();
+    const song = makeSong({ duration: 195 });
+    let periodicFlush: (() => void) | undefined;
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
+      if (delay === 30_000) periodicFlush = callback;
+      return delay;
+    }));
+    vi.stubGlobal('clearInterval', vi.fn());
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    expect(periodicFlush).toBeDefined();
+
+    // 静音：之后音量<1 时段不应计入统计
+    playbackStore.volume = 0;
+
+    // 静音期间播放 90 秒
+    for (let index = 1; index <= 3; index += 1) {
+      dateNow.mockReturnValue(100_000 + index * 30_000);
+      periodicFlush?.();
+    }
+
+    dateNow.mockReturnValue(190_000);
+    await playerPlayback.pauseSong();
+
+    expect(playbackApi.recordPlay).not.toHaveBeenCalled();
+    expect(reportUserBehavior).not.toHaveBeenCalled();
+
+    playerPlayback.dispose();
+    dateNow.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('counts only audible time when the output device is removed and restored mid-playback', async () => {
+    const song = makeSong({ duration: 195 });
+    let periodicFlush: (() => void) | undefined;
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(100_000);
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('setInterval', vi.fn((callback: () => void, delay: number) => {
+      if (delay === 30_000) periodicFlush = callback;
+      return delay;
+    }));
+    vi.stubGlobal('clearInterval', vi.fn());
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    expect(periodicFlush).toBeDefined();
+
+    // 播放 30 秒（有效）
+    dateNow.mockReturnValue(130_000);
+    periodicFlush?.();
+
+    // 设备断开 60 秒（无效，不计入）
+    tauriEventListeners.get('audio-output-device-changed')?.({ payload: { active_device_name: null } });
+    dateNow.mockReturnValue(160_000);
+    periodicFlush?.();
+    dateNow.mockReturnValue(190_000);
+    periodicFlush?.();
+
+    // 设备恢复，继续播放 30 秒（有效）
+    tauriEventListeners.get('audio-output-device-changed')?.({ payload: { active_device_name: 'Default Output' } });
+    dateNow.mockReturnValue(220_000);
+    periodicFlush?.();
+
+    dateNow.mockReturnValue(250_000);
+    await playerPlayback.pauseSong();
+
+    const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
+    // 30s（断开前）+ 30s（恢复后）= 60s，无设备时段不计入
+    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(60_000);
 
     playerPlayback.dispose();
     dateNow.mockRestore();
