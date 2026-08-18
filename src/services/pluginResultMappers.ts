@@ -118,55 +118,68 @@ export const extractAlbum = (item: any): string => {
 };
 
 export const parseDuration = (val: any): number => {
-  if (!val) return 0;
-  if (typeof val === 'number') return val > 1000 ? val : val * 1000;
-  if (typeof val === 'string') {
-    const parts = val.split(':');
-    if (parts.length >= 2) return (parseInt(parts[0]) * 60 + parseInt(parts[1])) * 1000;
-    const n = parseInt(val);
-    return n > 1000 ? n : n * 1000;
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val) || val <= 0) return 0;
+    // 如果大于 1000 视为毫秒 ms，否则视为秒 s 并转换为毫秒 ms
+    return val > 1000 ? Math.floor(val) : Math.floor(val * 1000);
   }
-  return 0;
-};
-
-/** 时长字段名（覆盖 MusicFree/网易云原生/第三方变体） */
-const DURATION_KEYS = ['duration', 'durationMs', 'interval', 'dt', 'dur', 'len'] as const;
-
-/** 时长单节点扫描：直接字段，返回毫秒（0 表示缺） */
-const scanDurationNode = (node: any): number => {
-  if (!node || typeof node !== 'object') return 0;
-  for (const k of DURATION_KEYS) {
-    const v = node[k];
-    if (v !== undefined && v !== null && v !== '') {
-      const ms = parseDuration(v);
-      if (ms) return ms;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    // 处理 "03:45" 或 "01:02:03" 冒号分割格式
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':').map((p) => parseInt(p, 10));
+      if (parts.every((n) => !isNaN(n))) {
+        if (parts.length === 2) {
+          return (parts[0] * 60 + parts[1]) * 1000;
+        }
+        if (parts.length === 3) {
+          return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+        }
+      }
+    }
+    // 处理纯数字字符串 "215" 或 "215000"
+    const n = parseFloat(trimmed);
+    if (!isNaN(n) && n > 0) {
+      return n > 1000 ? Math.floor(n) : Math.floor(n * 1000);
     }
   }
   return 0;
 };
 
-/**
- * 从插件条目/详情结果提取时长（毫秒）。
- * 网易云类插件常把数据藏在一层嵌套里（song/data/music…），与封面一样需要穿透。
- */
 export const extractDurationMs = (item: any): number => {
   if (!item || typeof item !== 'object') return 0;
-  let ms = scanDurationNode(item);
-  if (ms) return ms;
-  for (const k of ['rawData', 'raw']) {
-    if (item[k] && typeof item[k] === 'object') {
-      ms = scanDurationNode(item[k]);
-      if (ms) return ms;
+  const targets = [item, item.rawData, item.raw, item.song, item.music, item.data, item.detail].filter(Boolean);
+
+  for (const t of targets) {
+    const candidates = [
+      t.duration,
+      t.interval,
+      t.dt,
+      t.time,
+      t.length,
+      t.timelength,
+      t.songTime,
+      t.durationSeconds,
+      t.intervalSeconds,
+      t.al?.dt,
+      t.album?.dt,
+      t.album?.duration,
+    ];
+
+    for (const candidate of candidates) {
+      const durationMs = parseDuration(candidate);
+      if (durationMs > 0) {
+        return durationMs;
+      }
     }
   }
-  for (const k of NESTED_ITEM_KEYS) {
-    if (item[k] && typeof item[k] === 'object') {
-      ms = scanDurationNode(item[k]);
-      if (ms) return ms;
-    }
-  }
+
   return 0;
 };
+
+export const extractDuration = extractDurationMs;
 
 /** 从歌手条目中提取头像 URL，兼容各平台常见字段（含嵌套对象） */
 export const extractArtistAvatarUrl = (item: any): string => {

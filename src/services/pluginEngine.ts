@@ -1870,13 +1870,13 @@ export async function pluginGetCover(
     if (!neteaseSource) return null;
     const raw = item.rawData || item;
     const albumId = raw?.al?.id ?? raw?.album?.id ?? raw?.albumId;
-    const songmid = String(item.platformId || raw?.id || raw?.songmid || '');
-    if (!albumId || !songmid) return null;
+    const songmid = String(item.platformId || item.id || raw?.id || raw?.songmid || '');
+    if (!songmid) return null;
     try {
       const cover = await pluginApi.getLxCover({
         songmid,
         source: 'wy',
-        albumId: String(albumId),
+        albumId: albumId ? String(albumId) : '',
         name: item.title,
         singer: item.artist,
         albumName: item.album,
