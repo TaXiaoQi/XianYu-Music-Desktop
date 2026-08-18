@@ -20,6 +20,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { applyWindowMaterial, useWindowMaterial, type WindowMaterialMode } from '../../composables/windowMaterial';
+import { applyDarkClassWithTransition } from '../../composables/themeTransition';
 import {
   APP_TRAY_MENU_EVENT,
   TRAY_MENU_READY_EVENT,
@@ -116,11 +117,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 };
 
 watch([windowMaterial, windowBlurTint, isDarkTheme], async () => {
-  if (isDarkTheme.value) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
+  applyDarkClassWithTransition(isDarkTheme.value);
 
   try {
     await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import source from './windowMaterial.ts?raw';
+
 import {
   rebuildWindowMaterialForCompositor,
   resolveWindowMaterial,
+  useWindowMaterial,
   type WindowMaterialCapabilities,
 } from './windowMaterial';
 
@@ -86,5 +89,25 @@ describe('window material resolver', () => {
     });
 
     expect(calls).toEqual(['apply']);
+  });
+});
+
+describe('materialSwitching 过渡抑制范围', () => {
+  it('无材质重同步（none → none）不禁用 CSS 过渡', () => {
+    // 深浅色切换与窗口聚焦都会以 none → none 走一遍 applyWindowMaterial。
+    // 若此时置 materialSwitching=true，MainShell 的
+    // `.material-switching * { transition: none !important }`
+    // 会掐掉整棵树的过渡，主题渐变将永远不生效。
+    expect(source).toContain('const shouldSuppressTransitions = needsTransitionMask;');
+    expect(source).toContain('if (shouldSuppressTransitions) {\n        materialSwitching.value = true;');
+  });
+
+  it('材质切换后不会残留过渡抑制标志', () => {
+    const { materialSwitching } = useWindowMaterial();
+    expect(materialSwitching.value).toBe(false);
+  });
+
+  it('恢复过渡时同样受 shouldSuppressTransitions 约束，避免误清他人设置的标志', () => {
+    expect(source).toContain('if (shouldSuppressTransitions) {\n          materialSwitching.value = false;');
   });
 });
