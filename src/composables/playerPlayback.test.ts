@@ -427,8 +427,8 @@ describe('player playback domain', () => {
     await playerPlayback.pauseSong();
 
     const recordedPayloads = vi.mocked(playbackApi.recordPlay).mock.calls.map(([payload]) => payload);
-    // 30s（断开前）+ 30s（恢复后）= 60s，无设备时段不计入
-    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(60_000);
+    // 30s（断开前 100→130）+ 30s（恢复后 190→220）+ 30s（220→250）= 90s，无设备时段不计入
+    expect(recordedPayloads.reduce((sum, payload) => sum + payload.listenedMs, 0)).toBe(90_000);
 
     playerPlayback.dispose();
     dateNow.mockRestore();
