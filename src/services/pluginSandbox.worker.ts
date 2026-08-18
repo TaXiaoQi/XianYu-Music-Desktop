@@ -753,10 +753,11 @@ const cryptoShim = {
       : normalized === 'sha512' ? CryptoJs.SHA512
       : null;
     if (!hash) throw new Error(`crypto: 不支持的哈希算法 ${algo}`);
+    let data: any = '';
     return {
-      update(data: any) { this._data = data; return this; },
-      digest(encoding?: string) {
-        const result = hash(this._data || '').toString();
+      update(input: any) { data = input; return this; },
+      digest(encoding?: string): any {
+        const result = hash(data || '').toString();
         return encoding === 'hex' ? result : Buffer.from(result, 'hex');
       },
     };
@@ -768,10 +769,11 @@ const cryptoShim = {
       : normalized === 'sha256' ? CryptoJs.HmacSHA256
       : null;
     if (!hmac) throw new Error(`crypto: 不支持的 HMAC 算法 ${algo}`);
+    let data: any = '';
     return {
-      update(data: any) { this._data = data; return this; },
-      digest(encoding?: string) {
-        const result = hmac(this._data || '', key).toString();
+      update(input: any) { data = input; return this; },
+      digest(encoding?: string): any {
+        const result = hmac(data || '', key).toString();
         return encoding === 'hex' ? result : Buffer.from(result, 'hex');
       },
     };

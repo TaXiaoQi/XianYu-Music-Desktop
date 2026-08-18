@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractCoverUrl } from './pluginResultMappers';
+import { extractCoverUrl, extractDurationMs } from './pluginResultMappers';
 
 describe('extractCoverUrl netease picId fallback', () => {
   it('builds CDN url from reliable picId_str', () => {
@@ -80,5 +80,49 @@ describe('extractCoverUrl Baka plugin cover fields', () => {
   it('upgrades http:// coverImg to https://', () => {
     expect(extractCoverUrl({ coverImg: 'http://example.com/cover.png' }))
       .toBe('https://example.com/cover.png');
+  });
+});
+
+// 网易云系插件（mf/baka/lx 通用）常把歌曲数据藏在一层嵌套里（song/data/music…），
+// 封面和时长需穿透该层才能取到，否则搜索列表出现"有结果但无封面、无时长"
+describe('extractCoverUrl nested netease shapes', () => {
+  it('extracts al.picUrl nested under song', () => {
+    expect(extractCoverUrl({ song: { al: { picUrl: 'https://p3.music.126.net/song.jpg' } } }))
+      .toBe('https://p3.music.126.net/song.jpg');
+  });
+
+  it('extracts picId_str nested under rawData.data.album to build CDN url', () => {
+    const url = extractCoverUrl({
+      rawData: { data: { album: { picId_str: '109951163038292176' } } },
+    });
+    expect(url).toBe(
+      'https://p1.music.126.net/yD9vbpuILH-tqNRIaP640g==/109951163038292176.jpg',
+    );
+  });
+});
+
+describe('extractDurationMs', () => {
+  it('reads direct ms value', () => {
+    expect(extractDurationMs({ duration: 253000 })).toBe(253000);
+  });
+
+  it('treats sub-thousand seconds as seconds', () => {
+    expect(extractDurationMs({ duration: 240 })).toBe(240000);
+  });
+
+  it('reads dt under nested song (netease native field)', () => {
+    expect(extractDurationMs({ song: { dt: 253000 } })).toBe(253000);
+  });
+
+  it('reads duration under nested data', () => {
+    expect(extractDurationMs({ data: { duration: 200 } })).toBe(200000);
+  });
+
+  it('reads mm:ss string', () => {
+    expect(extractDurationMs({ duration: '04:13' })).toBe(253000);
+  });
+
+  it('returns 0 when no duration present anywhere', () => {
+    expect(extractDurationMs({ title: 'x', artist: 'y' })).toBe(0);
   });
 });

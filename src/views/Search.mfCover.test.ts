@@ -41,11 +41,12 @@ describe('MusicFree search cover backfill', () => {
     expect(searchSource).toContain('if (version !== coverLoadVersion) return; // 新搜索/切换来源，停止旧任务');
   });
 
-  it('never re-requests an item whose cover lookup already failed', () => {
+  it('never re-requests an item whose cover/duration lookup already succeeded or failed', () => {
+    // 封面 && 时长都已就绪的项跳过，其余（缺封面或缺时长）入队补获；
     // coverUrl 是 string，无法用 null/'' 区分"未尝试"与"已失败"，用 WeakSet 记对象身份
     expect(searchSource).toContain('const mfCoverAttempted = new WeakSet<PluginSearchResult>();');
     // 入队即标记，防止并发重入重复请求
-    expect(searchSource).toContain('if (item.coverUrl || mfCoverAttempted.has(item)) return false;');
+    expect(searchSource).toContain('if ((item.coverUrl && item.duration) || mfCoverAttempted.has(item)) return false;');
     expect(searchSource).toContain('mfCoverAttempted.add(item);');
   });
 });

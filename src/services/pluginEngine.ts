@@ -49,7 +49,7 @@ import {
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
-  parseDuration,
+  extractDurationMs,
 } from './pluginResultMappers';
 import { fetchWithTimeout } from './pluginFetch';
 import {
@@ -1896,7 +1896,7 @@ export async function pluginGetCover(
       const result = await inst.instance.getMusicInfo(musicItem);
       // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
       if (result && !item.duration) {
-        const dur = parseDuration(result.duration || result.interval || result.dt);
+        const dur = extractDurationMs(result);
         if (dur) item.duration = dur;
       }
       // 兼容多种封面字段名（不同插件返回的字段名可能不同）
