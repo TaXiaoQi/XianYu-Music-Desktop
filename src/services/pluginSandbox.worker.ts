@@ -1486,7 +1486,8 @@ async function loadLxPlugin(
       const global = globalThis;
       const process = globalThis.process;
       const require = globalThis.require;
-      const SCRIPT_MD5 = globalThis.SCRIPT_MD5;
+      // 不本地声明 SCRIPT_MD5：混淆插件可能自行声明同名变量（unicode 转义），
+      // 本地 const 会与之冲突；globalThis.SCRIPT_MD5 已注入，裸引用自动解析到全局。
       ${script}
       export {};
     `;
