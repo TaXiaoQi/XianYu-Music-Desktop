@@ -99,9 +99,9 @@ function mockSearch(request: PluginSearchRequest): Promise<PluginSearchResponse>
 
   const artists = type && type !== 'artist' ? [] : Array.from({ length: 4 }).map((_, i) => ({
     id: `${pluginId}_artist_${i}`,
-    name: `${query} 相关艺术家 ${i + 1}`,
+    name: `${query} 相关歌手 ${i + 1}`,
     avatarUrl: '',
-    description: `${query} 相关的艺术家简介 ${i + 1}`,
+    description: `${query} 相关的歌手简介 ${i + 1}`,
     songCount: 20 + i * 5,
     albumCount: 3 + i,
   }));

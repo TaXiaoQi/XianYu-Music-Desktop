@@ -116,7 +116,7 @@ export function songToSyncPayload(song: Song): SyncSongPayload {
 export function syncPayloadToSong(song: SyncSongPayload): Song {
   const payload = song as SyncSongPayload;
   const title = payload.title || payload.name || '';
-  const artist = payload.artist || '未知艺术家';
+  const artist = payload.artist || '未知歌手';
   const album = payload.album || '未知专辑';
   const artistNames = payload.artist_names?.length
     ? payload.artist_names

@@ -184,17 +184,14 @@ const applyAudioOutputStatus = (status: AudioOutputStatus) => {
   audioOutputStatus.value = status;
   selectedOutputDeviceId.value = status.selected_device_id ?? '';
 
-  // 后端在 WASAPI 独占设备断开/失败时会把 requested_output_mode 强制切回 shared。
-  // 前端必须同步设置 store，否则开关仍显示“独占模式已开启”，下一首也会继续请求独占模式。
+  // 同步 requested_output_mode 到设置（用户请求的输出模式）。
+  // 不再在降级时关闭 DSD/Bit-perfect — 保留用户意图，等设备恢复后自动切回。
+  // 底栏 UI 通过 playbackStore.activeOutputMode 判断是否真正在独占模式。
   if (settings.value.audio.outputMode !== status.requested_output_mode) {
-    // 独占被强制切回 shared 时，依赖独占的 DSD 直通与 Bit-perfect 一并关闭
-    const isShared = status.requested_output_mode === 'shared';
     patchSettings({
       audio: {
         ...settings.value.audio,
         outputMode: status.requested_output_mode,
-        dsdNativePassthrough: isShared ? false : settings.value.audio.dsdNativePassthrough,
-        outputBitPerfect: isShared ? false : settings.value.audio.outputBitPerfect,
       },
     });
   }

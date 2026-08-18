@@ -22,8 +22,8 @@ const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: 
   { value: 'title-artist', label: 'Title - Artist', description: 'Song title first, followed by the artist' },
   { value: 'title-artist-album', label: 'Title - Artist - Album', description: 'Includes the album name' },
 ] : [
-  { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前，歌名在后' },
-  { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前，艺术家在后' },
+  { value: 'artist-title', label: '歌手 - 歌名', description: '歌手在前，歌名在后' },
+  { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前，歌手在后' },
   { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑信息' },
 ]);
 

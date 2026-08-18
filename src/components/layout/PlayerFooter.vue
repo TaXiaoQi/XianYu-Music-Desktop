@@ -33,7 +33,7 @@ const {
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
-  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail, showComment,
+  isPlaying, volume, currentTime, playMode, activeOutputMode, showPlaylist, showPlayerDetail, showComment,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
   toggleMode, togglePlaylist, toggleComment,
   togglePlayerDetail, seekTo, formatDuration, playSong,
@@ -743,11 +743,13 @@ const handleVolumeLeave = () => {
 const showEqPanel = ref(false);
 
 // --- Bit-perfect / DSD 直通时禁用底栏音量与音质 UI ---
+// 使用 playbackStore.activeOutputMode（实际生效的模式）而非 settings.outputMode（用户请求的模式），
+// 这样独占设备断开降级为共享时，底栏控件自动解锁；设备恢复后自动切回独占时再次锁定。
 const isBitPerfectActive = computed(() =>
-  settings.value.audio.outputMode === 'wasapiExclusive' && settings.value.audio.outputBitPerfect === true,
+  activeOutputMode.value === 'wasapiExclusive' && settings.value.audio.outputBitPerfect === true,
 );
 const isDsdPassthroughActive = computed(() =>
-  settings.value.audio.outputMode === 'wasapiExclusive' && settings.value.audio.dsdNativePassthrough === true,
+  activeOutputMode.value === 'wasapiExclusive' && settings.value.audio.dsdNativePassthrough === true,
 );
 const isAudioControlLocked = computed(() => isBitPerfectActive.value || isDsdPassthroughActive.value);
 const audioLockTooltip = computed(() => {
