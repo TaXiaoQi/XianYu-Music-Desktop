@@ -13,7 +13,7 @@ use crate::player::types::{
 use crate::remote::cache::RemoteStreamSource;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use rodio::{Decoder, Sink, Source};
-use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig};
+use souvlaki::{MediaControlEvent, MediaControls, MediaPlayback, MediaPosition, PlatformConfig};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -67,7 +67,13 @@ fn should_restore_for_default_device_change(
     next_default_device_name: &Option<String>,
     _active_device_name: &Option<String>,
 ) -> bool {
-    selected_device_name.is_none() && next_default_device_name != last_default_device_name
+    // 仅当枚举到有效设备名（Some）且与上次不同时才触发恢复。
+    // 返回 None 表示设备枚举瞬时失败（USB 重新枚举、蓝牙服务重启等），
+    // 此时触发恢复会导致管线反复重建 → 扬声器频繁打开/关闭 → 爆音甚至掉线。
+    // 跳过 None，等下一轮轮询拿到有效设备名再决定。
+    selected_device_name.is_none()
+        && next_default_device_name.is_some()
+        && next_default_device_name != last_default_device_name
 }
 
 #[cfg(target_os = "windows")]
@@ -90,6 +96,7 @@ fn start_exclusive_playback(
     sound_effect_handle: Arc<crate::player::sound_effect::SoundEffectHandle>,
     user_volume: Arc<std::sync::atomic::AtomicU32>,
     dsd_native_passthrough: bool,
+    bit_perfect: bool,
 ) -> Result<WasapiExclusivePlayback, String> {
     WasapiExclusivePlayback::start(ExclusivePlayRequest {
         path,
@@ -103,6 +110,7 @@ fn start_exclusive_playback(
         sound_effect_handle,
         user_volume,
         dsd_native_passthrough,
+        bit_perfect,
     })
     .map_err(|error| error.to_string())
 }
@@ -130,7 +138,11 @@ fn restore_preferred_output(
     current_remote_stream: Option<&RemoteStreamSource>,
     current_streaming_state: Option<&crate::player::stream_cache::StreamingTempFileState>,
     dsd_native_passthrough: bool,
+    bit_perfect: bool,
 ) {
+    // 先显式释放旧 OutputStream，确保旧音频流完全停止后再打开新设备。
+    // 若不先 drop，新旧 stream 会短暂共存并竞争同一设备，导致爆音甚至设备掉线。
+    *output = None;
     *output = SharedOutputBackend::open(host, selected_device_name.as_deref()).ok();
     *active_device_name = output
         .as_ref()
@@ -150,12 +162,15 @@ fn restore_preferred_output(
             sound_effect_handle.clone(),
             user_volume.clone(),
             dsd_native_passthrough,
+            bit_perfect,
         ) {
             Ok(playback) => {
                 *active_device_name = Some(playback.active_device_name().to_string());
                 *active_output_mode = AudioOutputMode::WasapiExclusive;
                 *fallback_reason = None;
                 *exclusive_playback = Some(playback);
+                // 独占模式已接管设备，释放共享 OutputStream，避免两者同时占用设备。
+                *output = None;
                 return;
             }
             Err(error) => {
@@ -267,11 +282,10 @@ fn recover_from_exclusive_failure(
     stop_exclusive_playback(exclusive_playback);
 
     if let Err(error) = result {
-        // 独占设备断开/被系统回收后，必须彻底降级为共享模式：
-        // 1. active_output_mode 表示当前真实链路；
-        // 2. requested_output_mode 也切回 Shared，让前端开关自动关闭，避免下一首继续请求独占；
+        // 独占设备断开/被系统回收后，降级为共享模式：
+        // 1. active_output_mode 表示当前真实链路，切回 Shared；
+        // 2. requested_output_mode 保持不变（用户仍想要独占），等设备恢复后自动切回；
         // 3. 立即重建共享播放链，避免进度/歌词停在已失效的独占线程状态。
-        *requested_output_mode = AudioOutputMode::Shared;
         *active_output_mode = AudioOutputMode::Shared;
         *fallback_reason = Some(format!(
             "WASAPI 独占模式已断开，已自动切回共享模式：{error}"
@@ -345,6 +359,15 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
                                 }
                                 MediaControlEvent::Previous => {
                                     let _ = app_clone.emit("player:prev", ());
+                                }
+                                // Win11 SMTC 进度条拖动：跳转到指定位置
+                                MediaControlEvent::SetPosition(pos) => {
+                                    let secs = pos.0.as_secs_f64();
+                                    let _ = app_clone.emit("player:seek-to", secs);
+                                }
+                                // 停止播放
+                                MediaControlEvent::Stop => {
+                                    let _ = app_clone.emit("player:stop", ());
                                 }
                                 _ => {}
                             });
@@ -1256,6 +1279,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
     let controls = initialize_media_controls(app);
     let output_status = Arc::new(Mutex::new(AudioOutputStatus::default()));
     let thread_output_status = output_status.clone();
+    // SMTC 媒体控件引用：用于在播放线程中周期性同步进度到系统媒体控件
+    let thread_controls = controls.clone();
 
     // 在起播时创建非阻塞的 Equalizer 和 UserVolume 快照句柄
     let thread_eq_handle = Arc::new(crate::player::equalizer::EqualizerHandle::new(
@@ -1289,6 +1314,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut current_volume_balance_gain = 1.0;
         // DSD 原生 DoP 直通开关（仅 .dsf + WASAPI 独占生效），在 Play 时按设置记忆，供重连/恢复复用
         let mut current_dsd_native_passthrough = true;
+        // Bit-perfect 输出开关（WASAPI 独占时跳过全部 DSP），在 Play 时按设置记忆，供重连/恢复复用
+        let mut current_bit_perfect = false;
         // 上次发射 playback:progress 事件的时间，用于节流
         let mut last_progress_emit = std::time::Instant::now();
         // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
@@ -1374,10 +1401,12 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         start_offset_ms,
                         volume_balance_gain,
                         dsd_native_passthrough,
+                        bit_perfect,
                     } => {
                         requested_output_mode = output_mode;
                         current_volume_balance_gain = volume_balance_gain;
                         current_dsd_native_passthrough = dsd_native_passthrough;
+                        current_bit_perfect = bit_perfect;
                         let source_is_network_backed = source.is_network_backed();
                         let display_path = source.display_path();
                         // 记住当前远程流信息：seek 失败需要重建解码链时，远程流不能用
@@ -1424,6 +1453,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                                 current_dsd_native_passthrough,
+                                current_bit_perfect,
                             ) {
                                 Ok(playback) => {
                                     if selected_device_name.is_none() {
@@ -1530,6 +1560,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         // 暂停即释放音频设备：drop sink 与输出后端（共享 OutputStream /
                         // 独占 IAudioClient），让其他应用能使用音频设备；恢复播放时再重建。
                         // current_path 与播放进度被保留，用于恢复时续播。
+                        // 先 stop sink 再 drop，确保音频线程同步停止，避免残余数据导致 click 爆音。
+                        if let Some(sink) = &current_sink {
+                            sink.stop();
+                        }
                         current_sink = None;
                         current_normalizer_handle = None;
                         output = None;
@@ -1583,6 +1617,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 thread_se_handle.clone(),
                                 thread_user_volume.clone(),
                                 current_dsd_native_passthrough,
+                                current_bit_perfect,
                             ) {
                                 Ok(playback) => {
                                     if selected_device_name.is_none() {
@@ -1742,6 +1777,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                             current_dsd_native_passthrough,
+                            current_bit_perfect,
                         );
                         // 设备切换后重新应用播放倍速
                         if current_speed != 1.0 {
@@ -1796,6 +1832,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             current_remote_stream.as_ref(),
                             current_streaming_state.as_ref(),
                             current_dsd_native_passthrough,
+                            current_bit_perfect,
                         );
                         // 输出模式切换后重新应用播放倍速
                         if current_speed != 1.0 {
@@ -1863,6 +1900,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 sink.stop();
                             }
                             current_sink = None;
+                            // 先显式释放旧 OutputStream，确保旧音频流完全停止后再打开新设备。
+                            // 若不先 drop，新旧 stream 会短暂共存并竞争同一设备，导致爆音。
+                            output = None;
                             #[cfg(target_os = "windows")]
                             stop_exclusive_playback(&mut exclusive_playback);
 
@@ -1917,6 +1957,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
                                 current_dsd_native_passthrough,
+                                current_bit_perfect,
                             );
                             #[cfg(target_os = "windows")]
                             if !force_shared_after_exclusive_device_change {
@@ -1942,6 +1983,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 current_remote_stream.as_ref(),
                                 current_streaming_state.as_ref(),
                                 current_dsd_native_passthrough,
+                                current_bit_perfect,
                             );
                         }
 
@@ -1974,6 +2016,17 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 is_playing: true,
                             },
                         );
+
+                        // 同步进度到 Win11 SMTC，使系统音量条/锁屏进度条随播放推进
+                        if let Ok(mut controls) = thread_controls.lock() {
+                            if let Some(mc) = controls.as_mut() {
+                                let pos =
+                                    MediaPosition(Duration::from_secs_f64(position.max(0.0)));
+                                let _ = mc.set_playback(MediaPlayback::Playing {
+                                    progress: Some(pos),
+                                });
+                            }
+                        }
                     }
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -2377,6 +2430,23 @@ mod tests {
         let last_default_device_name = Some("CPAL default device".to_string());
         let next_default_device_name = Some("CPAL default device".to_string());
         let active_device_name = Some("WASAPI friendly device".to_string());
+
+        assert!(!should_restore_for_default_device_change(
+            &selected_device_name,
+            &last_default_device_name,
+            &next_default_device_name,
+            &active_device_name,
+        ));
+    }
+
+    #[test]
+    fn default_device_monitor_ignores_transient_enumeration_failure() {
+        // 设备枚举瞬时返回 None（USB 重新枚举 / 蓝牙服务重启）时，
+        // 不应触发设备切换恢复，避免管线反复重建导致扬声器掉线。
+        let selected_device_name = None;
+        let last_default_device_name = Some("扬声器".to_string());
+        let next_default_device_name: Option<String> = None;
+        let active_device_name = Some("扬声器".to_string());
 
         assert!(!should_restore_for_default_device_change(
             &selected_device_name,

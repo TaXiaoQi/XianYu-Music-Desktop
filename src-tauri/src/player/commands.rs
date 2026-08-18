@@ -75,6 +75,8 @@ pub async fn play_audio(
     cek: Option<String>,
     // DSD 原生 DoP 直通开关：仅对 .dsf + WASAPI 独占生效，默认开启。
     dsd_native_passthrough: Option<bool>,
+    // Bit-perfect 输出：独占时跳过全部 DSP（响度/EQ/音效/音量），按源位深整数直出，默认关闭。
+    output_bit_perfect: Option<bool>,
     app: tauri::AppHandle,
     db_state: tauri::State<'_, DbState>,
     state: tauri::State<'_, PlayerState>,
@@ -190,6 +192,7 @@ pub async fn play_audio(
         start_offset_ms,
         volume_balance_gain,
         dsd_native_passthrough: dsd_native_passthrough.unwrap_or(true),
+        bit_perfect: output_bit_perfect.unwrap_or(false),
     })
     .map_err(|e| e.to_string())?;
 

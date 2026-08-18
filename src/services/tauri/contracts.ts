@@ -162,6 +162,8 @@ export interface PlayAudioOptions {
   cek?: string;
   /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效（关闭则走常规 PCM 解码） */
   dsdNativePassthrough?: boolean;
+  /** Bit-perfect 输出：WASAPI 独占时跳过响度归一化/EQ/音效/主音量等全部 DSP，按源位深整数直出 */
+  outputBitPerfect?: boolean;
 }
 
 export interface UpdateLoudnessSettingsOptions {

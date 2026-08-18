@@ -190,6 +190,8 @@ pub enum AudioCommand {
         volume_balance_gain: f32,
         /// DSD 原生 DoP 直通开关：仅 .dsf + WASAPI 独占时生效。
         dsd_native_passthrough: bool,
+        /// Bit-perfect 输出：独占时跳过响度归一化/EQ/音效/主音量等全部 DSP，按源位深整数直出。
+        bit_perfect: bool,
     },
     Pause,
     Stop,

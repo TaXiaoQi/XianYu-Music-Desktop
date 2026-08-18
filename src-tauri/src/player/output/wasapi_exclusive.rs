@@ -43,6 +43,8 @@ pub(crate) struct ExclusivePlayRequest {
     pub user_volume: Arc<AtomicU32>,
     /// DSD 原生 DoP 直通开关（.dsf/.dff + WASAPI 独占生效），false 时走常规 PCM 解码
     pub dsd_native_passthrough: bool,
+    /// Bit-perfect 输出：跳过响度归一化/EQ/音效/主音量等全部 DSP，仅保留解码 + 安全限幅
+    pub bit_perfect: bool,
 }
 
 enum ExclusiveCommand {
@@ -180,6 +182,7 @@ impl ExclusiveSource {
         equalizer_handle: Arc<EqualizerHandle>,
         sound_effect_handle: Arc<SoundEffectHandle>,
         user_volume: Arc<AtomicU32>,
+        bit_perfect: bool,
     ) -> Result<(Self, u32, u16, Option<u8>), String> {
         let file = File::open(path).map_err(|error| error.to_string())?;
         let reader = BufReader::with_capacity(512 * 1024, file);
@@ -203,22 +206,29 @@ impl ExclusiveSource {
             .store(samples_at_target, Ordering::Relaxed);
         progress.visualizer.reset();
 
-        // 按照管线顺序装配: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> UserVolumeSource -> ClipGuardSource
         let decoded = decoder.convert_samples::<f32>().skip_duration(start_time);
-        let (normalized, normalizer_handle) = crate::player::loudness::VolumeNormalizer::new(
-            decoded,
-            volume_balance_gain,
-            100, // ramp 100ms
-        );
-        let eq_source = crate::player::equalizer::Equalizer::new(normalized, equalizer_handle);
-        let se_source =
-            crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
-        let vol_source = crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
-        let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
+
+        let (source, normalizer_handle) = if bit_perfect {
+            // Bit-perfect: 跳过响度归一化/EQ/音效/主音量，仅保留解码 + 安全限幅
+            let clip_source = crate::player::equalizer::ClipGuardSource::new(decoded);
+            let dummy_handle =
+                crate::player::loudness::GainRamp::new(1.0, sample_rate, 100).get_handle();
+            (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, dummy_handle)
+        } else {
+            // 常规管线: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> UserVolumeSource -> ClipGuardSource
+            let (normalized, normalizer_handle) =
+                crate::player::loudness::VolumeNormalizer::new(decoded, volume_balance_gain, 100);
+            let eq_source = crate::player::equalizer::Equalizer::new(normalized, equalizer_handle);
+            let se_source =
+                crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
+            let vol_source = crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
+            let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
+            (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, normalizer_handle)
+        };
 
         Ok((
             Self {
-                source: Box::new(clip_source),
+                source,
                 visualizer: progress.visualizer.clone(),
                 progress,
                 channels,
@@ -655,6 +665,7 @@ fn run_exclusive_playback(
         request.equalizer_handle.clone(),
         request.sound_effect_handle.clone(),
         request.user_volume.clone(),
+        request.bit_perfect,
     )?;
 
     let enumerator = DeviceEnumerator::new().map_err(|error| error.to_string())?;
@@ -742,6 +753,7 @@ fn run_exclusive_playback(
                         request.equalizer_handle.clone(),
                         request.sound_effect_handle.clone(),
                         request.user_volume.clone(),
+                        request.bit_perfect,
                     )?
                     .0;
                     let _ = source.read_frames_into(

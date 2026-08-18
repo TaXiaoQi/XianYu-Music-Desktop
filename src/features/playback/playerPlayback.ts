@@ -944,9 +944,9 @@ const authStore = useAuthStore();
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    // [音质切换防爆音] 同一首歌切换音质（continueStatisticsSession=true）时，
-    // 旧音频仍在播放中直接被替换会产生爆音/失真。此时无论渐入渐出是否开启，
-    // 都做一次短过渡（未开启时用 150ms），避免 DC offset 突变。
+    // [音质切换] 同一首歌切换音质（continueStatisticsSession=true）时，
+    // 旧音频会被先停止再重新起播新音质。由于网络 URL 解析期间存在静音间隔，
+    // 淡出→静音→淡入的体验割裂，因此音质切换不做淡进淡出。
     const isQualitySwitch = !!options.continueStatisticsSession
       && !!previousSong
       && previousSong.path === song.path;
@@ -961,14 +961,12 @@ const authStore = useAuthStore();
       && !!previousSong
       && (previousSong.path !== song.path || isQualitySwitch);
 
-    const shouldFadeOnSwitch = (fadeEnabled || isQualitySwitch)
+    const shouldFadeOnSwitch = fadeEnabled
       && isPlaying.value
       && !!previousSong
-      && (previousSong.path !== song.path || isQualitySwitch);
+      && previousSong.path !== song.path;
 
-    const effectiveFadeDuration = isQualitySwitch && !fadeEnabled
-      ? 150
-      : fadeDuration;
+    const effectiveFadeDuration = fadeDuration;
 
     let usingDownloadedAudioFile = false;
     let pluginHeaders: Record<string, string> | null = null;
@@ -1494,6 +1492,7 @@ const authStore = useAuthStore();
             ekey: pluginEkey,
             cek: pluginCek,
             dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
+            outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
           });
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));
@@ -1629,6 +1628,7 @@ const authStore = useAuthStore();
           gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
           preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
           dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
+          outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
         };
 
         if (playBeforeFlyCover) {
