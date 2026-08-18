@@ -49,6 +49,7 @@ import {
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
+  parseDuration,
 } from './pluginResultMappers';
 import { fetchWithTimeout } from './pluginFetch';
 import {
@@ -1893,6 +1894,11 @@ export async function pluginGetCover(
         ? resetMediaItem(item.rawData, source.name)
         : resetMediaItem(item, source.name);
       const result = await inst.instance.getMusicInfo(musicItem);
+      // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
+      if (result && !item.duration) {
+        const dur = parseDuration(result.duration || result.interval || result.dt);
+        if (dur) item.duration = dur;
+      }
       // 兼容多种封面字段名（不同插件返回的字段名可能不同）
       const coverUrl = extractCoverUrl(result);
       if (coverUrl) return coverUrl;

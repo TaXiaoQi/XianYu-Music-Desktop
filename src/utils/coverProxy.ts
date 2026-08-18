@@ -41,19 +41,20 @@ export function needsCoverProxy(url: string): boolean {
 /**
  * 获取可直接用于 <img src> 的封面 URL。
  *
- * 缓存检查在 needsProxy 之前：即使 URL 不在代理域名列表中，
- * 若已被错误处理函数代理并缓存（如防盗链域名更新），也能直接返回 data: URL。
+ * 缓存检查在最前面：无论是否需要代理，已缓存的 data: URL 优先返回。
  *
  * - 已有缓存：返回缓存的 data: URL。
  * - 无需代理且无缓存：原样返回，不触发回调。
- * - 需要代理且无缓存：先返回原始 URL（保证 <img> 始终渲染），
- *   同时异步发起代理，完成后调用 onReady(dataUrl)。
- *   - CDN 直连成功时直接显示，无需等待代理
- *   - CDN 直连失败时 @error 兜底，与代理结果双保险
- *   - 代理成功后刷新视图，切换为 data: URL
+ * - 需要代理且无缓存：返回 ''（不渲染 <img>，显示占位 SVG），
+ *   同时异步发起代理，完成后调用 onReady(dataUrl) 刷新视图。
+ *   代理成功后 getDisplayCoverUrl 命中缓存返回 data: URL，<img> 才渲染。
+ *   代理失败后返回 '' 永久占位。
+ *
+ * 返回 '' 而非原始 URL 的原因：代理域名（music.126.net 等）直连必 403，
+ * 返回原始 URL 会导致 <img> 渲染后加载失败、显示破碎图标且反复触发 @error。
  *
  * @param url 原始封面 URL
- * @param onReady 代理完成回调（仅在需要代理且异步完成时触发）
+ * @param onReady 代理完成回调（仅在需要代理且异步成功时触发）
  * @returns 当前可用于 <img> 的 URL
  */
 export function getDisplayCoverUrl(url: string, onReady?: (dataUrl: string) => void): string {
@@ -65,10 +66,9 @@ export function getDisplayCoverUrl(url: string, onReady?: (dataUrl: string) => v
 
   if (!needsCoverProxy(url)) return url;
 
-  // 已尝试过且失败的，返回原始 URL 交由 @error 兜底
-  if (coverProxyAttempted.has(url)) return url;
-  // 正在代理中，返回原始 URL 等待结果
-  if (proxyPending.has(url)) return url;
+  // 代理中或已失败：返回 '' 显示占位，不渲染 <img> 避免破碎图标
+  if (proxyPending.has(url) || coverProxyAttempted.has(url)) return '';
+
   proxyPending.add(url);
 
   (async () => {
@@ -83,7 +83,7 @@ export function getDisplayCoverUrl(url: string, onReady?: (dataUrl: string) => v
     }
   })();
 
-  return url;
+  return '';
 }
 
 /**

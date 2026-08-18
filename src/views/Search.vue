@@ -1210,9 +1210,9 @@ const mfCoverAttempted = new WeakSet<PluginSearchResult>();
 function triggerMfCoverLoading(pluginSource: PluginSource) {
   const version = ++coverLoadVersion;
   clearCoverLoadUiTimer();
-  // 只处理无封面且未尝试过的项，入队即标记，避免并发重入时重复请求
+  // 处理缺封面或缺时长的项，入队即标记，避免并发重入时重复请求
   const items = pluginSearchResults.value.filter((item) => {
-    if (item.coverUrl || mfCoverAttempted.has(item)) return false;
+    if ((item.coverUrl && item.duration) || mfCoverAttempted.has(item)) return false;
     mfCoverAttempted.add(item);
     return true;
   });
@@ -1229,16 +1229,19 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
       const item = items[nextIdx++];
       try {
         // 每个请求最多等 8 秒，超时直接跳过
+        // pluginGetCover 内部调用 getMusicInfo，会同时补全封面和时长
         const coverUrl = await withTimeoutFallback(
           pluginGetCover(pluginSource, item),
           8000,
           null,
         );
         if (version !== coverLoadVersion) return;
-        if (coverUrl) {
+        if (coverUrl && coverUrl !== item.coverUrl) {
           item.coverUrl = coverUrl.startsWith('http://') ? coverUrl.replace('http://', 'https://') : coverUrl;
           hasUpdate = true;
         }
+        // 时长已由 pluginGetCover 副作用补全到 item.duration
+        if (item.duration) hasUpdate = true;
       } catch { /* 已在 WeakSet 中标记，不再重试 */ }
     }
   };
