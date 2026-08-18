@@ -49,7 +49,7 @@ const playlistSongs = computed<Song[]>(() => {
       name: fileName,
       title: fileName.replace(/\.[^.]+$/, ''),
       path,
-      artist: '未知艺术家',
+      artist: '未知歌手',
       artist_names: [],
       effective_artist_names: [],
       album: '',

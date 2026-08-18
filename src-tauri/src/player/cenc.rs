@@ -540,6 +540,264 @@ pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String
     Ok(decrypted_any)
 }
 
+// ---------------------------------------------------------------------------
+// 流式 CENC 解密：当 moov 盒位于文件头部时，可在下载部分字节后即开始播放
+// ---------------------------------------------------------------------------
+
+use std::io::{Read, Seek, SeekFrom};
+
+/// 单个加密样本的元信息（绝对文件偏移、大小、IV）
+#[derive(Clone)]
+pub struct CencSampleInfo {
+    pub offset: u64,
+    pub size: u32,
+    pub iv: Vec<u8>,
+}
+
+/// 从已下载的字节片段中解析 CENC 元数据。
+///
+/// 若 moov 盒完整存在于 `data` 中，返回样本表 + enca 补丁偏移；
+/// 若 moov 不在 `data` 范围内（位于文件尾部），返回 `Ok(None)`。
+pub fn parse_cenc_metadata(data: &[u8], cek: &[u8]) -> Result<Option<CencMetadata>, String> {
+    if data.len() < 12 || &data[4..8] != b"ftyp" {
+        return Ok(None);
+    }
+
+    // 定位 moov（只在 data 范围内查找）
+    let mut moov_box: Option<BoxInfo> = None;
+    let mut off = 0usize;
+    while off + 8 <= data.len() {
+        if let Some(box_info) = read_box_header(data, off) {
+            if box_info.is(b"moov") {
+                moov_box = Some(box_info);
+                break;
+            }
+            off = box_info.data_end;
+        } else {
+            break;
+        }
+    }
+    let moov = match moov_box {
+        Some(m) => m,
+        None => return Ok(None), // moov 不在已下载范围内
+    };
+
+    let mut samples = Vec::new();
+    let mut enca_patch_offset: Option<u64> = None;
+
+    for trak in find_child_boxes(data, &moov, b"trak") {
+        let mdia = match find_child_box(data, &trak, b"mdia") { Some(m) => m, None => continue };
+        let minf = match find_child_box(data, &mdia, b"minf") { Some(m) => m, None => continue };
+        let stbl = match find_child_box(data, &minf, b"stbl") { Some(m) => m, None => continue };
+
+        let stsd = match find_child_box(data, &stbl, b"stsd") { Some(s) => s, None => continue };
+        let entry = match read_box_header(data, stsd.data_start + 8) { Some(e) => e, None => continue };
+        if !entry.is(b"enca") { continue; }
+
+        let tenc = match parse_tenc(data, &entry) {
+            Some(t) => t,
+            None => return Err("CENC 加密但未找到 tenc 盒".to_string()),
+        };
+        if tenc.iv_size == 0 && tenc.constant_iv.is_none() {
+            return Err("CENC tenc 中 per_sample_iv_size=0 且无常量 IV".to_string());
+        }
+
+        let stsc = match find_child_box(data, &stbl, b"stsc") {
+            Some(b) => parse_stsc(&data[b.data_start..b.data_end]),
+            None => return Err("CENC 文件缺少 stsc".to_string()),
+        };
+        let stco = match find_child_box(data, &stbl, b"stco") {
+            Some(b) => parse_stco(&data[b.data_start..b.data_end]),
+            None => match find_child_box(data, &stbl, b"co64") {
+                Some(b) => parse_co64(&data[b.data_start..b.data_end]),
+                None => return Err("CENC 文件缺少 stco/co64".to_string()),
+            },
+        };
+        let stsz = match find_child_box(data, &stbl, b"stsz") {
+            Some(b) => parse_stsz(&data[b.data_start..b.data_end]),
+            None => return Err("CENC 文件缺少 stsz".to_string()),
+        };
+
+        let ivs: Vec<Vec<u8>> = if let Some(ref c_iv) = tenc.constant_iv {
+            vec![c_iv.clone(); stsz.len()]
+        } else {
+            let senc = match find_child_box(data, &stbl, b"senc") {
+                Some(b) => b,
+                None => return Err("CENC 文件缺少 senc".to_string()),
+            };
+            parse_senc_ivs(&data[senc.data_start..senc.data_end], tenc.iv_size)?
+        };
+
+        let offsets = compute_sample_offsets(&stsc, &stco, &stsz);
+        for (i, &offset) in offsets.iter().enumerate() {
+            samples.push(CencSampleInfo {
+                offset,
+                size: stsz[i],
+                iv: ivs[i].clone(),
+            });
+        }
+
+        // 记录 enca 类型字段的文件偏移（用于 reader 中虚拟补丁为 mp4a）
+        enca_patch_offset = Some(entry.start as u64 + 4);
+    }
+
+    if samples.is_empty() {
+        return Ok(None);
+    }
+
+    let _ = cek; // CEK 在 reader 中使用，此处仅验证可解析
+    Ok(Some(CencMetadata {
+        samples,
+        enca_patch_offset: enca_patch_offset.unwrap_or(0),
+    }))
+}
+
+/// CENC 流式解密所需的元数据
+#[derive(Clone)]
+pub struct CencMetadata {
+    /// 所有加密样本的偏移/大小/IV，按文件偏移排序
+    pub samples: Vec<CencSampleInfo>,
+    /// enca 类型字段在文件中的绝对偏移（reader 读取时虚拟替换为 mp4a）
+    pub enca_patch_offset: u64,
+}
+
+/// 对样本内指定偏移开始的数据做 AES-CTR 解密。
+///
+/// `byte_offset_in_sample` 是这段数据在样本中的起始字节偏移（可能非 16 对齐）。
+fn decrypt_range_in_sample(
+    cek: &[u8],
+    iv: &[u8],
+    data: &mut [u8],
+    byte_offset_in_sample: usize,
+) {
+    let cipher = match Aes128::new_from_slice(cek) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut counter = [0u8; 16];
+    let iv_len = iv.len().min(16);
+    counter[..iv_len].copy_from_slice(&iv[..iv_len]);
+
+    // 将计数器推进到起始块
+    let start_block = byte_offset_in_sample / 16;
+    for _ in 0..start_block {
+        for i in (0..16).rev() {
+            counter[i] = counter[i].wrapping_add(1);
+            if counter[i] != 0 { break; }
+        }
+    }
+
+    let skip = byte_offset_in_sample % 16;
+    let mut pos = 0usize;
+
+    // 处理首个不完整块
+    if skip > 0 && pos < data.len() {
+        let mut keystream = GenericArray::clone_from_slice(&counter);
+        cipher.encrypt_block(&mut keystream);
+        let n = (16 - skip).min(data.len());
+        for i in 0..n {
+            data[pos + i] ^= keystream[skip + i];
+        }
+        pos += n;
+        for i in (0..16).rev() {
+            counter[i] = counter[i].wrapping_add(1);
+            if counter[i] != 0 { break; }
+        }
+    }
+
+    // 解密剩余完整块
+    while pos < data.len() {
+        let mut keystream = GenericArray::clone_from_slice(&counter);
+        cipher.encrypt_block(&mut keystream);
+        let n = (data.len() - pos).min(16);
+        for i in 0..n {
+            data[pos + i] ^= keystream[i];
+        }
+        pos += n;
+        for i in (0..16).rev() {
+            counter[i] = counter[i].wrapping_add(1);
+            if counter[i] != 0 { break; }
+        }
+    }
+}
+
+/// 流式 CENC 解密 Reader：包装 StreamingTempFileReader，在读取时按样本解密 + 虚拟 enca→mp4a 补丁。
+///
+/// 仅当 moov 盒位于文件头部（parse_cenc_metadata 成功）时可用。
+/// 若 moov 在文件尾部，必须回退到整文件就地解密。
+pub struct CencDecryptReader<R: Read + Seek> {
+    inner: R,
+    cek: Vec<u8>,
+    samples: Vec<CencSampleInfo>,
+    enca_patch_offset: u64,
+    pos: u64,
+}
+
+impl<R: Read + Seek> CencDecryptReader<R> {
+    pub fn new(inner: R, cek: Vec<u8>, metadata: CencMetadata) -> Self {
+        Self {
+            inner,
+            cek,
+            samples: metadata.samples,
+            enca_patch_offset: metadata.enca_patch_offset,
+            pos: 0,
+        }
+    }
+}
+
+impl<R: Read + Seek> Read for CencDecryptReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n == 0 { return Ok(0); }
+
+        let read_start = self.pos;
+        let read_end = self.pos + n as u64;
+
+        // 虚拟 enca → mp4a 补丁：在读取到 stsd 中 enca 类型字段时替换字节
+        let patch_start = self.enca_patch_offset;
+        let patch_end = patch_start + 4;
+        if patch_start < read_end && patch_end > read_start {
+            let buf_off = patch_start.saturating_sub(read_start) as usize;
+            let patch_len = (4_usize).min(n.saturating_sub(buf_off));
+            let patch = b"mp4a";
+            for i in 0..patch_len {
+                buf[buf_off + i] = patch[i];
+            }
+        }
+
+        // 解密与读取范围重叠的样本
+        for sample in &self.samples {
+            let sample_start = sample.offset;
+            let sample_end = sample.offset + sample.size as u64;
+            if sample_end <= read_start || sample_start >= read_end {
+                continue;
+            }
+            let overlap_start = sample_start.max(read_start);
+            let overlap_end = sample_end.min(read_end);
+            let buf_start = (overlap_start - read_start) as usize;
+            let buf_len = (overlap_end - overlap_start) as usize;
+            let byte_offset_in_sample = (overlap_start - sample_start) as usize;
+            decrypt_range_in_sample(
+                &self.cek,
+                &sample.iv,
+                &mut buf[buf_start..buf_start + buf_len],
+                byte_offset_in_sample,
+            );
+        }
+
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl<R: Read + Seek> Seek for CencDecryptReader<R> {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        let new_pos = self.inner.seek(pos)?;
+        self.pos = new_pos;
+        Ok(new_pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

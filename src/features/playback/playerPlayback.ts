@@ -282,6 +282,7 @@ const authStore = useAuthStore();
   // 无设备时播放不出声，不应计入播放时长。
   listen<AudioOutputStatus>('audio-output-device-changed', (event) => {
     hasAudioOutputDevice = event.payload.active_device_name != null;
+    playbackStore.activeOutputMode = event.payload.active_output_mode;
     syncStatisticsValidity();
   }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
 
@@ -289,6 +290,7 @@ const authStore = useAuthStore();
   playbackApi.getCurrentOutputDevice()
     .then(status => {
       hasAudioOutputDevice = status.active_device_name != null;
+      playbackStore.activeOutputMode = status.active_output_mode;
       syncStatisticsValidity();
     })
     .catch(() => {});

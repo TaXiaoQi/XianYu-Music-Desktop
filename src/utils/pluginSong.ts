@@ -23,7 +23,7 @@ export const isPluginSong = (song: { path?: string; source_type?: string } | nul
  * @param pluginId 所属插件 ID
  */
 export const pluginTrackToSong = (track: PluginTrack, pluginId: string): Song => {
-  const artistName = track.artist || (track.artists && track.artists.length > 0 ? track.artists[0] : '未知艺术家');
+  const artistName = track.artist || (track.artists && track.artists.length > 0 ? track.artists[0] : '未知歌手');
   const artistNames = track.artists && track.artists.length > 0 ? track.artists : [artistName];
   const albumName = track.album || '未知专辑';
   const path = `plugin://${pluginId}/${track.id}`;

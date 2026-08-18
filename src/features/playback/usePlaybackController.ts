@@ -28,6 +28,7 @@ export function usePlaybackController() {
     volume: playbackRefs.volume,
     currentTime: playbackRefs.currentTime,
     playMode: playbackRefs.playMode,
+    activeOutputMode: playbackRefs.activeOutputMode,
     playQueue: playbackRefs.playQueue,
     showPlaylist: uiRefs.showPlaylist,
     showPlayerDetail: uiRefs.showPlayerDetail,

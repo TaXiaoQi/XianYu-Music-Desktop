@@ -2,7 +2,7 @@
   <div class="flex flex-col h-full">
     <!-- 搜索结果头部 -->
     <div class="px-6 shrink-0 select-none">
-    <!-- 第一层：内容类型切换（音乐/艺术家/专辑/歌单） -->
+    <!-- 第一层：内容类型切换（音乐/歌手/专辑/歌单） -->
       <div class="flex items-center gap-1 border-b border-black/5 dark:border-white/5">
         <button
           v-for="tab in searchTabs"
@@ -175,7 +175,7 @@
             <div
               v-for="row in virtualCatalogGridRows"
               :key="row.key"
-              class="absolute left-0 grid w-full gap-3"
+              class="absolute left-0 grid w-full gap-x-6"
               :class="catalogGridClass"
               :style="{ transform: `translateY(${row.start}px)` }"
             >
@@ -329,7 +329,7 @@ type SearchTypeKey = 'track' | 'artist' | 'album' | 'playlist';
 const activeSearchType = ref<SearchTypeKey>('track');
 const searchTabs: { type: SearchTypeKey; label: string }[] = [
   { type: 'track', label: '音乐' },
-  { type: 'artist', label: '艺术家' },
+  { type: 'artist', label: '歌手' },
   { type: 'album', label: '专辑' },
   { type: 'playlist', label: '歌单' },
 ];
@@ -528,7 +528,8 @@ const resetTrackVirtualScroll = () => {
 const catalogGridScrollTop = ref(0);
 const catalogGridViewportHeight = ref(720);
 const catalogGridWidth = ref(960);
-const CATALOG_GRID_GAP = 12;
+const CATALOG_GRID_H_GAP = 24;
+const CATALOG_GRID_V_GAP = 40;
 const CATALOG_GRID_OVERSCAN_ROWS = 2;
 
 type CatalogGridEntry =
@@ -632,6 +633,7 @@ const catalogGridItems = computed<CatalogGridEntry[]>(() => {
 
 const catalogGridColumns = computed(() => {
   const width = catalogGridWidth.value;
+  if (width >= 1536) return 7;
   if (width >= 1280) return 6;
   if (width >= 1024) return 5;
   if (width >= 768) return 4;
@@ -645,16 +647,17 @@ const catalogGridClass = computed(() => ({
   'grid-cols-4': catalogGridColumns.value === 4,
   'grid-cols-5': catalogGridColumns.value === 5,
   'grid-cols-6': catalogGridColumns.value === 6,
+  'grid-cols-7': catalogGridColumns.value === 7,
 }));
 
 const catalogGridRowHeight = computed(() => {
   if (activeSearchType.value === 'artist') {
-    return 156 + CATALOG_GRID_GAP;
+    return 156 + CATALOG_GRID_V_GAP;
   }
 
   const columns = Math.max(1, catalogGridColumns.value);
-  const itemWidth = Math.max(120, (catalogGridWidth.value - CATALOG_GRID_GAP * (columns - 1)) / columns);
-  return itemWidth + 78 + CATALOG_GRID_GAP;
+  const itemWidth = Math.max(120, (catalogGridWidth.value - CATALOG_GRID_H_GAP * (columns - 1)) / columns);
+  return itemWidth + 78 + CATALOG_GRID_V_GAP;
 });
 
 const catalogGridRowCount = computed(() => Math.ceil(catalogGridItems.value.length / catalogGridColumns.value));
@@ -694,6 +697,19 @@ const resetCatalogGridVirtualScroll = () => {
   el.scrollTop = 0;
   catalogGridViewportHeight.value = el.clientHeight || catalogGridViewportHeight.value;
   catalogGridWidth.value = Math.max(320, el.clientWidth - 32);
+};
+
+// ResizeObserver：窗口/容器尺寸变化时同步虚拟滚动状态，避免网格列数和行高过期
+let scrollResizeObserver: ResizeObserver | null = null;
+const setupScrollResizeObserver = () => {
+  scrollResizeObserver?.disconnect();
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  scrollResizeObserver = new ResizeObserver(() => {
+    syncTrackVirtualScrollState();
+    syncCatalogGridVirtualScrollState();
+  });
+  scrollResizeObserver.observe(el);
 };
 
 // 封面加载任务版本号，用于在新搜索时取消旧任务
@@ -2144,14 +2160,20 @@ onMounted(() => {
   if (pendingType) {
     activeSearchType.value = pendingType;
   }
+  setupScrollResizeObserver();
   if (!hasQuery.value) return;
   performSearch();
 });
+
+// resultsScrollRef 在 track/catalog 视图切换时重新挂载，需重新绑定 ResizeObserver
+watch(resultsScrollRef, () => setupScrollResizeObserver());
 
 // 搜索页不再缓存。离开时终止未完成任务并释放只属于搜索页的临时状态。
 onBeforeUnmount(() => {
   searchAbortController?.abort();
   searchAbortController = null;
+  scrollResizeObserver?.disconnect();
+  scrollResizeObserver = null;
   coverLoadVersion += 1;
   clearCoverLoadUiTimer();
   stopCatalogCoverRefresh();

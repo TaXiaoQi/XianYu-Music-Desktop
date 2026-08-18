@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue';
 import { defineStore } from 'pinia';
 
 import { useLibraryStore } from '../library/store';
-import type { Song, QualityKey } from '../../types';
+import type { Song, QualityKey, AudioOutputMode } from '../../types';
 
 const areSamePaths = (left: string[], right: string[]) =>
   left.length === right.length && left.every((path, index) => path === right[index]);
@@ -14,6 +14,11 @@ export const usePlaybackStore = defineStore('playback', () => {
   const currentTime = ref(0);
   const playMode = ref(0);
   const isSongLoaded = ref(false);
+  /** 当前实际生效的音频输出模式（由后端 audio-output-device-changed 事件同步）。
+   * 与 settings.audio.outputMode（用户请求的模式）不同：
+   * 独占设备断开时 requested 仍为 wasapiExclusive，但 active 变为 shared。
+   * 底栏 UI 用此值判断 bit-perfect/DSD 锁定状态。 */
+  const activeOutputMode = ref<AudioOutputMode>('shared');
   const playQueuePaths = shallowRef<string[]>([]);
   const tempQueuePaths = shallowRef<string[]>([]);
   const currentSongPath = ref<string | null>(null);
@@ -221,6 +226,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentTime,
     playMode,
     isSongLoaded,
+    activeOutputMode,
     playQueue,
     playQueuePaths,
     tempQueue,

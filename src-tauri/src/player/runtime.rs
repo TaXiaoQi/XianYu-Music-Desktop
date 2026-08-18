@@ -1906,35 +1906,34 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             #[cfg(target_os = "windows")]
                             stop_exclusive_playback(&mut exclusive_playback);
 
+                            // 设备变化后尝试恢复用户请求的输出模式：
+                            // 若 requested_output_mode 仍为 WasapiExclusive，restore_preferred_output
+                            // 会尝试重建独占链；若设备尚未就绪则自动降级共享，等下一轮重试。
                             #[cfg(target_os = "windows")]
-                            let force_shared_after_exclusive_device_change = active_output_mode
-                                == AudioOutputMode::WasapiExclusive
-                                || requested_output_mode == AudioOutputMode::WasapiExclusive;
-
-                            #[cfg(target_os = "windows")]
-                            if force_shared_after_exclusive_device_change {
-                                requested_output_mode = AudioOutputMode::Shared;
-                                active_output_mode = AudioOutputMode::Shared;
-                                fallback_reason =
-                                    Some("WASAPI 独占设备已变化，已自动切回共享模式".to_string());
-                                restore_shared_output(
-                                    &selected_device_name,
-                                    &mut output,
-                                    &host,
-                                    &mut current_sink,
-                                    &mut active_device_name,
-                                    &current_path,
-                                    is_playing_flag,
-                                    &thread_progress,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                    current_volume_balance_gain,
-                                    &mut current_normalizer_handle,
-                                    current_remote_stream.as_ref(),
-                                    current_streaming_state.as_ref(),
-                                );
-                            }
+                            restore_preferred_output(
+                                &selected_device_name,
+                                &mut output,
+                                &host,
+                                &mut current_sink,
+                                &mut exclusive_playback,
+                                &mut active_device_name,
+                                &mut active_output_mode,
+                                &mut fallback_reason,
+                                requested_output_mode,
+                                &current_path,
+                                current_volume,
+                                is_playing_flag,
+                                &thread_progress,
+                                current_volume_balance_gain,
+                                thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
+                                thread_user_volume.clone(),
+                                &mut current_normalizer_handle,
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
+                                current_dsd_native_passthrough,
+                                current_bit_perfect,
+                            );
                             #[cfg(not(target_os = "windows"))]
                             restore_preferred_output(
                                 &selected_device_name,
@@ -1959,33 +1958,6 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                 current_dsd_native_passthrough,
                                 current_bit_perfect,
                             );
-                            #[cfg(target_os = "windows")]
-                            if !force_shared_after_exclusive_device_change {
-                                restore_preferred_output(
-                                    &selected_device_name,
-                                    &mut output,
-                                    &host,
-                                    &mut current_sink,
-                                    &mut exclusive_playback,
-                                    &mut active_device_name,
-                                    &mut active_output_mode,
-                                    &mut fallback_reason,
-                                    requested_output_mode,
-                                    &current_path,
-                                    current_volume,
-                                    is_playing_flag,
-                                    &thread_progress,
-                                    current_volume_balance_gain,
-                                    thread_eq_handle.clone(),
-                                    thread_se_handle.clone(),
-                                    thread_user_volume.clone(),
-                                &mut current_normalizer_handle,
-                                current_remote_stream.as_ref(),
-                                current_streaming_state.as_ref(),
-                                current_dsd_native_passthrough,
-                                current_bit_perfect,
-                            );
-                        }
 
                             emit_output_status(
                                 &thread_app_handle,

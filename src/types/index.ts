@@ -811,7 +811,7 @@ export interface DownloadSettings {
   rememberDownloadPath: boolean;
   /** 下载音质缺失时的回退行为，默认 'lower'（下载更低音质） */
   qualityFallbackBehavior: DownloadQualityFallbackBehavior;
-  /** 将歌曲元数据（标题、艺术家、专辑等）写入音频文件 tag（默认 true） */
+  /** 将歌曲元数据（标题、歌手、专辑等）写入音频文件 tag（默认 true） */
   embedMetadata: boolean;
   /** 将歌词写入音频文件 tag（默认 true） */
   embedLyrics: boolean;

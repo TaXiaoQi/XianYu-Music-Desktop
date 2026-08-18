@@ -86,7 +86,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '远程音乐库': 'Remote Library',
   '歌手': 'Artist',
   '未知歌手': 'Unknown artist',
-  '未知艺术家': 'Unknown artist',
   '专辑': 'Album',
   '未知专辑': 'Unknown album',
   '歌曲': 'Song',

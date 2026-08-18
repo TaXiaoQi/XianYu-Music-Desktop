@@ -106,7 +106,7 @@ export const parseDuration = (val: any): number => {
   return 0;
 };
 
-/** 从艺术家条目中提取头像 URL，兼容各平台常见字段（含嵌套对象） */
+/** 从歌手条目中提取头像 URL，兼容各平台常见字段（含嵌套对象） */
 export const extractArtistAvatarUrl = (item: any): string => {
   if (!item || typeof item !== 'object') return '';
   const candidates = [
