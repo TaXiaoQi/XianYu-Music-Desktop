@@ -1419,7 +1419,8 @@ class BakaPluginManagerClass {
           singer: item.artist,
           albumName: item.album,
         });
-        return cover || null;
+        // 升级 https：avoid http 封面被 WebView2 混合内容拦截、或被前端 needsProxy 误判走后端代理而失败
+        return (cover && String(cover).replace(/^http:\/\//i, 'https://')) || null;
       } catch {
         return null;
       }

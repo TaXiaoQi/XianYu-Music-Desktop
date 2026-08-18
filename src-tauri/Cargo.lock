@@ -114,6 +114,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "ape-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95097ef8efebf7b1e1d638b77935cfce25576163614427b464efe256bb8b2ec1"
+dependencies = [
+ "crc32fast",
+ "md-5",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2906,6 +2916,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest",
+]
+
+[[package]]
 name = "md5"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4340,10 +4360,12 @@ dependencies = [
 name = "rodio"
 version = "0.20.1"
 dependencies = [
+ "ape-decoder",
  "cpal",
  "hound",
  "symphonia",
  "symphonia-adapter-libopus",
+ "wavicle",
 ]
 
 [[package]]
@@ -6405,6 +6427,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "wavicle"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e312eaf22b4a7e5b7bf038edb3a7e4703c7b86dfabaea49d17af85e55eb76ab"
+
+[[package]]
 name = "web-sys"
 version = "0.3.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7239,6 +7267,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "wasapi",
+ "wavicle",
  "webview2-com",
  "windows 0.62.2",
  "windows-core 0.61.2",

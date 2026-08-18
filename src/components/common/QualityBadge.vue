@@ -86,7 +86,7 @@ const badgeType = computed(() => {
   }
 
   // 本地文件：基于元数据判断 HR / SQ / HQ
-  const losslessFormats = ['aif', 'aiff', 'flac', 'wav', 'alac', 'ape', 'pcm'];
+  const losslessFormats = ['aif', 'aiff', 'flac', 'wav', 'alac', 'ape', 'pcm', 'dsf', 'dff', 'dsd', 'wv', 'wavpack'];
   const audioType = (props.codec || props.format).toLowerCase();
   const isLossless = losslessFormats.includes(audioType);
   const hasAudioInfo = Boolean(audioType || props.bitrate || props.sampleRate || props.bitDepth);

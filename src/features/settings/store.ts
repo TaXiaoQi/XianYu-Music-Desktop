@@ -28,7 +28,7 @@ import {
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics';
+} from '../../composables/lyrics/constants';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,

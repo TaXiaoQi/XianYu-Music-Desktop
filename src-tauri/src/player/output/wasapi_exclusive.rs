@@ -1,4 +1,4 @@
-use crate::player::dsd_dop::{dop_pcm_rate, parse_dsf_info, DopStreamSource};
+use crate::player::dsd_dop::{dop_pcm_rate, parse_dsd_info, DopStreamSource};
 use crate::player::equalizer::{EqualizerHandle, EqualizerSettings};
 use crate::player::output::OutputError;
 use crate::player::sound_effect::{SoundEffectHandle, SoundEffectSettings};
@@ -41,7 +41,7 @@ pub(crate) struct ExclusivePlayRequest {
     pub equalizer_handle: Arc<EqualizerHandle>,
     pub sound_effect_handle: Arc<SoundEffectHandle>,
     pub user_volume: Arc<AtomicU32>,
-    /// DSD 原生 DoP 直通开关（仅 .dsf + WASAPI 独占生效），false 时走常规 PCM 解码
+    /// DSD 原生 DoP 直通开关（.dsf/.dff + WASAPI 独占生效），false 时走常规 PCM 解码
     pub dsd_native_passthrough: bool,
 }
 
@@ -454,10 +454,10 @@ fn probe_source_bit_depth(path: &str) -> Option<u8> {
     None
 }
 
-/// 尝试对未压缩 DSF 走 DSD 原生 DoP 直出（WASAPI 独占、24-bit 整型、位真）。
+/// 尝试对未压缩 DSF/DFF 走 DSD 原生 DoP 直出（WASAPI 独占、24-bit 整型、位真）。
 ///
 /// 返回 `Ok(true)` 表示已接管并完成播放（调用方应直接返回）；`Ok(false)` 表示
-/// 本文件不是 DSF / DST 压缩 / 设备不支持所需 DoP 采样率，调用方应回退到常规 PCM 路径。
+/// 本文件不是 DSF/DFF / DST 压缩 / 设备不支持所需 DoP 采样率，调用方应回退到常规 PCM 路径。
 ///
 /// DoP 是位真直出：绕过音量平衡、EQ 与音效管线，按 DoP PCM 率做计时与进度结算
 /// （每 DoP 帧 = 每通道 8 个 DSD bit，帧率 = DSD 率 / 8）。
@@ -466,12 +466,13 @@ fn attempt_dop_playback(
     command_rx: &Receiver<ExclusiveCommand>,
     init_tx: &std::sync::mpsc::SyncSender<Result<String, String>>,
 ) -> Result<bool, String> {
-    if !request.path.to_lowercase().ends_with(".dsf") {
+    let lower = request.path.to_lowercase();
+    if !lower.ends_with(".dsf") && !lower.ends_with(".dff") {
         return Ok(false);
     }
-    let info = match parse_dsf_info(&request.path) {
+    let info = match parse_dsd_info(&request.path) {
         Ok(info) if !info.is_dst => info,
-        _ => return Ok(false), // 非 DSF / DST 压缩 / 损坏 → 回退 PCM
+        _ => return Ok(false), // 非 DSF/DFF / DST 压缩 / 损坏 → 回退 PCM
     };
     let dop_rate = match dop_pcm_rate(info.dsd_rate) {
         Some(rate) => rate,
@@ -640,7 +641,7 @@ fn run_exclusive_playback(
         .user_volume
         .store(request.volume.to_bits(), Ordering::Relaxed);
 
-    // DSD(.dsf) 原生 DoP 直出；关闭直通或不满足条件时回退到常规 PCM 路径
+    // DSD(.dsf/.dff) 原生 DoP 直出；关闭直通或不满足条件时回退到常规 PCM 路径
     if request.dsd_native_passthrough && attempt_dop_playback(&request, &command_rx, &init_tx)? {
         return Ok(());
     }

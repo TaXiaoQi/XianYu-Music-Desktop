@@ -17,6 +17,8 @@ const PROXY_COVER_DOMAINS = [
   'y.gtimg.cn',
   'qpic.cn',
   'sycdn.kuwo.cn',
+  // 网易云 CDN 在 WebView2 内直连经常 403/加载失败（应用 Origin 不在其白名单），
+  // 必须走后端 proxy_image（带 Referer: https://music.163.com/）才能稳定显示
   'music.126.net',
   '163.com',
 ];

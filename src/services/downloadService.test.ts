@@ -278,7 +278,7 @@ describe('downloadService: probeDownloadableQualities', () => {
         const result = await (lxPluginGetMusicUrl as any)(_plugin, _lxSource, _songInfo, quality);
         const url = result?.url;
         if (!url || !/^https?:/.test(url)) return null;
-        return url;
+        return { url, quality };
       },
     );
   });

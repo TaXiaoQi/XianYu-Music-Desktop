@@ -2276,6 +2276,50 @@ mod tests {
         assert_decodes(false);
     }
 
+    /// 端到端：WavPack (.wv) 解码链路。用 wavicle 编码器生成最小 .wv 流，
+    /// 验证 Decoder::new 能识别 wvpk 魔数、解码出正确样本并支持 seek。
+    #[test]
+    fn rodio_decodes_and_seeks_wavpack() {
+        let params = wavicle::EncodeParams {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+        };
+        let frames: Vec<i32> = (0..4410)
+            .flat_map(|i| {
+                let l = (i % 1000) * 30 - 15000;
+                let r = 15000 - (i % 700) * 40;
+                [l, r]
+            })
+            .collect();
+        let bytes = wavicle::encode_int(params, &frames).expect("编码 wv 流失败");
+
+        let cursor = std::io::Cursor::new(bytes);
+        let mut decoder = Decoder::new(cursor).expect("rodio 应能解码 wv 流");
+        assert_eq!(decoder.sample_rate(), 44_100, "wv 采样率应为 44100");
+        assert_eq!(decoder.channels(), 2, "wv 声道数应为 2");
+        assert_eq!(
+            decoder.total_duration().map(|d| d.as_millis()),
+            Some(100),
+            "wv 总时长应为 100ms"
+        );
+
+        let samples: Vec<f32> = decoder.by_ref().collect();
+        assert_eq!(samples.len(), frames.len(), "wv 应解码出全部交错样本");
+        for (got, want) in samples.iter().zip(frames.iter()) {
+            assert!(
+                (got - *want as f32 / 32768.0).abs() < 1e-6,
+                "wv 样本数值不符：{got} vs {want}"
+            );
+        }
+
+        decoder
+            .try_seek(Duration::from_millis(50))
+            .expect("wv 应支持 seek");
+        let remaining = decoder.count();
+        assert_eq!(remaining, 2205 * 2, "seek 到 50ms 后应剩余一半样本");
+    }
+
     fn test_progress_at(seconds: f64) -> Arc<SharedProgress> {
         let sample_rate = 44_100_u32;
         let channels = 2_u32;

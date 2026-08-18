@@ -211,6 +211,7 @@ fn supported_audio_extension(path: &str) -> bool {
             if matches!(
                 ext.as_str(),
                 "mp3" | "flac" | "wav" | "m4a" | "aac" | "ogg" | "opus" | "aiff" | "aif"
+                    | "dsf" | "dff" | "ape" | "wv"
             )
     )
 }

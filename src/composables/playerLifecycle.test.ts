@@ -35,6 +35,7 @@ vi.mock('../services/tauri/playbackApi', () => ({
     setOutputDevice: mocks.setOutputDevice,
     setAudioOutputMode: mocks.setAudioOutputMode,
     updateLoudnessSettings: mocks.updateLoudnessSettings,
+    setPreventSleep: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
