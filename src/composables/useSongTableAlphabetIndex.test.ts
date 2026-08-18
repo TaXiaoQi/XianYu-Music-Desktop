@@ -29,7 +29,7 @@ const makeSong = (path: string): Song => ({
   duration: 180,
 });
 
-const mountAlphabetIndex = (currentViewMode: Ref<string>) => {
+const mountAlphabetIndex = (currentViewMode: Ref<string>, routePath: Ref<string> = ref('/')) => {
   const songs = ref([makeSong('/music/demo.flac'), makeSong('/music/next.flac')]);
   const result = useSongTableAlphabetIndex({
     songs,
@@ -37,7 +37,7 @@ const mountAlphabetIndex = (currentViewMode: Ref<string>) => {
     containerHeight: ref(600),
     containerRef: ref(null),
     rootRef: ref(null),
-    routePath: ref('/'),
+    routePath,
     currentViewMode,
     localSortMode: ref('title'),
     folderSortMode: ref('title'),
@@ -77,6 +77,39 @@ describe('useSongTableAlphabetIndex', () => {
 
       const { result, unmount } = mountAlphabetIndex(ref(viewMode));
 
+      expect(result.canLocateCurrentSong.value).toBe(true);
+
+      unmount();
+    },
+  );
+
+  // 收藏/最近播放页复用 SongTable，但滚动控件此前被 `routePath === '/'` 挡住，
+  // 需放宽到这两个页面也能显示
+  it.each([
+    ['favorites', '/favorites'],
+    ['recent', '/recent'],
+  ] as const)(
+    'shows scroll-to-top button in %s page after scrolling past the first row',
+    (viewMode, routePath) => {
+      const { result, unmount } = mountAlphabetIndex(ref(viewMode), ref(routePath));
+
+      expect(result.showScrollToTopButton.value).toBe(true);
+
+      unmount();
+    },
+  );
+
+  it.each([
+    ['favorites', '/favorites'],
+    ['recent', '/recent'],
+  ] as const)(
+    'keeps locate-current-song available in %s page when the current song is in the list',
+    (viewMode, routePath) => {
+      usePlaybackStore().currentSong = makeSong('/music/demo.flac');
+
+      const { result, unmount } = mountAlphabetIndex(ref(viewMode), ref(routePath));
+
+      expect(result.showLocateCurrentSongButton.value).toBe(true);
       expect(result.canLocateCurrentSong.value).toBe(true);
 
       unmount();
