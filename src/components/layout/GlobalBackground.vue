@@ -669,6 +669,7 @@ const customBgTransform = computed(() => {
             transform: `scale(${activeBackgroundInfo.scale})`,
             opacity: staticImageOpacity,
           }"
+          referrerpolicy="no-referrer"
         />
       </div>
     </transition>

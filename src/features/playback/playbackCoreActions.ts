@@ -26,10 +26,18 @@ export const createPlaybackCoreActions = ({
     getPlayerQueue().prevSong();
   };
 
+  const seekTo = (time: number) =>
+    getPlayerPlayback().seekTo(time);
+
+  const stopPlayback = () =>
+    getPlayerPlayback().stopPlaybackRuntime();
+
   return {
     playSong,
     togglePlay,
     nextSong,
     prevSong,
+    seekTo,
+    stopPlayback,
   };
 };

@@ -78,7 +78,7 @@ const pluginManagerVisited = ref(false);
 const steps: { key: Step; label: string }[] = [
   { key: 'theme', label: '主题' },
   { key: 'material', label: '材质' },
-  { key: 'shortcuts', label: '快捷键' },
+  { key: 'shortcuts', label: '快捷按键' },
   { key: 'plugins', label: '插件' },
   { key: 'account', label: '账号' },
 ];
@@ -1001,13 +1001,13 @@ onUnmounted(() => {
                         class="text-black/60 dark:text-white/60 font-light tracking-wider mb-4"
                         style="font-size: clamp(14px, 1.2vw, 18px);"
                       >
-                        快捷键
+                        快捷按键
                       </p>
                       <h2
                         class="text-black dark:text-white font-black tracking-tight leading-[0.95]"
                         style="font-size: clamp(40px, 6vw, 80px);"
                       >
-                        快捷键
+                        快捷按键
                       </h2>
                       <p
                         class="mt-6 text-black/50 dark:text-white/50 font-light max-w-sm"

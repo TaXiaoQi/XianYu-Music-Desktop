@@ -190,8 +190,8 @@ const handleCoverClick = (event: MouseEvent) => {
     >
       <!-- Main Cover Container -->
       <div class="w-full h-full rounded-[inherit] overflow-hidden relative isolate z-20">
-        <img v-if="displayedLocalCoverUrl" :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`" :src="displayedLocalCoverUrl" @error="onLocalCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-[transform,filter,opacity] duration-[240ms] ease-out z-10" :class="props.isExpanded ? (fullCoverLoading ? 'scale-[1.03] blur-[10px] brightness-90' : 'scale-100 blur-0 brightness-100') : 'scale-125 blur-0 brightness-100'" draggable="false" decoding="async" />
-        <img v-if="currentBigCoverUrl" :key="`big:${currentSongPath}:${currentBigCoverUrl}`" :src="currentBigCoverUrl" @load="onBigCoverLoad" @error="onBigCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-opacity duration-[240ms] ease-out z-20" :class="[props.isExpanded ? 'scale-100' : 'scale-125', bigCoverLoaded ? 'opacity-100' : 'opacity-0']" draggable="false" decoding="async" />
+        <img v-if="displayedLocalCoverUrl" :key="`thumb:${currentSongPath}:${displayedLocalCoverUrl}`" :src="displayedLocalCoverUrl" @error="onLocalCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-[transform,filter,opacity] duration-[240ms] ease-out z-10" :class="props.isExpanded ? (fullCoverLoading ? 'scale-[1.03] blur-[10px] brightness-90' : 'scale-100 blur-0 brightness-100') : 'scale-125 blur-0 brightness-100'" draggable="false" decoding="async" referrerpolicy="no-referrer" />
+        <img v-if="currentBigCoverUrl" :key="`big:${currentSongPath}:${currentBigCoverUrl}`" :src="currentBigCoverUrl" @load="onBigCoverLoad" @error="onBigCoverError" class="absolute inset-0 w-full h-full object-cover select-none transition-opacity duration-[240ms] ease-out z-20" :class="[props.isExpanded ? 'scale-100' : 'scale-125', bigCoverLoaded ? 'opacity-100' : 'opacity-0']" draggable="false" decoding="async" referrerpolicy="no-referrer" />
         <div v-if="showCoverPlaceholder" class="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 text-zinc-400 dark:from-zinc-700 dark:to-zinc-800 dark:text-zinc-400">
           <svg xmlns="http://www.w3.org/2000/svg" :class="props.isExpanded ? 'h-32 w-32' : 'h-6 w-6'" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" :stroke-width="props.isExpanded ? 1 : 1.7" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
         </div>
@@ -202,11 +202,11 @@ const handleCoverClick = (event: MouseEvent) => {
         <div v-if="props.isExpanded" class="absolute top-[calc(100%+2px)] left-0 w-full h-[65%] pointer-events-none z-10 reflection-wrapper rounded-[inherit] overflow-hidden">
           <!-- 清晰层：中间清晰，四周淡出 -->
           <div class="absolute inset-0 reflection-glass reflection-glass--sharp rounded-[inherit] overflow-hidden">
-            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" />
+            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
           </div>
           <!-- 模糊层：只在四周边缘显示，让边缘虚化 -->
           <div class="absolute inset-0 reflection-glass reflection-glass--blur rounded-[inherit] overflow-hidden">
-            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" />
+            <img v-if="reflectionCoverUrl" :src="reflectionCoverUrl" class="absolute top-0 left-0 w-full aspect-square object-cover scale-y-[-1]" draggable="false" decoding="async" referrerpolicy="no-referrer" />
           </div>
         </div>
       </transition>

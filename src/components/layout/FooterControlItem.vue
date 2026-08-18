@@ -67,6 +67,9 @@ const ctx = inject<{
   volumeBarRef: Ref<HTMLElement | null>;
   startDrag: (e: PointerEvent) => void;
   toggleMute: () => void;
+  // Bit-perfect / DSD 直通禁用态
+  isAudioControlLocked: Ref<boolean>;
+  audioLockTooltip: Ref<string>;
   // 均衡器
   showEqPanel: Ref<boolean>;
   toggleEqPanel: (e: MouseEvent) => void;
@@ -115,6 +118,8 @@ const {
   handleVolumeWheel,
   startDrag,
   toggleMute,
+  isAudioControlLocked,
+  audioLockTooltip,
   showEqPanel,
   toggleEqPanel,
   showPlaylist,
@@ -347,27 +352,29 @@ watch(
   <div v-else-if="itemKey === 'quality'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       :ref="el => { if (el) ctx.qualityButtonRef.value = el as HTMLElement; }"
-      @click="toggleQualityMenu"
+      @click="!isAudioControlLocked && toggleQualityMenu($event)"
       class="flex shrink-0 items-center justify-center whitespace-nowrap w-9 h-9 text-[12px] font-semibold rounded-full transition-colors select-none"
       :class="[
-        !isQualitySelectableSong
-          ? (showPlayerDetail
-              ? 'text-white/80 cursor-default'
-              : 'text-gray-700 dark:text-white/80 cursor-default')
-          : showQualityMenu
-            ? 'text-[#EC4141] bg-[#EC4141]/10'
-            : (showPlayerDetail
-                ? 'text-white/80 hover:text-white hover:bg-white/10'
-                : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
+        isAudioControlLocked
+          ? 'opacity-40 cursor-not-allowed'
+          : !isQualitySelectableSong
+            ? (showPlayerDetail
+                ? 'text-white/80 cursor-default'
+                : 'text-gray-700 dark:text-white/80 cursor-default')
+            : showQualityMenu
+              ? 'text-[#EC4141] bg-[#EC4141]/10'
+              : (showPlayerDetail
+                  ? 'text-white/80 hover:text-white hover:bg-white/10'
+                  : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
       ]"
-      :title="isQualitySelectableSong ? '音质选择' : '本地音质'"
+      :title="isAudioControlLocked ? audioLockTooltip : (isQualitySelectableSong ? '音质选择' : '本地音质')"
     >
       <FooterControlIcon item-key="quality" :quality-label="qualityButtonLabel" />
     </button>
 
     <transition name="fade-scale">
       <div
-        v-if="showQualityMenu"
+        v-if="!isAudioControlLocked && showQualityMenu"
         :ref="el => { if (el) ctx.qualityMenuRef.value = el as HTMLElement; }"
         class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
       >
@@ -434,10 +441,10 @@ watch(
     class="relative flex items-center justify-center h-full z-[70]"
     @mouseenter="handleVolumeEnter"
     @mouseleave="handleVolumeLeave"
-    @wheel.prevent.stop="handleVolumeWheel"
+    @wheel.prevent.stop="!isAudioControlLocked && handleVolumeWheel($event)"
   >
     <div
-      v-if="showVolumeSlider || isDraggingVolume"
+      v-if="!isAudioControlLocked && (showVolumeSlider || isDraggingVolume)"
       class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
     >
       <div class="absolute top-full left-0 w-full h-4"></div>
@@ -455,10 +462,14 @@ watch(
         </div>
       </div>
     </div>
-    <button @click="toggleMute"
+    <button @click="!isAudioControlLocked && toggleMute()"
       class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
-      :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
-      title="音量"
+      :class="[
+        isAudioControlLocked
+          ? 'opacity-40 cursor-not-allowed'
+          : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
+      ]"
+      :title="isAudioControlLocked ? audioLockTooltip : '音量'"
     >
       <FooterControlIcon item-key="volume" :volume="volume" class="h-5 w-5" />
     </button>

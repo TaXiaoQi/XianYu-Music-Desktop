@@ -1023,8 +1023,86 @@ export async function pluginPlaylistSearch(
       result = (await inst.instance.search(keyword, page, 'playlist')) ?? {};
       list = extractResultList(result);
     }
+    // 回退 0: 尝试 'album' 类型，将专辑也索引到歌单页
     if (list.length === 0) {
-      // log() 只进插件调试页，这里同步输出到控制台，便于用户在 DevTools 定位歌单搜索失效
+      result = (await inst.instance.search(keyword, page, 'album')) ?? {};
+      list = extractResultList(result);
+      if (list.length > 0) {
+        return list.map((item: any) => {
+          resetMediaItem(item, source.name);
+          const id = item.id || item.albumId || item.songId || item.musicId || '';
+          const title = stripHtmlTags(item.title || item.name || item.album || '');
+          const coverUrl = extractCoverUrl(item);
+          return {
+            id,
+            title,
+            coverUrl,
+            playCount: item.playCount ?? item.playcount ?? item.play_count,
+            trackCount: item.trackCount ?? item.trackcount ?? item.track_count,
+            artist: stripHtmlTags(item.artist || item.author || item.singer || ''),
+            platform: item.platform || source.name,
+            platformId: id,
+            pluginId: source.id,
+            rawData: { ...item, _isAlbum: true },
+          };
+        });
+      }
+    }
+    if (list.length === 0) {
+      // 回退 1: 尝试 importMusicSheet（用户输入收藏夹 URL/ID 时）
+      if (typeof inst.instance.importMusicSheet === 'function') {
+        try {
+          const imported = await inst.instance.importMusicSheet(keyword);
+          if (Array.isArray(imported) && imported.length > 0) {
+            const title = `${source.name}收藏夹`;
+            return [{
+              id: keyword,
+              title,
+              coverUrl: extractCoverUrl(imported[0]),
+              trackCount: imported.length,
+              artist: '',
+              platform: source.name,
+              platformId: keyword,
+              pluginId: source.id,
+              rawData: { id: keyword, title, _importedTracks: imported },
+            }];
+          }
+        } catch (e: any) {
+          console.warn(`[${source.name}] importMusicSheet 回退失败:`, e?.message || e);
+        }
+      }
+
+      // 回退 2: 尝试 getTopLists（用户输入关键词搜索时，返回排行榜作为歌单列表）
+      if (page === 1 && typeof inst.instance.getTopLists === 'function') {
+        try {
+          const topLists = await inst.instance.getTopLists();
+          if (Array.isArray(topLists) && topLists.length > 0) {
+            const results: PluginPlaylistSearchResult[] = [];
+            for (const category of topLists) {
+              if (category?.data && Array.isArray(category.data)) {
+                for (const item of category.data) {
+                  results.push({
+                    id: String(item.id || ''),
+                    title: stripHtmlTags(item.title || item.name || ''),
+                    coverUrl: item.coverImg || item.cover || extractCoverUrl(item),
+                    playCount: item.playCount ?? item.playcount,
+                    trackCount: item.trackCount ?? item.trackcount,
+                    artist: stripHtmlTags(category.title || ''),
+                    platform: source.name,
+                    platformId: String(item.id || ''),
+                    pluginId: source.id,
+                    rawData: { ...item, _isTopList: true },
+                  });
+                }
+              }
+            }
+            if (results.length > 0) return results;
+          }
+        } catch (e: any) {
+          console.warn(`[${source.name}] getTopLists 回退失败:`, e?.message || e);
+        }
+      }
+
       console.warn(
         `[${source.name}] 歌单搜索无结果: search(sheet/playlist) 返回 keys=`,
         result ? Object.keys(result) : result,
@@ -1073,6 +1151,53 @@ export async function pluginGetPlaylistDetail(
   if (!inst) return [];
 
   try {
+    // 如果是 importMusicSheet 导入的歌单，直接返回已导入的曲目
+    if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
+      if (page === 1) {
+        const list = sheetItem._importedTracks;
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+      return [];
+    }
+
+    // 如果是专辑条目（歌单搜索中将专辑索引为歌单），用 getAlbumInfo 获取曲目
+    if (sheetItem?._isAlbum) {
+      if (typeof inst.instance.getAlbumInfo === 'function') {
+        const getAlbumInfo = inst.instance.getAlbumInfo;
+        try {
+          const result = await retryOnEmpty(
+            `[${source.name}] getAlbumInfo(album as playlist) album="${stripHtmlTags(sheetItem?.title || sheetItem?.name || '')}"`,
+            () => getAlbumInfo(sheetItem, page),
+            (r) => extractResultList(r).length === 0,
+          );
+          const list = extractResultList(result);
+          if (list.length > 0) {
+            list.forEach((_: any) => { resetMediaItem(_, source.name); });
+            return list.map((item: any) => toPluginSearchResult(item, source));
+          }
+        } catch (e: any) {
+          log(`[${source.name}] getAlbumInfo(album as playlist) 调用失败: ${e?.message}`);
+        }
+      }
+      return [];
+    }
+
+    // 如果是排行榜条目，用 getTopListDetail 获取曲目
+    if (sheetItem?._isTopList && typeof inst.instance.getTopListDetail === 'function') {
+      try {
+        const result = await inst.instance.getTopListDetail(sheetItem, page);
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          list.forEach((_: any) => { resetMediaItem(_, source.name); });
+          return list.map((item: any) => toPluginSearchResult(item, source));
+        }
+      } catch (e: any) {
+        log(`[${source.name}] getTopListDetail 调用失败: ${e?.message}`);
+      }
+      return [];
+    }
+
     // 优先用 getMusicSheetInfo 获取歌单曲目
     if (typeof inst.instance.getMusicSheetInfo === 'function') {
       const getSheetInfo = inst.instance.getMusicSheetInfo;
@@ -1107,6 +1232,27 @@ export async function pluginGetPlaylistDetail(
     return [];
   } catch (e: any) {
     log(`[${source.name}] 获取歌单详情失败: ${e?.message}`);
+    return [];
+  }
+}
+
+// ==================== 收藏夹导入 ====================
+
+export async function pluginImportMusicSheet(
+  source: PluginSource,
+  urlLike: string,
+): Promise<PluginSearchResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.importMusicSheet !== 'function') return [];
+    const imported = await inst.instance.importMusicSheet(urlLike);
+    if (!Array.isArray(imported) || imported.length === 0) return [];
+    imported.forEach((_: any) => { resetMediaItem(_, source.name); });
+    return imported.map((item: any) => toPluginSearchResult(item, source));
+  } catch (e: any) {
+    log(`[${source.name}] importMusicSheet 失败: ${e?.message}`);
     return [];
   }
 }

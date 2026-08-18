@@ -161,6 +161,7 @@ onBeforeUnmount(() => {
                 class="w-full h-full object-cover"
                 alt=""
                 loading="lazy"
+                referrerpolicy="no-referrer"
                 @error="handleImgError"
               />
               <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">

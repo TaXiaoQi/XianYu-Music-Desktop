@@ -101,11 +101,13 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
       return;
     }
 
-    // 若调用方未提供封面 URL（本地歌曲封面可能尚未异步加载完成），
-    // 回退到源元素内 <img> 的 src，确保动画仍能触发
+    // 优先使用源元素内已渲染的 <img> src（可能是代理后的 data: URL），
+    // 其次回退到调用方提供的 coverUrl（原始 URL）。
+    // 这样在线歌曲列表中已代理的封面能直接用于飞行动画，
+    // 避免原始 URL 因 CDN 防盗链 403 导致飞封面图片加载失败。
     const resolveCoverUrl = (): string =>
-      coverUrl
-      || (sourceEl.querySelector('img') as HTMLImageElement | null)?.src
+      (sourceEl.querySelector('img') as HTMLImageElement | null)?.src
+      || coverUrl
       || '';
 
     const resolvedCoverUrl = resolveCoverUrl();
@@ -146,6 +148,7 @@ export function launchFlyingCover(songPath: string, coverUrl: string): Promise<v
       img.src = url;
       img.alt = '';
       img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
       img.setAttribute('aria-hidden', 'true');
       img.style.cssText =
         `position:fixed;left:0;top:0;width:${fromRect.width}px;height:${fromRect.height}px;` +

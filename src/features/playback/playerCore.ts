@@ -302,6 +302,8 @@ function createPlayerCore() {
     togglePlay,
     nextSong,
     prevSong,
+    seekTo,
+    stopPlayback,
     applyLibraryScanBatch,
     flushBufferedLibraryScanBatch,
     handleSeekCompleted: payload => playerPlayback.handleSeekCompleted(payload),
@@ -433,6 +435,14 @@ function createPlayerCore() {
 
   function prevSong() {
     return playbackCoreActions.prevSong();
+  }
+
+  function seekTo(time: number) {
+    return playbackCoreActions.seekTo(time);
+  }
+
+  function stopPlayback() {
+    return playbackCoreActions.stopPlayback();
   }
 
   function init() {

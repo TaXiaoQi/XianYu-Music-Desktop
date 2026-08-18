@@ -124,6 +124,16 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
 pub fn run() {
     #[cfg(target_os = "windows")]
     {
+        // 注册 AppUserModelID，使 Win11 SMTC（系统媒体传输控件）能正确显示应用名称，
+        // 而非"未知应用"。必须在创建窗口之前调用。
+        // SAFETY: SetCurrentProcessExplicitAppUserModelID 是线程安全的 Win32 API，
+        // 仅设置当前进程的 AppUserModelID 字符串，无副作用。
+        unsafe {
+            use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+            let app_id: Vec<u16> = "com.xymusic.desktop\0".encode_utf16().collect();
+            let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+        }
+
         if should_disable_gpu_for_startup() {
             append_webview2_browser_arg("--disable-gpu");
         }

@@ -742,6 +742,20 @@ const handleVolumeLeave = () => {
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
 
+// --- Bit-perfect / DSD 直通时禁用底栏音量与音质 UI ---
+const isBitPerfectActive = computed(() =>
+  settings.value.audio.outputMode === 'wasapiExclusive' && settings.value.audio.outputBitPerfect === true,
+);
+const isDsdPassthroughActive = computed(() =>
+  settings.value.audio.outputMode === 'wasapiExclusive' && settings.value.audio.dsdNativePassthrough === true,
+);
+const isAudioControlLocked = computed(() => isBitPerfectActive.value || isDsdPassthroughActive.value);
+const audioLockTooltip = computed(() => {
+  if (isBitPerfectActive.value && isDsdPassthroughActive.value) return 'Bit-perfect / DSD 直出中';
+  if (isBitPerfectActive.value) return 'Bit-perfect 输出中';
+  return 'DSD 直出中';
+});
+
 // --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
 const showFooterTools = ref(false);
 const footerToolsRef = ref<HTMLElement | null>(null);
@@ -908,6 +922,9 @@ provide('footerContext', {
   volumeBarRef,
   startDrag,
   toggleMute,
+  // Bit-perfect / DSD 直通禁用态
+  isAudioControlLocked,
+  audioLockTooltip,
   // 均衡器
   showEqPanel,
   toggleEqPanel,

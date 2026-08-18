@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
 import type { Playlist, Song } from '../../types';
-import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin } from '../../services/playlistImport';
+import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/playlistImport';
 import type { PlaylistImportResult, PlaylistSource } from '../../services/playlistImport';
 import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
 import type { ImportedPlaylist } from '../../services/backupImport';
@@ -387,7 +387,13 @@ const handleConfirm = async () => {
       const currentSource = importSources.value.find(s => s.key === selectedSource.value);
       let result: PlaylistImportResult;
 
-      if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
+      if (currentSource?.type === 'favorites' && currentSource.pluginSource) {
+        // 收藏夹导入（如哔哩哔哩）：直接调用 importMusicSheet 获取全部曲目
+        result = await importPlaylistFromFavorites(
+          currentSource.pluginSource,
+          importInput.value.trim(),
+        );
+      } else if (currentSource?.type === 'musicfree' && currentSource.pluginSource) {
         // MusicFree 插件导入：通过插件搜索歌单并获取详情
         result = await importPlaylistFromMusicFreePlugin(
           currentSource.pluginSource,
@@ -665,7 +671,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
               <!-- 歌单链接 -->
               <div class="space-y-1.5">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                  {{ currentSourceType === 'musicfree' ? '歌单名称或关键词' : '歌单链接或 ID' }}
+                  {{ currentSourceType === 'musicfree'
+                    ? '歌单名称或关键词'
+                    : currentSourceType === 'favorites'
+                      ? '收藏夹链接或 ID'
+                      : '歌单链接或 ID' }}
                 </label>
                 <input
                   ref="importInputRef"
@@ -674,7 +684,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
                   :disabled="importing"
                   :placeholder="currentSourceType === 'musicfree'
                     ? '输入歌单名称搜索并导入'
-                    : '粘贴歌单分享链接或输入歌单 ID'"
+                    : currentSourceType === 'favorites'
+                      ? '粘贴收藏夹分享链接或输入收藏夹 ID'
+                      : '粘贴歌单分享链接或输入歌单 ID'"
                   class="w-full px-4 py-2.5 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-[#EC4141] focus:border-transparent transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm disabled:opacity-50"
                 />
               </div>
@@ -696,7 +708,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
               <!-- 提示文本 -->
               <div class="text-xs text-gray-400 dark:text-white/40 leading-relaxed">
-                打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方输入框即可一键导入。仅支持公开歌单。
+                {{ currentSourceType === 'favorites'
+                  ? '打开哔哩哔哩，找到想导入的收藏夹，复制链接粘贴到上方即可一键导入。'
+                  : '打开对应平台 App，找到想导入的歌单，点击分享并复制链接，粘贴到上方输入框即可一键导入。仅支持公开歌单。' }}
               </div>
 
               <!-- 错误提示 -->

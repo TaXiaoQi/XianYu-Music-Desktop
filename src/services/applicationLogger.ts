@@ -4,7 +4,7 @@ import type { LogLevel, LogSettings } from '../types';
 
 export const APPLICATION_LOG_STORAGE_KEY = 'xianyu_application_logs_v1';
 export const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
-const MAX_LOG_ENTRIES = 100;
+const MAX_LOG_ENTRIES = 200;
 const MAX_ERROR_LOG_ENTRIES = 10;
 
 export interface ApplicationLogEntry {
@@ -71,7 +71,7 @@ export const filterLogEntriesForRetention = (
   _retentionDays: number,
   _now = Date.now(),
 ) => {
-  // 只保留最近 100 条日志，错误日志只保留最近 10 条，超过从最远的开始清除
+  // 只保留最近 200 条日志，错误日志只保留最近 10 条，超过从最远的开始清除
   let result = source.slice(-MAX_LOG_ENTRIES);
   // 在保留的条目中，错误日志只保留最近 10 条
   const errorEntries = result.filter(e => e.level === 'error');

@@ -114,6 +114,7 @@ onUnmounted(() => {
         :style="{ filter: coverFilterStyle }"
         draggable="false"
         decoding="async"
+        referrerpolicy="no-referrer"
       />
     </div>
 

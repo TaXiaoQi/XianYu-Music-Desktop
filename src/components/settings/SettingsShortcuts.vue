@@ -115,7 +115,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
     <section class="space-y-3">
       <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
         <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
-        快捷键
+        快捷按键
       </h2>
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
@@ -126,7 +126,7 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
 
         <div class="px-4 py-4 grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/45">
           <div class="truncate">功能说明</div>
-          <div class="truncate">快捷键</div>
+          <div class="truncate">快捷按键</div>
           <div class="truncate">全局快捷键</div>
         </div>
 

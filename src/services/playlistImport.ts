@@ -13,7 +13,7 @@
 import CryptoJs from 'crypto-js';
 import { pluginApi } from './tauri/pluginApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch } from './pluginEngine';
+import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import type { PluginSearchResult, PluginSource } from '../types';
 
@@ -23,8 +23,8 @@ export interface PlaylistSource {
   key: string;       // "wy" | "tx" | "kw" | "kg" | "auto" | "mf_<pluginId>"
   name: string;      // 显示名称
   platform: string;  // 平台中文名
-  /** 来源类型：LX 直连导入 / MusicFree 插件导入 */
-  type: 'lx' | 'musicfree';
+  /** 来源类型：LX 直连导入 / MusicFree 插件导入 / 收藏夹导入 */
+  type: 'lx' | 'musicfree' | 'favorites';
   /** MusicFree 插件源（仅 type='musicfree' 时有值），用于调用插件 API */
   pluginSource?: PluginSource;
 }
@@ -107,6 +107,21 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
         type: 'musicfree',
         pluginSource: p,
       });
+
+      // 哔哩哔哩插件：额外添加收藏夹导入入口
+      if (p.sources.some(s => s.toLowerCase() === 'bilibili')) {
+        const favKey = `fav_${p.id}`;
+        if (!seenKeys.has(favKey)) {
+          seenKeys.add(favKey);
+          sources.push({
+            key: favKey,
+            name: '哔哩哔哩收藏夹',
+            platform: p.name,
+            type: 'favorites',
+            pluginSource: p,
+          });
+        }
+      }
     }
   }
 
@@ -1329,6 +1344,50 @@ export async function importPlaylistFromMusicFreePlugin(
       img: sheetItem.coverUrl || '',
       desc: '',
       author: sheetItem.artist || '',
+      playCount: '',
+    },
+  };
+}
+
+// ==================== 收藏夹导入（哔哩哔哩等） ====================
+
+/**
+ * 通过插件的 importMusicSheet 接口直接导入收藏夹
+ *
+ * 与 importPlaylistFromMusicFreePlugin 不同，此函数不经过搜索步骤，
+ * 直接将 URL/ID 传给插件的 importMusicSheet 方法获取全部曲目。
+ *
+ * @param pluginSource 支持收藏夹导入的插件源（如哔哩哔哩）
+ * @param urlOrId 收藏夹链接或 ID
+ * @returns 导入结果
+ */
+export async function importPlaylistFromFavorites(
+  pluginSource: PluginSource,
+  urlOrId: string,
+): Promise<PlaylistImportResult> {
+  const input = urlOrId.trim();
+  if (!input) {
+    throw new Error('请输入收藏夹链接或 ID');
+  }
+
+  log(`[Favorites] 导入收藏夹: "${input}" via ${pluginSource.name}`);
+
+  const songs = await pluginImportMusicSheet(pluginSource, input);
+  if (songs.length === 0) {
+    throw new Error(`未能从 ${pluginSource.name} 收藏夹中获取歌曲，请检查链接是否正确`);
+  }
+
+  log(`[Favorites] 收藏夹导入完成: ${songs.length} 首歌曲`);
+
+  return {
+    source: pluginSource.name,
+    songs,
+    total: songs.length,
+    info: {
+      name: `${pluginSource.name}收藏夹`,
+      img: songs[0]?.coverUrl || '',
+      desc: '',
+      author: '',
       playCount: '',
     },
   };

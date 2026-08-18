@@ -78,6 +78,8 @@ const createLifecycleDeps = (loadLyrics = vi.fn()) => ({
   togglePlay: vi.fn(),
   nextSong: vi.fn(),
   prevSong: vi.fn(),
+  seekTo: vi.fn(),
+  stopPlayback: vi.fn(),
   applyLibraryScanBatch: vi.fn(),
   flushBufferedLibraryScanBatch: vi.fn(),
   handleSeekCompleted: vi.fn(),
