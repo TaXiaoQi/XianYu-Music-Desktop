@@ -275,7 +275,7 @@ import {
 } from '../services/lxMusicSdk';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
-import { pluginApi } from '../services/tauri/pluginApi';
+import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import {
   getStoredPlugins,
   pluginsVersion,
@@ -1275,22 +1275,17 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
 }
 
 /** 封面加载失败时，尝试代理回退；若代理也失败则清除 img 显示占位符 */
-const lxProxyFailedUrls = new Set<string>();
 const handleImgError = (item: LxSearchResultItem) => {
-  if (item.img && !item.img.startsWith('data:') && !lxProxyFailedUrls.has(item.img)) {
-    // 尝试通过后端代理加载
-    const originalUrl = item.img;
-    lxProxyFailedUrls.add(originalUrl);
+  const originalUrl = item.img;
+  if (originalUrl && !originalUrl.startsWith('data:')) {
     (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(originalUrl);
-        coverProxyCache.set(originalUrl, dataUrl);
+      const dataUrl = await tryProxyImage(originalUrl);
+      if (dataUrl) {
         item.img = dataUrl;
-        lxSearchResults.value = [...lxSearchResults.value];
-      } catch {
+      } else {
         item.img = '';
-        lxSearchResults.value = [...lxSearchResults.value];
       }
+      lxSearchResults.value = [...lxSearchResults.value];
     })();
     return;
   }
@@ -1400,66 +1395,9 @@ const handlePlaySong = (item: LxSearchResultItem) => {
 
 const formatMfDuration = formatSearchDuration;
 
-// 通用图片代理缓存：URL -> data URL
-// 用于处理需要 Referer 头或有 CORS 限制的图片（B站、酷我等）
-const coverProxyCache = new Map<string, string>();
-// 已尝试代理的 URL Set，避免无限重试
-const coverProxyAttempted = new Set<string>();
-
-/**
- * 判断 URL 是否需要通过后端代理加载。
- * 以下情况需要代理：
- * - http:// 协议（混合内容会被 WebView2 阻止）
- * - B站图片域名（需特殊 Referer 头）
- */
-const needsProxy = (url: string): boolean => {
-  if (!url) return false;
-  if (url.startsWith('data:') || url.startsWith('asset:')) return false;
-  if (url.startsWith('http://')) return true;
-  const proxyDomains = [
-    'hdslb.com',
-    'bilivideo.com',
-    'y.gtimg.cn',
-    'qpic.cn',
-    'sycdn.kuwo.cn',
-    // 网易云 CDN 同理：WebView2 直连易 403，走后端代理（与 coverProxy.ts 保持一致）
-    'music.126.net',
-    '163.com',
-  ];
-  return proxyDomains.some(domain => url.includes(domain));
-};
-
-/**
- * 获取需要代理的封面 URL：
- * 如果 URL 需要代理，先返回缓存结果（如有），同时异步发起代理请求。
- * 如果不需要代理，直接返回原始 URL。
- */
-const getProxiedCoverUrl = (url: string, refreshTrigger?: () => void): string => {
-  if (!url) return '';
-  if (!needsProxy(url)) return url;
-
-  const cached = coverProxyCache.get(url);
-  if (cached) return cached;
-
-  // 已尝试过且失败的，不再重试
-  if (coverProxyAttempted.has(url)) return '';
-  coverProxyAttempted.add(url);
-
-  // 异步代理并刷新
-  (async () => {
-    try {
-      const dataUrl = await pluginApi.proxyImage(url);
-      coverProxyCache.set(url, dataUrl);
-      refreshTrigger?.();
-    } catch { /* ignore */ }
-  })();
-
-  return ''; // 代理完成前不显示（避免闪烁的 403 图标）
-};
-
 const getMfCoverUrl = (item: PluginSearchResult) => {
   if (!item.coverUrl) return '';
-  return getProxiedCoverUrl(item.coverUrl, () => {
+  return getDisplayCoverUrl(item.coverUrl, () => {
     pluginSearchResults.value = [...pluginSearchResults.value];
   });
 };
@@ -1467,17 +1405,13 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
 const handleMfImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
-  // 如果是原始 URL（非 data:），尝试代理回退
-  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
-    coverProxyAttempted.add(src);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(src);
-        coverProxyCache.set(src, dataUrl);
-        pluginSearchResults.value = [...pluginSearchResults.value];
-      } catch { /* ignore */ }
-    })();
-  }
+  if (!src || src.startsWith('data:')) return;
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    }
+  })();
 };
 
 const handlePlayMfSong = async (item: PluginSearchResult) => {
@@ -1806,7 +1740,7 @@ const getVirtualTrackCoverPath = (entry: SearchTrackEntry) => {
 };
 
 const getVirtualTrackCoverUrl = (entry: SearchTrackEntry) => {
-  if (entry.kind === 'lx') return entry.item.img ? getProxiedCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
+  if (entry.kind === 'lx') return entry.item.img ? getDisplayCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
   if (entry.kind === 'plugin') return entry.item.coverUrl ? getMfCoverUrl(entry.item) : '';
   return entry.item.cover_thumb_path ? getLocalCoverUrl(entry.item) : '';
 };
@@ -1879,18 +1813,18 @@ const getCatalogEntryCover = (entry: CatalogGridEntry) => {
   if (entry.type === 'artist') {
     return entry.source === 'local'
       ? getLocalArtistCover(entry.item)
-      : entry.item.avatarUrl ? getProxiedCoverUrl(entry.item.avatarUrl, refreshFn) : '';
+      : entry.item.avatarUrl ? getDisplayCoverUrl(entry.item.avatarUrl, refreshFn) : '';
   }
 
   if (entry.type === 'album') {
     return entry.source === 'local'
       ? getLocalAlbumCover(entry.item)
-      : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
+      : entry.item.coverUrl ? getDisplayCoverUrl(entry.item.coverUrl, refreshFn) : '';
   }
 
   return entry.source === 'local'
     ? getPlaylistCover(entry.item)
-    : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
+    : entry.item.coverUrl ? getDisplayCoverUrl(entry.item.coverUrl, refreshFn) : '';
 };
 
 const getCatalogEntryTitle = (entry: CatalogGridEntry) => {
@@ -2069,24 +2003,17 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
 const handlePluginImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
-  // 如果是原始 URL（非 data:），尝试代理回退
-  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
-    coverProxyAttempted.add(src);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(src);
-        coverProxyCache.set(src, dataUrl);
-        // 代理成功：立即用 data: URL 替换，避免隐藏
-        img.src = dataUrl;
-        img.style.removeProperty('display');
-        // 刷新对应的结果列表，保证其它已挂载的该 URL 也已命中缓存
-        if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
-        else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
-        else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
-        return;
-      } catch { /* ignore */ }
-    })();
-  }
+  if (!src || src.startsWith('data:')) return;
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.style.removeProperty('display');
+      if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
+      else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
+      else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
+    }
+  })();
   img.style.display = 'none';
 };
 

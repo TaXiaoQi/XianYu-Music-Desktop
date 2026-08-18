@@ -17,6 +17,7 @@ describe('settings store', () => {
 
     expect(settingsStore.settings.language).toBe('zh-CN');
     expect(mergeAppSettings(settingsStore.settings, { language: 'en-US' }).language).toBe('en-US');
+    expect(mergeAppSettings(settingsStore.settings, { language: 'system' }).language).toBe('system');
     expect(mergeAppSettings(settingsStore.settings, {
       language: 'fr-FR' as unknown as 'zh-CN',
     }).language).toBe('zh-CN');

@@ -81,6 +81,7 @@ const staticItems: SettingsSearchItem[] = [
     },
   ]),
   ...makeItems('general', '常规与启动', [
+    { label: '软件语言', keywords: '语言 简体中文 繁體中文 English 跟随系统' },
     { label: '开机自动运行', keywords: '启动 自启动' },
     { label: '启动检测更新', keywords: '更新 检查 版本' },
     { label: 'GPU 加速', keywords: '硬件 图形 性能' },

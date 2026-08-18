@@ -41,6 +41,7 @@ const isLanguageDropdownOpen = ref(false);
 const languageDropdownRef = ref<HTMLElement | null>(null);
 
 const currentLanguageLabel = computed(() => {
+  if (appLanguage.value === 'system') return t('language.system');
   const current = languageOptions.value.find((opt) => opt.value === appLanguage.value);
   return current?.label ?? t('language.zhCN');
 });
@@ -212,6 +213,21 @@ onMounted(() => {
                 v-if="isLanguageDropdownOpen"
                 class="absolute right-0 top-full z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 bg-white/90 p-1 text-xs shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#262626]/95"
               >
+                <button
+                  type="button"
+                  @click="selectLanguageOption('system')"
+                  class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left font-medium transition-colors"
+                  :class="appLanguage === 'system'
+                    ? 'bg-[#EC4141]/10 text-[#EC4141] dark:bg-[#EC4141]/20 dark:text-[#ff8b8b]'
+                    : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                >
+                  <span class="truncate">{{ t('language.system') }}</span>
+                  <Check
+                    v-if="appLanguage === 'system'"
+                    class="h-3.5 w-3.5 shrink-0 text-[#EC4141] dark:text-[#ff8b8b]"
+                  />
+                </button>
+                <div class="my-1 h-px bg-black/5 dark:bg-white/10"></div>
                 <button
                   v-for="option in languageOptions"
                   :key="option.value"

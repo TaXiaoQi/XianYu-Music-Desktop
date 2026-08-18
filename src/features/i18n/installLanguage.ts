@@ -1,6 +1,7 @@
 import { appApi } from '../../services/tauri/appApi';
 import { playerStorage, playerStorageKeys } from '../../services/storage/playerStorage';
 import type { AppLanguage } from '../../types';
+import { resolveLanguage } from './index';
 
 const SUPPORTED: AppLanguage[] = ['zh-CN', 'zh-TW', 'en-US'];
 let latestRequestedLanguage: AppLanguage | null = null;
@@ -48,17 +49,18 @@ export async function consumeInstallLanguage(): Promise<AppLanguage | null> {
  * - 更新本地“已消费值”，避免下次启动把用户选择误判为新安装值。
  */
 export function syncLanguageToInstaller(language: AppLanguage): Promise<void> {
-  if (!isSupported(language)) return Promise.resolve();
+  const resolved = resolveLanguage(language);
+  if (!isSupported(resolved)) return Promise.resolve();
 
-  latestRequestedLanguage = language;
-  playerStorage.setString(playerStorageKeys.consumedInstallLanguage, language);
+  latestRequestedLanguage = resolved;
+  playerStorage.setString(playerStorageKeys.consumedInstallLanguage, resolved);
 
   // 注册表写入必须串行。快速连续切换时，旧请求即使较慢，也不能在新请求之后完成并覆盖最终值。
   const task = installerSyncQueue.then(async () => {
     // 尚未开始的旧请求可直接跳过，只写入用户最新选择。
-    if (latestRequestedLanguage !== language) return;
+    if (latestRequestedLanguage !== resolved) return;
     try {
-      await appApi.setInstallLanguage(language);
+      await appApi.setInstallLanguage(resolved);
     } catch {
       /* 非 Windows 或写入失败时静默忽略，不影响界面语言 */
     }

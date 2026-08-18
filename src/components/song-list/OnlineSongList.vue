@@ -4,8 +4,7 @@ import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { getDisplayCoverUrl } from '../../utils/coverProxy';
-import { pluginApi } from '../../services/tauri/pluginApi';
+import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 
 const { settings } = useSettings();
 const { currentSong, isPlaying } = usePlaybackController();
@@ -29,7 +28,6 @@ const formatDuration = (seconds: number): string => {
 
 /** 封面显示 URL 缓存（原始 URL → 代理后的 data: URL） */
 const coverDisplayMap = ref(new Map<string, string>());
-const coverAttempted = new Set<string>();
 
 /** 返回可直接用于 <img> 的封面 URL：需要代理的域名走后端代理，代理完成后自动刷新回 data: URL */
 const getCover = (item: Song): string => {
@@ -49,16 +47,14 @@ const getCover = (item: Song): string => {
 const handleImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
-  // 原始 URL（非 data:）加载失败 → 走后端代理回退，避免网易云等防盗链封面白屏
-  if (src && !src.startsWith('data:') && !coverAttempted.has(src)) {
-    coverAttempted.add(src);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(src);
-        coverDisplayMap.value = new Map(coverDisplayMap.value).set(src, dataUrl);
-      } catch { /* ignore */ }
-    })();
-  }
+  if (!src || src.startsWith('data:')) return;
+  // 原始 URL 加载失败 → 走后端代理回退（tryProxyImage 自带缓存/去重/失败标记）
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      coverDisplayMap.value = new Map(coverDisplayMap.value).set(src, dataUrl);
+    }
+  })();
 };
 
 /** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
