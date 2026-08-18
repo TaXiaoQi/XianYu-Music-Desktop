@@ -57,6 +57,7 @@ import {
   extractResultList,
   extractArtistAvatarUrl,
   qualityKeyToPluginString,
+  parseDuration,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
@@ -1432,6 +1433,11 @@ class BakaPluginManagerClass {
           ? resetMediaItem(item.rawData, source.name)
           : resetMediaItem(item, source.name);
         const result = await inst.getMusicInfo(musicItem);
+        // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
+        if (result && !item.duration) {
+          const dur = parseDuration(result.duration || result.interval || result.dt);
+          if (dur) item.duration = dur;
+        }
         const coverUrl = extractCoverUrl(result);
         if (coverUrl) return coverUrl;
       }
