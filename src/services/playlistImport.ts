@@ -685,6 +685,49 @@ async function fetchWyMusicDetailList(ids: string[]): Promise<PluginSearchResult
   throw new Error(`网易云歌曲详情获取失败: ${lastError?.message || 'unknown'}`);
 }
 
+/** 网易云歌曲元信息补全结果：封面 URL 与时长（毫秒） */
+export interface WyTrackMetaPatch {
+  coverUrl: string;
+  durationMs: number;
+}
+
+/**
+ * 按网易云歌曲 ID 批量补全封面与时长。
+ *
+ * 部分第三方 MusicFree 网易云插件（如时迁酱 v7）在 search 结果里既不返回可用的
+ * artwork（album.picUrl 在 weapi/search 响应中不存在），也完全不返回 duration/dt
+ * 字段。这里直接用官方 weapi 的 song/detail 批量补全，绕过插件实现差异。
+ *
+ * @param ids 网易云歌曲 ID 列表（纯数字 ID）
+ * @returns songId -> { coverUrl, durationMs } 映射；失败时返回空 Map
+ */
+export async function fetchWyTrackMetaByIds(
+  ids: string[],
+): Promise<Map<string, WyTrackMetaPatch>> {
+  const patches = new Map<string, WyTrackMetaPatch>();
+  const validIds = ids.filter(id => /^\d+$/.test(id));
+  if (validIds.length === 0) return patches;
+
+  try {
+    // 每批最多 1000 首，与 fetchWyMusicDetailList 的上游限制一致
+    const BATCH_SIZE = 1000;
+    for (let offset = 0; offset < validIds.length; offset += BATCH_SIZE) {
+      const batch = validIds.slice(offset, offset + BATCH_SIZE);
+      const details = await fetchWyMusicDetailList(batch);
+      for (const detail of details) {
+        patches.set(String(detail.id), {
+          coverUrl: detail.coverUrl || '',
+          durationMs: detail.duration || 0,
+        });
+      }
+    }
+  } catch (e: any) {
+    log(`fetchWyTrackMetaByIds failed: ${e?.message || e}`);
+  }
+
+  return patches;
+}
+
 function parseWyTrack(track: any): PluginSearchResult | null {
   const id = String(track.id ?? '');
   if (!id || id === '0') return null;

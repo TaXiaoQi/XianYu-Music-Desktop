@@ -297,6 +297,8 @@ import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } fro
 import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 import { useSettingsStore } from '../features/settings/store';
+import { extractCoverUrl, extractDuration } from '../services/pluginResultMappers';
+import { fetchWyTrackMetaByIds } from '../services/playlistImport';
 import { reportSearch, reportInputStats } from '../services/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -988,6 +990,7 @@ const performSearch = async () => {
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
+        void backfillWyTrackMeta(source.source, results);
       } else if (activeSearchType.value === 'artist') {
         // 歌手搜索
         pluginSearchResults.value = [];
@@ -1085,6 +1088,7 @@ const loadMore = async () => {
         pluginSearchResults.value = [...pluginSearchResults.value, ...results];
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
+        void backfillWyTrackMeta(source.source, results);
       } else {
         hasMore.value = false;
       }
@@ -1197,6 +1201,54 @@ function triggerCoverLoading() {
  * 内，不会重复请求。
  */
 const mfCoverAttempted = new WeakSet<PluginSearchResult>();
+
+/** 判断当前音源是否为网易云（用于决定是否走官方 weapi 批量补全元信息） */
+const isNeteaseSource = (pluginSource: PluginSource): boolean => {
+  if (pluginSource.sources?.some(s => s === 'wy' || /网易云|netease/i.test(s))) return true;
+  return /网易云|netease/i.test(pluginSource.name || '');
+};
+
+/**
+ * 网易云音源：用官方 weapi 的 song/detail 批量补全封面与时长。
+ *
+ * 部分第三方网易云 MusicFree 插件（如时迁酱 v7）的 search 结果既没有可用的
+ * artwork（weapi/search 响应里 album 只有 picId，没有 picUrl），也完全不返回
+ * duration/dt 字段，导致列表里封面和时长都缺失。这里直接按歌曲 ID 批量补全，
+ * 不依赖插件是否实现 getMusicInfo。
+ */
+async function backfillWyTrackMeta(pluginSource: PluginSource, items: PluginSearchResult[]) {
+  if (!isNeteaseSource(pluginSource)) return;
+
+  const version = coverLoadVersion;
+  // 只补缺封面或缺时长、且 ID 是网易云纯数字 ID 的条目
+  const pending = items.filter(item => (
+    (!item.coverUrl || !item.duration) && /^\d+$/.test(String(item.id))
+  ));
+  if (pending.length === 0) return;
+
+  const patches = await fetchWyTrackMetaByIds(pending.map(item => String(item.id)));
+  if (patches.size === 0) return;
+  // 补全期间用户可能已切换来源/重新搜索，丢弃过期结果
+  if (version !== coverLoadVersion) return;
+
+  let changed = false;
+  for (const item of pending) {
+    const patch = patches.get(String(item.id));
+    if (!patch) continue;
+    if (!item.coverUrl && patch.coverUrl) {
+      item.coverUrl = patch.coverUrl;
+      changed = true;
+    }
+    if (!item.duration && patch.durationMs > 0) {
+      item.duration = patch.durationMs;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    pluginSearchResults.value = [...pluginSearchResults.value];
+  }
+}
 
 /**
  * 触发 MusicFree 搜索结果的封面补获（滑动窗口并发版）。
@@ -1744,7 +1796,13 @@ const getVirtualTrackCoverPath = (entry: SearchTrackEntry) => {
 
 const getVirtualTrackCoverUrl = (entry: SearchTrackEntry) => {
   if (entry.kind === 'lx') return entry.item.img ? getDisplayCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
-  if (entry.kind === 'plugin') return entry.item.coverUrl ? getMfCoverUrl(entry.item) : '';
+  if (entry.kind === 'plugin') {
+    const coverUrl = entry.item.coverUrl || extractCoverUrl(entry.item) || extractCoverUrl(entry.item.rawData);
+    if (coverUrl && !entry.item.coverUrl) {
+      entry.item.coverUrl = coverUrl;
+    }
+    return coverUrl ? getMfCoverUrl(entry.item) : '';
+  }
   return entry.item.cover_thumb_path ? getLocalCoverUrl(entry.item) : '';
 };
 
@@ -1769,7 +1827,8 @@ const getVirtualTrackAlbum = (entry: SearchTrackEntry) => {
 const getVirtualTrackDuration = (entry: SearchTrackEntry) => {
   if (entry.kind === 'lx') return entry.item.interval;
   if (entry.kind === 'plugin') {
-    return entry.item.duration ? formatMfDuration(Math.floor(entry.item.duration / 1000)) : '--:--';
+    const durationMs = entry.item.duration || extractDuration(entry.item) || extractDuration(entry.item.rawData);
+    return durationMs > 0 ? formatMfDuration(Math.floor(durationMs / 1000)) : '--:--';
   }
   return formatLocalDuration(entry.item.duration);
 };
