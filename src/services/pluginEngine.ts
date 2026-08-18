@@ -1023,7 +1023,15 @@ export async function pluginPlaylistSearch(
       result = (await inst.instance.search(keyword, page, 'playlist')) ?? {};
       list = extractResultList(result);
     }
-    if (list.length === 0) return [];
+    if (list.length === 0) {
+      // log() 只进插件调试页，这里同步输出到控制台，便于用户在 DevTools 定位歌单搜索失效
+      console.warn(
+        `[${source.name}] 歌单搜索无结果: search(sheet/playlist) 返回 keys=`,
+        result ? Object.keys(result) : result,
+        '; 插件可能未实现歌单搜索或上游接口变更',
+      );
+      return [];
+    }
 
     return list.map((item: any) => {
       resetMediaItem(item, source.name);
@@ -1044,6 +1052,7 @@ export async function pluginPlaylistSearch(
       };
     });
   } catch (e: any) {
+    console.warn(`[${source.name}] 歌单搜索失败:`, e?.message || e);
     log(`[${source.name}] 歌单搜索失败: ${e?.message}`);
     return [];
   }
@@ -1725,7 +1734,8 @@ export async function pluginGetCover(
         singer: item.artist,
         albumName: item.album,
       });
-      return cover || null;
+      // 升级 https：避免 http 封面被 WebView2 混合内容拦截、或被前端 needsProxy 误判走后端代理而失败
+      return (cover && String(cover).replace(/^http:\/\//i, 'https://')) || null;
     } catch {
       return null;
     }

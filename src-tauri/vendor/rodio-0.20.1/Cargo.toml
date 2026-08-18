@@ -116,6 +116,10 @@ path = "benches/shared.rs"
 version = "1.1.0"
 optional = true
 
+[dependencies.ape-decoder]
+version = "0.3"
+optional = true
+
 [dependencies.claxon]
 version = "0.4.2"
 optional = true
@@ -157,6 +161,12 @@ optional = true
 version = "0.1.40"
 optional = true
 
+[dependencies.wavicle]
+version = "0.1"
+optional = true
+default-features = false
+features = ["decode"]
+
 [dev-dependencies.approx]
 version = "0.5.1"
 
@@ -176,6 +186,7 @@ version = "0.18.2"
 version = "0.6.0"
 
 [features]
+ape = ["dep:ape-decoder"]
 cpal-shared-stdcxx = ["cpal/oboe-shared-stdcxx"]
 default = [
     "flac",
@@ -220,3 +231,4 @@ tracing = ["dep:tracing"]
 vorbis = ["lewton"]
 wasm-bindgen = ["cpal/wasm-bindgen"]
 wav = ["hound"]
+wv = ["dep:wavicle"]

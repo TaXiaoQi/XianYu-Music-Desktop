@@ -707,6 +707,55 @@ const clearCoverLoadUiTimer = () => {
   }
 };
 
+// 目录封面后台补获的视图刷新：lx 歌手/专辑（kw/wy）封面由 lxCatalogSearch 内部的
+// fill* 系列后台补获（接口串行/小并发返回），但 pluginArtistResults/pluginAlbumResults
+// 是 shallowRef，返回时可能仍有条目缺图。轮询比对快照，变化才替换数组触发重渲染；
+// 全部补齐或超时后自动停止。
+let catalogCoverRefreshVersion = 0;
+let catalogCoverRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+const stopCatalogCoverRefresh = () => {
+  catalogCoverRefreshVersion += 1;
+  if (catalogCoverRefreshTimer) {
+    clearInterval(catalogCoverRefreshTimer);
+    catalogCoverRefreshTimer = null;
+  }
+};
+
+const watchCatalogCoverBackfill = <T,>(
+  getItems: () => T[],
+  pickUrl: (item: T) => string,
+  commit: (items: T[]) => void,
+) => {
+  const version = ++catalogCoverRefreshVersion;
+  if (catalogCoverRefreshTimer) clearInterval(catalogCoverRefreshTimer);
+  let prev = '';
+  catalogCoverRefreshTimer = setInterval(() => {
+    if (version !== catalogCoverRefreshVersion) {
+      clearInterval(catalogCoverRefreshTimer!);
+      catalogCoverRefreshTimer = null;
+      return;
+    }
+    const items = getItems();
+    const settled = items.length === 0 || items.every(i => pickUrl(i));
+    const snapshot = items.map(i => pickUrl(i) || '').join('|');
+    if (snapshot !== prev) {
+      prev = snapshot;
+      commit([...items]);
+    }
+    if (settled) {
+      clearInterval(catalogCoverRefreshTimer!);
+      catalogCoverRefreshTimer = null;
+    }
+  }, 600);
+  setTimeout(() => {
+    if (version === catalogCoverRefreshVersion && catalogCoverRefreshTimer) {
+      clearInterval(catalogCoverRefreshTimer);
+      catalogCoverRefreshTimer = null;
+    }
+  }, 15000);
+};
+
 // 右键菜单
 const showContextMenu = ref(false);
 const contextMenuX = ref(0);
@@ -792,6 +841,7 @@ const performSearch = async () => {
   }
   searchAbortController = new AbortController();
   const activeController = searchAbortController;
+  stopCatalogCoverRefresh();
 
   // 重置分页
   currentPage.value = 1;
@@ -860,23 +910,37 @@ const performSearch = async () => {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[];
         if (activeController.signal.aborted) return;
-        pluginArtistResults.value = results.map(item => ({
-          ...item,
-          platform: source.lxSourceId!,
-          platformId: item.id,
-          pluginId,
-        }));
+        // 就地补充平台字段（不 spread 复制）：fillWyArtistAvatars 等后台 worker
+        // 持续写入的是这批原始对象，watchCatalogCoverBackfill 才能把迟到头像刷进视图
+        for (const item of results) {
+          (item as any).platform = source.lxSourceId!;
+          (item as any).platformId = item.id;
+          (item as any).pluginId = pluginId;
+        }
+        pluginArtistResults.value = results as unknown as PluginArtistResult[];
+        watchCatalogCoverBackfill(
+          () => pluginArtistResults.value,
+          i => i.avatarUrl,
+          next => { pluginArtistResults.value = next; },
+        );
         hasMore.value = false;
       } else if (activeSearchType.value === 'album') {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[];
         if (activeController.signal.aborted) return;
-        pluginAlbumResults.value = results.map(item => ({
-          ...item,
-          platform: source.lxSourceId!,
-          platformId: item.id,
-          pluginId,
-        }));
+        // 就地补充平台字段（不 spread 复制）：fill*AlbumCovers 的后台 worker
+        // 持续写入的是这批原始对象，watchAlbumCoverBackfill 才能把迟到封面刷进视图
+        for (const item of results) {
+          (item as any).platform = source.lxSourceId!;
+          (item as any).platformId = item.id;
+          (item as any).pluginId = pluginId;
+        }
+        pluginAlbumResults.value = results as unknown as PluginAlbumResult[];
+        watchCatalogCoverBackfill(
+          () => pluginAlbumResults.value,
+          i => i.coverUrl,
+          next => { pluginAlbumResults.value = next; },
+        );
         hasMore.value = false;
       } else {
         lxSearchResults.value = [];
@@ -1342,6 +1406,7 @@ const needsProxy = (url: string): boolean => {
     'y.gtimg.cn',
     'qpic.cn',
     'sycdn.kuwo.cn',
+    // 网易云 CDN 同理：WebView2 直连易 403，走后端代理（与 coverProxy.ts 保持一致）
     'music.126.net',
     '163.com',
   ];
@@ -2089,6 +2154,7 @@ onBeforeUnmount(() => {
   searchAbortController = null;
   coverLoadVersion += 1;
   clearCoverLoadUiTimer();
+  stopCatalogCoverRefresh();
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;

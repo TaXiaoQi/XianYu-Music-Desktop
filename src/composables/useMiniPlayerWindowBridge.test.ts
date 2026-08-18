@@ -66,11 +66,15 @@ describe('mini player window bridge', () => {
       setFocus: vi.fn().mockResolvedValue(undefined),
     };
 
-    await restoreMainWindowFromMiniMode({
+    // 函数内部 await 500ms 的主窗显示延迟（小窗消失 → 主窗出现的间隔），
+    // fake timers 下不会自然走完，需先启动 promise 再推进时钟释放等待。
+    const restorePromise = restoreMainWindowFromMiniMode({
       isMiniMode,
       hideMiniPlayerWindow,
       mainWindow,
     });
+    await vi.advanceTimersByTimeAsync(500);
+    await restorePromise;
 
     expect(isMiniMode.value).toBe(false);
     expect(hideMiniPlayerWindow).toHaveBeenCalledTimes(1);
@@ -100,12 +104,14 @@ describe('mini player window bridge', () => {
       setFocus: vi.fn().mockResolvedValue(undefined),
     };
 
-    await restoreMainWindowFromMiniMode({
+    const restorePromise = restoreMainWindowFromMiniMode({
       isMiniMode,
       hideMiniPlayerWindow,
       mainWindow,
       keepMiniPlayerVisible: true,
     });
+    await vi.advanceTimersByTimeAsync(500);
+    await restorePromise;
 
     expect(isMiniMode.value).toBe(false);
     expect(hideMiniPlayerWindow).not.toHaveBeenCalled();

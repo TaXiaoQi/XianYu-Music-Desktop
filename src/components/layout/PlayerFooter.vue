@@ -477,7 +477,7 @@ const localQualityLabel = computed(() => {
   if (song.bit_depth && song.bit_depth >= 24) return QUALITY_ABBR.flac24bit;
   // 无损格式 → SQ
   const fmt = (song.format || song.codec || song.container || '').toLowerCase();
-  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf'];
+  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf', 'wv', 'wavpack'];
   if (losslessFormats.some(f => fmt.includes(f))) return QUALITY_ABBR.flac;
   // 有损格式按比特率映射
   const bitrateKbps = song.bitrate

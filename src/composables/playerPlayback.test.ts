@@ -98,15 +98,23 @@ vi.mock('./useCoverCache', () => ({
 
 // playerPlayback.ts 内 startPlaybackRuntime 会调用 listen('playback:progress', …)。
 // Node 环境下 @tauri-apps/api/event 的 transformCallback 引用 window → ReferenceError。
-// mock listen 使其返回一个 no-op unlisten，消除 unhandled rejection。
+// mock listen 并捕获回调，测试可手动派发 playback:progress 事件（试听片段检测等）。
+const tauriEventListeners = new Map<string, (event: { payload: unknown }) => void>();
+const emitPlaybackProgress = (position: number, duration: number) => {
+  tauriEventListeners.get('playback:progress')?.({ payload: { position, duration, is_playing: true } });
+};
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => {}),
+  listen: vi.fn().mockImplementation((event: string, handler: (event: { payload: unknown }) => void) => {
+    tauriEventListeners.set(event, handler);
+    return Promise.resolve(() => tauriEventListeners.delete(event));
+  }),
   emitTo: vi.fn(),
 }));
 
 import type { Song } from '../types';
 import { usePlaybackStore } from '../features/playback';
 import { playbackApi } from '../services/tauri/playbackApi';
+import { pluginApi } from '../services/tauri/pluginApi';
 import { createPlayerPlayback } from '../features/playback/playerPlayback';
 import { useUiStore } from '../shared/stores/ui';
 import { setMainWindowRenderingSnapshot } from './renderingPower';
@@ -132,6 +140,10 @@ describe('player playback domain', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    // node 环境无 requestAnimationFrame；playSong 会无条件启动 rAF 播放时钟，
+    // 提供无操作 stub，需要捕获帧回调的测试自行覆盖。
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     loadCoverMock.mockResolvedValue('');
     loadCoverPathMock.mockResolvedValue('');
     loadFullCoverMock.mockResolvedValue('');
@@ -685,6 +697,131 @@ describe('player playback domain', () => {
     await playPromise;
 
     expect(playbackApi.playAudio).toHaveBeenCalled();
+    playerPlayback.dispose();
+  });
+
+  it('maps a qishui vip preview clip back to the full song timeline', async () => {
+    const playbackStore = usePlaybackStore();
+    const song = makeSong({
+      path: 'plugin://汽水音乐/6778775241108752385',
+      title: '初学者',
+      duration: 261,
+      rawData: { pluginId: 'lx-test-plugin', id: '6778775241108752385' },
+    } as Partial<Song>);
+    // SEO 端点：完整时长 261s，试听片段从 208.9s 起、长 52s（与实际音频时长吻合）
+    const pluginHttpRequestSpy = vi.spyOn(pluginApi, 'pluginHttpRequest').mockResolvedValue({
+      status: 200,
+      body: {
+        seo_track: {
+          track: {
+            duration: 261_000,
+            preview: { start: 208_900, duration: 52_000 },
+          },
+        },
+      },
+    });
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    expect(pluginHttpRequestSpy).toHaveBeenCalled();
+
+    // 首个进度事件报告 52 秒试听流 → 触发试听检测与时间轴映射
+    emitPlaybackProgress(10, 52);
+    await vi.waitFor(() => {
+      expect(playbackStore.currentTime).toBeGreaterThan(200);
+    });
+    // 片段内 10s 映射为完整时间轴 208.9 + 10 = 218.9s，歌词/进度条对齐高潮位置
+    expect(playbackStore.currentTime).toBeCloseTo(218.9, 1);
+    // 元数据时长保留完整歌曲时长，进度条按完整时间轴展示
+    expect(playbackStore.currentSong?.duration).toBe(261);
+
+    // 后续进度事件持续映射
+    emitPlaybackProgress(12, 52);
+    expect(playbackStore.currentTime).toBeCloseTo(220.9, 1);
+
+    // 拖动到完整时间轴 220s → Rust 收到片段内 11.1s
+    await playerPlayback.seekTo(220);
+    const seekRequest = vi.mocked(playbackApi.seekAudio).mock.calls.at(-1)?.[0];
+    expect(seekRequest?.time).toBeCloseTo(11.1, 1);
+
+    playerPlayback.dispose();
+  });
+
+  it('clears the stale preview mapping when the same song returns a full stream', async () => {
+    const playbackStore = usePlaybackStore();
+    const song = makeSong({
+      path: 'plugin://汽水音乐/1111111111111111111',
+      title: 'Full Stream Now',
+      duration: 261,
+      rawData: { pluginId: 'lx-test-plugin', id: '1111111111111111111' },
+    } as Partial<Song>);
+    vi.spyOn(pluginApi, 'pluginHttpRequest').mockResolvedValue({
+      status: 200,
+      body: {
+        seo_track: {
+          track: {
+            duration: 261_000,
+            preview: { start: 208_900, duration: 52_000 },
+          },
+        },
+      },
+    });
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    emitPlaybackProgress(10, 52);
+    await vi.waitFor(() => {
+      expect(playbackStore.currentTime).toBeGreaterThan(200);
+    });
+
+    // 登录后同一首歌拿到完整流（时长 261s，与片段时长差 >3s）→ 清除陈旧映射
+    emitPlaybackProgress(20, 261);
+    expect(playbackStore.currentTime).toBeCloseTo(20, 1);
+
+    playerPlayback.dispose();
+  });
+
+  it('falls back to clip-relative timing for non-qishui preview streams', async () => {
+    const playbackStore = usePlaybackStore();
+    const song = makeSong({
+      path: 'plugin://kw/preview-only',
+      title: 'Preview Only',
+      duration: 240,
+      rawData: { pluginId: 'lx-test-plugin', id: 'preview-only' },
+    } as Partial<Song>);
+    // 非汽水插件不请求 SEO 端点
+    const pluginHttpRequestSpy = vi.spyOn(pluginApi, 'pluginHttpRequest');
+
+    const playerPlayback = createPlayerPlayback({
+      getDisplaySongList: () => [song],
+      addToHistory: vi.fn(),
+      loadLyrics: vi.fn(),
+      handleAutoNext: vi.fn(),
+    });
+
+    await playerPlayback.playSong(song);
+    emitPlaybackProgress(5, 60);
+    await vi.waitFor(() => {
+      expect(playbackStore.currentSong?.duration).toBe(60);
+    });
+
+    // 无起点信息：按实际片段时长修正 duration，进度条自洽
+    expect(playbackStore.currentSong?.duration).toBe(60);
+    expect(playbackStore.currentTime).toBeCloseTo(5, 1);
+    expect(pluginHttpRequestSpy).not.toHaveBeenCalled();
+
     playerPlayback.dispose();
   });
 

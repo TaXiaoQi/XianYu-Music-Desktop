@@ -47,8 +47,8 @@ pub(crate) fn i64_to_bool(v: Option<i64>) -> bool {
 }
 
 pub const SUPPORTED_LIBRARY_EXTENSIONS: &[&str] = &[
-    "aac", "aif", "aiff", "dff", "dsf", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "opus",
-    "wav",
+    "aac", "aif", "aiff", "ape", "dff", "dsf", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg",
+    "opus", "wav", "wv",
 ];
 
 pub const CUE_FILE_EXTENSIONS: &[&str] = &["cue"];
@@ -215,6 +215,8 @@ pub fn format_distribution_bucket(
         "aiff" => "aiff",
         "ogg" => "ogg",
         "mp4" => "aac",
+        "ape" => "ape",
+        "wavpack" => "wv",
         _ => match format.as_str() {
             "flac" => "flac",
             "mp3" => "mp3",
@@ -225,6 +227,8 @@ pub fn format_distribution_bucket(
             "ogg" | "oga" => "ogg",
             "opus" => "opus",
             "dsf" | "dff" => "dsd",
+            "ape" => "ape",
+            "wv" => "wv",
             _ => "other",
         },
     }

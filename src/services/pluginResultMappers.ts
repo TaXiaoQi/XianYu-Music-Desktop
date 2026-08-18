@@ -14,6 +14,10 @@ export const extractCoverUrl = (item: any): string => {
     item.artwork || item.cover || item.coverImg || item.coverUrl || item.cover_url || item.pic || item.picurl || item.img || item.imgurl || item.imgUrl || item.albumPic || item.picture ||
     raw.artwork || raw.cover || raw.coverImg || raw.coverUrl || raw.cover_url || raw.pic || raw.picurl || raw.img || raw.imgurl || raw.imgUrl || raw.albumPic || raw.picture || '';
 
+  // 过滤非字符串真值：网易云搜索的 al.pic 是超大整数，JSON 解析后丢精度，
+  // 不能当 URL 用；清空后走下方 picId 加密拼 CDN 兜底
+  if (url && typeof url !== 'string') url = '';
+
   if (!url && (item.al?.picUrl || raw.al?.picUrl)) url = item.al?.picUrl || raw.al?.picUrl;
   if (!url && (item.album?.picUrl || raw.album?.picUrl)) url = item.album?.picUrl || raw.album?.picUrl;
   if (!url && (item.album?.blurPicUrl || raw.album?.blurPicUrl)) url = item.album?.blurPicUrl || raw.album?.blurPicUrl;
@@ -137,6 +141,8 @@ export const extractResultList = (result: any): any[] => {
   const songFields = [
     'musicList', 'musiclist', 'songList', 'songlist', 'song_list',
     'songs', 'tracks', 'dataList', 'list', 'items', 'data', 'resData',
+    // 歌单搜索场景的字段变体（如 bilibili 等 MF 插件）
+    'sheetList', 'sheetlist', 'playlists', 'playlist',
   ];
   for (const field of songFields) {
     const val = result[field];

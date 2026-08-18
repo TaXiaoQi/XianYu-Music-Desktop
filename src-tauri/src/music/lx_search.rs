@@ -802,6 +802,18 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
             .get("size_hires")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
+        let size_master = file
+            .get("size_master")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let size_atmos = file
+            .get("size_atmos")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let size_dolby = file
+            .get("size_dolby")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         if size_128 > 0.0 {
             let s = size_formate(size_128);
@@ -857,6 +869,51 @@ fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem> {
             });
             lx_types.insert(
                 "flac24bit".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        if size_master > 0.0 {
+            let s = size_formate(size_master);
+            types.push(LxTypeTuple {
+                quality_type: "master".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "master".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        if size_atmos > 0.0 {
+            let s = size_formate(size_atmos);
+            types.push(LxTypeTuple {
+                quality_type: "atmos".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "atmos".into(),
+                LxTypeEntry {
+                    size: Some(s),
+                    hash: None,
+                },
+            );
+        }
+        if size_dolby > 0.0 {
+            let s = size_formate(size_dolby);
+            types.push(LxTypeTuple {
+                quality_type: "dolby".into(),
+                size: Some(s.clone()),
+                hash: None,
+            });
+            lx_types.insert(
+                "dolby".into(),
                 LxTypeEntry {
                     size: Some(s),
                     hash: None,
@@ -1086,48 +1143,29 @@ async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, Strin
         let mut types = Vec::new();
         let mut lx_types = HashMap::new();
 
-        if song.get("hq").is_some() {
+        // 与前端 searchWy 一致：网易云旧版搜索接口多数场景不返回 hq/sq 标志，
+        // 三档基础音质（128k/320k/flac）全部无条件声明，由播放探测/回退链路过滤。
+        // 高音质档位（flac24bit/master）同样采用声明 + 探测回落策略：
+        // 黑胶曲库普遍提供 Hi-Res 与超清母带。
+        let push_quality = |types: &mut Vec<LxTypeTuple>,
+                                lx_types: &mut HashMap<String, LxTypeEntry>,
+                                quality: &str| {
             types.push(LxTypeTuple {
-                quality_type: "320k".into(),
+                quality_type: quality.into(),
                 size: None,
                 hash: None,
             });
             lx_types.insert(
-                "320k".into(),
+                quality.to_string(),
                 LxTypeEntry {
                     size: None,
                     hash: None,
                 },
             );
+        };
+        for quality in ["128k", "320k", "flac", "flac24bit", "master"] {
+            push_quality(&mut types, &mut lx_types, quality);
         }
-        if song.get("sq").is_some() {
-            types.push(LxTypeTuple {
-                quality_type: "flac".into(),
-                size: None,
-                hash: None,
-            });
-            lx_types.insert(
-                "flac".into(),
-                LxTypeEntry {
-                    size: None,
-                    hash: None,
-                },
-            );
-        }
-        types.push(LxTypeTuple {
-            quality_type: "128k".into(),
-            size: None,
-            hash: None,
-        });
-        lx_types.insert(
-            "128k".into(),
-            LxTypeEntry {
-                size: None,
-                hash: None,
-            },
-        );
-        // 构建顺序为高→低（hq→sq→128k），反转为低→高（128k 在前），与前端展示一致
-        types.reverse();
 
         let ar = song
             .get("artists")
@@ -1781,14 +1819,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tx_handle_result_skips_item_without_media_mid() {
+    fn test_tx_handle_result_skips_item_without_songmid() {
+        // 放宽后的契约：只要 mid 或 id 存在即保留（file.media_mid 可能为空），
+        // 两者都缺失才跳过。
         let raw = serde_json::json!([
-            { "title": "有料", "file": {} },
-            { "title": "没料", "file": { "media_mid": "M001" } }
+            { "title": "无标识", "file": {} },
+            { "title": "有料", "mid": "003", "file": { "media_mid": "M001" } },
+            { "title": "仅id", "id": 42 }
         ]);
         let list = tx_handle_result(&raw);
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "没料");
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "有料");
+        assert_eq!(list[0].songmid, "003");
+        assert_eq!(list[0].str_media_mid.as_deref(), Some("M001"));
+        assert_eq!(list[1].name, "仅id");
     }
 
     // ===== mg_filter_data fixture =====

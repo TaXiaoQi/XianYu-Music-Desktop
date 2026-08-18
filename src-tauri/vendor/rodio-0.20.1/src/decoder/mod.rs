@@ -33,6 +33,11 @@ mod wav;
 #[cfg(feature = "dsd")]
 mod dsd;
 
+#[cfg(feature = "ape")]
+mod ape;
+#[cfg(feature = "wv")]
+mod wv;
+
 /// Source of audio samples from decoding a file.
 ///
 /// Supports MP3, WAV, Vorbis and Flac.
@@ -67,6 +72,10 @@ where
     Symphonia(symphonia::SymphoniaDecoder),
     #[cfg(feature = "dsd")]
     Dsd(dsd::DsdDecoder<R>),
+    #[cfg(feature = "ape")]
+    Ape(ape::ApeDecoder<R>),
+    #[cfg(feature = "wv")]
+    Wv(wv::WavpackDecoder<R>),
     None(::std::marker::PhantomData<R>),
 }
 
@@ -86,6 +95,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.next(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.next(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.next(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.next(),
             DecoderImpl::None(_) => None,
         }
     }
@@ -105,6 +118,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.size_hint(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.size_hint(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.size_hint(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.size_hint(),
             DecoderImpl::None(_) => (0, None),
         }
     }
@@ -124,6 +141,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.current_frame_len(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.current_frame_len(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.current_frame_len(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.current_frame_len(),
             DecoderImpl::None(_) => Some(0),
         }
     }
@@ -143,6 +164,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.channels(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.channels(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.channels(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.channels(),
             DecoderImpl::None(_) => 0,
         }
     }
@@ -162,6 +187,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.sample_rate(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.sample_rate(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.sample_rate(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.sample_rate(),
             DecoderImpl::None(_) => 1,
         }
     }
@@ -181,6 +210,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.total_duration(),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.total_duration(),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.total_duration(),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.total_duration(),
             DecoderImpl::None(_) => Some(Duration::default()),
         }
     }
@@ -200,6 +233,10 @@ impl<R: Read + Seek> DecoderImpl<R> {
             DecoderImpl::Symphonia(source) => source.try_seek(pos),
             #[cfg(feature = "dsd")]
             DecoderImpl::Dsd(source) => source.try_seek(pos),
+            #[cfg(feature = "ape")]
+            DecoderImpl::Ape(source) => source.try_seek(pos),
+            #[cfg(feature = "wv")]
+            DecoderImpl::Wv(source) => source.try_seek(pos),
             DecoderImpl::None(_) => Err(SeekError::NotSupported {
                 underlying_source: "DecoderImpl::None",
             }),
@@ -253,6 +290,22 @@ where
             Err(data) => data,
             Ok(decoder) => {
                 return Ok(Decoder(DecoderImpl::Dsd(decoder)));
+            }
+        };
+
+        #[cfg(feature = "ape")]
+        let data = match ape::ApeDecoder::new(data) {
+            Err(data) => data,
+            Ok(decoder) => {
+                return Ok(Decoder(DecoderImpl::Ape(decoder)));
+            }
+        };
+
+        #[cfg(feature = "wv")]
+        let data = match wv::WavpackDecoder::new(data) {
+            Err(data) => data,
+            Ok(decoder) => {
+                return Ok(Decoder(DecoderImpl::Wv(decoder)));
             }
         };
 
@@ -527,6 +580,21 @@ where
                     let mut source = dsd::DsdDecoder::new(reader).ok()?;
                     let sample = source.next();
                     (DecoderImpl::Dsd(source), sample)
+                }
+                #[cfg(feature = "ape")]
+                // The ape backend keeps no path back to the reader, so a
+                // looped restart is not possible; the loop simply ends.
+                DecoderImpl::Ape(source) => {
+                    let _ = source;
+                    (DecoderImpl::None(Default::default()), None)
+                }
+                #[cfg(feature = "wv")]
+                DecoderImpl::Wv(source) => {
+                    let mut reader = source.into_inner()?;
+                    reader.seek(SeekFrom::Start(0)).ok()?;
+                    let mut source = wv::WavpackDecoder::new(reader).ok()?;
+                    let sample = source.next();
+                    (DecoderImpl::Wv(source), sample)
                 }
                 none @ DecoderImpl::None(_) => (none, None),
             };
