@@ -227,6 +227,33 @@ export function reportError(
     });
 }
 
+// ─── 大家都在搜（热搜） ───────────────────────────────────────────
+
+export interface HotSearchItem {
+  keyword: string;
+  count: number;
+}
+
+/**
+ * 获取大家都在搜（Top 10 热搜关键词）。
+ * 聚合所有用户累计的搜索数据，按搜索次数倒序返回。
+ * 失败时返回空数组，不抛错。
+ */
+export async function fetchHotSearch(limit = 10): Promise<HotSearchItem[]> {
+  try {
+    const data = await signedRequest<{ list: Array<{ keyword: string; count: number }> }>(
+      'get_hot_search',
+      { limit },
+      { fetchTimeoutMs: 8_000, timeoutMs: 10_000 },
+    );
+    return data?.list ?? [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[HotSearch] 获取热搜失败: ${msg}`);
+    return [];
+  }
+}
+
 // ─── 用户行为数据 ───────────────────────────────────────────
 
 export interface UserBehaviorReport {
