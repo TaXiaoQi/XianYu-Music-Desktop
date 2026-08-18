@@ -110,10 +110,6 @@ const confirmDeleteLogs = () => {
   showToast('日志已全部删除', 'success');
 };
 
-const importPluginBackup = () => {
-  openImportModal('plugin');
-};
-
 /** 压缩图片为 data URL（JPEG），最大宽度 1600，质量 0.82 */
 const compressImageToDataUrl = (file: File, maxWidth = 1600, quality = 0.82): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -530,62 +526,7 @@ onUnmounted(() => {
       </p>
     </section>
 
-    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
-      <div>
-        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          从其他软件导入
-        </h2>
-        <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
-          从 BakaMusic、MusicFree 或洛雪音乐导入歌单。系统会按歌曲来源检查已安装插件，只导入能够关联到插件的歌曲。
-        </p>
-      </div>
-      <button
-        type="button"
-        :disabled="importingBackup"
-        class="inline-flex items-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
-        @click="importPluginBackup"
-      >
-        <Loader2 v-if="importingBackup" class="h-4 w-4 animate-spin" />
-        <FileDown v-else class="h-4 w-4 text-[#EC4141]" />
-        {{ importingBackup ? '正在检查插件并导入…' : '从其他软件导入歌单' }}
-      </button>
-      <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
-        导入完成后会统一列出成功关联的插件、缺失插件，以及所有未能导入的歌曲；支持拖入 .json 或 .zip 压缩包。
-      </p>
-    </section>
-
-    <section class="space-y-3">
-      <div>
-        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          导出日志
-        </h2>
-        <p class="mt-1 text-xs text-gray-500 dark:text-white/45">导出本机保留的应用日志，便于反馈问题或自行排查。</p>
-      </div>
-      <LogExportActions />
-    </section>
-
-    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
-      <div>
-        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-          日志管理
-        </h2>
-        <p class="mt-1 text-xs text-gray-500 dark:text-white/45">删除后无法恢复，建议先导出需要保留的日志。</p>
-      </div>
-      <button
-        type="button"
-        :disabled="entryCount === 0"
-        class="inline-flex items-center gap-2 rounded-xl border border-[#EC4141]/50 bg-[#EC4141] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#d13b3b] disabled:cursor-not-allowed disabled:opacity-40"
-        @click="showDeleteConfirmation = true"
-      >
-        <Trash2 class="h-4 w-4" />
-        删除全部日志
-      </button>
-    </section>
-
-    <div class="space-y-3">
+    <div class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -724,6 +665,36 @@ onUnmounted(() => {
       </div>
     </section>
     </div>
+
+    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
+      <div>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          导出日志
+        </h2>
+        <p class="mt-1 text-xs text-gray-500 dark:text-white/45">导出本机保留的应用日志，便于反馈问题或自行排查。</p>
+      </div>
+      <LogExportActions />
+    </section>
+
+    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
+      <div>
+        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          日志管理
+        </h2>
+        <p class="mt-1 text-xs text-gray-500 dark:text-white/45">删除后无法恢复，建议先导出需要保留的日志。</p>
+      </div>
+      <button
+        type="button"
+        :disabled="entryCount === 0"
+        class="inline-flex items-center gap-2 rounded-xl border border-[#EC4141]/50 bg-[#EC4141] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#d13b3b] disabled:cursor-not-allowed disabled:opacity-40"
+        @click="showDeleteConfirmation = true"
+      >
+        <Trash2 class="h-4 w-4" />
+        删除全部日志
+      </button>
+    </section>
 
     <!-- 我的反馈弹窗 -->
     <Teleport to="body">

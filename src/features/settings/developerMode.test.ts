@@ -48,7 +48,7 @@ describe('developer mode settings entry', () => {
     expect(advancedSource).toContain('删除全部日志');
     expect(advancedSource).toContain('应用备份');
     expect(advancedSource).toContain('showDeleteConfirmation');
-    expect(advancedSource).toContain('从 BakaMusic、MusicFree 或洛雪音乐导入歌单');
+    expect(advancedSource).not.toContain('从 BakaMusic、MusicFree 或洛雪音乐导入歌单');
     expect(advancedSource).toContain('preparePluginBackupImport');
     expect(advancedSource).toContain('<BackupImportResultModal');
   });

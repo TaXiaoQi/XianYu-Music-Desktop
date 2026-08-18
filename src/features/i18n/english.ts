@@ -209,7 +209,7 @@ const exactEnglishTranslations: Record<string, string> = {
   '插件': 'Plugins',
   '插件管理': 'Plugin Manager',
   '工具箱': 'Toolbox',
-  '快捷键': 'Shortcuts',
+  '快捷按键': 'Quick Keys',
   '高级设置': 'Advanced',
   '调试': 'Debug',
   '关于': 'About',
