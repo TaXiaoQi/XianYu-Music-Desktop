@@ -25,8 +25,10 @@ const PROXY_COVER_DOMAINS = [
 
 /** 封面代理缓存（原始 URL → data: URL） */
 const coverProxyCache = new Map<string, string>();
-/** 已发起过代理请求的 URL（避免对失败项重复请求） */
+/** 已尝试代理且失败的 URL（避免对失败项重复请求） */
 const coverProxyAttempted = new Set<string>();
+/** 正在代理中的 URL（避免重复发起请求） */
+const proxyPending = new Set<string>();
 
 /** 判断封面 URL 是否需要走后端代理 */
 export function needsCoverProxy(url: string): boolean {
@@ -39,10 +41,16 @@ export function needsCoverProxy(url: string): boolean {
 /**
  * 获取可直接用于 <img src> 的封面 URL。
  *
- * - 无需代理：原样返回，不触发回调。
- * - 需要代理且已有缓存：返回缓存的 data: URL。
- * - 需要代理且无缓存：先返回原始 URL（避免空封面闪烁），同时异步发起代理，
- *   完成后调用 onReady(dataUrl)。onReady 应负责把新值写入对应的响应式状态。
+ * 缓存检查在 needsProxy 之前：即使 URL 不在代理域名列表中，
+ * 若已被错误处理函数代理并缓存（如防盗链域名更新），也能直接返回 data: URL。
+ *
+ * - 已有缓存：返回缓存的 data: URL。
+ * - 无需代理且无缓存：原样返回，不触发回调。
+ * - 需要代理且无缓存：先返回原始 URL（保证 <img> 始终渲染），
+ *   同时异步发起代理，完成后调用 onReady(dataUrl)。
+ *   - CDN 直连成功时直接显示，无需等待代理
+ *   - CDN 直连失败时 @error 兜底，与代理结果双保险
+ *   - 代理成功后刷新视图，切换为 data: URL
  *
  * @param url 原始封面 URL
  * @param onReady 代理完成回调（仅在需要代理且异步完成时触发）
@@ -50,23 +58,65 @@ export function needsCoverProxy(url: string): boolean {
  */
 export function getDisplayCoverUrl(url: string, onReady?: (dataUrl: string) => void): string {
   if (!url) return '';
-  if (!needsCoverProxy(url)) return url;
 
+  // 缓存检查在最前面：无论是否需要代理，已缓存的 data: URL 优先返回
   const cached = coverProxyCache.get(url);
   if (cached) return cached;
 
-  if (onReady && !coverProxyAttempted.has(url)) {
-    coverProxyAttempted.add(url);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(url);
-        coverProxyCache.set(url, dataUrl);
-        onReady(dataUrl);
-      } catch {
-        // 代理失败：保持原始 URL，交由 <img> onerror 兜底
-      }
-    })();
-  }
+  if (!needsCoverProxy(url)) return url;
+
+  // 已尝试过且失败的，返回原始 URL 交由 @error 兜底
+  if (coverProxyAttempted.has(url)) return url;
+  // 正在代理中，返回原始 URL 等待结果
+  if (proxyPending.has(url)) return url;
+  proxyPending.add(url);
+
+  (async () => {
+    try {
+      const dataUrl = await pluginApi.proxyImage(url);
+      coverProxyCache.set(url, dataUrl);
+      onReady?.(dataUrl);
+    } catch {
+      coverProxyAttempted.add(url);
+    } finally {
+      proxyPending.delete(url);
+    }
+  })();
 
   return url;
+}
+
+/**
+ * 尝试通过后端代理加载图片 URL（供 @error 兜底使用）。
+ * 成功后返回 data: URL，失败返回 null。
+ * 已在代理中或已失败的 URL 不会重复请求。
+ */
+export async function tryProxyImage(url: string): Promise<string | null> {
+  if (!url || url.startsWith('data:') || url.startsWith('asset:')) return null;
+
+  // 先查缓存
+  const cached = coverProxyCache.get(url);
+  if (cached) return cached;
+
+  // 已在代理中或已失败，不重复请求
+  if (proxyPending.has(url) || coverProxyAttempted.has(url)) return null;
+
+  proxyPending.add(url);
+  try {
+    const dataUrl = await pluginApi.proxyImage(url);
+    coverProxyCache.set(url, dataUrl);
+    return dataUrl;
+  } catch {
+    coverProxyAttempted.add(url);
+    return null;
+  } finally {
+    proxyPending.delete(url);
+  }
+}
+
+/** 清除代理缓存和失败记录（用于切换搜索/重新搜索时重置状态） */
+export function clearCoverProxyCache(): void {
+  coverProxyCache.clear();
+  coverProxyAttempted.clear();
+  proxyPending.clear();
 }

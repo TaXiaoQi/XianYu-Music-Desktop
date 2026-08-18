@@ -726,7 +726,7 @@ export interface PluginSettings {
 }
 
 export type SongClickAction = 'double' | 'single';
-export type AppLanguage = 'zh-CN' | 'zh-TW' | 'en-US';
+export type AppLanguage = 'system' | 'zh-CN' | 'zh-TW' | 'en-US';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
