@@ -1036,7 +1036,12 @@ watch(
                   class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5"
                   @click="handleAlbumClick(album)"
                 >
-                  <div class="relative w-full aspect-square mb-3 mt-4">
+                  <div class="relative w-full aspect-square mb-3 mt-1">
+                    <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]">
+                      <div class="absolute inset-0 rounded-t-full border border-white/5 scale-90"></div>
+                      <div class="absolute inset-0 rounded-t-full border border-white/5 scale-75"></div>
+                      <div class="absolute inset-0 rounded-t-full border border-white/5 scale-50"></div>
+                    </div>
                     <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
                       <img
                         v-if="album.coverUrl"
