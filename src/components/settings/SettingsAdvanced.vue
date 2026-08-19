@@ -315,13 +315,24 @@ const handleExportAppBackup = async () => {
     const { json, summary } = await exportAppBackup(collectionsStore.playlists, {
       includePlugins: true,
       includeSettings: true,
+      includeFavorites: true,
+      favorites: {
+        paths: collectionsStore.favoritePaths,
+        songMeta: collectionsStore.favoriteSongMeta,
+      },
       resolveSongsByPaths: libraryStore.resolveSongsByPaths,
     });
 
     await debugApi.writeLogExport(filePath, json);
 
+    const parts: string[] = [];
+    if (summary.playlistCount > 0) parts.push(`${summary.playlistCount} 个歌单`);
+    if (summary.favoriteCount > 0) parts.push(`收藏 ${summary.favoriteCount} 首`);
+    if (summary.pluginCount > 0) parts.push(`${summary.pluginCount} 个插件`);
+    if (parts.length === 0) parts.push('无数据');
+    if (summary.hasSettings) parts.push('设置');
     showToast(
-      `已导出 ${summary.playlistCount} 个歌单、${summary.pluginCount} 个插件${summary.hasSettings ? '及设置' : ''}`,
+      `已导出${parts.join('、')}`,
       'success',
     );
   } catch (error: any) {
@@ -401,6 +412,7 @@ async function processImportFile(filePath: string) {
         replaceSettings,
       }, {
         includePlaylists: true,
+        includeFavorites: true,
         includePlugins: true,
         includeSettings: true,
       });
@@ -410,6 +422,7 @@ async function processImportFile(filePath: string) {
 
       const parts: string[] = [];
       if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
+      if (result.importedFavorites > 0) parts.push(`收藏 ${result.importedFavorites} 首`);
       if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
       if (result.settingsApplied) parts.push('设置');
       if (parts.length > 0) {
@@ -496,7 +509,7 @@ onUnmounted(() => {
           应用备份
         </h2>
         <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-white/45">
-          将歌单（自动区分本地/在线/混合）、插件和本地设置导出为单个 JSON 文件，可快速导入恢复。
+          将歌单（自动区分本地/在线/混合）、收藏歌曲、插件和本地设置导出为单个 JSON 文件，可快速导入恢复。
         </p>
       </div>
       <div class="flex flex-wrap gap-3">
@@ -522,7 +535,7 @@ onUnmounted(() => {
         </button>
       </div>
       <p class="text-[11px] leading-5 text-gray-400 dark:text-white/35">
-        导入时会自动恢复歌单、插件（跳过已存在的）和应用设置；支持拖入 .json 或 .zip 压缩包。
+        导入时会自动恢复歌单、收藏、插件（跳过已存在的）和应用设置；支持拖入 .json 或 .zip 压缩包。
       </p>
     </section>
 

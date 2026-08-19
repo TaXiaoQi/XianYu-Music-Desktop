@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Check, ChevronDown, CircleAlert, Minus, Plus } from 'lucide-vue-next';
+import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
-import { computed, onMounted, onScopeDispose, ref } from 'vue';
+import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import type { AudioOutputStatus, AudioDevice, AudioDeviceFormats } from '../../services/tauri/contracts';
@@ -28,9 +28,73 @@ const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
 const soundEffectStore = useSoundEffectStore();
 const { showToast } = useToast();
-const { isEnglish } = useI18n();
+const { isEnglish, t } = useI18n();
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
+const showVolumeBalancePopover = ref(false);
+const volumeBalancePopoverRef = ref<HTMLElement | null>(null);
+const volumeBalanceTriggerRef = ref<HTMLElement | null>(null);
+const volumeBalancePopoverStyle = ref<Record<string, string>>({});
+
+function updateVolumeBalancePopoverPosition() {
+  const trigger = volumeBalanceTriggerRef.value;
+  const popover = volumeBalancePopoverRef.value;
+  if (!trigger || !popover) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const popoverWidth = popover.offsetWidth;
+  const popoverHeight = popover.offsetHeight;
+  const gap = 8;
+  const viewportPadding = 12;
+
+  // 水平：右对齐触发器
+  let left = rect.right - popoverWidth;
+  left = Math.min(Math.max(left, viewportPadding), window.innerWidth - popoverWidth - viewportPadding);
+
+  // 垂直：优先下方，空间不够则翻到上方
+  const fitsBelow = rect.bottom + gap + popoverHeight <= window.innerHeight - viewportPadding;
+  const top = fitsBelow
+    ? rect.bottom + gap
+    : Math.max(viewportPadding, rect.top - popoverHeight - gap);
+
+  volumeBalancePopoverStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
+}
+
+function toggleVolumeBalancePopover() {
+  showVolumeBalancePopover.value = !showVolumeBalancePopover.value;
+  if (showVolumeBalancePopover.value) {
+    nextTick(() => {
+      updateVolumeBalancePopoverPosition();
+    });
+  }
+}
+
+function handleVolumeBalancePopoverOutsideClick(event: MouseEvent) {
+  if (
+    showVolumeBalancePopover.value
+    && volumeBalanceTriggerRef.value
+    && volumeBalancePopoverRef.value
+    && !volumeBalanceTriggerRef.value.contains(event.target as Node)
+    && !volumeBalancePopoverRef.value.contains(event.target as Node)
+  ) {
+    showVolumeBalancePopover.value = false;
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
+  window.addEventListener('resize', updateVolumeBalancePopoverPosition);
+  window.addEventListener('scroll', updateVolumeBalancePopoverPosition, true);
+});
+
+onScopeDispose(() => {
+  window.removeEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
+  window.removeEventListener('resize', updateVolumeBalancePopoverPosition);
+  window.removeEventListener('scroll', updateVolumeBalancePopoverPosition, true);
+});
 
 const showQualityModal = ref(false);
 const showFailureBehaviorModal = ref(false);
@@ -128,6 +192,10 @@ const toggleAutoSwitchSource = () => {
 
 // --- 播放设置 ---
 const autoPlay = ref(true);
+const songClickActionEnabled = computed(() => settings.value.songClickAction !== 'single');
+const toggleSongClickAction = () => {
+  settings.value.songClickAction = songClickActionEnabled.value ? 'single' : 'double';
+};
 const showLyricsSyncOffsetPanel = ref(false);
 const audioOutputStatus = ref<AudioOutputStatus | null>(null);
 const audioOutputDevices = ref<AudioDevice[]>([]);
@@ -448,14 +516,17 @@ onScopeDispose(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">音量平衡</div>
           </div>
           <div class="flex items-center gap-3">
-            <span
-              class="audio-tip"
-              :aria-label="volumeBalanceTip"
-              tabindex="0"
+            <button
+              ref="volumeBalanceTriggerRef"
+              type="button"
+              class="volume-balance-hint-btn"
+              :class="{ 'volume-balance-hint-btn--active': showVolumeBalancePopover }"
+              :aria-expanded="showVolumeBalancePopover"
+              :aria-label="'音量平衡说明'"
+              @click.stop="toggleVolumeBalancePopover"
             >
-              <CircleAlert class="h-4 w-4" aria-hidden="true" />
-              <span class="audio-tip-popover" role="tooltip">{{ volumeBalanceTip }}</span>
-            </span>
+              <CircleHelp class="h-4 w-4" aria-hidden="true" />
+            </button>
             <button
               type="button"
               class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
@@ -611,6 +682,23 @@ onScopeDispose(() => {
 
     <!-- 均衡器配置区已移除 -->
 
+    <!-- 音量平衡说明下拉弹窗 -->
+    <Teleport to="body">
+      <Transition name="settings-dropdown">
+        <div
+          v-if="showVolumeBalancePopover"
+          ref="volumeBalancePopoverRef"
+          class="volume-balance-popover"
+          role="dialog"
+          :style="volumeBalancePopoverStyle"
+        >
+          <div class="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+            {{ volumeBalanceTip }}
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- 音质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
     <Teleport to="body">
       <Transition name="modal-pop">
@@ -748,6 +836,26 @@ onScopeDispose(() => {
           </div>
            <button @click="autoPlay = !autoPlay" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="autoPlay ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="autoPlay ? 'translate-x-6' : 'translate-x-1'" />
+          </button>
+        </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.songClickAction') }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">{{ t('general.songClickActionHint') }}</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-label="t('general.songClickAction')"
+            :aria-checked="songClickActionEnabled"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+            :class="songClickActionEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            @click="toggleSongClickAction"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
+              :class="songClickActionEnabled ? 'translate-x-6' : 'translate-x-1'"
+            />
           </button>
         </div>
         <div class="desktop-setting-row">
@@ -997,58 +1105,6 @@ onScopeDispose(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.audio-tip {
-  position: relative;
-  display: inline-flex;
-  height: 20px;
-  width: 20px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #9ca3af;
-  outline: none;
-}
-
-.audio-tip-popover {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 30;
-  width: min(300px, calc(100vw - 48px));
-  max-width: calc(100vw - 48px);
-  pointer-events: none;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
-  color: rgb(31 41 55);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.55;
-  opacity: 0;
-  padding: 10px 12px;
-  transform: translateY(-4px);
-  transition: opacity 160ms ease, transform 160ms ease;
-  white-space: normal;
-}
-
-.audio-tip:hover .audio-tip-popover,
-.audio-tip:focus-visible .audio-tip-popover {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-:global(.dark) .audio-tip {
-  color: #9ca3af;
-}
-
-:global(.dark) .audio-tip-popover {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(31, 31, 31, 0.96);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
-  color: rgba(255, 255, 255, 0.92);
-}
-
 .settings-expand-panel {
   margin-top: 2px;
   padding: 18px 16px 0;
@@ -1161,5 +1217,67 @@ onScopeDispose(() => {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.45);
+}
+
+.volume-balance-hint-btn {
+  display: inline-flex;
+  height: 20px;
+  width: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #9ca3af;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.volume-balance-hint-btn:hover,
+.volume-balance-hint-btn--active {
+  color: #6b7280;
+  background: rgba(156, 163, 175, 0.15);
+}
+
+:global(.dark) .volume-balance-hint-btn {
+  color: #9ca3af;
+}
+
+:global(.dark) .volume-balance-hint-btn:hover,
+:global(.dark) .volume-balance-hint-btn--active {
+  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.volume-balance-popover {
+  position: fixed;
+  z-index: 500;
+  width: 280px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+:global(.dark) .volume-balance-popover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(38, 38, 38, 0.95);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 与项目 settings-dropdown 过渡保持一致 */
+.settings-dropdown-enter-active,
+.settings-dropdown-leave-active {
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.settings-dropdown-enter-from,
+.settings-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

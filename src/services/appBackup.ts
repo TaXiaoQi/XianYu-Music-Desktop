@@ -43,6 +43,8 @@ interface BackupPluginEntry {
 
 interface AppBackupData {
   playlists: BackupPlaylistEntry[];
+  /** 收藏歌曲（完整 Song 元信息，含本地与在线），含路径与元信息 */
+  favorites?: Song[];
   plugins: BackupPluginEntry[];
   settings: AppSettings | null;
 }
@@ -62,6 +64,7 @@ interface AppBackupSummary {
   totalSongs: number;
   localSongs: number;
   onlineSongs: number;
+  favoriteCount: number;
   pluginCount: number;
   hasSettings: boolean;
 }
@@ -74,6 +77,7 @@ interface AppBackupExportResult {
 export interface AppBackupImportResult {
   summary: AppBackupSummary;
   importedPlaylists: number;
+  importedFavorites: number;
   importedPlugins: number;
   skippedPlugins: number;
   settingsApplied: boolean;
@@ -115,19 +119,46 @@ function classifyPlaylist(songs: Song[]): PlaylistType {
 // ==================== 导出 ====================
 
 /**
+ * 构建收藏歌曲列表：优先使用收藏元信息，缺失时经 resolveSongsByPaths 从本地库解析
+ */
+function buildFavoriteSongs(
+  paths: string[],
+  songMeta: Record<string, Song>,
+  resolveSongsByPaths?: (paths: string[], fallbackSongs?: Song[]) => Song[],
+): Song[] {
+  const out: Song[] = [];
+  const seen = new Set<string>();
+  for (const path of paths) {
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const song = songMeta[path] ?? resolveSongsByPaths?.([path])[0];
+    if (song?.path) out.push(song);
+  }
+  return out;
+}
+
+/**
  * 导出完整应用备份
  * @param playlists 歌单列表
- * @param options 可选配置：是否导出插件、是否导出设置、歌曲路径解析器
+ * @param options 可选配置：是否导出插件、设置、收藏，收藏数据，歌曲路径解析器
  */
 export async function exportAppBackup(
   playlists: Playlist[],
   options: {
     includePlugins?: boolean;
     includeSettings?: boolean;
+    includeFavorites?: boolean;
+    favorites?: { paths: string[]; songMeta: Record<string, Song> };
     resolveSongsByPaths?: (paths: string[], fallbackSongs?: Song[]) => Song[];
   } = {},
 ): Promise<AppBackupExportResult> {
-  const { includePlugins = true, includeSettings = true, resolveSongsByPaths } = options;
+  const {
+    includePlugins = true,
+    includeSettings = true,
+    includeFavorites = true,
+    favorites,
+    resolveSongsByPaths,
+  } = options;
 
   // 1. 收集歌单数据
   const backupPlaylists: BackupPlaylistEntry[] = [];
@@ -161,7 +192,13 @@ export async function exportAppBackup(
     }
   }
 
-  // 2. 收集插件数据
+  // 2. 收集收藏歌曲（独立于歌单，含本地与在线元信息）
+  let backupFavorites: Song[] = [];
+  if (includeFavorites && favorites && favorites.paths.length > 0) {
+    backupFavorites = buildFavoriteSongs(favorites.paths, favorites.songMeta, resolveSongsByPaths);
+  }
+
+  // 3. 收集插件数据
   const backupPlugins: BackupPluginEntry[] = [];
   if (includePlugins) {
     const storedPlugins = getStoredPlugins();
@@ -185,7 +222,7 @@ export async function exportAppBackup(
     }
   }
 
-  // 3. 收集设置数据
+  // 4. 收集设置数据
   let settings: AppSettings | null = null;
   if (includeSettings) {
     settings = playerStorage.readSettings<AppSettings>();
@@ -193,6 +230,7 @@ export async function exportAppBackup(
 
   const data: AppBackupData = {
     playlists: backupPlaylists,
+    favorites: backupFavorites,
     plugins: backupPlugins,
     settings,
   };
@@ -214,6 +252,7 @@ export async function exportAppBackup(
     totalSongs,
     localSongs,
     onlineSongs,
+    favoriteCount: backupFavorites.length,
     pluginCount: backupPlugins.length,
     hasSettings: !!settings,
   };
@@ -249,7 +288,7 @@ export function parseAppBackup(jsonContent: string): AppBackup {
  * 从备份中计算摘要信息
  */
 function getBackupSummary(backup: AppBackup): AppBackupSummary {
-  const { playlists, plugins, settings } = backup.data;
+  const { playlists, favorites, plugins, settings } = backup.data;
   let totalSongs = 0;
   let localSongs = 0;
   let onlineSongs = 0;
@@ -270,6 +309,7 @@ function getBackupSummary(backup: AppBackup): AppBackupSummary {
     totalSongs,
     localSongs,
     onlineSongs,
+    favoriteCount: favorites?.length ?? 0,
     pluginCount: plugins.length,
     hasSettings: !!settings,
   };
@@ -278,15 +318,17 @@ function getBackupSummary(backup: AppBackup): AppBackupSummary {
 /**
  * 导入应用备份
  * @param backup 解析后的备份对象
- * @param collectionsStore 歌单 store（需提供 createPlaylist 方法）
+ * @param collectionsStore 歌单 store（需提供 createPlaylist / setFavoritePaths / setFavoriteSongMetaMap 方法）
  * @param libraryStore 本地库 store（需提供 setExtraSong / setExtraSongs 方法）
  * @param settingsStore 设置 store（需提供 patchSettings / replaceSettings 方法）
- * @param options 导入选项：是否导入歌单、插件、设置
+ * @param options 导入选项：是否导入歌单、收藏、插件、设置
  */
 export async function importAppBackup(
   backup: AppBackup,
   collectionsStore: {
     createPlaylist: (name: string, initialSongs?: string[], fullSongs?: Song[]) => string | null;
+    setFavoritePaths: (paths: string[]) => void;
+    setFavoriteSongMetaMap: (map: Record<string, Song>) => void;
   },
   libraryStore: {
     setExtraSong: (song: LibrarySong) => void;
@@ -296,10 +338,11 @@ export async function importAppBackup(
     patchSettings: (patch: Partial<AppSettings>) => void;
     replaceSettings: (settings: AppSettings) => void;
   },
-  options: { includePlaylists?: boolean; includePlugins?: boolean; includeSettings?: boolean } = {},
+  options: { includePlaylists?: boolean; includeFavorites?: boolean; includePlugins?: boolean; includeSettings?: boolean } = {},
 ): Promise<AppBackupImportResult> {
   const {
     includePlaylists = true,
+    includeFavorites = true,
     includePlugins = true,
     includeSettings = true,
   } = options;
@@ -307,6 +350,7 @@ export async function importAppBackup(
   const summary = getBackupSummary(backup);
   const errors: string[] = [];
   let importedPlaylists = 0;
+  let importedFavorites = 0;
   let importedPlugins = 0;
   let skippedPlugins = 0;
   let settingsApplied = false;
@@ -371,7 +415,30 @@ export async function importAppBackup(
     }
   }
 
-  // 3. 导入设置
+  // 3. 导入收藏（独立于歌单；在线歌曲需保留完整元信息供展示与播放）
+  if (includeFavorites && backup.data.favorites && backup.data.favorites.length > 0) {
+    const favSongs = backup.data.favorites;
+    // 注册歌曲到 libraryStore，确保本地/在线歌曲都能被解析
+    libraryStore.setExtraSongs(favSongs);
+
+    const savedPaths: string[] = [];
+    const metaMap: Record<string, Song> = {};
+    for (const song of favSongs) {
+      if (!song?.path) continue;
+      savedPaths.push(song.path);
+      // 本地歌曲由本地库还原；在线歌曲不在本地库中，需额外保存完整元信息
+      if (classifySong(song) === 'online') {
+        metaMap[song.path] = song;
+      }
+    }
+    collectionsStore.setFavoritePaths(savedPaths);
+    if (Object.keys(metaMap).length > 0) {
+      collectionsStore.setFavoriteSongMetaMap(metaMap);
+    }
+    importedFavorites = savedPaths.length;
+  }
+
+  // 4. 导入设置
   if (includeSettings && backup.data.settings) {
     try {
       // 使用 replaceSettings 完全替换设置
@@ -387,6 +454,7 @@ export async function importAppBackup(
   return {
     summary,
     importedPlaylists,
+    importedFavorites,
     importedPlugins,
     skippedPlugins,
     settingsApplied,

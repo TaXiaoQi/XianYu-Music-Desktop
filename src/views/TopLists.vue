@@ -29,13 +29,13 @@
       <section class="flex-1 flex overflow-hidden">
         <transition name="page-fade" mode="out-in">
           <!-- 加载中 -->
-          <div v-if="loading" key="loading" class="flex-1 flex items-center justify-center">
+          <div v-if="loading || checkingSources" key="loading" class="flex-1 flex items-center justify-center">
             <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
               <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <p class="text-sm">正在从 {{ selectedSourceName }} 加载榜单…</p>
+              <p class="text-sm">{{ checkingSources ? '正在检测可用音源…' : `正在从 ${selectedSourceName} 加载榜单…` }}</p>
             </div>
           </div>
 
@@ -134,6 +134,8 @@ type SourceItem = {
 const sourceList = ref<SourceItem[]>([]);
 const selectedSourceId = ref<string>('');
 const loading = ref(false);
+const checkingSources = ref(false);
+let refreshToken = 0;
 
 const allSourceList = computed(() => sourceList.value);
 
@@ -145,28 +147,42 @@ const selectedSourceName = computed(() => selectedSourceItem.value?.name ?? '未
 
 /** 构建支持榜单接口的插件来源列表 */
 async function refreshSourceList() {
-  const plugins = getStoredPlugins()
-    .filter(p => p.enabled && p.format === 'musicfree')
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const token = ++refreshToken;
+  checkingSources.value = true;
+  try {
+    const plugins = getStoredPlugins()
+      .filter(p => p.enabled && p.format === 'musicfree')
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-  const items: SourceItem[] = [];
-  for (const p of plugins) {
-    try {
-      if (await pluginSupportsTopLists(p)) {
-        items.push({ id: p.id, name: p.name, source: p });
+    // 并行检测各插件是否支持榜单，避免串行等待导致长时间停留在"无插件"空态
+    const results = await Promise.all(plugins.map(async (p) => {
+      try {
+        return (await pluginSupportsTopLists(p)) ? p : null;
+      } catch {
+        // 插件加载失败视为不支持榜单，静默跳过
+        return null;
       }
-    } catch {
-      // 插件加载失败视为不支持榜单，静默跳过
-    }
-  }
-  sourceList.value = items;
+    }));
 
-  const prevSelectedId = selectedSourceId.value;
-  const stillExists = items.some(s => s.id === prevSelectedId);
-  if (!stillExists && items.length > 0) {
-    selectedSourceId.value = items[0].id;
-  } else if (items.length === 0) {
-    selectedSourceId.value = '';
+    if (token !== refreshToken) return;
+
+    const items: SourceItem[] = results
+      .filter((p): p is PluginSource => p !== null)
+      .map(p => ({ id: p.id, name: p.name, source: p }));
+
+    sourceList.value = items;
+
+    const prevSelectedId = selectedSourceId.value;
+    const stillExists = items.some(s => s.id === prevSelectedId);
+    if (!stillExists && items.length > 0) {
+      selectedSourceId.value = items[0].id;
+    } else if (items.length === 0) {
+      selectedSourceId.value = '';
+    }
+  } finally {
+    if (token === refreshToken) {
+      checkingSources.value = false;
+    }
   }
 }
 
