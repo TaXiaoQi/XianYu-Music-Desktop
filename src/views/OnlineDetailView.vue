@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { defineAsyncComponent, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from 'lucide-vue-next';
 
 import type { Song, PluginSearchResult } from '../types';
 import { useOnlineDetailStore, type OnlineDetailType } from '../features/onlineDetail/store';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
-import { usePlaybackStore } from '../features/playback/store';
-import { useSettingsStore } from '../features/settings/store';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
 import { useToast } from '../composables/toast';
@@ -23,11 +21,7 @@ import {
   pluginGetArtistInfo,
   pluginGetAlbumSongs,
   pluginGetPlaylistDetail,
-  pluginGetMusicInfo,
-  pluginGetBakaMusicInfo,
-  isBakaPlugin,
   pluginGetCover,
-  getLastPluginError,
   pluginArtistSearch,
   pluginAlbumSearch,
   type PluginAlbumResult,
@@ -52,9 +46,11 @@ import { extractDurationMs } from '../services/pluginResultMappers';
 import ArtistDetailHeader from '../components/headers/ArtistDetailHeader.vue';
 import AlbumDetailHeader from '../components/headers/AlbumDetailHeader.vue';
 import DetailHeader from '../components/headers/DetailHeader.vue';
-import OnlineSongList from '../components/song-list/OnlineSongList.vue';
 import SongContextMenu from '../components/overlays/SongContextMenu.vue';
 import { type ArtistTabId } from '../utils/artistTabsOrder';
+import { useSongContextActions } from '../composables/useSongContextActions';
+
+const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
 
 const route = useRoute();
 const router = useRouter();
@@ -63,8 +59,6 @@ const { playSong, clearQueue, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const libraryStore = useLibraryStore();
 const onlineDetailStore = useOnlineDetailStore();
-const playbackStore = usePlaybackStore();
-const settingsStore = useSettingsStore();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 
 const detailType = computed<OnlineDetailType>(() => (route.query.type as OnlineDetailType) || 'artist');
@@ -73,6 +67,8 @@ const ctx = computed(() => onlineDetailStore.context);
 const loading = ref(false);
 /** 初始加载是否完成：完成后 Transition 始终留在 DOM 中，保证切换有动画 */
 const hasInitialLoad = ref(false);
+/** 整页滚动容器：header 与歌曲列表一起滚动 */
+const detailScrollRef = ref<HTMLElement | null>(null);
 /** 歌曲列表：MF 引擎存 PluginSearchResult，LX 引擎存 LxSearchResultItem */
 const songs = ref<any[]>([]);
 /** 专辑列表：MF 引擎存 PluginAlbumResult，LX 引擎存 LxAlbumSearchResult */
@@ -84,11 +80,16 @@ const artistActiveTab = ref<ArtistTabId>('songs');
 /** 竞态条件防护：每次 loadData 递增，异步回调中检查版本号防止旧数据覆盖新数据 */
 let loadVersion = 0;
 
-// 右键菜单状态
-const showContextMenu = ref(false);
-const contextMenuX = ref(0);
-const contextMenuY = ref(0);
-const contextMenuTargetSong = ref<Song | null>(null);
+// 右键菜单状态（自动区分本地/在线歌曲，已下载在线歌曲索引至本地文件）
+const {
+  showContextMenu,
+  contextMenuX,
+  contextMenuY,
+  contextMenuTargetSong,
+  contextMenuResolvedPath,
+  contextMenuIsOnlineSearch,
+  handleContextMenu: handleMySongContextMenu,
+} = useSongContextActions({ isBatchMode });
 
 const title = computed(() => ctx.value?.title || '');
 const subtitle = computed(() => ctx.value?.subtitle || '');
@@ -178,11 +179,6 @@ async function loadUserModeData() {
   }
 }
 
-/** 当前容器展示的歌曲列表（用户模式为被查看用户的收藏/歌单歌曲） */
-const currentSongs = computed<Song[]>(() =>
-  isUserMode.value ? userModeSongs.value : songList.value,
-);
-
 // 将 PluginSearchResult 转换为 Song 用于展示和播放
 function mfResultToSong(item: PluginSearchResult): Song {
   const artistNames = item.artist ? item.artist.split(/[、,/&]/).filter(Boolean).map(s => s.trim()) : ['未知歌手'];
@@ -263,6 +259,11 @@ const songList = computed<Song[]>(() =>
   isLxEngine.value
     ? songs.value.map((item: LxSearchResultItem) => lxResultToSong(item))
     : songs.value.map((item: PluginSearchResult) => mfResultToSong(item)),
+);
+
+/** 当前容器展示的歌曲列表：在线详情为在线歌曲，用户模式为被查看用户的收藏/歌单歌曲 */
+const currentSongs = computed<Song[]>(() =>
+  isUserMode.value ? userModeSongs.value : songList.value,
 );
 
 // MF 插件（如网易云）的 search/getAlbumInfo/getArtistWorks 可能不返回封面 URL，
@@ -512,107 +513,6 @@ async function loadMfData(page: number, version: number) {
   }
 }
 
-async function handlePlaySong(song: Song) {
-  if (!ctx.value) return;
-  // 用户详情模式：收藏歌曲可能为本地或在线，直接交给 playSong 解析协议 URL
-  if (isUserMode.value) {
-    launchFlyingCover(song.path, song.cover_thumb_path || '');
-    void playSong(song, { insertAfterCurrent: true });
-    return;
-  }
-  if (isLxEngine.value) {
-    await handlePlayLxSong(song);
-  } else {
-    await handlePlayMfSong(song);
-  }
-}
-
-// ==================== LX (落雪) 引擎播放 ====================
-
-async function handlePlayLxSong(song: Song) {
-  const lxItem = (song as any).rawData as LxSearchResultItem | undefined;
-  if (!lxItem) return;
-  // 缓存完整歌曲元信息（hash/_types/copyrightId 等），供 playerPlayback 解析 URL 时使用
-  cacheLxSong(lxItem);
-  // 同时缓存到 lxLyricFetcher（供歌词获取使用）
-  const songDuration = parseIntervalToSeconds(lxItem.interval);
-  cacheLxSongInfo(lxItem.source, lxItem.songmid, {
-    songmid: lxItem.songmid,
-    hash: lxItem.hash,
-    name: lxItem.name,
-    singer: lxItem.singer,
-    albumName: lxItem.albumName,
-    interval: lxItem.interval,
-    _interval: songDuration > 0 ? Math.round(songDuration) : undefined,
-    songId: lxItem.songId,
-    strMediaMid: lxItem.strMediaMid,
-    albumMid: lxItem.albumMid,
-    albumId: lxItem.albumId,
-    copyrightId: lxItem.copyrightId,
-    source: lxItem.source,
-  });
-  // 飞入封面动画
-  launchFlyingCover(song.path, song.cover_thumb_path || '');
-  // 立即播放：playSong 内部会解析 lx:// 协议并拉取直链、歌词、封面
-  void playSong(song, { insertAfterCurrent: true });
-}
-
-// ==================== MusicFree 引擎播放 ====================
-
-async function handlePlayMfSong(song: Song) {
-  if (!ctx.value) return;
-  if (!ctx.value.pluginSource) return;
-  const mfItem = (song as any).rawData as PluginSearchResult | undefined;
-  if (!mfItem) return;
-
-  try {
-    // 通过插件获取播放 URL（必须，阻塞播放）
-    // Baka 插件使用独立的 12 档音质方法
-    const requestedQuality = playbackStore.sessionQualityOverride
-      || settingsStore.settings.audio.onlineDefaultQuality || '320k';
-    const fallbackBehavior = settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower';
-    const musicInfo = await isBakaPlugin(ctx.value.pluginSource)
-      ? await pluginGetBakaMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior)
-      : await pluginGetMusicInfo(ctx.value.pluginSource, mfItem, requestedQuality, fallbackBehavior);
-    if (!musicInfo?.url) {
-      const detail = getLastPluginError();
-      showToast(detail ? `无法获取播放URL：${detail}` : '无法获取播放URL', 'error');
-      return;
-    }
-
-    const playableSong: Song = {
-      ...song,
-      source_type: 'plugin',
-      remote_source_id: musicInfo.url,
-      remote_requested_quality: requestedQuality as any,
-      remote_fallback_behavior: fallbackBehavior,
-      remote_actual_quality: musicInfo.actualQuality,
-      remote_headers: musicInfo.headers && Object.keys(musicInfo.headers).length > 0 ? musicInfo.headers : undefined,
-      remote_ekey: musicInfo.ekey,
-      remote_cek: musicInfo.cek,
-      cover_thumb_path: song.cover_thumb_path || musicInfo.coverUrl || '',
-    } as any;
-
-    // 从 getMediaSource 返回值中提取歌词（已由 buildLyricsRaw 构建为 lyricsRaw，支持逐字歌词）
-    if (musicInfo.lyricsRaw) {
-      (playableSong as any).lyrics_raw = musicInfo.lyricsRaw;
-    }
-
-    // 立即播放（不等歌词/封面，让用户尽快听到声音）
-    // playSong 内部会异步补获歌词（支持逐字歌词），此处不再重复获取
-    void playSong(playableSong, { insertAfterCurrent: true });
-
-    // 后台异步获取封面（不阻塞播放，歌词已由 playSong 内部异步获取）
-    if (!playableSong.cover_thumb_path) {
-      void pluginGetCover(ctx.value.pluginSource, mfItem).then((cover) => {
-        if (cover) playableSong.cover_thumb_path = cover;
-      }).catch(() => { /* 封面加载失败，忽略 */ });
-    }
-  } catch (e: any) {
-    showToast(`播放失败: ${e?.message || e}`, 'error');
-  }
-}
-
 /** 全部播放：清空队列 → 加入全部歌曲 → 播放第一首（播放时才拉取直链） */
 async function handlePlayAll() {
   if (!ctx.value || currentSongs.value.length === 0) {
@@ -664,19 +564,19 @@ async function handlePlayAll() {
 
 /** 收藏至歌单：调用原有引擎的收藏到歌单逻辑和 UI */
 function handleAddToPlaylist() {
-  if (songList.value.length === 0) {
+  if (currentSongs.value.length === 0) {
     showToast('暂无可收藏的歌曲', 'info');
     return;
   }
 
-  // 将在线歌曲元信息缓存到 songPool，确保歌单中能正确显示
-  for (const song of songList.value) {
+  // 将歌曲元信息缓存到 songPool，确保歌单中能正确显示
+  for (const song of currentSongs.value) {
     libraryStore.setExtraSong(song);
   }
 
   // 调用原有的收藏到歌单对话框，同时传入完整 Song 对象用于持久化
-  const songPaths = songList.value.map(s => s.path);
-  openAddToPlaylistDialog(songPaths, { songs: songList.value });
+  const songPaths = currentSongs.value.map(s => s.path);
+  openAddToPlaylistDialog(songPaths, { songs: currentSongs.value });
 }
 
 /** 全选/取消全选 */
@@ -689,13 +589,10 @@ function handleSelectAll() {
   }
 }
 
-function handleContextMenu(e: MouseEvent, song: Song) {
-  e.preventDefault();
-  contextMenuTargetSong.value = song;
-  contextMenuX.value = e.clientX;
-  contextMenuY.value = e.clientY;
-  showContextMenu.value = true;
-}
+/** 播放歌曲（在线/本地均由 playSong 解析协议） */
+const handlePlaySong = (song: Song) => {
+  void playSong(song, { insertAfterCurrent: true });
+};
 
 /** 右键菜单：收藏至歌单 */
 function handleContextMenuAddToPlaylist() {
@@ -985,7 +882,9 @@ watch(
     </div>
 
     <!-- 详情内容：hasInitialLoad 后始终在 DOM 中，保证 Transition 动画生效 -->
-    <div v-else class="flex-1 overflow-y-auto custom-scrollbar relative">
+    <div v-else class="flex-1 min-h-0 relative flex flex-col">
+      <!-- 整页滚动容器：header 与歌曲列表一起滚动 -->
+      <div ref="detailScrollRef" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative">
       <!-- 后续加载指示器（叠加在内容上方，不替换内容，不卸载 Transition） -->
       <Transition name="fade">
         <div v-if="loading" class="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
@@ -1007,9 +906,9 @@ watch(
             :artistName="title"
             :description="artistDescription"
             :rawData="ctx?.rawData"
-            :songs="songList"
+            :songs="currentSongs"
             :selectedCount="selectedPaths.size"
-            :totalSongCount="songList.length"
+            :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
@@ -1019,12 +918,18 @@ watch(
           <!-- 歌曲列表 / 专辑列表 tab（不使用 mode="out-in"，避免切换 tab 时内容空白） -->
           <div class="relative">
           <Transition name="tab-fade">
-            <OnlineSongList
+            <SongTable
               v-if="artistActiveTab === 'songs'"
               key="songs"
-              :songs="songList"
+              :songs="currentSongs"
+              :is-batch-mode="isBatchMode"
+              :selected-paths="selectedPaths"
+              memory-scope-key="online-detail-artist"
+              page-scroll-mode
+              :scroll-container-ref="detailScrollRef"
               @play="handlePlaySong"
-              @contextmenu="handleContextMenu"
+              @contextmenu="handleMySongContextMenu"
+              @update:selectedPaths="selectedPaths = $event"
             />
 
             <!-- 专辑列表 tab -->
@@ -1086,20 +991,28 @@ watch(
             v-model:isBatchMode="isBatchMode"
             :albumName="title"
             :albumArtist="subtitle"
-            :songs="songList"
+            :songs="currentSongs"
             :selectedCount="selectedPaths.size"
-            :totalSongCount="songList.length"
+            :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
             @addToPlaylist="handleAddToPlaylist"
             @selectAll="handleSelectAll"
           />
-          <OnlineSongList
-            :songs="songList"
-            @play="handlePlaySong"
-            @contextmenu="handleContextMenu"
-          />
+          <div class="relative">
+            <SongTable
+              :songs="currentSongs"
+              :is-batch-mode="isBatchMode"
+              :selected-paths="selectedPaths"
+              memory-scope-key="online-detail-album"
+              page-scroll-mode
+              :scroll-container-ref="detailScrollRef"
+              @play="handlePlaySong"
+              @contextmenu="handleMySongContextMenu"
+              @update:selectedPaths="selectedPaths = $event"
+            />
+          </div>
         </div>
 
         <!-- 歌单详情 -->
@@ -1107,21 +1020,29 @@ watch(
           <DetailHeader
             :title="title"
             :subtitle="subtitle"
-            :songs="songList"
+            :songs="currentSongs"
             :isBatchMode="isBatchMode"
             :selectedCount="selectedPaths.size"
-            :totalSongCount="songList.length"
+            :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
             @playAll="handlePlayAll"
             @openAddToPlaylist="handleAddToPlaylist"
             @selectAll="handleSelectAll"
           />
-          <OnlineSongList
-            :songs="songList"
-            @play="handlePlaySong"
-            @contextmenu="handleContextMenu"
-          />
+          <div class="relative">
+            <SongTable
+              :songs="currentSongs"
+              :is-batch-mode="isBatchMode"
+              :selected-paths="selectedPaths"
+              memory-scope-key="online-detail-playlist"
+              page-scroll-mode
+              :scroll-container-ref="detailScrollRef"
+              @play="handlePlaySong"
+              @contextmenu="handleMySongContextMenu"
+              @update:selectedPaths="selectedPaths = $event"
+            />
+          </div>
         </div>
 
         <!-- 用户详情（排行榜"查看"进入）：收藏 / 歌单 -->
@@ -1141,7 +1062,7 @@ watch(
             @selectAll="handleSelectAll"
           />
 
-          <div class="relative">
+          <div class="relative flex-1 min-h-0">
             <Transition name="tab-fade">
               <!-- 收藏歌曲 tab -->
               <div v-if="artistActiveTab === 'songs'" key="songs">
@@ -1164,11 +1085,17 @@ watch(
                   </svg>
                   <p class="text-sm mt-3">正在加载收藏...</p>
                 </div>
-                <OnlineSongList
+                <SongTable
                   v-else-if="currentSongs.length > 0"
                   :songs="currentSongs"
+                  :is-batch-mode="isBatchMode"
+                  :selected-paths="selectedPaths"
+                  memory-scope-key="online-detail-user"
+                  page-scroll-mode
+                  :scroll-container-ref="detailScrollRef"
                   @play="handlePlaySong"
-                  @contextmenu="handleContextMenu"
+                  @contextmenu="handleMySongContextMenu"
+                  @update:selectedPaths="selectedPaths = $event"
                 />
                 <div v-else class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -1241,7 +1168,8 @@ watch(
       :y="contextMenuY"
       :song="contextMenuTargetSong"
       :is-playlist-view="false"
-      :is-online-search="true"
+      :is-online-search="contextMenuIsOnlineSearch"
+      :resolved-file-path="contextMenuResolvedPath"
       :online-detail-type="detailType"
       @close="showContextMenu = false"
       @add-to-playlist="handleContextMenuAddToPlaylist"
@@ -1249,6 +1177,7 @@ watch(
       @view-online-album="handleOnlineViewAlbum"
     />
   </div>
+</div>
 </template>
 
 <style scoped>

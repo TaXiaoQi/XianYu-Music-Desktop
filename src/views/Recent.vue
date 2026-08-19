@@ -16,6 +16,7 @@
           :isBatchMode="isBatchMode"
           :selectedPaths="selectedPaths"
           memoryScopeKey="recent-view"
+          :download-completed-as-local="true"
           @play="handlePlaySong"
           @contextmenu="handleContextMenu"
           @drag-start="handleTableDragStart"

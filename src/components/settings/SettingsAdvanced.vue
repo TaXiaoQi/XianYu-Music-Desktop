@@ -740,9 +740,19 @@ onUnmounted(() => {
                   <div class="fb-my-main">
                     <div class="fb-my-left">
                       <p class="fb-my-content">{{ item.content }}</p>
-                      <div v-if="item.status === 'resolved' && item.resolveNote" class="fb-my-reply">
+                      <div v-if="item.status === 'resolved' && (item.resolveNote || (item.resolveImages && item.resolveImages.length > 0))" class="fb-my-reply">
                         <span class="fb-my-reply-label">处理说明（{{ item.repliedBy || item.assignee || '管理员' }}）</span>
-                        <span>{{ item.resolveNote }}</span>
+                        <span v-if="item.resolveNote">{{ item.resolveNote }}</span>
+                        <div v-if="item.resolveImages && item.resolveImages.length > 0" class="fb-my-resolve-imgs">
+                          <div
+                            v-for="(rimg, ri) in item.resolveImages"
+                            :key="ri"
+                            class="fb-my-resolve-img"
+                            @click="openFbViewer(item.resolveImages, ri)"
+                          >
+                            <img :src="rimg" alt="处理图片" loading="lazy" />
+                          </div>
+                        </div>
                       </div>
                       <div v-else-if="item.status === 'rejected' && item.rejectReason" class="fb-my-reply fb-my-reply-reject">
                         <span class="fb-my-reply-label">拒绝理由（{{ item.repliedBy || item.assignee || '管理员' }}）</span>
@@ -1264,6 +1274,36 @@ onUnmounted(() => {
 }
 .fb-my-reply-reject .fb-my-reply-label {
   color: #ff3b30;
+}
+.fb-my-resolve-imgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+  margin-top: 2px;
+}
+.fb-my-resolve-img {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: zoom-in;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+}
+.fb-my-resolve-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 140ms ease;
+}
+.fb-my-resolve-img:hover img {
+  transform: scale(1.06);
+}
+:global(.dark) .fb-my-resolve-img,
+.dark .fb-my-resolve-img {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #262626;
 }
 :global(.dark) .fb-my-reply-reject .fb-my-reply-label,
 .dark .fb-my-reply-reject .fb-my-reply-label {

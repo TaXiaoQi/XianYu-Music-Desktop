@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { CircleCheck, Download, Loader2, MessageCircle, SlidersHorizontal } from 'lucide-vue-next';
+import { CircleCheck, Download, MessageCircle, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
+import { useDownloadStore } from '../../features/download/store';
 
 defineOptions({ inheritAttrs: false });
+
+const downloadStore = useDownloadStore();
 
 withDefaults(defineProps<{
   itemKey: FooterItemKey;
@@ -26,7 +29,18 @@ withDefaults(defineProps<{
   <svg v-if="itemKey === 'favorite'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" :fill="active ? 'currentColor' : 'none'" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
   </svg>
-  <Loader2 v-else-if="itemKey === 'download' && loading" v-bind="$attrs" class="animate-spin" />
+  <div v-else-if="itemKey === 'download' && loading" v-bind="$attrs" class="relative inline-flex items-center justify-center">
+    <svg class="h-full w-full -rotate-90" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-opacity="0.15" stroke-width="4" />
+      <circle
+        cx="12" cy="12" r="9" fill="none" stroke="currentColor"
+        stroke-width="4" stroke-linecap="round"
+        :stroke-dasharray="56.55"
+        :stroke-dashoffset="56.55 * (1 - downloadStore.progress / 100)"
+        class="transition-[stroke-dashoffset] duration-150"
+      />
+    </svg>
+  </div>
   <CircleCheck v-else-if="itemKey === 'download' && completed" v-bind="$attrs" />
   <Download v-else-if="itemKey === 'download'" v-bind="$attrs" />
   <template v-else-if="itemKey === 'playMode'">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Announcement } from '../../utils/announcement';
 
 const props = defineProps<{
@@ -16,6 +16,36 @@ const handleClose = () => {
   if (!scrolledToEnd.value) return;
   emit('close');
 };
+
+// 图片查看器
+const viewerImages = ref<string[]>([]);
+const viewerIndex = ref(0);
+const viewerVisible = ref(false);
+const openViewer = (imgs: string[], index: number) => {
+  viewerImages.value = imgs;
+  viewerIndex.value = index;
+  viewerVisible.value = true;
+};
+const closeViewer = () => {
+  viewerVisible.value = false;
+  viewerImages.value = [];
+};
+const viewerPrev = () => {
+  if (viewerImages.value.length === 0) return;
+  viewerIndex.value = (viewerIndex.value - 1 + viewerImages.value.length) % viewerImages.value.length;
+};
+const viewerNext = () => {
+  if (viewerImages.value.length === 0) return;
+  viewerIndex.value = (viewerIndex.value + 1) % viewerImages.value.length;
+};
+const onViewerKey = (e: KeyboardEvent) => {
+  if (!viewerVisible.value) return;
+  if (e.key === 'Escape') closeViewer();
+  else if (e.key === 'ArrowLeft') viewerPrev();
+  else if (e.key === 'ArrowRight') viewerNext();
+};
+onMounted(() => window.addEventListener('keydown', onViewerKey));
+onUnmounted(() => window.removeEventListener('keydown', onViewerKey));
 
 const refreshScrollState = () => {
   const el = contentBodyRef.value;
@@ -109,6 +139,16 @@ watch(
             <p class="announcement-desc">
               {{ announcement.content }}
             </p>
+            <div v-if="announcement.images && announcement.images.length > 0" class="announcement-images">
+              <div
+                v-for="(img, i) in announcement.images"
+                :key="i"
+                class="announcement-img"
+                @click="openViewer(announcement.images!, i)"
+              >
+                <img :src="img" loading="lazy" alt="" />
+              </div>
+            </div>
           </div>
 
           <div class="announcement-footer">
@@ -125,6 +165,45 @@ watch(
               {{ scrolledToEnd ? '我已阅读并确认' : '阅读到底后可确认' }}
             </button>
           </div>
+        </div>
+      </div>
+    </transition>
+
+    <transition name="announcement-viewer-fade" appear>
+      <div
+        v-if="viewerVisible"
+        class="announcement-viewer fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none"
+        @keydown="onViewerKey"
+        tabindex="-1"
+      >
+        <button type="button" class="announcement-viewer-close" @click="closeViewer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <button
+          v-if="viewerImages.length > 1"
+          type="button"
+          class="announcement-viewer-nav announcement-viewer-prev"
+          @click.stop="viewerPrev"
+        >
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <img
+          v-if="viewerImages[viewerIndex]"
+          :src="viewerImages[viewerIndex]"
+          class="announcement-viewer-img"
+          alt=""
+          @click.stop
+        />
+        <button
+          v-if="viewerImages.length > 1"
+          type="button"
+          class="announcement-viewer-nav announcement-viewer-next"
+          @click.stop="viewerNext"
+        >
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div v-if="viewerImages.length > 1" class="announcement-viewer-count">
+          {{ viewerIndex + 1 }} / {{ viewerImages.length }}
         </div>
       </div>
     </transition>
@@ -250,6 +329,135 @@ watch(
   color: rgba(75, 85, 99, 0.9);
   margin: 0;
   white-space: pre-line;
+}
+
+/* ==================== 附加图片 ==================== */
+.announcement-images {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.announcement-img {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.announcement-img:hover {
+  transform: scale(1.04);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.announcement-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ==================== 图片查看器 ==================== */
+.announcement-viewer-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: background-color 140ms ease, transform 100ms ease;
+}
+
+.announcement-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.announcement-viewer-close:active {
+  transform: scale(0.94);
+}
+
+.announcement-viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  transition: background-color 140ms ease, transform 160ms ease;
+}
+
+.announcement-viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.announcement-viewer-prev {
+  left: 16px;
+}
+
+.announcement-viewer-next {
+  right: 16px;
+}
+
+.announcement-viewer-img {
+  max-width: min(88vw, 72vh * 1.4);
+  max-height: 82vh;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.announcement-viewer-count {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.45);
+  padding: 5px 12px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.announcement-viewer-fade-enter-active,
+.announcement-viewer-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.announcement-viewer-fade-enter-from,
+.announcement-viewer-fade-leave-to {
+  opacity: 0;
+}
+
+/* 深色模式附加图片 */
+html.dark .announcement-img {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .announcement-img:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 .announcement-footer {

@@ -22,8 +22,8 @@ const INDEX_PROXIMITY_PX = 72;
 const INDEX_AUTO_HIDE_MS = 500;
 // 此集合限定哪些列表视图展示"回到顶部"；收藏/最近播放也复用 SongTable，需一并纳入
 const SCROLL_TO_TOP_VIEW_MODES = new Set(['all', 'playlist', 'artist', 'album', 'favorites', 'recent']);
-// "回到顶部/跳转播放"两个悬浮控件可用的路由白名单（本地音乐库 + 收藏 + 最近播放）
-const SCROLL_NAV_ENABLED_ROUTES = new Set(['/', '/favorites', '/recent']);
+// "回到顶部/跳转播放"两个悬浮控件可用的路由白名单（本地音乐库 + 收藏 + 最近播放 + 在线搜索/详情）
+const SCROLL_NAV_ENABLED_ROUTES = new Set(['/', '/favorites', '/recent', '/search', '/online-detail']);
 
 type StringRef = Ref<string> | ComputedRef<string>;
 
@@ -181,12 +181,20 @@ export function useSongTableAlphabetIndex({
     !isCurrentSongVisibleInViewport.value,
   );
 
-  const showScrollToTopButton = computed(() =>
-    SCROLL_NAV_ENABLED_ROUTES.has(routePath.value) &&
-    SCROLL_TO_TOP_VIEW_MODES.has(currentViewMode.value) &&
-    songs.value.length > 0 &&
-    scrollTop.value > ROW_HEIGHT,
-  );
+  const showScrollToTopButton = computed(() => {
+    if (!SCROLL_NAV_ENABLED_ROUTES.has(routePath.value)) {
+      return false;
+    }
+
+    // 在线搜索/详情页的 currentViewMode 保留进入前的页面状态（如 statistics），不可作为显示依据
+    const isOnlineContext =
+      routePath.value === '/search' || routePath.value === '/online-detail';
+    if (!isOnlineContext && !SCROLL_TO_TOP_VIEW_MODES.has(currentViewMode.value)) {
+      return false;
+    }
+
+    return songs.value.length > 0 && scrollTop.value > ROW_HEIGHT;
+  });
 
   const clearHideIndexBarTimer = () => {
     if (hideIndexBarTimer) {

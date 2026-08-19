@@ -369,6 +369,7 @@ export interface MyFeedbackItem {
   assignee: string;
   repliedBy: string;
   resolveNote: string;
+  resolveImages: string[];
   rejectReason: string;
   hasErrorLogs: boolean;
   hasAllLogs: boolean;

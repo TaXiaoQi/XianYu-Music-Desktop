@@ -11,6 +11,8 @@ export interface Announcement {
   date?: string;
   actionUrl?: string;
   actionText?: string;
+  // 可选附加图片（例如反馈处理完成的图片），在内容下方以缩略图展示
+  images?: string[];
   // 内容版本标识（后端 updated_at）。后台编辑公告会刷新此字段，
   // 使本地「已读」指纹失效，从而让所有用户重新看到更新后的公告。
   updatedAt?: string;

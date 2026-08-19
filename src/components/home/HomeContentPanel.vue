@@ -146,6 +146,7 @@ const handleTableDragStart = (...args: any[]) => {
           :isBatchMode="isBatchMode"
           :selectedPaths="selectedPaths"
           :memoryScopeKey="songTableMemoryScopeKey"
+          :download-completed-as-local="true"
           class="min-h-0"
           @play="$emit('playSong', $event)"
           @contextmenu="handleSongContextMenu"

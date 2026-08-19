@@ -115,4 +115,37 @@ describe('useSongTableAlphabetIndex', () => {
       unmount();
     },
   );
+
+  // 在线搜索/详情页复用 SongTable，滚动控件需同样可用。
+  // 这些页面 currentViewMode 保留进入前的页面状态（默认 statistics），不应成为显示障碍
+  it.each([
+    ['search', '/search'],
+    ['online-detail', '/online-detail'],
+  ] as const)(
+    'shows scroll-to-top button in %s page after scrolling past the first row',
+    (viewMode, routePath) => {
+      const { result, unmount } = mountAlphabetIndex(ref('statistics'), ref(routePath));
+
+      expect(result.showScrollToTopButton.value).toBe(true);
+
+      unmount();
+    },
+  );
+
+  it.each([
+    ['search', '/search'],
+    ['online-detail', '/online-detail'],
+  ] as const)(
+    'keeps locate-current-song available in %s page when the current song is in the list',
+    (viewMode, routePath) => {
+      usePlaybackStore().currentSong = makeSong('/music/demo.flac');
+
+      const { result, unmount } = mountAlphabetIndex(ref('statistics'), ref(routePath));
+
+      expect(result.showLocateCurrentSongButton.value).toBe(true);
+      expect(result.canLocateCurrentSong.value).toBe(true);
+
+      unmount();
+    },
+  );
 });
