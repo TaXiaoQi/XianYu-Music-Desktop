@@ -22,7 +22,7 @@
 //!
 //! 每个效果用 SmoothedValue(50ms) 做 wet 混合，启停无 click。
 
-use super::dsp::{db_to_gain, gain_to_db, Biquad, EnvelopeFollower, SmoothedValue};
+use super::dsp::{db_to_gain, gain_to_db, soft_clip, Biquad, EnvelopeFollower, SmoothedValue};
 use super::SoundEffectSettings;
 
 pub struct ChannelRack {
@@ -186,8 +186,9 @@ impl ChannelRack {
             let l = frame[0];
             let r = frame[1];
             let side = r - l; // 全幅 side（不乘 0.5）
-            frame[0] = l * (1.0 - w) + side * w;
-            frame[1] = r * (1.0 - w) + side * w;
+            // 消人声后单边幅值可能因相减/相加超满幅，软限幅避免削波
+            frame[0] = soft_clip(l * (1.0 - w) + side * w);
+            frame[1] = soft_clip(r * (1.0 - w) + side * w);
         }
 
         // ====== 单声道合并（模块 14）======
