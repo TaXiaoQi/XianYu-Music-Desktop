@@ -47,6 +47,7 @@ import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngi
 import { cacheLxSong } from '../services/lxSongCache';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
+import { extractDurationMs } from '../services/pluginResultMappers';
 
 import ArtistDetailHeader from '../components/headers/ArtistDetailHeader.vue';
 import AlbumDetailHeader from '../components/headers/AlbumDetailHeader.vue';
@@ -197,24 +198,11 @@ function mfResultToSong(item: PluginSearchResult): Song {
   }
   album = album || '未知专辑';
 
-  // 时长：优先用 item.duration（已由 parseDuration 提取为毫秒）；
-  // 为空时尝试从 rawData 的 dt / duration / interval 字段提取
+  // 时长：优先用 item.duration（已由 extractDurationMs 提取为毫秒）；
+  // 为空时回退到 rawData 重新走统一的时长提取逻辑
   let durationMs = item.duration || 0;
   if ((!durationMs || durationMs <= 0) && item.rawData) {
-    const raw = item.rawData;
-    const rawDur = raw.dt || raw.duration || raw.interval;
-    if (rawDur) {
-      // parseDuration 逻辑：数字 > 1000 视为毫秒，否则视为秒并 ×1000
-      durationMs = typeof rawDur === 'number'
-        ? (rawDur > 1000 ? rawDur : rawDur * 1000)
-        : 0;
-      if (!durationMs && typeof rawDur === 'string') {
-        const parts = rawDur.split(':');
-        if (parts.length >= 2) {
-          durationMs = (parseInt(parts[0]) * 60 + parseInt(parts[1])) * 1000;
-        }
-      }
-    }
+    durationMs = extractDurationMs(item.rawData);
   }
 
   return {

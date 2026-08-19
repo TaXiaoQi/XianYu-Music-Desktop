@@ -776,8 +776,15 @@ watch(
 
 const toggleEqPanel = (e: MouseEvent) => {
   e.stopPropagation();
+  // Bit-perfect / DSD 直出期间禁止打开音效菜单，避免在独占直出中使能 DSP 破坏状态一致性
+  if (isAudioControlLocked.value) return;
   showEqPanel.value = !showEqPanel.value;
 };
+
+// Bit-perfect / DSD 直通开启时若音效面板正处于打开状态，强制关闭
+watch(isAudioControlLocked, (locked) => {
+  if (locked) showEqPanel.value = false;
+});
 
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;

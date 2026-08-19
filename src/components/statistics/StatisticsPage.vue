@@ -313,7 +313,8 @@ const losslessRatio = computed(() => {
 </script>
 
 <template>
-  <div class="statistics-page h-full overflow-y-auto custom-scrollbar w-full select-none">
+  <div class="relative h-full">
+    <div class="statistics-page h-full overflow-y-auto custom-scrollbar w-full select-none">
     <div class="px-4 pt-[clamp(0.25rem,0.6vw,0.75rem)] pb-10 md:px-6 md:pb-12 max-w-6xl mx-auto">
       <!-- Loading state -->
       <div v-if="loading && !stats" class="space-y-8">
@@ -544,6 +545,7 @@ const losslessRatio = computed(() => {
     @close="showContextMenu = false"
     @view-leaderboard-user="handleViewLeaderboardUser"
   />
+  </div>
 </template>
 
 <style scoped>

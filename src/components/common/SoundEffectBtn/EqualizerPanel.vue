@@ -166,12 +166,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                     <div class="space-y-3 rounded-xl border border-gray-200/70 bg-white/40 p-4 dark:border-white/10 dark:bg-white/5">
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">原始增益</span>
-                        <input type="range" class="fx-slider" min="0" max="300" v-model.number="store.originalGain">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.originalGain }}%</span>
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环境增益</span>
-                        <input type="range" class="fx-slider" min="0" max="300" v-model.number="store.envGain">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.envGain }}%</span>
                       </div>
                     </div>
