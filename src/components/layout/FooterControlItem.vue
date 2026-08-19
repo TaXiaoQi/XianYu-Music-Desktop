@@ -85,6 +85,8 @@ const ctx = inject<{
   mvActive: Ref<boolean>;
   mvLoading: Ref<boolean>;
   toggleMv: () => Promise<void>;
+  // MV 视频下载中（下载按钮 loading 态）
+  isMvVideoDownloading: Ref<boolean>;
 }>('footerContext')!;
 
 // 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
@@ -136,6 +138,7 @@ const {
   mvActive,
   mvLoading,
   toggleMv,
+  isMvVideoDownloading,
 } = ctx;
 
 const downloadQualityListRef = ref<HTMLElement | null>(null);
@@ -265,9 +268,11 @@ watch(
     >
       <FooterControlIcon
         item-key="download"
-        :loading="isOnlineSong && isDownloading"
-        :completed="!isOnlineSong || Boolean(downloadedRecord)"
-        :class="isOnlineSong && isDownloading ? 'h-6 w-6' : 'h-5 w-5'"
+        :loading="mvActive
+          ? isMvVideoDownloading
+          : (isOnlineSong && isDownloading)"
+        :completed="mvActive ? false : (!isOnlineSong || Boolean(downloadedRecord))"
+        :class="(mvActive && isMvVideoDownloading) || (isOnlineSong && isDownloading) ? 'h-6 w-6' : 'h-5 w-5'"
       />
     </button>
 
@@ -367,17 +372,23 @@ watch(
       :class="[
         isAudioControlLocked
           ? 'opacity-40 cursor-not-allowed'
-          : !isQualitySelectableSong
-            ? (showPlayerDetail
-                ? 'text-white/80 cursor-default'
-                : 'text-gray-700 dark:text-white/80 cursor-default')
-            : showQualityMenu
-              ? 'text-[#EC4141] bg-[#EC4141]/10'
-              : (showPlayerDetail
-                  ? 'text-white/80 hover:text-white hover:bg-white/10'
-                  : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
+          : mvActive
+            ? (showQualityMenu
+                ? 'text-[#EC4141] bg-[#EC4141]/10'
+                : (showPlayerDetail
+                    ? 'text-white/80 hover:text-white hover:bg-white/10'
+                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'))
+            : !isQualitySelectableSong
+              ? (showPlayerDetail
+                  ? 'text-white/80 cursor-default'
+                  : 'text-gray-700 dark:text-white/80 cursor-default')
+              : showQualityMenu
+                ? 'text-[#EC4141] bg-[#EC4141]/10'
+                : (showPlayerDetail
+                    ? 'text-white/80 hover:text-white hover:bg-white/10'
+                    : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
       ]"
-      :title="isAudioControlLocked ? audioLockTooltip : (isQualitySelectableSong ? '音质选择' : '本地音质')"
+      :title="isAudioControlLocked ? audioLockTooltip : (mvActive ? 'MV 画质选择' : (isQualitySelectableSong ? '音质选择' : '本地音质'))"
     >
       <FooterControlIcon item-key="quality" :quality-label="qualityButtonLabel" />
     </button>
@@ -393,8 +404,8 @@ watch(
           :class="showPlayerDetail ? 'bg-[#262626]/90 border-white/10' : 'bg-white/95 dark:bg-zinc-900/90 border-gray-100 dark:border-white/10'"
         >
           <div class="px-3 py-1 text-[10px] font-semibold text-gray-400 dark:text-white/40 select-none">
-            播放音质
-            <span v-if="isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
+            {{ mvActive ? 'MV 画质' : '播放音质' }}
+            <span v-if="!mvActive && isFooterQualityInfoProbing" class="font-normal"> · 探测中</span>
           </div>
           <div class="relative">
             <div
@@ -436,7 +447,7 @@ watch(
             </div>
           </div>
           <div
-            v-if="QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing"
+            v-if="QUALITY_OPTIONS.length === 0 && !isFooterQualityInfoProbing && !mvActive"
             class="px-3 py-2 text-[11px] text-gray-400 dark:text-white/40 whitespace-nowrap"
           >
             未探测到可播放音质
@@ -542,7 +553,7 @@ watch(
     </button>
   </div>
 
-  <!-- MV：播放当前歌曲的 MV 背景视频 -->
+  <!-- MV：播放当前歌曲的 MV 背景视频（仅播放详情页底栏显示，主页由布局过滤隐藏） -->
   <div v-else-if="itemKey === 'mv'" class="relative flex items-center justify-center h-full z-[70]">
     <button
       v-if="mvSupport(currentSong)"
@@ -553,7 +564,7 @@ watch(
         : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
       :title="mvActive ? '关闭 MV' : (mvLoading ? 'MV 加载中…' : '开启 MV')"
     >
-      <FooterControlIcon item-key="mv" class="h-4 w-4" />
+      <FooterControlIcon item-key="mv" :class="mvLoading ? 'h-4 w-4 animate-pulse' : 'h-4 w-4'" />
     </button>
     <button
       v-else

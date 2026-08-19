@@ -1707,6 +1707,103 @@ class BakaPluginManagerClass {
     return [];
   }
 
+  /** B站专用：专辑与歌单详情统一走同一取数路径。
+   *  不走 getPlaylistDetail/getAlbumSongs 的通用重试编排，B站歌单/收藏集多以 getAlbumInfo 取到歌曲，
+   *  getAlbumInfo 空时回退 getMusicSheetInfo，再空才搜索兜底。 */
+  async getBilibiliDetail(source: PluginSource, item: any, page: number = 1): Promise<PluginSearchResult[]> {
+    const inst = await this._ensureInstance(source);
+    if (!inst) return [];
+
+    const label = `[${source.name}] BilibiliDetail item="${item?.title || item?.name || ''}"`;
+
+    const mapList = (list: any[]) =>
+      list.map((it: any) => {
+        resetMediaItem(it, source.name);
+        return toPluginSearchResult(it, source);
+      });
+
+    if (typeof inst.getAlbumInfo === 'function') {
+      const getAlbumInfo = inst.getAlbumInfo;
+      try {
+        const result = await retryWithBackoff(
+          `${label} 按专辑`,
+          () => getAlbumInfo(item, page),
+          (r) => extractResultList(r).length === 0,
+        );
+        const list = extractResultList(result);
+        if (list.length > 0) return mapList(list);
+      } catch (e: any) {
+        log(`[BilibiliDetail] ${source.name} getAlbumInfo 失败: ${e?.message || e}`);
+      }
+    }
+
+    if (typeof inst.getMusicSheetInfo === 'function') {
+      const getMusicSheetInfo = inst.getMusicSheetInfo;
+      try {
+        const result = await retryWithBackoff(
+          `${label} 按歌单`,
+          () => getMusicSheetInfo(item, page),
+          (r) => extractResultList(r).length === 0,
+        );
+        const list = extractResultList(result);
+        if (list.length > 0) return mapList(list);
+      } catch (e: any) {
+        log(`[BilibiliDetail] ${source.name} getMusicSheetInfo 失败: ${e?.message || e}`);
+      }
+    }
+
+    // 兜底：按标题搜索
+    if (page === 1) {
+      const name = item.title || item.name || item.album || '';
+      if (name) {
+        catalogLog(`${label} 按专辑/歌单均空，回退搜索 "${name}"`);
+        return this.searchMusic(source, name, 1);
+      }
+    }
+    return [];
+  }
+
+  /** B站专用：歌手作品（UP 主空间投稿列表）。
+   *  空间接口 /x/space/wbi/arc/search 受风控，无登录态时稳定返回"风控校验失败"→空列表，
+   *  失败是确定性的：通用重试编排（6 次 + 退避约 12s）只会让歌手页长时间转圈。
+   *  这里单次尝试；音乐列表为空时立即回退按歌手名搜索，专辑列表为空则保持为空
+   *  （不能拿歌曲搜索结果顶替，否则会显示成假专辑）。 */
+  async getBilibiliArtistWorks(
+    source: PluginSource,
+    artistItem: any,
+    page: number = 1,
+    type: 'music' | 'album' = 'music',
+  ): Promise<PluginSearchResult[]> {
+    const inst = await this._ensureInstance(source);
+    if (!inst) return [];
+
+    if (typeof inst.getArtistWorks === 'function') {
+      const getArtistWorks = inst.getArtistWorks;
+      try {
+        const result = await getArtistWorks(artistItem, page, type);
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          return list.map((item: any) => {
+            resetMediaItem(item, source.name);
+            return toPluginSearchResult(item, source);
+          });
+        }
+        catalogLog(`[${source.name}] BilibiliArtistWorks(${type}) 空间列表为空(疑似风控)`);
+      } catch (e: any) {
+        log(`[BilibiliArtistWorks] ${source.name} 失败: ${e?.message || e}`);
+      }
+    }
+
+    if (type === 'music') {
+      const artistName = artistItem?.name || artistItem?.artist || '';
+      if (artistName) {
+        catalogLog(`[${source.name}] BilibiliArtistWorks 回退搜索 "${artistName}"`);
+        return this.searchMusic(source, artistName, page);
+      }
+    }
+    return [];
+  }
+
   /** 获取歌手作品 */
   async getArtistWorks(source: PluginSource, artistItem: any, page: number = 1, type: string = 'music'): Promise<PluginSearchResult[]> {
     const inst = await this._ensureInstance(source);

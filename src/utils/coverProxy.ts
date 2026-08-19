@@ -31,6 +31,15 @@ const PROXY_COVER_DOMAINS = [
 export function needsCoverProxy(url: string): boolean {
   if (!url) return false;
   if (url.startsWith('data:') || url.startsWith('asset:')) return false;
+  // Tauri 本地资产协议 http://asset.localhost/...（convertFileSrc 转出的本地封面）不是远程资源，绝不要代理
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === 'asset.localhost' || host === 'localhost' || host === '127.0.0.1') {
+      return false;
+    }
+  } catch {
+    // URL 已由上层校验；解析失败时交由下方判定
+  }
   if (url.startsWith('http://')) return true;
   return PROXY_COVER_DOMAINS.some(domain => url.includes(domain));
 }

@@ -313,7 +313,7 @@ export type FooterItemKey =
   | 'equalizer'       // 均衡器
   | 'playlist'        // 播放队列
   | 'comment'         // 评论区
-  | 'mv';             // MV 背景视频
+  | 'mv';             // MV 背景视频（仅播放详情页显示）
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';
@@ -691,7 +691,23 @@ export interface AudioSettings {
   fadeInOutDurationMs: number;
   /** 在线播放失败时自动切换到其他落雪音源（仅 lx:// 歌曲），默认 true */
   autoSwitchSourceOnFailure: boolean;
+  /** MV 背景视频默认画质（播放），默认 '720P' */
+  mvDefaultQuality?: MvQualityKey;
 }
+
+/** MV 视频画质档位 */
+export type MvQualityKey = '360P' | '480P' | '720P' | '1080P' | '4K';
+
+/** MV 画质档位元数据（设置页与选择弹窗共用） */
+export const MV_QUALITY_META: Record<MvQualityKey, { label: string; description: string }> = {
+  '360P': { label: '360P', description: '流畅' },
+  '480P': { label: '480P', description: '清晰' },
+  '720P': { label: '720P', description: '高清' },
+  '1080P': { label: '1080P', description: '全高清' },
+  '4K': { label: '4K', description: '超高清' },
+};
+
+export const MV_QUALITY_KEYS: MvQualityKey[] = ['360P', '480P', '720P', '1080P', '4K'];
 
 export type ShortcutActionId =
   | 'togglePlay'
@@ -820,6 +836,8 @@ export interface DownloadSettings {
   embedLyrics: boolean;
   /** 将封面嵌入音频文件 tag（默认 true） */
   embedCover: boolean;
+  /** 下载 MV 视频的默认画质，默认 '720P' */
+  mvDefaultQuality?: MvQualityKey;
 }
 
 /** 下载音质缺失行为 */

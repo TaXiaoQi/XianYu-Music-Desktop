@@ -1,4 +1,5 @@
 use crate::security::path_validator;
+use image::{GenericImageView, ImageEncoder};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -315,25 +316,92 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
 
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
 
-    // 限制 5MB
-    if bytes.len() > 5 * 1024 * 1024 {
+    // 网络读取上限（远超封面预期，防止恶意超大响应拖垮内存）
+    const MAX_NETWORK_BYTES: usize = 20 * 1024 * 1024;
+    if bytes.len() > MAX_NETWORK_BYTES {
+        return Err("Image too large".to_string());
+    }
+
+    // 返回前保留上限：过大图片直接透传会生成数十 MB 的 data: URL，拖跨渲染进程。
+    // 超过上限时用 image 解码缩小再编码成小体积 JPEG，保证内存与内存封容量可控。
+    use base64::{engine::general_purpose, Engine as _};
+
+    const MAX_DATA_BYTES: usize = 5 * 1024 * 1024;
+    if bytes.len() > MAX_DATA_BYTES {
+        let Ok(img) = image::load_from_memory(&bytes) else {
+            return Err("Image too large".to_string());
+        };
+        // 限制最长边，保证封面缩略图体积足够小（原图过大时才缩放）
+        const MAX_EDGE: u32 = 800;
+        let img = shrink_to_fit(img, MAX_EDGE);
+        let rgba = img.to_rgba8();
+        // 尽量保留 alpha（透明 PNG 封面），否则回退 JPEG 保证稳定返回
+        let mut png = Vec::new();
+        if image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(
+                rgba.as_raw(),
+                rgba.width(),
+                rgba.height(),
+                image::ExtendedColorType::Rgba8,
+            )
+            .is_ok()
+        {
+            return Ok(format!(
+                "data:image/png;base64,{}",
+                general_purpose::STANDARD.encode(&png)
+            ));
+        }
+        let mut jpeg = Vec::new();
+        if image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 82)
+            .write_image(
+                rgba.as_raw(),
+                rgba.width(),
+                rgba.height(),
+                image::ExtendedColorType::Rgba8,
+            )
+            .is_ok()
+        {
+            return Ok(format!(
+                "data:image/jpeg;base64,{}",
+                general_purpose::STANDARD.encode(&jpeg)
+            ));
+        }
         return Err("Image too large".to_string());
     }
 
     // 转为 data URL
-    use base64::{engine::general_purpose, Engine as _};
     let b64 = general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{};base64,{}", content_type, b64))
 }
 
+/// 等比缩小到指定最长边（不足或非图片尺寸则原样返回）
+fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage {
+    let (w, h) = img.dimensions();
+    let largest = w.max(h);
+    if largest <= max_edge || w == 0 || h == 0 {
+        return img;
+    }
+    if w >= h {
+        img.resize(max_edge, (h * max_edge) / w, image::imageops::FilterType::Lanczos3)
+    } else {
+        img.resize((w * max_edge) / h, max_edge, image::imageops::FilterType::Lanczos3)
+    }
+}
+
 /// 异步下载音频到临时文件，返回本地文件路径
-/// 用于 B站 m4s 等需要特殊 headers 的音频流
+/// 用于 B站 m4s 等需要特殊 headers 的音频流。
+///
+/// 手动跟随 302 重定向：reqwest 默认在同一主机重定向时保留 Cookie 等敏感头，
+/// 但跨主机重定向会剥离 Cookie/Authorization 防泄露。B站 CDN 常把取流地址 302
+/// 到镜像主机（如 xy*.mcdn.bilivideo.cn），一旦 Cookie/Referer 被剥离，CDN 就按
+/// 匿名处理并返回 3-4 秒预览片段。这里禁用自动重定向，每一跳都重新注入完整 headers。
 #[tauri::command]
 pub async fn download_audio_to_temp(
     url: String,
     headers: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
         .gzip(true)
         .brotli(true)
@@ -342,24 +410,62 @@ pub async fn download_audio_to_temp(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut req = client.get(&url);
-    if let Some(hdrs) = headers {
-        for (key, value) in hdrs {
+    let baseline_headers = headers.unwrap_or_default();
+    let mut current_url = url;
+
+    let mut body: Option<Vec<u8>> = None;
+    let mut final_content_length: Option<u64> = None;
+
+    for _hop in 0..12 {
+        let mut req = client.get(&current_url);
+        for (key, value) in &baseline_headers {
             if !key.trim().is_empty() && !value.trim().is_empty() {
                 req = req.header(key, value);
             }
         }
+        let response = req.send().await.map_err(|e| e.to_string())?;
+
+        if response.status().is_redirection() {
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_string());
+            let Some(next_url) = location else {
+                return Err(format!("Redirect without Location: HTTP {}", response.status()));
+            };
+            if next_url.trim().is_empty() {
+                return Err(format!("Empty redirect Location from HTTP {}", response.status()));
+            }
+            current_url = if next_url.starts_with("http://") || next_url.starts_with("https://") {
+                next_url
+            } else {
+                reqwest::Url::parse(&current_url)
+                    .and_then(|base| base.join(&next_url))
+                    .map(|u| u.to_string())
+                    .unwrap_or(next_url)
+            };
+            continue;
+        }
+
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status()));
+        }
+        final_content_length = response.content_length();
+        body = Some(response.bytes().await.map_err(|e| e.to_string())?.to_vec());
+        break;
     }
 
-    let response = req.send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
-    }
-
-    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    let bytes = body.ok_or_else(|| "No response body".to_string())?;
     if bytes.is_empty() {
         return Err("Empty response".to_string());
     }
+    eprintln!(
+        "[B站m4s-dl] url={} content_length={:?} downloaded={}",
+        current_url,
+        final_content_length,
+        bytes.len()
+    );
 
     // 写入临时文件
     let temp_dir = std::env::temp_dir();

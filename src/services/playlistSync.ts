@@ -142,6 +142,18 @@ export function syncPayloadToSong(song: SyncSongPayload): Song {
   };
 }
 
+/**
+ * 从歌曲列表中取第一张可跨设备访问（http/https）的封面 URL。
+ * 本地文件路径封面在其他设备上无法访问，跳过。
+ */
+export function firstRemoteSongCover(songs: Array<{ cover_thumb_path?: string; coverUrl?: string }> | undefined): string {
+  for (const s of songs ?? []) {
+    const c = s?.cover_thumb_path || s?.coverUrl || '';
+    if (typeof c === 'string' && /^https?:\/\//i.test(c)) return c;
+  }
+  return '';
+}
+
 // ==================== API 封装 ====================
 
 /** 删除云端歌单 */

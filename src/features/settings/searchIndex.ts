@@ -145,6 +145,7 @@ const staticItems: SettingsSearchItem[] = [
   ]),
   ...makeItems('audioOutput', '在线播放', [
     { label: '默认播放音质', keywords: '在线 无损 Hi-Res 320k' },
+    { label: 'MV 默认画质', keywords: 'MV 视频 背景 画质 720P 1080P 4K' },
     { label: '默认音质播放失败行为', keywords: '音质 回退 降级' },
     { label: '起播失败行为', keywords: '播放失败 在线引擎' },
   ]),
@@ -169,6 +170,7 @@ const staticItems: SettingsSearchItem[] = [
   ...makeItems('download', '下载音质', [
     { label: '默认下载音质', keywords: '无损 Hi-Res 320k' },
     { label: '音质缺失行为', keywords: '回退 降级 不可用' },
+    { label: 'MV 默认画质', keywords: 'MV 视频 下载 画质 720P 1080P 4K' },
   ]),
   ...makeItems('download', '文件名与歌词', [
     { label: '文件名样式', keywords: '命名 歌手 歌名' },
