@@ -113,6 +113,11 @@ provide('footerContext', {
   isPluginSong: ref(true),
   showComment: ref(false),
   toggleComment: () => {},
+  // MV（预览始终禁用，仅展示外观）
+  mvSupport: () => false,
+  mvActive: ref(false),
+  mvLoading: ref(false),
+  toggleMv: async () => {},
 });
 
 interface FooterDragState {

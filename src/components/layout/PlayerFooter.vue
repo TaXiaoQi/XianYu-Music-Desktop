@@ -14,6 +14,7 @@ import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
+import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
@@ -276,6 +277,43 @@ const wrapToggleComment = () => {
   }
   toggleComment();
 };
+
+// --- MV 背景视频 ---
+// 与 PlayerDetailBackground 共享同一模块级单例：这里触发 start/stop，
+// 详情页背景组件通过相同的 ref 感知视频 URL 并渲染。
+const videoBackground = useBilibiliVideoBackground();
+const mvActive = videoBackground.requested;
+const mvLoading = videoBackground.loading;
+
+/** 是否可能支持 MV（同步判定；真正能否解析由 start 决定） */
+const mvSupport = supportsMusicVideo;
+
+const toggleMv = async () => {
+  if (!currentSong.value) return;
+  try {
+    await videoBackground.toggle(currentSong.value);
+  } catch (e: any) {
+    console.warn('[MV] 切换失败:', e?.message || e);
+  }
+};
+
+// MV 开启状态下切歌：为新歌自动加载 MV；新歌不支持则停止。
+watch(
+  () => currentSong.value?.path,
+  (path) => {
+    if (!path) {
+      void videoBackground.stop();
+      return;
+    }
+    if (!videoBackground.requested.value) return;
+    const song = currentSong.value!;
+    if (!supportsMusicVideo(song)) {
+      void videoBackground.stop();
+      return;
+    }
+    videoBackground.start(song).catch(() => {});
+  },
+);
 
 const handleContextMenu = (e: MouseEvent) => {
   if (!currentSong.value) return;
@@ -944,6 +982,11 @@ provide('footerContext', {
   isPluginSong,
   showComment,
   toggleComment: wrapToggleComment,
+  // MV
+  mvSupport,
+  mvActive,
+  mvLoading,
+  toggleMv,
 });
 
 onMounted(async () => {

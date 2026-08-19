@@ -40,7 +40,7 @@ export interface FooterItemMeta {
   label: string;
   description: string;
   /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
-  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle';
+  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play';
 }
 
 /**
@@ -57,6 +57,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'equalizer',      label: '均衡器',     description: 'EQ 频段调节', icon: 'equalizer' },
   { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', icon: 'playlist' },
   { key: 'comment',        label: '评论区',     description: '打开当前歌曲评论（仅插件在线歌曲可用）', icon: 'message-circle' },
+  { key: 'mv',             label: 'MV',         description: '播放当前歌曲的 MV 背景视频（仅插件歌曲可用）', icon: 'play' },
 ];
 
 export const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(item => item.key);
