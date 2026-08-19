@@ -140,6 +140,13 @@ export const normalizeMediaRequestHeaders = (
       || host.includes('music.joox.com')
       || path.includes('/joox/');
 
+    // B站 CDN：bilivideo.com / bilivideo.cn / hdslb.com（封面图）
+    // 防盗链要求 Referer + Origin，缺失时 CDN 只返回 3-4 秒预览片段
+    const isBilibiliLike = host.includes('bilivideo.com')
+      || host.includes('bilivideo.cn')
+      || host.includes('hdslb.com')
+      || host.includes('bilibili.com');
+
     if (isKugouLike) {
       const referer = host.includes('haitangw.cc')
         ? `${parsed.protocol}//${parsed.host}/`
@@ -158,6 +165,9 @@ export const normalizeMediaRequestHeaders = (
       const referer = 'https://www.joox.com/';
       setHeaderIfMissing(headers, 'Referer', referer);
       setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
+    } else if (isBilibiliLike) {
+      setHeaderIfMissing(headers, 'Referer', 'https://www.bilibili.com');
+      setHeaderIfMissing(headers, 'Origin', 'https://www.bilibili.com');
     }
   } catch {
     // URL 已经过 sanitizeMediaUrl 兜底；解析失败时只保留已有 headers 与 Accept。

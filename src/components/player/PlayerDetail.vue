@@ -5,10 +5,12 @@ import { Maximize2, Minimize2, Minus, Square, X } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { isFlyingCover } from '../../composables/useFlyingCover';
-import { loadLyrics, lyricsStatus } from '../../composables/lyrics/state';
+import { loadLyrics, lyricsSettings, lyricsStatus } from '../../composables/lyrics/state';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSharedTransition } from '../../composables/useSharedTransition';
+import { useToast } from '../../composables/toast';
+import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
 import { useUiStore } from '../../shared/stores/ui';
 import type { SongDetail } from '../../types';
 import { windowApi } from '../../services/tauri/windowApi';
@@ -32,6 +34,14 @@ const {
 
 const { settings, patchTheme } = useSettings();
 const { isImmersiveFullscreen, fullscreenAnimState } = storeToRefs(useUiStore());
+const { showToast } = useToast();
+const {
+  requested: videoBackgroundRequested,
+  loading: videoBackgroundLoading,
+  sourceSongPath: videoBackgroundSongPath,
+  start: startVideoBackground,
+  stop: stopVideoBackground,
+} = useBilibiliVideoBackground();
 
 // 歌词页首次打开时再渲染重型外壳；打开后保持常驻，避免收起再展开时丢封面或歌词状态。
 // 真正可释放的 AMLL 动效实例由 LyricsView 在 disabled 时单独卸载。
@@ -66,6 +76,12 @@ watch(currentSong, (song) => {
     shouldRenderCover.value = true;
   }
 }, { immediate: true });
+
+watch(() => currentSong.value?.path ?? '', (path) => {
+  if (videoBackgroundSongPath.value && videoBackgroundSongPath.value !== path) {
+    void stopVideoBackground();
+  }
+});
 
 const isOnlineSongPath = (path: string) => path.startsWith('lx://') || path.startsWith('plugin://');
 
@@ -321,6 +337,7 @@ onBeforeUnmount(() => {
   }
   disableCursorAutoHide();
   window.removeEventListener('keydown', handleKeydown);
+  void stopVideoBackground();
 });
 
 const formatFileSize = (size: number | undefined) => {
@@ -430,6 +447,32 @@ const closeContextMenu = () => {
 const openLyricsReplacement = () => {
   contextMenuVisible.value = false;
   lyricsReplacementVisible.value = true;
+};
+
+const toggleVideoBackground = async () => {
+  const song = currentSong.value;
+  contextMenuVisible.value = false;
+  if (!song) return;
+
+  if (videoBackgroundRequested.value) {
+    await stopVideoBackground();
+    showToast('背景视频已关闭', 'info');
+    return;
+  }
+
+  showToast('正在解析并加载背景视频…', 'info');
+  try {
+    const started = await startVideoBackground(song);
+    if (started) {
+      lyricsSettings.backgroundBlur = 0;
+      showToast(
+        '背景视频已开启，模糊度已调整为 0%。可在底栏“页面样式”→“背景样式”中重新调整',
+        'success',
+      );
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '背景视频加载失败', 'error');
+  }
 };
 </script>
 
@@ -590,8 +633,11 @@ const openLyricsReplacement = () => {
       :x="contextMenuX"
       :y="contextMenuY"
       :song="currentSong"
+      :video-background-requested="videoBackgroundRequested"
+      :video-background-loading="videoBackgroundLoading"
       @close="closeContextMenu"
       @change-lyrics="openLyricsReplacement"
+      @toggle-video-background="toggleVideoBackground"
     />
     <LyricsReplacementModal
       v-if="lyricsReplacementVisible"

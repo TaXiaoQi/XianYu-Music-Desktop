@@ -821,7 +821,17 @@ fn append_decoded_source<R>(
             // 从解码后的音频源提取总时长，供前端查询（在线歌曲 Song.duration 可能为 0）
             let duration_secs = source
                 .total_duration()
-                .map(|d| d.as_secs_f64())
+                .map(|d| {
+                    // [B站 m4s 时长误报] 分片 MP4 (m4s) 可能导致 symphonia 解码器
+                    // 返回 Duration::new(0, u32::MAX) = 4.294967295 秒的错误固定值。
+                    // 实际音频完整可播放，但前端据此提前终止播放。
+                    // 检测此异常值（secs==0 且 nanos==u32::MAX），视为误报不写入。
+                    if d.as_secs() == 0 && d.subsec_nanos() == u32::MAX {
+                        0.0
+                    } else {
+                        d.as_secs_f64()
+                    }
+                })
                 .unwrap_or(0.0);
             progress
                 .total_duration_secs

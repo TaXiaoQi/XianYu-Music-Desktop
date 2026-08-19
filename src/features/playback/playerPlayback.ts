@@ -21,6 +21,7 @@ import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
+import {getPluginBilibiliCookies} from '../../services/pluginCookieStore';
 import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
 
 interface PlaySongOptions {
@@ -913,7 +914,10 @@ const authStore = useAuthStore();
 
         const normalizedCover = cover || '';
         if (normalizedCover) {
-          currentCover.value = normalizedCover;
+          // [在线歌曲] loadCover 返回缓存中的原始 URL（如B站 hdslb.com），
+          // 需经过 getDisplayCoverUrl 取代理后的 data: URL，避免覆盖 immediateCover
+          // 路径已异步设置的代理封面。无 onReady：代理已由 immediateCover 路径发起。
+          currentCover.value = getDisplayCoverUrl(normalizedCover);
           currentCoverPath.value = song.path;
         } else if (!immediateCover) {
           // 保留上一首封面只用于遮盖异步加载阶段；确认当前歌曲确实没有封面后清空，
@@ -922,7 +926,7 @@ const authStore = useAuthStore();
           currentCoverPath.value = '';
         }
         if (!currentCoverFull.value) {
-          currentCoverFull.value = normalizedCover || '';
+          currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
         }
       })
       .catch(() => {
@@ -1023,6 +1027,11 @@ const authStore = useAuthStore();
         pluginHeaders = resolvedOnlineAudio.pluginHeaders;
         pluginEkey = resolvedOnlineAudio.ekey;
         pluginCek = resolvedOnlineAudio.cek;
+        // [B站防盗链] 缓存 headers 到歌曲对象，避免预解析 URL 路径复用时丢失 Cookie/Referer，
+        // 导致 B站 CDN 对部分视频只返回 3-4 秒预览片段。
+        if (pluginHeaders) {
+          song.remote_headers = pluginHeaders;
+        }
         if (resolvedOnlineAudio.currentPlayingQuality) {
           playbackStore.currentPlayingQuality = resolvedOnlineAudio.currentPlayingQuality;
         }
@@ -1163,9 +1172,24 @@ const authStore = useAuthStore();
       // [B站 m4s] 先通过后端异步下载到临时文件，再作为本地文件播放
       // 避免 RemoteRangeReader 阻塞 + HTML5 Audio 不支持 m4s 格式
       let actualAudioPath = audioFilePath;
-      if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com'))) {
+      if (isNetworkAudio && (audioFilePath.includes('.m4s') || audioFilePath.includes('bilivideo.com') || audioFilePath.includes('bilivideo.cn'))) {
         try {
-          const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, { 'Referer': 'https://www.bilibili.com' });
+          // 合并插件返回的 headers（含 Cookie 等防盗链信息），避免无 Cookie 时
+          // B站 CDN 对部分视频只返回预览片段（3-4秒）
+          const m4sHeaders: Record<string, string> = { ...(pluginHeaders ?? {}) };
+          if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'referer')) {
+            m4sHeaders.Referer = 'https://www.bilibili.com';
+          }
+          // [B站防盗链] 插件 getMediaSource 可能不返回 Cookie，但 B站 API 调用时
+          // 已将 Cookie 存入 pluginCookieStore。此处从 cookie store 补充 B站 Cookie，
+          // 确保对需要登录鉴权的视频 CDN 也能下载完整音频而非 3-4 秒预览。
+          if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'cookie')) {
+            const bilibiliCookies = getPluginBilibiliCookies();
+            if (bilibiliCookies) {
+              m4sHeaders.Cookie = bilibiliCookies;
+            }
+          }
+          const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, m4sHeaders);
           if (tempPath) {
             actualAudioPath = tempPath;
           }
@@ -1194,9 +1218,13 @@ const authStore = useAuthStore();
 
             const normalizedCover = cover || '';
             const normalizedCoverPath = coverPath || '';
-            currentCover.value = normalizedCover;
+            // [在线歌曲] loadCover 返回缓存中的原始 URL，需经 getDisplayCoverUrl 取代理后的
+            // data: URL，否则会覆盖 immediateCover 路径已异步设置的代理封面。
+            if (normalizedCover) {
+              currentCover.value = getDisplayCoverUrl(normalizedCover);
+            }
             if (!currentCoverFull.value) {
-              currentCoverFull.value = normalizedCover;
+              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
             }
 
             await playbackApi.updatePlaybackMetadata({
@@ -1453,9 +1481,11 @@ const authStore = useAuthStore();
 
             const normalizedCover = cover || '';
             const normalizedCoverPath = coverPath || '';
-            currentCover.value = normalizedCover;
+            if (normalizedCover) {
+              currentCover.value = getDisplayCoverUrl(normalizedCover);
+            }
             if (!currentCoverFull.value) {
-              currentCoverFull.value = normalizedCover;
+              currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
             }
 
             await playbackApi.updatePlaybackMetadata({

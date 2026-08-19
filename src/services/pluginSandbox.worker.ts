@@ -729,6 +729,7 @@ interface MusicFreeInstance {
   supportedQualities?: string[];
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
+  getMvSource?: (musicItem: any, videoQuality?: string) => Promise<any>;
   getMusicInfo?: (musicBase: any) => Promise<any>;
   getLyric?: (musicItem: any) => Promise<any>;
   getAlbumInfo?: (albumItem: any, page: number) => Promise<any>;
@@ -883,7 +884,7 @@ async function loadMusicFreePlugin(
     // _availableMethods: 插件实例实际实现的方法名列表，供主线程代理精确创建函数桩
     // supportedQualities: Baka/Toskysun 系列插件声明的 12 档音质列表
     const allMethodNames = [
-      'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
+      'search', 'getMediaSource', 'getMvSource', 'getMusicInfo', 'getLyric',
       'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
       'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
       'getRecommendSheetTags', 'getRecommendSheetsByTag',

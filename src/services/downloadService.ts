@@ -416,12 +416,26 @@ export async function resolveOnlineQualityUrl(
   for (const q of candidates) {
     const preResolved = sanitizeMediaUrl(preResolvedUrls?.[q]);
     if (preResolved && /^https?:/.test(preResolved) && !isDegradedLossless(q, preResolved)) {
+      // 命中预解析 URL 时，若需要播放附加信息且歌曲缺封面，补获封面。
+      // 否则预解析路径跳过了 getMediaSource，封面永远拿不到，导致播放详情页无封面/背景。
+      let coverThumbPath: string | undefined;
+      if (options?.includePlaybackExtras && isPlugin && !song.cover_thumb_path) {
+        const pluginCtx = ctx as PluginResolveContext;
+        try {
+          const coverTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+          coverThumbPath = await Promise.race([
+            pluginGetCover(pluginCtx.pluginSource, pluginCtx.pluginSearchResult),
+            coverTimeout,
+          ]) ?? undefined;
+        } catch { /* ignore cover error */ }
+      }
       return {
         quality: resolveActualQuality(song.remote_actual_quality ?? q, preResolved),
         url: preResolved,
         headers: song.remote_headers ?? null,
         ekey: song.remote_ekey,
         cek: song.remote_cek,
+        coverThumbPath,
       };
     }
 

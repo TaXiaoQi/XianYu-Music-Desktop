@@ -62,8 +62,9 @@ use player::{
     update_playback_position, wait_stream_complete,
 };
 use plugins::{
-    download_audio_to_temp, plugin_http_request, plugin_http_request_binary, proxy_image,
-    read_file_bytes, read_plugin_file, save_plugin_script,
+    download_audio_to_temp, download_video_to_cache, plugin_http_request,
+    plugin_http_request_binary, proxy_image, read_file_bytes, read_plugin_file,
+    remove_cached_background_video, save_plugin_script,
 };
 use power::set_prevent_sleep;
 use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
@@ -301,6 +302,8 @@ pub fn run() {
             read_file_bytes,
             proxy_image,
             download_audio_to_temp,
+            download_video_to_cache,
+            remove_cached_background_video,
             recognize_system_audio,
             cancel_recognize_system_audio,
             recognize_with_pcm,
