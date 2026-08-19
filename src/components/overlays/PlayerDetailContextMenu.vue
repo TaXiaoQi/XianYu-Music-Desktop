@@ -10,7 +10,7 @@ import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from 
 import { useOnlineDetailStore } from '../../features/onlineDetail/store';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
-import { isBilibiliPluginSong } from '../../composables/useBilibiliVideoBackground';
+import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import type { Song } from '../../types';
 
 type DetailMenuAction =
@@ -59,7 +59,7 @@ const isOnlineSong = computed(() => {
   const path = props.song?.path ?? '';
   return path.startsWith('plugin://') || path.startsWith('lx://');
 });
-const isBilibiliSong = computed(() => isBilibiliPluginSong(props.song));
+const isBilibiliSong = computed(() => supportsMusicVideo(props.song));
 
 /** 图标定义 */
 const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {

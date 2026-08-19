@@ -39,9 +39,29 @@ const {
   requested: videoBackgroundRequested,
   loading: videoBackgroundLoading,
   sourceSongPath: videoBackgroundSongPath,
+  videoUrl: backgroundVideoUrl,
   start: startVideoBackground,
   stop: stopVideoBackground,
 } = useBilibiliVideoBackground();
+
+/** MV 模式：视频背景已请求且实际加载出画面时才认为是真正的 MV 状态（否则可能还在加载/解析） */
+const isMovieMode = computed(() => videoBackgroundRequested.value && Boolean(backgroundVideoUrl.value));
+
+// MV 模式联动：进入时自动关闭封面与歌词（歌词隐藏交由下方容器 v-show）并把背景模糊置 0，
+// 退出时一并恢复被关闭/被改动的封面与背景模糊
+const preMovieCoverHidden = ref(false);
+const preMovieBackgroundBlur = ref(0);
+watch(isMovieMode, (movieMode) => {
+  if (movieMode) {
+    preMovieCoverHidden.value = coverHidden.value;
+    preMovieBackgroundBlur.value = lyricsSettings.backgroundBlur;
+    coverHidden.value = true;
+    lyricsSettings.backgroundBlur = 0;
+  } else {
+    coverHidden.value = preMovieCoverHidden.value;
+    lyricsSettings.backgroundBlur = preMovieBackgroundBlur.value;
+  }
+}, { flush: 'post' });
 
 // 歌词页首次打开时再渲染重型外壳；打开后保持常驻，避免收起再展开时丢封面或歌词状态。
 // 真正可释放的 AMLL 动效实例由 LyricsView 在 disabled 时单独卸载。
@@ -456,7 +476,7 @@ const toggleVideoBackground = async () => {
 
   if (videoBackgroundRequested.value) {
     await stopVideoBackground();
-    showToast('背景视频已关闭', 'info');
+    showToast('背景视频已关闭，封面与歌词已恢复', 'info');
     return;
   }
 
@@ -464,11 +484,7 @@ const toggleVideoBackground = async () => {
   try {
     const started = await startVideoBackground(song);
     if (started) {
-      lyricsSettings.backgroundBlur = 0;
-      showToast(
-        '背景视频已开启，模糊度已调整为 0%。可在底栏“页面样式”→“背景样式”中重新调整',
-        'success',
-      );
+      showToast('背景视频已开启', 'success');
     }
   } catch (error) {
     showToast(error instanceof Error ? error.message : '背景视频加载失败', 'error');
@@ -604,7 +620,7 @@ const toggleVideoBackground = async () => {
         @toggle-cover="handleToggleCover"
       />
 
-      <div v-if="shouldRenderHeavyContent" class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
+      <div v-if="shouldRenderHeavyContent" v-show="!isMovieMode" class="relative z-[75] flex min-h-0 flex-1 pl-8 pr-0 pb-22 pointer-events-none">
         <div v-if="!coverHidden" class="pointer-events-none h-full w-[40%] min-w-[300px]"></div>
 
         <div
