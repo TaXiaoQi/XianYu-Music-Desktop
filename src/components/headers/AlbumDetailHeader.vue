@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { albumHeaderCache } from '../../caches/imageCaches';
 import { useCoverCache } from '../../composables/useCoverCache';
+import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import SortModeIcon from '../common/SortModeIcon.vue';
@@ -56,6 +57,18 @@ const sortMenuIsRightAligned = ref(false);
 
 const coverUrl = ref('');
 const isLoading = ref(false);
+
+// 显示用封面：B站等防盗链封面经后端代理成 data:URL（代理完成回填刷新），本地封面原样
+const displayedCover = ref('');
+watch(coverUrl, (url) => {
+  if (!url) {
+    displayedCover.value = '';
+    return;
+  }
+  displayedCover.value = getDisplayCoverUrl(url, (dataUrl) => {
+    displayedCover.value = dataUrl;
+  });
+}, { immediate: true });
 const artistName = computed(() => props.albumArtist || '未知歌手');
 const albumCacheKey = computed(() => `${props.albumName}::${props.albumArtist || '未知歌手'}`);
 const { loadCover, peekCoverUrl } = useCoverCache();
@@ -207,7 +220,7 @@ const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scroll
     <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
       <div :style="{ width: coverSize, height: coverSize }" class="rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
         <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
-        <img v-else-if="coverUrl" :src="coverUrl" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="albumName" decoding="async" />
+        <img v-else-if="displayedCover" :src="displayedCover" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="albumName" decoding="async" />
         <div v-else class="w-full h-full flex items-center justify-center text-4xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="getGradientForAlbum(albumName)">
           ♪
         </div>

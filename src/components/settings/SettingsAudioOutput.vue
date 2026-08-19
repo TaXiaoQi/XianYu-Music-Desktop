@@ -5,12 +5,12 @@ import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
-import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
+import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { playbackApi } from '../../services/tauri/playbackApi';
 import type { AudioOutputStatus, AudioDevice, AudioDeviceFormats } from '../../services/tauri/contracts';
-import type { OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
+import type { MvQualityKey, OnlineDefaultQuality, OnlineFailureBehavior, OnlineQualityFallbackBehavior } from '../../types';
 import { playerStorage, playerStorageKeys } from '../../services/storage/playerStorage';
 import {
   buildAudioOutputDeviceOptions,
@@ -99,6 +99,7 @@ onScopeDispose(() => {
 const showQualityModal = ref(false);
 const showFailureBehaviorModal = ref(false);
 const showFallbackBehaviorModal = ref(false);
+const showMvQualityModal = ref(false);
 
 const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
   { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
@@ -158,6 +159,12 @@ const patchOnlineQuality = (value: OnlineDefaultQuality) => {
 const handleQualitySelect = (value: OnlineDefaultQuality) => {
   showQualityModal.value = false;
   patchOnlineQuality(value);
+};
+
+/** 弹窗中选择 MV 默认画质 */
+const handleMvQualitySelect = (value: MvQualityKey) => {
+  showMvQualityModal.value = false;
+  patchSettings({ audio: { ...settings.value.audio, mvDefaultQuality: value } });
 };
 
 /** 弹窗中选择起播失败行为 */
@@ -623,6 +630,25 @@ onScopeDispose(() => {
           </button>
         </div>
 
+        <!-- MV 默认画质 -->
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MV 默认画质</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              开启 MV 背景视频时优先使用的画质档位，实际以片源提供为准。
+            </div>
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            @click="showMvQualityModal = true"
+          >
+            <span>{{ settings.audio.mvDefaultQuality ?? '720P' }}</span>
+            <span class="text-xs text-gray-400">{{ MV_QUALITY_META[settings.audio.mvDefaultQuality ?? '720P'].description }}</span>
+            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
         <!-- 默认音质播放失败行为 -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
@@ -733,6 +759,48 @@ onScopeDispose(() => {
                     class="text-[10px] font-normal opacity-75"
                     :class="settings.audio.onlineDefaultQuality === key ? '' : 'text-gray-400 dark:text-gray-500'"
                   >{{ QUALITY_META[key].description }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- MV 默认画质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
+    <Teleport to="body">
+      <Transition name="modal-pop">
+        <div
+          v-if="showMvQualityModal"
+          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          @click.self="showMvQualityModal = false"
+        >
+          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择 MV 默认画质</h3>
+              <button
+                @click="showMvQualityModal = false"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >✕</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto custom-scrollbar p-3">
+              <div class="grid grid-cols-3 gap-1.5">
+                <button
+                  v-for="key in MV_QUALITY_KEYS"
+                  :key="key"
+                  type="button"
+                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5"
+                  :class="(settings.audio.mvDefaultQuality ?? '720P') === key
+                    ? 'bg-[#EC4141] text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                  :title="MV_QUALITY_META[key].description"
+                  @click="handleMvQualitySelect(key)"
+                >
+                  <span>{{ MV_QUALITY_META[key].label }}</span>
+                  <span
+                    class="text-[10px] font-normal opacity-75"
+                    :class="(settings.audio.mvDefaultQuality ?? '720P') === key ? '' : 'text-gray-400 dark:text-gray-500'"
+                  >{{ MV_QUALITY_META[key].description }}</span>
                 </button>
               </div>
             </div>

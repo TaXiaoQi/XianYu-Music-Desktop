@@ -62,6 +62,11 @@ import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUr
 
 export type { PluginUpdateCheckResult } from './pluginUpdates';
 
+// B站插件标识：其专辑/歌单详情走统一的 getBilibiliDetail 专用路径
+function isBilibiliSource(source: PluginSource): boolean {
+  return source.name === 'bilibili' || String(source.id || '').includes('bilibili');
+}
+
 // ==================== 常量 ====================
 
 const PLUGIN_SOURCES_KEY = 'xianyu_plugin_sources_v4';
@@ -1179,6 +1184,10 @@ export async function pluginGetPlaylistDetail(
 ): Promise<PluginSearchResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
+    // B站专辑与歌单统一走专用取数路径
+    if (isBilibiliSource(source)) {
+      return BakaPluginManager.getBilibiliDetail(source, sheetItem, page);
+    }
     return BakaPluginManager.getPlaylistDetail(source, sheetItem, page);
   }
   const inst = await ensurePluginInstance(source);
@@ -1300,6 +1309,10 @@ export async function pluginGetArtistWorks(
 ): Promise<PluginSearchResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
+    // B站：空间作品接口被风控时返回空，走专用路径（单次尝试 + 搜索兜底），避免 6 次无效重试导致歌手页长时间转圈
+    if (isBilibiliSource(source)) {
+      return BakaPluginManager.getBilibiliArtistWorks(source, artistItem, page, 'music');
+    }
     return BakaPluginManager.getArtistWorks(source, artistItem, page, 'music');
   }
   const inst = await ensurePluginInstance(source);
@@ -1353,7 +1366,9 @@ export async function pluginGetArtistAlbums(
 ): Promise<PluginAlbumResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
-    const results = await BakaPluginManager.getArtistWorks(source, artistItem, page, 'album');
+    const results = isBilibiliSource(source)
+      ? await BakaPluginManager.getBilibiliArtistWorks(source, artistItem, page, 'album')
+      : await BakaPluginManager.getArtistWorks(source, artistItem, page, 'album');
     return results.map((item: any) => ({
       id: item.id || '',
       name: item.title || '',
@@ -1462,6 +1477,10 @@ export async function pluginGetAlbumSongs(
 ): Promise<PluginSearchResult[]> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
+    // B站专辑与歌单统一走专用取数路径
+    if (isBilibiliSource(source)) {
+      return BakaPluginManager.getBilibiliDetail(source, albumItem, page);
+    }
     return BakaPluginManager.getAlbumSongs(source, albumItem, page);
   }
   const inst = await ensurePluginInstance(source);
@@ -1788,6 +1807,15 @@ export async function pluginGetBakaMusicInfo(
 
 // ==================== 获取视频源（Baka 扩展 getMvSource，用于背景视频）====================
 
+export interface PluginVideoQuality {
+  key: string;
+  label?: string;
+  height?: number;
+  bitrate?: number;
+  size?: number;
+  codec?: string;
+}
+
 export interface PluginVideoSource {
   url: string;
   headers?: Record<string, string>;
@@ -1800,6 +1828,8 @@ export interface PluginVideoSource {
   height?: number;
   backupUrls?: string[];
   expiresAt?: number;
+  /** 插件上报的可用画质列表（getMvSource 扩展；供底栏画质菜单展示） */
+  availableVideoQualities?: PluginVideoQuality[];
 }
 
 /** 调用插件的视频解析扩展；未实现 getMvSource 的旧插件返回 null，由调用方走兜底解析。 */
@@ -1836,6 +1866,20 @@ export async function pluginGetVideoSource(
           typeof value === 'string' && /^https?:\/\//i.test(value)
         )).slice(0, 4)
       : undefined;
+    const availableVideoQualities = Array.isArray(result.availableVideoQualities)
+      ? result.availableVideoQualities
+          .filter((entry: any): entry is Record<string, unknown> => !!entry && typeof entry === 'object'
+            && typeof entry.quality === 'string' && entry.quality.trim())
+          .map((entry: Record<string, unknown>) => ({
+            key: String(entry.quality).trim(),
+            label: typeof entry.label === 'string' ? entry.label : undefined,
+            height: Number.isFinite(Number(entry.height)) ? Number(entry.height) : undefined,
+            bitrate: Number.isFinite(Number(entry.bitrate)) ? Number(entry.bitrate) : undefined,
+            size: Number.isFinite(Number(entry.size)) ? Number(entry.size) : undefined,
+            codec: typeof entry.codec === 'string' ? entry.codec : undefined,
+          }))
+          .slice(0, 12)
+      : undefined;
 
     return {
       url,
@@ -1851,6 +1895,7 @@ export async function pluginGetVideoSource(
       height: Number.isFinite(Number(result.height)) ? Number(result.height) : undefined,
       backupUrls,
       expiresAt: Number.isFinite(Number(result.expiresAt)) ? Number(result.expiresAt) : undefined,
+      availableVideoQualities: availableVideoQualities?.length ? availableVideoQualities : undefined,
     };
   } catch (error) {
     log(`[getMvSource] ${source.name} 调用失败: ${error}`);
@@ -2412,8 +2457,71 @@ export function setPluginUserVariableValues(pluginId: string, values: Record<str
       log(`[setPluginUserVariableValues]  ${k}=${values[k] ? '(已设置,' + String(values[k]).length + '字符)' : '(空)'}`);
     }
     localStorage.setItem(userVarKey(pluginId), JSON.stringify(values));
+    // B站插件：把用户变量里的 B站 Cookie 同步进取流读取的 Cookie 存储（取流/下载防盗链）
+    const biliSource = getStoredPlugins().find(
+      (p) => p.id === pluginId && (p.name === 'bilibili' || String(p.id || '').includes('bilibili')),
+    );
+    if (biliSource) {
+      syncBilibiliCookiesFromVars(values);
+    }
   } catch (e) {
     log(`[setPluginUserVariableValues] 保存异常: ${e}`);
+  }
+}
+
+const BILIBILI_COOKIE_KEYS = new Set([
+  'SESSDATA',
+  'buvid3',
+  'buvid4',
+  'bili_jct',
+  'DedeUserID',
+  'DedeUserID__ckMd5',
+  'b_nut',
+  '_uuid',
+  'PVID',
+  'sid',
+]);
+
+function storePluginCookie(name: string, value: unknown): void {
+  try {
+    if (!name || value == null || String(value) === '') return;
+    const cookieStore = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+    cookieStore[name] = { value: String(value), domain: 'bilibili.com' };
+    localStorage.setItem('__plugin_cookies', JSON.stringify(cookieStore));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 把 B站插件用户变量里可识别的 B站 Cookie 写入 __plugin_cookies，
+ * 供 getPluginBilibiliCookies() 取流/下载防盗链使用。支持：
+ *  - 已知 Cookie 键名的变量（SESSDATA/buvid3 等）
+ *  - 值整体为浏览器导出的 Cookie JSON 数组 / 对象
+ */
+function syncBilibiliCookiesFromVars(values: Record<string, string>): void {
+  for (const k of Object.keys(values)) {
+    if (BILIBILI_COOKIE_KEYS.has(k) && values[k]) {
+      storePluginCookie(k, values[k]);
+    }
+  }
+  for (const raw of Object.values(values)) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!(trimmed.startsWith('[') || trimmed.startsWith('{'))) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      const items = Array.isArray(parsed)
+        ? parsed
+        : Object.entries(parsed).map(([n, v]) => ({ name: n, value: v }));
+      for (const it of items) {
+        if (it && it.name && it.value != null) {
+          storePluginCookie(String(it.name), it.value);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
 }
 

@@ -1428,9 +1428,26 @@ const authStore = useAuthStore();
           // 合并插件返回的 headers（含 Cookie 等防盗链信息），避免无 Cookie 时
           // B站 CDN 对部分视频只返回预览片段（3-4秒）
           const m4sHeaders: Record<string, string> = { ...(pluginHeaders ?? {}) };
-          if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'referer')) {
-            m4sHeaders.Referer = 'https://www.bilibili.com';
-          }
+          // [B站防盗链] 强制确保 Referer/Origin 是有效值：插件可能返回小写 referer 或空值，
+          // 若留着无效值，CDN 仍当匿名返回 4 秒预览。这里按大小写不敏感查找，无效则用有效值覆盖。
+          const ensureEffectiveHeader = (want: string, value: string): void => {
+            const lower = want.toLowerCase();
+            let foundKey: string | null = null;
+            let foundVal = '';
+            for (const [k, v] of Object.entries(m4sHeaders)) {
+              if (k.toLowerCase() === lower) {
+                foundKey = k;
+                foundVal = String(v ?? '');
+                break;
+              }
+            }
+            if (!foundKey || !/^https?:\/\//i.test(foundVal)) {
+              if (foundKey) delete m4sHeaders[foundKey];
+              m4sHeaders[want] = value;
+            }
+          };
+          ensureEffectiveHeader('Referer', 'https://www.bilibili.com');
+          ensureEffectiveHeader('Origin', 'https://www.bilibili.com');
           // [B站防盗链] 插件 getMediaSource 可能不返回 Cookie，但 B站 API 调用时
           // 已将 Cookie 存入 pluginCookieStore。此处从 cookie store 补充 B站 Cookie，
           // 确保对需要登录鉴权的视频 CDN 也能下载完整音频而非 3-4 秒预览。
@@ -1440,6 +1457,19 @@ const authStore = useAuthStore();
               m4sHeaders.Cookie = bilibiliCookies;
             }
           }
+          // [4秒预览探针] 打印下载URL域名与是否带上有效Cookie/Referer，用于定位B站取流是否仍匿名
+          try {
+            const host = new URL(audioFilePath).hostname;
+            const cookieNames = (m4sHeaders.Cookie || '')
+              .split(';')
+              .map((s: string) => s.split('=')[0].trim())
+              .filter(Boolean);
+            const effReferer = Object.entries(m4sHeaders).find(([k]) => k.toLowerCase() === 'referer')?.[1] || '(无)';
+            const effOrigin = Object.entries(m4sHeaders).find(([k]) => k.toLowerCase() === 'origin')?.[1] || '(无)';
+            console.log(
+              `[B站m4s] host=${host} Cookie=${cookieNames.length ? `${cookieNames.join(',')}` : '(无)'} Referer=${effReferer} Origin=${effOrigin}`,
+            );
+          } catch { /* ignore */ }
           const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, m4sHeaders);
           if (tempPath) {
             actualAudioPath = tempPath;

@@ -168,4 +168,21 @@ describe('Bilibili player-detail video background', () => {
     expect(background.requested.value).toBe(false);
     expect(background.loading.value).toBe(false);
   });
+
+  it('supports songs without plugin_id by falling back to rawData.pluginId', async () => {
+    const song = makeSong({
+      plugin_id: undefined,
+      rawData: {
+        id: 'BV1j3411D7pu',
+        platform: 'bilibili',
+        pluginId: 'bili-plugin',
+        rawData: { bvid: 'BV1j3411D7pu', platform: 'bilibili' },
+      },
+    });
+
+    await expect(background.start(song)).resolves.toBe(true);
+    expect(background.active.value).toBe(true);
+
+    await background.stop();
+  });
 });

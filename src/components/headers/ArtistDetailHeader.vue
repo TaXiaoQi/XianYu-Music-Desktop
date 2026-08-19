@@ -10,6 +10,7 @@ import { useToast } from '../../composables/toast';
 import { artistHeaderCache } from '../../caches/imageCaches';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
+import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { type ArtistTabId, getOrderedArtistTabs, saveTabsOrder } from '../../utils/artistTabsOrder';
 
 const props = defineProps<{
@@ -196,10 +197,22 @@ const currentArtist = computed(() => {
   return libraryStore.artistCatalog.find(item => item.name === props.artistName);
 });
 
+// 在线封面（readOnly）显示 URL：B站等防盗链封面经后端代理成 data:URL，代理完成回填刷新
+const displayedOverrideCover = ref('');
+watch(() => props.coverUrlOverride, (url) => {
+  if (!url) {
+    displayedOverrideCover.value = '';
+    return;
+  }
+  displayedOverrideCover.value = getDisplayCoverUrl(url, (dataUrl) => {
+    displayedOverrideCover.value = dataUrl;
+  });
+}, { immediate: true });
+
 const displayedCover = computed(() => {
   // readOnly 模式优先使用在线封面 URL
   if (props.readOnly && props.coverUrlOverride) {
-    return props.coverUrlOverride;
+    return displayedOverrideCover.value;
   }
   if (currentArtist.value?.avatarPath) {
     return convertFileSrc(currentArtist.value.avatarPath);

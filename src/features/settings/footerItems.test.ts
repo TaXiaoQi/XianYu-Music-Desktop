@@ -19,7 +19,8 @@ describe('footer layout visual editor helpers', () => {
     });
 
     expect(layout.hidden).toEqual([]);
-    expect(computeCollapsedItems(layout)).toEqual([]);
+    // 旧布局未包含 mv：mv 不在任何容器，默认进入折叠收纳菜单
+    expect(computeCollapsedItems(layout)).toEqual(['mv']);
   });
 
   it('moves a disabled main-bar button into more tools', () => {

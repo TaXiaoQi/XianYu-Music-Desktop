@@ -849,11 +849,13 @@ fn append_decoded_source<R>(
             let duration_secs = source
                 .total_duration()
                 .map(|d| {
-                    // [B站 m4s 时长误报] 分片 MP4 (m4s) 可能导致 symphonia 解码器
-                    // 返回 Duration::new(0, u32::MAX) = 4.294967295 秒的错误固定值。
-                    // 实际音频完整可播放，但前端据此提前终止播放。
-                    // 检测此异常值（secs==0 且 nanos==u32::MAX），视为误报不写入。
-                    if d.as_secs() == 0 && d.subsec_nanos() == u32::MAX {
+                    // [B站 m4s 时长误报] 分片 MP4 (m4s) 的 mdhd duration=0，rodio 在
+                    // total_duration() 里用 (1f64/frac) as u32 换算纳秒时，frac=0.0 会饱和成
+                    // u32::MAX，得到 Duration::new(0, u32::MAX) = 4.294967295 秒的错误固定值。
+                    // 实际音频完整可播放，但前端会把它当试听片段提前终止播放。
+                    // 注意该值会被 Duration 规范化成 secs=4, nanos=294967295，
+                    // 因此用 as_nanos()==u32::MAX 精确检测此误报值，视为未知时长不写入。
+                    if d.as_nanos() == u32::MAX as u128 {
                         0.0
                     } else {
                         d.as_secs_f64()
@@ -2440,5 +2442,60 @@ mod tests {
             &next_default_device_name,
             &active_device_name,
         ));
+    }
+
+    #[test]
+    fn debug_decode_bilibili_m4s() {
+        let path = std::env::var("XY_M4S_PATH").unwrap_or_else(|_| {
+            "C:\\Users\\小奇\\AppData\\Local\\Temp\\xy_music_1787144280366.m4s".to_string()
+        });
+        let file = std::fs::File::open(&path).expect("open m4s");
+        let reader = std::io::BufReader::with_capacity(512 * 1024, file);
+        let decoder = rodio::Decoder::new(reader).expect("rodio 应能解码 m4s");
+        let rate = decoder.sample_rate();
+        let channels = decoder.channels();
+        let total = decoder.total_duration();
+        eprintln!("[debug-m4s] rate={rate} channels={channels} total_duration={total:?}");
+        if let Some(t) = total {
+            eprintln!(
+                "[debug-m4s] dur secs={} nanos={} as_nanos={} as_secs_f64={}",
+                t.as_secs(),
+                t.subsec_nanos(),
+                t.as_nanos(),
+                t.as_secs_f64()
+            );
+        }
+        let mut source = decoder.convert_samples::<f32>();
+        let mut count: u64 = 0;
+        for _ in 0..(rate as u64 * channels as u64 * 300) {
+            match source.next() {
+                Some(_) => count += 1,
+                None => break,
+            }
+        }
+        let seconds = count as f64 / (rate as u64 * channels as u64) as f64;
+        eprintln!("[debug-m4s] decoded_samples={count} decoded_seconds={seconds:.2}");
+        assert!(seconds > 60.0, "应能解码超过 60 秒，实际 {seconds:.2} 秒");
+    }
+
+    #[test]
+    fn m4s_sentinel_duration_detection() {
+        // rodio 在 mdhd duration=0 时返回 Duration::new(0, u32::MAX)，
+        // 该值会被 Duration 规范化成 secs=4, nanos=294967295（4.294967295s）。
+        // 旧检测条件 as_secs()==0 永远不成立，必须用 as_nanos()==u32::MAX 精确匹配。
+        let sentinel = std::time::Duration::new(0, u32::MAX);
+        assert_eq!(sentinel.as_secs(), 4, "Duration::new(0, u32::MAX) 会被规范化");
+        assert_eq!(sentinel.subsec_nanos(), 294967295);
+        assert_eq!(sentinel.as_nanos(), u32::MAX as u128, "as_nanos 应精确等于 u32::MAX");
+
+        let is_sentinel = |d: std::time::Duration| d.as_nanos() == u32::MAX as u128;
+        assert!(is_sentinel(sentinel), "哨兵值应被识别为误报");
+
+        // 正常时长（如 278 秒）不应被误判
+        let normal = std::time::Duration::from_secs_f64(278.0);
+        assert!(!is_sentinel(normal), "正常时长不应被误判为哨兵");
+        // 恰好 4.294967295 秒的真实音频（几乎不可能）也会被识别，可接受
+        let exactly = std::time::Duration::from_secs_f64(4.294967295);
+        assert!(is_sentinel(exactly));
     }
 }

@@ -1362,6 +1362,7 @@ const handleOnlineViewArtist = async (song: Song) => {
         pluginSource,
         rawData: artist.rawData,
         sourceSearchType: activeSearchType.value as SourceSearchType,
+        engineType: 'musicfree',
       });
       void router.push({ path: '/online-detail', query: { type: 'artist' } });
     } catch (e: any) {

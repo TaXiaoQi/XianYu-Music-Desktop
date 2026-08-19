@@ -23,6 +23,7 @@ import {
   deleteCloudPlaylist,
   fileSyncDownload,
   fileSyncUpload,
+  firstRemoteSongCover,
   getCiyuanxiId,
   songToSyncPayload,
   syncPayloadToSong,
@@ -251,7 +252,8 @@ export function usePlaylistSync() {
           name: pl.name,
           type: classifySyncPlaylist(songs),
           cloudId: pl.cloudId,
-          cloudCoverUrl: pl.cloudCoverUrl,
+          // 本地歌单封面是本机文件路径无法跨设备访问，回退用歌单内在线歌曲的远程封面
+          cloudCoverUrl: pl.cloudCoverUrl || firstRemoteSongCover(songs),
           isFavorite: pl.isFavorite,
           createdAt: pl.createdAt,
           songs: songs.map(songToSyncPayload),

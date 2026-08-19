@@ -12,9 +12,10 @@ import { useToast } from '../composables/toast';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { downloadFavorites as downloadUserFavorites } from '../services/favoritesSync';
-import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong } from '../services/playlistSync';
+import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong, firstRemoteSongCover } from '../services/playlistSync';
 import { getCiyuanxiId } from '../services/playlistSync';
 import { getSongAlbumKey } from '../features/library/playerLibraryViewShared';
+import { getDisplayCoverUrl } from '../utils/coverProxy';
 import {
   pluginGetArtistWorks,
   pluginGetArtistAlbums,
@@ -140,9 +141,6 @@ const viewedFavorites = ref<Song[]>([]);
 /** 用户详情：被查看用户的歌单原始数据 */
 const viewedPlaylists = ref<Array<{ id: string; name: string; cloudCoverUrl?: string; songs?: any[] }>>([]);
 
-/** 用户详情：当前打开的云歌单（点击歌单卡片后展示其歌曲） */
-const activeCloudPlaylist = ref<{ name: string; songs: any[] } | null>(null);
-
 /** 用户详情加载状态 */
 const userModeLoading = ref(false);
 
@@ -158,24 +156,39 @@ const userPlaylistItems = computed(() =>
     id: playlist.id,
     name: playlist.name,
     count: Array.isArray(playlist.songs) ? playlist.songs.length : 0,
-    cover: playlist.cloudCoverUrl || '',
+    // 云端封面缺失时（旧数据未带 cloudCoverUrl），回退用歌单内在线歌曲的远程封面
+    cover: playlist.cloudCoverUrl || firstRemoteSongCover(playlist.songs) || '',
   })),
 );
 
-/** 用户详情：当前容器展示的歌曲（点击歌单后展示其歌曲，否则展示收藏） */
-const userModeSongs = computed<Song[]>(() => {
-  if (activeCloudPlaylist.value) {
-    return activeCloudPlaylist.value.songs.map(syncPayloadToSong);
-  }
-  return viewedFavorites.value;
-});
+/** 专辑/歌单网格统一数据源：歌手页为专辑，用户页为云歌单（共用歌手页卡片样式） */
+const gridItems = computed<any[]>(() => (isUserMode.value ? userPlaylistItems.value : albums.value));
+
+/** 网格封面显示 URL：B站等防盗链封面（hdslb.com）直连 403，须经后端代理转 data:URL，代理完成回填刷新 */
+const gridCoverDisplayMap = ref(new Map<string, string>());
+function getGridItemCover(item: any): string {
+  const url = isUserMode.value ? (item.cover || '') : (item.coverUrl || '');
+  if (!url) return '';
+  const cached = gridCoverDisplayMap.value.get(url);
+  if (cached) return cached;
+  return getDisplayCoverUrl(url, (dataUrl) => {
+    gridCoverDisplayMap.value = new Map(gridCoverDisplayMap.value).set(url, dataUrl);
+  });
+}
+
+/** 用户详情：当前容器展示的歌曲列表 */
+const userModeSongs = computed<Song[]>(() => viewedFavorites.value);
 
 /**
  * 加载被查看用户的云收藏与云歌单
  */
 async function loadUserModeData() {
   const userId = viewedUserId.value;
-  if (!userId) return;
+  // 用户模式不走 loadData；初始加载期间保持整页"正在加载…"（与歌手页行为一致），结束后在 finally 解除门控
+  if (!userId) {
+    hasInitialLoad.value = true;
+    return;
+  }
   if (userModeLoading.value) return;
   userModeLoading.value = true;
   try {
@@ -202,6 +215,7 @@ async function loadUserModeData() {
     showToast(`无法加载用户数据：${msg}`, 'error');
   } finally {
     userModeLoading.value = false;
+    hasInitialLoad.value = true;
   }
 }
 
@@ -281,11 +295,15 @@ function lxResultToSong(item: LxSearchResultItem): Song {
   } as any;
 }
 
-const songList = computed<Song[]>(() =>
-  isLxEngine.value
+const songList = computed<Song[]>(() => {
+  // 用户页云歌单：loadData 已转换为完整 Song，不可再走插件结果映射
+  if (detailType.value === 'playlist' && ctx.value?.rawData?.userPlaylistSongs) {
+    return songs.value as Song[];
+  }
+  return isLxEngine.value
     ? songs.value.map((item: LxSearchResultItem) => lxResultToSong(item))
-    : songs.value.map((item: PluginSearchResult) => mfResultToSong(item)),
-);
+    : songs.value.map((item: PluginSearchResult) => mfResultToSong(item));
+});
 
 /** 当前容器展示的歌曲列表：在线详情为在线歌曲，用户模式为被查看用户的收藏/歌单歌曲 */
 const currentSongs = computed<Song[]>(() =>
@@ -409,7 +427,20 @@ async function loadData(page = 1) {
   const version = ++loadVersion;
   loading.value = true;
   try {
-    if (isLxEngine.value && ctx.value.lxSourceId) {
+    // 用户页云歌单：歌曲已随上下文携带（rawData.userPlaylistSongs），直接渲染，不走在线插件加载
+    const userPlSongs = ctx.value.rawData?.userPlaylistSongs;
+    if (detailType.value === 'playlist' && Array.isArray(userPlSongs)) {
+      if (version !== loadVersion) return;
+      const restored = (page === 1 ? userPlSongs : [...songs.value, ...userPlSongs]).map(syncPayloadToSong);
+      songs.value = restored;
+      // 元信息写入 extra，供播放解析（与用户页收藏歌曲同处理）
+      const lookup = libraryStore.songLookup;
+      restored.forEach(song => {
+        if (!lookup.has(song.path) && song.path) {
+          libraryStore.setExtraSong(song);
+        }
+      });
+    } else if (isLxEngine.value && ctx.value.lxSourceId) {
       await loadLxData(page, version);
     } else {
       await loadMfData(page, version);
@@ -424,6 +455,8 @@ async function loadData(page = 1) {
     hasInitialLoad.value = true;
   }
 
+  // 云歌单歌曲元数据完整，无需补获封面
+  if (ctx.value?.rawData?.userPlaylistSongs && detailType.value === 'playlist') return;
   // 歌曲列表加载完成后，异步补获缺失的封面（不阻塞渲染）
   // 版本不匹配时跳过，避免为已过期的数据触发封面拉取
   if (version !== loadVersion) return;
@@ -781,12 +814,25 @@ function handleAlbumClick(album: any) {
   void router.push({ path: '/online-detail', query: { type: 'album' } });
 }
 
-/** 点击用户详情中的云歌单，打开其歌曲列表 */
+/** 点击用户详情中的云歌单，跳转到独立歌单详情页（与歌手页点专辑跳专辑详情同模式） */
 function handleUserPlaylistClick(playlistId: string) {
   const playlist = viewedPlaylists.value.find(p => p.id === playlistId);
   if (!playlist) return;
-  activeCloudPlaylist.value = { name: playlist.name, songs: playlist.songs ?? [] };
-  artistActiveTab.value = 'songs';
+  const songs = playlist.songs ?? [];
+  // 使用带历史的上下文设置，保存当前用户上下文，返回时恢复
+  onlineDetailStore.setContextWithHistory({
+    type: 'playlist',
+    title: playlist.name,
+    subtitle: `${songs.length} 首歌曲`,
+    // 封面与歌单卡片同源：云端封面缺失时回退歌单内在线歌曲的远程封面
+    coverUrl: playlist.cloudCoverUrl || firstRemoteSongCover(songs) || '',
+    engineType: 'musicfree',
+    // 云歌单歌曲已随上下文携带，歌单详情页直接渲染，无需在线加载
+    rawData: { userPlaylistSongs: songs },
+    sourceSearchType: 'playlist',
+  });
+  // 不重置 tab：跳转前切 tab 会先播放一次容器内切换动画（歌单网格淡出→收藏列表）再跳转，观感多余
+  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 }
 
 function handleBack() {
@@ -831,8 +877,7 @@ watch(detailType, (newType, oldType) => {
   albums.value = [];
   if (ctx.value) {
     if (newType === 'user') {
-      viewedFavorites.value = [];
-      viewedPlaylists.value = [];
+      // 返回用户页：保留已加载的收藏/歌单避免闪现空态，后台静默刷新
       void loadUserModeData();
     } else {
       void loadData(1);
@@ -847,10 +892,6 @@ watch(artistActiveTab, () => {
     songs.value = [];
     albums.value = [];
     void loadData(1);
-  }
-  // 用户详情切换到"歌单"tab 或再次点"收藏"时，退出云歌单歌曲视图
-  if (detailType.value === 'user') {
-    activeCloudPlaylist.value = null;
   }
 });
 
@@ -911,21 +952,9 @@ watch(
     <div v-else class="flex-1 min-h-0 relative flex flex-col">
       <!-- 整页滚动容器：header 与歌曲列表一起滚动 -->
       <div ref="detailScrollRef" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative">
-      <!-- 后续加载指示器（叠加在内容上方，不替换内容，不卸载 Transition） -->
-      <Transition name="fade">
-        <div v-if="loading" class="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-          <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 dark:bg-white/10 backdrop-blur-md shadow-sm">
-            <svg class="animate-spin h-4 w-4 text-[#EC4141]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span class="text-xs text-black/60 dark:text-white/60">加载中…</span>
-          </div>
-        </div>
-      </Transition>
       <Transition name="detail-slide" mode="out-in">
-        <!-- 歌手详情 -->
-        <div v-if="detailType === 'artist'" key="artist">
+        <!-- 歌手详情 / 用户详情（排行榜"查看"进入，复用歌手页样式） -->
+        <div v-if="detailType === 'artist' || detailType === 'user'" key="artist">
           <ArtistDetailHeader
             v-model:isBatchMode="isBatchMode"
             v-model:activeTab="artistActiveTab"
@@ -938,6 +967,7 @@ watch(
             :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
+            :tabNameOverrides="isUserMode ? { songs: '收藏', albums: '歌单' } : undefined"
             @playAll="handlePlayAll"
             @selectAll="handleSelectAll"
           />
@@ -945,28 +975,28 @@ watch(
           <!-- 歌曲列表 / 专辑列表 tab（不使用 mode="out-in"，避免切换 tab 时内容空白） -->
           <div class="relative">
           <Transition name="tab-fade">
-            <SongTable
-              v-if="artistActiveTab === 'songs'"
-              key="songs"
-              :songs="currentSongs"
-              :is-batch-mode="isBatchMode"
-              :selected-paths="selectedPaths"
-              memory-scope-key="online-detail-artist"
-              page-scroll-mode
-              :scroll-container-ref="detailScrollRef"
-              @play="handlePlaySong"
-              @contextmenu="handleMySongContextMenu"
-              @update:selectedPaths="selectedPaths = $event"
-            />
+            <div v-if="artistActiveTab === 'songs'" key="songs">
+              <SongTable
+                :songs="currentSongs"
+                :is-batch-mode="isBatchMode"
+                :selected-paths="selectedPaths"
+                :memory-scope-key="isUserMode ? 'online-detail-user' : 'online-detail-artist'"
+                page-scroll-mode
+                :scroll-container-ref="detailScrollRef"
+                @play="handlePlaySong"
+                @contextmenu="handleMySongContextMenu"
+                @update:selectedPaths="selectedPaths = $event"
+              />
+            </div>
 
-            <!-- 专辑列表 tab -->
+            <!-- 专辑列表 / 歌单列表 tab（共用歌手页黑胶卡片样式） -->
             <div v-else-if="artistActiveTab === 'albums'" key="albums" class="p-4 md:p-6 lg:p-8">
-              <div v-if="albums.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10">
+              <div v-if="gridItems.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10">
                 <div
-                  v-for="album in albums"
-                  :key="album.id"
+                  v-for="item in gridItems"
+                  :key="item.id"
                   class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5"
-                  @click="handleAlbumClick(album)"
+                  @click="isUserMode ? handleUserPlaylistClick(item.id) : handleAlbumClick(item)"
                 >
                   <div class="relative w-full aspect-square mb-3 mt-1">
                     <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]">
@@ -976,27 +1006,27 @@ watch(
                     </div>
                     <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
                       <img
-                        v-if="album.coverUrl"
-                        :src="album.coverUrl"
+                        v-if="getGridItemCover(item)"
+                        :src="getGridItemCover(item)"
                         class="w-full h-full object-cover rounded-sm"
                         alt=""
                         loading="lazy"
                         @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
                       />
                       <div
-                        v-if="!album.coverUrl"
+                        v-if="!getGridItemCover(item)"
                         class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner"
                       >
-                        {{ album.name ? album.name.charAt(0).toUpperCase() : 'A' }}
+                        {{ item.name ? item.name.charAt(0).toUpperCase() : (isUserMode ? 'P' : 'A') }}
                       </div>
                     </div>
                   </div>
                   <div class="flex flex-col items-start px-1 z-20">
                     <h3 class="font-bold text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-tight">
-                      {{ album.name }}
+                      {{ item.name }}
                     </h3>
                     <p class="text-xs text-gray-500 dark:text-gray-400 truncate w-full mt-1.5 opacity-80">
-                      {{ album.artist }}
+                      {{ isUserMode ? `${item.count} 首歌曲` : item.artist }}
                     </p>
                   </div>
                 </div>
@@ -1005,7 +1035,7 @@ watch(
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                 </svg>
-                <p class="text-sm">暂无专辑</p>
+                <p class="text-sm">{{ isUserMode ? '暂无歌单' : '暂无专辑' }}</p>
               </div>
             </div>
 
@@ -1082,120 +1112,6 @@ watch(
           </div>
         </div>
 
-        <!-- 用户详情（排行榜"查看"进入）：收藏 / 歌单 -->
-        <div v-else-if="detailType === 'user'" key="user">
-          <ArtistDetailHeader
-            v-model:isBatchMode="isBatchMode"
-            v-model:activeTab="artistActiveTab"
-            :artistName="title"
-            :description="artistDescription"
-            :songs="currentSongs"
-            :selectedCount="selectedPaths.size"
-            :totalSongCount="currentSongs.length"
-            :readOnly="true"
-            :coverUrlOverride="coverUrl"
-            :tabNameOverrides="{ songs: '收藏', albums: '歌单' }"
-            @playAll="handlePlayAll"
-            @selectAll="handleSelectAll"
-          />
-
-          <div class="relative flex-1 min-h-0">
-            <Transition name="tab-fade">
-              <!-- 收藏歌曲 tab -->
-              <div v-if="artistActiveTab === 'songs'" key="songs">
-                <button
-                  v-if="activeCloudPlaylist"
-                  type="button"
-                  class="group flex items-center gap-2 px-2 py-2 text-sm text-gray-600 dark:text-white/60 hover:text-[#EC4141] transition-colors cursor-pointer"
-                  @click="activeCloudPlaylist = null"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                  </svg>
-                  <span class="font-medium">返回</span>
-                  <span class="text-gray-400 dark:text-white/40 group-hover:text-[#EC4141] transition-colors truncate">{{ activeCloudPlaylist.name }}</span>
-                </button>
-                <div v-if="userModeLoading" class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
-                  <svg class="h-8 w-8 animate-spin opacity-40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                  </svg>
-                  <p class="text-sm mt-3">正在加载收藏...</p>
-                </div>
-                <SongTable
-                  v-else-if="currentSongs.length > 0"
-                  :songs="currentSongs"
-                  :is-batch-mode="isBatchMode"
-                  :selected-paths="selectedPaths"
-                  memory-scope-key="online-detail-user"
-                  page-scroll-mode
-                  :scroll-container-ref="detailScrollRef"
-                  @play="handlePlaySong"
-                  @contextmenu="handleMySongContextMenu"
-                  @update:selectedPaths="selectedPaths = $event"
-                />
-                <div v-else class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                  </svg>
-                  <p class="text-sm">暂无收藏歌曲</p>
-                </div>
-              </div>
-
-              <!-- 歌单列表 tab -->
-              <div v-else-if="artistActiveTab === 'albums'" key="albums" class="p-4 md:p-6 lg:p-8">
-                <div v-if="userModeLoading" class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
-                  <svg class="h-8 w-8 animate-spin opacity-40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                  </svg>
-                  <p class="text-sm mt-3">正在加载歌单...</p>
-                </div>
-                <div v-else-if="userPlaylistItems.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10">
-                  <div
-                    v-for="playlist in userPlaylistItems"
-                    :key="playlist.id"
-                    class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5"
-                    @click="handleUserPlaylistClick(playlist.id)"
-                  >
-                    <div class="relative w-full aspect-square mb-3 mt-4">
-                      <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
-                        <img
-                          v-if="playlist.cover"
-                          :src="playlist.cover"
-                          class="w-full h-full object-cover rounded-sm"
-                          alt=""
-                          loading="lazy"
-                          @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
-                        />
-                        <div
-                          v-if="!playlist.cover"
-                          class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner"
-                        >
-                          {{ playlist.name ? playlist.name.charAt(0).toUpperCase() : 'P' }}
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex flex-col items-start px-1 z-20">
-                      <h3 class="font-bold text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-tight">
-                        {{ playlist.name }}
-                      </h3>
-                      <p class="text-xs text-gray-500 dark:text-gray-400 truncate w-full mt-1.5 opacity-80">
-                        {{ playlist.count }} 首歌曲
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  </svg>
-                  <p class="text-sm">暂无歌单</p>
-                </div>
-              </div>
-            </Transition>
-          </div>
-        </div>
       </Transition>
     </div>
 

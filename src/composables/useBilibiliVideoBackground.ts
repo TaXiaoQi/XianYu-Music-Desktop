@@ -4,9 +4,11 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   getStoredPlugins,
   pluginGetVideoSource,
+  type PluginVideoQuality,
   type PluginVideoSource,
 } from '../services/pluginEngine';
 import { pluginApi } from '../services/tauri/pluginApi';
+import { useSettings } from '../features/settings/useSettings';
 import type { PluginSearchResult, Song } from '../types';
 
 const videoUrl = ref('');
@@ -14,16 +16,54 @@ const cachedVideoPath = ref('');
 const sourceSongPath = ref('');
 const loading = ref(false);
 const error = ref('');
+const availableQualities = ref<PluginVideoQuality[]>([]);
+const activeQuality = ref('');
 let requestVersion = 0;
+let activeSong: Song | null = null;
+
+/** 供“下载视频”使用的最后一次成功解析结果（原始直链 + 请求头） */
+const lastResolvedSource = ref<Pick<PluginVideoSource, 'url' | 'headers' | 'backupUrls' | 'videoQuality' | 'codec' | 'height' | 'width'> | null>(null);
 
 const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i;
-const DEFAULT_BILIBILI_VIDEO_QUALITY = '720P';
 const DEFAULT_MV_QUALITY = '720P';
 const BILIBILI_720P_QUALITY_ID = 64;
 
-/** 是否为插件在线歌曲（本地 / LX 无 MV 概念） */
+/** B 站兜底解析支持的画质档位（未登录账号一般最高 1080P） */
+const BILIBILI_QUALITY_PRESETS: Array<PluginVideoQuality & { qn: number }> = [
+  { key: '360P', label: '360P 流畅', qn: 16 },
+  { key: '480P', label: '480P 清晰', qn: 32 },
+  { key: '720P', label: '720P 高清', qn: 64 },
+  { key: '1080P', label: '1080P 全高清', qn: 80 },
+];
+
+const BILIBILI_QUALITY_ID_LABELS: Record<number, string> = {
+  16: '360P',
+  32: '480P',
+  64: '720P',
+  74: '720P60',
+  80: '1080P',
+  112: '1080P+',
+  116: '1080P60',
+  120: '4K',
+};
+
+function preferredMvQuality(): string {
+  try {
+    const configured = useSettings().settings.value.audio.mvDefaultQuality;
+    if (configured) return configured;
+  } catch {
+    /* Pinia 未就绪（测试环境）时回退默认档 */
+  }
+  return DEFAULT_MV_QUALITY;
+}
+
+/**
+ * 是否为插件在线歌曲（本地 / LX 无 MV 概念）。
+ * 播放路径构造的 Song 不写 plugin_id（与音频解析一致），需回退 rawData.pluginId。
+ */
 function isMusicVideoSong(song: Song | null | undefined): boolean {
-  return !!song && song.source_type === 'plugin' && !!song.plugin_id;
+  if (!song || song.source_type !== 'plugin') return false;
+  return !!song.plugin_id || !!nestedValue(song.rawData, 'pluginId');
 }
 
 /**
@@ -100,11 +140,15 @@ function parseBilibiliResponse(responseBody: string, label: string): Record<stri
   return payload.data as Record<string, any>;
 }
 
+function bilibiliQualityId(quality: string): number {
+  return BILIBILI_QUALITY_PRESETS.find(preset => preset.key === quality)?.qn ?? BILIBILI_720P_QUALITY_ID;
+}
+
 /**
  * 旧版 Bilibili 插件只负责歌曲解析，没有 getMvSource 扩展。
  * 这里使用歌曲自身的 BV/AV 号补齐视频流，避免把“接口不存在”误报成插件损坏。
  */
-async function resolveBilibiliVideoSource(song: Song): Promise<PluginVideoSource | null> {
+async function resolveBilibiliVideoSource(song: Song, quality: string): Promise<PluginVideoSource | null> {
   const identity = extractBilibiliIdentity(song);
   if (!identity.bvid && !identity.aid) return null;
 
@@ -123,9 +167,10 @@ async function resolveBilibiliVideoSource(song: Song): Promise<PluginVideoSource
   }
   if (!cid) throw new Error('Bilibili 视频信息中缺少 CID');
 
+  const qn = bilibiliQualityId(quality);
   const playResponse = await pluginApi.pluginHttpRequest(
     'GET',
-    `https://api.bilibili.com/x/player/playurl?${identityQuery}&cid=${encodeURIComponent(cid)}&qn=64&fnval=16&fourk=1`,
+    `https://api.bilibili.com/x/player/playurl?${identityQuery}&cid=${encodeURIComponent(cid)}&qn=${qn}&fnval=16&fourk=1`,
     { Referer: `https://www.bilibili.com/video/${identity.bvid || `av${identity.aid}`}` },
   );
   const playData = parseBilibiliResponse(playResponse.body, 'Bilibili 视频流解析');
@@ -133,12 +178,12 @@ async function resolveBilibiliVideoSource(song: Song): Promise<PluginVideoSource
   const isAvc = (candidate: any) => String(candidate?.codecs || '').startsWith('avc1');
   const qualityId = (candidate: any) => Number(candidate?.id) || 0;
   const compatibleVideos = dashVideos
-    .filter((candidate: any) => qualityId(candidate) <= BILIBILI_720P_QUALITY_ID)
+    .filter((candidate: any) => qualityId(candidate) <= qn)
     .sort((left: any, right: any) => qualityId(right) - qualityId(left));
   const video = dashVideos.find((candidate: any) => (
-    qualityId(candidate) === BILIBILI_720P_QUALITY_ID && isAvc(candidate)
+    qualityId(candidate) === qn && isAvc(candidate)
   ))
-    || dashVideos.find((candidate: any) => qualityId(candidate) === BILIBILI_720P_QUALITY_ID)
+    || dashVideos.find((candidate: any) => qualityId(candidate) === qn)
     || compatibleVideos.find(isAvc)
     || compatibleVideos[0]
     || dashVideos.find(isAvc)
@@ -156,11 +201,12 @@ async function resolveBilibiliVideoSource(song: Song): Promise<PluginVideoSource
     url: directUrl,
     backupUrls,
     headers: { Referer: 'https://www.bilibili.com/' },
-    videoQuality: DEFAULT_BILIBILI_VIDEO_QUALITY,
+    videoQuality: BILIBILI_QUALITY_ID_LABELS[qualityId(video)] || quality,
     codec: firstString(video?.codecs),
     mimeType: firstString(video?.mimeType, video?.mime_type, 'video/mp4'),
     width: Number(video?.width) || undefined,
     height: Number(video?.height) || undefined,
+    availableVideoQualities: BILIBILI_QUALITY_PRESETS.map(({ qn: _qn, ...preset }) => preset),
   };
 }
 
@@ -217,6 +263,30 @@ async function removeCachedFile(path: string) {
   await pluginApi.removeCachedBackgroundVideo(path).catch(() => {});
 }
 
+/** 解析 MV 视频源（不写缓存）：供播放 start 与下载 resolveDownloadSource 共用 */
+async function resolveMvVideoSource(song: Song, quality: string): Promise<{
+  videoSource: PluginVideoSource;
+  headers: Record<string, string> | undefined;
+}> {
+  const isBili = isBilibiliPluginSong(song);
+  const pluginId = song.plugin_id || String(nestedValue(song.rawData, 'pluginId') || '');
+  const source = getStoredPlugins().find(plugin => plugin.id === pluginId);
+  if (!source) {
+    throw new Error('未找到当前歌曲对应的插件');
+  }
+  let resolved = await pluginGetVideoSource(source, toPluginSearchResult(song), quality);
+  if (!resolved?.url && isBili) {
+    resolved = await resolveBilibiliVideoSource(song, quality);
+  }
+  if (!resolved?.url) {
+    throw new Error(isBili ? '未能解析当前 Bilibili 视频' : '当前歌曲的插件未提供 MV');
+  }
+  const headers = isBili
+    ? withBilibiliHeaders(resolved.headers, resolved.userAgent)
+    : mergedPluginHeaders(resolved);
+  return { videoSource: resolved, headers };
+}
+
 export function useBilibiliVideoBackground() {
   const active = computed(() => Boolean(videoUrl.value && sourceSongPath.value));
   const requested = computed(() => Boolean(sourceSongPath.value));
@@ -229,14 +299,19 @@ export function useBilibiliVideoBackground() {
     sourceSongPath.value = '';
     loading.value = false;
     error.value = '';
+    availableQualities.value = [];
+    activeQuality.value = '';
+    lastResolvedSource.value = null;
+    activeSong = null;
     await removeCachedFile(previousPath);
   };
 
-  const start = async (song: Song) => {
+  const start = async (song: Song, quality?: string) => {
     const isBili = isBilibiliPluginSong(song);
     if (!isBili && !isMusicVideoSong(song)) {
       throw new Error('当前歌曲不支持 MV');
     }
+    const targetQuality = quality?.trim() || preferredMvQuality();
 
     const previousPath = cachedVideoPath.value;
     const requestId = ++requestVersion;
@@ -247,25 +322,12 @@ export function useBilibiliVideoBackground() {
     error.value = '';
     void removeCachedFile(previousPath);
 
-    const pluginId = song.plugin_id || String(nestedValue(song.rawData, 'pluginId') || '');
-    const source = getStoredPlugins().find(plugin => plugin.id === pluginId);
-    if (!source) {
-      loading.value = false;
-      sourceSongPath.value = '';
-      throw new Error('未找到当前歌曲对应的插件');
-    }
+    activeSong = song;
 
-    let videoSource: PluginVideoSource | null;
+    let videoSource: PluginVideoSource;
+    let headers: Record<string, string> | undefined;
     try {
-      let resolved = await pluginGetVideoSource(
-        source,
-        toPluginSearchResult(song),
-        isBili ? DEFAULT_BILIBILI_VIDEO_QUALITY : DEFAULT_MV_QUALITY,
-      );
-      if (!resolved?.url && isBili) {
-        resolved = await resolveBilibiliVideoSource(song);
-      }
-      videoSource = resolved;
+      ({ videoSource, headers } = await resolveMvVideoSource(song, targetQuality));
     } catch (resolutionError) {
       if (requestId === requestVersion) {
         loading.value = false;
@@ -277,17 +339,7 @@ export function useBilibiliVideoBackground() {
       throw resolutionError;
     }
     if (requestId !== requestVersion) return false;
-    if (!videoSource?.url) {
-      loading.value = false;
-      sourceSongPath.value = '';
-      const msg = isBili ? '未能解析当前 Bilibili 视频' : '当前歌曲的插件未提供 MV';
-      error.value = msg;
-      throw new Error(msg);
-    }
 
-    const headers = isBili
-      ? withBilibiliHeaders(videoSource.headers, videoSource.userAgent)
-      : mergedPluginHeaders(videoSource);
     const candidates = [videoSource.url, ...(videoSource.backupUrls || [])];
     let downloadedPath = '';
     let lastDownloadError: unknown = null;
@@ -315,7 +367,49 @@ export function useBilibiliVideoBackground() {
     cachedVideoPath.value = downloadedPath;
     videoUrl.value = convertFileSrc(downloadedPath);
     loading.value = false;
+    lastResolvedSource.value = {
+      url: videoSource.url,
+      headers,
+      backupUrls: videoSource.backupUrls,
+      videoQuality: videoSource.videoQuality || targetQuality,
+      codec: videoSource.codec,
+      height: videoSource.height,
+      width: videoSource.width,
+    };
+    availableQualities.value = videoSource.availableVideoQualities?.length
+      ? videoSource.availableVideoQualities
+      : (isBili
+        ? BILIBILI_QUALITY_PRESETS.map(({ qn: _qn, ...preset }) => preset)
+        : [{ key: videoSource.videoQuality || targetQuality }]);
+    activeQuality.value = videoSource.videoQuality || targetQuality;
     return true;
+  };
+
+  /** MV 播放中切换画质：以新档位重新解析并加载 */
+  const setQuality = async (qualityKey: string) => {
+    if (!requested.value || !activeSong) return false;
+    if (qualityKey === activeQuality.value) return true;
+    return start(activeSong, qualityKey);
+  };
+
+  /** 按指定画质解析下载用直链（不影响播放状态；同档位时优先复用当前解析结果） */
+  const resolveDownloadSource = async (song: Song, quality: string) => {
+    const last = lastResolvedSource.value;
+    if (quality === activeQuality.value && last?.url) {
+      return {
+        url: last.url,
+        headers: last.headers,
+        backupUrls: last.backupUrls,
+        videoQuality: last.videoQuality || quality,
+      };
+    }
+    const { videoSource, headers } = await resolveMvVideoSource(song, quality);
+    return {
+      url: videoSource.url,
+      headers,
+      backupUrls: videoSource.backupUrls,
+      videoQuality: videoSource.videoQuality || quality,
+    };
   };
 
   const toggle = async (song: Song) => {
@@ -333,8 +427,13 @@ export function useBilibiliVideoBackground() {
     error,
     videoUrl,
     sourceSongPath,
+    availableQualities,
+    activeQuality,
+    lastResolvedSource,
     start,
     stop,
     toggle,
+    setQuality,
+    resolveDownloadSource,
   };
 }

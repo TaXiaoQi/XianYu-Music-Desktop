@@ -3,8 +3,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
 import { useI18n } from '../../features/i18n';
 import { useSettings } from '../../features/settings/useSettings';
-import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior } from '../../types';
-import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
+import type { DownloadBehavior, DownloadFileNameStyle, DownloadLyricsStyle, DownloadQuality, DownloadQualityFallbackBehavior, MvQualityKey } from '../../types';
+import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, ref } from 'vue';
 
 const { settings, patchSettings } = useSettings();
@@ -16,6 +16,7 @@ const showQualityFallbackModal = ref(false);
 const showFileNameStyleModal = ref(false);
 const showLyricsFormatModal = ref(false);
 const showLyricsStyleModal = ref(false);
+const showMvQualityModal = ref(false);
 
 const FILE_NAME_STYLE_OPTIONS = computed<{ value: DownloadFileNameStyle; label: string; description: string }[]>(() => isEnglish.value ? [
   { value: 'artist-title', label: 'Artist - Title', description: 'Artist first, followed by the song title' },
@@ -76,6 +77,12 @@ const patchDownloadQuality = (value: DownloadQuality) => {
 const handleDownloadQualitySelect = (value: DownloadQuality) => {
   showDownloadQualityModal.value = false;
   patchDownloadQuality(value);
+};
+
+/** 弹窗中选择 MV 默认下载画质 */
+const handleMvQualitySelect = (value: MvQualityKey) => {
+  showMvQualityModal.value = false;
+  patchSettings({ download: { ...settings.value.download, mvDefaultQuality: value } });
 };
 
 /** 弹窗中选择下载行为 */
@@ -270,6 +277,21 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
             <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
           </button>
         </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">MV 默认画质</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">下载 MV 视频弹窗中预选的画质档位</div>
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2 rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+            @click="showMvQualityModal = true"
+          >
+            <span>{{ settings.download.mvDefaultQuality ?? '720P' }}</span>
+            <span class="text-xs text-gray-400">{{ MV_QUALITY_META[settings.download.mvDefaultQuality ?? '720P'].description }}</span>
+            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </section>
 
@@ -307,6 +329,48 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
                     class="text-[10px] font-normal opacity-75"
                     :class="settings.download.quality === key ? '' : 'text-gray-400 dark:text-gray-500'"
                   >{{ QUALITY_META[key].description }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- MV 默认画质选择弹窗：复用添加歌单弹窗容器模式，3 列平铺网格 -->
+    <Teleport to="body">
+      <Transition name="modal-pop">
+        <div
+          v-if="showMvQualityModal"
+          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          @click.self="showMvQualityModal = false"
+        >
+          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择 MV 默认画质</h3>
+              <button
+                @click="showMvQualityModal = false"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >✕</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto custom-scrollbar p-3">
+              <div class="grid grid-cols-3 gap-1.5">
+                <button
+                  v-for="key in MV_QUALITY_KEYS"
+                  :key="key"
+                  type="button"
+                  class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5"
+                  :class="(settings.download.mvDefaultQuality ?? '720P') === key
+                    ? 'bg-[#EC4141] text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                  :title="MV_QUALITY_META[key].description"
+                  @click="handleMvQualitySelect(key)"
+                >
+                  <span>{{ MV_QUALITY_META[key].label }}</span>
+                  <span
+                    class="text-[10px] font-normal opacity-75"
+                    :class="(settings.download.mvDefaultQuality ?? '720P') === key ? '' : 'text-gray-400 dark:text-gray-500'"
+                  >{{ MV_QUALITY_META[key].description }}</span>
                 </button>
               </div>
             </div>

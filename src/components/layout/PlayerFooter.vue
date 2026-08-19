@@ -15,10 +15,11 @@ import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
+import { useToast } from '../../composables/toast';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
-import { QUALITY_META } from '../../types';
+import { QUALITY_META, MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
   getProgressVisualState,
@@ -57,23 +58,27 @@ import {
   computeCollapsedItems,
   normalizeFooterLayout,
 } from '../../features/settings/footerItems';
+import type { FooterItemKey } from '../../types';
 
 /** 归一化后的当前布局（防御性处理，确保任何来源都合法） */
 const normalizedLayout = computed(() => normalizeFooterLayout(footerLayout.value));
+
+// MV 控件仅在播放详情页（歌词页）底栏显示；主页底栏隐藏
+const isFooterItemVisible = (key: FooterItemKey) => showPlayerDetail.value || key !== 'mv';
 /** 左侧容器控件（最多 2 个） */
-const leftItems = computed(() => normalizedLayout.value.left.filter(key => !normalizedLayout.value.hidden.includes(key)));
+const leftItems = computed(() => normalizedLayout.value.left.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
 /** 中间左侧控件（最多 1 个，紧邻"上一首"） */
-const middleLeftItem = computed(() => normalizedLayout.value.middleLeft && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleLeft)
+const middleLeftItem = computed(() => normalizedLayout.value.middleLeft && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleLeft) && isFooterItemVisible(normalizedLayout.value.middleLeft)
   ? normalizedLayout.value.middleLeft
   : null);
 /** 中间右侧控件（最多 1 个，紧邻"下一首"） */
-const middleRightItem = computed(() => normalizedLayout.value.middleRight && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleRight)
+const middleRightItem = computed(() => normalizedLayout.value.middleRight && !normalizedLayout.value.hidden.includes(normalizedLayout.value.middleRight) && isFooterItemVisible(normalizedLayout.value.middleRight)
   ? normalizedLayout.value.middleRight
   : null);
 /** 右侧容器控件（最多 5 个） */
-const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key)));
-/** 折叠收纳菜单中的控件（未分配到任何容器） */
-const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value));
+const rightItems = computed(() => normalizedLayout.value.right.filter(key => !normalizedLayout.value.hidden.includes(key) && isFooterItemVisible(key)));
+/** 折叠收纳菜单中的控件（未分配到任何容器；主页同样隐藏 MV） */
+const collapsedItems = computed(() => computeCollapsedItems(normalizedLayout.value).filter(isFooterItemVisible));
 
 // --- 下载功能 ---
 // 底栏下载：根据设置中的下载行为决定只展开音质下拉，或打开详细下载弹窗。
@@ -84,6 +89,7 @@ const isOnlineSong = computed(() => isDownloadableOnlineSong(currentSong.value))
 // 已下载状态：当前歌曲若有下载记录且文件仍存在，按钮显示为「已下载」
 const downloadedRecord = ref<DownloadRecord | null>(null);
 const showRedownloadConfirm = ref(false);
+const showMvDownloadQualityModal = ref(false);
 // [下载联动] isDownloading 来自共享 store：右键菜单下载同一首歌时底栏也会显示「下载中」动画
 const isDownloading = computed(() => {
   if (!downloadStore.isDownloading) return false;
@@ -223,6 +229,13 @@ const openDownloadByBehavior = () => {
 };
 
 const handleDownloadClick = () => {
+  if (mvActive.value) {
+    if (isMvVideoDownloading.value) return;
+    showDownloadQualityMenu.value = false;
+    showQualityMenu.value = false;
+    showMvDownloadQualityModal.value = true;
+    return;
+  }
   if (!isOnlineSong.value || isDownloading.value) return;
   if (!currentSong.value) return;
   if (downloadedRecord.value) {
@@ -230,6 +243,66 @@ const handleDownloadClick = () => {
     return;
   }
   openDownloadByBehavior();
+};
+
+/** MV 下载画质弹窗可选档位：优先插件上报列表，无则回退静态档位 */
+const mvDownloadQualityOptions = computed<Array<{ key: string; label: string }>>(() => {
+  const available = videoBackground.availableQualities.value;
+  if (available.length) {
+    return available.map(quality => ({ key: quality.key, label: quality.label || quality.key }));
+  }
+  return MV_QUALITY_KEYS.map(key => ({ key, label: MV_QUALITY_META[key].label }));
+});
+
+/** MV 下载弹窗预选档位：设置中的下载默认画质（不在列表时回退当前播放画质） */
+const mvDownloadDefaultQuality = computed(() => {
+  const configured = settings.value.download.mvDefaultQuality;
+  const keys = mvDownloadQualityOptions.value.map(option => option.key);
+  if (configured && keys.includes(configured)) return configured;
+  return keys.includes(videoBackground.activeQuality.value)
+    ? videoBackground.activeQuality.value
+    : keys[keys.length - 1] ?? '720P';
+});
+
+/** MV 下载弹窗选中后按档位解析直链并下载到下载目录 */
+const downloadMvWithQuality = async (qualityKey: string) => {
+  showMvDownloadQualityModal.value = false;
+  const song = currentSong.value;
+  if (!song) return;
+  const downloadDir = settings.value.download.downloadPath;
+  if (!downloadDir) {
+    showToast('请先在设置 - 下载中选择下载目录', 'error');
+    return;
+  }
+
+  const sanitize = (text: string) => text.replace(/[\\/:*?"<>|]/g, ' ').trim();
+  const title = sanitize(song.title || song.name || 'video');
+  const artist = sanitize(song.artist || '');
+  const fileName = `${title}${artist ? ` - ${artist}` : ''} (${qualityKey}).mp4`;
+
+  isMvVideoDownloading.value = true;
+  try {
+    const source = await videoBackground.resolveDownloadSource(song, qualityKey);
+    const destPath = await downloadApi.resolveDownloadPath(downloadDir, fileName, false);
+    const candidates = [source.url, ...(source.backupUrls || [])];
+    let savedPath = '';
+    let lastError: unknown = null;
+    for (const candidate of candidates) {
+      try {
+        savedPath = await downloadApi.downloadOnlineSong(candidate, destPath, null, source.headers || null);
+        if (savedPath) break;
+      } catch (downloadError) {
+        lastError = downloadError;
+      }
+    }
+    if (!savedPath) throw (lastError instanceof Error ? lastError : new Error('下载失败'));
+    showToast(`MV 已下载：${fileName}`, 'success');
+  } catch (e: any) {
+    console.warn('[MV] 视频下载失败:', e?.message || e);
+    showToast(e?.message || 'MV 下载失败', 'error');
+  } finally {
+    isMvVideoDownloading.value = false;
+  }
 };
 
 /** 确认重新下载：按下载行为打开音质菜单或详细弹窗 */
@@ -246,6 +319,7 @@ const startDownload = async (qualityKey: DownloadQuality) => {
 };
 
 const downloadButtonTitle = computed(() => {
+  if (mvActive.value) return isMvVideoDownloading.value ? 'MV 视频下载中…' : '下载 MV 视频';
   if (!isOnlineSong.value) return '本地文件';
   if (isDownloading.value) return '下载中…';
   if (downloadedRecord.value) return `已下载：${downloadedRecord.value.fileName}（点击重新下载）`;
@@ -279,14 +353,14 @@ const wrapToggleComment = () => {
 };
 
 // --- MV 背景视频 ---
-// 与 PlayerDetailBackground 共享同一模块级单例：这里触发 start/stop，
-// 详情页背景组件通过相同的 ref 感知视频 URL 并渲染。
+// 与 PlayerDetailBackground 共享同一模块级单例：开关在播放详情页底栏 MV 控件触发，
+// 切歌时自动为新歌加载；MV 开启时音质按钮切换为「画质」、下载按钮切换为「下载视频」。
 const videoBackground = useBilibiliVideoBackground();
 const mvActive = videoBackground.requested;
 const mvLoading = videoBackground.loading;
-
-/** 是否可能支持 MV（同步判定；真正能否解析由 start 决定） */
 const mvSupport = supportsMusicVideo;
+const { showToast } = useToast();
+const isMvVideoDownloading = ref(false);
 
 const toggleMv = async () => {
   if (!currentSong.value) return;
@@ -294,6 +368,7 @@ const toggleMv = async () => {
     await videoBackground.toggle(currentSong.value);
   } catch (e: any) {
     console.warn('[MV] 切换失败:', e?.message || e);
+    showToast(e?.message || 'MV 打开失败', 'error');
   }
 };
 
@@ -348,8 +423,15 @@ const ALL_QUALITY_OPTIONS: Array<{ label: string; value: QualityKey; description
       description: QUALITY_META[k].description,
     }));
 
-/** 当前歌曲可用的播放音质选项（最终以下载链路 probeDownloadableQualities 的实测结果为准） */
-const QUALITY_OPTIONS = computed(() => {
+/** 下拉菜单选项：MV 开启时为视频画质列表，否则为当前歌曲可用的播放音质 */
+const QUALITY_OPTIONS = computed<Array<{ label: string; value: string; description: string }>>(() => {
+  if (mvActive.value) {
+    return videoBackground.availableQualities.value.map(quality => ({
+      label: quality.label || quality.key,
+      value: quality.key,
+      description: '',
+    }));
+  }
   if (footerAvailableQualityKeys.value !== null) {
     return ALL_QUALITY_OPTIONS.filter(opt => footerAvailableQualityKeys.value!.includes(opt.value));
   }
@@ -373,10 +455,22 @@ const getAudioExtLabel = (key: QualityKey, url?: string) => {
   return QUALITY_META[key]?.isLossless ? 'FLAC' : 'MP3';
 };
 
-const footerQualityExtraText = (key: QualityKey) => {
-  const url = footerQualityUrls.value[key];
-  const size = footerQualitySizes.value[key];
-  const ext = getAudioExtLabel(key, url);
+const footerQualityExtraText = (key: string) => {
+  if (mvActive.value) {
+    const quality = videoBackground.availableQualities.value.find(item => item.key === key);
+    if (!quality) return '';
+    const parts: string[] = [];
+    if (quality.height) parts.push(`${quality.height}P`);
+    if (quality.bitrate) parts.push(`${Math.round(quality.bitrate / 1000)}kbps`);
+    if (typeof quality.size === 'number' && quality.size > 0) {
+      const mb = quality.size / 1024 / 1024;
+      parts.push(`${mb >= 1024 ? `${(mb / 1024).toFixed(1)}GB` : `${mb.toFixed(1)}MB`}`);
+    }
+    return parts.join(' · ');
+  }
+  const url = footerQualityUrls.value[key as QualityKey];
+  const size = footerQualitySizes.value[key as QualityKey];
+  const ext = getAudioExtLabel(key as QualityKey, url);
   if (typeof size === 'number' && size > 0) {
     return `${ext} · ${compactFileSize(size)}`;
   }
@@ -529,10 +623,11 @@ const localQualityLabel = computed(() => {
   return localFormatLabel.value || 'HQ';
 });
 
-/** 按钮实际显示文字：在线歌曲显示音质标签，本地歌曲显示映射后的音质标签 */
-const qualityButtonLabel = computed(() =>
-  isQualitySelectableSong.value ? currentQualityLabel.value : localQualityLabel.value,
-);
+/** 按钮实际显示文字：MV 开启时显示画质档位；在线歌曲显示音质标签，本地歌曲显示映射后的音质标签 */
+const qualityButtonLabel = computed(() => {
+  if (mvActive.value) return videoBackground.activeQuality.value || '画质';
+  return isQualitySelectableSong.value ? currentQualityLabel.value : localQualityLabel.value;
+});
 
 /** 是否是支持音质切换的在线歌曲（lx:// 或 plugin:// 协议） */
 const isQualitySelectableSong = computed(() => {
@@ -540,11 +635,13 @@ const isQualitySelectableSong = computed(() => {
   return path.startsWith('lx://') || path.startsWith('plugin://');
 });
 
-/** 下拉菜单中应高亮的音质：在线歌曲优先使用实际播放音质，
+/** 下拉菜单中应高亮的档位：MV 开启时为当前画质；在线歌曲优先使用实际播放音质，
  *  尚未解析完成或本地歌曲回退到用户设置的首选音质。
  *  这样即使因回退逻辑命中的档位与首选不同，下拉也能准确反映当前播放状态。 */
-const activeQualityKey = computed<QualityKey>(
-  () => currentPlayingQuality.value ?? selectedQualityKey.value,
+const activeQualityKey = computed<string>(
+  () => mvActive.value
+    ? videoBackground.activeQuality.value
+    : (currentPlayingQuality.value ?? selectedQualityKey.value),
 );
 
 const showQualityMenu = ref(false);
@@ -552,21 +649,32 @@ const qualityButtonRef = ref<HTMLElement | null>(null);
 const qualityMenuRef = ref<HTMLElement | null>(null);
 
 const toggleQualityMenu = (e: MouseEvent) => {
-  if (!isQualitySelectableSong.value) return; // 本地歌曲或不支持的在线歌曲：禁用
+  // MV 开启时始终可打开（画质选择）；本地歌曲或不支持的在线歌曲：禁用
+  if (!mvActive.value && !isQualitySelectableSong.value) return;
   e.stopPropagation();
   // 关闭下载音质菜单，避免两个下拉同时打开
   showDownloadQualityMenu.value = false;
   showQualityMenu.value = !showQualityMenu.value;
-  if (showQualityMenu.value) {
+  if (showQualityMenu.value && !mvActive.value) {
     void ensureFooterQualityInfo();
   }
 };
 
-const selectQuality = async (qualityKey: QualityKey) => {
+const selectQuality = async (qualityKey: string) => {
+  if (mvActive.value) {
+    showQualityMenu.value = false;
+    try {
+      await videoBackground.setQuality(qualityKey);
+    } catch (e: any) {
+      console.warn('[MV] 画质切换失败:', e?.message || e);
+      showToast(e?.message || '画质切换失败', 'error');
+    }
+    return;
+  }
   const prev = selectedQualityKey.value;
   // 仅写入会话级临时覆盖，不修改 settings，避免同步到设置页的「在线播放音质」。
   // 播放链路（playerPlayback）会优先读取 sessionQualityOverride。
-  setSessionQualityOverride(qualityKey);
+  setSessionQualityOverride(qualityKey as QualityKey);
   showQualityMenu.value = false;
 
   // 若当前正在播放可切换音质的在线歌曲且音质发生了变化，立即重新播放以应用新音质
@@ -987,6 +1095,7 @@ provide('footerContext', {
   mvActive,
   mvLoading,
   toggleMv,
+  isMvVideoDownloading,
 });
 
 onMounted(async () => {
@@ -1288,6 +1397,48 @@ onUnmounted(() => {
           type="info"
           @confirm="handleConfirmRedownload"
         />
+
+        <!-- MV 下载画质选择弹窗 -->
+        <Teleport to="body">
+          <Transition name="modal-pop">
+            <div
+              v-if="showMvDownloadQualityModal"
+              class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+              @click.self="showMvDownloadQualityModal = false"
+            >
+              <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+                <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+                  <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择 MV 下载画质</h3>
+                  <button
+                    @click="showMvDownloadQualityModal = false"
+                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >✕</button>
+                </div>
+                <div class="max-h-80 overflow-y-auto custom-scrollbar p-3">
+                  <div class="grid grid-cols-3 gap-1.5">
+                    <button
+                      v-for="option in mvDownloadQualityOptions"
+                      :key="option.key"
+                      type="button"
+                      class="px-2 py-2 text-xs font-semibold rounded-md transition-colors text-center whitespace-nowrap flex flex-col items-center gap-0.5"
+                      :class="mvDownloadDefaultQuality === option.key
+                        ? 'bg-[#EC4141] text-white shadow-sm'
+                        : 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'"
+                      @click="downloadMvWithQuality(option.key)"
+                    >
+                      <span>{{ option.label }}</span>
+                      <span
+                        v-if="option.key === videoBackground.activeQuality.value"
+                        class="text-[10px] font-normal opacity-75"
+                        :class="mvDownloadDefaultQuality === option.key ? '' : 'text-gray-400 dark:text-gray-500'"
+                      >当前播放</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
 
       </footer>
 

@@ -10,6 +10,7 @@ import {
 } from '../../services/lxUrlResolver';
 import { resolveOnlineQualityUrl } from '../../services/downloadService';
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
+import { getPluginBilibiliCookies } from '../../services/pluginCookieStore';
 import { resolveActualQuality } from '../../services/audioQualityVerify';
 
 export interface ResolveOnlineAudioOptions {
@@ -37,6 +38,34 @@ export interface ResolveOnlineAudioResult {
 const sortQualities = (qualities: QualityKey[]) => (
   qualities.sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
 );
+
+/** 为 B 站 CDN 取流请求合并会话 Cookie（buvid3/4 · SESSDATA），
+ *  避免匿名分流只返回几秒预览流（插件 headers 通常不含 Cookie，需从这里补上） */
+const withBilibiliStreamCookie = (
+  url: string,
+  headers: Record<string, string> | null,
+): Record<string, string> | null => {
+  if (!headers) {
+    return headers;
+  }
+  const alreadyHasCookie = Object.keys(headers).some((k) => k.toLowerCase() === 'cookie');
+  if (alreadyHasCookie) {
+    return headers;
+  }
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (!host.includes('bilivideo') && !host.includes('hdslb') && !host.includes('bilibili')) {
+      return headers;
+    }
+  } catch {
+    return headers;
+  }
+  const biliCookie = getPluginBilibiliCookies();
+  if (biliCookie) {
+    headers['Cookie'] = biliCookie;
+  }
+  return headers;
+};
 
 export const getOnlineAvailableQualities = async (
   songPath: string,
@@ -106,9 +135,10 @@ export const resolveOnlineAudio = async ({
       );
 
       if (resolved?.url) {
+        const resolvedHeaders = normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null);
         return {
           audioFilePath: resolved.url,
-          pluginHeaders: normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null),
+          pluginHeaders: withBilibiliStreamCookie(resolved.url, resolvedHeaders),
           currentPlayingQuality: resolveActualQuality(resolved.quality, resolved.url),
           currentPlayingAudioUrl: resolved.url,
           lyricsRaw: resolved.lyricsRaw,

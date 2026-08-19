@@ -13,13 +13,14 @@ import type {
   ImportedLyricsFont,
   LyricsSettings,
   LogSettings,
+  MvQualityKey,
   PluginSettings,
   SidebarSettings,
   ThemeSettings,
   TopBarLayoutSettings,
   UploadSettings,
 } from '../../types';
-import { ALL_QUALITY_KEYS } from '../../types';
+import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS } from '../../types';
 import { DEFAULT_THEME_COLOR, normalizeThemeColor } from '../../utils/themeColor';
 // 直接从 constants.ts 叶子模块导入，避免经由 index → state → settings/store 形成循环依赖
 import {
@@ -175,6 +176,7 @@ export const defaultAudioSettings: AudioSettings = {
   fadeInOutEnabled: false,
   fadeInOutDurationMs: 1000,
   autoSwitchSourceOnFailure: true,
+  mvDefaultQuality: '720P',
 };
 
 export const defaultDownloadSettings: DownloadSettings = {
@@ -183,7 +185,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   batchDownloadLimit: 2,
   format: 'mp3',
   quality: '320k',
-  downloadLyrics: true,
+  downloadLyrics: false,
   lyricsFormat: 'lrc',
   lyricsStyle: 'word-by-word',
   overwriteExisting: false,
@@ -194,6 +196,7 @@ export const defaultDownloadSettings: DownloadSettings = {
   embedMetadata: true,
   embedLyrics: true,
   embedCover: true,
+  mvDefaultQuality: '720P',
 };
 
 export const defaultUploadSettings: UploadSettings = {
@@ -386,6 +389,9 @@ export const mergeDownloadSettings = (
     embedMetadata: typeof patch.embedMetadata === 'boolean' ? patch.embedMetadata : base.embedMetadata,
     embedLyrics: typeof patch.embedLyrics === 'boolean' ? patch.embedLyrics : base.embedLyrics,
     embedCover: typeof patch.embedCover === 'boolean' ? patch.embedCover : base.embedCover,
+    mvDefaultQuality: MV_QUALITY_KEYS.includes(patch.mvDefaultQuality as MvQualityKey)
+      ? (patch.mvDefaultQuality as MvQualityKey)
+      : base.mvDefaultQuality ?? '720P',
   };
 };
 
@@ -577,6 +583,9 @@ export const mergeAudioSettings = (
     autoSwitchSourceOnFailure: typeof patch.autoSwitchSourceOnFailure === 'boolean'
       ? patch.autoSwitchSourceOnFailure
       : base.autoSwitchSourceOnFailure ?? true,
+    mvDefaultQuality: MV_QUALITY_KEYS.includes(patch.mvDefaultQuality as MvQualityKey)
+      ? (patch.mvDefaultQuality as MvQualityKey)
+      : base.mvDefaultQuality ?? '720P',
   };
 };
 
