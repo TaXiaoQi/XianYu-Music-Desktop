@@ -324,6 +324,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                     </section>
 
+                    <!-- 音调补偿 -->
+                    <div class="flex items-center gap-2 py-0.5">
+                      <input type="checkbox" class="fx-check-mini" v-model="store.preservesPitch">
+                      <span class="text-[12px] text-gray-600 dark:text-gray-300">音调补偿（变速时保持音调）</span>
+                    </div>
+
                     <!-- 卡拉OK消人声 -->
                     <section class="rounded-xl border border-gray-200/70 bg-white/40 p-3 transition-all hover:border-[#EC4141]/40 dark:border-white/10 dark:bg-white/5">
                       <div class="flex items-center justify-between">

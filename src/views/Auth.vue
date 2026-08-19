@@ -734,10 +734,6 @@ async function confirmLogout() {
   }
 }
 
-function goBackToMain() {
-  void router.push('/');
-}
-
 // 修改弦予号（参考微信号设计：登录唯一标识，每月可修改一次）
 const showCiyuanxiModal = ref(false);
 const ciyuanxiForm = ref({ oldId: '', newId: '', password: '' });
@@ -1469,13 +1465,6 @@ async function silentPoll() {
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              class="text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer"
-              @click="goBackToMain"
-            >
-              返回主界面
-            </button>
             <button
               type="button"
               class="text-[#EC4141] hover:bg-red-50 dark:hover:bg-red-500/10 px-4 py-1.5 rounded-md text-sm font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
