@@ -18,7 +18,39 @@ let requestVersion = 0;
 
 const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i;
 const DEFAULT_BILIBILI_VIDEO_QUALITY = '720P';
+const DEFAULT_MV_QUALITY = '720P';
 const BILIBILI_720P_QUALITY_ID = 64;
+
+/** 是否为插件在线歌曲（本地 / LX 无 MV 概念） */
+function isMusicVideoSong(song: Song | null | undefined): boolean {
+  return !!song && song.source_type === 'plugin' && !!song.plugin_id;
+}
+
+/**
+ * 合并插件 MV 返回的请求头与 UA（仅通用插件分支使用；B 站走 withBilibiliHeaders 强制补 Referer）
+ */
+function mergedPluginHeaders(videoSource: PluginVideoSource): Record<string, string> | undefined {
+  const headers = { ...(videoSource.headers || {}) };
+  if (videoSource.userAgent && !Object.keys(headers).some(key => key.toLowerCase() === 'user-agent')) {
+    headers['User-Agent'] = videoSource.userAgent;
+  }
+  return Object.keys(headers).length ? headers : undefined;
+}
+
+/**
+ * 当前歌曲是否可能支持 MV：
+ * - 插件在线歌曲为前提
+ * - B 站插件歌曲必然可解析（BV/AV 兜底）
+ * - 其余 musicfree 插件歌曲：有对应插件且非 LX 即视为可能（真正是否提供见 start 的解析结果）
+ */
+export function supportsMusicVideo(song: Song | null | undefined): boolean {
+  if (!isMusicVideoSong(song)) return false;
+  if (isBilibiliPluginSong(song)) return true;
+  const source = getStoredPlugins().find(
+    plugin => plugin.id === (song!.plugin_id || String(nestedValue(song!.rawData, 'pluginId') || '')),
+  );
+  return !!source && source.format !== 'lx';
+}
 
 function nestedValue(value: unknown, key: string): unknown {
   if (!value || typeof value !== 'object') return undefined;
@@ -201,8 +233,9 @@ export function useBilibiliVideoBackground() {
   };
 
   const start = async (song: Song) => {
-    if (!isBilibiliPluginSong(song)) {
-      throw new Error('当前歌曲不是 Bilibili 插件歌曲');
+    const isBili = isBilibiliPluginSong(song);
+    if (!isBili && !isMusicVideoSong(song)) {
+      throw new Error('当前歌曲不支持 MV');
     }
 
     const previousPath = cachedVideoPath.value;
@@ -219,19 +252,20 @@ export function useBilibiliVideoBackground() {
     if (!source) {
       loading.value = false;
       sourceSongPath.value = '';
-      throw new Error('未找到当前 Bilibili 插件');
+      throw new Error('未找到当前歌曲对应的插件');
     }
 
     let videoSource: PluginVideoSource | null;
     try {
-      const pluginVideoSource = await pluginGetVideoSource(
+      let resolved = await pluginGetVideoSource(
         source,
         toPluginSearchResult(song),
-        DEFAULT_BILIBILI_VIDEO_QUALITY,
+        isBili ? DEFAULT_BILIBILI_VIDEO_QUALITY : DEFAULT_MV_QUALITY,
       );
-      videoSource = pluginVideoSource?.url
-        ? pluginVideoSource
-        : await resolveBilibiliVideoSource(song);
+      if (!resolved?.url && isBili) {
+        resolved = await resolveBilibiliVideoSource(song);
+      }
+      videoSource = resolved;
     } catch (resolutionError) {
       if (requestId === requestVersion) {
         loading.value = false;
@@ -246,10 +280,14 @@ export function useBilibiliVideoBackground() {
     if (!videoSource?.url) {
       loading.value = false;
       sourceSongPath.value = '';
-      throw new Error('未能解析当前 Bilibili 视频');
+      const msg = isBili ? '未能解析当前 Bilibili 视频' : '当前歌曲的插件未提供 MV';
+      error.value = msg;
+      throw new Error(msg);
     }
 
-    const headers = withBilibiliHeaders(videoSource.headers, videoSource.userAgent);
+    const headers = isBili
+      ? withBilibiliHeaders(videoSource.headers, videoSource.userAgent)
+      : mergedPluginHeaders(videoSource);
     const candidates = [videoSource.url, ...(videoSource.backupUrls || [])];
     let downloadedPath = '';
     let lastDownloadError: unknown = null;
@@ -271,7 +309,7 @@ export function useBilibiliVideoBackground() {
       sourceSongPath.value = '';
       const message = lastDownloadError instanceof Error ? lastDownloadError.message : String(lastDownloadError || '');
       error.value = message;
-      throw new Error(message ? `背景视频加载失败：${message}` : '背景视频加载失败');
+      throw new Error(message ? `MV 加载失败：${message}` : 'MV 加载失败');
     }
 
     cachedVideoPath.value = downloadedPath;

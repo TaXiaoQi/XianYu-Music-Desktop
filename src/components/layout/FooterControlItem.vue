@@ -80,6 +80,11 @@ const ctx = inject<{
   isPluginSong: Ref<boolean>;
   showComment: Ref<boolean>;
   toggleComment: () => void;
+  // MV
+  mvSupport: (song: Song | null | undefined) => boolean;
+  mvActive: Ref<boolean>;
+  mvLoading: Ref<boolean>;
+  toggleMv: () => Promise<void>;
 }>('footerContext')!;
 
 // 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
@@ -127,6 +132,10 @@ const {
   isPluginSong,
   showComment,
   toggleComment,
+  mvSupport,
+  mvActive,
+  mvLoading,
+  toggleMv,
 } = ctx;
 
 const downloadQualityListRef = ref<HTMLElement | null>(null);
@@ -530,6 +539,29 @@ watch(
       title="当前歌曲不支持评论（仅插件在线歌曲可用）"
     >
       <FooterControlIcon item-key="comment" class="h-4 w-4" />
+    </button>
+  </div>
+
+  <!-- MV：播放当前歌曲的 MV 背景视频 -->
+  <div v-else-if="itemKey === 'mv'" class="relative flex items-center justify-center h-full z-[70]">
+    <button
+      v-if="mvSupport(currentSong)"
+      @click="toggleMv"
+      class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+      :class="mvActive || mvLoading
+        ? 'text-[#EC4141] bg-[#EC4141]/10'
+        : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+      :title="mvActive ? '关闭 MV' : (mvLoading ? 'MV 加载中…' : '开启 MV')"
+    >
+      <FooterControlIcon item-key="mv" class="h-4 w-4" />
+    </button>
+    <button
+      v-else
+      class="w-8 h-8 flex items-center justify-center rounded-full opacity-40 cursor-not-allowed"
+      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-600 dark:text-white/60'"
+      title="当前歌曲不支持 MV（仅插件在线歌曲可用）"
+    >
+      <FooterControlIcon item-key="mv" class="h-4 w-4" />
     </button>
   </div>
 </template>

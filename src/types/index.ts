@@ -312,7 +312,8 @@ export type FooterItemKey =
   | 'volume'          // 音量
   | 'equalizer'       // 均衡器
   | 'playlist'        // 播放队列
-  | 'comment';        // 评论区
+  | 'comment'         // 评论区
+  | 'mv';             // MV 背景视频
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';
