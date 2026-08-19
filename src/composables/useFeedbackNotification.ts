@@ -17,6 +17,7 @@ interface FeedbackNotificationRaw {
   status: string;
   resolve_note: string;
   reject_reason: string;
+  resolve_images: string[];
   replied_at: string;
   updated_at: string;
 }
@@ -77,6 +78,7 @@ export function useFeedbackNotification() {
           type: isRejected ? 'warning' : 'info',
           date: formatDate(item.replied_at),
           updatedAt: item.updated_at,
+          images: isRejected ? [] : (Array.isArray(item.resolve_images) ? item.resolve_images : []),
         };
         currentNotificationId.value = item.id;
         feedbackVisible.value = true;

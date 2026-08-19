@@ -26,24 +26,21 @@ export const freqsPreset = [
 // 新增均衡器预设（均衡衍生预设）
 export { advancedEqPresets } from './advancedEffects'
 
-// 卷积混响预设。
+// 卷积混响预设（环境类精简集，参考主流专业音频软件的空间命名）。
 // dry/wet 即干声/湿声百分比（0~100），与音效面板滑杆单位一致：wet 作为混响尾音的
-// 混合占比（约 20~60 为宜），dry 保持节目清晰度（约 70~95）。数值过大（>100）会
-// 放大信号导致破音，这里预置值均控制在安全范围内，Rust 侧另有 [0,1] 夹取兜底。
+// 混合占比，dry 保持节目清晰度。wet 按"空间越大越湿"拉开梯度，使每个预设的效果
+// 与名称空间感对应：教堂最大最湿，小房间最干，电话为带通特性（干声压到最低以突出
+// 电话音色）。数值过大（>100）会放大信号导致破音，均在安全范围，Rust 侧另有 [0,1]
+// 夹取兜底。注意：source 仅作说明；实际 IR 由 Rust 按 label 编译期 include_bytes 加载。
 export const convolutions = [
-  { name: '电话', label: 'phone', dry: 15, wet: 55, source: 'filter-telephone.wav' },
-  { name: '教堂', label: 'church', dry: 70, wet: 60, source: 's2_r4_bd.wav' },
-  { name: '大厅', label: 'hall', dry: 80, wet: 45, source: 'bright-hall.wav' },
-  { name: '电影院', label: 'cinema', dry: 75, wet: 50, source: 'cinema-diningroom.wav' },
-  { name: '餐厅', label: 'restaurant', dry: 80, wet: 40, source: 'dining-living-true-stereo.wav' },
-  { name: '卫生间', label: 'bathroom', dry: 85, wet: 35, source: 'living-bedroom-leveled.wav' },
-  { name: '室内', label: 'room', dry: 88, wet: 30, source: 'spreader50-65ms.wav' },
-  { name: '立体声', label: 'stereo', dry: 95, wet: 20, source: 's3_r1_bd.wav' },
-  { name: '矩阵混响（1）', label: 'matrixReverb1', dry: 85, wet: 35, source: 'matrix-reverb1.wav' },
-  { name: '矩阵混响（2）', label: 'matrixReverb2', dry: 82, wet: 40, source: 'matrix-reverb2.wav' },
-  { name: '心形扩散', label: 'cardioidSpread', dry: 92, wet: 25, source: 'cardiod-35-10-spread.wav' },
-  { name: '磁性立体声', label: 'magneticStereo', dry: 95, wet: 15, source: 'tim-omni-35-10-magnetic.wav' },
-  { name: '反馈抑制', label: 'feedbackSuppressor', dry: 90, wet: 25, source: 'feedback-spring.wav' },
+  { name: '教堂', label: 'church', dry: 55, wet: 65, source: 's3_r1_bd.wav' },
+  { name: '大厅', label: 'hall', dry: 62, wet: 60, source: 'bright-hall.wav' },
+  { name: '电影院', label: 'cinema', dry: 68, wet: 52, source: 'cinema-diningroom.wav' },
+  { name: '餐厅', label: 'restaurant', dry: 74, wet: 44, source: 'dining-living-true-stereo.wav' },
+  { name: '弹簧混响', label: 'feedbackSuppressor', dry: 78, wet: 38, source: 'feedback-spring.wav' },
+  { name: '起居室', label: 'bathroom', dry: 82, wet: 32, source: 'living-bedroom-leveled.wav' },
+  { name: '房间', label: 'room', dry: 86, wet: 25, source: 'medium-room1.wav' },
+  { name: '电话', label: 'phone', dry: 20, wet: 60, source: 'filter-telephone.wav' },
 ] as const
 
 // 算法混响预设（程序生成 IR，无需音频文件）

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { X, Clock, Trash2, Flame } from 'lucide-vue-next';
-import { computed, onMounted, onUnmounted, provide, ref } from 'vue';
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
@@ -77,15 +77,68 @@ const hotSearchLoading = ref(false);
 let hotSearchLoadedAt = 0;
 const HOT_SEARCH_CACHE_MS = 5 * 60 * 1000;
 
+// 逐条渐进展示：面板保持完整形态，内容一条条浮现，避免等云端返回后整体跳动
+const revealedCount = ref(0);
+let revealTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearRevealTimer = () => {
+  if (revealTimer) {
+    clearTimeout(revealTimer);
+    revealTimer = null;
+  }
+};
+
+// 重置计数并让列表逐条出现（条数少也逐条，保证每次都有进入动画）
+// 首条做一点延迟，避免逐条下滑与面板整体淡入重叠、抢走"淡进淡出"的视觉
+const REVEAL_START_DELAY_MS = 140;
+const startReveal = (count: number) => {
+  clearRevealTimer();
+  revealedCount.value = 0;
+  if (count <= 0) return;
+  let i = 0;
+  const begin = () => {
+    i += 1;
+    revealedCount.value = i;
+    if (i < count) revealTimer = setTimeout(begin, 50);
+  };
+  revealTimer = setTimeout(begin, REVEAL_START_DELAY_MS);
+};
+
+const visibleHotList = computed(() => hotSearchList.value.slice(0, revealedCount.value));
+const visibleHistoryList = computed(() =>
+  navigationStore.searchHistory.slice(0, revealedCount.value),
+);
+
+// 切换 Tab：重新逐条出现当前 Tab 的内容
+const switchSearchTab = (tab: 'hot' | 'history') => {
+  searchTab.value = tab;
+  startReveal(tab === 'hot' ? hotSearchList.value.length : navigationStore.searchHistory.length);
+};
+
+// 搜索记录变化时（当前为记录 Tab）重新逐条出现
+watch(
+  () => navigationStore.searchHistory.length,
+  (count) => {
+    if (searchTab.value === 'history') startReveal(count);
+  },
+);
+
 const loadHotSearch = async () => {
   if (hotSearchLoading.value) return;
   const now = Date.now();
-  if (hotSearchList.value.length && now - hotSearchLoadedAt < HOT_SEARCH_CACHE_MS) return;
+  if (hotSearchList.value.length && now - hotSearchLoadedAt < HOT_SEARCH_CACHE_MS) {
+    // 缓存命中：直接复用数据，在热搜 Tab 下逐条浮现
+    if (searchTab.value === 'hot') startReveal(hotSearchList.value.length);
+    return;
+  }
   hotSearchLoading.value = true;
+  clearRevealTimer();
+  revealedCount.value = 0;
   const list = await fetchHotSearch(10);
   hotSearchList.value = list;
   hotSearchLoadedAt = Date.now();
   hotSearchLoading.value = false;
+  if (searchTab.value === 'hot') startReveal(list.length);
 };
 
 const handleInput = (e: Event) => {
@@ -102,6 +155,8 @@ const handleSearchEnter = () => {
 
 const handleSearchFocus = () => {
   showHistory.value = true;
+  // 每次重新打开面板都逐条出现当前 Tab 内容；热搜由 loadHotSearch 就绪后触发
+  if (searchTab.value === 'history') startReveal(navigationStore.searchHistory.length);
   void loadHotSearch();
 };
 
@@ -247,16 +302,16 @@ onUnmounted(() => {
 
       <!-- 搜索历史下拉（热搜 / 记录 双 Tab） -->
       <Transition name="search-history-fade">
-        <div v-if="showHistory" @mousedown.prevent class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-72 overflow-y-auto overflow-x-hidden">
+        <div v-if="showHistory" @mousedown.prevent class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 h-72 overflow-y-auto overflow-x-hidden">
           <!-- 顶部 Tab 切换：热搜左 / 记录右 -->
           <div class="px-3 pt-2 pb-1.5 border-b border-black/5 dark:border-white/5 flex items-center gap-1 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
             <button
-              @click="searchTab = 'hot'"
+              @click="switchSearchTab('hot')"
               :class="searchTab === 'hot' ? 'bg-[#EC4141]/10 text-[#EC4141] font-medium' : 'text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70'"
               class="px-3 py-1 rounded-full text-xs transition-colors cursor-pointer"
             >{{ t('topbar.hotSearch') }}</button>
             <button
-              @click="searchTab = 'history'"
+              @click="switchSearchTab('history')"
               :class="searchTab === 'history' ? 'bg-[#EC4141]/10 text-[#EC4141] font-medium' : 'text-black/50 dark:text-white/50 hover:text-black/70 dark:hover:text-white/70'"
               class="px-3 py-1 rounded-full text-xs transition-colors cursor-pointer"
             >{{ t('topbar.history') }}</button>
@@ -274,18 +329,20 @@ onUnmounted(() => {
             <div v-else-if="!hotSearchList.length" class="px-3 py-4 text-center text-xs text-black/40 dark:text-white/40">
               {{ t('topbar.hotSearchEmpty') }}
             </div>
-            <button
-              v-for="(item, index) in hotSearchList"
-              :key="item.keyword"
-              class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center gap-2 cursor-pointer transition-colors group"
-              @click="handleSelectHistory(item.keyword)"
-            >
-              <span
-                :class="index < 3 ? 'text-[#EC4141]' : 'text-black/30 dark:text-white/30'"
-                class="w-4 shrink-0 text-center text-xs font-bold"
-              >{{ index + 1 }}</span>
-              <span class="truncate">{{ item.keyword }}</span>
-            </button>
+            <TransitionGroup v-else tag="div" name="hot-reveal">
+              <button
+                v-for="(item, index) in visibleHotList"
+                :key="item.keyword"
+                class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center gap-2 cursor-pointer transition-colors group"
+                @click="handleSelectHistory(item.keyword)"
+              >
+                <span
+                  :class="index < 3 ? 'text-[#EC4141]' : 'text-black/30 dark:text-white/30'"
+                  class="w-4 shrink-0 text-center text-xs font-bold"
+                >{{ index + 1 }}</span>
+                <span class="truncate">{{ item.keyword }}</span>
+              </button>
+            </TransitionGroup>
           </div>
 
           <!-- 记录页 -->
@@ -303,20 +360,26 @@ onUnmounted(() => {
             <div v-if="!navigationStore.searchHistory.length" class="px-3 py-4 text-center text-xs text-black/40 dark:text-white/40">
               {{ t('topbar.historyEmpty') }}
             </div>
-            <button
-              v-for="item in navigationStore.searchHistory"
-              :key="item"
-              class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
-              @click="handleSelectHistory(item)"
+            <TransitionGroup
+              v-else
+              tag="div"
+              name="hot-reveal"
             >
-              <span class="truncate">{{ item }}</span>
-              <span
-                class="text-black/30 dark:text-white/30 group-hover:text-[#EC4141] p-0.5 shrink-0 transition-colors"
-                @click.stop="handleRemoveHistory($event, item)"
+              <button
+                v-for="item in visibleHistoryList"
+                :key="item"
+                class="w-full text-left px-3 py-1.5 text-sm text-black/70 dark:text-white/70 hover:text-[#EC4141] hover:bg-[#EC4141]/5 dark:hover:bg-[#EC4141]/10 flex items-center justify-between gap-2 cursor-pointer transition-colors group"
+                @click="handleSelectHistory(item)"
               >
-                <X class="h-3 w-3" />
-              </span>
-            </button>
+                <span class="truncate">{{ item }}</span>
+                <span
+                  class="text-black/30 dark:text-white/30 group-hover:text-[#EC4141] p-0.5 shrink-0 transition-colors"
+                  @click.stop="handleRemoveHistory($event, item)"
+                >
+                  <X class="h-3 w-3" />
+                </span>
+              </button>
+            </TransitionGroup>
           </div>
         </div>
       </Transition>
@@ -360,6 +423,15 @@ onUnmounted(() => {
 
 .search-history-fade-enter-from,
 .search-history-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.hot-reveal-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.hot-reveal-enter-from {
   opacity: 0;
   transform: translateY(-4px);
 }

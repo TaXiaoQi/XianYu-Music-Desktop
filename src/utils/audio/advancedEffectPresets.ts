@@ -19,19 +19,17 @@ export interface AlgorithmicReverbPreset {
   decay: number      // 衰减幂（越大衰减越快）
   type: 'hall' | 'room' | 'plate' | 'spring' | 'tunnel' | 'valley' | 'metal'
   preDelay: number   // 预延迟（秒）
+  dry: number        // 干声百分比（0~100），作为增益条默认值
+  wet: number        // 湿声百分比（0~100），作为增益条默认值
   description: string
 }
 
 export const algorithmicReverbs: AlgorithmicReverbPreset[] = [
-  { name: '小型录音棚', label: 'algoStudio',    duration: 1.2, decay: 2.5, type: 'room',   preDelay: 0.01,  description: '紧凑温暖的录音棚声学环境' },
-  { name: '巨型音乐厅', label: 'algoHall',      duration: 4.5, decay: 1.5, type: 'hall',   preDelay: 0.03,  description: '宏大明亮的音乐厅空间感' },
-  { name: '密闭浴室',   label: 'algoBathroom',  duration: 0.8, decay: 3.5, type: 'room',   preDelay: 0.005, description: '明亮短促的硬表面反射' },
-  { name: '隧道',       label: 'algoTunnel',    duration: 5.5, decay: 1.2, type: 'tunnel', preDelay: 0.02,  description: '长长的回声通道密集反射' },
-  { name: '山谷回声',   label: 'algoValley',    duration: 6.0, decay: 1.0, type: 'valley', preDelay: 0.05,  description: '开阔山野的离散回声' },
-  { name: '金属腔体',   label: 'algoMetal',     duration: 2.5, decay: 2.0, type: 'metal',  preDelay: 0.01,  description: '金属共鸣腔体的明亮振铃' },
-  { name: '板式混响',   label: 'algoPlate',     duration: 2.8, decay: 2.0, type: 'plate',  preDelay: 0.015, description: '经典金属板混响明亮密集' },
-  { name: '弹簧混响',   label: 'algoSpring',    duration: 1.8, decay: 2.5, type: 'spring', preDelay: 0.008, description: '复古弹簧混响摇滚专用' },
-  { name: '预延迟混响', label: 'algoPreDelay',  duration: 3.0, decay: 1.8, type: 'hall',   preDelay: 0.12,  description: '可调预延迟适配人声纯音乐' },
+  { name: '小房间', label: 'algoRoom',    duration: 1.0, decay: 3.0, type: 'room',   preDelay: 0.005, dry: 82, wet: 34, description: '短促紧实的密闭空间' },
+  { name: '大厅',   label: 'algoHall',    duration: 4.5, decay: 1.5, type: 'hall',   preDelay: 0.03,  dry: 68, wet: 54, description: '尾音悠长、明亮开阔的音乐厅' },
+  { name: '暖房',   label: 'algoChamber', duration: 2.5, decay: 2.0, type: 'room',   preDelay: 0.01,  dry: 76, wet: 42, description: '温暖偏暗的中型空间' },
+  { name: '隧道',   label: 'algoTunnel',  duration: 5.5, decay: 1.2, type: 'tunnel', preDelay: 0.02,  dry: 72, wet: 48, description: '窄长通道的密集回声' },
+  { name: '山谷',   label: 'algoValley',  duration: 6.0, decay: 1.0, type: 'valley', preDelay: 0.05,  dry: 62, wet: 58, description: '开阔山野的超长回声' },
 ]
 
 // ==================== 算法混响 IR 生成器 ====================

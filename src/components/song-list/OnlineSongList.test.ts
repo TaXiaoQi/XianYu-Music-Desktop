@@ -9,8 +9,11 @@ describe('online song list header', () => {
     expect(onlineSongListSource).not.toContain('<thead');
   });
 
-  it('shows the search result heading row only for the local source', () => {
-    expect(searchSource).toContain('v-if="isLocalSource"');
+  it('uses SongTable as the container for the online track search list', () => {
+    // 音乐 tab 使用 SongTable 作为容器，内容仍为在线搜索结果（onlineTrackSongs）
+    expect(searchSource).toContain('<SongTable');
+    expect(searchSource).toContain('onlineTrackSongs');
+    expect(searchSource).not.toContain('myPlaylistsSongs');
     expect(searchSource).not.toContain('<thead');
     expect(searchSource).not.toContain('<th v-if="isLocalSource"');
     expect(searchSource).not.toContain('<td v-if="isLocalSource"');

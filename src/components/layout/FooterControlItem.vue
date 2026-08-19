@@ -258,7 +258,7 @@ watch(
         item-key="download"
         :loading="isOnlineSong && isDownloading"
         :completed="!isOnlineSong || Boolean(downloadedRecord)"
-        class="h-5 w-5"
+        :class="isOnlineSong && isDownloading ? 'h-6 w-6' : 'h-5 w-5'"
       />
     </button>
 

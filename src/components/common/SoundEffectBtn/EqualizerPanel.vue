@@ -25,15 +25,18 @@ const tabs = [
 const reverbItems = convolutions.map(c => ({
   label: c.label,
   name: c.name,
-  active: computed(() => store.activeConvolution === c.label),
+  // 自定义模式下不点亮基准预设，只点亮"自定义"项
+  active: computed(() => !store.convIsCustom && store.activeConvolution === c.label),
 }));
+const customConvolutionActive = computed(() => store.convIsCustom && store.activeConvolution != null);
 
 // ===== 算法混响 =====
 const algoReverbItems = algorithmicReverbs.map(ar => ({
   label: ar.label,
   name: ar.name,
-  active: computed(() => store.activeAlgoReverb === ar.label),
+  active: computed(() => !store.algoIsCustom && store.activeAlgoReverb === ar.label),
 }));
+const customAlgoReverbActive = computed(() => store.algoIsCustom && store.activeAlgoReverb != null);
 
 const handleReverbToggle = (label: string) => {
   store.toggleConvolution(label);
@@ -41,6 +44,19 @@ const handleReverbToggle = (label: string) => {
 
 const handleAlgoReverbToggle = (label: string) => {
   store.toggleAlgoReverb(label);
+};
+
+const handleConvolutionCustom = () => {
+  store.toggleConvolutionCustom();
+};
+
+const handleAlgoReverbCustom = () => {
+  store.toggleAlgoReverbCustom();
+};
+
+// 用户拖动增益条时自动切入"自定义"模式并保存（仅监听 input 拖动，不触发初始化）
+const handleReverbGainInput = () => {
+  store.markCustomReverbGain();
 };
 
 // ===== 均衡器 =====
@@ -170,6 +186,15 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                         >
                           {{ item.name }}
                         </label>
+                        <label
+                          class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
+                          :class="customConvolutionActive
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                          @click.prevent="handleConvolutionCustom"
+                        >
+                          自定义
+                        </label>
                       </div>
                     </section>
 
@@ -191,6 +216,15 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                         >
                           {{ item.name }}
                         </label>
+                        <label
+                          class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
+                          :class="customAlgoReverbActive
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                          @click.prevent="handleAlgoReverbCustom"
+                        >
+                          自定义
+                        </label>
                       </div>
                     </section>
 
@@ -198,12 +232,12 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                     <div class="space-y-3 rounded-xl border border-gray-200/70 bg-white/40 p-4 dark:border-white/10 dark:bg-white/5">
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">原始增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain" @input="handleReverbGainInput">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.originalGain }}%</span>
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环境增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain" @input="handleReverbGainInput">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.envGain }}%</span>
                       </div>
                     </div>

@@ -7,7 +7,6 @@ import { songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useSettings } from '../../features/settings/useSettings';
 import { useRoute, useRouter } from 'vue-router';
-import QualityBadge from '../common/QualityBadge.vue';
 import { INDEX_KEYS } from '../../utils/alphabetIndex';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
@@ -21,9 +20,13 @@ import { useSongTableAlphabetIndex } from '../../composables/useSongTableAlphabe
 import { useSongTableLibraryState } from '../../features/library/useSongTableLibraryState';
 import { useLibraryStore } from '../../features/library/store';
 import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
-import { getSongSourceLabel } from '../../utils/remoteSong';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
 import { getDownloadRecord, loadDownloadHistory } from '../../services/downloadHistory';
+import { CircleCheck, Download } from 'lucide-vue-next';
+import { useDownloadStore } from '../../features/download/store';
+import { downloadToLocal } from '../../composables/useDownloadToLocal';
+import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { getSongSourceLabel } from '../../utils/remoteSong';
 
 /** 在线歌曲：路径以 lx:// 或 plugin:// 开头 */
 const isOnlineSong = (song: Song) => {
@@ -31,18 +34,10 @@ const isOnlineSong = (song: Song) => {
   return path.startsWith('lx://') || path.startsWith('plugin://');
 };
 
-/** 在线歌曲无本地元数据时，显示默认音质标记（HQ） */
-const onlineQualityLabel = (song: Song) => {
-  // 若有本地元数据，QualityBadge 会自动渲染，无需回退
-  if (song.bitrate || song.format || song.codec || song.container) return '';
-  // 有音质档位时由 QualityBadge 渲染 12 档标签，不再回退到 HQ
-  if (getOnlineQualityKey(song)) return '';
-  // 在线歌曲默认显示 HQ（高品质）
-  return 'HQ';
-};
-
 /** 已下载的在线歌曲 path 集合（响应式，供模板同步判断） */
 const downloadedOnlinePaths = ref<Set<string>>(new Set());
+/** 已下载在线歌曲 path → 本地音乐文件格式（大写扩展名），供"下载完成替换为本地"容器展示真实音质 */
+const downloadedLocalFormats = ref<Map<string, string>>(new Map());
 let downloadedPathsRequestId = 0;
 const refreshDownloadedPaths = async (songs: Song[]) => {
   const requestId = ++downloadedPathsRequestId;
@@ -50,37 +45,51 @@ const refreshDownloadedPaths = async (songs: Song[]) => {
   if (requestId !== downloadedPathsRequestId) return;
 
   const set = new Set<string>();
+  const formats = new Map<string, string>();
   for (const song of songs) {
-    if (isOnlineSong(song) && getDownloadRecord(song.path)) {
-      set.add(song.path);
-    }
+    if (!isOnlineSong(song)) continue;
+    const record = getDownloadRecord(song.path);
+    if (!record) continue;
+    set.add(song.path);
+    const fileName = record.fileName ?? (record as { localPath?: string }).localPath ?? '';
+    const ext = localMusicFormatOf(fileName);
+    if (ext) formats.set(song.path, ext);
   }
   downloadedOnlinePaths.value = set;
+  downloadedLocalFormats.value = formats;
 };
-/** 已下载的在线歌曲不显示音质标记 */
-const shouldHideQualityBadge = (song: Song) =>
-  isOnlineSong(song) && downloadedOnlinePaths.value.has(song.path);
+
+/** 从本地文件名解析音乐格式（大写扩展名），无则返回空 */
+const localMusicFormatOf = (name: string) => {
+  const idx = name.lastIndexOf('.');
+  if (idx < 0 || idx === name.length - 1) return '';
+  return name.slice(idx + 1).toUpperCase();
+};
+
+/** 音质列展示的格式：本地容器中已下载的在线歌显示其真实本地音质，否则显示歌曲扩展名 */
+const displayedFormat = (song: Song) => {
+  if (props.downloadCompletedAsLocal && downloadedOnlinePaths.value.has(song.path)) {
+    return downloadedLocalFormats.value.get(song.path) || getSongExtension(song);
+  }
+  return getSongExtension(song);
+};
+
+const downloadStore = useDownloadStore();
+/** 判断歌曲是否正在下载（与底栏下载 UI 共用同一 store） */
+const isSongDownloading = (song: Song) =>
+  downloadStore.isDownloading && downloadStore.downloadingSongPath === song.path;
+
+/** 点击下载：走统一的下载至本地逻辑（与底栏/右键菜单一致） */
+const handleDownloadClick = (song: Song) => {
+  if (!isDownloadableOnlineSong(song)) return;
+  void downloadToLocal(song);
+};
 
 const { settings } = useSettings();
 const songClickAction = computed(() => settings.value.songClickAction || 'double');
 const libraryStore = useLibraryStore();
 const { libraryScanProgress, lastLibraryScanError } = storeToRefs(libraryStore);
-const { currentSong, isPlaying, formatDuration, currentPlayingQuality } = usePlaybackController();
-
-/**
- * 获取在线歌曲的音质档位：
- * - 当前正在播放的歌曲：使用实时解析的 currentPlayingQuality
- * - 其他在线歌曲：使用已缓存的 remote_actual_quality（搜索/详情页预解析时写入）
- * - 本地歌曲或未知：返回 undefined，QualityBadge 回退到文件元数据判断
- */
-const getOnlineQualityKey = (song: Song): string | undefined => {
-  if (!isOnlineSong(song)) return undefined;
-  // 当前播放歌曲优先使用实时音质
-  if (currentSong.value?.path === song.path && currentPlayingQuality.value) {
-    return currentPlayingQuality.value;
-  }
-  return song.remote_actual_quality;
-};
+const { currentSong, isPlaying, formatDuration } = usePlaybackController();
 
 const props = defineProps<{
   songs: Song[];
@@ -89,6 +98,16 @@ const props = defineProps<{
   isBatchMode: boolean;
   selectedPaths: Set<string>;
   memoryScopeKey: string;
+  /** 整页滚动模式：滚动由外层容器驱动，内部容器不产生滚动条（在线详情页与 header 一起滚动） */
+  pageScrollMode?: boolean;
+  /** 整页滚动模式下的外层滚动容器 */
+  scrollContainerRef?: HTMLElement | null;
+  /**
+   * 已下载在线歌曲的展示策略：
+   * true（我的收藏/最近播放/歌单等本地容器）时，下载完成的歌视为本地——音质列不占位且来源列显示"本地"；
+   * false（搜索/在线详情容器）时，下载完成显示与底栏一致的绿色对勾且来源列保留音源名。
+   */
+  downloadCompletedAsLocal?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -96,6 +115,7 @@ const emit = defineEmits<{
   (e: 'contextmenu', event: MouseEvent, song: Song): void;
   (e: 'update:selectedPaths', newSet: Set<string>): void;
   (e: 'drag-start', payload: { event: PointerEvent; song: Song; index: number }): void;
+  (e: 'load-more'): void;
 }>();
 
 const {
@@ -134,6 +154,10 @@ const rootRef = ref<HTMLElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
 const containerHeight = ref(600);
+/** 整页滚动模式下使用外层滚动容器，否则使用内部容器 */
+const activeScrollContainer = computed(() =>
+  props.pageScrollMode ? (props.scrollContainerRef ?? null) : containerRef.value,
+);
 const loadedSongCount = ref(0);
 const isScrollbarHot = ref(false);
 const isScrollbarScrolling = ref(false);
@@ -174,8 +198,8 @@ const sourceSongCount = computed(() => props.songPaths?.length ?? props.songs.le
 const resetLoadedSongCount = () => {
   loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
   scrollTop.value = 0;
-  if (containerRef.value) {
-    containerRef.value.scrollTop = 0;
+  if (activeScrollContainer.value) {
+    activeScrollContainer.value.scrollTop = 0;
   }
 };
 
@@ -231,11 +255,19 @@ watch(() => props.songPaths ?? props.songs, (items) => {
     return;
   }
 
+  // 追加场景（列表变长且首项未变，如搜索分页加载更多）：保留滚动位置，仅扩展已加载段
+  const isAppend = len > prevSongsLen && firstPath === prevFirstPath && prevSongsLen >= 0;
+
   prevSongsLen = len;
   prevFirstPath = firstPath;
   prevLastPath = lastPath;
-  resetLoadedSongCount();
+  if (isAppend) {
+    loadedSongCount.value = Math.min(sourceSongCount.value, Math.max(loadedSongCount.value, getSegmentBatchSize()));
+  } else {
+    resetLoadedSongCount();
+  }
   downloadedOnlinePaths.value = new Set();
+  downloadedLocalFormats.value = new Map();
 }, { immediate: true });
 
 const tableViewportKey = computed(() =>
@@ -303,14 +335,14 @@ const loadVisibleSongComments = (songs: Song[]) => {
 };
 
 const syncScrollTopFromContainer = () => {
-  if (containerRef.value) {
-    scrollTop.value = containerRef.value.scrollTop;
+  if (activeScrollContainer.value) {
+    scrollTop.value = activeScrollContainer.value.scrollTop;
   }
 };
 
 const updateContainerHeight = () => {
-  if (containerRef.value) {
-    containerHeight.value = containerRef.value.clientHeight;
+  if (activeScrollContainer.value) {
+    containerHeight.value = activeScrollContainer.value.clientHeight;
   }
   ensureViewportSegmentFilled();
 };
@@ -392,18 +424,18 @@ const restoreActiveViewportCovers = async () => {
 };
 
 const saveViewportCoverSnapshot = (key = tableViewportKey.value) => {
-  if (!key || !containerRef.value) {
+  if (!key || !activeScrollContainer.value) {
     return;
   }
 
-  const containerRect = containerRef.value.getBoundingClientRect();
-  const viewportBuffer = containerRef.value.clientHeight;
+  const containerRect = activeScrollContainer.value.getBoundingClientRect();
+  const viewportBuffer = activeScrollContainer.value.clientHeight;
   const snapshotTop = containerRect.top - viewportBuffer;
   const snapshotBottom = containerRect.bottom + viewportBuffer;
   const snapshot: string[] = [];
   const seenPaths = new Set<string>();
 
-  containerRef.value.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
+  activeScrollContainer.value.querySelectorAll<HTMLElement>('[data-cover-path]').forEach((element) => {
     if (snapshot.length >= VIEWPORT_SNAPSHOT_LIMIT) {
       return;
     }
@@ -437,7 +469,7 @@ const saveViewportCoverSnapshot = (key = tableViewportKey.value) => {
 const {
   saveScrollPosition,
   restoreScrollPosition,
-} = useListScrollMemory(tableViewportKey, containerRef);
+} = useListScrollMemory(tableViewportKey, activeScrollContainer);
 
 const virtualData = computed(() => {
   const songs = Array.isArray(segmentedSongs.value) ? segmentedSongs.value : [];
@@ -478,12 +510,12 @@ const showScrollbarDuringScroll = () => {
 };
 
 const syncScrollbarHotZone = (event: MouseEvent | PointerEvent) => {
-  if (!containerRef.value) {
+  if (!activeScrollContainer.value) {
     isScrollbarHot.value = false;
     return;
   }
 
-  const rect = containerRef.value.getBoundingClientRect();
+  const rect = activeScrollContainer.value.getBoundingClientRect();
   isScrollbarHot.value = isPointerNearVerticalScrollbar(event.clientX, rect, DEFAULT_SCROLLBAR_HOT_ZONE_PX);
 };
 
@@ -504,6 +536,10 @@ const onScroll = (event: Event) => {
   scrollTop.value = target.scrollTop;
   if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * SCROLL_TRIGGER_ROWS) {
     loadNextSongSegment();
+    // 已渲染完当前提供的全部歌曲仍接近底部时，通知父组件加载更多（如在线搜索分页）
+    if (loadedSongCount.value >= sourceSongCount.value) {
+      emit('load-more');
+    }
   }
   showScrollbarDuringScroll();
 };
@@ -533,7 +569,7 @@ const {
   songs: segmentedSongs,
   scrollTop,
   containerHeight,
-  containerRef,
+  containerRef: activeScrollContainer,
   rootRef,
   routePath: computed(() => route.path),
   currentViewMode,
@@ -545,6 +581,16 @@ const {
   refreshFolder,
   expandFolderPath,
 });
+
+// 整页滚动模式：滚动发生在外层容器，动态监听其 scroll 事件驱动虚拟滚动
+watch(
+  () => props.scrollContainerRef,
+  (el, oldEl) => {
+    if (oldEl) oldEl.removeEventListener('scroll', onScroll);
+    if (el) el.addEventListener('scroll', onScroll, { passive: true });
+  },
+  { immediate: true },
+);
 
 watch(
   () => virtualData.value.items,
@@ -794,14 +840,18 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 <template>
   <div
     ref="rootRef"
-    class="flex-1 min-h-0 min-w-0 relative overflow-x-hidden"
+    class="min-w-0 relative overflow-x-hidden"
+    :class="{ 'flex-1 min-h-0': !pageScrollMode }"
     @pointermove="handleSongTablePointerMove"
     @mouseleave="handleSongTableMouseLeave"
   >
     <div
       ref="containerRef"
-      class="h-full overflow-y-auto overflow-x-hidden pl-2.5 pb-8 custom-scrollbar song-list-scroll-container"
-      :class="{ 'song-list-scrollbar-active': isScrollbarActive }"
+      class="overflow-x-hidden pl-2.5 pb-8 custom-scrollbar song-list-scroll-container"
+      :class="{
+        'h-full overflow-y-auto': !pageScrollMode,
+        'song-list-scrollbar-active': isScrollbarActive,
+      }"
       @scroll="onScroll"
     >
       <div class="w-full relative">
@@ -870,22 +920,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
               >（{{ getSongComment(song) }}）</span>
             </div>
             <div class="flex items-center gap-1.5 text-xs text-gray-900 dark:text-gray-100 leading-snug">
-              <QualityBadge
-                v-if="settings.showQualityBadges && !shouldHideQualityBadge(song)"
-                class="shrink-0"
-                :bitrate="song.bitrate || 0"
-                :sample-rate="song.sample_rate || 0"
-                :bit-depth="song.bit_depth || 0"
-                :format="song.format || ''"
-                :codec="song.codec || ''"
-                :container="song.container || ''"
-                :quality-key="getOnlineQualityKey(song)"
-              />
-              <!-- 在线歌曲无本地元数据时显示默认 HQ 音质标记（已下载的在线歌曲不显示） -->
-              <span
-                v-if="settings.showQualityBadges && !shouldHideQualityBadge(song) && isOnlineSong(song) && onlineQualityLabel(song)"
-                class="shrink-0 text-[7px] font-bold border px-0.5 rounded-[3px] select-none flex items-center justify-center h-[12px] leading-none bg-orange-100 text-orange-800 border-transparent dark:bg-orange-500/20 dark:text-orange-300 dark:border-transparent"
-              >{{ onlineQualityLabel(song) }}</span>
               <!-- 歌手名 -->
               <span v-if="currentViewMode === 'album'" class="truncate flex items-center gap-1 flex-wrap" :title="song.artist">
                 <template v-for="(artistName, artistIndex) in getClickableArtistNames(song)" :key="`${song.path}-${artistName}`">
@@ -903,20 +937,41 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             {{ song.album }}
           </div>
 
-          <div class="w-14 shrink-0 truncate text-center text-xs font-mono text-gray-500 dark:text-white/50" :title="getSongExtension(song)">
-            {{ getSongExtension(song) }}
-          </div>
-
-          <!-- 来源/本地标签（最右侧） -->
-          <div class="shrink-0 flex items-center">
-            <span
-              v-if="isOnlineSong(song)"
-              class="rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-            >{{ getSongSourceLabel(song) }}</span>
-            <span
-              v-else
-              class="rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
-            >本地</span>
+          <!-- 音质/格式列：在线歌曲显示下载状态（下载中圆环 / 未下载按钮）；本地容器中已下载的歌展示本地真实音质；在线容器中已下载显示绿色对勾 -->
+          <div class="w-16 shrink-0 flex items-center justify-center gap-1 text-center text-xs font-mono text-gray-500 dark:text-white/50">
+            <span class="min-w-0 truncate" :title="displayedFormat(song)">{{ displayedFormat(song) }}</span>
+            <template v-if="isOnlineSong(song)">
+              <div
+                v-if="isSongDownloading(song)"
+                class="relative h-5 w-5 shrink-0 text-[#EC4141]"
+                :title="`下载中 ${Math.floor(downloadStore.progress)}%`"
+              >
+                <svg class="h-full w-full -rotate-90" viewBox="0 0 20 20">
+                  <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-opacity="0.15" stroke-width="4" />
+                  <circle
+                    cx="10" cy="10" r="7" fill="none" stroke="currentColor"
+                    stroke-width="4" stroke-linecap="round"
+                    :stroke-dasharray="43.98"
+                    :stroke-dashoffset="43.98 * (1 - downloadStore.progress / 100)"
+                    class="transition-[stroke-dashoffset] duration-150"
+                  />
+                </svg>
+              </div>
+              <CircleCheck
+                v-else-if="!downloadCompletedAsLocal && downloadedOnlinePaths.has(song.path)"
+                class="h-4 w-4 shrink-0 text-emerald-500"
+                :title="`已下载：${song.title || song.name}`"
+              />
+              <button
+                v-else-if="!downloadedOnlinePaths.has(song.path)"
+                type="button"
+                class="shrink-0 text-gray-400 dark:text-white/40 hover:text-[#EC4141] transition-colors cursor-pointer"
+                :title="`下载：${song.title || song.name}`"
+                @click.stop="handleDownloadClick(song)"
+              >
+                <Download class="h-3.5 w-3.5" />
+              </button>
+            </template>
           </div>
 
           <div class="shrink-0 flex items-center gap-3 text-xs font-mono text-gray-900 dark:text-gray-100" :class="{ 'opacity-20 pointer-events-none': dragSession.active }">
@@ -925,6 +980,19 @@ const getRowStyle = (songIndex: number, songPath: string) => {
               <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 dark:text-white/40 hover:text-gray-600 dark:hover:text-white opacity-0 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
             </button>
             <span class="w-10 text-right">{{ formatDuration(song.duration) }}</span>
+          </div>
+
+          <!-- 来源标签：在线容器始终显示音源名（下载完成也保留）；本地容器中已下载或在读本地歌曲显示"本地" -->
+          <div class="w-16 shrink-0 flex items-center justify-center">
+            <span
+              v-if="isOnlineSong(song) && !(downloadCompletedAsLocal && downloadedOnlinePaths.has(song.path))"
+              class="max-w-full truncate rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
+              :title="getSongSourceLabel(song)"
+            >{{ getSongSourceLabel(song) }}</span>
+            <span
+              v-else
+              class="whitespace-nowrap rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
+            >本地</span>
           </div>
         </div>
 
@@ -1044,42 +1112,48 @@ const getRowStyle = (songIndex: number, songPath: string) => {
       </div>
     </div>
 
-    <div class="absolute right-6 bottom-6 z-30 grid grid-cols-[36px_36px] gap-3">
-      <div class="h-9 w-9">
-        <transition name="locate-fab">
-          <button
-            v-if="settings.enableScrollToTopButton && showScrollToTopButton"
-            type="button"
-            class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-[#ec4141] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] dark:hover:bg-gray-800 dark:hover:text-[#ec4141]"
-            title="回到顶部"
-            @click="scrollToTop"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12l7-7 7 7M12 5v14" />
-            </svg>
-          </button>
-        </transition>
-      </div>
+    <!-- target 未就绪时 disabled 就地渲染，避免 Teleport null target 触发 Vue patch 崩溃 -->
+    <Teleport
+      :disabled="!pageScrollMode || !scrollContainerRef"
+      :to="pageScrollMode ? scrollContainerRef : undefined"
+    >
+      <div class="absolute right-6 bottom-6 z-30 grid grid-cols-[36px_36px] gap-3">
+        <div class="h-9 w-9">
+          <transition name="locate-fab">
+            <button
+              v-if="settings.enableScrollToTopButton && showScrollToTopButton"
+              type="button"
+              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-[#ec4141] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)] dark:hover:bg-gray-800 dark:hover:text-[#ec4141]"
+              title="回到顶部"
+              @click="scrollToTop"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12l7-7 7 7M12 5v14" />
+              </svg>
+            </button>
+          </transition>
+        </div>
 
-      <div class="h-9 w-9">
-        <transition name="locate-fab">
-          <button
-            v-if="showLocateCurrentSongButton"
-            type="button"
-            class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
-            :class="canLocateCurrentSong ? 'hover:bg-white dark:hover:bg-gray-800 hover:text-[#ec4141] dark:hover:text-[#ec4141] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer' : 'opacity-40 cursor-not-allowed'"
-            :disabled="!canLocateCurrentSong"
-            title="定位当前播放歌曲"
-            @click="scrollToCurrentSong"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
-              <circle cx="12" cy="12" r="3.25" stroke-width="1.8" />
-            </svg>
-          </button>
-        </transition>
+        <div class="h-9 w-9">
+          <transition name="locate-fab">
+            <button
+              v-if="showLocateCurrentSongButton"
+              type="button"
+              class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200/50 bg-white/80 text-gray-500 shadow-[0_4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-all duration-300 dark:border-white/10 dark:bg-black/50 dark:text-gray-400 dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+              :class="canLocateCurrentSong ? 'hover:bg-white dark:hover:bg-gray-800 hover:text-[#ec4141] dark:hover:text-[#ec4141] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] cursor-pointer' : 'opacity-40 cursor-not-allowed'"
+              :disabled="!canLocateCurrentSong"
+              title="定位当前播放歌曲"
+              @click="scrollToCurrentSong"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+                <circle cx="12" cy="12" r="3.25" stroke-width="1.8" />
+              </svg>
+            </button>
+          </transition>
+        </div>
       </div>
-    </div>
+    </Teleport>
 
     <Teleport to="body">
       <transition name="index-bubble">
