@@ -2249,6 +2249,9 @@ export async function pluginGetMusicComments(
 
 // ==================== 辅助函数 ====================
 
+// 正在加载中的插件实例 Promise 缓存，避免并发加载同一插件时互相销毁沙箱导致加载失败
+const pendingPluginInstances = new Map<string, Promise<PluginInstance | null>>();
+
 /**
  * 确保插件实例已加载到内存中
  */
@@ -2259,6 +2262,20 @@ async function ensurePluginInstance(source: PluginSource): Promise<PluginInstanc
     return inst;
   }
 
+  // 并发保护：同一插件正在加载时共享同一个 Promise，避免重复加载互相干扰
+  const pending = pendingPluginInstances.get(source.id);
+  if (pending) return pending;
+
+  const promise = loadPluginInstance(source);
+  pendingPluginInstances.set(source.id, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingPluginInstances.delete(source.id);
+  }
+}
+
+async function loadPluginInstance(source: PluginSource): Promise<PluginInstance | null> {
   log(`插件实例未缓存，重新加载: ${source.name} (${source.filePath})`);
 
   try {
@@ -2766,76 +2783,10 @@ export async function loadPlugins(lazyLoad: boolean = false): Promise<void> {
       return;
     }
 
+    // MusicFree 插件：复用 ensurePluginInstance 加载（含并发保护），
+    // 避免与榜单/搜索等页面按需加载同一插件时互相销毁沙箱导致加载失败
     try {
-      let script = '';
-      if (source.filePath.startsWith('builtin://')) {
-        const webPath = BUILTIN_PLUGINS[source.filePath];
-        if (webPath) {
-          const resp = await fetchWithTimeout(webPath, 5000);
-          if (resp.ok) script = await resp.text();
-        }
-      } else if (source.filePath.startsWith('http')) {
-        // [修复防御]: 远程 URL 先尝试浏览器 fetch，失败则回退 Tauri 后端（绕过 CORS）
-        const resp = await fetchWithTimeout(source.filePath, 10000);
-        if (resp.ok) script = await resp.text();
-        if (!script) {
-          try {
-            script = await pluginApi.fetchPluginUrl(source.filePath);
-          } catch { /* ignore */ }
-        }
-      } else {
-        try {
-          script = await pluginApi.readPluginFile(source.filePath);
-        } catch (e: any) {
-          log(`[loadPlugins] ${source.name} 读取文件失败: ${e?.message || e} (path=${source.filePath})`);
-        }
-      }
-
-      if (!script) {
-        log(`[loadPlugins] ${source.name} 脚本为空，跳过加载 (filePath=${source.filePath})`);
-      }
-
-      if (script) {
-        const loadedSource = await loadPluginFromScript(script, source.filePath, source.id);
-        // [修复] 直接用 source.id 缓存实例
-        if (loadedSource) {
-          const entry = pluginInstances.get(loadedSource.id);
-          if (entry) {
-            linkSandboxAlias(source.id, loadedSource.id);
-            const availableMethods = Object.keys(entry.instance)
-              .filter(key => typeof (entry.instance as any)[key] === 'function');
-            const sourceProxy = createSandboxProxy(source.id, {
-              ...entry.instance,
-              _availableMethods: availableMethods,
-            });
-            pluginInstances.set(source.id, {
-              source,
-              instance: sourceProxy,
-              script: entry.script,
-            });
-          }
-        }
-        // 回退: 遍历找到 filePath 匹配的条目
-        if (!pluginInstances.has(source.id)) {
-          for (const [key, entry] of pluginInstances) {
-            if (entry.source.filePath === source.filePath && key !== source.id) {
-              linkSandboxAlias(source.id, key);
-              const availableMethods = Object.keys(entry.instance)
-                .filter(methodName => typeof (entry.instance as any)[methodName] === 'function');
-              const sourceProxy = createSandboxProxy(source.id, {
-                ...entry.instance,
-                _availableMethods: availableMethods,
-              });
-              pluginInstances.set(source.id, {
-                source,
-                instance: sourceProxy,
-                script: entry.script,
-              });
-              break;
-            }
-          }
-        }
-      }
+      await ensurePluginInstance(source);
     } catch (e: any) {
       log(`插件 ${source.name} 加载失败: ${e?.message || e}`);
     }

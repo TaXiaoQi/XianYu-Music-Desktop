@@ -59,7 +59,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   // ===== 卷积混响 =====
   const activeConvolution = ref<string | null>(null)
   const originalGain = ref(0)
-  const envGain = ref(300)
+  const envGain = ref(100)
 
   // 监听混响选择变化：同步 UI 增益状态 + 互斥取消算法混响
   watch(activeConvolution, (label) => {
@@ -129,7 +129,8 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
 
   // ===== 3D 环绕声 =====
   const enable3DSurround = ref(false)
-  const surroundIntensity = ref(9) // 1~20
+  const surroundIntensity = ref(9) // 1~10（3D 效果深度，÷10 为 0.1~1.0 干湿比）
+  const surround3DRotation = ref(6.5) // 秒/圈（3D 旋转速度，独立于强度）
   const soundDistance = ref(9) // 1~20
 
   watch(enable3DSurround, (val) => {
@@ -229,8 +230,8 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   const compressorEnabled = ref(false)
   const compressorThreshold = ref(-18)  // dB: -60~0
   const compressorRatio = ref(4)        // 1:1~20:1
-  const compressorAttack = ref(8)       // ms: 0~100
-  const compressorRelease = ref(400)    // ms: 10~1000
+  const compressorAttack = ref(8)       // ms: 1~100
+  const compressorRelease = ref(400)    // ms: 120~1000
 
   // ===== 高级音效: Crossfeed 耳机互馈 =====
   const crossfeedEnabled = ref(false)
@@ -369,11 +370,11 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
             : 'none'
 
     // 空间参数按当前模式取对应字段（Rust 侧根据 spatialMode 解释）：
-    // - 3D：speed 由 surroundIntensity 派生，radius = soundDistance
+    // - 3D：speed 由 surround3DRotation（秒/圈，÷3.6 换算成倍率），intensity = surroundIntensity，radius = soundDistance
     // - 8D/36D：speed = rotationSpeed（秒/圈），radius = virtualDistance
     // - virtual：使用 virtualSurroundSpread，speed/radius 取默认占位
     const spatialSpeed = enable3DSurround.value
-      ? 2 * (surroundIntensity.value / 10)
+      ? surround3DRotation.value / 3.6
       : enable8D.value
         ? rotationSpeed8D.value
         : enable36D.value
@@ -676,6 +677,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     preservesPitch: preservesPitch.value,
     enable3DSurround: enable3DSurround.value,
     surroundIntensity: surroundIntensity.value,
+    surround3DRotation: surround3DRotation.value,
     soundDistance: soundDistance.value,
     enable8D: enable8D.value,
     rotationSpeed8D: rotationSpeed8D.value,
@@ -787,6 +789,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     if (typeof s.preservesPitch === 'boolean') preservesPitch.value = s.preservesPitch
     if (typeof s.enable3DSurround === 'boolean') enable3DSurround.value = s.enable3DSurround
     if (typeof s.surroundIntensity === 'number') surroundIntensity.value = s.surroundIntensity
+    if (typeof s.surround3DRotation === 'number') surround3DRotation.value = s.surround3DRotation
     if (typeof s.soundDistance === 'number') soundDistance.value = s.soundDistance
     if (typeof s.enable8D === 'boolean') enable8D.value = s.enable8D
     if (typeof s.rotationSpeed8D === 'number') rotationSpeed8D.value = s.rotationSpeed8D
@@ -928,7 +931,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     [
       eqBands, activeConvolution, originalGain, envGain, activeAlgoReverb,
       pitchShift, playbackRate, preservesPitch,
-      enable3DSurround, surroundIntensity, soundDistance,
+      enable3DSurround, surroundIntensity, surround3DRotation, soundDistance,
       enable8D, rotationSpeed8D, virtualDistance8D,
       enable36D, rotationSpeed36D, virtualDistance36D,
       enableVirtualSurround, virtualSurroundMode, virtualSurroundSpread,
@@ -988,6 +991,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     // 3D 环绕
     enable3DSurround,
     surroundIntensity,
+    surround3DRotation,
     soundDistance,
     // 8D 环绕
     enable8D,

@@ -14,7 +14,7 @@ const emit = defineEmits<{ (event: 'close'): void }>();
 const summary = computed(() => props.result?.summary);
 const hasErrors = computed(() => (props.result?.errors.length ?? 0) > 0);
 const allSuccess = computed(() =>
-  props.result && !hasErrors.value && props.result.importedPlaylists > 0,
+  props.result && !hasErrors.value && (props.result.importedPlaylists > 0 || props.result.importedFavorites > 0),
 );
 </script>
 
@@ -35,7 +35,7 @@ const allSuccess = computed(() =>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">应用备份导入结果</h3>
               </div>
               <p class="mt-1 text-xs text-gray-500 dark:text-white/45">
-                已完成歌单、插件和设置的导入恢复。
+                已完成歌单、收藏、插件和设置的导入恢复。
               </p>
             </div>
             <button
@@ -98,6 +98,7 @@ const allSuccess = computed(() =>
                 <span>共 {{ summary.totalSongs }} 首歌曲</span>
                 <span>本地 {{ summary.localSongs }} 首</span>
                 <span>在线 {{ summary.onlineSongs }} 首</span>
+                <span>收藏 {{ summary.favoriteCount }} 首</span>
               </div>
             </section>
 
@@ -142,10 +143,10 @@ const allSuccess = computed(() =>
 
             <!-- 全部成功提示 -->
             <div
-              v-if="!hasErrors && result.importedPlaylists > 0"
+              v-if="!hasErrors && (result.importedPlaylists > 0 || result.importedFavorites > 0)"
               class="rounded-xl bg-emerald-500/8 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-200"
             >
-              全部歌单和插件均已成功导入。
+              全部歌单、收藏和插件均已成功导入。
             </div>
           </div>
 

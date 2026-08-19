@@ -877,13 +877,25 @@ export async function lxPluginRequest(
 
       // 响应格式验证（与直接调用路径一致）
       switch (action) {
-        case 'musicUrl':
-          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${typeof response === 'string' ? response.substring(0, 100) : (response === null ? 'null' : JSON.stringify(response)?.substring(0, 100))}`);
-          if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
+        case 'musicUrl': {
+          // 部分混淆插件（baka 风格）musicUrl 返回对象 { url, type, ... } 而非纯字符串。
+          // 一律提取 url 字符串；但保留原始 shape 打印，避免影响后续加密音源处理。
+          let musicUrl = response;
+          let reportedType: unknown = data.type;
+          if (typeof response === 'object' && response !== null) {
+            const rawShape = JSON.stringify(response)?.substring(0, 300);
+            console.warn(`[lxPluginRequest] ${source.name} musicUrl 返回对象，提取 url 字段: ${rawShape}`);
+            const obj = response as Record<string, any>;
+            musicUrl = obj?.url ?? obj?.link ?? obj?.playUrl ?? '';
+            if (obj?.type != null) reportedType = obj.type;
+          }
+          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${typeof musicUrl === 'string' ? musicUrl.substring(0, 120) : (response === null ? 'null' : JSON.stringify(response)?.substring(0, 120))}`);
+          if (typeof musicUrl !== 'string' || musicUrl.length === 0 || musicUrl.length > 2048 || !/^https?:/.test(musicUrl)) {
             throw new Error('Invalid musicUrl response');
           }
-          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 成功: ${response.substring(0, 80)}...`);
-          return { source: data.source, action, data: { type: data.type, url: response } };
+          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 成功: ${musicUrl.substring(0, 80)}...`);
+          return { source: data.source, action, data: { type: String(reportedType ?? ''), url: musicUrl } };
+        }
         case 'lyric':
           return {
             source: data.source, action,
@@ -1065,19 +1077,33 @@ export async function lxPluginGetPic(
  */
 export async function getLxPluginScript(sourceId: string, fallbackFilePath?: string): Promise<string | null> {
   const state = lxPlugins.get(sourceId);
-  const filePath = state?.source?.filePath ?? fallbackFilePath;
+  // 优先使用调用方持久化的 filePath（`getPluginScript` 传入 `source.filePath`）。
+  // 本地导入的插件经 persistPluginScriptToDataDir 后，该路径指向数据目录备份副本；
+  // 而内存中 lxPlugins 的 filePath 仍是 loadPluginFromScript 时留下的原始导入文件位置。
+  // 若按内存路径走，账号同步/备份会读取原导入文件——原文件被移动/删除时同步即失败，
+  // 且违背"导入后以备份副本为准"的初衷。
+  const memoryPath = state?.source?.filePath ?? '';
+  const persistPath = fallbackFilePath?.trim() ?? '';
+  const filePath = persistPath || memoryPath;
   if (!filePath) return null;
 
-  // 1. 优先从脚本缓存读取
-  const cached = scriptCache.get(filePath);
+  if (persistPath && memoryPath && persistPath !== memoryPath) {
+    log(`[getLxPluginScript] ${sourceId.slice(0, 8)}… 持久化路径(备份) ${persistPath} 与内存路径(原文件) ${memoryPath} 不一致，优先读取备份`);
+  }
+
+  // 1. 优先从脚本缓存读取（备份路径未命中时退回内存路径的缓存）
+  const cached = scriptCache.get(filePath)
+    || (memoryPath && scriptCache.get(memoryPath) ? scriptCache.get(memoryPath) : undefined);
   if (cached) return cached;
 
-  // 2. 缓存未命中，重新获取脚本
-  try {
-    return await fetchLxPluginScript(filePath);
-  } catch {
-    return null;
+  // 2. 缓存未命中，按"持久化路径 → 内存路径"依次读取
+  for (const p of new Set([filePath, memoryPath].filter(Boolean))) {
+    try {
+      const script = await fetchLxPluginScript(p as string);
+      if (script) return script;
+    } catch { /* 尝试下一个路径 */ }
   }
+  return null;
 }
 
 export async function ensureLxPluginInstance(source: PluginSource): Promise<LxPluginState | null> {

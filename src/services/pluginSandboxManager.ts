@@ -278,6 +278,9 @@ function handleWorkerMessage(sandbox: ManagedSandbox, e: MessageEvent): void {
       const msg = event.message || '';
       if (event.level === 'error') console.error(msg);
       else if (event.level === 'warn') console.warn(msg);
+      // 默认把 info 级诊断也打出来，便于观察插件 musicUrl/lyric 的原始返回值，
+      // 否则关键诊断（`LX request(action=musicUrl) 返回: ...`）被静默丢弃。
+      else console.log(msg);
       if (msg.includes('获取播放源错误') || msg.includes('PlayAuth') || msg.includes('playauth')) {
         _lastSandboxError = msg;
       }

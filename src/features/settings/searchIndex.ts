@@ -88,7 +88,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '关闭时最小化至托盘', keywords: '退出 后台 托盘' },
     { label: '显示音质标识', keywords: '无损 Hi-Res 标签' },
     { label: '显示歌曲注释', keywords: '备注 注释' },
-    { label: '打开一键回顶按钮', keywords: '滚动 顶部' },
+    { label: '显示回到顶部按钮', keywords: '滚动 顶部' },
     { label: '启用任务栏快捷播控', keywords: '任务栏 播放控制' },
     { label: '修改歌手头像时同步写回音频标签', keywords: '头像 tag 标签 写入' },
   ]),
@@ -154,6 +154,7 @@ const staticItems: SettingsSearchItem[] = [
   ]),
   ...makeItems('audioOutput', '播放设置', [
     { label: '自动播放', keywords: '启动 播放' },
+    { label: '双击播放歌曲', keywords: '单击 双击 播放 触发' },
     { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' },
     { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' },
     { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' },
