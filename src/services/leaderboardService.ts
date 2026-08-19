@@ -28,6 +28,8 @@ export interface LeaderboardEntry {
   rank: number;
   username: string;
   nickname: string;
+  /** 弦予号：收藏/歌单同步的查询键 */
+  ciyuanxi_id?: string;
   avatar?: string;
   /** 听歌时长（秒） */
   duration: number;
@@ -187,6 +189,7 @@ export async function fetchLeaderboard(
         rank: number;
         username: string;
         nickname: string;
+        ciyuanxi_id?: string;
         avatar: string;
         duration: number;
         is_me: boolean;
@@ -195,6 +198,7 @@ export async function fetchLeaderboard(
         rank: number;
         username: string;
         nickname: string;
+        ciyuanxi_id?: string;
         avatar: string;
         duration: number;
         is_me: boolean;
@@ -215,6 +219,7 @@ export async function fetchLeaderboard(
       rank: item.rank,
       username: item.username,
       nickname: item.nickname || item.username,
+      ciyuanxi_id: item.ciyuanxi_id,
       avatar: item.avatar || undefined,
       duration: item.duration,
       isMe: Boolean(ciyuanxiId && item.is_me),
@@ -226,6 +231,7 @@ export async function fetchLeaderboard(
         rank: data.me.rank,
         username: data.me.username,
         nickname: data.me.nickname || data.me.username,
+        ciyuanxi_id: data.me.ciyuanxi_id,
         avatar: data.me.avatar || undefined,
         duration: data.me.duration,
         isMe: true,

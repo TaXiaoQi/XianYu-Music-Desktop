@@ -1,4 +1,4 @@
-import type { PluginSearchResult, PluginSource, QualityKey } from '../types';
+import type { PluginPlaylistSearchResult, PluginSearchResult, PluginSource, QualityKey } from '../types';
 import { qualityKeyToBakaPluginQuality } from '../types';
 import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../utils/coverUrl';
 
@@ -234,4 +234,51 @@ export const extractResultList = (result: any): any[] => {
     }
   }
   return [];
+};
+
+/**
+ * 将插件 getTopLists 返回的分类数据展平为榜单条目列表。
+ * 兼容「分类数组（{ title, data: [...] }）」与「扁平数组（条目本身）」两种结构。
+ * 条目 rawData 带 _isTopList 标记，供详情加载走 getTopListDetail。
+ */
+export const flattenTopListCategories = (
+  topLists: any,
+  source: PluginSource,
+): PluginPlaylistSearchResult[] => {
+  if (!Array.isArray(topLists)) return [];
+
+  const results: PluginPlaylistSearchResult[] = [];
+  for (const category of topLists) {
+    if (category?.data && Array.isArray(category.data)) {
+      for (const item of category.data) {
+        results.push({
+          id: String(item.id || ''),
+          title: stripHtmlTags(item.title || item.name || ''),
+          coverUrl: item.coverImg || item.cover || extractCoverUrl(item),
+          playCount: item.playCount ?? item.playcount,
+          trackCount: item.trackCount ?? item.trackcount,
+          artist: stripHtmlTags(category.title || ''),
+          platform: source.name,
+          platformId: String(item.id || ''),
+          pluginId: source.id,
+          rawData: { ...item, _isTopList: true },
+        });
+      }
+    } else if (category && typeof category === 'object') {
+      // 扁平数组：每个条目本身就是一个榜单
+      results.push({
+        id: String(category.id || ''),
+        title: stripHtmlTags(category.title || category.name || ''),
+        coverUrl: category.coverImg || category.cover || extractCoverUrl(category),
+        playCount: category.playCount ?? category.playcount,
+        trackCount: category.trackCount ?? category.trackcount,
+        artist: stripHtmlTags(category.artist || category.author || ''),
+        platform: source.name,
+        platformId: String(category.id || ''),
+        pluginId: source.id,
+        rawData: { ...category, _isTopList: true },
+      });
+    }
+  }
+  return results;
 };

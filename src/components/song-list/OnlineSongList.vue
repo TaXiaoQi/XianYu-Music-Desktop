@@ -34,7 +34,8 @@ const getCover = (item: Song): string => {
   const url = item.cover_thumb_path || '';
   if (!url || url.startsWith('data:')) return url;
   const cached = coverDisplayMap.value.get(url);
-  if (cached) return cached;
+  // 注意：代理中的封面缓存值为 ''（占位），不能按 falsy 判断，否则每次渲染都会重新写入 map 触发无限递归更新
+  if (cached !== undefined) return cached;
   const display = getDisplayCoverUrl(url, (dataUrl) => {
     coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, dataUrl);
   });

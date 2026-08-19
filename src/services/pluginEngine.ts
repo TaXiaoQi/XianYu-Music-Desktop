@@ -50,6 +50,7 @@ import {
   stripHtmlTags,
   toPluginSearchResult,
   extractDurationMs,
+  flattenTopListCategories,
 } from './pluginResultMappers';
 import { fetchWithTimeout } from './pluginFetch';
 import {
@@ -1136,6 +1137,37 @@ export async function pluginPlaylistSearch(
     log(`[${source.name}] 歌单搜索失败: ${e?.message}`);
     return [];
   }
+}
+
+// ==================== 插件榜单 ====================
+
+/**
+ * 获取插件排行榜（榜单）列表。
+ * 调用插件的 getTopLists 接口，返回按分类展平的榜单条目。
+ * 条目 rawData 带 _isTopList 标记，供 pluginGetPlaylistDetail 走 getTopListDetail 获取曲目。
+ * Baka 插件的榜单机制（获取 + 展平）完全委托给 BakaPluginManager，与 MF 分离。
+ */
+export async function pluginGetTopLists(source: PluginSource): Promise<PluginPlaylistSearchResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (await BakaPluginManager.isBakaPlugin(source)) {
+      return BakaPluginManager.getTopLists(source);
+    }
+    if (typeof inst.instance.getTopLists !== 'function') return [];
+    const topLists = await inst.instance.getTopLists();
+    return flattenTopListCategories(topLists, source);
+  } catch (e: any) {
+    console.warn(`[${source.name}] getTopLists 调用失败:`, e?.message || e);
+    return [];
+  }
+}
+
+/** 检查插件是否支持榜单接口（getTopLists） */
+export async function pluginSupportsTopLists(source: PluginSource): Promise<boolean> {
+  const inst = await ensurePluginInstance(source);
+  return !!inst && typeof inst.instance.getTopLists === 'function';
 }
 
 // ==================== 插件歌单详情 ====================

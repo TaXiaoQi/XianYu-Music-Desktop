@@ -34,7 +34,8 @@ type SongMenuAction =
   | 'openFolder'
   | 'viewSongInfo'
   | 'removeFromList'
-  | 'deleteFromDisk';
+  | 'deleteFromDisk'
+  | 'viewLeaderboardUser';
 
 type SongMenuEntry =
   | { type: 'divider'; key: string }
@@ -54,6 +55,13 @@ interface SongMenuIcon {
   }>;
 }
 
+/** 排行榜用户条目摘要（右键"查看"跳转用户详情用） */
+interface LeaderboardUserSummary {
+  username: string;
+  nickname: string;
+  avatar?: string;
+}
+
 const props = defineProps<{
   visible: boolean;
   x: number;
@@ -64,12 +72,14 @@ const props = defineProps<{
   isManagementMode?: boolean;
   isOnlineSearch?: boolean;
   /** 在线详情页容器类型：用于在歌手/专辑容器中隐藏"查看歌手/查看专辑" */
-  onlineDetailType?: 'artist' | 'album' | 'playlist';
+  onlineDetailType?: 'artist' | 'album' | 'playlist' | 'user';
   /** 已下载在线歌曲的本地文件路径（供"打开文件所在目录""查看歌曲信息"使用） */
   resolvedFilePath?: string;
+  /** 排行榜用户模式：仅显示"查看"菜单项（song 可为 null） */
+  leaderboardEntry?: LeaderboardUserSummary | null;
 }>();
 
-const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album']);
+const emit = defineEmits(['close', 'add-to-playlist', 'delete-disk', 'view-online-artist', 'view-online-album', 'view-leaderboard-user']);
 
 const route = useRoute();
 const router = useRouter();
@@ -206,9 +216,22 @@ addAlbumToQueueTail: {
       { d: 'M6.5 7l.7 10.3A2 2 0 009.2 19h5.6a2 2 0 001.99-1.7L17.5 7' },
     ],
   },
+  viewLeaderboardUser: {
+    fill: false,
+    viewBox: '0 0 24 24',
+    paths: [
+      { d: 'M12 11a3 3 0 100-6 3 3 0 000 6z' },
+      { d: 'M6.5 18.5a5.5 5.5 0 0111 0' },
+    ],
+  },
 };
 
 const menuEntries = computed<SongMenuEntry[]>(() => {
+  // 排行榜用户模式：仅显示"查看"菜单项
+  if (props.leaderboardEntry) {
+    return [{ type: 'action', key: 'viewLeaderboardUser', label: '查看' }];
+  }
+
   const online = props.isOnlineSearch;
   const isFavorited = props.song ? isFavorite(props.song) : false;
   const favoriteLabel = isFavorited ? '取消收藏' : '收藏歌曲';
@@ -464,6 +487,12 @@ const handleDownloadToLocal = (song: Song) => {
 };
 
 const handleAction = (action: SongMenuAction) => {
+  if (action === 'viewLeaderboardUser') {
+    emit('view-leaderboard-user');
+    emit('close');
+    return;
+  }
+
   if (!props.song) {
     return;
   }

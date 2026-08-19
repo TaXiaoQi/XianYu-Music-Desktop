@@ -70,6 +70,26 @@ describe('extractDuration', () => {
     const item = { id: '1', title: '歌', duration: 0, dt: 180000 };
     expect(extractDuration(item)).toBe(180000);
   });
+
+  it('extracts duration from duration field in seconds (Baka QQ/网易云/酷我 format)', () => {
+    const item = { id: '1', title: '歌', duration: 215 };
+    expect(extractDuration(item)).toBe(215000);
+  });
+
+  it('extracts duration from durationSeconds field', () => {
+    const item = { id: '1', title: '歌', durationSeconds: 255 };
+    expect(extractDuration(item)).toBe(255000);
+  });
+
+  it('extracts duration from intervalSeconds field', () => {
+    const item = { id: '1', title: '歌', intervalSeconds: 180 };
+    expect(extractDuration(item)).toBe(180000);
+  });
+
+  it('extracts duration from nested al.dt field (Netease album node)', () => {
+    const item = { id: '1', title: '歌', al: { dt: 240000 } };
+    expect(extractDuration(item)).toBe(240000);
+  });
 });
 
 describe('toPluginSearchResult duration mapping', () => {

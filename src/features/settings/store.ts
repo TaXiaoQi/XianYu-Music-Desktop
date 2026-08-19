@@ -135,6 +135,7 @@ export const defaultSidebarSettings: SidebarSettings = {
   showStatistics: true,
   showPlugins: true,
   showAccount: false,
+  showTopLists: true,
   order: [...DEFAULT_SIDEBAR_ORDER],
 };
 
