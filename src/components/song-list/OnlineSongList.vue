@@ -39,6 +39,9 @@ const getCover = (item: Song): string => {
   const display = getDisplayCoverUrl(url, (dataUrl) => {
     coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, dataUrl);
   });
+  if (display === '' && !url.startsWith('data:')) {
+    console.warn('[OnlineSongList] 封面代理未完成/失败，暂显示占位', url);
+  }
   if (display !== url) {
     coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, display);
   }

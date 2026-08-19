@@ -5,6 +5,7 @@ import { dragSession } from '../../composables/dragState';
 import type { Song } from '../../types';
 import { songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useSettings } from '../../features/settings/useSettings';
 import { useRoute, useRouter } from 'vue-router';
 import { INDEX_KEYS } from '../../utils/alphabetIndex';
@@ -296,7 +297,16 @@ const getDisplayedCoverUrl = (path: string | undefined) => {
     return '';
   }
 
-  return displayedCoverUrls.get(path) ?? coverCache.get(path) ?? '';
+  const raw = displayedCoverUrls.get(path) ?? coverCache.get(path) ?? '';
+  if (!raw) {
+    return '';
+  }
+
+  // B站（hdslb 等）等防盗链封面需走后端代理成 data:URL，
+  // 代理成功后回填 displayedCoverUrls 触发重新渲染（其余域名/本地封面原样返回）
+  return getDisplayCoverUrl(raw, (dataUrl) => {
+    displayedCoverUrls.set(path, dataUrl);
+  });
 };
 
 const getSongComment = (song: Song) => (

@@ -85,8 +85,11 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
         envGain.value = conv.wet
       }
     } else {
-      originalGain.value = 0
-      envGain.value = 0
+      // 仅在另一类混响没有接管时才复位，避免切换（conv→algo）时并发被意外清零
+      if (!activeAlgoReverb.value) {
+        originalGain.value = 0
+        envGain.value = 0
+      }
     }
   })
 
@@ -191,6 +194,12 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
       const preset = algorithmicReverbs.find((p: { label: string }) => p.label === label)
       originalGain.value = preset?.dry ?? 85
       envGain.value = preset?.wet ?? 40
+    } else {
+      // 关闭算法混响时复位增益条；若卷积已接管则跳过，避免切换并发被意外清零
+      if (!activeConvolution.value) {
+        originalGain.value = 0
+        envGain.value = 0
+      }
     }
   })
 

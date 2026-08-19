@@ -23,20 +23,24 @@ const PROXY_COVER_DOMAINS = [
   '163.com',
 ];
 
-/** 封面代理缓存（原始 URL → data: URL） */
-const coverProxyCache = new Map<string, string>();
-/** 已尝试代理且失败的 URL（避免对失败项重复请求） */
-const coverProxyAttempted = new Set<string>();
-/** 正在代理中的 URL（避免重复发起请求） */
-const proxyPending = new Set<string>();
-
-/** 判断封面 URL 是否需要走后端代理 */
+/**
+ * 判断封面 URL 是否需要走后端代理。
+ * B站封面（hdslb.com / bilivideo.com）有防盗链，直连返回 403，
+ * 必须走后端 proxy_image（带 Referer: https://www.bilibili.com/）。
+ */
 export function needsCoverProxy(url: string): boolean {
   if (!url) return false;
   if (url.startsWith('data:') || url.startsWith('asset:')) return false;
   if (url.startsWith('http://')) return true;
   return PROXY_COVER_DOMAINS.some(domain => url.includes(domain));
 }
+
+/** 封面代理缓存（原始 URL → data: URL） */
+const coverProxyCache = new Map<string, string>();
+/** 已尝试代理且失败的 URL（避免对失败项重复请求） */
+const coverProxyAttempted = new Set<string>();
+/** 正在代理中的 URL（避免重复发起请求） */
+const proxyPending = new Set<string>();
 
 /**
  * 获取可直接用于 <img src> 的封面 URL。
@@ -76,8 +80,9 @@ export function getDisplayCoverUrl(url: string, onReady?: (dataUrl: string) => v
       const dataUrl = await pluginApi.proxyImage(url);
       coverProxyCache.set(url, dataUrl);
       onReady?.(dataUrl);
-    } catch {
+    } catch (e) {
       coverProxyAttempted.add(url);
+      console.error('[coverProxy] getDisplayCoverUrl 代理失败', url, e);
     } finally {
       proxyPending.delete(url);
     }
@@ -106,8 +111,9 @@ export async function tryProxyImage(url: string): Promise<string | null> {
     const dataUrl = await pluginApi.proxyImage(url);
     coverProxyCache.set(url, dataUrl);
     return dataUrl;
-  } catch {
+  } catch (e) {
     coverProxyAttempted.add(url);
+    console.error('[coverProxy] tryProxyImage 代理失败', url, e);
     return null;
   } finally {
     proxyPending.delete(url);
