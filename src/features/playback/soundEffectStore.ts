@@ -820,7 +820,7 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     if (typeof s.vibratoRate === 'number') vibratoRate.value = s.vibratoRate
     if (typeof s.vibratoDepth === 'number') vibratoDepth.value = s.vibratoDepth
     if (typeof s.pitchDriftEnabled === 'boolean') pitchDriftEnabled.value = s.pitchDriftEnabled
-    if (typeof s.pitchDriftSpeed === 'number') pitchDriftSpeed.value = s.pitchDriftSpeed
+    if (typeof s.pitchDriftSpeed === 'number') pitchDriftSpeed.value = Math.min(5, Math.max(0.1, s.pitchDriftSpeed))
     if (typeof s.pitchDriftRange === 'number') pitchDriftRange.value = s.pitchDriftRange
     if (typeof s.tremoloEnabled === 'boolean') tremoloEnabled.value = s.tremoloEnabled
     if (typeof s.tremoloRate === 'number') tremoloRate.value = s.tremoloRate

@@ -12,7 +12,7 @@
  * - 歌曲保留完整 Song 元数据，并使用 syncType 自动区分本地与在线来源。
  */
 
-import { ref, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useAuthStore } from '../features/auth/store';
@@ -52,6 +52,7 @@ import {
   getAutoSyncScheduler,
 } from '../services/autoSync';
 import { playerStorage } from '../services/storage/playerStorage';
+import { localStore } from '../services/storage/localStore';
 import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
 import type { AutoSyncConfig, Playlist, Song } from '../types';
 
@@ -67,6 +68,38 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
+/**
+ * 各类同步状态（上次同步时间 + 结果）持久化到本地，避免每次打开账号设置时
+ * 因组件重建而重置为「未同步」。
+ */
+const SYNC_STATUS_STORAGE_KEY = 'player_sync_status';
+
+interface PersistedSyncSlot<T> {
+  time: number | null;
+  result: T | null;
+}
+
+type PersistedSyncState = {
+  playlists: PersistedSyncSlot<SyncResult>;
+  plugins: PersistedSyncSlot<PluginSyncResult>;
+  settings: PersistedSyncSlot<SettingsSyncResult>;
+  favorites: PersistedSyncSlot<SyncResult>;
+};
+
+function loadPersistedSyncState(): PersistedSyncState {
+  const saved = localStore.getJson<Partial<PersistedSyncState>>(SYNC_STATUS_STORAGE_KEY) ?? {};
+  const slot = <T>(val: unknown): PersistedSyncSlot<T> =>
+    val && typeof val === 'object' && typeof (val as PersistedSyncSlot<T>).time === 'number'
+      ? { time: (val as PersistedSyncSlot<T>).time, result: (val as PersistedSyncSlot<T>).result ?? null }
+      : { time: null, result: null };
+  return {
+    playlists: slot<SyncResult>(saved.playlists),
+    plugins: slot<PluginSyncResult>(saved.plugins),
+    settings: slot<SettingsSyncResult>(saved.settings),
+    favorites: slot<SyncResult>(saved.favorites),
+  };
+}
+
 export function usePlaylistSync() {
   const collectionsStore = useCollectionsStore();
   const libraryStore = useLibraryStore();
@@ -76,32 +109,56 @@ export function usePlaylistSync() {
 
   const syncing = ref(false);
   const syncProgress = ref('');
-  const lastSyncTime = ref<number | null>(null);
-  const lastSyncResult = ref<SyncResult | null>(null);
+
+  const persistedSyncState = loadPersistedSyncState();
+
+  const lastSyncTime = ref<number | null>(persistedSyncState.playlists.time);
+  const lastSyncResult = ref<SyncResult | null>(persistedSyncState.playlists.result);
 
   // 插件同步独立状态（与歌单同步分开）
   const pluginSyncing = ref(false);
   const pluginSyncProgress = ref('');
-  const lastPluginSyncTime = ref<number | null>(null);
-  const lastPluginSyncResult = ref<PluginSyncResult | null>(null);
+  const lastPluginSyncTime = ref<number | null>(persistedSyncState.plugins.time);
+  const lastPluginSyncResult = ref<PluginSyncResult | null>(persistedSyncState.plugins.result);
 
   // 设置同步独立状态
   const settingsSyncing = ref(false);
   const settingsSyncProgress = ref('');
-  const lastSettingsSyncTime = ref<number | null>(null);
-  const lastSettingsSyncResult = ref<SettingsSyncResult | null>(null);
+  const lastSettingsSyncTime = ref<number | null>(persistedSyncState.settings.time);
+  const lastSettingsSyncResult = ref<SettingsSyncResult | null>(persistedSyncState.settings.result);
 
   // 收藏同步独立状态
   const favoritesSyncing = ref(false);
   const favoritesSyncProgress = ref('');
-  const lastFavoritesSyncTime = ref<number | null>(null);
-  const lastFavoritesSyncResult = ref<SyncResult | null>(null);
+  const lastFavoritesSyncTime = ref<number | null>(persistedSyncState.favorites.time);
+  const lastFavoritesSyncResult = ref<SyncResult | null>(persistedSyncState.favorites.result);
 
   // 自动同步状态
   const autoSyncStatus = ref('');
   const autoSyncDelayed = ref(false);
   let autoSyncInitialized = false;
   let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** 将某类同步状态刷入本地存储，保证再次打开账号设置时仍能显示「上次同步」 */
+  function persistSyncStatus(category: keyof PersistedSyncState) {
+    const snapshot = loadPersistedSyncState();
+    if (category === 'playlists') {
+      snapshot.playlists = { time: lastSyncTime.value, result: lastSyncResult.value };
+    } else if (category === 'plugins') {
+      snapshot.plugins = { time: lastPluginSyncTime.value, result: lastPluginSyncResult.value };
+    } else if (category === 'settings') {
+      snapshot.settings = { time: lastSettingsSyncTime.value, result: lastSettingsSyncResult.value };
+    } else {
+      snapshot.favorites = { time: lastFavoritesSyncTime.value, result: lastFavoritesSyncResult.value };
+    }
+    localStore.setJson(SYNC_STATUS_STORAGE_KEY, snapshot);
+  }
+
+  // 四类同步状态任一发生变化即持久化
+  watch([lastSyncTime, lastSyncResult], () => persistSyncStatus('playlists'), { deep: true });
+  watch([lastPluginSyncTime, lastPluginSyncResult], () => persistSyncStatus('plugins'), { deep: true });
+  watch([lastSettingsSyncTime, lastSettingsSyncResult], () => persistSyncStatus('settings'), { deep: true });
+  watch([lastFavoritesSyncTime, lastFavoritesSyncResult], () => persistSyncStatus('favorites'), { deep: true });
 
   /** 检查是否可以同步（已登录 + 开启了歌单上传） */
   function canSync(): boolean {

@@ -355,8 +355,8 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       <div v-show="store.pitchDriftEnabled" class="mt-2 space-y-1.5">
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">漂移速度</span>
-                          <input type="range" class="fx-slider" min="1" max="50" v-model.number="store.pitchDriftSpeed">
-                          <span class="w-8 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.pitchDriftSpeed }}</span>
+                          <input type="range" class="fx-slider" min="0.1" max="5" step="0.1" v-model.number="store.pitchDriftSpeed">
+                          <span class="w-12 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ (store.pitchDriftSpeed * 0.1).toFixed(2) }}Hz</span>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">漂移范围</span>

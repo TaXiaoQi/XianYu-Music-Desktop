@@ -85,7 +85,13 @@ impl ModulationRack {
         ] {
             w.set_time_constant(tc, sample_rate);
         }
-        // 延迟线容量按采样率调整（最长 2s）
+        // 延迟线容量按采样率调整：颤音/音调漂移的在高端采样率（176.4k/192k）下若
+        // 仍用固定容量，按采样率缩放的深度会超出缓冲而回绕混叠。统一扩容到覆盖 ~40ms。
+        let mod_line = ((sample_rate * 0.04) as usize).next_power_of_two().max(2048);
+        for d in &mut self.vib_dl.iter_mut().chain(self.drift_dl.iter_mut()) {
+            d.resize(mod_line);
+        }
+        // 延迟回声最长 2s
         let delay_size = (sample_rate as usize * 2).next_power_of_two();
         for d in &mut self.delay_dl {
             d.resize(delay_size);
@@ -158,7 +164,8 @@ impl ModulationRack {
         // Vibrato 颤音（调制延迟）
         let w = self.wet_vibrato.tick();
         if w > 0.001 {
-            let depth_samp = (s.vibrato.depth * 0.001 * sr).clamp(0.0, 20.0); // ms→采样
+            // ms→采样；上限放宽到 ~12ms（原 20 采样≈0.45ms，令 0~10ms 滑杆大部分是死区）
+            let depth_samp = (s.vibrato.depth * 0.001 * sr).clamp(0.0, sr * 0.012);
             for i in 0..2 {
                 let lfo = self.vib_lfo.tick_sine() * 0.5 + 0.5; // 0..1
                 let delay = 1.0 + lfo * depth_samp;
@@ -171,7 +178,8 @@ impl ModulationRack {
         // PitchDrift 音调漂移（慢速调制延迟 + 双 LFO 叠加更不规则）
         let w = self.wet_pitch_drift.tick();
         if w > 0.001 {
-            let depth_samp = (s.pitch_drift.depth * 0.001 * sr).clamp(0.0, 40.0);
+            // ms→采样；上限放宽到 ~33ms（原 40 采样≈0.9ms，令 0~30ms 滑杆大部分是死区）
+            let depth_samp = (s.pitch_drift.depth * 0.001 * sr).clamp(0.0, sr * 0.033);
             for i in 0..2 {
                 let lfo = self.drift_lfo.tick_sine();
                 let delay = 2.0 + (lfo * 0.5 + 0.5) * depth_samp;
