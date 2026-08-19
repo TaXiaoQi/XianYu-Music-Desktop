@@ -58,6 +58,7 @@ import {
   extractArtistAvatarUrl,
   qualityKeyToPluginString,
   extractDurationMs,
+  flattenTopListCategories,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
@@ -1661,6 +1662,13 @@ class BakaPluginManagerClass {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
 
+    // 榜单条目走轻量的 getTopListDetail：
+    // 1) 避免 getMusicSheetInfo 的音质检测/封面补全/重试开销（榜单打开慢的根因）
+    // 2) getTopListDetail 返回的歌曲带完整 duration 字段（QQ/网易云/酷我等榜单时长缺失的根因）
+    if (sheetItem?._isTopList) {
+      return this.getTopListDetail(source, sheetItem, page);
+    }
+
     const fetchDetail = async (): Promise<any> => {
       if (typeof inst.getMusicSheetInfo !== 'function') return {};
       return (await inst.getMusicSheetInfo(sheetItem, page)) ?? {};
@@ -1756,14 +1764,16 @@ class BakaPluginManagerClass {
 
   // ==================== 榜单 ====================
 
-  async getTopLists(source: PluginSource): Promise<any[]> {
+  /** 获取 Baka 插件榜单列表，并展平为榜单条目（rawData 带 _isTopList 标记） */
+  async getTopLists(source: PluginSource): Promise<PluginPlaylistSearchResult[]> {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
 
     try {
       if (typeof inst.getTopLists !== 'function') return [];
       const result = (await inst.getTopLists()) ?? [];
-      return Array.isArray(result) ? result : (result?.data || []);
+      const topLists = Array.isArray(result) ? result : (result?.data || []);
+      return flattenTopListCategories(topLists, source);
     } catch (e: any) {
       log(`[getTopLists] ${source.name} 失败: ${e?.message || e}`);
       return [];
@@ -1777,8 +1787,8 @@ class BakaPluginManagerClass {
     try {
       if (typeof inst.getTopListDetail !== 'function') return [];
       const result = (await inst.getTopListDetail(topListItem, page)) ?? {};
-      const list = result?.musicList || result?.data || result?.list || [];
-      if (Array.isArray(list) && list.length > 0) {
+      const list = extractResultList(result);
+      if (list.length > 0) {
         return list.map((item: any) => {
           resetMediaItem(item, source.name);
           return toPluginSearchResult(item, source);

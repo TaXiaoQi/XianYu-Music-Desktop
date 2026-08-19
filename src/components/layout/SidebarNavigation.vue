@@ -24,6 +24,7 @@ const sidebarLabelKeys: Record<SidebarItemKey, I18nKey> = {
   folders: 'sidebar.folders',
   plugins: 'sidebar.plugins',
   account: 'sidebar.account',
+  topLists: 'sidebar.topLists',
 };
 
 const emit = defineEmits<{
@@ -92,6 +93,8 @@ const activeKey = computed<SidebarItemKey | null>(() => {
       return 'plugins';
     case '/auth':
       return 'account';
+    case '/top-lists':
+      return 'topLists';
     default:
       return null;
   }

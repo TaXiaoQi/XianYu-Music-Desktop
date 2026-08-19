@@ -10,7 +10,7 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import type { PluginSource } from '../../types';
 
-export type OnlineDetailType = 'artist' | 'album' | 'playlist';
+export type OnlineDetailType = 'artist' | 'album' | 'playlist' | 'user';
 
 /** 搜索页来源类型，用于"从哪儿来回哪儿去"导航 */
 export type SourceSearchType = 'track' | 'artist' | 'album' | 'playlist';
@@ -25,8 +25,8 @@ export interface OnlineDetailContext {
   coverUrl: string;
   /** 歌手简介（仅 artist 类型使用，来源 pluginArtistSearch/artist 详情接口） */
   description?: string;
-  /** 插件来源（musicfree/baka 系使用） */
-  pluginSource: PluginSource;
+  /** 插件来源（musicfree/baka 系使用；用户详情等本地数据场景可省略） */
+  pluginSource?: PluginSource;
   /** 插件搜索结果的 rawData（用于调用 getArtistWorks/getAlbumInfo/getMusicSheetInfo） */
   rawData: any;
   /** 搜索页来源类型，返回搜索时恢复对应 tab */

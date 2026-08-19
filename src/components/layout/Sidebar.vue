@@ -61,6 +61,7 @@ const {
   openRecent,
   openPlugins,
   openAuth,
+  openTopLists,
 } = useHomeNavigation(router);
 const { preloadCovers, loadCover, primeCoverPath } = useCoverCache();
 
@@ -378,6 +379,10 @@ const handleOpenAccountView = () => {
   void openAuth();
 };
 
+const handleOpenTopListsView = () => {
+  void openTopLists();
+};
+
 /** 侧边栏项点击分发：侧边栏顺序可自定义，故统一用 key 派发到对应 handler */
 const sidebarSelectHandlers: Record<SidebarItemKey, () => void> = {
   localMusic: handleOpenAllView,
@@ -388,6 +393,7 @@ const sidebarSelectHandlers: Record<SidebarItemKey, () => void> = {
   folders: handleOpenFolderView,
   plugins: handleOpenPluginsView,
   account: handleOpenAccountView,
+  topLists: handleOpenTopListsView,
 };
 
 const handleSidebarSelect = (key: SidebarItemKey) => {

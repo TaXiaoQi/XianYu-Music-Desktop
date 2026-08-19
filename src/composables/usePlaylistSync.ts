@@ -41,6 +41,10 @@ import {
   type SettingsSyncResult,
 } from '../services/settingsSync';
 import {
+  uploadFavorites as uploadFavoritesToCloud,
+  downloadFavorites as downloadFavoritesFromCloud,
+} from '../services/favoritesSync';
+import {
   showSettingsConflict,
   type SyncCategoryChoices,
 } from './useSettingsConflict';
@@ -87,6 +91,12 @@ export function usePlaylistSync() {
   const lastSettingsSyncTime = ref<number | null>(null);
   const lastSettingsSyncResult = ref<SettingsSyncResult | null>(null);
 
+  // 收藏同步独立状态
+  const favoritesSyncing = ref(false);
+  const favoritesSyncProgress = ref('');
+  const lastFavoritesSyncTime = ref<number | null>(null);
+  const lastFavoritesSyncResult = ref<SyncResult | null>(null);
+
   // 自动同步状态
   const autoSyncStatus = ref('');
   const autoSyncDelayed = ref(false);
@@ -111,6 +121,11 @@ export function usePlaylistSync() {
   /** 检查设置上传是否在设置中启用 */
   function isSettingsUploadEnabled(): boolean {
     return settingsStore.settings.upload.settings;
+  }
+
+  /** 检查收藏上传是否在设置中启用 */
+  function isFavoritesUploadEnabled(): boolean {
+    return settingsStore.settings.upload.favorites;
   }
 
   /**
@@ -681,6 +696,124 @@ export function usePlaylistSync() {
   }
 
   /**
+   * 收集当前用户所有收藏歌曲（本地库 + 在线收藏元信息）
+   */
+  function collectFavoriteSongs(): Song[] {
+    const lookup = libraryStore.songLookup;
+    return collectionsStore.favoritePaths
+      .map(path => lookup.get(path) || collectionsStore.favoriteSongMeta[path])
+      .filter((song): song is Song => !!song);
+  }
+
+  /**
+   * 仅上传收藏歌曲到云端
+   */
+  async function uploadFavoritesOnly(): Promise<void> {
+    logSync('========== uploadFavoritesOnly 开始 ==========');
+    if (!canSync()) {
+      logSyncError('uploadFavoritesOnly: 未登录或无弦予号');
+      showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    if (!isFavoritesUploadEnabled()) {
+      logSync('uploadFavoritesOnly: 收藏上传未开启');
+      showToast('收藏同步已关闭，请在设置中开启', 'info');
+      return;
+    }
+
+    favoritesSyncing.value = true;
+    favoritesSyncProgress.value = '正在上传收藏到云端...';
+
+    try {
+      const songs = collectFavoriteSongs();
+      const ciyuanxiId = getCiyuanxiId();
+      if (!ciyuanxiId) {
+        showToast('未获取到弦予号', 'error');
+        return;
+      }
+      const result = await uploadFavoritesToCloud(ciyuanxiId, songs);
+      lastFavoritesSyncTime.value = Date.now();
+      lastFavoritesSyncResult.value = {
+        uploadedPlaylists: 0,
+        downloadedPlaylists: 0,
+        uploadedSongs: result.song_count,
+        downloadedSongs: 0,
+        errors: [],
+      };
+      logSync(`uploadFavoritesOnly 完成: uploaded=${result.song_count}`);
+      showToast(result.song_count > 0 ? `已上传 ${result.song_count} 首收藏歌曲` : '收藏已是最新', 'success');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logSyncError(`uploadFavoritesOnly 异常: ${msg}`, error);
+      showToast(`收藏上传失败：${msg}`, 'error');
+    } finally {
+      favoritesSyncing.value = false;
+      favoritesSyncProgress.value = '';
+    }
+  }
+
+  /**
+   * 仅从云端下载收藏歌曲到本地
+   */
+  async function downloadFavoritesOnly(): Promise<void> {
+    logSync('========== downloadFavoritesOnly 开始 ==========');
+    if (!canSync()) {
+      logSyncError('downloadFavoritesOnly: 未登录或无弦予号');
+      showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    favoritesSyncing.value = true;
+    favoritesSyncProgress.value = '正在从云端下载收藏...';
+
+    try {
+      const ciyuanxiId = getCiyuanxiId();
+      if (!ciyuanxiId) {
+        showToast('未获取到弦予号', 'error');
+        return;
+      }
+      const offlineList = await downloadFavoritesFromCloud(ciyuanxiId);
+      const count = offlineList.length;
+
+      // 写入本地收藏：本地库歌曲更新路径，在线或缺失歌曲写入元信息
+      const lookup = libraryStore.songLookup;
+      const savedPaths: string[] = [];
+      const metaMap: Record<string, Song> = {};
+      for (const song of offlineList) {
+        if (lookup.has(song.path)) {
+          savedPaths.push(song.path);
+        } else {
+          savedPaths.push(song.path);
+          metaMap[song.path] = song;
+        }
+      }
+      collectionsStore.setFavoritePaths(savedPaths);
+      if (Object.keys(metaMap).length > 0) {
+        collectionsStore.setFavoriteSongMetaMap(metaMap);
+      }
+
+      lastFavoritesSyncTime.value = Date.now();
+      lastFavoritesSyncResult.value = {
+        uploadedPlaylists: 0,
+        downloadedPlaylists: 0,
+        uploadedSongs: 0,
+        downloadedSongs: count,
+        errors: [],
+      };
+      logSync(`downloadFavoritesOnly 完成: downloaded=${count}`);
+      showToast(count > 0 ? `已下载 ${count} 首收藏歌曲` : '云端暂无收藏数据', 'success');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logSyncError(`downloadFavoritesOnly 异常: ${msg}`, error);
+      showToast(`收藏下载失败：${msg}`, 'error');
+    } finally {
+      favoritesSyncing.value = false;
+      favoritesSyncProgress.value = '';
+    }
+  }
+
+  /**
    * 双向同步设置：先比较本地与云端，一致则跳过，不一致则弹窗让用户选择
    */
   async function syncSettings(): Promise<SettingsSyncResult> {
@@ -969,6 +1102,16 @@ export function usePlaylistSync() {
       }
     }
 
+    if (upload.favorites) {
+      try {
+        logSync('performAutoSync: 同步收藏');
+        await uploadFavoritesOnly();
+      } catch (e) {
+        logSyncError('performAutoSync: 同步收藏失败', e);
+        hasError = true;
+      }
+    }
+
     logSync('performAutoSync: 自动同步完成');
     if (hasError) {
       throw new Error('部分同步项失败');
@@ -1053,12 +1196,17 @@ export function usePlaylistSync() {
     settingsSyncProgress,
     lastSettingsSyncTime,
     lastSettingsSyncResult,
+    favoritesSyncing,
+    favoritesSyncProgress,
+    lastFavoritesSyncTime,
+    lastFavoritesSyncResult,
     autoSyncStatus,
     autoSyncDelayed,
     canSync,
     isUploadEnabled,
     isPluginUploadEnabled,
     isSettingsUploadEnabled,
+    isFavoritesUploadEnabled,
     syncPlaylists,
     syncPlugins,
     syncSettings,
@@ -1068,6 +1216,8 @@ export function usePlaylistSync() {
     downloadPluginsOnly,
     uploadSettingsOnly,
     downloadSettingsOnly,
+    uploadFavoritesOnly,
+    downloadFavoritesOnly,
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,

@@ -247,7 +247,7 @@ onUnmounted(() => {
 
       <!-- 搜索历史下拉（热搜 / 记录 双 Tab） -->
       <Transition name="search-history-fade">
-        <div v-if="showHistory" class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-72 overflow-y-auto overflow-x-hidden">
+        <div v-if="showHistory" @mousedown.prevent class="absolute top-full left-2 right-2 mt-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 z-50 max-h-72 overflow-y-auto overflow-x-hidden">
           <!-- 顶部 Tab 切换：热搜左 / 记录右 -->
           <div class="px-3 pt-2 pb-1.5 border-b border-black/5 dark:border-white/5 flex items-center gap-1 sticky top-0 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl">
             <button

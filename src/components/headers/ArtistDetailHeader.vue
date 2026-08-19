@@ -26,6 +26,8 @@ const props = defineProps<{
   description?: string;
   /** 歌手原始数据（description 为空时回退 artistDesc/intro/desc 等字段） */
   rawData?: any;
+  /** 自定义 tab 名称（覆盖默认的 歌曲/专辑/歌手详情） */
+  tabNameOverrides?: Partial<Record<ArtistTabId, string>>;
 }>();
 
 const emit = defineEmits([
@@ -599,7 +601,7 @@ const handlePlayAll = () => {
           @pointerdown="onPointerDown(tab.id, $event)"
           @click="handleTabClick(tab.id)"
         >
-          <span class="pointer-events-none">{{ tab.name }}</span>
+          <span class="pointer-events-none">{{ props.tabNameOverrides?.[tab.id] || tab.name }}</span>
           <div 
             v-if="activeTab === tab.id" 
             class="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-[3px] bg-[#EC4141] rounded-t-full pointer-events-none"

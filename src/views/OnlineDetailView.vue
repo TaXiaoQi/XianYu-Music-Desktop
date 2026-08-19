@@ -12,6 +12,11 @@ import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDia
 import { useLibraryStore } from '../features/library/store';
 import { useToast } from '../composables/toast';
 import { launchFlyingCover } from '../composables/useFlyingCover';
+import { useHomeNavigation } from '../composables/useHomeNavigation';
+import { downloadFavorites as downloadUserFavorites } from '../services/favoritesSync';
+import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong } from '../services/playlistSync';
+import { getCiyuanxiId } from '../services/playlistSync';
+import { getSongAlbumKey } from '../features/library/playerLibraryViewShared';
 import {
   pluginGetArtistWorks,
   pluginGetArtistAlbums,
@@ -59,6 +64,7 @@ const libraryStore = useLibraryStore();
 const onlineDetailStore = useOnlineDetailStore();
 const playbackStore = usePlaybackStore();
 const settingsStore = useSettingsStore();
+const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 
 const detailType = computed<OnlineDetailType>(() => (route.query.type as OnlineDetailType) || 'artist');
 const ctx = computed(() => onlineDetailStore.context);
@@ -88,6 +94,93 @@ const subtitle = computed(() => ctx.value?.subtitle || '');
 const coverUrl = computed(() => ctx.value?.coverUrl || '');
 const artistDescription = computed(() => ctx.value?.description || '');
 const isLxEngine = computed(() => ctx.value?.engineType === 'lx');
+
+/** 用户详情模式（排行榜"查看"进入）：展示被查看用户的云收藏与云歌单 */
+const isUserMode = computed(() => detailType.value === 'user');
+
+/** 用户详情：被查看用户的弦予号（云同步查询键），优先取 rawData.ciyuanxi_id，回退 username */
+const targetUsername = computed(() => {
+  const raw = ctx.value?.rawData;
+  if (!raw) return '';
+  if (typeof raw.ciyuanxi_id === 'string' && raw.ciyuanxi_id) return raw.ciyuanxi_id;
+  return typeof raw.username === 'string' ? raw.username : '';
+});
+
+/** 用户详情：被查看用户的云收藏（Song[]），本地库可还原的用本地库，否则保留元信息 */
+const viewedFavorites = ref<Song[]>([]);
+
+/** 用户详情：被查看用户的歌单原始数据 */
+const viewedPlaylists = ref<Array<{ id: string; name: string; cloudCoverUrl?: string; songs?: any[] }>>([]);
+
+/** 用户详情：当前打开的云歌单（点击歌单卡片后展示其歌曲） */
+const activeCloudPlaylist = ref<{ name: string; songs: any[] } | null>(null);
+
+/** 用户详情加载状态 */
+const userModeLoading = ref(false);
+
+/** 用户详情：目标用户的弦予号（不存在时回退到当前用户） */
+const viewedUserId = computed(() => targetUsername.value || getCiyuanxiId());
+
+/** 用户详情：被查看用户的歌单原始数据 */
+const userPlaylists = computed(() => viewedPlaylists.value);
+
+/** 用户详情：被查看用户的歌单列表（封面解析 + 歌曲数） */
+const userPlaylistItems = computed(() =>
+  userPlaylists.value.map(playlist => ({
+    id: playlist.id,
+    name: playlist.name,
+    count: Array.isArray(playlist.songs) ? playlist.songs.length : 0,
+    cover: playlist.cloudCoverUrl || '',
+  })),
+);
+
+/** 用户详情：当前容器展示的歌曲（点击歌单后展示其歌曲，否则展示收藏） */
+const userModeSongs = computed<Song[]>(() => {
+  if (activeCloudPlaylist.value) {
+    return activeCloudPlaylist.value.songs.map(syncPayloadToSong);
+  }
+  return viewedFavorites.value;
+});
+
+/**
+ * 加载被查看用户的云收藏与云歌单
+ */
+async function loadUserModeData() {
+  const userId = viewedUserId.value;
+  if (!userId) return;
+  if (userModeLoading.value) return;
+  userModeLoading.value = true;
+  try {
+    const [favorites, playlistsData] = await Promise.all([
+      downloadUserFavorites(userId),
+      downloadUserPlaylists(userId).catch(() => null),
+    ]);
+    viewedFavorites.value = favorites;
+    viewedPlaylists.value = (playlistsData?.playlists ?? []).map(p => ({
+      id: String(p.id ?? ''),
+      name: p.name ?? '未知歌单',
+      cloudCoverUrl: p.cloudCoverUrl || '',
+      songs: p.songs ?? [],
+    }));
+    // 收藏歌曲的元信息写入 extra，供播放解析
+    favorites.forEach(song => {
+      const lookup = libraryStore.songLookup;
+      if (!lookup.has(song.path) && song.path) {
+        libraryStore.setExtraSong(song);
+      }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    showToast(`无法加载用户数据：${msg}`, 'error');
+  } finally {
+    userModeLoading.value = false;
+  }
+}
+
+/** 当前容器展示的歌曲列表（用户模式为被查看用户的收藏/歌单歌曲） */
+const currentSongs = computed<Song[]>(() =>
+  isUserMode.value ? userModeSongs.value : songList.value,
+);
 
 // 将 PluginSearchResult 转换为 Song 用于展示和播放
 function mfResultToSong(item: PluginSearchResult): Song {
@@ -191,8 +284,9 @@ const MF_COVER_CONCURRENCY = 3;
 
 async function fetchMissingMfCovers() {
   if (!ctx.value) return;
-  const version = ++mfCoverFetchVersion;
   const { pluginSource } = ctx.value;
+  if (!pluginSource) return;
+  const version = ++mfCoverFetchVersion;
 
   // 筛选没有封面的歌曲（拷贝索引，避免遍历期间数组变化）
   const pending: { index: number; item: PluginSearchResult }[] = [];
@@ -295,6 +389,8 @@ function deriveAlbumsFromMfSongs(songResults: PluginSearchResult[]): PluginAlbum
 
 async function loadData(page = 1) {
   if (!ctx.value) return;
+  // 用户详情模式展示本地收藏/歌单，无需加载在线数据
+  if (isUserMode.value) return;
   const version = ++loadVersion;
   loading.value = true;
   try {
@@ -389,6 +485,7 @@ async function loadLxData(page: number, version: number) {
 async function loadMfData(page: number, version: number) {
   if (!ctx.value) return;
   const { type, rawData, pluginSource } = ctx.value;
+  if (!pluginSource) return;
 
   if (type === 'artist') {
     if (artistActiveTab.value === 'songs') {
@@ -429,6 +526,12 @@ async function loadMfData(page: number, version: number) {
 
 async function handlePlaySong(song: Song) {
   if (!ctx.value) return;
+  // 用户详情模式：收藏歌曲可能为本地或在线，直接交给 playSong 解析协议 URL
+  if (isUserMode.value) {
+    launchFlyingCover(song.path, song.cover_thumb_path || '');
+    void playSong(song, { insertAfterCurrent: true });
+    return;
+  }
   if (isLxEngine.value) {
     await handlePlayLxSong(song);
   } else {
@@ -470,6 +573,7 @@ async function handlePlayLxSong(song: Song) {
 
 async function handlePlayMfSong(song: Song) {
   if (!ctx.value) return;
+  if (!ctx.value.pluginSource) return;
   const mfItem = (song as any).rawData as PluginSearchResult | undefined;
   if (!mfItem) return;
 
@@ -523,17 +627,17 @@ async function handlePlayMfSong(song: Song) {
 
 /** 全部播放：清空队列 → 加入全部歌曲 → 播放第一首（播放时才拉取直链） */
 async function handlePlayAll() {
-  if (!ctx.value || songList.value.length === 0) {
+  if (!ctx.value || currentSongs.value.length === 0) {
     showToast('暂无可播放的歌曲', 'info');
     return;
   }
 
   try {
-    const firstSong = songList.value[0];
+    const firstSong = currentSongs.value[0];
 
     // LX 引擎：全部歌曲预先缓存元信息，确保队列中后续歌曲也能正确解析 URL/歌词
     if (isLxEngine.value) {
-      for (const song of songList.value) {
+      for (const song of currentSongs.value) {
         const lxItem = (song as any).rawData as LxSearchResultItem | undefined;
         if (!lxItem) continue;
         cacheLxSong(lxItem);
@@ -561,7 +665,7 @@ async function handlePlayAll() {
 
     // 清空当前播放队列，加入全部歌曲（保留 rawData，播放时由 playSong 解析协议 URL）
     await clearQueue();
-    addSongsToQueue(songList.value);
+    addSongsToQueue(currentSongs.value);
 
     // 播放第一首：playSong 内部会解析 plugin:// 或 lx:// 协议并拉取直链、歌词、封面
     await playSong(firstSong, { preserveQueue: true });
@@ -589,7 +693,7 @@ function handleAddToPlaylist() {
 
 /** 全选/取消全选 */
 function handleSelectAll() {
-  const allPaths = songList.value.map(s => s.path);
+  const allPaths = currentSongs.value.map(s => s.path);
   if (allPaths.length > 0 && selectedPaths.value.size === allPaths.length) {
     selectedPaths.value = new Set();
   } else {
@@ -624,6 +728,12 @@ async function handleOnlineViewArtist(song: Song) {
     return;
   }
 
+  // 用户详情模式：收藏歌曲可能为本地歌曲，直接打开本地歌手详情
+  if (isUserMode.value) {
+    void openHomeArtist(artistName);
+    return;
+  }
+
   try {
     if (isLxEngine.value && ctx.value.lxSourceId) {
       // LX 引擎：用 lxCatalogSearch 搜索歌手
@@ -646,6 +756,10 @@ async function handleOnlineViewArtist(song: Song) {
         lxSourceId: ctx.value.lxSourceId,
       });
     } else {
+      if (!ctx.value.pluginSource) {
+        showToast('当前歌曲缺少歌手信息', 'info');
+        return;
+      }
       // MF 引擎：用 pluginArtistSearch 搜索歌手
       const results = await pluginArtistSearch(ctx.value.pluginSource, artistName, 1);
       if (results.length === 0) {
@@ -680,6 +794,12 @@ async function handleOnlineViewAlbum(song: Song) {
     return;
   }
 
+  // 用户详情模式：收藏歌曲可能为本地歌曲，直接打开本地专辑详情
+  if (isUserMode.value) {
+    void openHomeAlbum(getSongAlbumKey(song));
+    return;
+  }
+
   try {
     if (isLxEngine.value && ctx.value.lxSourceId) {
       // LX 引擎：用 lxCatalogSearch 搜索专辑
@@ -702,6 +822,10 @@ async function handleOnlineViewAlbum(song: Song) {
         lxSourceId: ctx.value.lxSourceId,
       });
     } else {
+      if (!ctx.value.pluginSource) {
+        showToast('当前歌曲缺少专辑信息', 'info');
+        return;
+      }
       // MF 引擎：用 pluginAlbumSearch 搜索专辑
       const results = await pluginAlbumSearch(ctx.value.pluginSource, albumName, 1);
       if (results.length === 0) {
@@ -729,6 +853,7 @@ async function handleOnlineViewAlbum(song: Song) {
 /** 点击歌手详情中的专辑，导航到在线专辑详情 */
 function handleAlbumClick(album: any) {
   if (!ctx.value) return;
+  if (!ctx.value.pluginSource) return;
   const isLx = isLxEngine.value && ctx.value.lxSourceId;
   // 使用带历史的上下文设置，保存当前歌手上下文
   onlineDetailStore.setContextWithHistory({
@@ -745,13 +870,21 @@ function handleAlbumClick(album: any) {
   void router.push({ path: '/online-detail', query: { type: 'album' } });
 }
 
+/** 点击用户详情中的云歌单，打开其歌曲列表 */
+function handleUserPlaylistClick(playlistId: string) {
+  const playlist = viewedPlaylists.value.find(p => p.id === playlistId);
+  if (!playlist) return;
+  activeCloudPlaylist.value = { name: playlist.name, songs: playlist.songs ?? [] };
+  artistActiveTab.value = 'songs';
+}
+
 function handleBack() {
   // 如果有上一个上下文（从歌手详情进入专辑），直接 router.back
   if (onlineDetailStore.hasPreviousContext()) {
     void router.back();
   } else {
     // 返回搜索页，设置 pendingSearchType 以恢复搜索 tab
-    const sourceType = ctx.value?.sourceSearchType || detailType.value;
+    const sourceType = ctx.value?.sourceSearchType || (detailType.value === 'user' ? 'playlist' : detailType.value);
     onlineDetailStore.setPendingSearchType(sourceType);
     void router.back();
   }
@@ -763,7 +896,11 @@ onMounted(() => {
     void router.replace('/search');
     return;
   }
-  void loadData(1);
+  if (isUserMode.value) {
+    void loadUserModeData();
+  } else {
+    void loadData(1);
+  }
 });
 
 onBeforeUnmount(() => {
@@ -781,7 +918,15 @@ watch(detailType, (newType, oldType) => {
   // 清空上一个类型的数据，避免转场期间显示旧数据
   songs.value = [];
   albums.value = [];
-  if (ctx.value) void loadData(1);
+  if (ctx.value) {
+    if (newType === 'user') {
+      viewedFavorites.value = [];
+      viewedPlaylists.value = [];
+      void loadUserModeData();
+    } else {
+      void loadData(1);
+    }
+  }
 });
 
 // 歌手 tab 切换时重新加载对应数据
@@ -791,6 +936,10 @@ watch(artistActiveTab, () => {
     songs.value = [];
     albums.value = [];
     void loadData(1);
+  }
+  // 用户详情切换到"歌单"tab 或再次点"收藏"时，退出云歌单歌曲视图
+  if (detailType.value === 'user') {
+    activeCloudPlaylist.value = null;
   }
 });
 
@@ -980,6 +1129,115 @@ watch(
             @play="handlePlaySong"
             @contextmenu="handleContextMenu"
           />
+        </div>
+
+        <!-- 用户详情（排行榜"查看"进入）：收藏 / 歌单 -->
+        <div v-else-if="detailType === 'user'" key="user">
+          <ArtistDetailHeader
+            v-model:isBatchMode="isBatchMode"
+            v-model:activeTab="artistActiveTab"
+            :artistName="title"
+            :description="artistDescription"
+            :songs="currentSongs"
+            :selectedCount="selectedPaths.size"
+            :totalSongCount="currentSongs.length"
+            :readOnly="true"
+            :coverUrlOverride="coverUrl"
+            :tabNameOverrides="{ songs: '收藏', albums: '歌单' }"
+            @playAll="handlePlayAll"
+            @selectAll="handleSelectAll"
+          />
+
+          <div class="relative">
+            <Transition name="tab-fade">
+              <!-- 收藏歌曲 tab -->
+              <div v-if="artistActiveTab === 'songs'" key="songs">
+                <button
+                  v-if="activeCloudPlaylist"
+                  type="button"
+                  class="group flex items-center gap-2 px-2 py-2 text-sm text-gray-600 dark:text-white/60 hover:text-[#EC4141] transition-colors cursor-pointer"
+                  @click="activeCloudPlaylist = null"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span class="font-medium">返回</span>
+                  <span class="text-gray-400 dark:text-white/40 group-hover:text-[#EC4141] transition-colors truncate">{{ activeCloudPlaylist.name }}</span>
+                </button>
+                <div v-if="userModeLoading" class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
+                  <svg class="h-8 w-8 animate-spin opacity-40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  <p class="text-sm mt-3">正在加载收藏...</p>
+                </div>
+                <OnlineSongList
+                  v-else-if="currentSongs.length > 0"
+                  :songs="currentSongs"
+                  @play="handlePlaySong"
+                  @contextmenu="handleContextMenu"
+                />
+                <div v-else class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                  </svg>
+                  <p class="text-sm">暂无收藏歌曲</p>
+                </div>
+              </div>
+
+              <!-- 歌单列表 tab -->
+              <div v-else-if="artistActiveTab === 'albums'" key="albums" class="p-4 md:p-6 lg:p-8">
+                <div v-if="userModeLoading" class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
+                  <svg class="h-8 w-8 animate-spin opacity-40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                  <p class="text-sm mt-3">正在加载歌单...</p>
+                </div>
+                <div v-else-if="userPlaylistItems.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-6 gap-y-10">
+                  <div
+                    v-for="playlist in userPlaylistItems"
+                    :key="playlist.id"
+                    class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5"
+                    @click="handleUserPlaylistClick(playlist.id)"
+                  >
+                    <div class="relative w-full aspect-square mb-3 mt-4">
+                      <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
+                        <img
+                          v-if="playlist.cover"
+                          :src="playlist.cover"
+                          class="w-full h-full object-cover rounded-sm"
+                          alt=""
+                          loading="lazy"
+                          @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                        />
+                        <div
+                          v-if="!playlist.cover"
+                          class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner"
+                        >
+                          {{ playlist.name ? playlist.name.charAt(0).toUpperCase() : 'P' }}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex flex-col items-start px-1 z-20">
+                      <h3 class="font-bold text-sm md:text-base text-gray-800 dark:text-gray-200 truncate w-full group-hover:text-[#EC4141] transition-colors leading-tight">
+                        {{ playlist.name }}
+                      </h3>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 truncate w-full mt-1.5 opacity-80">
+                        {{ playlist.count }} 首歌曲
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="flex flex-col items-center justify-center py-20 text-black/30 dark:text-white/30">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <p class="text-sm">暂无歌单</p>
+                </div>
+              </div>
+            </Transition>
+          </div>
         </div>
       </Transition>
     </div>

@@ -116,6 +116,7 @@ function handleDeleteAccount() {
 // 上传选项
 const uploadItems: Array<{ key: keyof typeof settingsStore.settings.upload; label: string; desc: string }> = [
   { key: 'playlists', label: '歌单', desc: '同步本地创建与编辑的歌单' },
+  { key: 'favorites', label: '收藏', desc: '同步我的收藏歌曲' },
   { key: 'plugins', label: '插件', desc: '同步已安装的插件配置' },
   { key: 'settings', label: '本地设置', desc: '同步播放设置、歌词设置、快捷键等偏好配置' },
 ];
@@ -196,6 +197,29 @@ const settingsSyncSummary = computed(() => {
 
 const settingsSyncErrors = computed(() => {
   const r = playlistSync.lastSettingsSyncResult.value;
+  if (!r || r.errors.length === 0) return [];
+  return r.errors;
+});
+
+// 收藏同步
+const formattedLastFavoritesSync = computed(() => {
+  if (!playlistSync.lastFavoritesSyncTime.value) return null;
+  const date = new Date(playlistSync.lastFavoritesSyncTime.value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
+
+const favoritesSyncSummary = computed(() => {
+  const r = playlistSync.lastFavoritesSyncResult.value;
+  if (!r) return null;
+  const parts: string[] = [];
+  if (r.uploadedSongs > 0) parts.push(`上传 ${r.uploadedSongs} 首`);
+  if (r.downloadedSongs > 0) parts.push(`下载 ${r.downloadedSongs} 首`);
+  if (r.errors.length > 0) parts.push(`${r.errors.length} 个错误`);
+  return parts.length > 0 ? parts.join('，') : '无变更';
+});
+
+const favoritesSyncErrors = computed(() => {
+  const r = playlistSync.lastFavoritesSyncResult.value;
   if (!r || r.errors.length === 0) return [];
   return r.errors;
 });
@@ -411,7 +435,7 @@ function updateAutoSyncMaxDelay(event: Event) {
           <span class="w-1 h-4 bg-[#EC4141] rounded-full"></span>
           手动同步
         </span>
-        <SettingHint text="手动将本地歌单、插件、设置同步到云端，或从云端拉取到本地。支持多设备间数据共享。" />
+        <SettingHint text="手动将本地歌单、收藏、插件、设置同步到云端，或从云端拉取到本地。支持多设备间数据共享。" />
       </h2>
 
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
@@ -538,6 +562,50 @@ function updateAutoSyncMaxDelay(event: Event) {
                 class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 :disabled="playlistSync.settingsSyncing.value"
                 @click="playlistSync.downloadSettingsOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                更新至本地
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 收藏同步项 -->
+        <div class="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
+          <div class="manual-sync-head">
+            <div class="upload-copy min-w-0">
+              <div class="upload-label text-gray-900 dark:text-white/90">收藏</div>
+              <div class="manual-sync-sub text-gray-500 dark:text-white/50 truncate">
+                <span v-if="playlistSync.favoritesSyncing.value">{{ playlistSync.favoritesSyncProgress.value || '正在同步...' }}</span>
+                <span v-else-if="favoritesSyncSummary">上次：{{ favoritesSyncSummary }}<template v-if="formattedLastFavoritesSync"> · {{ formattedLastFavoritesSync }}</template></span>
+                <span v-else>未同步</span>
+              </div>
+              <div v-if="favoritesSyncErrors.length > 0 && !playlistSync.favoritesSyncing.value" class="sync-error-list">
+                <div v-for="(err, idx) in favoritesSyncErrors" :key="idx" class="sync-error-item">
+                  {{ err }}
+                </div>
+              </div>
+              <div v-if="!playlistSync.isFavoritesUploadEnabled()" class="manual-sync-tip">上传已关闭，仅下载云端收藏</div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-3 h-8 rounded-full text-xs font-medium transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.favoritesSyncing.value"
+                @click="playlistSync.uploadFavoritesOnly()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                同步至服务器
+              </button>
+              <button
+                type="button"
+                class="border border-black/15 dark:border-white/15 hover:border-[#EC4141]/40 text-black/70 dark:text-white/70 hover:text-[#EC4141] px-3 h-8 rounded-full text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                :disabled="playlistSync.favoritesSyncing.value"
+                @click="playlistSync.downloadFavoritesOnly()"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

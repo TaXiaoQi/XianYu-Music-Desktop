@@ -17,6 +17,7 @@ const Plugins = () => import('../views/Plugins.vue');
 const Settings = () => import('../views/Settings.vue');
 const Auth = () => import('../views/Auth.vue');
 const Search = () => import('../views/Search.vue');
+const TopLists = () => import('../views/TopLists.vue');
 const OnlineDetail = () => import('../views/OnlineDetailView.vue');
 const InitializationView = defineComponent({
   name: 'InitializationView',
@@ -34,6 +35,7 @@ const routes: Array<RouteRecordRaw> = [
   { path: '/settings', name: 'Settings', component: Settings },
   { path: '/auth', name: 'Auth', component: Auth },
   { path: '/search', name: 'Search', component: Search },
+  { path: '/top-lists', name: 'TopLists', component: TopLists },
   { path: '/online-detail', name: 'OnlineDetail', component: OnlineDetail },
 ];
 

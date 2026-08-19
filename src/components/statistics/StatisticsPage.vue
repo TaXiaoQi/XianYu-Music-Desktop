@@ -7,14 +7,48 @@ import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
+import { useOnlineDetailStore } from '../../features/onlineDetail/store';
 import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
+import SongContextMenu from '../overlays/SongContextMenu.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const { theme } = useSettings();
 const { isEnglish } = useI18n();
+const onlineDetailStore = useOnlineDetailStore();
+
+// 排行榜右键菜单状态
+const showContextMenu = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextMenuTargetEntry = ref<LeaderboardEntry | null>(null);
+
+function handleLeaderboardContextMenu(e: MouseEvent, item: LeaderboardEntry) {
+  e.preventDefault();
+  contextMenuTargetEntry.value = item;
+  contextMenuX.value = e.clientX;
+  contextMenuY.value = e.clientY;
+  showContextMenu.value = true;
+}
+
+/** 右键"查看"：打开用户详情页（收藏/歌单 tab） */
+function handleViewLeaderboardUser() {
+  const entry = contextMenuTargetEntry.value;
+  if (!entry) return;
+  onlineDetailStore.setContextWithHistory({
+    type: 'user',
+    title: entry.nickname || entry.username,
+    subtitle: `@${entry.username}`,
+    coverUrl: entry.avatar || '',
+    // username 用于同步查询键，必须用弦予号(ciyuanxi_id)，昵称仅用于展示
+    rawData: { username: entry.ciyuanxi_id || entry.username, ciyuanxi_id: entry.ciyuanxi_id },
+    engineType: 'musicfree',
+  });
+  showContextMenu.value = false;
+  void router.push({ path: '/online-detail', query: { type: 'user' } });
+}
 
 const hasCustomBackground = computed(() => (
   theme.value.mode === 'custom' && Boolean(theme.value.customBackground.imagePath)
@@ -413,6 +447,7 @@ const losslessRatio = computed(() => {
               class="leaderboard-row animate-fade-in-up"
               :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3 }"
               :style="{ animationDelay: `${index * 60}ms` }"
+              @contextmenu="handleLeaderboardContextMenu($event, item)"
             >
               <div
                 class="leaderboard-rank animate-rank-pop"
@@ -445,6 +480,7 @@ const losslessRatio = computed(() => {
               class="leaderboard-row is-me is-sticky animate-fade-in-up"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
               :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
+              @contextmenu="handleLeaderboardContextMenu($event, leaderboardDisplay.me)"
             >
               <div
                 class="leaderboard-rank animate-rank-pop"
@@ -496,6 +532,18 @@ const losslessRatio = computed(() => {
       </div>
     </div>
   </div>
+
+  <SongContextMenu
+    :visible="showContextMenu"
+    :x="contextMenuX"
+    :y="contextMenuY"
+    :song="null"
+    :is-playlist-view="false"
+    :is-online-search="false"
+    :leaderboard-entry="contextMenuTargetEntry"
+    @close="showContextMenu = false"
+    @view-leaderboard-user="handleViewLeaderboardUser"
+  />
 </template>
 
 <style scoped>
