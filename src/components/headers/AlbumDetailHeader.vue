@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { albumHeaderCache } from '../../caches/imageCaches';
 import { useCoverCache } from '../../composables/useCoverCache';
+import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import SortModeIcon from '../common/SortModeIcon.vue';
 
@@ -16,6 +17,8 @@ const props = defineProps<{
   readOnly?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
+  /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
+  scrollContainerRef?: HTMLElement | null;
 }>();
 
 const emit = defineEmits([
@@ -162,6 +165,23 @@ const getGradientForAlbum = (name: string) => {
   }
   return gradients[Math.abs(hash) % gradients.length];
 };
+
+// ===== 滚动缩小封面（QQ 音乐桌面版风格）=====
+const scrollContainer = computed(() => props.scrollContainerRef ?? null);
+const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
+
+/** 封面尺寸：144px → 44px */
+const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
+/** 右侧信息列高度：144px → 64px */
+const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
+/** 标题字号：32px → 16px（同步压缩行高避免占位过高） */
+const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
+const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
+/** 标题下边距：16px → 4px */
+const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
+/** 专辑艺人在收缩早期淡出并收起 */
+const artistOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
+const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
 </script>
 
 <template>
@@ -184,8 +204,8 @@ const getGradientForAlbum = (name: string) => {
       </div>
     </div>
 
-    <div v-else class="flex gap-6 h-auto mt-2 mb-6">
-      <div class="w-36 h-36 rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+    <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
+      <div :style="{ width: coverSize, height: coverSize }" class="rounded-lg shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
         <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
         <img v-else-if="coverUrl" :src="coverUrl" class="w-full h-full object-cover select-none animate-in fade-in duration-300" draggable="false" :alt="albumName" decoding="async" />
         <div v-else class="w-full h-full flex items-center justify-center text-4xl font-bold text-white bg-gradient-to-br animate-in fade-in duration-300" :class="getGradientForAlbum(albumName)">
@@ -193,13 +213,13 @@ const getGradientForAlbum = (name: string) => {
         </div>
       </div>
 
-      <div class="h-36 flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
-        <div class="mb-4">
-          <h1 class="text-[32px] font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight flex items-center gap-2">
+      <div :style="{ height: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
+        <div :style="{ marginBottom: titleMarginBottom }">
+          <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight flex items-center gap-2">
             <span class="bg-[#EC4141] text-white text-[12px] px-1.5 py-0.5 rounded border border-[#EC4141] font-normal leading-none -mt-1 relative top-[1px]">专辑</span>
             {{ albumName }}
           </h1>
-          <p class="text-[14px] text-gray-500 dark:text-gray-400 mt-2 truncate w-full flex items-center gap-2">
+          <p class="text-[14px] text-gray-500 dark:text-gray-400 mt-2 truncate w-full flex items-center gap-2 overflow-hidden" :style="{ opacity: artistOpacity, maxHeight: artistMaxHeight }">
             <span>专辑艺人:</span>
             <span class="text-[#507DAF] dark:text-[#6a9adb]">{{ artistName }}</span>
           </p>

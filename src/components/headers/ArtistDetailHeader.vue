@@ -9,6 +9,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useToast } from '../../composables/toast';
 import { artistHeaderCache } from '../../caches/imageCaches';
 import { useCoverCache } from '../../composables/useCoverCache';
+import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import { type ArtistTabId, getOrderedArtistTabs, saveTabsOrder } from '../../utils/artistTabsOrder';
 
 const props = defineProps<{
@@ -18,8 +19,10 @@ const props = defineProps<{
   totalSongCount?: number;
   activeTab: ArtistTabId;
   songs?: any[];
-  /** 只读模式：禁用头像编辑、管理按钮、tab 拖拽，过滤掉详情 tab */
+  /** 只读模式：禁用头像编辑、管理按钮、tab 拖拽 */
   readOnly?: boolean;
+  /** 存在可展示的歌手简介：readOnly（在线详情）时据此决定是否显示"详情" tab，无简介接口的插件默认不显示 */
+  hasArtistDetail?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
   /** 歌手简介（展示在简介框中） */
@@ -28,6 +31,8 @@ const props = defineProps<{
   rawData?: any;
   /** 自定义 tab 名称（覆盖默认的 歌曲/专辑/歌手详情） */
   tabNameOverrides?: Partial<Record<ArtistTabId, string>>;
+  /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
+  scrollContainerRef?: HTMLElement | null;
 }>();
 
 const emit = defineEmits([
@@ -50,10 +55,10 @@ const tabs = ref(getOrderedArtistTabs());
 const draggedTabId = ref<ArtistTabId | null>(null);
 const suppressClick = ref<boolean>(false);
 
-/** readOnly 模式下过滤掉 details tab */
+// readOnly 模式默认过滤详情 tab，有可展示简介时保留（在线详情页：无对应 API 的插件 no details）
 const visibleTabs = computed(() => {
   if (props.readOnly) {
-    return tabs.value.filter(t => t.id !== 'details');
+    return props.hasArtistDetail ? tabs.value : tabs.value.filter(t => t.id !== 'details');
   }
   return tabs.value;
 });
@@ -467,6 +472,25 @@ const getGradientForArtist = (name: string) => {
 const handlePlayAll = () => {
   emit('playAll');
 };
+
+// ===== 滚动缩小封面（QQ 音乐桌面版风格）=====
+const scrollContainer = computed(() => props.scrollContainerRef ?? null);
+const { scrollProgress } = useScrollShrinkHeader(scrollContainer, 144);
+
+/** 封面尺寸：144px → 44px */
+const coverSize = computed(() => `${144 - 100 * scrollProgress.value}px`);
+/** 右侧信息列高度：144px → 64px */
+const columnHeight = computed(() => `${144 - 80 * scrollProgress.value}px`);
+/** 标题字号：32px → 16px（同步压缩行高避免占位过高） */
+const titleSize = computed(() => `${32 - 16 * scrollProgress.value}px`);
+const titleLineHeight = computed(() => `${40 - 20 * scrollProgress.value}px`);
+/** 标题下边距：16px → 4px */
+const titleMarginBottom = computed(() => `${16 - 12 * scrollProgress.value}px`);
+/** 按钮上边距：8px → 0 */
+const buttonsMarginTop = computed(() => `${8 - 8 * scrollProgress.value}px`);
+/** 简介在收缩早期淡出并收起（初始高度取大值避免长简介被裁剪） */
+const descriptionOpacity = computed(() => Math.max(0, 1 - scrollProgress.value * 2));
+const descriptionMaxHeight = computed(() => `${Math.round(1000 * Math.max(0, 1 - scrollProgress.value * 2))}px`);
 </script>
 
 <template>
@@ -492,11 +516,12 @@ const handlePlayAll = () => {
     </div>
 
     <!-- 正常模式: 歌手详情展示区 -->
-    <div v-else class="flex gap-6 h-auto mt-2 mb-6">
+    <div v-else class="flex items-center gap-6 h-auto mt-2 mb-6">
       <!-- 封面图 (圆形) -->
       <div 
         @click="!readOnly ? handleAvatarClick : undefined"
-        class="w-36 h-36 rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border-4 border-white/50 dark:border-white/5"
+        :style="{ width: coverSize, height: coverSize }"
+        class="rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden group relative select-none bg-gray-100 dark:bg-white/5 border-4 border-white/50 dark:border-white/5"
         :class="!readOnly ? 'cursor-pointer' : 'cursor-default'"
       >
         <div v-if="isLoading" class="w-full h-full bg-gray-200 dark:bg-white/10 animate-pulse"></div>
@@ -529,16 +554,16 @@ const handlePlayAll = () => {
       </div>
       
       <!-- 文本信息与操作 -->
-      <div class="h-36 flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
+      <div :style="{ height: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
         <!-- 歌手名字 -->
-        <div class="mb-4">
-          <h1 class="text-[32px] font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight">
+        <div :style="{ marginBottom: titleMarginBottom }">
+          <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight">
             {{ artistName }}
           </h1>
         </div>
 
         <!-- 操作按钮组 -->
-        <div class="flex items-center gap-3 mt-2">
+        <div class="flex items-center gap-3" :style="{ marginTop: buttonsMarginTop }">
            <button 
              @click="handlePlayAll" 
              class="bg-white/1 hover:bg-white/10 border border-white/1 text-gray-900 dark:text-gray-100 px-6 py-2 rounded-full text-[15px] font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
@@ -565,8 +590,12 @@ const handlePlayAll = () => {
       </div>
     </div>
 
-    <!-- 歌手简介展示框 -->
-    <div v-if="displayDescription" class="mb-5 px-1 -mt-1">
+    <!-- 歌手简介展示框（readOnly 且有详情 tab 时，简介已独立成"详情"页，此处不再重复展示） -->
+    <div
+      v-if="displayDescription && !(readOnly && hasArtistDetail)"
+      class="mb-5 px-1 -mt-1 overflow-hidden"
+      :style="{ opacity: descriptionOpacity, maxHeight: descriptionMaxHeight }"
+    >
       <div class="text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 max-w-3xl whitespace-pre-line break-words">
         {{ displayDescription }}
       </div>

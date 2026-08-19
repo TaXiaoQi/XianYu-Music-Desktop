@@ -20,6 +20,7 @@
       :loadingSet="loadingSet"
       :selectedPaths="selectedPaths"
       :setSongTableRef="setSongTableRef"
+      :scrollContainerRef="songTableScrollContainer"
       @update:isBatchMode="isBatchMode = $event"
       @update:isManagementMode="isManagementMode = $event"
       @update:artistActiveTab="artistActiveTab = $event"
@@ -132,7 +133,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'Home' });
 
-import { defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { useHomePageModel } from '../composables/useHomePageModel';
 import { useI18n } from '../features/i18n';
 
@@ -164,6 +165,7 @@ const {
   artistAlbumList,
   coverCache,
   loadingSet,
+  songTableRef,
   setSongTableRef,
   handlePlayAll,
   handleBatchPlay,
@@ -217,6 +219,9 @@ const {
   editingPlaylistId,
   confirmRename,
 } = useHomePageModel();
+
+/** 歌曲列表滚动容器：驱动本地详情头部（歌单/歌手/专辑）的滚动缩小封面效果 */
+const songTableScrollContainer = computed(() => songTableRef.value?.containerRef ?? null);
 </script>
 
 <style scoped>

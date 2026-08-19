@@ -158,6 +158,17 @@ const containerHeight = ref(600);
 const activeScrollContainer = computed(() =>
   props.pageScrollMode ? (props.scrollContainerRef ?? null) : containerRef.value,
 );
+// 列表首行在外层滚动容器内的顶部偏移（整页滚动时为 header 高度），用于在线详情页的判定换算
+const listOffsetTop = ref(0);
+const updateListOffsetTop = () => {
+  const root = containerRef.value;
+  const outer = activeScrollContainer.value;
+  if (props.pageScrollMode && root && outer && root !== outer) {
+    listOffsetTop.value = Math.max(0, root.getBoundingClientRect().top - outer.getBoundingClientRect().top);
+  } else {
+    listOffsetTop.value = 0;
+  }
+};
 const loadedSongCount = ref(0);
 const isScrollbarHot = ref(false);
 const isScrollbarScrolling = ref(false);
@@ -534,6 +545,7 @@ const handleSongTableMouseLeave = () => {
 const onScroll = (event: Event) => {
   const target = event.target as HTMLElement;
   scrollTop.value = target.scrollTop;
+  updateListOffsetTop();
   if (target.scrollTop + target.clientHeight >= target.scrollHeight - ROW_HEIGHT * SCROLL_TRIGGER_ROWS) {
     loadNextSongSegment();
     // 已渲染完当前提供的全部歌曲仍接近底部时，通知父组件加载更多（如在线搜索分页）
@@ -580,6 +592,7 @@ const {
   folderTree,
   refreshFolder,
   expandFolderPath,
+  listOffsetTop,
 });
 
 // 整页滚动模式：滚动发生在外层容器，动态监听其 scroll 事件驱动虚拟滚动
@@ -587,7 +600,10 @@ watch(
   () => props.scrollContainerRef,
   (el, oldEl) => {
     if (oldEl) oldEl.removeEventListener('scroll', onScroll);
-    if (el) el.addEventListener('scroll', onScroll, { passive: true });
+    if (el) {
+      el.addEventListener('scroll', onScroll, { passive: true });
+      updateListOffsetTop();
+    }
   },
   { immediate: true },
 );
@@ -643,9 +659,11 @@ const handlePointerDown = (event: PointerEvent, song: Song, index: number) => {
   emit('drag-start', { event, song, index });
 };
 
-const showDragIcon = computed(() =>
-  ['folder', 'playlist', 'all', 'artist', 'album', 'genre', 'year'].includes(currentViewMode.value),
-);
+const showDragIcon = computed(() => {
+  // 在线搜索/详情是只读容器，不受本地 currentViewMode 残留影响，统一显示播放图标
+  if (route.path === '/search' || route.path === '/online-detail') return false;
+  return ['folder', 'playlist', 'all', 'artist', 'album', 'genre', 'year'].includes(currentViewMode.value);
+});
 const {
   showHeroScanCard,
   hasSearchQuery,
@@ -894,7 +912,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </span>
-                <span v-else class="text-gray-500 dark:text-white/60">
+                <span v-else class="text-gray-500 dark:text-white/60 cursor-pointer hover:text-[#EC4141]" @click.stop="handlePlayClick(song)" @dblclick.stop.prevent>
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
                   </svg>
@@ -1112,12 +1130,17 @@ const getRowStyle = (songIndex: number, songPath: string) => {
       </div>
     </div>
 
-    <!-- target 未就绪时 disabled 就地渲染，避免 Teleport null target 触发 Vue patch 崩溃 -->
+    <!-- target 未就绪时 disabled 就地渲染，避免 Teleport null target 触发 Vue patch 崩溃；
+         整页滚动（在线详情）时挂回滚动容器，sticky 吸在容器可视区底部——容器可视区正好位于
+         底部播放栏上方，按钮既不随内容滚出视口，也不会盖住底栏（与本地容器绝对定位同理） -->
     <Teleport
       :disabled="!pageScrollMode || !scrollContainerRef"
-      :to="pageScrollMode ? scrollContainerRef : undefined"
+      :to="scrollContainerRef"
     >
-      <div class="absolute right-6 bottom-6 z-30 grid grid-cols-[36px_36px] gap-3">
+      <div
+        class="grid grid-cols-[36px_36px] gap-3"
+        :class="pageScrollMode ? 'sticky bottom-6 z-[60] ml-auto mr-6 w-fit' : 'absolute right-6 bottom-6 z-30'"
+      >
         <div class="h-9 w-9">
           <transition name="locate-fab">
             <button

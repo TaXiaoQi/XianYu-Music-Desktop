@@ -97,6 +97,32 @@ const coverUrl = computed(() => ctx.value?.coverUrl || '');
 const artistDescription = computed(() => ctx.value?.description || '');
 const isLxEngine = computed(() => ctx.value?.engineType === 'lx');
 
+// 歌手简介文本：优先用已拉取的 description，缺失时从原始数据回退常见简介字段
+const artistDetailText = computed(() => {
+  if (detailType.value !== 'artist') return '';
+  const c = ctx.value;
+  if (!c) return '';
+  const explicit = (c.description || '').trim();
+  if (explicit) return explicit;
+  const rd = c.rawData;
+  if (rd && typeof rd === 'object') {
+    return (
+      rd.artistDesc || rd.artist_intro || rd.intro || rd.briefDesc
+      || rd.description || rd.desc || ''
+    ).trim();
+  }
+  return '';
+});
+/** 是否有可展示的歌手简介：无则隐藏"详情" tab（无对应 API 的插件默认不显示） */
+const artistDetailAvailable = computed(() => artistDetailText.value.length > 0);
+
+// 简介为空时若正停留在"详情" tab，回退到歌曲 tab，避免空页面残留
+watch(artistDetailAvailable, (available) => {
+  if (!available && artistActiveTab.value === 'details') {
+    artistActiveTab.value = 'songs';
+  }
+});
+
 /** 用户详情模式（排行榜"查看"进入）：展示被查看用户的云收藏与云歌单 */
 const isUserMode = computed(() => detailType.value === 'user');
 
@@ -905,6 +931,7 @@ watch(
             v-model:activeTab="artistActiveTab"
             :artistName="title"
             :description="artistDescription"
+            :hasArtistDetail="artistDetailAvailable"
             :rawData="ctx?.rawData"
             :songs="currentSongs"
             :selectedCount="selectedPaths.size"
@@ -979,6 +1006,16 @@ watch(
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                 </svg>
                 <p class="text-sm">暂无专辑</p>
+              </div>
+            </div>
+
+            <!-- 歌手详情简介 tab（单独页面展示，参考 QQ 音乐） -->
+            <div v-else-if="artistActiveTab === 'details'" key="details" class="p-4 md:p-6 lg:p-8">
+              <div class="max-w-3xl">
+                <h3 class="font-bold text-base text-gray-900 dark:text-white mb-3">歌手详情</h3>
+                <div class="text-[13.5px] leading-[1.9] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-5 py-4 whitespace-pre-line break-words min-h-[120px]">
+                  {{ artistDetailText }}
+                </div>
               </div>
             </div>
           </Transition>

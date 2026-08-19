@@ -33,6 +33,12 @@ interface UseSongTableAlphabetIndexOptions {
   containerHeight: Ref<number>;
   containerRef: Ref<HTMLElement | null>;
   rootRef: Ref<HTMLElement | null>;
+  /**
+   * 列表首行在滚动容器内的顶部偏移（整页滚动模式下等于 header 高度）。
+   * 在线详情页等 pageScrollMode 场景用于把容器滚动量换算成列表局部滚动量，
+   * 使回到顶部/定位播放/当前行可见性的判定与真实列表坐标一致。
+   */
+  listOffsetTop?: Ref<number>;
   routePath: StringRef;
   currentViewMode: Ref<string>;
   localSortMode: Ref<string>;
@@ -59,6 +65,7 @@ export function useSongTableAlphabetIndex({
   folderTree,
   refreshFolder,
   expandFolderPath,
+  listOffsetTop,
 }: UseSongTableAlphabetIndexOptions) {
   const { currentSong } = storeToRefs(usePlaybackStore());
   const indexBarRef = ref<HTMLElement | null>(null);
@@ -67,6 +74,11 @@ export function useSongTableAlphabetIndex({
   const hoverIndexKey = ref<AlphabetIndexKey | null>(null);
   const isIndexBarVisible = ref(false);
   let hideIndexBarTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // 列表局部滚动量：减去列表首行在滚动容器内的偏移（在线详情页 header 高度）
+  const listScrollTop = computed(() =>
+    Math.max(scrollTop.value - (listOffsetTop?.value ?? 0), 0),
+  );
 
   const indexLabelGetter = computed<((song: Song) => string) | null>(() => {
     if (currentViewMode.value === 'all' && localSortMode.value === 'title') {
@@ -110,7 +122,7 @@ export function useSongTableAlphabetIndex({
 
     const visibleIndex = Math.min(
       songs.value.length - 1,
-      Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT)),
+      Math.max(0, Math.floor(listScrollTop.value / ROW_HEIGHT)),
     );
 
     return getAlphabetIndexKey(indexLabelGetter.value(songs.value[visibleIndex]));
@@ -167,7 +179,7 @@ export function useSongTableAlphabetIndex({
       return false;
     }
 
-    const viewportTop = scrollTop.value;
+    const viewportTop = listScrollTop.value;
     const viewportBottom = viewportTop + viewportHeight;
     const currentRowTop = currentSongIndex.value * ROW_HEIGHT;
     const currentRowBottom = currentRowTop + ROW_HEIGHT;
@@ -193,7 +205,7 @@ export function useSongTableAlphabetIndex({
       return false;
     }
 
-    return songs.value.length > 0 && scrollTop.value > ROW_HEIGHT;
+    return songs.value.length > 0 && listScrollTop.value > ROW_HEIGHT;
   });
 
   const clearHideIndexBarTimer = () => {
@@ -236,8 +248,9 @@ export function useSongTableAlphabetIndex({
       return;
     }
 
-    const targetTop = songIndex * ROW_HEIGHT;
-    containerRef.value.scrollTo({ top: targetTop, behavior: 'auto' });
+    const targetTop = songIndex * ROW_HEIGHT + (listOffsetTop?.value ?? 0);
+    // 平滑滚动过去，避免定位当前播放歌曲时直接硬跳
+    containerRef.value.scrollTo({ top: targetTop, behavior: 'smooth' });
     scrollTop.value = targetTop;
   };
 
