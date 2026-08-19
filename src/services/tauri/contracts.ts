@@ -1038,6 +1038,15 @@ export interface TauriCommandMap {
   delete_wallpaper_file: { payload: { localPath: string }; response: void };
   // ============ 通用文件写入 ============
   write_text_file: { payload: { content: string; destPath: string }; response: string };
+  // ============ 背景视频缓存 ============
+  download_video_to_cache: {
+    payload: { url: string; headers?: Record<string, string> | null };
+    response: string;
+  };
+  remove_cached_background_video: {
+    payload: { path: string };
+    response: void;
+  };
 }
 
 /** 听歌识曲接口响应 */

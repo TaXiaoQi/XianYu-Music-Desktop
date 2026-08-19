@@ -170,6 +170,8 @@ commands.allow = [
   "read_file_bytes",
   "proxy_image",
   "download_audio_to_temp",
+  "download_video_to_cache",
+  "remove_cached_background_video",
   "recognize_system_audio",
   "cancel_recognize_system_audio",
   "recognize_with_pcm",

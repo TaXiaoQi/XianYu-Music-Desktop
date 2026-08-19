@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePlayer } from '../../features/playback';
 import { lyricsSettings } from '../../composables/lyrics';
 import { fileApi } from '../../services/tauri/fileApi';
+import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
 
 const props = defineProps<{
   bgOpacity?: number;
   active?: boolean;
 }>();
 
-const { dominantColors, currentCover, currentSongPath } = usePlayer();
+const { dominantColors, currentCover, currentCoverFull, currentSongPath, currentTime, isPlaying } = usePlayer();
+const { active: videoBackgroundActive, videoUrl: backgroundVideoUrl } = useBilibiliVideoBackground();
+const videoRef = ref<HTMLVideoElement | null>(null);
+const videoPlaybackFailed = ref(false);
+const coverImgFailed = ref(false);
 
 const viewportArea = ref(
   typeof window !== 'undefined' ? window.innerWidth * window.innerHeight : 0
@@ -21,9 +26,19 @@ const updateViewportArea = () => {
   viewportArea.value = window.innerWidth * window.innerHeight;
 };
 
-const thumbCoverUrl = computed(() => (
-  (props.active ?? true) ? currentCover.value : ''
-));
+const thumbCoverUrl = computed(() => {
+  if (!(props.active ?? true)) return '';
+  // 缩略图加载失败时回退到全尺寸封面（在线歌曲可能只有 currentCoverFull 有值）
+  if (coverImgFailed.value && currentCoverFull.value) {
+    return currentCoverFull.value;
+  }
+  return currentCover.value || currentCoverFull.value || '';
+});
+
+// 封面 URL 变化时重置加载失败状态，让 <img> 重新尝试加载
+watch([currentCover, currentCoverFull], () => {
+  coverImgFailed.value = false;
+});
 
 /** 单曲独立背景图路径（从数据库读取，每首歌可不同） */
 const songBgPath = ref<string | null>(null);
@@ -72,6 +87,50 @@ const coverFilterStyle = computed(() => {
   return `blur(${blur}px) brightness(0.78) saturate(1.42) contrast(1.16)`;
 });
 
+const showBackgroundVideo = computed(() => (
+  (props.active ?? true)
+  && videoBackgroundActive.value
+  && Boolean(backgroundVideoUrl.value)
+  && !videoPlaybackFailed.value
+));
+
+const syncBackgroundVideo = (force = false) => {
+  const video = videoRef.value;
+  if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+  const target = Math.max(0, currentTime.value) % video.duration;
+  if (force || Math.abs(video.currentTime - target) > 0.8) {
+    video.currentTime = target;
+  }
+};
+
+const updateVideoPlayback = () => {
+  const video = videoRef.value;
+  if (!video) return;
+  if (showBackgroundVideo.value && isPlaying.value) {
+    void video.play().catch(() => {});
+  } else {
+    video.pause();
+  }
+};
+
+watch(backgroundVideoUrl, async () => {
+  videoPlaybackFailed.value = false;
+  await nextTick();
+  syncBackgroundVideo(true);
+  updateVideoPlayback();
+});
+watch([isPlaying, () => props.active, showBackgroundVideo], updateVideoPlayback);
+watch(currentTime, () => syncBackgroundVideo(false));
+
+const handleVideoLoaded = () => {
+  syncBackgroundVideo(true);
+  updateVideoPlayback();
+};
+
+const handleVideoError = () => {
+  videoPlaybackFailed.value = true;
+};
+
 onMounted(() => {
   window.addEventListener('resize', updateViewportArea);
   updateViewportArea();
@@ -95,8 +154,23 @@ onUnmounted(() => {
       :style="{ backgroundColor: dominantColors[0] }"
     ></div>
 
+    <div v-if="showBackgroundVideo" class="absolute inset-0 overflow-hidden z-[1]">
+      <video
+        ref="videoRef"
+        :src="backgroundVideoUrl"
+        class="h-full w-full object-cover select-none"
+        :style="{ filter: coverFilterStyle }"
+        muted
+        loop
+        playsinline
+        preload="auto"
+        @loadedmetadata="handleVideoLoaded"
+        @error="handleVideoError"
+      ></video>
+    </div>
+
     <!-- 自定义背景图（用户上传）：覆盖默认封面背景 -->
-    <div v-if="customBgUrl" class="absolute inset-0 overflow-hidden z-[1]">
+    <div v-else-if="customBgUrl" class="absolute inset-0 overflow-hidden z-[1]">
       <img
         :src="customBgUrl"
         class="w-full h-full object-cover scale-110 select-none"
@@ -109,11 +183,13 @@ onUnmounted(() => {
     <!-- 默认封面背景（无自定义背景图时显示） -->
     <div v-else-if="thumbCoverUrl" class="absolute inset-0 overflow-hidden z-[1]">
       <img
+        :key="`bg-cover:${currentSongPath}:${thumbCoverUrl}`"
         :src="thumbCoverUrl"
         class="w-full h-full object-cover scale-110 select-none"
         :style="{ filter: coverFilterStyle }"
         draggable="false"
         decoding="async"
+        @error="coverImgFailed = true"
         referrerpolicy="no-referrer"
       />
     </div>

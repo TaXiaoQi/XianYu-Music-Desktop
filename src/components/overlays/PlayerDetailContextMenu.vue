@@ -10,6 +10,7 @@ import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from 
 import { useOnlineDetailStore } from '../../features/onlineDetail/store';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
+import { isBilibiliPluginSong } from '../../composables/useBilibiliVideoBackground';
 import type { Song } from '../../types';
 
 type DetailMenuAction =
@@ -18,6 +19,7 @@ type DetailMenuAction =
   | 'viewSongInfo'
   | 'changeCover'
   | 'changeLyrics'
+  | 'toggleVideoBackground'
   | 'addToPlaylist';
 
 interface MenuEntry {
@@ -31,11 +33,14 @@ const props = defineProps<{
   x: number;
   y: number;
   song: Song | null;
+  videoBackgroundRequested?: boolean;
+  videoBackgroundLoading?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'change-lyrics'): void;
+  (e: 'toggle-video-background'): void;
 }>();
 
 const router = useRouter();
@@ -54,6 +59,7 @@ const isOnlineSong = computed(() => {
   const path = props.song?.path ?? '';
   return path.startsWith('plugin://') || path.startsWith('lx://');
 });
+const isBilibiliSong = computed(() => isBilibiliPluginSong(props.song));
 
 /** 图标定义 */
 const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
@@ -103,6 +109,15 @@ const menuIcons: Record<DetailMenuAction, MenuEntry['icon']> = {
       { d: 'M5 3.5h14a1.5 1.5 0 011.5 1.5v14A1.5 1.5 0 0119 20.5H5A1.5 1.5 0 013.5 19V5A1.5 1.5 0 015 3.5z' },
     ],
   },
+  toggleVideoBackground: {
+    viewBox: '0 0 24 24',
+    fill: false,
+    paths: [
+      { d: 'M4 6.5A1.5 1.5 0 015.5 5h9A1.5 1.5 0 0116 6.5v11a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 014 17.5z' },
+      { d: 'M16 9l4-2v10l-4-2' },
+      { d: props.videoBackgroundRequested ? 'M8.5 9h3v6h-3z' : 'M8.5 8.5l4.5 3.5-4.5 3.5z' },
+    ],
+  },
   addToPlaylist: {
     viewBox: '0 0 24 24',
     fill: false,
@@ -149,6 +164,14 @@ const menuEntries = computed<MenuEntry[]>(() => {
     label: '更改歌词 (LRC)',
     icon: menuIcons.changeLyrics,
   });
+
+  if (isBilibiliSong.value) {
+    entries.push({
+      key: 'toggleVideoBackground',
+      label: props.videoBackgroundRequested ? '关闭背景视频' : '播放视频为背景',
+      icon: menuIcons.toggleVideoBackground,
+    });
+  }
 
   // 添加到歌单放置在最后
   entries.push({
@@ -349,6 +372,9 @@ const handleAction = (action: DetailMenuAction) => {
       break;
     case 'changeLyrics':
       emit('change-lyrics');
+      break;
+    case 'toggleVideoBackground':
+      emit('toggle-video-background');
       break;
     case 'addToPlaylist':
       openAddToPlaylistDialog(props.song.path, { songs: [props.song] });
