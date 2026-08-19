@@ -126,7 +126,7 @@ function inferActualQualityFromPluginResult(
  */
 function createSandboxProxy(pluginId: string, metadata: any): IPluginInstance {
   const allMethodNames = [
-    'search', 'getMediaSource', 'getMusicInfo', 'getLyric',
+    'search', 'getMediaSource', 'getMvSource', 'getMusicInfo', 'getLyric',
     'getAlbumInfo', 'getArtistWorks', 'getTopLists', 'getTopListDetail',
     'importMusicSheet', 'importMusicItem', 'getMusicSheetInfo',
     'getRecommendSheetTags', 'getRecommendSheetsByTag',
@@ -646,6 +646,7 @@ interface IPluginInstance {
   supportedQualities?: string[];
   search?: (query: string, page: number, type: string) => Promise<any>;
   getMediaSource?: (musicItem: any, quality: string) => Promise<any>;
+  getMvSource?: (musicItem: any, videoQuality?: string) => Promise<any>;
   getMusicInfo?: (musicItem: any) => Promise<any>;
   getLyric?: (musicItem: any) => Promise<any>;
   getAlbumInfo?: (albumItem: any, page: number) => Promise<any>;
@@ -1751,6 +1752,78 @@ export async function pluginGetBakaMusicInfo(
   // 确保插件实例已加载
   await ensurePluginInstance(source);
   return BakaPluginManager.getMediaSource(source, item, quality, fallbackBehavior, availableQualities);
+}
+
+// ==================== 获取视频源（Baka 扩展 getMvSource，用于背景视频）====================
+
+export interface PluginVideoSource {
+  url: string;
+  headers?: Record<string, string>;
+  userAgent?: string;
+  videoQuality?: string;
+  mimeType?: string;
+  codec?: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  backupUrls?: string[];
+  expiresAt?: number;
+}
+
+/** 调用插件的视频解析扩展；未实现 getMvSource 的旧插件返回 null，由调用方走兜底解析。 */
+export async function pluginGetVideoSource(
+  source: PluginSource,
+  item: PluginSearchResult,
+  videoQuality?: string,
+): Promise<PluginVideoSource | null> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst || typeof inst.instance.getMvSource !== 'function') {
+    return null;
+  }
+
+  const musicItem = item.rawData
+    ? resetMediaItem(item.rawData, source.name)
+    : resetMediaItem(item, source.name);
+
+  try {
+    const result = await inst.instance.getMvSource(musicItem, videoQuality);
+    if (!result || typeof result !== 'object') return null;
+
+    const url = typeof result.url === 'string' ? result.url.trim() : '';
+    if (!/^https?:\/\//i.test(url)) return null;
+
+    const headers = result.headers && typeof result.headers === 'object' && !Array.isArray(result.headers)
+      ? Object.fromEntries(
+          Object.entries(result.headers)
+            .filter(([key, value]) => key.trim() && typeof value === 'string' && value.trim())
+            .slice(0, 64),
+        ) as Record<string, string>
+      : undefined;
+    const backupUrls = Array.isArray(result.backupUrls)
+      ? result.backupUrls.filter((value: unknown): value is string => (
+          typeof value === 'string' && /^https?:\/\//i.test(value)
+        )).slice(0, 4)
+      : undefined;
+
+    return {
+      url,
+      headers,
+      userAgent: typeof result.userAgent === 'string' ? result.userAgent : undefined,
+      videoQuality: typeof result.videoQuality === 'string'
+        ? result.videoQuality
+        : (typeof result.quality === 'string' ? result.quality : undefined),
+      mimeType: typeof result.mimeType === 'string' ? result.mimeType : undefined,
+      codec: typeof result.codec === 'string' ? result.codec : undefined,
+      duration: Number.isFinite(Number(result.duration)) ? Number(result.duration) : undefined,
+      width: Number.isFinite(Number(result.width)) ? Number(result.width) : undefined,
+      height: Number.isFinite(Number(result.height)) ? Number(result.height) : undefined,
+      backupUrls,
+      expiresAt: Number.isFinite(Number(result.expiresAt)) ? Number(result.expiresAt) : undefined,
+    };
+  } catch (error) {
+    log(`[getMvSource] ${source.name} 调用失败: ${error}`);
+    return null;
+  }
 }
 
 // ==================== 获取歌词（与 MusicFree PluginMethodsWrapper.getLyric 完全一致）====================

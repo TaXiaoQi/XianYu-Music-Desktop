@@ -277,6 +277,25 @@ async function downloadAudioToTemp(
 }
 
 /**
+ * 下载网络视频到应用缓存目录，供 WebView 通过 asset 协议播放（背景视频）
+ * 后端 command: download_video_to_cache
+ */
+async function downloadVideoToCache(
+  url: string,
+  headers?: Record<string, string>,
+): Promise<string> {
+  return tauriInvoke('download_video_to_cache', { url, headers: headers ?? null });
+}
+
+/**
+ * 清理本功能在应用缓存中创建的背景视频文件
+ * 后端 command: remove_cached_background_video
+ */
+async function removeCachedBackgroundVideo(path: string): Promise<void> {
+  return tauriInvoke('remove_cached_background_video', { path });
+}
+
+/**
  * 获取落雪歌曲封面
  * 后端 command: get_lx_cover -> string | null
  */
@@ -328,6 +347,8 @@ export const pluginApi = {
   fetchPluginUrl,
   proxyImage,
   downloadAudioToTemp,
+  downloadVideoToCache,
+  removeCachedBackgroundVideo,
   getLxCover,
   resolveLxWithQualityFallback,
   findAlternativeLxSource,

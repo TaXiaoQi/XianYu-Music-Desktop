@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::time::Duration;
 use tauri::Manager;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize)]
 pub struct PluginHttpResponse {
@@ -373,4 +374,118 @@ pub async fn download_audio_to_temp(
     std::fs::write(&temp_path, &bytes).map_err(|e| e.to_string())?;
 
     Ok(temp_path.to_string_lossy().to_string())
+}
+
+const MAX_BACKGROUND_VIDEO_BYTES: u64 = 512 * 1024 * 1024;
+
+/// 将插件解析得到的视频流式写入应用缓存，供 WebView 通过 asset 协议播放。
+#[tauri::command]
+pub async fn download_video_to_cache(
+    app: tauri::AppHandle,
+    url: String,
+    headers: Option<HashMap<String, String>>,
+) -> Result<String, String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Unsupported video URL".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .gzip(true)
+        .brotli(true)
+        .deflate(true)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    let mut request = client.get(&url);
+    if let Some(request_headers) = headers {
+        for (key, value) in request_headers {
+            if !key.trim().is_empty() && !value.trim().is_empty() {
+                request = request.header(key, value);
+            }
+        }
+    }
+
+    let mut response = request.send().await.map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+    if response
+        .content_length()
+        .is_some_and(|size| size > MAX_BACKGROUND_VIDEO_BYTES)
+    {
+        return Err("Video is too large for background playback".to_string());
+    }
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("video-background");
+    tokio::fs::create_dir_all(&cache_dir)
+        .await
+        .map_err(|error| error.to_string())?;
+    let file_name = format!("xy_music_video_{}.mp4", uuid::Uuid::new_v4());
+    let cache_path = cache_dir.join(file_name);
+    let mut file = tokio::fs::File::create(&cache_path)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut written = 0_u64;
+    let download_result: Result<(), String> = async {
+        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+            written = written.saturating_add(chunk.len() as u64);
+            if written > MAX_BACKGROUND_VIDEO_BYTES {
+                return Err("Video is too large for background playback".to_string());
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        file.flush().await.map_err(|error| error.to_string())?;
+        Ok(())
+    }
+    .await;
+
+    if let Err(error) = download_result {
+        drop(file);
+        let _ = tokio::fs::remove_file(&cache_path).await;
+        return Err(error);
+    }
+    if written == 0 {
+        drop(file);
+        let _ = tokio::fs::remove_file(&cache_path).await;
+        return Err("Empty video response".to_string());
+    }
+
+    Ok(cache_path.to_string_lossy().to_string())
+}
+
+/// 仅允许清理本功能在应用缓存中创建的视频文件。
+#[tauri::command]
+pub async fn remove_cached_background_video(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<(), String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("video-background");
+    let candidate = std::path::PathBuf::from(path);
+    let file_name = candidate
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if candidate.parent() != Some(cache_dir.as_path()) || !file_name.starts_with("xy_music_video_")
+    {
+        return Err("Refusing to remove a non-background-video file".to_string());
+    }
+    if !candidate.exists() {
+        return Ok(());
+    }
+    tokio::fs::remove_file(candidate)
+        .await
+        .map_err(|error| error.to_string())
 }
