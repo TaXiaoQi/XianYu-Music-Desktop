@@ -13,7 +13,7 @@
 import CryptoJs from 'crypto-js';
 import { pluginApi } from './tauri/pluginApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch } from './pluginEngine';
+import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import type { PluginSearchResult, PluginSource } from '../types';
 
@@ -23,8 +23,8 @@ export interface PlaylistSource {
   key: string;       // "wy" | "tx" | "kw" | "kg" | "auto" | "mf_<pluginId>"
   name: string;      // 显示名称
   platform: string;  // 平台中文名
-  /** 来源类型：LX 直连导入 / MusicFree 插件导入 */
-  type: 'lx' | 'musicfree';
+  /** 来源类型：LX 直连导入 / MusicFree 插件导入 / 收藏夹导入 */
+  type: 'lx' | 'musicfree' | 'favorites';
   /** MusicFree 插件源（仅 type='musicfree' 时有值），用于调用插件 API */
   pluginSource?: PluginSource;
 }
@@ -107,6 +107,21 @@ export function getImportSourcesFromPlugins(): PlaylistSource[] {
         type: 'musicfree',
         pluginSource: p,
       });
+
+      // 哔哩哔哩插件：额外添加收藏夹导入入口
+      if (p.sources.some(s => s.toLowerCase() === 'bilibili')) {
+        const favKey = `fav_${p.id}`;
+        if (!seenKeys.has(favKey)) {
+          seenKeys.add(favKey);
+          sources.push({
+            key: favKey,
+            name: '哔哩哔哩收藏夹',
+            platform: p.name,
+            type: 'favorites',
+            pluginSource: p,
+          });
+        }
+      }
     }
   }
 
@@ -668,6 +683,49 @@ async function fetchWyMusicDetailList(ids: string[]): Promise<PluginSearchResult
   }
 
   throw new Error(`网易云歌曲详情获取失败: ${lastError?.message || 'unknown'}`);
+}
+
+/** 网易云歌曲元信息补全结果：封面 URL 与时长（毫秒） */
+export interface WyTrackMetaPatch {
+  coverUrl: string;
+  durationMs: number;
+}
+
+/**
+ * 按网易云歌曲 ID 批量补全封面与时长。
+ *
+ * 部分第三方 MusicFree 网易云插件（如时迁酱 v7）在 search 结果里既不返回可用的
+ * artwork（album.picUrl 在 weapi/search 响应中不存在），也完全不返回 duration/dt
+ * 字段。这里直接用官方 weapi 的 song/detail 批量补全，绕过插件实现差异。
+ *
+ * @param ids 网易云歌曲 ID 列表（纯数字 ID）
+ * @returns songId -> { coverUrl, durationMs } 映射；失败时返回空 Map
+ */
+export async function fetchWyTrackMetaByIds(
+  ids: string[],
+): Promise<Map<string, WyTrackMetaPatch>> {
+  const patches = new Map<string, WyTrackMetaPatch>();
+  const validIds = ids.filter(id => /^\d+$/.test(id));
+  if (validIds.length === 0) return patches;
+
+  try {
+    // 每批最多 1000 首，与 fetchWyMusicDetailList 的上游限制一致
+    const BATCH_SIZE = 1000;
+    for (let offset = 0; offset < validIds.length; offset += BATCH_SIZE) {
+      const batch = validIds.slice(offset, offset + BATCH_SIZE);
+      const details = await fetchWyMusicDetailList(batch);
+      for (const detail of details) {
+        patches.set(String(detail.id), {
+          coverUrl: detail.coverUrl || '',
+          durationMs: detail.duration || 0,
+        });
+      }
+    }
+  } catch (e: any) {
+    log(`fetchWyTrackMetaByIds failed: ${e?.message || e}`);
+  }
+
+  return patches;
 }
 
 function parseWyTrack(track: any): PluginSearchResult | null {
@@ -1329,6 +1387,50 @@ export async function importPlaylistFromMusicFreePlugin(
       img: sheetItem.coverUrl || '',
       desc: '',
       author: sheetItem.artist || '',
+      playCount: '',
+    },
+  };
+}
+
+// ==================== 收藏夹导入（哔哩哔哩等） ====================
+
+/**
+ * 通过插件的 importMusicSheet 接口直接导入收藏夹
+ *
+ * 与 importPlaylistFromMusicFreePlugin 不同，此函数不经过搜索步骤，
+ * 直接将 URL/ID 传给插件的 importMusicSheet 方法获取全部曲目。
+ *
+ * @param pluginSource 支持收藏夹导入的插件源（如哔哩哔哩）
+ * @param urlOrId 收藏夹链接或 ID
+ * @returns 导入结果
+ */
+export async function importPlaylistFromFavorites(
+  pluginSource: PluginSource,
+  urlOrId: string,
+): Promise<PlaylistImportResult> {
+  const input = urlOrId.trim();
+  if (!input) {
+    throw new Error('请输入收藏夹链接或 ID');
+  }
+
+  log(`[Favorites] 导入收藏夹: "${input}" via ${pluginSource.name}`);
+
+  const songs = await pluginImportMusicSheet(pluginSource, input);
+  if (songs.length === 0) {
+    throw new Error(`未能从 ${pluginSource.name} 收藏夹中获取歌曲，请检查链接是否正确`);
+  }
+
+  log(`[Favorites] 收藏夹导入完成: ${songs.length} 首歌曲`);
+
+  return {
+    source: pluginSource.name,
+    songs,
+    total: songs.length,
+    info: {
+      name: `${pluginSource.name}收藏夹`,
+      img: songs[0]?.coverUrl || '',
+      desc: '',
+      author: '',
       playCount: '',
     },
   };

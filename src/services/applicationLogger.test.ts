@@ -21,8 +21,8 @@ const createEntry = (
 });
 
 describe('application logger', () => {
-  it('keeps entries within the count-based retention limits (last 100 total, last 10 errors)', () => {
-    // 保留逻辑改为按数量保留：最近 100 条日志、错误日志最近 10 条，不再按日期过滤
+  it('keeps entries within the count-based retention limits (last 200 total, last 10 errors)', () => {
+    // 保留逻辑改为按数量保留：最近 200 条日志、错误日志最近 10 条，不再按日期过滤
     const now = Date.UTC(2026, 7, 2, 12, 0, 0);
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
@@ -33,7 +33,7 @@ describe('application logger', () => {
       createEntry('warn', cutoff + 6 * 60 * 60 * 1000), // 当天 06:00
     ];
 
-    // 不足 100 条且无错误日志超限，全部保留（不再按日期丢弃前一天日志）
+    // 不足 200 条且无错误日志超限，全部保留（不再按日期丢弃前一天日志）
     expect(filterLogEntriesForRetention(entries, 1, now)).toEqual([entries[0], entries[1]]);
   });
 

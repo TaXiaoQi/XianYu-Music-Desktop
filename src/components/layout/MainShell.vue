@@ -10,7 +10,6 @@ import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
-import { useBanCheck } from '../../composables/useBanCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
 import Sidebar from './Sidebar.vue';
@@ -118,8 +117,6 @@ const {
 // --- 首次启动引导 ---
 const { showOnboarding, completeOnboarding } = useOnboarding();
 
-// 封禁检测心跳（登录后自动轮询）
-useBanCheck();
 const settingsStore = useSettingsStore();
 
 const handleOnboardingComplete = () => {

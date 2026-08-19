@@ -281,6 +281,7 @@ const handleOnlineViewArtist = async (song: Song) => {
       type: 'artist',
       title: artist.name,
       subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+      description: artist.description || '',
       coverUrl: artist.avatarUrl,
       pluginSource,
       rawData: artist.rawData,

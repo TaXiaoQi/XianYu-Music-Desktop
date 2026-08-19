@@ -35,6 +35,7 @@ vi.mock('../services/tauri/playbackApi', () => ({
     setOutputDevice: mocks.setOutputDevice,
     setAudioOutputMode: mocks.setAudioOutputMode,
     updateLoudnessSettings: mocks.updateLoudnessSettings,
+    setPreventSleep: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -77,6 +78,8 @@ const createLifecycleDeps = (loadLyrics = vi.fn()) => ({
   togglePlay: vi.fn(),
   nextSong: vi.fn(),
   prevSong: vi.fn(),
+  seekTo: vi.fn(),
+  stopPlayback: vi.fn(),
   applyLibraryScanBatch: vi.fn(),
   flushBufferedLibraryScanBatch: vi.fn(),
   handleSeekCompleted: vi.fn(),

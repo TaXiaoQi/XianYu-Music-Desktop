@@ -51,8 +51,9 @@ use music::{
     search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder, signed_post_json,
 };
 use player::{
-    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_visualizer_samples,
-    get_current_output_device, get_output_devices, get_playback_duration, get_playback_progress,
+    clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_device_formats,
+    get_audio_visualizer_samples, get_current_output_device, get_output_devices,
+    get_playback_duration, get_playback_progress,
     get_playback_ready, get_playback_session, get_playback_start_failed,
     get_playback_start_failed_reason, get_playback_start_failed_info, get_stream_cache_info,
     get_track_loudness_info, is_stream_cached, load_playback_session, pause_audio, play_audio,
@@ -124,6 +125,16 @@ pub fn graceful_shutdown(app: &tauri::AppHandle) {
 pub fn run() {
     #[cfg(target_os = "windows")]
     {
+        // 注册 AppUserModelID，使 Win11 SMTC（系统媒体传输控件）能正确显示应用名称，
+        // 而非"未知应用"。必须在创建窗口之前调用。
+        // SAFETY: SetCurrentProcessExplicitAppUserModelID 是线程安全的 Win32 API，
+        // 仅设置当前进程的 AppUserModelID 字符串，无副作用。
+        unsafe {
+            use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+            let app_id: Vec<u16> = "com.xymusic.desktop\0".encode_utf16().collect();
+            let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
+        }
+
         if should_disable_gpu_for_startup() {
             append_webview2_browser_arg("--disable-gpu");
         }
@@ -211,6 +222,7 @@ pub fn run() {
             apply_rename,
             get_output_devices,
             get_current_output_device,
+            get_audio_device_formats,
             set_output_device,
             set_audio_output_mode,
             set_prevent_sleep,

@@ -47,7 +47,7 @@ import {
 } from '../types';
 import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
-import { callSandboxMethod, isSandboxReady, getSandboxInstance } from './pluginSandboxManager';
+import { callSandboxMethod, isSandboxReady, getSandboxInstance, clearLastSandboxError, getLastSandboxError } from './pluginSandboxManager';
 import {
   resetMediaItem,
   extractCoverUrl,
@@ -55,17 +55,34 @@ import {
   stripHtmlTags,
   toPluginSearchResult,
   extractResultList,
+  extractArtistAvatarUrl,
   qualityKeyToPluginString,
+  extractDurationMs,
 } from './pluginResultMappers';
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
-import { pluginHttpRequest } from './tauri/pluginApi';
+import { pluginHttpRequest, pluginApi } from './tauri/pluginApi';
 
 let _logCallback: ((msg: string) => void) | null = null;
 
 function log(msg: string) {
   try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
+
+/** 加载日志：直接输出到浏览器 console，便于前端排查插件目录（歌单/歌手/专辑）间歇加载问题 */
+const catalogLog = (msg: string) => {
+  console.log(`[CatalogLoad] ${msg}`);
+  log(msg);
+};
+
+/** 汇总一次插件返回的结构，便于日志中人工判断返回了什么 */
+const describeResultWrapper = (r: any): string => {
+  if (!r || typeof r !== 'object') return `type=${typeof r}`;
+  const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
+  let len = 0;
+  try { len = extractResultList(r).length; } catch { /* ignore */ }
+  return `keys=[${keys}] extractedLen=${len}`;
+};
 
 const firstStringField = (source: any, keys: string[]): string => {
   if (!source || typeof source !== 'object') {
@@ -1052,6 +1069,7 @@ class BakaPluginManagerClass {
       attemptedPluginQualities.add(q);
 
       try {
+        clearLastSandboxError();
         result = await inst.getMediaSource(attemptMusicItem, q);
         if (result?.url) {
           if (await shouldAcceptMediaResult(result, pairIdx, q)) {
@@ -1060,8 +1078,15 @@ class BakaPluginManagerClass {
           result = null;
         }
 
+        const sandboxErr = getLastSandboxError();
+        if (!result?.url && sandboxErr && isFatalMediaSourceError(sandboxErr)) {
+          log(`[getMediaSource] 沙箱日志检测到致命错误，跳过剩余音质: ${sandboxErr}`);
+          songLevelErrorDetected = true;
+          break;
+        }
+
         // 新键无结果，尝试旧键回退（对齐 BakaMusic newToLegacyQualityMap）。
-        // 当用户选择“暂停/不回退”时，不再尝试旧键，避免绕过设置继续刷请求。
+        // 当用户选择"暂停/不回退"时，不再尝试旧键，避免绕过设置继续刷请求。
         const legacyQ = fallbackBehavior === 'pause' ? undefined : newToLegacyQualityMap[q];
         if (!result?.url && legacyQ && legacyQ !== q) {
           if (attemptedPluginQualities.has(legacyQ)) {
@@ -1069,12 +1094,19 @@ class BakaPluginManagerClass {
           } else {
             attemptedPluginQualities.add(legacyQ);
             log(`[getMediaSource] quality=${q} 无结果，回退到旧键: ${legacyQ}`);
+            clearLastSandboxError();
             result = await inst.getMediaSource(attemptMusicItem, legacyQ);
             if (result?.url) {
               if (await shouldAcceptMediaResult(result, pairIdx, legacyQ)) {
                 break;
               }
               result = null;
+            }
+            const legacySandboxErr = getLastSandboxError();
+            if (!result?.url && legacySandboxErr && isFatalMediaSourceError(legacySandboxErr)) {
+              log(`[getMediaSource] 沙箱日志检测到致命错误(legacy)，跳过剩余音质: ${legacySandboxErr}`);
+              songLevelErrorDetected = true;
+              break;
             }
           }
         }
@@ -1364,17 +1396,58 @@ class BakaPluginManagerClass {
     const inst = await this._ensureInstance(source);
     if (!inst) return null;
 
+    // 网易云检测与专辑接口兜底（与 pluginEngine.pluginGetCover 的 tryNeteaseAlbumCover 一致）
+    // 网易云搜索只回超大整数 pic 而无 picUrl/pic_str 时，getMusicInfo 也常拿不到封面，走专辑接口最稳
+    const rawItem = item.rawData || item;
+    const neteaseSource =
+      (source.sources && source.sources.includes('wy')) ||
+      /网易云|netease/i.test(source.name || '') ||
+      !!rawItem?.al?.id ||
+      !!rawItem?.al?.picId_str ||
+      !!rawItem?.al?.pic;
+    const tryNeteaseAlbumCover = async (): Promise<string | null> => {
+      if (!neteaseSource) return null;
+      const raw = item.rawData || item;
+      const albumId = raw?.al?.id ?? raw?.album?.id ?? raw?.albumId;
+      const songmid = String(item.platformId || raw?.id || raw?.songmid || '');
+      if (!albumId || !songmid) return null;
+      try {
+        const cover = await pluginApi.getLxCover({
+          songmid,
+          source: 'wy',
+          albumId: String(albumId),
+          name: item.title,
+          singer: item.artist,
+          albumName: item.album,
+        });
+        // 升级 https：avoid http 封面被 WebView2 混合内容拦截、或被前端 needsProxy 误判走后端代理而失败
+        return (cover && String(cover).replace(/^http:\/\//i, 'https://')) || null;
+      } catch {
+        return null;
+      }
+    };
+
     try {
       if (typeof inst.getMusicInfo === 'function') {
         const musicItem = item.rawData
           ? resetMediaItem(item.rawData, source.name)
           : resetMediaItem(item, source.name);
         const result = await inst.getMusicInfo(musicItem);
+        // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
+        if (result && !item.duration) {
+          const dur = extractDurationMs(result);
+          if (dur) item.duration = dur;
+        }
         const coverUrl = extractCoverUrl(result);
         if (coverUrl) return coverUrl;
       }
+      // getMusicInfo 无封面时，网易云走专辑接口兜底（song/detail 常被限流）
+      const albumCover = await tryNeteaseAlbumCover();
+      if (albumCover) return albumCover;
       return item.coverUrl || null;
     } catch {
+      const albumCover = await tryNeteaseAlbumCover();
+      if (albumCover) return albumCover;
       return item.coverUrl || null;
     }
   }
@@ -1451,7 +1524,7 @@ class BakaPluginManagerClass {
         return {
           id: item.id || item.artistId || item.singerId || '',
           name: stripHtmlTags(item.name || item.title || item.artist || ''),
-          avatarUrl: extractCoverUrl(item) || item.avatar || '',
+          avatarUrl: extractArtistAvatarUrl(item),
           description: item.description || item.desc || '',
           songCount: item.songCount || item.musicCount || undefined,
           albumCount: item.albumCount || undefined,
@@ -1546,11 +1619,22 @@ class BakaPluginManagerClass {
     if (!inst) return [];
 
     try {
-      // 优先使用 getAlbumInfo
+      // 优先使用 getAlbumInfo，落雪式增量退避反复尝试成功路径
       if (typeof inst.getAlbumInfo === 'function') {
-        const result = (await inst.getAlbumInfo(albumItem, page)) ?? {};
-        const list = result?.musicList || result?.data || result?.list || [];
-        if (Array.isArray(list) && list.length > 0) {
+        const getAlbumInfo = inst.getAlbumInfo;
+        const albumLabel = `[${source.name}] getAlbumInfo album="${albumItem?.title || albumItem?.name || albumItem?.album || ''}"`;
+        let list: any[] = [];
+        try {
+          const result = await retryWithBackoff(
+            albumLabel,
+            () => getAlbumInfo(albumItem, page),
+            (r) => extractResultList(r).length === 0,
+          );
+          list = extractResultList(result);
+        } catch (e: any) {
+          log(`[getAlbumInfo] ${source.name} 多次尝试仍空/异常: ${e?.message || e}`);
+        }
+        if (list.length > 0) {
           return list.map((item: any) => {
             resetMediaItem(item, source.name);
             return toPluginSearchResult(item, source);
@@ -1561,6 +1645,7 @@ class BakaPluginManagerClass {
       if (page === 1) {
         const albumName = albumItem.title || albumItem.name || albumItem.album || '';
         if (albumName) {
+          catalogLog(`[${source.name}] getAlbumInfo 重试仍为空，回退搜索 "${albumName}"`);
           return this.searchMusic(source, albumName, 1);
         }
       }
@@ -1576,29 +1661,42 @@ class BakaPluginManagerClass {
     const inst = await this._ensureInstance(source);
     if (!inst) return [];
 
+    const fetchDetail = async (): Promise<any> => {
+      if (typeof inst.getMusicSheetInfo !== 'function') return {};
+      return (await inst.getMusicSheetInfo(sheetItem, page)) ?? {};
+    };
+
+    const sheetLabel = `[${source.name}] getMusicSheetInfo sheet="${sheetItem?.title || sheetItem?.name || ''}"`;
+
+    let list: any[] = [];
     try {
-      if (typeof inst.getMusicSheetInfo === 'function') {
-        const result = (await inst.getMusicSheetInfo(sheetItem, page)) ?? {};
-        const list = result?.musicList || result?.data || result?.list || [];
-        if (Array.isArray(list) && list.length > 0) {
-          return list.map((item: any) => {
-            resetMediaItem(item, source.name);
-            return toPluginSearchResult(item, source);
-          });
-        }
-      }
-      // 回退到搜索
-      if (page === 1) {
-        const sheetName = sheetItem.title || sheetItem.name || '';
-        if (sheetName) {
-          return this.searchMusic(source, sheetName, 1);
-        }
-      }
-      return [];
+      const raw = await retryWithBackoff(
+        sheetLabel,
+        fetchDetail,
+        (r) => extractResultList(r).length === 0,
+      );
+      list = extractResultList(raw);
     } catch (e: any) {
-      log(`[getPlaylistDetail] ${source.name} 失败: ${e?.message || e}`);
-      return [];
+      log(`[getPlaylistDetail] ${source.name} getMusicSheetInfo 多次尝试仍空/异常: ${e?.message || e}`);
+      list = [];
     }
+
+    if (list.length > 0) {
+      return list.map((item: any) => {
+        resetMediaItem(item, source.name);
+        return toPluginSearchResult(item, source);
+      });
+    }
+
+    // 回退到搜索
+    if (page === 1) {
+      const sheetName = sheetItem.title || sheetItem.name || '';
+      if (sheetName) {
+        catalogLog(`${sheetLabel} 重试仍为空，回退搜索 "${sheetName}"`);
+        return this.searchMusic(source, sheetName, 1);
+      }
+    }
+    return [];
   }
 
   /** 获取歌手作品 */
@@ -1608,8 +1706,19 @@ class BakaPluginManagerClass {
 
     try {
       if (typeof inst.getArtistWorks === 'function') {
-        const result = (await inst.getArtistWorks(artistItem, page, type)) ?? {};
-        const list = extractResultList(result);
+        const getArtistWorks = inst.getArtistWorks;
+        const worksLabel = `[${source.name}] getArtistWorks(${type}) artist="${artistItem?.name || artistItem?.artist || ''}"`;
+        let list: any[] = [];
+        try {
+          const result = await retryWithBackoff(
+            worksLabel,
+            () => getArtistWorks(artistItem, page, type),
+            (r) => extractResultList(r).length === 0,
+          );
+          list = extractResultList(result);
+        } catch (e: any) {
+          log(`[getArtistWorks] ${source.name} 多次尝试仍空/异常: ${e?.message || e}`);
+        }
         if (list.length > 0) {
           return list.map((item: any) => {
             resetMediaItem(item, source.name);
@@ -1621,6 +1730,7 @@ class BakaPluginManagerClass {
       if (page === 1) {
         const artistName = artistItem.name || artistItem.artist || '';
         if (artistName) {
+          catalogLog(`[${source.name}] getArtistWorks 重试仍为空，回退搜索 "${artistName}"`);
           return this.searchMusic(source, artistName, 1);
         }
       }
@@ -1829,6 +1939,47 @@ class BakaPluginManagerClass {
 
     return proxy as IBakaPluginInstance;
   }
+}
+
+// ==================== 落雪式增量退避重试（与 pluginEngine.retryOnEmpty 一致） ====================
+
+/**
+ * 当插件接口偶发空返回/异常时，参考落雪(lx) 的加载方式：
+ * 每次失败间隔递增（800/1600/2400...），最多 attempts 次（约 12s）才放弃并抛错。
+ * 不做短固定间隔的快速限次重试。
+ */
+async function retryWithBackoff<T>(
+  label: string,
+  fn: () => Promise<any>,
+  isEmpty: (val: any) => boolean,
+  base: number = 800,
+  attempts: number = 6,
+): Promise<T> {
+  let result: T | undefined;
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    const wait = base * i;
+    try {
+      result = (await fn()) as T;
+      catalogLog(`${label} 第${i}次 → ${describeResultWrapper(result)}`);
+      if (!isEmpty(result)) return result;
+      if (i < attempts) {
+        catalogLog(`${label} 第${i}次为空，${wait}ms后重试(共${attempts}次)`);
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
+    } catch (e: any) {
+      lastErr = e;
+      catalogLog(`${label} 第${i}次异常: ${e?.message || e}`);
+      if (i < attempts) {
+        catalogLog(`${label} 异常后 ${wait}ms重试(共${attempts}次)`);
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
+    }
+  }
+  if (result === undefined || isEmpty(result as any)) {
+    throw lastErr ?? new Error(`${label} 多次尝试后仍为空`);
+  }
+  return result as T;
 }
 
 // ==================== 单例导出 ====================

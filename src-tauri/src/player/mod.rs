@@ -1,6 +1,8 @@
 pub mod buffered_source;
+pub(crate) mod cenc;
 mod commands;
 mod device;
+pub mod dsd_dop;
 pub mod equalizer;
 pub mod loudness;
 mod output;
@@ -22,7 +24,8 @@ pub use commands::{
     update_playback_metadata, wait_stream_complete,
 };
 pub use device::{
-    get_current_output_device, get_output_devices, set_audio_output_mode, set_output_device,
+    get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,
+    set_output_device,
 };
 pub use runtime::init_player;
 pub use session::{

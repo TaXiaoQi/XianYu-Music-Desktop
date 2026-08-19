@@ -4,6 +4,7 @@ import type { Song } from '../../types';
 import { useSettings } from '../../features/settings/useSettings';
 import { launchFlyingCover } from '../../composables/useFlyingCover';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
+import { getDisplayCoverUrl, tryProxyImage } from '../../utils/coverProxy';
 
 const { settings } = useSettings();
 const { currentSong, isPlaying } = usePlaybackController();
@@ -25,8 +26,35 @@ const formatDuration = (seconds: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+/** 封面显示 URL 缓存（原始 URL → 代理后的 data: URL） */
+const coverDisplayMap = ref(new Map<string, string>());
+
+/** 返回可直接用于 <img> 的封面 URL：需要代理的域名走后端代理，代理完成后自动刷新回 data: URL */
+const getCover = (item: Song): string => {
+  const url = item.cover_thumb_path || '';
+  if (!url || url.startsWith('data:')) return url;
+  const cached = coverDisplayMap.value.get(url);
+  if (cached) return cached;
+  const display = getDisplayCoverUrl(url, (dataUrl) => {
+    coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, dataUrl);
+  });
+  if (display !== url) {
+    coverDisplayMap.value = new Map(coverDisplayMap.value).set(url, display);
+  }
+  return display;
+};
+
 const handleImgError = (e: Event) => {
-  (e.target as HTMLImageElement).style.display = 'none';
+  const img = e.target as HTMLImageElement;
+  const src = img.src;
+  if (!src || src.startsWith('data:')) return;
+  // 原始 URL 加载失败 → 走后端代理回退（tryProxyImage 自带缓存/去重/失败标记）
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      coverDisplayMap.value = new Map(coverDisplayMap.value).set(src, dataUrl);
+    }
+  })();
 };
 
 /** 点击/双击播放：触发飞入封面动画并立即 emit 播放 */
@@ -107,49 +135,52 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <table class="w-full text-left">
-    <tbody>
-      <tr
-        v-for="(item, index) in visibleSongs"
-        :key="`${item.path}-${index}`"
-        class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-        @click="songClickAction === 'single' && handlePlayClick(item)"
-        @dblclick="songClickAction !== 'single' && handlePlayClick(item)"
-        @contextmenu="emit('contextmenu', $event, item)"
-      >
-        <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
-          {{ index + 1 }}
-        </td>
-        <td class="py-2 px-2">
-          <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
-            <img
-              v-if="item.cover_thumb_path"
-              :src="item.cover_thumb_path"
-              class="w-full h-full object-cover"
-              alt=""
-              loading="lazy"
-              @error="handleImgError"
-            />
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-            </svg>
-          </div>
-        </td>
-        <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
-          {{ item.title || item.name }}
-        </td>
-        <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
-          {{ item.artist }}
-        </td>
-        <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
-          {{ item.album }}
-        </td>
-        <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
-          {{ formatDuration(item.duration) }}
-        </td>
-      </tr>
-    </tbody>
-  </table>
-  <!-- 渐进式渲染哨兵：滚动到此处时自动加载下一批 -->
-  <div ref="sentinelRef" class="h-1 w-full" aria-hidden="true"></div>
+  <div class="online-song-list-root">
+    <table class="w-full text-left">
+      <tbody>
+        <tr
+          v-for="(item, index) in visibleSongs"
+          :key="`${item.path}-${index}`"
+          class="group border-b border-black/5 dark:border-white/5 cursor-default select-none transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          @click="songClickAction === 'single' && handlePlayClick(item)"
+          @dblclick="songClickAction !== 'single' && handlePlayClick(item)"
+          @contextmenu="emit('contextmenu', $event, item)"
+        >
+          <td class="py-2 px-4 text-center text-xs text-black/40 dark:text-white/40">
+            {{ index + 1 }}
+          </td>
+          <td class="py-2 px-2">
+            <div class="w-11 h-11 rounded-lg bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-lg font-black shrink-0" :data-cover-path="item.path">
+              <img
+                v-if="getCover(item)"
+                :src="getCover(item)"
+                class="w-full h-full object-cover"
+                alt=""
+                loading="lazy"
+                referrerpolicy="no-referrer"
+                @error="handleImgError"
+              />
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+          </td>
+          <td class="py-2 px-2 text-sm text-black dark:text-white font-medium truncate max-w-[200px]">
+            {{ item.title || item.name }}
+          </td>
+          <td class="py-2 px-2 text-sm text-black/60 dark:text-white/60 truncate max-w-[150px]">
+            {{ item.artist }}
+          </td>
+          <td class="py-2 px-2 text-sm text-black/40 dark:text-white/40 truncate max-w-[150px]">
+            {{ item.album }}
+          </td>
+          <td class="py-2 px-4 text-xs text-black/40 dark:text-white/40 text-right whitespace-nowrap">
+            {{ formatDuration(item.duration) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <!-- 渐进式渲染哨兵：滚动到此处时自动加载下一批 -->
+    <div ref="sentinelRef" class="h-1 w-full" aria-hidden="true"></div>
+  </div>
 </template>

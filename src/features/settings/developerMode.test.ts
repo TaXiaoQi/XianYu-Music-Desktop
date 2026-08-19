@@ -20,13 +20,13 @@ describe('developer mode settings entry', () => {
     expect(aboutSource).toContain('DEVELOPER_MODE_CLICK_COUNT = 5');
     expect(aboutSource).toContain('@click="handleDeveloperModeClick"');
     expect(aboutSource).toContain('将音乐给予你');
-    expect(aboutSource).toContain("showToast('已进入开发者模式', 'success')");
+    expect(aboutSource).toContain("showToast(isEnglish.value ? 'Developer mode enabled' : '已进入开发者模式', 'success')");
   });
 
   it('shows Debug only in developer mode and allows exiting it', () => {
-    expect(settingsSource).toContain("{ id: 'debug' as const, name: '调试' }");
+    expect(settingsSource).toContain("{ id: 'debug' as const, name: t('settings.debug') }");
     expect(settingsSource).toContain("activeTab === 'debug'");
-    expect(settingsSource).toContain('if (!isDeveloperMode.value) return baseTabs;');
+    expect(settingsSource).toContain('if (!isDeveloperMode.value) return baseTabs.value;');
     expect(debugSource).toContain('@click="disableDeveloperMode"');
     expect(debugSource).toContain('退出开发者模式');
     expect(debugSource).toContain('播放初始化动画');
@@ -39,7 +39,7 @@ describe('developer mode settings entry', () => {
   });
 
   it('shows advanced settings to regular users and keeps log export there', () => {
-    expect(settingsSource).toContain("{ id: 'advanced', name: '高级设置' }");
+    expect(settingsSource).toContain("{ id: 'advanced', name: t('settings.advanced') }");
     expect(settingsSource).toContain("activeTab === 'advanced'");
     expect(advancedSource).toContain('<LogExportActions />');
     expect(debugSource).not.toContain('<LogExportActions />');
@@ -48,8 +48,8 @@ describe('developer mode settings entry', () => {
     expect(advancedSource).toContain('删除全部日志');
     expect(advancedSource).toContain('应用备份');
     expect(advancedSource).toContain('showDeleteConfirmation');
-    expect(advancedSource).toContain('从 BakaMusic 或 MusicFree 软件导入歌单');
-    expect(advancedSource).toContain('preparePluginBackupFile');
+    expect(advancedSource).not.toContain('从 BakaMusic、MusicFree 或洛雪音乐导入歌单');
+    expect(advancedSource).toContain('preparePluginBackupImport');
     expect(advancedSource).toContain('<BackupImportResultModal');
   });
 });

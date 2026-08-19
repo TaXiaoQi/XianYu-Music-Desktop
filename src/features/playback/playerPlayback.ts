@@ -2,6 +2,7 @@ import {storeToRefs} from 'pinia';
 import {watch} from 'vue';
 import {listen} from '@tauri-apps/api/event';
 import type {QualityKey, Song} from '../../types';
+import type {AudioOutputStatus} from '../../services/tauri/contracts';
 import {playbackApi} from '../../services/tauri/playbackApi';
 import {pluginApi} from '../../services/tauri/pluginApi';
 import {usePlaybackStore} from './store';
@@ -96,6 +97,13 @@ let playbackStartOffset = 0;
 let sessionStartTime: number | null = null;
 let accumulatedTime = 0;
 let currentPlayCountRecorded = false;
+// [统计] 当前是否有音频输出设备（由 audio-output-device-changed 事件维护）。
+// 无设备或音量<1 时播放无实际声音输出，这段时间不计入播放时长统计、不上报。
+let hasAudioOutputDevice = true;
+// [统计] 上次结算时的输出有效性（有设备且音量>=1），用于在状态翻转时精确结算有效时长
+let lastOutputValid = true;
+let deviceStatusUnlisten: (() => void) | null = null;
+let volumeValidityWatcher: ReturnType<typeof watch> | null = null;
 let isSeeking = false;
 // duration 未知时用于检测播放结束：记录上次后端进度及停滞轮次
 let lastRawProgress = -1;
@@ -108,6 +116,103 @@ const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.
 const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
 const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+// ==================== [试听片段] 在线音源试听流处理 ====================
+// 部分插件（如汽水音乐）对 VIP 歌曲匿名只返回 30~60 秒试听片段，且片段截取自歌曲中段
+// （如 3:28 处的高潮部分），表现为"一上来就从高潮播放、歌词对不上"。
+// 这里通过实际音频时长与元数据时长的差异检测试听流，并将播放进度映射回完整歌曲时间轴，
+// 使进度条与歌词正确对齐片段在原曲中的位置。
+
+interface PreviewClipInfo {
+  /** 片段在完整歌曲中的起点（秒） */
+  start: number;
+  /** 片段实际时长（秒） */
+  duration: number;
+}
+
+/** 当前歌曲若为试听片段，保存其映射信息；非试听为 null */
+let activePreviewClip: PreviewClipInfo | null = null;
+/** activePreviewClip 所属歌曲路径（同一首歌重播时保留映射） */
+let previewClipPath = '';
+/** 已完成试听检测的歌曲路径，防止同一首歌重复检测/重复弹提示 */
+let previewDetectedPath = '';
+/** 汽水歌曲试听元数据缓存：trackId → 片段信息（起点/时长来自 SEO 端点） */
+const qishuiPreviewCache = new Map<string, PreviewClipInfo>();
+/** 进行中的汽水试听元数据请求，避免播放预热与检测重复请求 */
+const qishuiPreviewInflight = new Map<string, Promise<PreviewClipInfo | null>>();
+
+const QISHUI_SEO_TRACK_URL = 'https://beta-luna.douyin.com/luna/h5/seo_track';
+
+function isPluginPath(path: string): boolean {
+  return path.startsWith('plugin://');
+}
+
+function isQishuiPluginPath(path: string): boolean {
+  return path.startsWith('plugin://汽水音乐');
+}
+
+/** 从 plugin://平台名/trackId 形式的路径中提取插件歌曲 ID */
+function extractPluginTrackId(path: string): string {
+  const rest = path.slice('plugin://'.length);
+  return rest.split('/').pop() || '';
+}
+
+/** 读取汽水歌曲的试听元数据（片段起点/时长），匿名可访问，带缓存与去重 */
+async function fetchQishuiPreviewInfo(trackId: string): Promise<PreviewClipInfo | null> {
+  const cached = qishuiPreviewCache.get(trackId);
+  if (cached) return cached;
+  const inflight = qishuiPreviewInflight.get(trackId);
+  if (inflight) return inflight;
+
+  const request = (async (): Promise<PreviewClipInfo | null> => {
+    try {
+      const resp = await pluginApi.pluginHttpRequest(
+        'GET',
+        `${QISHUI_SEO_TRACK_URL}?track_id=${encodeURIComponent(trackId)}&device_platform=web`,
+        undefined, undefined, 8000,
+      );
+      if (resp.status < 200 || resp.status >= 300) return null;
+      const data = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp.body;
+      const track = data?.seo_track?.track;
+      const preview = track?.preview;
+      const fullDurationMs = Number(track?.duration) || 0;
+      const previewDurationMs = Number(preview?.duration) || 0;
+      const startMs = Number(preview?.start);
+      // 仅当试听时长明显小于完整时长时才视为试听配置
+      if (
+        Number.isFinite(startMs) && startMs >= 0
+        && previewDurationMs > 0 && fullDurationMs > previewDurationMs
+      ) {
+        const info = { start: startMs / 1000, duration: previewDurationMs / 1000 };
+        qishuiPreviewCache.set(trackId, info);
+        return info;
+      }
+    } catch { /* 匿名访问失败或网络异常时按无偏移处理 */ }
+    return null;
+  })();
+
+  qishuiPreviewInflight.set(trackId, request);
+  try {
+    return await request;
+  } finally {
+    qishuiPreviewInflight.delete(trackId);
+  }
+}
+
+function formatPreviewClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** 试听检测条件：实际音频为短片段且远小于元数据时长（如 52s vs 261s） */
+function isPreviewLikeStream(actualDuration: number, songDuration: number): boolean {
+  return actualDuration > 0
+    && songDuration >= 100
+    && actualDuration <= 120
+    && actualDuration + 30 <= songDuration;
+}
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -151,6 +256,50 @@ const authStore = useAuthStore();
     currentAvailableQualities,
   } = storeToRefs(playbackStore);
   const { showPlayerDetail } = storeToRefs(uiStore);
+
+  // [统计] 输出有效性（有设备且音量>=1）翻转时精确结算统计会话：
+  // 变为无效（静音/无设备）→ 结算当前有效 session 到 accumulatedTime，避免无效时段混入；
+  // 恢复有效 → 若正在播放重新开始统计会话（不含无效时段）。
+  const syncStatisticsValidity = () => {
+    const valid = playbackStore.volume >= 1 && hasAudioOutputDevice;
+    if (valid === lastOutputValid) return;
+    lastOutputValid = valid;
+    if (valid) {
+      if (isPlaying.value) sessionStartTime = Date.now();
+    } else if (isPlaying.value && sessionStartTime) {
+      accumulatedTime += (Date.now() - sessionStartTime) / 1000;
+      sessionStartTime = null;
+    }
+  };
+
+  // [统计] 仅在输出有效（有设备且音量>=1）时开启统计会话。
+  // 起播/恢复/周期刷新若在无效时段无条件重置 sessionStartTime，会把静音/无设备时段
+  // 重新计入统计，故统一走此入口：无效时置 null，由 syncStatisticsValidity 在恢复有效时接管。
+  const startStatisticsSession = () => {
+    sessionStartTime = (playbackStore.volume >= 1 && hasAudioOutputDevice) ? Date.now() : null;
+  };
+
+  // [统计] 订阅音频输出设备变更事件，维护 hasAudioOutputDevice 状态。
+  // 无设备时播放不出声，不应计入播放时长。
+  listen<AudioOutputStatus>('audio-output-device-changed', (event) => {
+    hasAudioOutputDevice = event.payload.active_device_name != null;
+    playbackStore.activeOutputMode = event.payload.active_output_mode;
+    syncStatisticsValidity();
+  }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
+
+  // [统计] 应用启动时主动获取一次设备状态（事件仅在设备变化时发射，启动时可能无事件）
+  playbackApi.getCurrentOutputDevice()
+    .then(status => {
+      hasAudioOutputDevice = status.active_device_name != null;
+      playbackStore.activeOutputMode = status.active_output_mode;
+      syncStatisticsValidity();
+    })
+    .catch(() => {});
+
+  // [统计] 音量变化时同步统计会话有效性（静音/恢复）
+  volumeValidityWatcher = watch(() => playbackStore.volume, () => {
+    syncStatisticsValidity();
+  });
 
   const setManagedTimeout = (callback: () => void, delay: number) => {
     const timerId = setTimeout(() => {
@@ -411,6 +560,44 @@ const authStore = useAuthStore();
     currentTime.value = time;
   };
 
+  /**
+   * [试听片段] 实际音频时长远小于元数据时长时判定为试听流。
+   * 汽水歌曲可从 SEO 端点拿到片段起点，将 currentTime 映射回完整歌曲时间轴；
+   * 拿不到起点时按实际片段时长修正 duration，保证进度条自洽。
+   */
+  const handlePreviewClipDetected = async (song: Song, actualDuration: number) => {
+    previewDetectedPath = song.path;
+    const trackId = isQishuiPluginPath(song.path) ? extractPluginTrackId(song.path) : '';
+    const previewInfo = trackId ? await fetchQishuiPreviewInfo(trackId) : null;
+
+    // 等待期间可能已切歌
+    if (currentSong.value?.path !== song.path) return;
+
+    if (previewInfo && Math.abs(previewInfo.duration - actualDuration) <= 3) {
+      activePreviewClip = { start: previewInfo.start, duration: actualDuration };
+      previewClipPath = song.path;
+      // currentTime 从片段内进度映射到完整歌曲时间轴（进度条/歌词立即对齐片段位置）
+      reanchorPlaybackClock(previewInfo.start + currentTime.value);
+      showToast(
+        `「${getSmtcTitle(song)}」为 VIP 试听片段（${Math.round(actualDuration)} 秒，${formatPreviewClock(previewInfo.start)} 起），完整播放请配置插件登录或更换音源`,
+        'info',
+      );
+    } else {
+      activePreviewClip = { start: 0, duration: actualDuration };
+      previewClipPath = song.path;
+      const flooredDuration = Math.floor(actualDuration);
+      if (song.duration !== flooredDuration) {
+        currentSong.value = { ...song, duration: flooredDuration };
+        playbackStore.patchQueueSongMeta(song.path, { duration: flooredDuration });
+      }
+      reanchorPlaybackClock(Math.min(currentTime.value, actualDuration));
+      showToast(
+        `当前音源仅为试听片段（约 ${flooredDuration} 秒），完整播放请更换音源或配置插件登录`,
+        'info',
+      );
+    }
+  };
+
   const startPlaybackRuntime = () => {
     stopPlaybackRuntime();
     reanchorPlaybackClock(currentTime.value);
@@ -434,7 +621,11 @@ const authStore = useAuthStore();
       const delta = (now - playbackAnchorTime) / 1000.0;
       currentTime.value = playbackStartOffset + delta;
 
-      if (currentSong.value.duration > 0 && currentTime.value >= currentSong.value.duration) {
+      // [试听片段] 试听流的自然结束位置以片段终点为准
+      const endTime = activePreviewClip
+        ? activePreviewClip.start + activePreviewClip.duration
+        : currentSong.value.duration;
+      if (endTime > 0 && currentTime.value >= endTime - 0.3) {
         handleAutoNext();
         return;
       }
@@ -449,7 +640,7 @@ const authStore = useAuthStore();
     periodicFlushTimerId = setInterval(() => {
       if (isPlaying.value && currentSong.value) {
         flushPlaySession();
-        sessionStartTime = Date.now();
+        startStatisticsSession();
       }
     }, 30_000);
 
@@ -461,10 +652,34 @@ const authStore = useAuthStore();
       if (!progressListeningActive || !isPlaying.value || isSeeking) return;
 
       const {position: rawTime, duration} = event.payload;
+      // [试听片段] 同一首歌重播后若实际时长与片段时长不符（如已配置登录态拿到完整流），
+      // 清除陈旧映射并允许重新检测
+      if (
+        activePreviewClip
+        && duration > 0
+        && Math.abs(duration - activePreviewClip.duration) > 3
+      ) {
+        activePreviewClip = null;
+        previewClipPath = '';
+        previewDetectedPath = '';
+      }
       const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-      const adjustedTime = Math.max(0, rawTime - offsetSec);
+      // [试听片段] 试听流的 rawTime 是片段内进度，加上片段起点映射回完整歌曲时间轴
+      const previewStart = activePreviewClip?.start ?? 0;
+      const adjustedTime = Math.max(0, rawTime - offsetSec + previewStart);
       if (Math.abs(adjustedTime - currentTime.value) > 0.05) {
         reanchorPlaybackClock(adjustedTime);
+      }
+
+      // [试听片段检测] 实际音频时长远小于元数据时长 → 插件只返回了试听片段（如汽水 VIP 歌曲）
+      const songForPreviewCheck = currentSong.value;
+      if (
+        songForPreviewCheck
+        && previewDetectedPath !== songForPreviewCheck.path
+        && isPluginPath(songForPreviewCheck.path)
+        && isPreviewLikeStream(duration, songForPreviewCheck.duration)
+      ) {
+        void handlePreviewClipDetected(songForPreviewCheck, duration);
       }
 
       // 播放结束兜底检测：后端进度连续多轮停滞且已播放过则视为结束
@@ -477,7 +692,10 @@ const authStore = useAuthStore();
       if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
         stalledProgressTicks += 1;
         const unknownDuration = !song.duration || song.duration <= 0;
-        const nearEnd = song.duration > 0 && rawTime >= song.duration - 3;
+        // [试听片段] 试听流的结束位置以片段时长为准（rawTime 是片段内进度）
+        const nearEnd = activePreviewClip
+          ? rawTime >= activePreviewClip.duration - 3
+          : song.duration > 0 && rawTime >= song.duration - 3;
         // 在线歌（流式下载）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
         // 若沿用 4 轮阈值会被误判为播放结束而自动切下一首，故对在线歌放宽阈值。
         const isOnlineStream = !!song.path
@@ -519,6 +737,13 @@ const authStore = useAuthStore();
   const flushPlaySession = () => {
     const song = currentSong.value;
     if (!song) return;
+
+    // [统计] 无有效音频输出（无输出设备或音量<1）时，这段播放时长不计入统计、不上报。
+    // 丢弃当前会话起点，避免静音/无设备时段被后续 flush 累计。
+    if (playbackStore.volume < 1 || !hasAudioOutputDevice) {
+      sessionStartTime = null;
+      return;
+    }
 
     let currentSession = 0;
     if (isPlaying.value && sessionStartTime) {
@@ -722,9 +947,9 @@ const authStore = useAuthStore();
     const fadeEnabled = settingsStore.settings.audio.fadeInOutEnabled;
     const fadeDuration = settingsStore.settings.audio.fadeInOutDurationMs;
 
-    // [音质切换防爆音] 同一首歌切换音质（continueStatisticsSession=true）时，
-    // 旧音频仍在播放中直接被替换会产生爆音/失真。此时无论渐入渐出是否开启，
-    // 都做一次短过渡（未开启时用 150ms），避免 DC offset 突变。
+    // [音质切换] 同一首歌切换音质（continueStatisticsSession=true）时，
+    // 旧音频会被先停止再重新起播新音质。由于网络 URL 解析期间存在静音间隔，
+    // 淡出→静音→淡入的体验割裂，因此音质切换不做淡进淡出。
     const isQualitySwitch = !!options.continueStatisticsSession
       && !!previousSong
       && previousSong.path === song.path;
@@ -739,14 +964,12 @@ const authStore = useAuthStore();
       && !!previousSong
       && (previousSong.path !== song.path || isQualitySwitch);
 
-    const shouldFadeOnSwitch = (fadeEnabled || isQualitySwitch)
+    const shouldFadeOnSwitch = fadeEnabled
       && isPlaying.value
       && !!previousSong
-      && (previousSong.path !== song.path || isQualitySwitch);
+      && previousSong.path !== song.path;
 
-    const effectiveFadeDuration = isQualitySwitch && !fadeEnabled
-      ? 150
-      : fadeDuration;
+    const effectiveFadeDuration = fadeDuration;
 
     let usingDownloadedAudioFile = false;
     let pluginHeaders: Record<string, string> | null = null;
@@ -890,9 +1113,10 @@ const authStore = useAuthStore();
       : primeCoverPath(coverLookupPath, song.cover_thumb_path);
     const cachedFullCover = getFullCoverUrl(coverLookupPath);
     const immediateCover = cachedCover || persistedCover;
+    let displayCover = '';
     if (immediateCover) {
       // B站等需代理的封面：先显示原始 URL，异步代理完成后刷新底部栏/歌词封面
-      const displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
+      displayCover = getDisplayCoverUrl(immediateCover, (dataUrl) => {
         if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
         currentCover.value = dataUrl;
         currentCoverFull.value = dataUrl;
@@ -900,7 +1124,8 @@ const authStore = useAuthStore();
       currentCover.value = displayCover;
       currentCoverPath.value = coverLookupPath;
     }
-    currentCoverFull.value = cachedFullCover || immediateCover || '';
+    // 展开大图同样优先用代理后的封面，避免网易云等防盗链封面白屏
+    currentCoverFull.value = cachedFullCover || displayCover || immediateCover || '';
     preloadPriorityCovers(getLikelyThumbnailPaths(song));
     // [落雪] lx:// 歌曲跳过本地封面加载（loadCover 会调用后端读取本地文件）
     const currentThumbnailLoad = isLxSong
@@ -952,10 +1177,34 @@ const authStore = useAuthStore();
     }
     const cueStartOffset = song.cue_start_offset || 0;
     const requestedStartTime = Number.isFinite(options.startTime) ? (options.startTime as number) : 0;
-    const resumeTime = Math.max(0, Math.min(requestedStartTime, song.duration || requestedStartTime));
+    let resumeTime = Math.max(0, Math.min(requestedStartTime, song.duration || requestedStartTime));
 
     stopPlaybackRuntime();
+    // [试听片段] 换歌时重置试听映射并预热汽水试听元数据；同一首歌重播（暂停恢复/重试）
+    // 保留映射，并把续播位置限制在片段区间内（resumeTime 保持完整歌曲时间轴）。
+    if (previewClipPath !== song.path) {
+      activePreviewClip = null;
+      previewClipPath = '';
+      previewDetectedPath = '';
+      if (isQishuiPluginPath(song.path)) {
+        const prewarmTrackId = extractPluginTrackId(song.path);
+        if (prewarmTrackId && !qishuiPreviewCache.has(prewarmTrackId)) {
+          void fetchQishuiPreviewInfo(prewarmTrackId);
+        }
+      }
+    }
+    if (activePreviewClip) {
+      resumeTime = Math.max(
+        activePreviewClip.start,
+        Math.min(resumeTime, activePreviewClip.start + activePreviewClip.duration - 1),
+      );
+    }
     reanchorPlaybackClock(resumeTime);
+    // [进度同步] 提前启动播放时钟和 playback:progress 监听器，不必等 Rust 起播探测完成。
+    // 之前在线歌曲的 startPlaybackRuntime 在 tryPlayOnlineViaRust 之后才调用（最长 20 秒），
+    // 期间 currentTime 卡在 0，但实际音频已在 Rust 后端播放，导致"有声音但进度条不动"。
+    // 提前启动后，动画时钟从 0 开始走动，首个 playback:progress 事件到达时自动修正到正确位置。
+    startPlaybackRuntime();
     accumulatedTime = 0;
     sessionStartTime = null;
     lastRawProgress = -1;
@@ -979,7 +1228,9 @@ const authStore = useAuthStore();
       scheduleAddToHistory(currentSong.value ?? song);
     };
 
-    const startOffsetMs = cueStartOffset + Math.round(resumeTime * 1000);
+    // [试听片段] Rust 侧起始位置需要片段内时间（resumeTime 是完整歌曲时间轴）
+    const startOffsetMs = cueStartOffset
+      + Math.round((resumeTime - (activePreviewClip?.start ?? 0)) * 1000);
 
     try {
       const preparedOnlineAudio = await onlineAudioPreparationPromise;
@@ -1205,9 +1456,14 @@ const authStore = useAuthStore();
       // 置加载状态、加载歌词、启动播放时钟、更新 SMTC 与封面
       const finishRustPlaybackStart = () => {
         isSongLoaded.value = true;
-        sessionStartTime = Date.now();
+        startStatisticsSession();
         loadLyrics();
-        startPlaybackRuntime();
+        // [进度同步] 起播确认后立即将时钟锚定到实际起播位置（resumeTime），
+        // 消除下载/探测期间 rAF 时钟超前导致的进度与声音不匹配。
+        // 不再重复 startPlaybackRuntime()：早期启动的 rAF 时钟与 playback:progress
+        // 监听器继续沿用，避免重复订阅导致事件丢失或时钟被重置到超前位置。
+        // resumeTime 始终是完整歌曲时间轴（试听映射在 progress 事件中统一处理）。
+        reanchorPlaybackClock(resumeTime);
         recordStartedSongToHistory();
 
         void currentThumbnailLoad
@@ -1220,8 +1476,12 @@ const authStore = useAuthStore();
             const normalizedCoverPath = coverPath || '';
             // [在线歌曲] loadCover 返回缓存中的原始 URL，需经 getDisplayCoverUrl 取代理后的
             // data: URL，否则会覆盖 immediateCover 路径已异步设置的代理封面。
+            // 与 playSong 内首个缩略图回调语义一致：异步加载无结果时保留立即封面，
+            // 仅在确认本歌确实没有封面（连立即封面都没有）时才清空，避免闪烁回退。
             if (normalizedCover) {
               currentCover.value = getDisplayCoverUrl(normalizedCover);
+            } else if (!immediateCover) {
+              currentCover.value = '';
             }
             if (!currentCoverFull.value) {
               currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
@@ -1259,6 +1519,8 @@ const authStore = useAuthStore();
             headers: pluginHeaders,
             ekey: pluginEkey,
             cek: pluginCek,
+            dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
+            outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
           });
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));
@@ -1393,6 +1655,8 @@ const authStore = useAuthStore();
           volumeBalanceEnabled: settingsStore.settings.audio.volumeBalance?.enabled,
           gainOffsetDb: settingsStore.settings.audio.volumeBalance?.gainOffsetDb,
           preventClipping: settingsStore.settings.audio.volumeBalance?.preventClipping,
+          dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
+          outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
         };
 
         if (playBeforeFlyCover) {
@@ -1453,7 +1717,7 @@ const authStore = useAuthStore();
         }
 
         isSongLoaded.value = true;
-        sessionStartTime = Date.now();
+        startStatisticsSession();
         loadLyrics();
         startPlaybackRuntime();
         recordStartedSongToHistory();
@@ -1483,6 +1747,8 @@ const authStore = useAuthStore();
             const normalizedCoverPath = coverPath || '';
             if (normalizedCover) {
               currentCover.value = getDisplayCoverUrl(normalizedCover);
+            } else if (!immediateCover) {
+              currentCover.value = '';
             }
             if (!currentCoverFull.value) {
               currentCoverFull.value = getDisplayCoverUrl(normalizedCover) || '';
@@ -1629,12 +1895,12 @@ const authStore = useAuthStore();
       }
       if (myToken !== togglePlayToken) return;
       await playbackApi.resumeAudio();
-      sessionStartTime = Date.now();
+      startStatisticsSession();
       startPlaybackRuntime();
       void fadeVolumeTo(targetVol, fadeDuration, startVol);
     } else {
       await playbackApi.resumeAudio();
-      sessionStartTime = Date.now();
+      startStatisticsSession();
       startPlaybackRuntime();
     }
   };
@@ -1652,16 +1918,24 @@ const authStore = useAuthStore();
     const trackDuration = currentSong.value.duration;
     // duration 未知/为 0 时不对上限进行 clamp，否则 seekTo 任意时间都会被压缩到 0
     // 导致点击歌词从头播放
-    const targetTime = trackDuration > 0
+    let targetTime = trackDuration > 0
       ? Math.max(0, Math.min(newTime, trackDuration))
       : Math.max(0, newTime);
+    // [试听片段] 拖动范围限制在片段区间内，Rust 侧需要的是片段内时间
+    if (activePreviewClip) {
+      targetTime = Math.max(
+        activePreviewClip.start,
+        Math.min(targetTime, activePreviewClip.start + activePreviewClip.duration - 0.5),
+      );
+    }
     const requestId = ++latestSeekRequestId;
     reanchorPlaybackClock(targetTime);
 
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
+      const seekClipTime = targetTime + offsetSec - (activePreviewClip?.start ?? 0);
       await playbackApi.seekAudio({
-        time: targetTime + offsetSec,
+        time: Math.max(0, seekClipTime),
         isPlaying: isPlaying.value,
         requestId,
       });
@@ -1708,7 +1982,8 @@ const authStore = useAuthStore();
 
     isSeeking = false;
     const offsetSec = (currentSong.value?.cue_start_offset || 0) / 1000;
-    const trackTime = Math.max(0, payload.time - offsetSec);
+    // [试听片段] seek 完成回执是片段内时间，映射回完整歌曲时间轴
+    const trackTime = Math.max(0, payload.time - offsetSec + (activePreviewClip?.start ?? 0));
     reanchorPlaybackClock(trackTime);
   };
 
@@ -1719,6 +1994,10 @@ const authStore = useAuthStore();
     clearManagedShortTimers();
     progressUnlisten = null;
     progressListeningActive = false;
+    deviceStatusUnlisten?.();
+    deviceStatusUnlisten = null;
+    volumeValidityWatcher?.();
+    volumeValidityWatcher = null;
     currentBackendVolume = playbackStore.volume / 100;
     togglePlayToken += 1;
     playRequestId += 1;

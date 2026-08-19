@@ -43,7 +43,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   library: '音乐库',
   toolbox: '工具箱',
   desktopLyrics: '桌面歌词',
-  shortcuts: '快捷键',
+  shortcuts: '快捷按键',
   advanced: '高级设置',
   about: '关于',
 };
@@ -81,6 +81,7 @@ const staticItems: SettingsSearchItem[] = [
     },
   ]),
   ...makeItems('general', '常规与启动', [
+    { label: '软件语言', keywords: '语言 简体中文 繁體中文 English 跟随系统' },
     { label: '开机自动运行', keywords: '启动 自启动' },
     { label: '启动检测更新', keywords: '更新 检查 版本' },
     { label: 'GPU 加速', keywords: '硬件 图形 性能' },
@@ -156,6 +157,8 @@ const staticItems: SettingsSearchItem[] = [
     { label: '播放时阻止电脑睡眠', keywords: '防休眠 保持唤醒 电源' },
     { label: '播放设备', keywords: '输出设备 声卡 扬声器 耳机' },
     { label: 'WASAPI 独占模式', keywords: 'Windows 声卡 输出 独占' },
+    { label: '原生 DSD 直通', keywords: 'DSD DoP 直通 独占 无损' },
+    { label: 'Bit-perfect 输出', keywords: '位完美 直出 采样率 独占 无损' },
     { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },
   ]),
 

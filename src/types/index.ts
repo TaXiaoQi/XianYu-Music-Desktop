@@ -663,6 +663,10 @@ export interface EqualizerSettings {
 
 export interface AudioSettings {
   outputMode: AudioOutputMode;
+  /** bit-perfect 输出：强制 WASAPI 独占 + 关闭音量/均衡器/音效 DSP，按源采样率直出 */
+  outputBitPerfect?: boolean;
+  /** DSD 原生 DoP 直通：仅 .dsf + WASAPI 独占时生效，关闭则走常规 PCM 解码 */
+  dsdNativePassthrough?: boolean;
   volumeBalance: {
     enabled: boolean;
     gainOffsetDb: number;
@@ -722,7 +726,7 @@ export interface PluginSettings {
 }
 
 export type SongClickAction = 'double' | 'single';
-export type AppLanguage = 'zh-CN' | 'zh-TW' | 'en-US';
+export type AppLanguage = 'system' | 'zh-CN' | 'zh-TW' | 'en-US';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -807,7 +811,7 @@ export interface DownloadSettings {
   rememberDownloadPath: boolean;
   /** 下载音质缺失时的回退行为，默认 'lower'（下载更低音质） */
   qualityFallbackBehavior: DownloadQualityFallbackBehavior;
-  /** 将歌曲元数据（标题、艺术家、专辑等）写入音频文件 tag（默认 true） */
+  /** 将歌曲元数据（标题、歌手、专辑等）写入音频文件 tag（默认 true） */
   embedMetadata: boolean;
   /** 将歌词写入音频文件 tag（默认 true） */
   embedLyrics: boolean;

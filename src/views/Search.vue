@@ -2,7 +2,7 @@
   <div class="flex flex-col h-full">
     <!-- 搜索结果头部 -->
     <div class="px-6 shrink-0 select-none">
-    <!-- 第一层：内容类型切换（音乐/艺术家/专辑/歌单） -->
+    <!-- 第一层：内容类型切换（音乐/歌手/专辑/歌单） -->
       <div class="flex items-center gap-1 border-b border-black/5 dark:border-white/5">
         <button
           v-for="tab in searchTabs"
@@ -175,7 +175,7 @@
             <div
               v-for="row in virtualCatalogGridRows"
               :key="row.key"
-              class="absolute left-0 grid w-full gap-3"
+              class="absolute left-0 grid w-full gap-x-6"
               :class="catalogGridClass"
               :style="{ transform: `translateY(${row.start}px)` }"
             >
@@ -275,7 +275,7 @@ import {
 } from '../services/lxMusicSdk';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { cacheLxSong } from '../services/lxSongCache';
-import { pluginApi } from '../services/tauri/pluginApi';
+import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import {
   getStoredPlugins,
   pluginsVersion,
@@ -297,6 +297,8 @@ import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } fro
 import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
 import { cacheLxSongInfo } from '../services/lxLyricFetcher';
 import { useSettingsStore } from '../features/settings/store';
+import { extractCoverUrl, extractDuration } from '../services/pluginResultMappers';
+import { fetchWyTrackMetaByIds } from '../services/playlistImport';
 import { reportSearch, reportInputStats } from '../services/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -329,7 +331,7 @@ type SearchTypeKey = 'track' | 'artist' | 'album' | 'playlist';
 const activeSearchType = ref<SearchTypeKey>('track');
 const searchTabs: { type: SearchTypeKey; label: string }[] = [
   { type: 'track', label: '音乐' },
-  { type: 'artist', label: '艺术家' },
+  { type: 'artist', label: '歌手' },
   { type: 'album', label: '专辑' },
   { type: 'playlist', label: '歌单' },
 ];
@@ -528,7 +530,8 @@ const resetTrackVirtualScroll = () => {
 const catalogGridScrollTop = ref(0);
 const catalogGridViewportHeight = ref(720);
 const catalogGridWidth = ref(960);
-const CATALOG_GRID_GAP = 12;
+const CATALOG_GRID_H_GAP = 24;
+const CATALOG_GRID_V_GAP = 40;
 const CATALOG_GRID_OVERSCAN_ROWS = 2;
 
 type CatalogGridEntry =
@@ -632,6 +635,7 @@ const catalogGridItems = computed<CatalogGridEntry[]>(() => {
 
 const catalogGridColumns = computed(() => {
   const width = catalogGridWidth.value;
+  if (width >= 1536) return 7;
   if (width >= 1280) return 6;
   if (width >= 1024) return 5;
   if (width >= 768) return 4;
@@ -645,16 +649,17 @@ const catalogGridClass = computed(() => ({
   'grid-cols-4': catalogGridColumns.value === 4,
   'grid-cols-5': catalogGridColumns.value === 5,
   'grid-cols-6': catalogGridColumns.value === 6,
+  'grid-cols-7': catalogGridColumns.value === 7,
 }));
 
 const catalogGridRowHeight = computed(() => {
   if (activeSearchType.value === 'artist') {
-    return 156 + CATALOG_GRID_GAP;
+    return 156 + CATALOG_GRID_V_GAP;
   }
 
   const columns = Math.max(1, catalogGridColumns.value);
-  const itemWidth = Math.max(120, (catalogGridWidth.value - CATALOG_GRID_GAP * (columns - 1)) / columns);
-  return itemWidth + 78 + CATALOG_GRID_GAP;
+  const itemWidth = Math.max(120, (catalogGridWidth.value - CATALOG_GRID_H_GAP * (columns - 1)) / columns);
+  return itemWidth + 78 + CATALOG_GRID_V_GAP;
 });
 
 const catalogGridRowCount = computed(() => Math.ceil(catalogGridItems.value.length / catalogGridColumns.value));
@@ -696,6 +701,19 @@ const resetCatalogGridVirtualScroll = () => {
   catalogGridWidth.value = Math.max(320, el.clientWidth - 32);
 };
 
+// ResizeObserver：窗口/容器尺寸变化时同步虚拟滚动状态，避免网格列数和行高过期
+let scrollResizeObserver: ResizeObserver | null = null;
+const setupScrollResizeObserver = () => {
+  scrollResizeObserver?.disconnect();
+  const el = resultsScrollRef.value;
+  if (!el) return;
+  scrollResizeObserver = new ResizeObserver(() => {
+    syncTrackVirtualScrollState();
+    syncCatalogGridVirtualScrollState();
+  });
+  scrollResizeObserver.observe(el);
+};
+
 // 封面加载任务版本号，用于在新搜索时取消旧任务
 let coverLoadVersion = 0;
 let coverLoadUiTimer: ReturnType<typeof setInterval> | null = null;
@@ -705,6 +723,55 @@ const clearCoverLoadUiTimer = () => {
     clearInterval(coverLoadUiTimer);
     coverLoadUiTimer = null;
   }
+};
+
+// 目录封面后台补获的视图刷新：lx 歌手/专辑（kw/wy）封面由 lxCatalogSearch 内部的
+// fill* 系列后台补获（接口串行/小并发返回），但 pluginArtistResults/pluginAlbumResults
+// 是 shallowRef，返回时可能仍有条目缺图。轮询比对快照，变化才替换数组触发重渲染；
+// 全部补齐或超时后自动停止。
+let catalogCoverRefreshVersion = 0;
+let catalogCoverRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+const stopCatalogCoverRefresh = () => {
+  catalogCoverRefreshVersion += 1;
+  if (catalogCoverRefreshTimer) {
+    clearInterval(catalogCoverRefreshTimer);
+    catalogCoverRefreshTimer = null;
+  }
+};
+
+const watchCatalogCoverBackfill = <T,>(
+  getItems: () => T[],
+  pickUrl: (item: T) => string,
+  commit: (items: T[]) => void,
+) => {
+  const version = ++catalogCoverRefreshVersion;
+  if (catalogCoverRefreshTimer) clearInterval(catalogCoverRefreshTimer);
+  let prev = '';
+  catalogCoverRefreshTimer = setInterval(() => {
+    if (version !== catalogCoverRefreshVersion) {
+      clearInterval(catalogCoverRefreshTimer!);
+      catalogCoverRefreshTimer = null;
+      return;
+    }
+    const items = getItems();
+    const settled = items.length === 0 || items.every(i => pickUrl(i));
+    const snapshot = items.map(i => pickUrl(i) || '').join('|');
+    if (snapshot !== prev) {
+      prev = snapshot;
+      commit([...items]);
+    }
+    if (settled) {
+      clearInterval(catalogCoverRefreshTimer!);
+      catalogCoverRefreshTimer = null;
+    }
+  }, 600);
+  setTimeout(() => {
+    if (version === catalogCoverRefreshVersion && catalogCoverRefreshTimer) {
+      clearInterval(catalogCoverRefreshTimer);
+      catalogCoverRefreshTimer = null;
+    }
+  }, 15000);
 };
 
 // 右键菜单
@@ -792,6 +859,7 @@ const performSearch = async () => {
   }
   searchAbortController = new AbortController();
   const activeController = searchAbortController;
+  stopCatalogCoverRefresh();
 
   // 重置分页
   currentPage.value = 1;
@@ -860,23 +928,37 @@ const performSearch = async () => {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'artist', 1) as LxArtistSearchResult[];
         if (activeController.signal.aborted) return;
-        pluginArtistResults.value = results.map(item => ({
-          ...item,
-          platform: source.lxSourceId!,
-          platformId: item.id,
-          pluginId,
-        }));
+        // 就地补充平台字段（不 spread 复制）：fillWyArtistAvatars 等后台 worker
+        // 持续写入的是这批原始对象，watchCatalogCoverBackfill 才能把迟到头像刷进视图
+        for (const item of results) {
+          (item as any).platform = source.lxSourceId!;
+          (item as any).platformId = item.id;
+          (item as any).pluginId = pluginId;
+        }
+        pluginArtistResults.value = results as unknown as PluginArtistResult[];
+        watchCatalogCoverBackfill(
+          () => pluginArtistResults.value,
+          i => i.avatarUrl,
+          next => { pluginArtistResults.value = next; },
+        );
         hasMore.value = false;
       } else if (activeSearchType.value === 'album') {
         lxSearchResults.value = [];
         const results = await lxCatalogSearch(source.lxSourceId, query, 'album', 1) as LxAlbumSearchResult[];
         if (activeController.signal.aborted) return;
-        pluginAlbumResults.value = results.map(item => ({
-          ...item,
-          platform: source.lxSourceId!,
-          platformId: item.id,
-          pluginId,
-        }));
+        // 就地补充平台字段（不 spread 复制）：fill*AlbumCovers 的后台 worker
+        // 持续写入的是这批原始对象，watchAlbumCoverBackfill 才能把迟到封面刷进视图
+        for (const item of results) {
+          (item as any).platform = source.lxSourceId!;
+          (item as any).platformId = item.id;
+          (item as any).pluginId = pluginId;
+        }
+        pluginAlbumResults.value = results as unknown as PluginAlbumResult[];
+        watchCatalogCoverBackfill(
+          () => pluginAlbumResults.value,
+          i => i.coverUrl,
+          next => { pluginAlbumResults.value = next; },
+        );
         hasMore.value = false;
       } else {
         lxSearchResults.value = [];
@@ -908,6 +990,7 @@ const performSearch = async () => {
         pluginSearchResults.value = results;
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
+        void backfillWyTrackMeta(source.source, results);
       } else if (activeSearchType.value === 'artist') {
         // 歌手搜索
         pluginSearchResults.value = [];
@@ -1005,6 +1088,7 @@ const loadMore = async () => {
         pluginSearchResults.value = [...pluginSearchResults.value, ...results];
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
+        void backfillWyTrackMeta(source.source, results);
       } else {
         hasMore.value = false;
       }
@@ -1118,6 +1202,54 @@ function triggerCoverLoading() {
  */
 const mfCoverAttempted = new WeakSet<PluginSearchResult>();
 
+/** 判断当前音源是否为网易云（用于决定是否走官方 weapi 批量补全元信息） */
+const isNeteaseSource = (pluginSource: PluginSource): boolean => {
+  if (pluginSource.sources?.some(s => s === 'wy' || /网易云|netease/i.test(s))) return true;
+  return /网易云|netease/i.test(pluginSource.name || '');
+};
+
+/**
+ * 网易云音源：用官方 weapi 的 song/detail 批量补全封面与时长。
+ *
+ * 部分第三方网易云 MusicFree 插件（如时迁酱 v7）的 search 结果既没有可用的
+ * artwork（weapi/search 响应里 album 只有 picId，没有 picUrl），也完全不返回
+ * duration/dt 字段，导致列表里封面和时长都缺失。这里直接按歌曲 ID 批量补全，
+ * 不依赖插件是否实现 getMusicInfo。
+ */
+async function backfillWyTrackMeta(pluginSource: PluginSource, items: PluginSearchResult[]) {
+  if (!isNeteaseSource(pluginSource)) return;
+
+  const version = coverLoadVersion;
+  // 只补缺封面或缺时长、且 ID 是网易云纯数字 ID 的条目
+  const pending = items.filter(item => (
+    (!item.coverUrl || !item.duration) && /^\d+$/.test(String(item.id))
+  ));
+  if (pending.length === 0) return;
+
+  const patches = await fetchWyTrackMetaByIds(pending.map(item => String(item.id)));
+  if (patches.size === 0) return;
+  // 补全期间用户可能已切换来源/重新搜索，丢弃过期结果
+  if (version !== coverLoadVersion) return;
+
+  let changed = false;
+  for (const item of pending) {
+    const patch = patches.get(String(item.id));
+    if (!patch) continue;
+    if (!item.coverUrl && patch.coverUrl) {
+      item.coverUrl = patch.coverUrl;
+      changed = true;
+    }
+    if (!item.duration && patch.durationMs > 0) {
+      item.duration = patch.durationMs;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    pluginSearchResults.value = [...pluginSearchResults.value];
+  }
+}
+
 /**
  * 触发 MusicFree 搜索结果的封面补获（滑动窗口并发版）。
  *
@@ -1130,9 +1262,9 @@ const mfCoverAttempted = new WeakSet<PluginSearchResult>();
 function triggerMfCoverLoading(pluginSource: PluginSource) {
   const version = ++coverLoadVersion;
   clearCoverLoadUiTimer();
-  // 只处理无封面且未尝试过的项，入队即标记，避免并发重入时重复请求
+  // 处理缺封面或缺时长的项，入队即标记，避免并发重入时重复请求
   const items = pluginSearchResults.value.filter((item) => {
-    if (item.coverUrl || mfCoverAttempted.has(item)) return false;
+    if ((item.coverUrl && item.duration) || mfCoverAttempted.has(item)) return false;
     mfCoverAttempted.add(item);
     return true;
   });
@@ -1149,16 +1281,19 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
       const item = items[nextIdx++];
       try {
         // 每个请求最多等 8 秒，超时直接跳过
+        // pluginGetCover 内部调用 getMusicInfo，会同时补全封面和时长
         const coverUrl = await withTimeoutFallback(
           pluginGetCover(pluginSource, item),
           8000,
           null,
         );
         if (version !== coverLoadVersion) return;
-        if (coverUrl) {
+        if (coverUrl && coverUrl !== item.coverUrl) {
           item.coverUrl = coverUrl.startsWith('http://') ? coverUrl.replace('http://', 'https://') : coverUrl;
           hasUpdate = true;
         }
+        // 时长已由 pluginGetCover 副作用补全到 item.duration
+        if (item.duration) hasUpdate = true;
       } catch { /* 已在 WeakSet 中标记，不再重试 */ }
     }
   };
@@ -1195,22 +1330,17 @@ function triggerMfCoverLoading(pluginSource: PluginSource) {
 }
 
 /** 封面加载失败时，尝试代理回退；若代理也失败则清除 img 显示占位符 */
-const lxProxyFailedUrls = new Set<string>();
 const handleImgError = (item: LxSearchResultItem) => {
-  if (item.img && !item.img.startsWith('data:') && !lxProxyFailedUrls.has(item.img)) {
-    // 尝试通过后端代理加载
-    const originalUrl = item.img;
-    lxProxyFailedUrls.add(originalUrl);
+  const originalUrl = item.img;
+  if (originalUrl && !originalUrl.startsWith('data:')) {
     (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(originalUrl);
-        coverProxyCache.set(originalUrl, dataUrl);
+      const dataUrl = await tryProxyImage(originalUrl);
+      if (dataUrl) {
         item.img = dataUrl;
-        lxSearchResults.value = [...lxSearchResults.value];
-      } catch {
+      } else {
         item.img = '';
-        lxSearchResults.value = [...lxSearchResults.value];
       }
+      lxSearchResults.value = [...lxSearchResults.value];
     })();
     return;
   }
@@ -1320,60 +1450,9 @@ const handlePlaySong = (item: LxSearchResultItem) => {
 
 const formatMfDuration = formatSearchDuration;
 
-// 通用图片代理缓存：URL -> data URL
-// 用于处理需要 Referer 头或有 CORS 限制的图片（B站、酷我等）
-const coverProxyCache = new Map<string, string>();
-// 已尝试代理的 URL Set，避免无限重试
-const coverProxyAttempted = new Set<string>();
-
-/**
- * 判断 URL 是否需要通过后端代理加载。
- * 以下情况需要代理：
- * - http:// 协议（混合内容会被 WebView2 阻止）
- * - B站图片域名（需特殊 Referer 头）
- */
-const needsProxy = (url: string): boolean => {
-  if (!url) return false;
-  if (url.startsWith('data:') || url.startsWith('asset:')) return false;
-  if (url.startsWith('http://')) return true;
-  const proxyDomains = [
-    'hdslb.com',
-    'bilivideo.com',
-  ];
-  return proxyDomains.some(domain => url.includes(domain));
-};
-
-/**
- * 获取需要代理的封面 URL：
- * 如果 URL 需要代理，先返回缓存结果（如有），同时异步发起代理请求。
- * 如果不需要代理，直接返回原始 URL。
- */
-const getProxiedCoverUrl = (url: string, refreshTrigger?: () => void): string => {
-  if (!url) return '';
-  if (!needsProxy(url)) return url;
-
-  const cached = coverProxyCache.get(url);
-  if (cached) return cached;
-
-  // 已尝试过且失败的，不再重试
-  if (coverProxyAttempted.has(url)) return '';
-  coverProxyAttempted.add(url);
-
-  // 异步代理并刷新
-  (async () => {
-    try {
-      const dataUrl = await pluginApi.proxyImage(url);
-      coverProxyCache.set(url, dataUrl);
-      refreshTrigger?.();
-    } catch { /* ignore */ }
-  })();
-
-  return ''; // 代理完成前不显示（避免闪烁的 403 图标）
-};
-
 const getMfCoverUrl = (item: PluginSearchResult) => {
   if (!item.coverUrl) return '';
-  return getProxiedCoverUrl(item.coverUrl, () => {
+  return getDisplayCoverUrl(item.coverUrl, () => {
     pluginSearchResults.value = [...pluginSearchResults.value];
   });
 };
@@ -1381,17 +1460,13 @@ const getMfCoverUrl = (item: PluginSearchResult) => {
 const handleMfImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
-  // 如果是原始 URL（非 data:），尝试代理回退
-  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
-    coverProxyAttempted.add(src);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(src);
-        coverProxyCache.set(src, dataUrl);
-        pluginSearchResults.value = [...pluginSearchResults.value];
-      } catch { /* ignore */ }
-    })();
-  }
+  if (!src || src.startsWith('data:')) return;
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      pluginSearchResults.value = [...pluginSearchResults.value];
+    }
+  })();
 };
 
 const handlePlayMfSong = async (item: PluginSearchResult) => {
@@ -1720,8 +1795,14 @@ const getVirtualTrackCoverPath = (entry: SearchTrackEntry) => {
 };
 
 const getVirtualTrackCoverUrl = (entry: SearchTrackEntry) => {
-  if (entry.kind === 'lx') return entry.item.img ? getProxiedCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
-  if (entry.kind === 'plugin') return entry.item.coverUrl ? getMfCoverUrl(entry.item) : '';
+  if (entry.kind === 'lx') return entry.item.img ? getDisplayCoverUrl(entry.item.img, () => { lxSearchResults.value = [...lxSearchResults.value]; }) : '';
+  if (entry.kind === 'plugin') {
+    const coverUrl = entry.item.coverUrl || extractCoverUrl(entry.item) || extractCoverUrl(entry.item.rawData);
+    if (coverUrl && !entry.item.coverUrl) {
+      entry.item.coverUrl = coverUrl;
+    }
+    return coverUrl ? getMfCoverUrl(entry.item) : '';
+  }
   return entry.item.cover_thumb_path ? getLocalCoverUrl(entry.item) : '';
 };
 
@@ -1746,7 +1827,8 @@ const getVirtualTrackAlbum = (entry: SearchTrackEntry) => {
 const getVirtualTrackDuration = (entry: SearchTrackEntry) => {
   if (entry.kind === 'lx') return entry.item.interval;
   if (entry.kind === 'plugin') {
-    return entry.item.duration ? formatMfDuration(Math.floor(entry.item.duration / 1000)) : '--:--';
+    const durationMs = entry.item.duration || extractDuration(entry.item) || extractDuration(entry.item.rawData);
+    return durationMs > 0 ? formatMfDuration(Math.floor(durationMs / 1000)) : '--:--';
   }
   return formatLocalDuration(entry.item.duration);
 };
@@ -1793,18 +1875,18 @@ const getCatalogEntryCover = (entry: CatalogGridEntry) => {
   if (entry.type === 'artist') {
     return entry.source === 'local'
       ? getLocalArtistCover(entry.item)
-      : entry.item.avatarUrl ? getProxiedCoverUrl(entry.item.avatarUrl, refreshFn) : '';
+      : entry.item.avatarUrl ? getDisplayCoverUrl(entry.item.avatarUrl, refreshFn) : '';
   }
 
   if (entry.type === 'album') {
     return entry.source === 'local'
       ? getLocalAlbumCover(entry.item)
-      : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
+      : entry.item.coverUrl ? getDisplayCoverUrl(entry.item.coverUrl, refreshFn) : '';
   }
 
   return entry.source === 'local'
     ? getPlaylistCover(entry.item)
-    : entry.item.coverUrl ? getProxiedCoverUrl(entry.item.coverUrl, refreshFn) : '';
+    : entry.item.coverUrl ? getDisplayCoverUrl(entry.item.coverUrl, refreshFn) : '';
 };
 
 const getCatalogEntryTitle = (entry: CatalogGridEntry) => {
@@ -1880,6 +1962,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
       type: 'artist',
       title: artist.name,
       subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+      description: artist.description || '',
       coverUrl: artist.avatarUrl,
       pluginSource: selectedSourceItem.value.source!,
       rawData: artist.rawData,
@@ -1899,6 +1982,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     type: 'artist',
     title: artist.name,
     subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
+    description: artist.description || '',
     coverUrl: artist.avatarUrl,
     pluginSource,
     rawData: artist.rawData,
@@ -1981,20 +2065,17 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
 const handlePluginImgError = (e: Event) => {
   const img = e.target as HTMLImageElement;
   const src = img.src;
-  // 如果是原始 URL（非 data:），尝试代理回退
-  if (src && !src.startsWith('data:') && !coverProxyAttempted.has(src)) {
-    coverProxyAttempted.add(src);
-    (async () => {
-      try {
-        const dataUrl = await pluginApi.proxyImage(src);
-        coverProxyCache.set(src, dataUrl);
-        // 刷新对应的结果列表
-        if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
-        else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
-        else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
-      } catch { /* ignore */ }
-    })();
-  }
+  if (!src || src.startsWith('data:')) return;
+  (async () => {
+    const dataUrl = await tryProxyImage(src);
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.style.removeProperty('display');
+      if (activeSearchType.value === 'artist') pluginArtistResults.value = [...pluginArtistResults.value];
+      else if (activeSearchType.value === 'album') pluginAlbumResults.value = [...pluginAlbumResults.value];
+      else pluginPlaylistResults.value = [...pluginPlaylistResults.value];
+    }
+  })();
   img.style.display = 'none';
 };
 
@@ -2068,16 +2149,23 @@ onMounted(() => {
   if (pendingType) {
     activeSearchType.value = pendingType;
   }
+  setupScrollResizeObserver();
   if (!hasQuery.value) return;
   performSearch();
 });
+
+// resultsScrollRef 在 track/catalog 视图切换时重新挂载，需重新绑定 ResizeObserver
+watch(resultsScrollRef, () => setupScrollResizeObserver());
 
 // 搜索页不再缓存。离开时终止未完成任务并释放只属于搜索页的临时状态。
 onBeforeUnmount(() => {
   searchAbortController?.abort();
   searchAbortController = null;
+  scrollResizeObserver?.disconnect();
+  scrollResizeObserver = null;
   coverLoadVersion += 1;
   clearCoverLoadUiTimer();
+  stopCatalogCoverRefresh();
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;

@@ -44,10 +44,12 @@ import {
   extractArtist,
   extractCoverUrl,
   extractResultList,
+  extractArtistAvatarUrl,
   qualityKeyToPluginString,
   resetMediaItem,
   stripHtmlTags,
   toPluginSearchResult,
+  extractDurationMs,
 } from './pluginResultMappers';
 import { fetchWithTimeout } from './pluginFetch';
 import {
@@ -819,6 +821,62 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const MF_EMPTY_SEARCH_RETRY_DELAY_MS = 450;
 
+/** 加载日志：直接输出到浏览器 console，便于前端排查插件目录（歌单/歌手/专辑）间歇加载问题 */
+const catalogLog = (msg: string) => {
+  console.log(`[CatalogLoad] ${msg}`);
+  log(msg);
+};
+
+/** 汇总一次插件返回的结构，便于日志中人工判断返回了什么 */
+const describeResult = (r: any): string => {
+  if (!r || typeof r !== 'object') return `type=${typeof r}`;
+  const keys = Object.keys(r).filter(k => k !== 'isEnd').join(',') || '空对象';
+  let len = 0;
+  try { len = extractResultList(r).length; } catch { /* ignore */ }
+  return `keys=[${keys}] extractedLen=${len}`;
+};
+
+/**
+ * 调用插件方法，若结果为空则等待后重试。
+ * 参考落雪(lx) 的加载方式：失败时用增量退避拉长每次间隔，延后放弃，让加载转圈持续更久、命中率更高；
+ * 不做短固定间隔的快速重试。delay 可传固定值或返回每次等待时长的函数。
+ */
+async function retryOnEmpty<T>(
+  label: string,
+  fn: () => Promise<T>,
+  isEmpty: (val: T) => boolean,
+  delay: number | ((attempt: number) => number) = (i: number) => MF_EMPTY_SEARCH_RETRY_DELAY_MS * 2 * i,
+  attempts: number = 6,
+): Promise<T> {
+  const getDelay = (i: number) => (typeof delay === 'function' ? delay(i) : delay);
+  let result: T | undefined;
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    const wait = getDelay(i);
+    try {
+      result = await fn();
+      catalogLog(`${label} 第${i}次 → ${describeResult(result)}`);
+      if (!isEmpty(result)) return result;
+      if (i < attempts) {
+        catalogLog(`${label} 第${i}次为空，${wait}ms后重试(共${attempts}次)`);
+        await sleep(wait);
+      }
+    } catch (e: any) {
+      lastErr = e;
+      catalogLog(`${label} 第${i}次异常: ${e?.message || e}`);
+      if (i < attempts) {
+        catalogLog(`${label} 异常后 ${wait}ms重试(共${attempts}次)`);
+        await sleep(wait);
+      }
+    }
+  }
+  // 所有尝试都用尽且每次结果都判空 → 抛错由调用方决定兜底策略
+  if (result === undefined || isEmpty(result as T)) {
+    throw lastErr ?? new Error(`${label} 多次尝试后仍为空`);
+  }
+  return result as T;
+}
+
 /** 音乐搜索诊断版：保留初始化、能力和接口错误，供歌词选择页直接展示原因。 */
 export async function pluginMusicSearchWithDiagnostics(
   source: PluginSource,
@@ -881,11 +939,17 @@ export async function pluginMusicSearchWithDiagnostics(
     let { result, list } = await callSearch(1);
 
     // 部分 MusicFree QQ 插件的上游接口会偶发正常响应但 data=[]。
-    // 这种情况下不应立刻判定无结果，短延迟后重试一次即可大幅降低“有时有、有时空”的体验问题。
+    // 参考落雪(lx) 的增量退避：不做短固定间隔的快速放弃，逐步拉长间隔反复重试，共 6 次约 12s
     if (list.length === 0) {
-      log(`[pluginSearch] ${source.name} 第 1 次返回空列表，${MF_EMPTY_SEARCH_RETRY_DELAY_MS}ms 后重试一次`);
-      await sleep(MF_EMPTY_SEARCH_RETRY_DELAY_MS);
-      ({ result, list } = await callSearch(2));
+      const attempts = 6;
+      let attempt = 2;
+      while (list.length === 0 && attempt <= attempts) {
+        const wait = 800 * (attempt - 1);
+        log(`[pluginSearch] ${source.name} 第 ${attempt - 1} 次返回空列表，${wait}ms 后重试(共 ${attempts} 次)`);
+        await sleep(wait);
+        ({ result, list } = await callSearch(attempt));
+        attempt++;
+      }
     }
 
     if (list.length > 0) {
@@ -910,7 +974,7 @@ export async function pluginMusicSearchWithDiagnostics(
       results: [],
       status: Array.isArray(result?.data) ? 'empty' : 'invalid_response',
       reason: Array.isArray(result?.data)
-        ? `插件连续两次搜索成功但没有找到与“${keyword}”匹配的歌曲`
+        ? `插件多次搜索（最多 6 次）均未找到与“${keyword}”匹配的歌曲`
         : `插件 search 返回格式无效或为空：实际字段为 ${result ? Object.keys(result).join(', ') || '空对象' : 'null'}`,
       searchType,
       supportsLyrics: true,
@@ -954,10 +1018,100 @@ export async function pluginPlaylistSearch(
   try {
     if (typeof inst.instance.search !== 'function') return [];
 
-    // 直接尝试搜索；Baka 插件可能未声明 sheet 但实际支持
-    const result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
-    const list = extractResultList(result);
-    if (list.length === 0) return [];
+    // 尝试 'sheet' 类型；部分插件使用 'playlist' 类型
+    let result = (await inst.instance.search(keyword, page, 'sheet')) ?? {};
+    let list = extractResultList(result);
+    if (list.length === 0) {
+      result = (await inst.instance.search(keyword, page, 'playlist')) ?? {};
+      list = extractResultList(result);
+    }
+    // 回退 0: 尝试 'album' 类型，将专辑也索引到歌单页
+    if (list.length === 0) {
+      result = (await inst.instance.search(keyword, page, 'album')) ?? {};
+      list = extractResultList(result);
+      if (list.length > 0) {
+        return list.map((item: any) => {
+          resetMediaItem(item, source.name);
+          const id = item.id || item.albumId || item.songId || item.musicId || '';
+          const title = stripHtmlTags(item.title || item.name || item.album || '');
+          const coverUrl = extractCoverUrl(item);
+          return {
+            id,
+            title,
+            coverUrl,
+            playCount: item.playCount ?? item.playcount ?? item.play_count,
+            trackCount: item.trackCount ?? item.trackcount ?? item.track_count,
+            artist: stripHtmlTags(item.artist || item.author || item.singer || ''),
+            platform: item.platform || source.name,
+            platformId: id,
+            pluginId: source.id,
+            rawData: { ...item, _isAlbum: true },
+          };
+        });
+      }
+    }
+    if (list.length === 0) {
+      // 回退 1: 尝试 importMusicSheet（用户输入收藏夹 URL/ID 时）
+      if (typeof inst.instance.importMusicSheet === 'function') {
+        try {
+          const imported = await inst.instance.importMusicSheet(keyword);
+          if (Array.isArray(imported) && imported.length > 0) {
+            const title = `${source.name}收藏夹`;
+            return [{
+              id: keyword,
+              title,
+              coverUrl: extractCoverUrl(imported[0]),
+              trackCount: imported.length,
+              artist: '',
+              platform: source.name,
+              platformId: keyword,
+              pluginId: source.id,
+              rawData: { id: keyword, title, _importedTracks: imported },
+            }];
+          }
+        } catch (e: any) {
+          console.warn(`[${source.name}] importMusicSheet 回退失败:`, e?.message || e);
+        }
+      }
+
+      // 回退 2: 尝试 getTopLists（用户输入关键词搜索时，返回排行榜作为歌单列表）
+      if (page === 1 && typeof inst.instance.getTopLists === 'function') {
+        try {
+          const topLists = await inst.instance.getTopLists();
+          if (Array.isArray(topLists) && topLists.length > 0) {
+            const results: PluginPlaylistSearchResult[] = [];
+            for (const category of topLists) {
+              if (category?.data && Array.isArray(category.data)) {
+                for (const item of category.data) {
+                  results.push({
+                    id: String(item.id || ''),
+                    title: stripHtmlTags(item.title || item.name || ''),
+                    coverUrl: item.coverImg || item.cover || extractCoverUrl(item),
+                    playCount: item.playCount ?? item.playcount,
+                    trackCount: item.trackCount ?? item.trackcount,
+                    artist: stripHtmlTags(category.title || ''),
+                    platform: source.name,
+                    platformId: String(item.id || ''),
+                    pluginId: source.id,
+                    rawData: { ...item, _isTopList: true },
+                  });
+                }
+              }
+            }
+            if (results.length > 0) return results;
+          }
+        } catch (e: any) {
+          console.warn(`[${source.name}] getTopLists 回退失败:`, e?.message || e);
+        }
+      }
+
+      console.warn(
+        `[${source.name}] 歌单搜索无结果: search(sheet/playlist) 返回 keys=`,
+        result ? Object.keys(result) : result,
+        '; 插件可能未实现歌单搜索或上游接口变更',
+      );
+      return [];
+    }
 
     return list.map((item: any) => {
       resetMediaItem(item, source.name);
@@ -978,6 +1132,7 @@ export async function pluginPlaylistSearch(
       };
     });
   } catch (e: any) {
+    console.warn(`[${source.name}] 歌单搜索失败:`, e?.message || e);
     log(`[${source.name}] 歌单搜索失败: ${e?.message}`);
     return [];
   }
@@ -990,14 +1145,70 @@ export async function pluginGetPlaylistDetail(
   sheetItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getPlaylistDetail(source, sheetItem, page);
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
   try {
+    // 如果是 importMusicSheet 导入的歌单，直接返回已导入的曲目
+    if (Array.isArray(sheetItem?._importedTracks) && sheetItem._importedTracks.length > 0) {
+      if (page === 1) {
+        const list = sheetItem._importedTracks;
+        list.forEach((_: any) => { resetMediaItem(_, source.name); });
+        return list.map((item: any) => toPluginSearchResult(item, source));
+      }
+      return [];
+    }
+
+    // 如果是专辑条目（歌单搜索中将专辑索引为歌单），用 getAlbumInfo 获取曲目
+    if (sheetItem?._isAlbum) {
+      if (typeof inst.instance.getAlbumInfo === 'function') {
+        const getAlbumInfo = inst.instance.getAlbumInfo;
+        try {
+          const result = await retryOnEmpty(
+            `[${source.name}] getAlbumInfo(album as playlist) album="${stripHtmlTags(sheetItem?.title || sheetItem?.name || '')}"`,
+            () => getAlbumInfo(sheetItem, page),
+            (r) => extractResultList(r).length === 0,
+          );
+          const list = extractResultList(result);
+          if (list.length > 0) {
+            list.forEach((_: any) => { resetMediaItem(_, source.name); });
+            return list.map((item: any) => toPluginSearchResult(item, source));
+          }
+        } catch (e: any) {
+          log(`[${source.name}] getAlbumInfo(album as playlist) 调用失败: ${e?.message}`);
+        }
+      }
+      return [];
+    }
+
+    // 如果是排行榜条目，用 getTopListDetail 获取曲目
+    if (sheetItem?._isTopList && typeof inst.instance.getTopListDetail === 'function') {
+      try {
+        const result = await inst.instance.getTopListDetail(sheetItem, page);
+        const list = extractResultList(result);
+        if (list.length > 0) {
+          list.forEach((_: any) => { resetMediaItem(_, source.name); });
+          return list.map((item: any) => toPluginSearchResult(item, source));
+        }
+      } catch (e: any) {
+        log(`[${source.name}] getTopListDetail 调用失败: ${e?.message}`);
+      }
+      return [];
+    }
+
     // 优先用 getMusicSheetInfo 获取歌单曲目
     if (typeof inst.instance.getMusicSheetInfo === 'function') {
+      const getSheetInfo = inst.instance.getMusicSheetInfo;
       try {
-        const result = await inst.instance.getMusicSheetInfo(sheetItem, page);
+        const result = await retryOnEmpty(
+          `[${source.name}] getMusicSheetInfo sheet="${stripHtmlTags(sheetItem?.title || sheetItem?.name || '')}"`,
+          () => getSheetInfo(sheetItem, page),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1027,6 +1238,27 @@ export async function pluginGetPlaylistDetail(
   }
 }
 
+// ==================== 收藏夹导入 ====================
+
+export async function pluginImportMusicSheet(
+  source: PluginSource,
+  urlLike: string,
+): Promise<PluginSearchResult[]> {
+  const inst = await ensurePluginInstance(source);
+  if (!inst) return [];
+
+  try {
+    if (typeof inst.instance.importMusicSheet !== 'function') return [];
+    const imported = await inst.instance.importMusicSheet(urlLike);
+    if (!Array.isArray(imported) || imported.length === 0) return [];
+    imported.forEach((_: any) => { resetMediaItem(_, source.name); });
+    return imported.map((item: any) => toPluginSearchResult(item, source));
+  } catch (e: any) {
+    log(`[${source.name}] importMusicSheet 失败: ${e?.message}`);
+    return [];
+  }
+}
+
 // ==================== 歌手作品（歌曲） ====================
 
 export async function pluginGetArtistWorks(
@@ -1034,14 +1266,23 @@ export async function pluginGetArtistWorks(
   artistItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getArtistWorks(source, artistItem, page, 'music');
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
   try {
     // 优先用 getArtistWorks 获取歌手作品
     if (typeof inst.instance.getArtistWorks === 'function') {
+      const getWorks = inst.instance.getArtistWorks;
       try {
-        const result = await inst.instance.getArtistWorks(artistItem, page, 'music');
+        const result = await retryOnEmpty(
+          `[${source.name}] getArtistWorks(music) artist="${stripHtmlTags(artistItem?.name || artistItem?.title || '')}"`,
+          () => getWorks(artistItem, page, 'music'),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1078,13 +1319,32 @@ export async function pluginGetArtistAlbums(
   artistItem: any,
   page: number = 1,
 ): Promise<PluginAlbumResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    const results = await BakaPluginManager.getArtistWorks(source, artistItem, page, 'album');
+    return results.map((item: any) => ({
+      id: item.id || '',
+      name: item.title || '',
+      artist: item.artist || '',
+      coverUrl: item.coverUrl || '',
+      platform: item.platform || source.name,
+      platformId: item.id || '',
+      pluginId: source.id,
+      rawData: item.rawData,
+    }));
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
   try {
     if (typeof inst.instance.getArtistWorks !== 'function') return [];
 
-    const result = await inst.instance.getArtistWorks(artistItem, page, 'album');
+    const getWorks = inst.instance.getArtistWorks;
+    const result = await retryOnEmpty(
+      `[${source.name}] getArtistWorks(album) artist="${stripHtmlTags(artistItem?.name || artistItem?.title || '')}"`,
+      () => getWorks(artistItem, page, 'album'),
+      (r) => extractResultList(r).length === 0,
+    );
     const list = extractResultList(result);
     if (list.length === 0) return [];
 
@@ -1111,6 +1371,56 @@ export async function pluginGetArtistAlbums(
   }
 }
 
+/** 从歌手条目/详情对象中尽力提取简介，兼容各平台常见字段（含嵌套子对象） */
+function extractArtistDescription(raw: any): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const candidates = [
+    'artistDesc', 'artistIntro', 'artist_intro', 'briefDesc', 'briefdesc',
+    'intro', 'desc', 'description', 'profile', 'bio', 'biography',
+    'aDesc', 'aDes',
+  ];
+  for (const key of candidates) {
+    const v = raw[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const inner = extractArtistDescription(v);
+      if (inner) return inner;
+    }
+  }
+  return '';
+}
+
+/**
+ * 获取歌手简介：调用插件的 getArtistInfo（如未实现则返回空字符串，不影响现有功能）。
+ * 歌手的 search('artist') 列表通常不带简介，简介在歌手详情接口里。
+ */
+export async function pluginGetArtistInfo(
+  source: PluginSource,
+  artistItem: any,
+): Promise<string> {
+  if (!source || !artistItem) return '';
+  let info: any = null;
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    info = await BakaPluginManager.getArtistInfo(source, artistItem);
+  } else {
+    const inst = await ensurePluginInstance(source);
+    if (!inst) return '';
+    try {
+      const fn = inst.instance.getArtistInfo;
+      if (typeof fn === 'function') {
+        const p = fn(artistItem);
+        info = p && typeof p.catch === 'function' ? (await p.catch(() => null)) : p;
+      }
+    } catch {
+      info = null;
+    }
+  }
+  const desc = extractArtistDescription(info);
+  catalogLog(`[${source.name}] getArtistInfo → ${desc ? `简介 ${desc.length} 字符` : '无简介'}`);
+  return desc;
+}
+
 // ==================== 专辑详情 ====================
 
 export async function pluginGetAlbumSongs(
@@ -1118,14 +1428,23 @@ export async function pluginGetAlbumSongs(
   albumItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
+  if (await BakaPluginManager.isBakaPlugin(source)) {
+    await ensurePluginInstance(source);
+    return BakaPluginManager.getAlbumSongs(source, albumItem, page);
+  }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
 
   try {
     // 优先用 getAlbumInfo 获取专辑曲目
     if (typeof inst.instance.getAlbumInfo === 'function') {
+      const getAlbumInfo = inst.instance.getAlbumInfo;
       try {
-        const result = await inst.instance.getAlbumInfo(albumItem, page);
+        const result = await retryOnEmpty(
+          `[${source.name}] getAlbumInfo album="${stripHtmlTags(albumItem?.title || albumItem?.name || '')}"`,
+          () => getAlbumInfo(albumItem, page),
+          (r) => extractResultList(r).length === 0,
+        );
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
@@ -1624,18 +1943,19 @@ export async function pluginGetCover(
     if (!neteaseSource) return null;
     const raw = item.rawData || item;
     const albumId = raw?.al?.id ?? raw?.album?.id ?? raw?.albumId;
-    const songmid = String(item.platformId || raw?.id || raw?.songmid || '');
-    if (!albumId || !songmid) return null;
+    const songmid = String(item.platformId || item.id || raw?.id || raw?.songmid || '');
+    if (!songmid) return null;
     try {
       const cover = await pluginApi.getLxCover({
         songmid,
         source: 'wy',
-        albumId: String(albumId),
+        albumId: albumId ? String(albumId) : '',
         name: item.title,
         singer: item.artist,
         albumName: item.album,
       });
-      return cover || null;
+      // 升级 https：避免 http 封面被 WebView2 混合内容拦截、或被前端 needsProxy 误判走后端代理而失败
+      return (cover && String(cover).replace(/^http:\/\//i, 'https://')) || null;
     } catch {
       return null;
     }
@@ -1647,6 +1967,11 @@ export async function pluginGetCover(
         ? resetMediaItem(item.rawData, source.name)
         : resetMediaItem(item, source.name);
       const result = await inst.instance.getMusicInfo(musicItem);
+      // getMusicInfo 返回的时长补全到 item（搜索结果常缺 duration）
+      if (result && !item.duration) {
+        const dur = extractDurationMs(result);
+        if (dur) item.duration = dur;
+      }
       // 兼容多种封面字段名（不同插件返回的字段名可能不同）
       const coverUrl = extractCoverUrl(result);
       if (coverUrl) return coverUrl;
@@ -1691,30 +2016,60 @@ export async function pluginArtistSearch(
 
   try {
     if (typeof inst.instance.search !== 'function') return [];
+    const doSearch = inst.instance.search;
 
-    // 直接尝试搜索；Baka 插件可能未声明 artist 但实际支持
-    const result = (await inst.instance.search(keyword, page, 'artist')) ?? {};
-    const list = extractResultList(result);
+    const artistLabel = `[${source.name}] artistSearch w="${keyword}" p=${page}`;
+    // 同一 artistSearch 路径可间歇性成功（风控/节流），因此多尝试几次成功路径本身，
+    // 而不是退化到"从音乐搜索结果拼歌手"（后者拿不到完整 artist 元数据，多为假数据）。
+    let result: any;
+    try {
+      result = await retryOnEmpty(
+        artistLabel,
+        () => doSearch(keyword, page, 'artist'),
+        (r) => {
+          const list = extractResultList(r);
+          if (list.length === 0) return true;
+          // 列表非空但没有任何有效 artist 字段 → 视为无效（疑似把歌曲当 artist 返回），重试
+          return list.every(
+            (it: any) => !it?.name && !it?.title && !it?.artist && !it?.singername && !it?.singer,
+          );
+        },
+        // 参考落雪(lx) 的增量退避：800/1600/2400/...ms，累积约 12s 才放弃，加载转圈持续更久
+        (i) => 800 * i,
+        6,
+      );
+    } catch (e: any) {
+      catalogLog(`${artistLabel} 多次尝试后仍为空/异常，放弃本次 artist 结果: ${e?.message || e}`);
+      return [];
+    }
+    const list = extractResultList(result ?? {});
     if (list.length === 0) return [];
-
-    return list.map((item: any) => {
-      resetMediaItem(item, source.name);
-      const id = item.id || item.artistId || item.singerId || '';
-      const name = stripHtmlTags(item.name || item.title || item.artist || '');
-      const avatarUrl = extractCoverUrl(item) || item.avatar || '';
-      return {
-        id,
-        name,
-        avatarUrl,
-        description: item.description || item.desc || '',
-        songCount: item.songCount || item.musicCount || undefined,
-        albumCount: item.albumCount || undefined,
-        platform: item.platform || source.name,
-        platformId: id,
-        pluginId: source.id,
-        rawData: item,
-      };
-    });
+    const valid = list
+      .map((item: any) => {
+        resetMediaItem(item, source.name);
+        const id = item.id || item.artistId || item.singerId || item.sid || '';
+        const name = stripHtmlTags(item.name || item.title || item.artist || item.singername || item.singer || '');
+        if (!name) return null;
+        const avatarUrl = extractArtistAvatarUrl(item);
+        return {
+          id,
+          name,
+          avatarUrl,
+          description: extractArtistDescription(item),
+          songCount: item.songCount || item.musicCount || undefined,
+          albumCount: item.albumCount || undefined,
+          platform: item.platform || source.name,
+          platformId: id,
+          pluginId: source.id,
+          rawData: item,
+        } as PluginArtistResult;
+      })
+      .filter(Boolean) as PluginArtistResult[];
+    if (valid.length === 0) {
+      catalogLog(`${artistLabel} 提取出 ${list.length} 条但无有效 artist 字段`);
+      return [];
+    }
+    return valid;
   } catch (e: any) {
     log(`[pluginArtistSearch] ${source.name} 失败: ${e?.message || e}`);
     return [];

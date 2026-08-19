@@ -1,9 +1,61 @@
 use crate::player::types::{
-    AudioCommand, AudioDevice, AudioOutputMode, AudioOutputStatus, PlayerState,
+    AudioCommand, AudioDevice, AudioDeviceFormat, AudioDeviceFormats, AudioOutputMode,
+    AudioOutputStatus, PlayerState,
 };
 use cpal::traits::{DeviceTrait, HostTrait};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+
+/// 枚举输出设备的原生能力(样本格式/采样率范围/声道)，用于 bit-perfect 输出配置。
+/// 与 get_output_devices 同理，枚举可能耗时，放到后台阻塞线程池执行。
+#[tauri::command]
+pub async fn get_audio_device_formats() -> Result<Vec<AudioDeviceFormats>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let host = cpal::default_host();
+        let devices = host.output_devices().map_err(|e| e.to_string())?;
+        let mut result = Vec::new();
+
+        for device in devices {
+            let name = match device.name() {
+                Ok(name) => name,
+                Err(_) => continue,
+            };
+
+            let mut seen = HashSet::new();
+            let mut formats = Vec::new();
+            if let Ok(configs) = device.supported_output_configs() {
+                for cfg in configs {
+                    let format_name = format!("{:?}", cfg.sample_format()).to_lowercase();
+                    let key = (
+                        cfg.channels(),
+                        cfg.min_sample_rate().0,
+                        cfg.max_sample_rate().0,
+                        format_name.clone(),
+                    );
+                    if seen.insert(key) {
+                        formats.push(AudioDeviceFormat {
+                            sample_format: format_name,
+                            min_sample_rate: cfg.min_sample_rate().0,
+                            max_sample_rate: cfg.max_sample_rate().0,
+                            channels: cfg.channels(),
+                        });
+                    }
+                }
+            }
+
+            result.push(AudioDeviceFormats {
+                id: name.clone(),
+                name,
+                formats,
+            });
+        }
+
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
 pub async fn get_output_devices() -> Result<Vec<AudioDevice>, String> {

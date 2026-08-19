@@ -28,7 +28,7 @@ import {
   mergeDesktopLyricsSettings,
   mergeLyricsSettings,
   normalizeImportedLyricsFonts,
-} from '../../composables/lyrics';
+} from '../../composables/lyrics/constants';
 import {
   createDefaultShortcutSettings,
   mergeShortcutSettings,
@@ -154,6 +154,8 @@ export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
 
 export const defaultAudioSettings: AudioSettings = {
   outputMode: 'shared',
+  outputBitPerfect: false,
+  dsdNativePassthrough: true,
   volumeBalance: {
     enabled: false,
     gainOffsetDb: 0,
@@ -535,6 +537,12 @@ export const mergeAudioSettings = (
   return {
     ...base,
     outputMode: nextOutputMode,
+    outputBitPerfect: typeof patch.outputBitPerfect === 'boolean'
+      ? patch.outputBitPerfect
+      : (base.outputBitPerfect ?? false),
+    dsdNativePassthrough: typeof patch.dsdNativePassthrough === 'boolean'
+      ? patch.dsdNativePassthrough
+      : (base.dsdNativePassthrough ?? true),
     volumeBalance: {
       enabled,
       gainOffsetDb,
@@ -587,7 +595,7 @@ export const mergeAppSettings = (
     // Ignore removed legacy fields that may still exist in persisted settings.
     ...base,
     ...rest,
-    language: language === 'zh-CN' || language === 'zh-TW' || language === 'en-US' ? language : base.language,
+    language: language === 'system' || language === 'zh-CN' || language === 'zh-TW' || language === 'en-US' ? language : base.language,
     preventSleepWhilePlaying: typeof preventSleepWhilePlaying === 'boolean'
       ? preventSleepWhilePlaying
       : base.preventSleepWhilePlaying,

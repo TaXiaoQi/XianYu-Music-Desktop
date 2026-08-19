@@ -33,7 +33,7 @@ const {
   currentPlayingQuality,
   sessionQualityOverride,
   setSessionQualityOverride,
-  isPlaying, volume, currentTime, playMode, showPlaylist, showPlayerDetail, showComment,
+  isPlaying, volume, currentTime, playMode, activeOutputMode, showPlaylist, showPlayerDetail, showComment,
   togglePlay, nextSong, prevSong, handleVolume, handleVolumeWheel, toggleMute,
   toggleMode, togglePlaylist, toggleComment,
   togglePlayerDetail, seekTo, formatDuration, playSong,
@@ -477,7 +477,7 @@ const localQualityLabel = computed(() => {
   if (song.bit_depth && song.bit_depth >= 24) return QUALITY_ABBR.flac24bit;
   // 无损格式 → SQ
   const fmt = (song.format || song.codec || song.container || '').toLowerCase();
-  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf'];
+  const losslessFormats = ['flac', 'ape', 'wav', 'alac', 'aiff', 'dsd', 'dff', 'dsf', 'wv', 'wavpack'];
   if (losslessFormats.some(f => fmt.includes(f))) return QUALITY_ABBR.flac;
   // 有损格式按比特率映射
   const bitrateKbps = song.bitrate
@@ -742,6 +742,22 @@ const handleVolumeLeave = () => {
 // --- EQ Panel State ---
 const showEqPanel = ref(false);
 
+// --- Bit-perfect / DSD 直通时禁用底栏音量与音质 UI ---
+// 使用 playbackStore.activeOutputMode（实际生效的模式）而非 settings.outputMode（用户请求的模式），
+// 这样独占设备断开降级为共享时，底栏控件自动解锁；设备恢复后自动切回独占时再次锁定。
+const isBitPerfectActive = computed(() =>
+  activeOutputMode.value === 'wasapiExclusive' && settings.value.audio.outputBitPerfect === true,
+);
+const isDsdPassthroughActive = computed(() =>
+  activeOutputMode.value === 'wasapiExclusive' && settings.value.audio.dsdNativePassthrough === true,
+);
+const isAudioControlLocked = computed(() => isBitPerfectActive.value || isDsdPassthroughActive.value);
+const audioLockTooltip = computed(() => {
+  if (isBitPerfectActive.value && isDsdPassthroughActive.value) return 'Bit-perfect / DSD 直出中';
+  if (isBitPerfectActive.value) return 'Bit-perfect 输出中';
+  return 'DSD 直出中';
+});
+
 // --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
 const showFooterTools = ref(false);
 const footerToolsRef = ref<HTMLElement | null>(null);
@@ -908,6 +924,9 @@ provide('footerContext', {
   volumeBarRef,
   startDrag,
   toggleMute,
+  // Bit-perfect / DSD 直通禁用态
+  isAudioControlLocked,
+  audioLockTooltip,
   // 均衡器
   showEqPanel,
   toggleEqPanel,

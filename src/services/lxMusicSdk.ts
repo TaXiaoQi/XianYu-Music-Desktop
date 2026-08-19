@@ -57,6 +57,8 @@ export interface LxSearchResultItem {
   img: string | null;
   /** 各歌手的头像 URL（key 为歌手名，value 为头像 URL），搜索接口直接返回时填充 */
   singerAvatars?: Record<string, string>;
+  /** 各歌手的艺人 ID（key 为歌手名，value 为 ID），供歌手头像/详情接口补获 */
+  singerIds?: Record<string, string>;
   types: { type: string; size: string | null; hash?: string }[];
   _types: Record<string, { size: string | null; hash?: string }>;
   // source-specific fields
@@ -134,6 +136,42 @@ async function httpPostJson(url: string, body: string, headers?: Record<string, 
     return JSON.parse(resp.body);
   } catch {
     throw new Error(`Invalid JSON response from ${url}`);
+  }
+}
+
+/**
+ * 酷我旧搜索接口（search.kuwo.cn/r.s）返回 Python 风格单引号 JSON
+ * （{'ARTISTPIC':'',...}），标准 JSON.parse 必然失败。
+ * 状态机转换：字符串定界符 ' → "，字符串内的 " 转义，保留原有反斜杠转义。
+ */
+function parseLooseJson(text: string): any {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!inStr) {
+      if (ch === "'") { inStr = true; out += '"'; }
+      else out += ch;
+    } else if (ch === '\\') {
+      out += ch + (text[i + 1] ?? '');
+      i++;
+    } else if (ch === "'") {
+      inStr = false;
+      out += '"';
+    } else {
+      out += ch === '"' ? '\\"' : ch;
+    }
+  }
+  return JSON.parse(out);
+}
+
+async function httpGetLooseJson(url: string, headers?: Record<string, string>): Promise<any> {
+  const resp = await httpFetch(url, { method: 'GET', headers });
+  if (resp.status !== 200) throw new Error(`HTTP ${resp.status} for ${url}`);
+  try {
+    return JSON.parse(resp.body);
+  } catch {
+    return parseLooseJson(resp.body);
   }
 }
 
@@ -299,6 +337,29 @@ async function zzcSign(text: string): Promise<string> {
 
 const KW_MINFO_REGEX = /level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)/;
 
+/**
+ * 酷我搜索结果的封面字段在不同响应/版本中位置不一，尝试多个字段拼封面。
+ * 完整 URL 直接归一化，相对 short 路径用 buildKuwoAlbumCoverUrl。
+ * 全部缺失返回 null，由 catalogSearch 阶段对 artist/album 异步补封面。
+ */
+function kwSearchCover(info: any): string | null {
+  const candidates = ['web_albumpic_short', 'web_album_pic', 'album_pic', 'albumpic_short', 'albumpic', 'pic'];
+  for (const key of candidates) {
+    const v = info?.[key];
+    if (!v) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    if (/^https?:\/\//i.test(s)) {
+      const norm = normalizeKuwoCoverUrl(s);
+      if (norm) return norm;
+    } else {
+      const built = buildKuwoAlbumCoverUrl(s);
+      if (built) return built;
+    }
+  }
+  return null;
+}
+
 function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
   const result: LxSearchResultItem[] = [];
   if (!rawData) return result;
@@ -336,8 +397,9 @@ function kwHandleResult(rawData: any[]): LxSearchResultItem[] | null {
     }
     types.reverse();
     const interval = parseInt(info.DURATION);
-    // 搜索结果自带 web_albumpic_short，直接拼封面，避免再请求 artistpicserver
-    const imgFromSearch = buildKuwoAlbumCoverUrl(info.web_albumpic_short) || null;
+    // 搜索结果图片字段在同一响应/版本中位置不一，用 kwSearchCover 尝试多个字段；
+    // 全部缺失则留空，由 lxCatalogSearch 阶段对 artist/album 异步补封面
+    const imgFromSearch = kwSearchCover(info);
     result.push({
       name: decodeName(info.SONGNAME),
       singer: decodeName(info.ARTIST).replace(/&/g, '、'),
@@ -499,6 +561,21 @@ function txHandleResult(rawList: any[]): LxSearchResultItem[] {
       const size = sizeFormate(file.size_hires);
       types.push({ type: 'flac24bit', size });
       _types.flac24bit = { size };
+    }
+    if (Number(file.size_master) > 0) {
+      const size = sizeFormate(file.size_master);
+      types.push({ type: 'master', size });
+      _types.master = { size };
+    }
+    if (Number(file.size_atmos) > 0) {
+      const size = sizeFormate(file.size_atmos);
+      types.push({ type: 'atmos', size });
+      _types.atmos = { size };
+    }
+    if (Number(file.size_dolby) > 0) {
+      const size = sizeFormate(file.size_dolby);
+      types.push({ type: 'dolby', size });
+      _types.dolby = { size };
     }
     const album = item.album || item.albumInfo || item.album_info || {};
     const albumId = String(album.mid ?? firstValue(item, ['albumMid', 'albummid', 'album_mid', 'albumMID', 'albumid', 'albumId']) ?? '');
@@ -721,6 +798,27 @@ async function requestTxSearch(str: string, page: number, limit: number): Promis
   });
 }
 
+/** 经典 Web 搜索接口兜底：不依赖新签名(Mobile)风控体系，Mobile 被持续风控时使用 */
+async function txSearchWebFallback(str: string, page: number, limit: number): Promise<LxSearchResult> {
+  const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&inCharset=utf-8&outCharset=utf-8&cr=1&platform=h5&catZhida=0&w=${encodeURIComponent(str)}&p=${page}&n=${limit}`;
+  const result = await httpGetJson(url, {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://y.qq.com/',
+  });
+  const song = result?.data?.song;
+  const rawList = song?.list || [];
+  const items = txHandleResult(rawList);
+  if (items.length === 0) throw new Error('TX web fallback: 无有效歌曲');
+  const total = Number(song?.totalnum || song?.num || rawList.length) || items.length;
+  return {
+    list: items,
+    allPage: Math.ceil(total / limit),
+    limit,
+    total,
+    source: 'tx',
+  };
+}
+
 function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearchResult {
   const list = txHandleResult(rawList);
   if (list.length === 0 && Array.isArray(rawList) && rawList.length > 0) {
@@ -737,7 +835,11 @@ function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearch
 }
 
 async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 4) throw new Error('TX search: 搜索失败');
+  if (retryNum > 4) {
+    // Mobile 接口被持续风控(reqCode 2001)，走经典 Web 接口兜底，避免直接失败
+    console.warn('[LxMusicSdk] TX search: Mobile 重试耗尽，尝试 Web 兜底接口');
+    return txSearchWebFallback(str, page, limit);
+  }
 
   // 仅使用 Mobile 接口（落雪官方验证有效）。请求两次会累积 QQ 音乐的风控（reqCode 2001），
   // 导致结果随机失败，故完全移除已失效的 Desktop 兜底请求。
@@ -788,6 +890,9 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
     types.push({ type: '128k', size: null }); _types['128k'] = { size: null };
     if (!song.hq) { types.push({ type: '320k', size: null }); _types['320k'] = { size: null }; }
     if (!song.sq) { types.push({ type: 'flac', size: null }); _types.flac = { size: null }; }
+    // 高音质档位同样采用声明 + 探测回落策略：网易云黑胶曲库普遍提供 Hi-Res 与超清母带
+    types.push({ type: 'flac24bit', size: null }); _types.flac24bit = { size: null };
+    types.push({ type: 'master', size: null }); _types.master = { size: null };
     types.reverse();
     const ar = song.artists || [];
     const al = song.album || {};
@@ -799,11 +904,16 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
       (al.picUrl && String(al.picUrl).replace(/^http:\/\//i, 'https://'))
       || neteasePicIdToUrl(al.picId_str || al.pic_str || al.picId || al.pic)
       || null;
-    // 网易云搜索接口 artists[].img1v1Url 为歌手头像，提取供歌手搜索页使用
+    // 网易云搜索接口 artists[].img1v1Url 为歌手头像，提取供歌手搜索页使用；
+    // 同时提取 artists[].id，img1v1Url 实为全局占位头像时靠 artistId 补真实头像
     const singerAvatars: Record<string, string> = {};
+    const singerIds: Record<string, string> = {};
     for (const s of ar) {
       if (s && s.name && s.img1v1Url) {
         singerAvatars[s.name] = s.img1v1Url;
+      }
+      if (s && s.name && s.id != null) {
+        singerIds[s.name] = String(s.id);
       }
     }
     return {
@@ -816,6 +926,7 @@ async function searchWy(str: string, page = 1, limit = 30, retryNum = 0): Promis
       songmid: String(song.id),
       img,
       singerAvatars: Object.keys(singerAvatars).length > 0 ? singerAvatars : undefined,
+      singerIds: Object.keys(singerIds).length > 0 ? singerIds : undefined,
       types,
       _types,
     };
@@ -981,8 +1092,14 @@ export function deriveLxArtistResults(list: LxSearchResultItem[]): LxArtistSearc
         name,
         avatarUrl,
         songCount: 1,
-        // 保存 source/songmid 供 lxCatalogSearch 异步补充头像（kw 源搜索结果无图片）
-        rawData: { source: song.source, name, songmid: song.songmid },
+        // 保存 source/songmid/artistId 供 lxCatalogSearch 异步补充头像
+        // （kw 源无图片字段用 songmid；wy 源 img1v1Url 是占位头像，用 artistId 调艺人接口）
+        rawData: {
+          source: song.source,
+          name,
+          songmid: song.songmid,
+          artistId: song.singerIds?.[name] ?? '',
+        },
       });
     }
   }
@@ -1010,7 +1127,7 @@ export function deriveLxAlbumResults(list: LxSearchResultItem[]): LxAlbumSearchR
       artist: song.singer,
       coverUrl: song.img || '',
       songCount: 1,
-      rawData: { source: song.source, id, name, artist: song.singer },
+      rawData: { source: song.source, id, name, artist: song.singer, songmid: song.songmid },
     });
   }
 
@@ -1040,7 +1157,7 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
     seen.add(dedupeKey);
 
     const creator = raw.creator;
-    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'PIC']) || '');
+    let coverUrl = String(firstValue(raw, ['coverUrl', 'coverImgUrl', 'img', 'imgurl', 'pic', 'picUrl', 'pic_url', 'PIC', 'album_pic_url', 'hts_pic']) || '');
     if (coverUrl.startsWith('//')) coverUrl = `https:${coverUrl}`;
     else if (coverUrl.startsWith('http://')) coverUrl = coverUrl.replace('http://', 'https://');
     results.push({
@@ -1049,7 +1166,7 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
       coverUrl,
       artist: String(firstValue(raw, ['artist', 'author', 'nickname', 'uname', 'UNAME']) || creator?.name || creator?.nickname || ''),
       trackCount: Number(firstValue(raw, ['trackCount', 'trackcount', 'songCount', 'song_count', 'songnum', 'SONGNUM'])) || undefined,
-      playCount: Number(firstValue(raw, ['playCount', 'playcount', 'play_count', 'listennum', 'LISTENNUM'])) || undefined,
+      playCount: Number(firstValue(raw, ['playCount', 'playcount', 'play_count', 'playcnt', 'listennum', 'LISTENNUM'])) || undefined,
       rawData: raw,
     });
   }
@@ -1057,21 +1174,65 @@ export function normalizeLxPlaylistResults(source: LxSourceId, rawItems: any[]):
   return results;
 }
 
+// ==================== LX 歌单搜索 Web 兜底 ====================
+
+/**
+ * TX 歌单搜索兜底：无签名 Desktop 通道（musicu.fcg DoSearchForQQMusicDesktop，
+ * search_type=3 → req.data.body.songlist.list，字段 dissid/dissname/imgurl/
+ * song_count/listennum/creator.name）。
+ * 客户端签名(Mobile)通道被风控降级返回空时使用，实测无 sign 也稳定可用；
+ * 经典 t=3 client_search_cp 接口已死（data 仅剩 zhida/taglist 空结构，不再返回歌单）。
+ */
+async function txSheetSearchDesktopFallback(keyword: string, page = 1, limit = 30): Promise<any[]> {
+  const body = {
+    comm: { ct: 19, cv: 1859, uin: '0' },
+    req: {
+      module: 'music.search.SearchCgiService',
+      method: 'DoSearchForQQMusicDesktop',
+      param: {
+        search_type: 3,
+        query: keyword,
+        page_num: page,
+        num_per_page: limit,
+      },
+    },
+  };
+  const data = await httpPostJson(
+    'https://u.y.qq.com/cgi-bin/musicu.fcg',
+    JSON.stringify(body),
+    {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      'Content-Type': 'application/json',
+      Referer: 'https://y.qq.com/',
+    },
+  );
+  const list = data?.req?.data?.body?.songlist?.list;
+  if (!Array.isArray(list) || list.length === 0) {
+    console.warn('[LxMusicSdk] TX 歌单 Desktop 兜底无结果');
+    throw new Error('TX sheet desktop fallback: 无有效歌单');
+  }
+  return list;
+}
+
 async function searchLxPlaylists(source: LxSourceId, keyword: string, page: number, limit: number): Promise<LxPlaylistSearchResult[]> {
   if (source === 'kw') {
     // 优先用新 API，回退到旧 API
     try {
-      const data = await httpGetJson(`http://www.kuwo.cn/api/www/search/searchPlayListBykeyWord?key=${encodeURIComponent(keyword)}&pn=${page}&rn=${limit}`, {
+      const data = await httpGetJson(`https://www.kuwo.cn/api/www/search/searchPlayListBykeyWord?key=${encodeURIComponent(keyword)}&pn=${page}&rn=${limit}`, {
         csrf: 'ABCDEF',
         Cookie: 'kw_token=ABCDEF',
-        Referer: 'http://www.kuwo.cn/',
+        Referer: 'https://www.kuwo.cn/',
       });
       const list = data?.data?.list || data?.data || [];
       if (Array.isArray(list) && list.length > 0) {
         return normalizeLxPlaylistResults(source, list);
       }
     } catch { /* 回退到旧 API */ }
-    const data = await httpGetJson(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(keyword)}&pn=${page - 1}&rn=${limit}&ft=playlist&encoding=utf8&rformat=json`);
+    // 旧 r.s 接口返回单引号 JSON（httpGetLooseJson 兼容），字段为
+    // playlistid/name/nickname/hts_pic|pic/songnum/playcnt
+    const data = await httpGetLooseJson(`https://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(keyword)}&pn=${page - 1}&rn=${limit}&ft=playlist&encoding=utf8&rformat=json`, {
+      Referer: 'https://www.kuwo.cn/',
+    });
     return normalizeLxPlaylistResults(source, data?.abslist || data?.data || []);
   }
 
@@ -1112,14 +1273,27 @@ async function searchLxPlaylists(source: LxSourceId, keyword: string, page: numb
         },
       },
     };
-    const sign = await zzcSign(JSON.stringify(requestData));
-    const data = await httpPostJson(
-      `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
-      JSON.stringify(requestData),
-      { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
-    );
-    const body = data?.req?.data?.body;
-    return normalizeLxPlaylistResults(source, body?.item_songlist || body?.songlist?.list || body?.songlist || []);
+    // 该接口与 searchTx 同属新签名(Mobile)风控体系，被风控/降级时 body 为空，
+    // 走无签名 Desktop 通道兜底（txSheetSearchDesktopFallback，实测稳定可用）
+    let list: any[];
+    try {
+      const sign = await zzcSign(JSON.stringify(requestData));
+      const data = await httpPostJson(
+        `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+        JSON.stringify(requestData),
+        { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
+      );
+      const body = data?.req?.data?.body;
+      list = body?.item_songlist || body?.songlist?.list || [];
+    } catch (e: any) {
+      console.warn(`[LxMusicSdk] TX 歌单搜索接口异常，尝试 Desktop 兜底: ${e?.message || e}`);
+      list = [];
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      console.warn('[LxMusicSdk] TX 歌单搜索 Mobile 为空，尝试 Desktop 兜底');
+      list = await txSheetSearchDesktopFallback(keyword, page, limit);
+    }
+    return normalizeLxPlaylistResults(source, list);
   }
 
   const time = Date.now().toString();
@@ -1155,11 +1329,23 @@ export async function lxCatalogSearch(
 ): Promise<LxArtistSearchResult[] | LxAlbumSearchResult[] | LxPlaylistSearchResult[]> {
   if (type === 'playlist') return searchLxPlaylists(source, keyword, page, limit);
   const result = await lxSearch(source, keyword, page, limit);
-  if (type !== 'artist') return deriveLxAlbumResults(result.list);
+  if (type !== 'artist') {
+    const albums = deriveLxAlbumResults(result.list);
+    // kw/wy 源搜索结果无可靠封面对应字段（kw 无图片字段、wy 只有超大整数 picId），异步补专辑封面
+    if (source === 'kw') {
+      await fillKwAlbumCovers(albums as LxAlbumSearchResult[]);
+    } else if (source === 'wy') {
+      await fillWyAlbumCovers(albums as LxAlbumSearchResult[]);
+    }
+    return albums;
+  }
   const artists = deriveLxArtistResults(result.list);
-  // kw 源搜索结果无图片字段，用 songmid 调 artistpicserver 异步获取封面作为歌手头像
+  // kw 源搜索结果无图片字段，用 songmid 调 artistpicserver 异步获取封面作为歌手头像；
+  // wy 源搜索接口的 img1v1Url 是全局占位头像，需用 artistId 调艺人接口补真实头像
   if (source === 'kw') {
     await fillKwArtistAvatars(artists);
+  } else if (source === 'wy') {
+    await fillWyArtistAvatars(artists);
   }
   return artists;
 }
@@ -1190,7 +1376,132 @@ async function fillKwArtistAvatars(artists: LxArtistSearchResult[]): Promise<voi
   ]);
 }
 
-// ==================== Main Export ====================
+/**
+ * 网易云搜索接口 artists[].img1v1Url 实为全局统一的默认占位头像
+ * （所有歌手返回同一个 6y-UleORITEDbvrOLV0Q8A== URL），不是真实头像。
+ * 用 artistId 调艺人详情接口（/api/artist/{id}）拿真实 artist.picUrl。
+ * 小并发（3）打接口，只阻塞 2.5 秒，其余后台继续补获
+ * （Search.vue 的封面轮询会把迟到的头像刷进视图）。
+ */
+const WY_PLACEHOLDER_AVATAR = '6y-UleORITEDbvrOLV0Q8A==';
+
+async function fillWyArtistAvatars(artists: LxArtistSearchResult[]): Promise<void> {
+  const targets = artists.filter(a => {
+    const id = String((a.rawData as any)?.artistId ?? '');
+    if (!/^\d+$/.test(id)) return false;
+    return !a.avatarUrl || a.avatarUrl.includes(WY_PLACEHOLDER_AVATAR);
+  });
+  if (targets.length === 0) return;
+
+  const CONCURRENCY = 3;
+  let nextIdx = 0;
+
+  const worker = async (): Promise<void> => {
+    while (nextIdx < targets.length) {
+      const a = targets[nextIdx++];
+      const artistId = String((a.rawData as any).artistId);
+      try {
+        const resp = await httpGetJson(`https://music.163.com/api/artist/${encodeURIComponent(artistId)}?ext=true`, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36',
+          'Referer': 'https://music.163.com',
+          'Cookie': 'MUSIC_A=1',
+        });
+        const avatar = resp?.artist?.picUrl || resp?.artist?.img1v1Url || '';
+        if (avatar) {
+          a.avatarUrl = String(avatar).replace(/^http:\/\//i, 'https://');
+        }
+      } catch { /* 单个歌手获取失败不影响整体 */ }
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, () => worker());
+  await Promise.race([
+    Promise.allSettled(workers),
+    new Promise(resolve => setTimeout(resolve, 2500)),
+  ]);
+}
+
+/**
+ * 酷我搜索结果无图片字段，用专辑信息接口补专辑封面；
+ * 专辑接口失败/为空时用歌曲封面(artistpicserver)兜底。最多等待 3 秒。
+ */
+async function fillKwAlbumCovers(albums: LxAlbumSearchResult[]): Promise<void> {
+  const tasks = albums
+    .filter(a => !a.coverUrl && (a.rawData as any)?.id)
+    .map(async a => {
+      const raw = a.rawData as any;
+      try {
+        // 1) 酷我专辑信息接口取专辑封面
+        try {
+          const resp = await httpGetJson(`https://www.kuwo.cn/api/www/album/albumInfo?albumid=${encodeURIComponent(raw.id)}&httpsStatus=1`, {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+            'Referer': 'https://www.kuwo.cn/',
+          });
+          const pic = resp?.data?.pic || resp?.data?.picS || resp?.data?.data?.pic || resp?.data?.data?.album?.pic;
+          if (pic) {
+            const url = normalizeKuwoCoverUrl(String(pic));
+            if (url) {
+              a.coverUrl = url;
+              return;
+            }
+          }
+        } catch { /* 专辑接口失败/为空，走歌曲封面兜底 */ }
+        // 2) 兜底：用歌曲封面(artistpicserver)作为专辑封面
+        if (raw.songmid) {
+          const presp = await httpFetch(
+            `http://artistpicserver.kuwo.cn/pic.web?corp=kuwo&type=rid_pic&pictype=500&size=500&rid=${raw.songmid}`,
+            { method: 'GET' },
+          );
+          if (presp.status === 200 && /^http/.test(presp.body?.trim())) {
+            const url = normalizeKuwoCoverUrl(presp.body.trim());
+            if (url) a.coverUrl = url;
+          }
+        }
+      } catch { /* 单个专辑获取失败不影响整体 */ }
+    });
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise(resolve => setTimeout(resolve, 3000)),
+  ]);
+}
+
+/**
+ * 网易云搜索结果 album 不返回 picUrl，只返回超大整数 picId（JSON 解析即丢精度，
+ * neteasePicIdToUrl 的精度校验会拒绝），导致专辑封面为空。
+ *
+ * 与歌曲封面补获（triggerCoverLoading → lxGetPic）走同一条链路：Rust get_lx_cover
+ * 自带按专辑缓存 + 全局串行锁 + 请求间隔，天然规避网易云风控（code:-462）；
+ * 前端并发调用只会在 Rust 侧排队，不会打爆专辑接口。
+ *
+ * 只阻塞等待 2.5 秒让首批封面随搜索结果一起返回，其余由后台 worker 继续补获
+ * （Search.vue 的 albumCoverRefresh 轮询会把迟到的封面刷进视图）。
+ */
+async function fillWyAlbumCovers(albums: LxAlbumSearchResult[]): Promise<void> {
+  const targets = albums.filter(a =>
+    !a.coverUrl && /^\d+$/.test(String((a.rawData as any)?.id ?? ''))
+  );
+  if (targets.length === 0) return;
+
+  const worker = async (a: LxAlbumSearchResult): Promise<void> => {
+    const raw = a.rawData as any;
+    try {
+      const cover = await pluginApi.getLxCover({
+        songmid: String(raw.songmid || ''),
+        source: 'wy',
+        albumId: String(raw.id),
+        name: raw.name,
+        singer: raw.artist,
+        albumName: raw.name,
+      });
+      if (cover) a.coverUrl = String(cover).replace(/^http:\/\//i, 'https://');
+    } catch { /* 单个专辑获取失败不影响整体 */ }
+  };
+
+  await Promise.race([
+    Promise.allSettled(targets.map(worker)),
+    new Promise(resolve => setTimeout(resolve, 2500)),
+  ]);
+}
 
 export type LxSourceId = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
 
@@ -1377,6 +1688,31 @@ export async function lxGetAlbumSongs(
   return [];
 }
 
+// ==================== LX 歌单详情 Web 兜底 ====================
+
+/**
+ * 经典 Web 歌单详情兜底：不依赖新签名(musics.fcg)风控体系。
+ * Mobile 歌单详情被风控/降级返回空时使用，避免小秋/QQ 歌单页空白。
+ */
+async function txSheetTracksWebFallback(
+  playlistId: string,
+  page: number,
+  limit: number,
+): Promise<LxSearchResultItem[]> {
+  const url = `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(playlistId)}&format=json&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=jq&needNewCode=0`;
+  const result = await httpGetJson(url, {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+    'Referer': 'https://y.qq.com/',
+  });
+  const cdlist: any[] = result?.data?.cdlist || [];
+  const first: any = cdlist[0] || {};
+  const songAll: any[] = first.songlist || [];
+  const start = (page - 1) * limit;
+  const songlist = songAll.slice(start, start + limit);
+  if (songlist.length === 0) console.warn(`[LxMusicSdk] TX playlist web fallback ${playlistId}: empty songlist`);
+  return txHandleResult(songlist);
+}
+
 /**
  * 获取落雪音源歌单曲目列表
  * @param playlistRawData 来自 normalizeLxPlaylistResults 的 rawData（原始 API 响应项）
@@ -1434,14 +1770,25 @@ export async function lxGetPlaylistTracks(
             },
           },
         };
-        const sign = await zzcSign(JSON.stringify(requestData));
-        const resp = await httpPostJson(
-          `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
-          JSON.stringify(requestData),
-          { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
-        );
+        // 该接口与 searchTx 同属新签名(Mobile)风控体系：被风控(reqCode 2001)或降级时返回空 songlist，
+        // 无结果时走经典 Web 接口兜底（不依赖这套风控），否则用户在歌单页一直空白。
+        const fallback = (reason: string) => {
+          console.warn(`[LxMusicSdk] TX playlist ${playlistId}: ${reason}，尝试 Web 兜底`);
+          return txSheetTracksWebFallback(playlistId, page, limit);
+        };
+        let resp: any;
+        try {
+          const sign = await zzcSign(JSON.stringify(requestData));
+          resp = await httpPostJson(
+            `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+            JSON.stringify(requestData),
+            { 'User-Agent': 'Mozilla/5.0 (Linux; Android 12; EBG-AN10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.141 Mobile Safari/537.36', 'Content-Type': 'application/json', 'Referer': 'https://y.qq.com/' },
+          );
+        } catch (e: any) {
+          return fallback(`Mobile 接口异常(${e?.message || e})`);
+        }
         const songlist: any[] = resp?.req?.data?.songlist || [];
-        if (songlist.length === 0) console.warn(`[LxMusicSdk] TX playlist ${playlistId}: empty songlist`);
+        if (songlist.length === 0) return fallback('empty songlist');
         return txHandleResult(songlist);
       }
       case 'wy': {
@@ -1500,7 +1847,7 @@ export async function lxGetPic(songInfo: LxSearchResultItem): Promise<string | n
 
   try {
     const result = await pluginApi.getLxCover(toUrlSongInfo(songInfo));
-    return result ?? null;
+    return (result && String(result).replace(/^http:\/\//i, 'https://')) || null;
   } catch (e: any) {
     console.warn(`[LxMusicSdk] getLxCover failed: ${e?.message || e}`);
     return null;

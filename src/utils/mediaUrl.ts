@@ -139,6 +139,14 @@ export const normalizeMediaRequestHeaders = (
     const isJooxLike = host.includes('joox.com')
       || host.includes('music.joox.com')
       || path.includes('/joox/');
+    const isQishuiLike = host.includes('douyin.com')
+      || host.includes('pglstatp-toutiao.com')
+      || host.includes('pangolin-sdk-toutiao.com')
+      || host.includes('bytescm.com')
+      || host.includes('pstatp.com')
+      || host.includes('bytecdn.cn')
+      || host.includes('toutiao.com')
+      || path.includes('/qishui/');
 
     // B站 CDN：bilivideo.com / bilivideo.cn / hdslb.com（封面图）
     // 防盗链要求 Referer + Origin，缺失时 CDN 只返回 3-4 秒预览片段
@@ -168,6 +176,10 @@ export const normalizeMediaRequestHeaders = (
     } else if (isBilibiliLike) {
       setHeaderIfMissing(headers, 'Referer', 'https://www.bilibili.com');
       setHeaderIfMissing(headers, 'Origin', 'https://www.bilibili.com');
+    } else if (isQishuiLike) {
+      const referer = 'https://www.douyin.com/';
+      setHeaderIfMissing(headers, 'Referer', referer);
+      setHeaderIfMissing(headers, 'Origin', referer.replace(/\/$/, ''));
     }
   } catch {
     // URL 已经过 sanitizeMediaUrl 兜底；解析失败时只保留已有 headers 与 Accept。

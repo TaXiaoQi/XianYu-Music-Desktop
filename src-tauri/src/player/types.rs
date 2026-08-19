@@ -188,6 +188,10 @@ pub enum AudioCommand {
         output_mode: AudioOutputMode,
         start_offset_ms: Option<u64>,
         volume_balance_gain: f32,
+        /// DSD 原生 DoP 直通开关：仅 .dsf + WASAPI 独占时生效。
+        dsd_native_passthrough: bool,
+        /// Bit-perfect 输出：独占时跳过响度归一化/EQ/音效/主音量等全部 DSP，按源位深整数直出。
+        bit_perfect: bool,
     },
     Pause,
     Stop,
@@ -261,6 +265,22 @@ pub struct PlayerState {
 pub struct AudioDevice {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AudioDeviceFormat {
+    /// 样本格式（如 f32/i16/i24），取自 cpal SampleFormat 的 Debug 名小写。
+    pub sample_format: String,
+    pub min_sample_rate: u32,
+    pub max_sample_rate: u32,
+    pub channels: u16,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AudioDeviceFormats {
+    pub id: String,
+    pub name: String,
+    pub formats: Vec<AudioDeviceFormat>,
 }
 
 #[derive(Serialize, Clone, Default)]

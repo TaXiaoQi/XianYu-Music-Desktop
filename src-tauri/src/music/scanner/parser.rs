@@ -150,7 +150,13 @@ pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) ->
         }
     }
 
-    if duration == 0 || sample_rate == 0 || bit_depth.is_none() {
+    // mp4 容器（m4a/m4b/mp4）需要精确识别编解码器以区分 ALAC 无损与 AAC 有损。
+    // lofty 虽能给出完整时长/采样率/位深，却不提供 codec，若不强制探测会缺失 codec，
+    // 导致无损 ALAC m4a 被前端误判成有损。
+    let is_mp4_container = container.as_deref() == Some("mp4");
+    let metadata_incomplete = duration == 0 || sample_rate == 0 || bit_depth.is_none();
+
+    if metadata_incomplete || is_mp4_container {
         let identity = detect_audio_identity(path, format);
 
         if duration == 0 {
@@ -169,7 +175,15 @@ pub(crate) fn parse_song_from_file(path: &Path, path_str: &str, format: &str) ->
         {
             container = identity.container;
         }
-        codec = identity.codec;
+        // mp4 容器对 codec 有硬性依赖，直接用探测结果（identity 值缺失时保留既有值）；
+        // 其他格式仅在既有 codec 为空时兜底填充。
+        if is_mp4_container {
+            if let Some(codec_name) = identity.codec {
+                codec = Some(codec_name);
+            }
+        } else if codec.is_none() {
+            codec = identity.codec;
+        }
     }
 
     if bitrate == 0 {

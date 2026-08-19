@@ -710,6 +710,126 @@ const _require = (packageName: string) => {
   return null;
 };
 
+// ==================== Node 全局模拟（混淆 LX 插件依赖）====================
+//
+// 重度混淆的 LX 插件（如"独家音源"）用自定义 VM 解释器运行，会以自由变量或
+// globalThis 方式访问 Node.js 全局对象：process / require / SCRIPT_MD5 等。
+// 这里提供安全模拟，绝不真正执行系统命令。
+
+// child_process 安全桩：混淆插件可能调用 execSync('shutdown /s /t 0') 等
+// 反调试/反破解命令（检测到环境不符就关机/杀进程）。绝不能真正执行，
+// 返回空结果让插件误以为命令已执行，从而继续正常运行。
+const childProcessStub: Record<string, any> = {
+  exec(_cmd: string, options?: any, callback?: any) {
+    if (typeof options === 'function') callback = options;
+    if (typeof callback === 'function') {
+      try { callback(null, '', ''); } catch { /* ignore */ }
+    }
+    return { stdout: '', stderr: '', pid: 0, exitCode: 0, on: () => {}, once: () => {}, kill: () => {} };
+  },
+  execFile(_file: string, ...rest: any[]) {
+    const callback = rest.find((a: any) => typeof a === 'function');
+    if (callback) { try { callback(null, '', ''); } catch { /* ignore */ } }
+    return { stdout: '', stderr: '', pid: 0, exitCode: 0, on: () => {}, once: () => {}, kill: () => {} };
+  },
+  spawn() {
+    return { stdout: '', stderr: '', pid: 0, exitCode: 0, on: () => {}, once: () => {}, kill: () => {} };
+  },
+  fork() {
+    return { stdout: '', stderr: '', pid: 0, exitCode: 0, on: () => {}, once: () => {}, kill: () => {} };
+  },
+  execSync() { return Buffer.alloc(0); },
+  execFileSync() { return Buffer.alloc(0); },
+  spawnSync() { return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), status: 0, pid: 0 }; },
+};
+
+// crypto 安全桩：基于 crypto-js 与 Web Crypto 提供常用同步 API
+const cryptoShim = {
+  createHash(algo: string) {
+    const normalized = String(algo).toLowerCase().replace(/-/g, '');
+    const hash = normalized === 'md5' ? CryptoJs.MD5
+      : normalized === 'sha1' ? CryptoJs.SHA1
+      : normalized === 'sha256' ? CryptoJs.SHA256
+      : normalized === 'sha512' ? CryptoJs.SHA512
+      : null;
+    if (!hash) throw new Error(`crypto: 不支持的哈希算法 ${algo}`);
+    let data: any = '';
+    return {
+      update(input: any) { data = input; return this; },
+      digest(encoding?: string): any {
+        const result = hash(data || '').toString();
+        return encoding === 'hex' ? result : Buffer.from(result, 'hex');
+      },
+    };
+  },
+  createHmac(algo: string, key: any) {
+    const normalized = String(algo).toLowerCase().replace(/-/g, '');
+    const hmac = normalized === 'md5' ? CryptoJs.HmacMD5
+      : normalized === 'sha1' ? CryptoJs.HmacSHA1
+      : normalized === 'sha256' ? CryptoJs.HmacSHA256
+      : null;
+    if (!hmac) throw new Error(`crypto: 不支持的 HMAC 算法 ${algo}`);
+    let data: any = '';
+    return {
+      update(input: any) { data = input; return this; },
+      digest(encoding?: string): any {
+        const result = hmac(data || '', key).toString();
+        return encoding === 'hex' ? result : Buffer.from(result, 'hex');
+      },
+    };
+  },
+  randomBytes(size: number) {
+    const arr = new Uint8Array(size);
+    crypto.getRandomValues(arr);
+    return Buffer.from(arr);
+  },
+  randomUUID() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  },
+  timingSafeEqual(a: any, b: any) {
+    const ba = Buffer.from(a), bb = Buffer.from(b);
+    if (ba.length !== bb.length) return false;
+    let diff = 0;
+    for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
+    return diff === 0;
+  },
+};
+
+// process 模拟：混淆插件会读取 version/versions/env/platform/arch/pid 等，
+// 并可能调用 kill() 做反调试（返回 true 假装成功即可）
+const lxProcess = {
+  platform: 'win32',
+  arch: 'x64',
+  version: 'v20.0.0',
+  versions: { node: '20.0.0', v8: '11.3.244.8', uv: '1.44.2', zlib: '1.2.13', openssl: '3.0.8' },
+  env: {},
+  pid: 12345,
+  kill(_pid?: number, _signal?: string) { return true; },
+  nextTick(fn: (...args: any[]) => void, ...args: any[]) { Promise.resolve().then(() => fn(...args)); },
+  cwd: () => '/',
+  browser: false,
+};
+
+// require 模拟：解析常见模块 + 安全桩
+const lxRequire = (name: string) => {
+  const pkg = packages[name];
+  if (pkg) return pkg;
+  switch (name) {
+    case 'child_process': return childProcessStub;
+    case 'crypto': return cryptoShim;
+    case 'zlib': return zlibPkg;
+    case 'buffer': return { Buffer };
+    case 'crypto-js': return CryptoJs;
+    default:
+      throw new Error(`Cannot find module '${name}'`);
+  }
+};
+
 // ==================== MusicFree 插件执行 ====================
 
 interface MusicFreeInstance {
@@ -845,6 +965,15 @@ async function loadMusicFreePlugin(
       process: _process,
       fetch: proxyFetch,
     });
+
+    // 以全局变量形式提供 Buffer/CryptoJS，供插件以自由变量方式直接引用。
+    // 不能用模块作用域 const 注入：插件自身若声明 const Buffer/CryptoJS（如
+    // kw/qq 插件的 const { Buffer } = require("buffer")）会与注入声明冲突，
+    // 导致 "Identifier has already been declared" 加载失败。全局变量可被
+    // 模块内自由变量解析，同时被模块内同名声明遮蔽，互不冲突。
+    (globalThis as any).Buffer = Buffer;
+    (globalThis as any).CryptoJs = CryptoJs;
+    (globalThis as any).CryptoJS = CryptoJs;
 
     const moduleSource = `
       'use strict';
@@ -1327,6 +1456,15 @@ async function loadLxPlugin(
   // 设置 globalThis.lx
   (globalThis as any).lx = lxApi;
 
+  // 重度混淆插件以 globalThis 方式访问 Node 全局对象，需在全局注入。
+  // 每个插件独立 Worker，注入不会跨插件泄漏。
+  (globalThis as any).process = lxProcess;
+  (globalThis as any).require = lxRequire;
+  (globalThis as any).Buffer = Buffer;
+  (globalThis as any).CryptoJs = CryptoJs;
+  (globalThis as any).CryptoJS = CryptoJs;
+  (globalThis as any).SCRIPT_MD5 = CryptoJs.MD5(script).toString();
+
   // 通过 Blob 模块执行插件脚本，避免依赖 CSP 字符串求值能力。
   const runtimeId = `lx:${pluginId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   getRuntimeMap().set(runtimeId, {
@@ -1347,6 +1485,10 @@ async function loadLxPlugin(
       const window = globalThis;
       const self = globalThis;
       const global = globalThis;
+      const process = globalThis.process;
+      const require = globalThis.require;
+      // 不本地声明 SCRIPT_MD5：混淆插件可能自行声明同名变量（unicode 转义），
+      // 本地 const 会与之冲突；globalThis.SCRIPT_MD5 已注入，裸引用自动解析到全局。
       ${script}
       export {};
     `;

@@ -43,7 +43,7 @@ const qualityListRef = ref<HTMLElement | null>(null);
 const qualityScrollProgress = ref({ show: false, top: 0, height: 100 });
 
 const FILE_NAME_STYLE_OPTIONS: { value: DownloadFileNameStyle; label: string; description: string }[] = [
-  { value: 'artist-title', label: '歌手 - 歌名', description: '艺术家在前' },
+  { value: 'artist-title', label: '歌手 - 歌名', description: '歌手在前' },
   { value: 'title-artist', label: '歌名 - 歌手', description: '歌名在前' },
   { value: 'title-artist-album', label: '歌名 - 歌手 - 专辑', description: '附加专辑' },
 ];

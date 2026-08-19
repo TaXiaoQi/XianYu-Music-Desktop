@@ -63,7 +63,7 @@ const TEXT = computed(() => isEnglish.value ? {
   leaderboardFailed: '排行榜加载失败',
   clickToRetry: '点击重试',
   unknownSong: '未知歌曲',
-  unknownArtist: '未知艺术家',
+  unknownArtist: '未知歌手',
   deletedSong: '已删除歌曲',
   you: '你',
   loginAria: '前往登录页面查看个人排名',

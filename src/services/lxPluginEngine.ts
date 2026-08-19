@@ -311,9 +311,20 @@ export function isLxPluginScript(script: string): boolean {
   if (/globalThis\s*\[\s*['"]lx['"]\s*]/.test(trimmed)) return true;
   if (/globalThis\s*\.\s*lx\b/.test(trimmed)) return true;
   // 4. 混淆插件可能在解构时引用 globalThis.lx（如 const { EVENT_NAMES } = globalThis.lx）
-  return /globalThis/.test(trimmed) && /\bEVENT_NAMES\b/.test(trimmed);
+  if (/globalThis/.test(trimmed) && /\bEVENT_NAMES\b/.test(trimmed)) return true;
 
+  // ===== 重度混淆插件增强检测 =====
+  // 此类插件用自定义 VM 解释器 + unicode 转义隐藏 LX API 特征，明文特征全部失效。
+  // 5. LX 服务端下发配置（lx-music-desktop 特有，混淆插件常以明文保留）
+  if (/SERVER_SCRIPT_CONFIG/.test(trimmed)) return true;
+  // 6. unicode 转义的 SCRIPT_MD5（\u0053\u0043\u0052\u0049\u0050\u0054\u005f\u004d\u0044\u0035，
+  //    lx-music-desktop 注入的脚本 MD5 全局变量，混淆插件用它做环境校验）
+  if (/\\u0053\\u0043\\u0052\\u0049\\u0050\\u0054\\u005f\\u004d\\u0044\\u0035/.test(trimmed)) return true;
+  // 7. unicode 转义的 lx（\u006c\u0078）与 globalThis（\u0067\u006c\u006f\u0062\u0061\u006c\u0054\u0068\u0069\u0073）
+  //    组合出现，说明插件通过 globalThis.lx 访问 LX API
+  if (/\\u006c\\u0078/.test(trimmed) && /\\u0067\\u006c\\u006f\\u0062\\u0061\\u006c\\u0054\\u0068\\u0069\\u0073/.test(trimmed)) return true;
 
+  return false;
 }
 
 export function parseLxScriptInfo(script: string): {

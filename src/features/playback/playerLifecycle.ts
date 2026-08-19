@@ -49,6 +49,8 @@ interface CreatePlayerLifecycleDeps {
   togglePlay: () => void | Promise<void>;
   nextSong: () => void;
   prevSong: () => void;
+  seekTo: (time: number) => void | Promise<void>;
+  stopPlayback: () => void | Promise<void>;
   applyLibraryScanBatch: (payload: LibraryScanBatchPayload) => void;
   flushBufferedLibraryScanBatch: () => void;
   handleSeekCompleted: (payload: SeekCompletedPayload) => void;
@@ -170,6 +172,8 @@ export const createPlayerLifecycle = ({
   togglePlay,
   nextSong,
   prevSong,
+  seekTo,
+  stopPlayback,
   applyLibraryScanBatch,
   flushBufferedLibraryScanBatch,
   handleSeekCompleted,
@@ -293,6 +297,17 @@ export const createPlayerLifecycle = ({
       }),
       listen('player:prev', () => {
         prevSong();
+      }),
+      // Win11 SMTC 进度条拖动：跳转到指定位置
+      listen<number>('player:seek-to', event => {
+        const time = Number(event.payload);
+        if (Number.isFinite(time) && time >= 0) {
+          void seekTo(time);
+        }
+      }),
+      // Win11 SMTC 停止按钮：停止播放
+      listen('player:stop', () => {
+        void stopPlayback();
       }),
       listen<LibraryScanBatchPayload>('library-scan-batch', event => {
         applyLibraryScanBatch(event.payload);

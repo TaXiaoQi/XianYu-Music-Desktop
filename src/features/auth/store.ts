@@ -2,6 +2,7 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 
 import {
+  checkBanStatus,
   clearAuth,
   getAuthApiSecret,
   getAuthBaseUrl,
@@ -14,6 +15,7 @@ import {
   type AuthUser,
   type ProfileStats,
 } from '../../services/auth/authService';
+import { showBanDialog } from '../../composables/useBanDialog';
 
 /**
  * 账号认证状态
@@ -75,7 +77,21 @@ export const useAuthStore = defineStore('auth', () => {
       // 从 keyring 加载凭证到内存缓存（含 localStorage 迁移）
       await initAuthFromKeyring();
       const session = await refreshSession();
-      setAuth(session);
+      if (session) {
+        // 页面刷新时校验登录状态：状态正常则继承登录态，异常（封禁）才要求下线
+        const status = await checkBanStatus();
+        if (status.banned) {
+          reset();
+          void showBanDialog(status.type, status.reason, {
+            ciyuanxiId: status.ciyuanxiId,
+            nickname: status.nickname,
+          });
+        } else {
+          setAuth(session);
+        }
+      } else {
+        setAuth(null);
+      }
       initialized.value = true;
     } finally {
       initializing.value = false;

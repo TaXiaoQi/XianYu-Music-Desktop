@@ -17,7 +17,7 @@ describe('OnboardingModal splash', () => {
   it('keeps tall shortcut settings visible from the top at minimum window height', () => {
     expect(source).toContain('max-w-6xl mx-auto min-h-full');
     expect(source).not.toContain('max-w-6xl mx-auto h-full');
-    expect(source).toContain('快捷键');
+    expect(source).toContain('快捷按键');
   });
 
   it('automatically continues after five seconds', () => {

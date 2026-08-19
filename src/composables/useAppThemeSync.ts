@@ -5,6 +5,7 @@ import { useWindowMaterial } from './windowMaterial';
 import { useThemeSettings } from './useThemeSettings';
 import { windowApi } from '../services/tauri/windowApi';
 import { applyThemeColorToDocument } from '../utils/themeColor';
+import { applyDarkClassWithTransition } from './themeTransition';
 
 export function useAppThemeSync() {
   const {
@@ -33,19 +34,11 @@ export function useAppThemeSync() {
   };
 
   const applyTheme = async () => {
-    if (isDarkTheme.value) {
-      document.documentElement.classList.add('dark');
-      try {
-        await appWindow.setTheme('dark');
-      } catch (error) {
-        console.warn('Failed to set window theme:', error);
-      }
-      return;
-    }
+    // 切换深浅色时附带渐变过渡；首帧启动与减少动效场景内部会自动跳过动画
+    applyDarkClassWithTransition(isDarkTheme.value);
 
-    document.documentElement.classList.remove('dark');
     try {
-      await appWindow.setTheme('light');
+      await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
     } catch (error) {
       console.warn('Failed to set window theme:', error);
     }

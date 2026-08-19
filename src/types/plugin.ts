@@ -36,9 +36,9 @@ export interface PluginTrack {
   id: string;
   /** 歌曲标题 */
   title: string;
-  /** 艺术家名称 */
+  /** 歌手名称 */
   artist: string;
-  /** 艺术家列表（多人合作时拆分） */
+  /** 歌手列表（多人合作时拆分） */
   artists?: string[];
   /** 专辑名称 */
   album?: string;
@@ -56,7 +56,7 @@ export interface PluginTrack {
   quality?: string;
 }
 
-/** 插件搜索结果 - 艺术家 */
+/** 插件搜索结果 - 歌手 */
 export interface PluginArtist {
   id: string;
   name: string;

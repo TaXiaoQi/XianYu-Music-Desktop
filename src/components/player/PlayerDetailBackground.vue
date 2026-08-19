@@ -190,6 +190,7 @@ onUnmounted(() => {
         draggable="false"
         decoding="async"
         @error="coverImgFailed = true"
+        referrerpolicy="no-referrer"
       />
     </div>
 
