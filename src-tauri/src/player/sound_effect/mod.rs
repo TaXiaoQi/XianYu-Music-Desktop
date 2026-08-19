@@ -28,6 +28,7 @@ pub mod pitch;
 pub mod reverb;
 pub mod shaper;
 pub mod spatial;
+pub mod wsola;
 
 use rodio::source::SeekError;
 use rodio::Source;

@@ -78,7 +78,7 @@ const zhCN = {
   'sidebar.recent': '最近播放',
   'sidebar.folders': '文件夹',
   'sidebar.plugins': '插件管理',
-  'sidebar.account': '账号',
+  'sidebar.account': '个人中心',
   'sidebar.topLists': '榜单',
 
   'topbar.search': '搜索音乐...',

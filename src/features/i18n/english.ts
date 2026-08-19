@@ -1273,7 +1273,6 @@ const exactEnglishTranslations: Record<string, string> = {
   '调制与延迟特效': 'Modulation & Delay',
   '谐波激励器 (Exciter)': 'Harmonic Exciter',
   '软失真': 'Soft clipping',
-  '返回主界面': 'Back to main screen',
   '返回登录': 'Back to sign in',
   '速度调节': 'Speed control',
   '速率': 'Rate',
