@@ -26,6 +26,8 @@ interface Props {
   playlistDetail: PlaylistDetail | null;
   localSongList: Song[];
   localSongPaths?: string[];
+  /** 歌曲列表滚动容器（用于歌单详情头部滚动缩小封面效果） */
+  scrollContainerRef?: HTMLElement | null;
 }
 
 const props = defineProps<Props>();
@@ -91,6 +93,7 @@ const isManagementModeModel = computed({
     :showRename="true"
     :showAddToPlaylist="true"
     :showHeaderAddToPlaylist="false"
+    :scrollContainerRef="scrollContainerRef"
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
     @openAddToPlaylist="$emit('showAddToPlaylist')"

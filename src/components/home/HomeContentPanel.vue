@@ -71,6 +71,9 @@ watch(localSongTableRef, value => {
   props.setSongTableRef?.(value);
 }, { immediate: true });
 
+/** 歌曲列表滚动容器：驱动歌手/专辑详情头部的滚动缩小封面效果 */
+const songTableScrollContainer = computed(() => localSongTableRef.value?.containerRef ?? null);
+
 onBeforeUnmount(() => {
   props.setSongTableRef?.(null);
 });
@@ -99,6 +102,7 @@ const handleTableDragStart = (...args: any[]) => {
         :artistName="localFilterCondition || 'Unknown Artist'"
         :songs="localSongList"
         :selectedCount="selectedCount"
+        :scrollContainerRef="songTableScrollContainer"
         @playAll="$emit('playAll')"
         @batchPlay="$emit('batchPlay')"
         @addToPlaylist="$emit('showAddToPlaylist')"
@@ -113,6 +117,7 @@ const handleTableDragStart = (...args: any[]) => {
         :albumArtist="selectedAlbumSong?.album_artist || selectedAlbumSong?.artist || 'Unknown Artist'"
         :songs="localSongList"
         :selectedCount="selectedCount"
+        :scrollContainerRef="songTableScrollContainer"
         @playAll="$emit('playAll')"
         @batchPlay="$emit('batchPlay')"
         @addToPlaylist="$emit('showAddToPlaylist')"
