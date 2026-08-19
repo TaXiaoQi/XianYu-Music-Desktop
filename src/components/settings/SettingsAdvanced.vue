@@ -539,7 +539,7 @@ onUnmounted(() => {
       </p>
     </section>
 
-    <div class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
+    <div class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -679,7 +679,7 @@ onUnmounted(() => {
     </section>
     </div>
 
-    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
+    <section class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
@@ -690,7 +690,7 @@ onUnmounted(() => {
       <LogExportActions />
     </section>
 
-    <section class="space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
+    <section class="space-y-3">
       <div>
         <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
