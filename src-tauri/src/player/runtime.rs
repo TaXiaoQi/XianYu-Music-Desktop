@@ -1615,6 +1615,10 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         if requested_output_mode == AudioOutputMode::WasapiExclusive
                             && !source_is_network_backed
                         {
+                            // 关键：先释放可能仍持有设备的旧独占播放。例如在「未播放」状态下切换独占
+                            // 时，restore_preferred_output 会以 paused 状态初始化一个独占流并占据设备，
+                            // 若不先 stop，本次新建独占会因设备已被占用而打开失败，连共享回退也失败 → 无声。
+                            stop_exclusive_playback(&mut exclusive_playback);
                             match start_exclusive_playback(
                                 current_path.clone(),
                                 selected_device_name.clone(),

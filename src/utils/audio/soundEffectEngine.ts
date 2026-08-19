@@ -26,21 +26,24 @@ export const freqsPreset = [
 // 新增均衡器预设（均衡衍生预设）
 export { advancedEqPresets } from './advancedEffects'
 
-// 卷积混响预设
+// 卷积混响预设。
+// dry/wet 即干声/湿声百分比（0~100），与音效面板滑杆单位一致：wet 作为混响尾音的
+// 混合占比（约 20~60 为宜），dry 保持节目清晰度（约 70~95）。数值过大（>100）会
+// 放大信号导致破音，这里预置值均控制在安全范围内，Rust 侧另有 [0,1] 夹取兜底。
 export const convolutions = [
-  { name: '电话', label: 'phone', mainGain: 0.0, sendGain: 3.0, source: 'filter-telephone.wav' },
-  { name: '教堂', label: 'church', mainGain: 1.8, sendGain: 0.9, source: 's2_r4_bd.wav' },
-  { name: '大厅', label: 'hall', mainGain: 0.8, sendGain: 2.4, source: 'bright-hall.wav' },
-  { name: '电影院', label: 'cinema', mainGain: 0.6, sendGain: 2.3, source: 'cinema-diningroom.wav' },
-  { name: '餐厅', label: 'restaurant', mainGain: 0.6, sendGain: 1.8, source: 'dining-living-true-stereo.wav' },
-  { name: '卫生间', label: 'bathroom', mainGain: 0.6, sendGain: 2.1, source: 'living-bedroom-leveled.wav' },
-  { name: '室内', label: 'room', mainGain: 1, sendGain: 2.5, source: 'spreader50-65ms.wav' },
-  { name: '立体声', label: 'stereo', mainGain: 1.8, sendGain: 0.8, source: 's3_r1_bd.wav' },
-  { name: '矩阵混响（1）', label: 'matrixReverb1', mainGain: 1.5, sendGain: 0.9, source: 'matrix-reverb1.wav' },
-  { name: '矩阵混响（2）', label: 'matrixReverb2', mainGain: 1.3, sendGain: 1, source: 'matrix-reverb2.wav' },
-  { name: '心形扩散', label: 'cardioidSpread', mainGain: 1.8, sendGain: 0.6, source: 'cardiod-35-10-spread.wav' },
-  { name: '磁性立体声', label: 'magneticStereo', mainGain: 1, sendGain: 0.2, source: 'tim-omni-35-10-magnetic.wav' },
-  { name: '反馈抑制', label: 'feedbackSuppressor', mainGain: 1.8, sendGain: 0.8, source: 'feedback-spring.wav' },
+  { name: '电话', label: 'phone', dry: 15, wet: 55, source: 'filter-telephone.wav' },
+  { name: '教堂', label: 'church', dry: 70, wet: 60, source: 's2_r4_bd.wav' },
+  { name: '大厅', label: 'hall', dry: 80, wet: 45, source: 'bright-hall.wav' },
+  { name: '电影院', label: 'cinema', dry: 75, wet: 50, source: 'cinema-diningroom.wav' },
+  { name: '餐厅', label: 'restaurant', dry: 80, wet: 40, source: 'dining-living-true-stereo.wav' },
+  { name: '卫生间', label: 'bathroom', dry: 85, wet: 35, source: 'living-bedroom-leveled.wav' },
+  { name: '室内', label: 'room', dry: 88, wet: 30, source: 'spreader50-65ms.wav' },
+  { name: '立体声', label: 'stereo', dry: 95, wet: 20, source: 's3_r1_bd.wav' },
+  { name: '矩阵混响（1）', label: 'matrixReverb1', dry: 85, wet: 35, source: 'matrix-reverb1.wav' },
+  { name: '矩阵混响（2）', label: 'matrixReverb2', dry: 82, wet: 40, source: 'matrix-reverb2.wav' },
+  { name: '心形扩散', label: 'cardioidSpread', dry: 92, wet: 25, source: 'cardiod-35-10-spread.wav' },
+  { name: '磁性立体声', label: 'magneticStereo', dry: 95, wet: 15, source: 'tim-omni-35-10-magnetic.wav' },
+  { name: '反馈抑制', label: 'feedbackSuppressor', dry: 90, wet: 25, source: 'feedback-spring.wav' },
 ] as const
 
 // 算法混响预设（程序生成 IR，无需音频文件）

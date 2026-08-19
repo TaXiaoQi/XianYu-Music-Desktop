@@ -155,10 +155,13 @@ export const extractDurationMs = (item: any): number => {
   for (const t of targets) {
     const candidates = [
       t.duration,
+      t.durationMs,
       t.interval,
       t.dt,
       t.time,
       t.length,
+      t.dur,
+      t.len,
       t.timelength,
       t.songTime,
       t.durationSeconds,
@@ -166,6 +169,10 @@ export const extractDurationMs = (item: any): number => {
       t.al?.dt,
       t.album?.dt,
       t.album?.duration,
+      t.song?.duration,
+      t.music?.duration,
+      t.data?.duration,
+      t.detail?.duration,
     ];
 
     for (const candidate of candidates) {

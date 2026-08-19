@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, reactive, watch, watchEffect } from 'vue'
+import { ref, reactive, watch, watchEffect, computed } from 'vue'
 import { playerStorage, playerStorageKeys } from '../../services/storage/playerStorage'
 import { localStore } from '../../services/storage/localStore'
 import { playbackApi } from '../../services/tauri/playbackApi'
@@ -24,6 +24,8 @@ export const advancedEqPresetNames = advancedEqPresets.map(p => p.name)
 export const algorithmicReverbNames = algorithmicReverbs.map(p => p.name)
 
 export const useSoundEffectStore = defineStore('soundEffect', () => {
+  // 夹取到 [0,1]：混响干/湿以 0~1 比例传给 Rust，避免放大信号削波。
+  const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
   // ===== 均衡器 =====
   const eqBands = reactive<Record<string, number>>({
     '31': 0, '62': 0, '125': 0, '250': 0, '500': 0,
@@ -64,8 +66,9 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
     if (label) {
       const conv = convolutions.find((c: { label: string }) => c.label === label)
       if (conv) {
-        originalGain.value = Math.round(conv.mainGain * 10)
-        envGain.value = Math.round(conv.sendGain * 10)
+        // 预设的 dry/wet 即百分比（0~100），直接作为滑杆/同步的输入值
+        originalGain.value = conv.dry
+        envGain.value = conv.wet
       }
     } else {
       originalGain.value = 0
@@ -89,11 +92,10 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   watch(activeAlgoReverb, (label) => {
     if (label) {
       activeConvolution.value = null // 互斥: 取消卷积混响
-      // 与 YinDongMusic 对齐：dry=1.0(mainGain), wet=2.0(sendGain)。
-      // Rust 侧 Freeverb 已加 WET_BOOST + 早期反射 + 砖墙限制器（ceiling=0.95），
-      // 可安全处理 wet=2.0，不再削波。
-      originalGain.value = 10
-      envGain.value = 20
+      // 算法混响取安全默认：干声 85%、湿声 40%。Freeverb 内部已含 FIXED_GAIN +
+      // WET_BOOST + 砖墙限制器（ceiling=0.95）兜底，此处以百分比输入，不会削波。
+      originalGain.value = 85
+      envGain.value = 40
     }
   })
 
@@ -304,7 +306,31 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   const ssCenterLevel = ref(100)   // %: 0~200
 
   // ===== AB 对比旁通 =====
-  const bypassAll = ref(true)
+  // 默认必须为 false：rust 侧 should_hard_bypass() = bypass || !has_audible_processing()，
+  // 若默认开启旁通会把整条 DSP 链（含独立 EQ 路径）硬旁通，导致「打开音效却听不到」。
+  // 无任何音效开启时 rust 端 has_audible_processing() 为 false，仍安全直通。
+  const bypassAll = ref(false)
+
+  // 任一音效从「无」→「有」（上升沿）时自动关闭旁通，避免用户开效果却听不到（含旧版
+  // 持久化中 bypassAll=true 的迁移）。用上升沿判断而非「任一启用即强制关闭」，保证 AB
+  // 对比期间手动开启旁通不会被改回来。
+  const anyEffectEnabled = computed(
+    () =>
+      activeConvolution.value != null || activeAlgoReverb.value != null ||
+      enable3DSurround.value || enable8D.value || enable36D.value || enableVirtualSurround.value ||
+      vocalRemoval.value || vibratoEnabled.value || pitchDriftEnabled.value || tremoloEnabled.value ||
+      bassBoostEnabled.value || dynamicEqEnabled.value || distortionEnabled.value || flangerEnabled.value ||
+      phaserEnabled.value || delayEnabled.value || compressorEnabled.value || crossfeedEnabled.value ||
+      stereoWidenEnabled.value || monoMergeEnabled.value || channelSwapEnabled.value || v4aEnabled.value ||
+      noiseGateEnabled.value || expanderEnabled.value || multibandCompEnabled.value || limiterEnabled.value ||
+      exciterEnabled.value || subBassEnabled.value || deEsserEnabled.value || agcEnabled.value ||
+      loFiEnabled.value || bitcrushEnabled.value || stereoSeparationEnabled.value
+  )
+  let prevAnyEffectEnabled = anyEffectEnabled.value
+  watch(anyEffectEnabled, (now) => {
+    if (now && !prevAnyEffectEnabled && bypassAll.value) bypassAll.value = false
+    prevAnyEffectEnabled = now
+  })
 
   // ===== 音频增强增益 =====
   // 0-100 映射到 Rust 侧 0~6dB 增益。默认必须为 0，避免未开启音效时仍被放大、
@@ -320,7 +346,8 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
   // - watchEffect 自动追踪 buildSoundEffectSettings() 内读取的全部 ref，任一变更即
   //   重建 settings 并触发防抖同步（trailing 50ms），避免拖动滑块时频繁 IPC。
   // - 字段单位与 UI 滑块一致（百分比/dB/Hz/ms），Rust 各 Source 内部做单位换算。
-  //   增益类字段（reverbDry/Wet）传原始浮点增益（store 内 *10 仅为 UI 显示，此处 ÷10 还原）。
+  //   混响 dry/wet 以百分比存储（滑块 0~300），同步时换算为 0~1 比例并夹取，防止
+  //   干声/湿声被放大超过原始信号而削波（此前预设倍率泄出导致破音、噪声被放大）。
 
   /** 由当前 store 状态构建与 Rust SoundEffectSettings 一一对应的参数对象 */
   const buildSoundEffectSettings = (): SoundEffectSettings => {
@@ -365,11 +392,11 @@ export const useSoundEffectStore = defineStore('soundEffect', () => {
       pitchShift: pitchShift.value,
       playbackRate: playbackRate.value,
       preservesPitch: preservesPitch.value,
-      // 混响（originalGain/envGain 内部 *10 仅为 UI 显示，还原为原始增益）
+      // 混响（originalGain/envGain 以百分比存储，换算为 0~1 比例并夹取）
       reverbKind,
       reverbPreset,
-      reverbDry: originalGain.value / 10,
-      reverbWet: envGain.value / 10,
+      reverbDry: clamp01(originalGain.value / 100),
+      reverbWet: clamp01(envGain.value / 100),
       // 空间
       spatialMode,
       spatialSpeed,

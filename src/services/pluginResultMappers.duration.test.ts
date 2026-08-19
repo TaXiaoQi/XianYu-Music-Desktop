@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractDuration, parseDuration, toPluginSearchResult } from './pluginResultMappers';
+import { extractDuration, extractDurationMs, extractResultList, parseDuration, toPluginSearchResult } from './pluginResultMappers';
 import type { PluginSource } from '../types';
 
 function makePlugin(): PluginSource {
@@ -90,6 +90,41 @@ describe('extractDuration', () => {
     const item = { id: '1', title: '歌', al: { dt: 240000 } };
     expect(extractDuration(item)).toBe(240000);
   });
+
+  it('extracts duration from durationMs field', () => {
+    const item = { id: '1', title: '歌', durationMs: 215000 };
+    expect(extractDuration(item)).toBe(215000);
+  });
+
+  it('extracts duration from dur field', () => {
+    const item = { id: '1', title: '歌', dur: 215 };
+    expect(extractDuration(item)).toBe(215000);
+  });
+
+  it('extracts duration from len field', () => {
+    const item = { id: '1', title: '歌', len: 240000 };
+    expect(extractDuration(item)).toBe(240000);
+  });
+
+  it('extracts duration from nested song.duration inside rawData', () => {
+    const item = { id: '1', title: '歌', rawData: { song: { duration: 215 } } };
+    expect(extractDuration(item)).toBe(215000);
+  });
+
+  it('extracts duration from nested music.duration inside rawData', () => {
+    const item = { id: '1', title: '歌', rawData: { music: { duration: 223 } } };
+    expect(extractDuration(item)).toBe(223000);
+  });
+
+  it('extracts duration from nested data.duration inside rawData', () => {
+    const item = { id: '1', title: '歌', rawData: { data: { duration: 300 } } };
+    expect(extractDuration(item)).toBe(300000);
+  });
+
+  it('extracts duration from nested detail.duration inside rawData', () => {
+    const item = { id: '1', title: '歌', rawData: { detail: { duration: 269 } } };
+    expect(extractDuration(item)).toBe(269000);
+  });
 });
 
 describe('toPluginSearchResult duration mapping', () => {
@@ -105,5 +140,60 @@ describe('toPluginSearchResult duration mapping', () => {
 
     const result = toPluginSearchResult(item, plugin);
     expect(result.duration).toBe(320000);
+  });
+});
+
+describe('detail page data flow (extractResultList → toPluginSearchResult)', () => {
+  const plugin = makePlugin();
+
+  it('QQ 歌手详情页：formatMusicItem 返回 duration(秒)，列表在 data 字段', () => {
+    const result = {
+      isEnd: true,
+      data: [
+        { id: '1', name: '晴天', singer: '周杰伦', album: '叶惠美', duration: 269 },
+        { id: '2', name: '七里香', singer: '周杰伦', album: '七里香', duration: 302 },
+      ],
+    };
+    const list = extractResultList(result);
+    expect(list.length).toBe(2);
+    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    expect(mapped[0].duration).toBe(269000);
+    expect(mapped[1].duration).toBe(302000);
+  });
+
+  it('网易云 专辑详情页：duration 在 musicList 字段', () => {
+    const result = {
+      albumItem: { id: 'a1', name: '专辑' },
+      musicList: [
+        { id: '1', name: '歌1', singer: '歌手', album: '专辑', duration: 223 },
+        { id: '2', name: '歌2', singer: '歌手', album: '专辑', duration: 240 },
+      ],
+    };
+    const list = extractResultList(result);
+    expect(list.length).toBe(2);
+    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    expect(mapped[0].duration).toBe(223000);
+    expect(mapped[1].duration).toBe(240000);
+  });
+
+  it('酷我 歌单详情页：duration 在 musicList 字段', () => {
+    const result = {
+      isEnd: true,
+      musicList: [
+        { id: '1', name: '歌1', artist: '歌手', album: '专辑', duration: 215 },
+        { id: '2', name: '歌2', artist: '歌手', album: '专辑', duration: 300 },
+      ],
+    };
+    const list = extractResultList(result);
+    expect(list.length).toBe(2);
+    const mapped = list.map((item) => toPluginSearchResult(item, plugin));
+    expect(mapped[0].duration).toBe(215000);
+    expect(mapped[1].duration).toBe(300000);
+  });
+
+  it('歌曲无 duration 字段时返回 0（mfResultToSong 会显示 --:--）', () => {
+    const item = { id: '1', name: '歌', singer: '歌手', album: '专辑' };
+    const mapped = toPluginSearchResult(item, plugin);
+    expect(mapped.duration).toBe(0);
   });
 });

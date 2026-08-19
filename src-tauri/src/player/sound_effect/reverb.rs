@@ -343,9 +343,11 @@ impl ReverbRack {
                 self.process_freeverb(in_l, in_r)
             };
 
-        // 干/湿混合（与旧版语义一致 + 立体声宽度交叉混合）
-        let dry_gain = 1.0 + (s.reverb_dry - 1.0) * w;
-        let wet = s.reverb_wet * w;
+        // 干/湿混合（与旧版语义一致 + 立体声宽度交叉混合）。
+        // dry ∈[0,1]、wet ∈[0,1] 夹取：任何来源（含历史坏预设、用户滑杆触顶）都不得
+        // 把干声/湿声放大超过原始信号，否则会削波破音、混响尾音噪声被放大成沙沙声。
+        let dry_gain = 1.0 + (s.reverb_dry.clamp(0.0, 1.0) - 1.0) * w;
+        let wet = s.reverb_wet.clamp(0.0, 1.0) * w;
         let wet1 = wet * (self.width * 0.5 + 0.5);
         let wet2 = wet * (self.width * 0.5 - 0.5);
         let wet_out_l = wet_l * wet1 + wet_r * wet2;

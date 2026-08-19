@@ -478,9 +478,19 @@ watch(
   <!-- 均衡器按钮与弹出面板 -->
   <div v-else-if="itemKey === 'equalizer'" class="relative flex items-center justify-center h-full z-[70]">
     <button
-      @click="toggleEqPanel"
-      :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', showEqPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
-      title="均衡器 (EQ)"
+      @click="!isAudioControlLocked && toggleEqPanel($event)"
+      :disabled="isAudioControlLocked"
+      :class="[
+        'transition-colors w-8 h-8 flex items-center justify-center rounded-full',
+        isAudioControlLocked
+          ? 'opacity-40 cursor-not-allowed'
+          : showEqPanel
+            ? 'text-[#EC4141] bg-[#EC4141]/10'
+            : (showPlayerDetail
+                ? 'text-white/80 hover:text-white hover:bg-white/10'
+                : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
+      ]"
+      :title="isAudioControlLocked ? audioLockTooltip : '均衡器 (EQ)'"
     >
       <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
     </button>
