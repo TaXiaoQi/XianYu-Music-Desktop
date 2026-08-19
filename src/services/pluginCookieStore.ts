@@ -68,6 +68,31 @@ export function flushCookies(): void {
   // localStorage 中的 cookie store 是即时写入的，无需额外 flush
 }
 
+/**
+ * 获取 B站相关 Cookie 并构建 Cookie 请求头字符串。
+ *
+ * B站插件调用 API 时（api.bilibili.com / www.bilibili.com）会将 Cookie 存入
+ * localStorage，但 CDN 域名（bilivideo.com）与 API 域名不同，getCookies
+ * 的域匹配不会命中。此函数直接遍历 cookie store，提取所有 bilibili 域的
+ * Cookie，拼成 "name1=value1; name2=value2" 格式，供 m4s 下载防盗链使用。
+ */
+export function getPluginBilibiliCookies(): string {
+  try {
+    const store = JSON.parse(localStorage.getItem('__plugin_cookies') || '{}');
+    const pairs: string[] = [];
+    for (const [name, info] of Object.entries(store)) {
+      const c = info as any;
+      const domain = String(c?.domain ?? '').toLowerCase();
+      if (domain.includes('bilibili') && c?.value) {
+        pairs.push(`${name}=${c.value}`);
+      }
+    }
+    return pairs.join('; ');
+  } catch {
+    return '';
+  }
+}
+
 // ==================== Storage 管理 ====================
 
 /** 设置插件存储项（对应 musicfree/storage.setItem） */

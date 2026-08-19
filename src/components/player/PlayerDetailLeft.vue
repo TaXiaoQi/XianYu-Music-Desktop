@@ -108,11 +108,14 @@ watch([currentSongPath, () => props.isExpanded], async ([path, isExpanded]) => {
   try {
     const fullCoverUrl = await fullCoverLoad;
     if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !props.isExpanded) return;
-    currentCoverFull.value = fullCoverUrl || '';
+    // [在线歌曲] loadFullCover 对 plugin:// 返回空（后端无法读取本地封面），
+    // 不能清空 currentCoverFull，否则会覆盖 immediateCover 路径已设置的代理封面。
+    if (fullCoverUrl) {
+      currentCoverFull.value = fullCoverUrl;
+    }
     fullCoverLoading.value = false;
   } catch {
     if (requestId !== fullCoverRequestId || path !== currentSongPath.value || !props.isExpanded) return;
-    currentCoverFull.value = '';
     fullCoverLoading.value = false;
   }
 }, { immediate: true });
