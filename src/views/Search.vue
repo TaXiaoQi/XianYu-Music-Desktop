@@ -187,9 +187,10 @@
                 :class="entry.type === 'artist' ? 'flex flex-col items-center gap-2' : 'flex flex-col gap-2'"
                 @click="handleCatalogEntryClick(entry)"
               >
+                <!-- 歌手：保持圆形头像 -->
                 <div
-                  class="bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition"
-                  :class="entry.type === 'artist' ? 'w-20 h-20 rounded-full' : 'aspect-square rounded-lg'"
+                  v-if="entry.type === 'artist'"
+                  class="w-20 h-20 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition"
                 >
                   <img
                     v-if="getCatalogEntryCover(entry)"
@@ -200,9 +201,49 @@
                     referrerpolicy="no-referrer"
                     @error="handlePluginImgError($event)"
                   />
-                  <svg v-else-if="entry.type === 'artist'" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l7 3v-11l-7-3-7 3v11l7-3zM12 19V8M5 12l7-3 7 3" />
                   </svg>
+                </div>
+                <!-- 专辑：对齐专辑列表页封面（黑胶唱片 + 白框 + object-cover 缩放） -->
+                <div v-else-if="entry.type === 'album'" class="relative w-full aspect-square shrink-0">
+                  <div class="absolute inset-x-2 top-0 bottom-1/2 bg-[#1c1c1c] rounded-t-full shadow-inner origin-bottom translate-y-[-10%] group-hover:translate-y-[-24%] transition-transform duration-500 ease-out z-0 flex items-center justify-center overflow-hidden border border-[#333]">
+                    <div class="absolute inset-0 rounded-t-full border border-white/5 scale-90"></div>
+                    <div class="absolute inset-0 rounded-t-full border border-white/5 scale-75"></div>
+                    <div class="absolute inset-0 rounded-t-full border border-white/5 scale-50"></div>
+                  </div>
+                  <div class="absolute inset-0 z-10 bg-white dark:bg-gray-800 rounded-md shadow-md border border-gray-100 dark:border-white/10 p-1 flex items-center justify-center overflow-hidden group-hover:shadow-xl transition-shadow duration-300">
+                    <img
+                      v-if="getCatalogEntryCover(entry)"
+                      :src="getCatalogEntryCover(entry)"
+                      class="w-full h-full rounded-sm object-cover"
+                      alt=""
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                      @error="handlePluginImgError($event)"
+                    />
+                    <div
+                      v-else
+                      class="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 rounded-sm flex items-center justify-center text-4xl font-bold text-gray-300 dark:text-gray-600 shadow-inner"
+                    >
+                      {{ getCatalogEntryTitle(entry) ? getCatalogEntryTitle(entry).charAt(0).toUpperCase() : 'A' }}
+                    </div>
+                  </div>
+                </div>
+                <!-- 歌单：保持原样式 -->
+                <div
+                  v-else
+                  class="bg-black/10 dark:bg-white/10 overflow-hidden flex items-center justify-center text-[#EC4141] text-2xl font-black shrink-0 ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#EC4141]/30 transition aspect-square rounded-lg"
+                >
+                  <img
+                    v-if="getCatalogEntryCover(entry)"
+                    :src="getCatalogEntryCover(entry)"
+                    class="w-full h-full object-cover"
+                    alt=""
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    @error="handlePluginImgError($event)"
+                  />
                   <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                   </svg>
@@ -530,6 +571,8 @@ const resetTrackVirtualScroll = () => {
 const catalogGridScrollTop = ref(0);
 const catalogGridViewportHeight = ref(720);
 const catalogGridWidth = ref(960);
+// 列数断点基于窗口宽度（与本地专辑页一致），保证最小窗口下封面大小一致
+const windowWidth = ref(window.innerWidth);
 const CATALOG_GRID_H_GAP = 24;
 const CATALOG_GRID_V_GAP = 40;
 const CATALOG_GRID_OVERSCAN_ROWS = 2;
@@ -634,7 +677,7 @@ const catalogGridItems = computed<CatalogGridEntry[]>(() => {
 });
 
 const catalogGridColumns = computed(() => {
-  const width = catalogGridWidth.value;
+  const width = windowWidth.value;
   if (width >= 1536) return 7;
   if (width >= 1280) return 6;
   if (width >= 1024) return 5;
@@ -683,6 +726,10 @@ const virtualCatalogGridRows = computed<VirtualCatalogGridRow[]>(() => {
 
   return rows;
 });
+
+const handleWindowResize = () => {
+  windowWidth.value = window.innerWidth;
+};
 
 const syncCatalogGridVirtualScrollState = () => {
   const el = resultsScrollRef.value;
@@ -2139,6 +2186,7 @@ const getPlaylistCover = (playlist: Playlist): string => {
 // 初始化
 onMounted(() => {
   uiStore.showPlayerDetail = false;
+  window.addEventListener('resize', handleWindowResize);
   refreshPluginSourceList();
   // 初始化来源选择：优先选第一个插件，无插件则选本地
   if (allSourceList.value.length > 0) {
@@ -2159,6 +2207,7 @@ watch(resultsScrollRef, () => setupScrollResizeObserver());
 
 // 搜索页不再缓存。离开时终止未完成任务并释放只属于搜索页的临时状态。
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize);
   searchAbortController?.abort();
   searchAbortController = null;
   scrollResizeObserver?.disconnect();

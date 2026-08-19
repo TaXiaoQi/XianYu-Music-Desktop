@@ -227,12 +227,14 @@ const resultsScrollRef = ref<HTMLElement | null>(null);
 const gridScrollTop = ref(0);
 const gridViewportHeight = ref(720);
 const gridWidth = ref(960);
+// 列数断点基于窗口宽度（与本地专辑页一致），保证最小窗口下封面大小一致
+const windowWidth = ref(window.innerWidth);
 const GRID_H_GAP = 24;
 const GRID_V_GAP = 40;
 const GRID_OVERSCAN_ROWS = 2;
 
 const gridColumns = computed(() => {
-  const width = gridWidth.value;
+  const width = windowWidth.value;
   if (width >= 1536) return 7;
   if (width >= 1280) return 6;
   if (width >= 1024) return 5;
@@ -384,7 +386,12 @@ const handleTopListClick = (entry: GridEntry) => {
 };
 
 // ==================== 初始化 ====================
+const handleWindowResize = () => {
+  windowWidth.value = window.innerWidth;
+};
+
 onMounted(() => {
+  window.addEventListener('resize', handleWindowResize);
   void refreshSourceList();
 });
 
@@ -394,6 +401,7 @@ watch(pluginsVersion, () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize);
   loadVersion += 1;
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
