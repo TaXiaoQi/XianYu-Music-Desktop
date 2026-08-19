@@ -280,7 +280,8 @@ watch(
           <div class="relative">
             <div
               ref="downloadQualityListRef"
-              class="max-h-[230px] overflow-y-auto pr-3 custom-scrollbar"
+              class="max-h-[230px] overflow-y-auto custom-scrollbar"
+              :class="downloadQualityScrollProgress.show ? 'pr-2' : ''"
               @scroll="updateDownloadQualityScrollProgress"
             >
               <button
@@ -389,7 +390,8 @@ watch(
           <div class="relative">
             <div
               ref="qualityListRef"
-              class="max-h-[230px] overflow-y-auto pr-3 custom-scrollbar"
+              class="max-h-[230px] overflow-y-auto custom-scrollbar"
+              :class="qualityScrollProgress.show ? 'pr-2' : ''"
               @scroll="updateQualityScrollProgress"
             >
               <button
