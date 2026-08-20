@@ -3,6 +3,7 @@ mod custom_fonts;
 mod database;
 pub mod error;
 mod foreground_window;
+mod host_crypto;
 mod install_language;
 mod music;
 mod player;
@@ -67,6 +68,10 @@ use plugins::{
     download_audio_to_temp, download_video_to_cache, plugin_http_request,
     plugin_http_request_binary, proxy_image, read_file_bytes, read_plugin_file,
     remove_cached_background_video, save_plugin_script,
+};
+use host_crypto::{
+    host_kugou_sign, host_linuxapi_encrypt, host_migu_sign, host_sha256_hex, host_weapi_encrypt,
+    host_zzc_sign,
 };
 use plugin_host::commands::{
     plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
@@ -323,6 +328,12 @@ pub fn run() {
             plugin_engine_store_import,
             plugin_engine_cookie_header_for_domain,
             plugin_engine_store_snapshot,
+            host_zzc_sign,
+            host_kugou_sign,
+            host_migu_sign,
+            host_linuxapi_encrypt,
+            host_weapi_encrypt,
+            host_sha256_hex,
             read_plugin_file,
             save_plugin_script,
             read_file_bytes,

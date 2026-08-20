@@ -7273,7 +7273,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xianyu_music"
-version = "1.1.3-beta8"
+version = "1.1.4-beta1"
 dependencies = [
  "aes",
  "amll-lyric",
@@ -7289,6 +7289,7 @@ dependencies = [
  "keyring",
  "lofty",
  "md5",
+ "num-bigint",
  "quick-xml 0.39.4",
  "raw-window-handle",
  "rayon",

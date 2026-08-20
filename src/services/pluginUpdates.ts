@@ -1,6 +1,6 @@
-import CryptoJs from 'crypto-js';
 import type { PluginSource } from '../types';
 import type { pluginApi } from './tauri/pluginApi';
+import { hostSha256Hex } from './tauri/hostCryptoApi';
 import { fetchWithTimeout } from './pluginFetch';
 
 export interface PluginUpdateCheckResult {
@@ -190,7 +190,7 @@ export const createPluginUpdateService = ({
     // 如果新脚本哈希与 source.id 完全一致，说明脚本内容未变化，直接判定无更新。
     // 这可以避免因版本号正则提取误差导致的"永远有更新"问题。
     if (source.format === 'musicfree' && source.id) {
-      const newHash = CryptoJs.SHA256(newScript).toString();
+      const newHash = await hostSha256Hex(newScript);
       if (newHash === source.id) {
         log(`[checkPluginUpdate] ${source.name} 脚本哈希一致 (hash=${newHash.substring(0, 16)}...)，无更新`);
         return {
