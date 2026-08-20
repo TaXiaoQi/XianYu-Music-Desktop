@@ -1460,7 +1460,7 @@ const authStore = useAuthStore();
           // 已将 Cookie 存入 pluginCookieStore。此处从 cookie store 补充 B站 Cookie，
           // 确保对需要登录鉴权的视频 CDN 也能下载完整音频而非 3-4 秒预览。
           if (!Object.keys(m4sHeaders).some(key => key.toLowerCase() === 'cookie')) {
-            const bilibiliCookies = getPluginBilibiliCookies();
+            const bilibiliCookies = await getPluginBilibiliCookies();
             if (bilibiliCookies) {
               m4sHeaders.Cookie = bilibiliCookies;
             }

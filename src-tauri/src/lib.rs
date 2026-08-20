@@ -6,6 +6,7 @@ mod foreground_window;
 mod install_language;
 mod music;
 mod player;
+mod plugin_host;
 mod plugins;
 mod power;
 mod recognize;
@@ -66,6 +67,11 @@ use plugins::{
     download_audio_to_temp, download_video_to_cache, plugin_http_request,
     plugin_http_request_binary, proxy_image, read_file_bytes, read_plugin_file,
     remove_cached_background_video, save_plugin_script,
+};
+use plugin_host::commands::{
+    plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
+    plugin_engine_destroy_all, plugin_engine_load_lx, plugin_engine_load_musicfree,
+    plugin_engine_store_import, plugin_engine_store_snapshot,
 };
 use power::set_prevent_sleep;
 use recognize::{cancel_recognize_system_audio, recognize_system_audio, recognize_with_pcm};
@@ -309,6 +315,14 @@ pub fn run() {
             stop_topmost_guard,
             plugin_http_request,
             plugin_http_request_binary,
+            plugin_engine_load_musicfree,
+            plugin_engine_load_lx,
+            plugin_engine_call,
+            plugin_engine_destroy,
+            plugin_engine_destroy_all,
+            plugin_engine_store_import,
+            plugin_engine_cookie_header_for_domain,
+            plugin_engine_store_snapshot,
             read_plugin_file,
             save_plugin_script,
             read_file_bytes,

@@ -1,0 +1,10 @@
+[package]
+name = "truce-rack-poc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+truce-rack = { path = "C:/Users/小奇/AppData/Local/Temp/truce-rack-src/crates/truce-rack" }
+
+[profile.release]
+opt-level = 2

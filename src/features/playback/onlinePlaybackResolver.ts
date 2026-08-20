@@ -41,10 +41,10 @@ const sortQualities = (qualities: QualityKey[]) => (
 
 /** 为 B 站 CDN 取流请求合并会话 Cookie（buvid3/4 · SESSDATA），
  *  避免匿名分流只返回几秒预览流（插件 headers 通常不含 Cookie，需从这里补上） */
-const withBilibiliStreamCookie = (
+const withBilibiliStreamCookie = async (
   url: string,
   headers: Record<string, string> | null,
-): Record<string, string> | null => {
+): Promise<Record<string, string> | null> => {
   if (!headers) {
     return headers;
   }
@@ -60,7 +60,7 @@ const withBilibiliStreamCookie = (
   } catch {
     return headers;
   }
-  const biliCookie = getPluginBilibiliCookies();
+  const biliCookie = await getPluginBilibiliCookies();
   if (biliCookie) {
     headers['Cookie'] = biliCookie;
   }
@@ -138,7 +138,7 @@ export const resolveOnlineAudio = async ({
         const resolvedHeaders = normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null);
         return {
           audioFilePath: resolved.url,
-          pluginHeaders: withBilibiliStreamCookie(resolved.url, resolvedHeaders),
+          pluginHeaders: await withBilibiliStreamCookie(resolved.url, resolvedHeaders),
           currentPlayingQuality: resolveActualQuality(resolved.quality, resolved.url),
           currentPlayingAudioUrl: resolved.url,
           lyricsRaw: resolved.lyricsRaw,
