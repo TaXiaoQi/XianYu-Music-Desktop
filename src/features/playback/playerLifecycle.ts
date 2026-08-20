@@ -211,7 +211,7 @@ export const createPlayerLifecycle = ({
     localSortMode,
     localCustomOrder,
   } = storeToRefs(libraryStore);
-  const { favoritePaths, playlists, playlistSortMode } = storeToRefs(collectionsStore);
+  const { favoritePaths, favoriteCollections, playlists, playlistSortMode } = storeToRefs(collectionsStore);
   const {
     currentCover,
     currentSong,
@@ -354,6 +354,7 @@ export const createPlayerLifecycle = ({
     watch(playQueuePaths, scheduleStatePersistence);
     watch(watchedFolders, scheduleStatePersistence);
     watch(favoritePaths, scheduleStatePersistence);
+    watch(favoriteCollections, scheduleStatePersistence, { deep: true });
 
     // 合并两个对 playlists 的 watch：持久化保存 + 在线歌曲注入 songPool。
     // 使用 deep 监听以捕获歌单内歌曲增删，但批量合并 setExtraSongs 以减少 songCatalogVersion 递增。
@@ -633,6 +634,9 @@ export const createPlayerLifecycle = ({
       collectionsStore.setFavoritePaths(
         playerStorage.readStringArray(playerStorageKeys.favorites) ?? [],
       );
+
+      // 恢复整张收藏的歌单/专辑（收藏页"歌单/专辑"tab 数据源）
+      collectionsStore.setFavoriteCollections(playerStorage.readFavoriteCollections());
 
       // 恢复在线收藏歌曲的元信息，并写入额外歌曲池，
       // 使收藏列表能反查出这些不在本地音乐库中的歌曲

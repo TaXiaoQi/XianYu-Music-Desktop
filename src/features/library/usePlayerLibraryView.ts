@@ -21,7 +21,6 @@ export function usePlayerLibraryView() {
     currentArtistFilter,
     currentFolderFilter,
     currentViewMode,
-    favDetailFilter,
     favTab,
     filterCondition,
     localMusicTab,
@@ -79,8 +78,6 @@ export function usePlayerLibraryView() {
 
   const collectionSelectors = useLibraryCollectionSelectors({
     favoritePaths,
-    playlists,
-    recentSongs,
     songLookup,
   });
 
@@ -104,7 +101,6 @@ export function usePlayerLibraryView() {
     currentFolderFilter,
     filterCondition,
     favTab,
-    favDetailFilter,
     folderSortMode,
     localSortMode,
     albumDetailSortMode,
@@ -121,8 +117,6 @@ export function usePlayerLibraryView() {
     currentViewSongPaths,
     currentFolderSongs: folderSelectors.currentFolderSongs,
     currentViewSongs,
-    favAlbumList: collectionSelectors.favAlbumList,
-    favArtistList: collectionSelectors.favArtistList,
     favoriteSongList: collectionSelectors.favoriteSongList,
     filteredAlbumList: catalogSelectors.filteredAlbumList,
     filteredArtistList: catalogSelectors.filteredArtistList,
@@ -131,8 +125,6 @@ export function usePlayerLibraryView() {
     isLocalMusic,
     libraryFolders,
     libraryHierarchy,
-    recentAlbumList: collectionSelectors.recentAlbumList,
-    recentPlaylistList: collectionSelectors.recentPlaylistList,
     resolveSongByPath,
     searchQuery,
     sourceSongs,

@@ -5,7 +5,7 @@ import { showSettingsConflict } from '../../composables/useSettingsConflict';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { showProfileLimitDialog } from '../../composables/useProfileLimitDialog';
-import { showBanDialog } from '../../composables/useBanDialog';
+import { showBanDialog, showSessionExpiredDialog } from '../../composables/useBanDialog';
 import { showCiyuanxiDialog } from '../../composables/useCiyuanxiDialog';
 import { useAuthStore } from '../../features/auth/store';
 import { usePlaybackStore } from '../../features/playback/store';
@@ -133,6 +133,10 @@ function testBanDeviceDialog() {
   void showBanDialog('device', '该设备已被封禁，不支持在该设备上继续使用。如有疑问请联系管理员。');
 }
 
+function testSessionExpiredDialog() {
+  void showSessionExpiredDialog('登录状态已失效，请重新登录账号以继续使用。');
+}
+
 function testAppealDialog() {
   // 调试模式：仅测试申诉页面与流程，不发送服务器
   void showBanDialog(
@@ -253,6 +257,20 @@ function testCiyuanxiDialog() {
           type="button"
           class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
           @click="testBanDeviceDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">登录过期提示框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试登录态失效时的重新登录提示弹窗（确认/去登录）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testSessionExpiredDialog"
         >
           弹出
         </button>

@@ -3,8 +3,16 @@ import { computed, defineAsyncComponent } from 'vue';
 
 import type { FolderNode, Song } from '../../types';
 import { useI18n } from '../../features/i18n';
+import { usePlayerViewState } from '../../composables/usePlayerViewState';
+import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
+import {
+  buildLocalPlaylistCollectionKey,
+  type FavoriteCollectionEntry,
+} from '../../features/collections/store';
 
 const { isEnglish } = useI18n();
+const { filterCondition } = usePlayerViewState();
+const { playlists } = useLibraryCollections();
 
 const DetailHeader = defineAsyncComponent(() => import('../headers/DetailHeader.vue'));
 const FoldersHeader = defineAsyncComponent(() => import('../headers/FoldersHeader.vue'));
@@ -31,6 +39,22 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+/** 本地歌单详情的"收藏整张"条目（仅歌单详情视图提供） */
+const localPlaylistFavoriteEntry = computed<FavoriteCollectionEntry | null>(() => {
+  if (props.localViewMode !== 'playlist') return null;
+  const playlist = playlists.value.find(p => p.id === filterCondition.value);
+  if (!playlist) return null;
+  return {
+    key: buildLocalPlaylistCollectionKey(playlist.id),
+    type: 'playlist',
+    title: playlist.name,
+    subtitle: `${playlist.songPaths.length} 首歌曲`,
+    coverUrl: playlist.cloudCoverUrl || playlist.songs?.find(s => s.cover_thumb_path)?.cover_thumb_path || '',
+    favoritedAt: 0,
+    localPlaylistId: playlist.id,
+  };
+});
 
 const emit = defineEmits<{
   (event: 'update:isBatchMode', value: boolean): void;
@@ -94,6 +118,7 @@ const isManagementModeModel = computed({
     :showAddToPlaylist="true"
     :showHeaderAddToPlaylist="false"
     :scrollContainerRef="scrollContainerRef"
+    :favoriteEntry="localPlaylistFavoriteEntry"
     @playAll="$emit('playAll')"
     @batchPlay="$emit('batchPlay')"
     @openAddToPlaylist="$emit('showAddToPlaylist')"

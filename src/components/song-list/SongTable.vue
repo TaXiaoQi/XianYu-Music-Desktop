@@ -3,7 +3,7 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import { storeToRefs } from 'pinia';
 import { dragSession } from '../../composables/dragState';
 import type { Song } from '../../types';
-import { songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
+import { listScrollCache, songTableViewportCoverSnapshotCache } from '../../caches/imageCaches';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useSettings } from '../../features/settings/useSettings';
@@ -207,9 +207,22 @@ const getSegmentBatchSize = () => Math.max(
 
 const sourceSongCount = computed(() => props.songPaths?.length ?? props.songs.length);
 
+const tableViewportKey = computed(() =>
+  [
+    'song-table',
+    listRoutePath.value,
+    props.memoryScopeKey,
+    localSortMode.value,
+    folderSortMode.value,
+  ].join('::'),
+);
+
 const resetLoadedSongCount = () => {
   loadedSongCount.value = Math.min(sourceSongCount.value, getSegmentBatchSize());
   scrollTop.value = 0;
+  if (props.pageScrollMode && listScrollCache.get(tableViewportKey.value) !== undefined) {
+    return;
+  }
   if (activeScrollContainer.value) {
     activeScrollContainer.value.scrollTop = 0;
   }
@@ -281,16 +294,6 @@ watch(() => props.songPaths ?? props.songs, (items) => {
   downloadedOnlinePaths.value = new Set();
   downloadedLocalFormats.value = new Map();
 }, { immediate: true });
-
-const tableViewportKey = computed(() =>
-  [
-    'song-table',
-    listRoutePath.value,
-    props.memoryScopeKey,
-    localSortMode.value,
-    folderSortMode.value,
-  ].join('::'),
-);
 
 const getDisplayedCoverUrl = (path: string | undefined) => {
   if (!path) {
@@ -491,6 +494,17 @@ const {
   saveScrollPosition,
   restoreScrollPosition,
 } = useListScrollMemory(tableViewportKey, activeScrollContainer);
+
+// 整页滚动模式：歌曲列表更新后若存在保存的滚动位置，触发恢复
+// 解决返回导航时歌曲异步加载晚于 useListScrollMemory 初始恢复尝试的问题
+watch(
+  () => (props.pageScrollMode ? sourceSongCount.value : -1),
+  (count) => {
+    if (props.pageScrollMode && count > 0 && listScrollCache.get(tableViewportKey.value) !== undefined) {
+      void restoreScrollPosition();
+    }
+  },
+);
 
 const virtualData = computed(() => {
   const songs = Array.isArray(segmentedSongs.value) ? segmentedSongs.value : [];

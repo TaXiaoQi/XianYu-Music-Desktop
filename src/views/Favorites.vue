@@ -15,21 +15,43 @@
     />
     
     <div class="flex-1 flex overflow-hidden relative">
-      
-      <section class="flex-1 flex overflow-hidden">
-        <SongTable
-          ref="songTableRef"
-          :songs="localSongList"
-          :isBatchMode="isBatchMode"
-          :selectedPaths="selectedPaths"
-          memoryScopeKey="favorites-view"
-          :download-completed-as-local="true"
-          @play="handlePlaySong"
-          @contextmenu="handleContextMenu"
-          @update:selectedPaths="selectedPaths = $event"
-          @drag-start="handleTableDragStart"
+      <Transition name="fav-tab" mode="out-in">
+        <!-- 单曲 tab：收藏歌曲列表 -->
+        <section v-if="favTab === 'songs'" key="songs" class="flex-1 flex overflow-hidden">
+          <SongTable
+            ref="songTableRef"
+            :songs="localSongList"
+            :isBatchMode="isBatchMode"
+            :selectedPaths="selectedPaths"
+            memoryScopeKey="favorites-view"
+            :download-completed-as-local="true"
+            @play="handlePlaySong"
+            @contextmenu="handleContextMenu"
+            @update:selectedPaths="selectedPaths = $event"
+            @drag-start="handleTableDragStart"
+          />
+        </section>
+
+        <!-- 歌单 tab：收藏的整张歌单网格 -->
+        <FavoriteCollectionsGrid
+          v-else-if="favTab === 'playlists'"
+          key="playlists"
+          :items="favoritePlaylistEntries"
+          empty-message="还没有收藏的歌单，去在线歌单详情页点击「收藏整张歌单」吧"
+          @open="handleOpenCollection"
+          @remove="handleRemoveCollection"
         />
-      </section>
+
+        <!-- 专辑 tab：收藏的整张专辑网格 -->
+        <FavoriteCollectionsGrid
+          v-else
+          key="albums"
+          :items="favoriteAlbumEntries"
+          empty-message="还没有收藏的专辑，去在线专辑详情页点击「收藏整张专辑」吧"
+          @open="handleOpenCollection"
+          @remove="handleRemoveCollection"
+        />
+      </Transition>
     </div>
     
     <!-- 弹窗组件 -->
@@ -65,9 +87,18 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useRouter } from 'vue-router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
+import {
+  useCollectionsStore,
+  type FavoriteCollectionEntry,
+} from '../features/collections/store';
+import { useOnlineDetailStore } from '../features/onlineDetail/store';
+import { useNavigationStore } from '../shared/stores/navigation';
+import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
 import { useSongContextActions } from '../composables/useSongContextActions';
@@ -81,9 +112,18 @@ import { useSongDrag } from '../composables/useSongDrag';
 
 const FavoritesHeader = defineAsyncComponent(() => import('../components/headers/FavoritesHeader.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
+const FavoriteCollectionsGrid = defineAsyncComponent(() => import('../components/favorites/FavoriteCollectionsGrid.vue'));
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
+
+const router = useRouter();
+const navigationStore = useNavigationStore();
+const collectionsStore = useCollectionsStore();
+const onlineDetailStore = useOnlineDetailStore();
+const { openHomePlaylist } = useHomeNavigation(router);
+const { favTab } = storeToRefs(navigationStore);
+const { favoriteCollections } = storeToRefs(collectionsStore);
 
 const { displaySongList, searchQuery } = usePlayerLibraryView();
 const { playSong, addSongsToQueue } = usePlaybackController();
@@ -97,13 +137,66 @@ const {
 
 const localSongList = computed(() => displaySongList.value);
 
+/** 搜索关键词过滤（歌单/专辑 tab 按标题与副标题匹配） */
+const filterEntriesBySearch = (entries: FavoriteCollectionEntry[]): FavoriteCollectionEntry[] => {
+  const keyword = searchQuery.value.trim().toLowerCase();
+  if (!keyword) return entries;
+  return entries.filter(entry =>
+    entry.title.toLowerCase().includes(keyword)
+    || entry.subtitle.toLowerCase().includes(keyword),
+  );
+};
+
+/** 收藏的歌单条目（含本地歌单与在线歌单） */
+const favoritePlaylistEntries = computed(() =>
+  filterEntriesBySearch(favoriteCollections.value.filter(entry => entry.type === 'playlist')),
+);
+
+/** 收藏的专辑条目（在线专辑） */
+const favoriteAlbumEntries = computed(() =>
+  filterEntriesBySearch(favoriteCollections.value.filter(entry => entry.type === 'album')),
+);
+
 // ========== 状态管理 ==========
 const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const songTableRef = ref<any>(null);
 
+// 离开单曲 tab 时退出批量模式并清空选择（歌单/专辑 tab 无批量操作）
+watch(favTab, (tab) => {
+  if (tab !== 'songs') {
+    isBatchMode.value = false;
+    selectedPaths.value.clear();
+  }
+});
+
 // 初始化拖拽逻辑
 const { handleTableDragStart } = useSongDrag(localSongList, isBatchMode, selectedPaths, songTableRef);
+
+// 打开收藏的歌单/专辑详情：本地歌单走首页歌单详情，在线歌单/专辑恢复上下文快照进在线详情
+const handleOpenCollection = (entry: FavoriteCollectionEntry) => {
+  if (entry.localPlaylistId) {
+    const playlist = collectionsStore.getPlaylistById(entry.localPlaylistId);
+    if (!playlist) {
+      collectionsStore.removeFavoriteCollection(entry.key);
+      showToast('歌单已不存在，已移除该收藏', 'info');
+      return;
+    }
+    void openHomePlaylist(entry.localPlaylistId);
+    return;
+  }
+
+  if (entry.onlineContext) {
+    onlineDetailStore.clearContext();
+    onlineDetailStore.setContext({ ...entry.onlineContext });
+    void router.push({ path: '/online-detail', query: { type: entry.onlineContext.type } });
+  }
+};
+
+const handleRemoveCollection = (entry: FavoriteCollectionEntry) => {
+  collectionsStore.removeFavoriteCollection(entry.key);
+  showToast(entry.type === 'album' ? '已取消收藏专辑' : '已取消收藏歌单', 'info');
+};
 
 // 弹窗状态
 const showConfirm = ref(false);
@@ -256,3 +349,21 @@ const openAddToPlaylistSelection = () => {
 
 // ========== 路由监听 ==========
 </script>
+
+<style scoped>
+/* 单曲/歌单/专辑 tab 切换动画 */
+.fav-tab-enter-active {
+  transition: opacity 240ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.fav-tab-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.fav-tab-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.fav-tab-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+</style>

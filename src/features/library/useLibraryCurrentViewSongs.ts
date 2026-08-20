@@ -34,8 +34,7 @@ interface UseLibraryCurrentViewSongsOptions {
   currentAlbumFilter: Ref<string>;
   currentFolderFilter: Ref<string>;
   filterCondition: Ref<string>;
-  favTab: Ref<'songs' | 'artists' | 'albums'>;
-  favDetailFilter: Ref<{ type: 'artist' | 'album'; name: string } | null>;
+  favTab: Ref<'songs' | 'playlists' | 'albums'>;
   folderSortMode: Ref<FolderSortMode>;
   localSortMode: Ref<LocalSortMode>;
   albumDetailSortMode: Ref<AlbumDetailSortMode>;
@@ -58,7 +57,6 @@ export function useLibraryCurrentViewSongs({
   currentFolderFilter,
   filterCondition,
   favTab,
-  favDetailFilter,
   folderSortMode,
   localSortMode,
   albumDetailSortMode,
@@ -269,36 +267,28 @@ export function useLibraryCurrentViewSongs({
       favoriteSongPaths,
       searchQuery,
       favTab,
-      favDetailFilter,
       localSortMode,
       canonicalSongPaths,
     ],
-    async ([viewMode, paths, query, currentFavTab, detailFilter, sortMode]) => {
+    async ([viewMode, paths, query, currentFavTab, sortMode]) => {
       const requestId = ++favoriteViewRequestId;
 
-      if (viewMode !== 'favorites' || sortMode === 'custom') {
+      // 收藏页"歌单/专辑"tab 展示整张收藏网格，歌曲列表仅在"单曲"tab 加载
+      if (viewMode !== 'favorites' || currentFavTab !== 'songs' || sortMode === 'custom') {
         favoriteViewSongPaths.value = [];
         return;
       }
 
-      const effectiveDetailFilter = currentFavTab === 'songs' ? null : detailFilter;
-      if (paths.length === 0 || (currentFavTab !== 'songs' && !effectiveDetailFilter)) {
+      if (paths.length === 0) {
         favoriteViewSongPaths.value = [];
         return;
       }
 
       try {
-        const resolvedDetailFilter = currentFavTab === 'songs'
-          ? null
-          : effectiveDetailFilter?.type === 'album'
-            ? { type: 'album' as const, name: effectiveDetailFilter.name }
-            : { type: 'artist' as const, name: effectiveDetailFilter!.name };
-
         const nextPaths = await loadFavoriteSongPaths({
           favoritePaths: paths,
           query,
           sortMode,
-          detailFilter: resolvedDetailFilter,
         });
 
         if (requestId !== favoriteViewRequestId) {
@@ -518,20 +508,8 @@ export function useLibraryCurrentViewSongs({
   };
 
   const resolveFavoriteFallbackPaths = () => {
-    if (favTab.value === 'songs') {
-      return [...favoriteSongPaths.value];
-    }
-
-    if (favTab.value === 'artists') {
-      return favDetailFilter.value?.type === 'artist'
-        ? favoriteSongPaths.value.filter(path => songHasArtist(songLookup.value.get(path)!, favDetailFilter.value!.name))
-        : [];
-    }
-
-    if (favTab.value === 'albums') {
-      return favDetailFilter.value?.type === 'album'
-        ? favoriteSongPaths.value.filter(path => matchesAlbumKey(songLookup.value.get(path)!, favDetailFilter.value!.name))
-        : [];
+    if (favTab.value !== 'songs') {
+      return [];
     }
 
     return [...favoriteSongPaths.value];

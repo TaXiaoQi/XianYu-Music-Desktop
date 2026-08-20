@@ -1,7 +1,7 @@
 import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, unref, watch, type Ref } from 'vue';
 import { listScrollCache } from '../caches/imageCaches';
 
-const RESTORE_MAX_ATTEMPTS = 30;
+const RESTORE_MAX_ATTEMPTS = 120;
 
 export function useListScrollMemory(
   keySource: string | Ref<string>,
@@ -9,6 +9,7 @@ export function useListScrollMemory(
 ) {
   const resolveKey = () => unref(keySource);
   let attachedElement: HTMLElement | null = null;
+  let keyChanged = false;
 
   const handleContainerScroll = () => {
     saveScrollPosition();
@@ -110,11 +111,11 @@ export function useListScrollMemory(
   });
 
   onDeactivated(() => {
-    saveScrollPosition();
+    if (!keyChanged) saveScrollPosition();
   });
 
   onBeforeUnmount(() => {
-    saveScrollPosition();
+    if (!keyChanged) saveScrollPosition();
     detachScrollListener();
   });
 
@@ -126,6 +127,8 @@ export function useListScrollMemory(
     watch(keySource, (newKey, oldKey) => {
       if (oldKey && oldKey !== newKey) {
         saveScrollPosition(oldKey);
+        detachScrollListener();
+        keyChanged = true;
       }
 
       if (!newKey || newKey === oldKey) {

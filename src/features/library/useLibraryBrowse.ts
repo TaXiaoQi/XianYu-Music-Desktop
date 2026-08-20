@@ -65,9 +65,6 @@ export function useLibraryBrowse() {
     filteredAlbumList: libraryView.filteredAlbumList,
     folderList: libraryView.folderList,
     favoriteSongList: libraryView.favoriteSongList,
-    favArtistList: libraryView.favArtistList,
-    favAlbumList: libraryView.favAlbumList,
-    recentPlaylistList: libraryView.recentPlaylistList,
     // Compatibility aliases for older callers.
     folderTree: libraryView.libraryHierarchy,
     librarySongs: libraryView.canonicalSongs,
