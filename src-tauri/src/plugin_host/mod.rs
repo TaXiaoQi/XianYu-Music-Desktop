@@ -5,6 +5,7 @@
 //!   - HTTP（reqwest，含 Cookie 注入/捕获）
 //!   - Cookie / Storage（PluginStore 持久化）
 //!   - zlib inflate/deflate（flate2）
+//!   - 文本解码（encoding_rs，TextDecoder 全编码标签支持）
 //!   - 随机字节 / 日志 / 延时
 //!
 //! 超时双保险：interrupt handler 打断同步死循环；外层 tokio timeout
@@ -291,6 +292,31 @@ fn register_bridges<'js>(
             },
         )?;
         globals.set("__xyNativeDeflate", f)?;
+    }
+
+    // ---- __xyNativeDecodeText(base64, label) -> string 同步（浏览器 TextDecoder 语义）----
+    // 插件（如 Baka 酷我）用 new TextDecoder("gb18030") 解码歌词，shim 无法用
+    // 纯 JS 覆盖全部 WHATWG 编码标签，统一桥到 encoding_rs 解码
+    {
+        let f = Function::new(
+            ctx.clone(),
+            move |ctx: Ctx, data_b64: String, label: String| -> rquickjs::Result<String> {
+                let data = general_purpose::STANDARD
+                    .decode(data_b64.as_bytes())
+                    .map_err(|e| Exception::throw_message(&ctx, &format!("decodeText: {}", e)))?;
+                let encoding = encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(
+                    || {
+                        Exception::throw_message(
+                            &ctx,
+                            &format!("The encoding label provided ('{label}') is invalid."),
+                        )
+                    },
+                )?;
+                let (text, _, _) = encoding.decode(&data);
+                Ok(text.into_owned())
+            },
+        )?;
+        globals.set("__xyNativeDecodeText", f)?;
     }
 
     // ---- __xyNativeHttpRequest 异步 ----
@@ -1165,6 +1191,282 @@ mod tests {
             .await;
         assert!(call2.ok);
         assert_eq!(call2.data.unwrap().as_str().unwrap(), "xyz");
+    }
+
+    /// 真实插件冒烟：load → search → getMediaSource 全链路。
+    /// 运行：cargo test --lib plugin_smoke_live -- --ignored --nocapture
+    /// 插件目录由 env PLUGIN_ADAPT_DIR 指定（默认 %TEMP%\plugin_adapt）。
+    #[tokio::test]
+    #[ignore]
+    async fn plugin_smoke_live() {
+        let dir = std::env::var("PLUGIN_ADAPT_DIR").unwrap_or_else(|_| {
+            std::env::temp_dir().join("plugin_adapt").to_string_lossy().into_owned()
+        });
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("plugin dir missing")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "js").unwrap_or(false))
+            .collect();
+        files.sort();
+        assert!(!files.is_empty(), "no plugin scripts in {}", dir);
+
+        let only: Option<String> = std::env::var("PLUGIN_ONLY").ok();
+        let keyword = std::env::var("PLUGIN_KEYWORD").unwrap_or_else(|_| "晴天 周杰伦".to_string());
+        let engine = engine();
+
+        for path in &files {
+            let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+            if let Some(filter) = &only {
+                if !name.contains(filter.as_str()) {
+                    continue;
+                }
+            }
+            let script = std::fs::read_to_string(path).unwrap();
+            println!("\n================ {} ================", name);
+
+            let load = engine.load_musicfree(&name, &script, "{}").await;
+            if !load.ok {
+                println!("[LOAD FAILED] {:?}", load.error);
+                continue;
+            }
+            let meta = load.metadata.unwrap();
+            println!(
+                "[LOADED] platform={:?} version={:?} qualities={:?} userVars={:?}",
+                meta["platform"].as_str(),
+                meta["version"].as_str(),
+                meta["supportedQualities"],
+                meta["userVariables"]
+            );
+
+            let search_args = format!(r#"["{}",1,"music"]"#, keyword);
+            let search = engine
+                .call(&name, "search", &search_args, Some("{}"), 30_000)
+                .await;
+            if !search.ok {
+                println!("[SEARCH FAILED] {:?}", search.error);
+                continue;
+            }
+            let items = search
+                .data
+                .as_ref()
+                .and_then(|d| d.get("data"))
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if items.is_empty() {
+                println!("[SEARCH EMPTY] data={}", search.data.unwrap_or_default());
+                continue;
+            }
+            let first = &items[0];
+            println!(
+                "[SEARCH OK] {} items, first: id={:?} title={:?} artist={:?}",
+                items.len(),
+                first["id"].to_string(),
+                first["title"].as_str(),
+                first["artist"].as_str()
+            );
+
+            for quality in ["320k", "128k", "flac"] {
+                let args = format!(r#"[{}, "{}"]"#, first, quality);
+                let call = engine
+                    .call(&name, "getMediaSource", &args, Some("{}"), 30_000)
+                    .await;
+                match &call.data {
+                    Some(v) => println!("[MEDIA {}] {}", quality, v),
+                    None => {
+                        let logs: Vec<String> = call
+                            .logs
+                            .iter()
+                            .map(|l| format!("{}|{}", l.level, l.message))
+                            .collect();
+                        println!("[MEDIA {} FAILED] {:?} logs={:?}", quality, call.error, logs)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 复刻应用完整取链链路：load → search → getMediaSource(应用侧音质键) → 直链可播性探测。
+    /// 运行：cargo test --lib plugin_app_flow_live -- --ignored --nocapture
+    ///
+    /// 与 plugin_smoke_live 的差异：
+    /// 1. MF 系插件按应用真实映射传旧三档键（320k→high / 128k→standard / flac→lossless），
+    ///    Baka 系传原生键，验证应用编排层的音质映射是否可用；
+    /// 2. 对解析出的直链做 Range GET 探测（复刻 Rust 播放器起播探测），
+    ///    报告 HTTP 状态/Content-Type/长度，定位"解析成功但起播失败"的断点；
+    /// 3. QQ 系插件额外用宿主兜底条目形状（songmid + qualities 门禁）复测。
+    #[tokio::test]
+    #[ignore]
+    async fn plugin_app_flow_live() {
+        let dir = std::env::var("PLUGIN_ADAPT_DIR").unwrap_or_else(|_| {
+            std::env::temp_dir().join("plugin_adapt").to_string_lossy().into_owned()
+        });
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("plugin dir missing")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "js").unwrap_or(false))
+            .collect();
+        files.sort();
+        assert!(!files.is_empty(), "no plugin scripts in {}", dir);
+
+        let only: Option<String> = std::env::var("PLUGIN_ONLY").ok();
+        let keyword = std::env::var("PLUGIN_KEYWORD").unwrap_or_else(|_| "晴天 周杰伦".to_string());
+        let engine = engine();
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(12))
+            .build()
+            .unwrap();
+
+        for path in &files {
+            let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+            if let Some(filter) = &only {
+                if !name.contains(filter.as_str()) {
+                    continue;
+                }
+            }
+            let script = std::fs::read_to_string(path).unwrap();
+            println!("\n================ {} ================", name);
+
+            let load = engine.load_musicfree(&name, &script, "{}").await;
+            if !load.ok {
+                println!("[LOAD FAILED] {:?}", load.error);
+                continue;
+            }
+
+            // QQ 系插件：宿主兜底条目形状复测（qqHostSearchFallback 的 lxItemToQqMusicFreeItem 输出）。
+            // 放在搜索之前：QQ 系搜索普遍被风控（这正是宿主兜底存在的原因），
+            // 取链验证不能依赖插件自身搜索成功。
+            let platform = load
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("platform"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if platform.contains("QQ") {
+                let host_item = serde_json::json!({
+                    "id": "97773",
+                    "songmid": "0039MnYb0qxYhV",
+                    "title": "晴天",
+                    "artist": "周杰伦",
+                    "album": "叶惠美",
+                    "albumid": "10658",
+                    "albummid": "002Neh8l0RxIVZ",
+                    "artwork": "https://y.gtimg.cn/music/photo_new/T002R300x300M000002Neh8l0RxIVZ.jpg",
+                    "interval": "269",
+                    "qualities": {
+                        "128k": { "size": "4298221" },
+                        "320k": { "size": "10792943" },
+                        "flac": { "size": "27164239" }
+                    },
+                    "_hostQqFallback": true,
+                    "platform": platform
+                });
+                for quality in ["high", "standard", "lossless", "320k", "flac", "128k"] {
+                    let args = format!(r#"[{}, "{}"]"#, host_item, quality);
+                    let call = engine
+                        .call(&name, "getMediaSource", &args, Some("{}"), 30_000)
+                        .await;
+                    match &call.data {
+                        Some(data) => {
+                            let url = data.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                            println!("[HOST-ITEM {}] url={}", quality, &url[..url.len().min(72)]);
+                        }
+                        None => println!(
+                            "[HOST-ITEM {} FAILED] {:?}",
+                            quality,
+                            call.error
+                        ),
+                    }
+                }
+            }
+
+            let search_args = format!(r#"["{}",1,"music"]"#, keyword);
+            let search = engine
+                .call(&name, "search", &search_args, Some("{}"), 30_000)
+                .await;
+            if !search.ok {
+                println!("[SEARCH FAILED] {:?}", search.error);
+                continue;
+            }
+            let items = search
+                .data
+                .as_ref()
+                .and_then(|d| d.get("data"))
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if items.is_empty() {
+                println!("[SEARCH EMPTY]");
+                continue;
+            }
+            let first = &items[0];
+            println!(
+                "[SEARCH OK] {} items, first: id={} title={:?}",
+                items.len(),
+                first["id"],
+                first["title"].as_str()
+            );
+
+            // 应用侧音质键：MF 系（时迁酱）走 qualityKeyToMfQuality 三档映射，
+            // Baka 系走原生 12 档键
+            let is_baka = name.starts_with("baka_");
+            let quality_keys: [&str; 3] = if is_baka {
+                ["320k", "128k", "flac"]
+            } else {
+                ["high", "standard", "lossless"]
+            };
+
+            for quality in quality_keys {
+                let args = format!(r#"[{}, "{}"]"#, first, quality);
+                let call = engine
+                    .call(&name, "getMediaSource", &args, Some("{}"), 30_000)
+                    .await;
+                let Some(data) = &call.data else {
+                    println!("[MEDIA {} FAILED] {:?} logs={:?}", quality, call.error, call.logs.len());
+                    continue;
+                };
+                let url = data.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                if url.is_empty() {
+                    println!("[MEDIA {}] 无 url: {}", quality, data);
+                    continue;
+                }
+                let mut req = http.get(url).header("Range", "bytes=0-2047");
+                if let Some(headers) = data.get("headers").and_then(|h| h.as_object()) {
+                    for (k, v) in headers {
+                        if let Some(v) = v.as_str() {
+                            let lk = k.to_ascii_lowercase();
+                            if lk == "host" || lk == "accept-encoding" || lk == "content-length" {
+                                continue;
+                            }
+                            req = req.header(k.as_str(), v);
+                        }
+                    }
+                }
+                let short = &url[..url.len().min(72)];
+                match req.send().await {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16();
+                        let ct = resp
+                            .headers()
+                            .get("content-type")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("-")
+                            .to_string();
+                        let cr = resp
+                            .headers()
+                            .get("content-range")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("-")
+                            .to_string();
+                        println!("[MEDIA {} PROBE] HTTP {} ct={} range={} url={}", quality, status, ct, cr, short);
+                    }
+                    Err(e) => println!("[MEDIA {} PROBE FAIL] {} -> {}", quality, short, e),
+                }
+            }
+        }
     }
 
     #[tokio::test]

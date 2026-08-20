@@ -4,7 +4,8 @@
 //!   - 请求前按 URL 域名注入已存 Cookie（headers 已带 Cookie 则跳过）
 //!   - 响应后捕获全部 Set-Cookie 存入 PluginStore
 //!   - gzip/br/deflate 自动解压，UA 兜底 Chrome 120
-//!   - 文本 body 超过 UTF-8 边界时以 "[INVALID_UTF8]" 占位（与原实现一致）
+//!   - 文本 body 按 Content-Type charset 解码（缺省 UTF-8，encoding_rs；
+//!     无效序列输出 U+FFFD，与浏览器一致）
 //!   - timeout_ms = 0 → 默认 30s；follow < 0 → 默认跟随 10 次重定向，0 → 不跟随
 
 use super::store::PluginStore;
@@ -31,6 +32,22 @@ pub struct HttpBridgeResponse {
     pub body_base64: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// 按 Content-Type 的 charset 解码文本 body；未声明或无法识别时按 UTF-8
+fn decode_text_body(bytes: &[u8], content_type: Option<&String>) -> String {
+    let charset = content_type
+        .and_then(|ct| {
+            ct.split(';').find_map(|p| {
+                let p = p.trim();
+                p.strip_prefix("charset=")
+                    .map(|v| v.trim_matches('"').to_string())
+            })
+        })
+        .unwrap_or_else(|| "utf-8".to_string());
+    let encoding =
+        encoding_rs::Encoding::for_label(charset.as_bytes()).unwrap_or(encoding_rs::UTF_8);
+    encoding.decode(bytes).0.into_owned()
 }
 
 pub struct HttpBridge {
@@ -176,7 +193,7 @@ impl HttpBridge {
             (None, Some(general_purpose::STANDARD.encode(&buf)))
         } else {
             (
-                Some(String::from_utf8(buf).unwrap_or_else(|_| "[INVALID_UTF8]".to_string())),
+                Some(decode_text_body(&buf, response_headers.get("content-type"))),
                 None,
             )
         };

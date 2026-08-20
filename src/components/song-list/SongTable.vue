@@ -1203,7 +1203,6 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 <style scoped>
 .song-list-scroll-container {
   overflow-anchor: none;
-  scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
 }
 
 .song-list-scroll-container::-webkit-scrollbar {
@@ -1221,30 +1220,13 @@ const getRowStyle = (songIndex: number, songPath: string) => {
   background-clip: content-box;
 }
 
-.song-list-scroll-container.song-list-scrollbar-active {
-  scrollbar-color: rgba(236, 65, 65, 0.55) transparent;
-}
-
-.song-list-scroll-container.song-list-scrollbar-active::-webkit-scrollbar-thumb {
-  border-width: 2px;
-  background-color: rgba(236, 65, 65, 0.55);
-}
-
 .song-list-scroll-container::-webkit-scrollbar-thumb:hover {
   border-width: 2px;
   background-color: rgba(236, 65, 65, 0.68);
 }
 
-:global(.dark) .song-list-scroll-container {
-  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
-}
-
 :global(.dark) .song-list-scroll-container::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.22);
-}
-
-:global(.dark) .song-list-scroll-container.song-list-scrollbar-active {
-  scrollbar-color: rgba(236, 65, 65, 0.7) transparent;
 }
 
 :global(.dark) .song-list-scroll-container.song-list-scrollbar-active::-webkit-scrollbar-thumb {

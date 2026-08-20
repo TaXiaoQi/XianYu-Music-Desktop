@@ -149,7 +149,7 @@ describe('downloadService: quality candidates', () => {
   });
 });
 
-describe('downloadService: QQ 插件试听链的 LX 兜底', () => {
+describe('downloadService: QQ 插件原生适配（无 LX 兜底）', () => {
   const qqPlugin = { id: 'qq1', enabled: true, format: 'musicfree', sources: ['QQ音乐'], name: 'QQ音乐', filePath: 'x.js' };
 
   const makeQqPluginSong = (): Song => ({
@@ -178,33 +178,14 @@ describe('downloadService: QQ 插件试听链的 LX 兜底', () => {
     (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
   });
 
-  it('插件全档失败后走 LX tx 音源兜底取完整版', async () => {
-    mockResolveLxUrl.mockResolvedValueOnce({
-      url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
-      quality: '320k' as QualityKey,
-      source: 'plugin' as const,
-    });
-
+  it('插件全档失败后如实返回 null，不再借 LX tx 音源兜底', async () => {
     const result = await resolveOnlineQualityUrl(makeQqPluginSong(), '320k', 'lower', null);
 
-    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'lower', null);
-    expect(result?.url).toContain('M800');
-    expect(result?.quality).toBe('320k');
-  });
-
-  it('LX 兜底返回的试听链同样拒绝', async () => {
-    mockResolveLxUrl.mockResolvedValueOnce({
-      url: 'http://ws.stream.qqmusic.qq.com/RS02003Qui1q2u1Zho.mp3?vkey=abc',
-      quality: '128k' as QualityKey,
-      source: 'plugin' as const,
-    });
-
-    const result = await resolveOnlineQualityUrl(makeQqPluginSong(), '320k', 'lower', null);
-
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
     expect(result).toBeNull();
   });
 
-  it('非 QQ 插件不触发 LX 兜底', async () => {
+  it('非 QQ 插件同样不走 LX 兜底', async () => {
     const kgPlugin = { ...qqPlugin, id: 'kg1', name: '酷狗音乐', sources: ['酷狗音乐'] };
     (getStoredPlugins as any).mockReturnValue([kgPlugin]);
     const song = { ...makeQqPluginSong(), rawData: { ...makeQqPluginSong().rawData, pluginId: 'kg1', platform: '酷狗音乐' } } as unknown as Song;
@@ -214,12 +195,7 @@ describe('downloadService: QQ 插件试听链的 LX 兜底', () => {
     expect(mockResolveLxUrl).not.toHaveBeenCalled();
   });
 
-  it('下载时插件全档失败后走 LX tx 音源兜底落盘', async () => {
-    mockResolveLxUrl.mockResolvedValueOnce({
-      url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
-      quality: '320k' as QualityKey,
-      source: 'plugin' as const,
-    });
+  it('下载时插件全档失败后抛出聚合错误，不落 LX 兜底文件', async () => {
     (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
       if (cmd === 'download_online_song') return args.destPath;
       if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
@@ -227,35 +203,21 @@ describe('downloadService: QQ 插件试听链的 LX 兜底', () => {
       return null;
     });
 
-    const result = await downloadSong(makeQqPluginSong(), { ...baseOptions, quality: '320k' });
-
-    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'lower', null);
-    expect(result.hitQuality).toBe('320k');
-    expect(result.filePath).toContain('周杰伦 - 晴天');
+    await expect(downloadSong(makeQqPluginSong(), { ...baseOptions, quality: '320k' }))
+      .rejects.toThrow('下载失败');
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
   });
 
-  it('探测时插件全档失败后逐档走 LX tx 音源兜底', async () => {
-    mockResolveLxUrl.mockImplementation(
-      async (_song: unknown, _src: string, _mid: string, q: QualityKey) =>
-        q === '320k'
-          ? {
-              url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
-              quality: '320k' as QualityKey,
-              source: 'plugin' as const,
-            }
-          : null,
-    );
-
+  it('探测时插件全档失败后返回空结果，不借 LX 音源补齐', async () => {
     const result = await probeDownloadableQualities(makeQqPluginSong(), ['320k', '128k']);
 
-    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'pause', ['320k']);
-    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '128k', 'pause', ['128k']);
-    expect(result.available).toEqual(['320k']);
-    expect(result.resolvedUrls['320k']).toContain('M800');
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
+    expect(result.available).toEqual([]);
+    expect(result.resolvedUrls).toEqual({});
   });
 });
 
-describe('downloadService: 网易云插件的 LX wy 兜底', () => {
+describe('downloadService: 网易云插件原生适配（无 LX 兜底）', () => {
   const wyPlugin = { id: 'wy1', enabled: true, format: 'musicfree', sources: ['网易云音乐'], name: '网易云音乐', filePath: 'x.js' };
 
   const makeWyPluginSong = (): Song => ({
@@ -284,35 +246,16 @@ describe('downloadService: 网易云插件的 LX wy 兜底', () => {
     (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
   });
 
-  it('插件全档失败后走 LX wy 音源兜底取完整版', async () => {
-    mockResolveLxUrl.mockResolvedValueOnce({
-      url: 'http://m701.music.126.net/20260820/x/y/186016.mp3',
-      quality: '320k' as QualityKey,
-      source: 'plugin' as const,
-    });
-
+  it('插件全档失败后如实返回 null，不再借 LX wy 音源兜底', async () => {
     const result = await resolveOnlineQualityUrl(makeWyPluginSong(), '320k', 'lower', null);
 
-    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'wy', '186016', '320k', 'lower', null);
-    expect(result?.url).toContain('music.126.net');
-    expect(result?.quality).toBe('320k');
-    // 兜底前先种入 LX wy 元信息缓存，未配置 LX 插件时也能走 Rust 公共 API
-    expect(cacheLxSong).toHaveBeenCalledWith(expect.objectContaining({ source: 'wy', songmid: '186016' }));
-  });
-
-  it('LX 兜底返回的官方外链同样拒绝', async () => {
-    mockResolveLxUrl.mockResolvedValueOnce({
-      url: 'https://music.163.com/song/media/outer/url?id=186016.mp3',
-      quality: '128k' as QualityKey,
-      source: 'plugin' as const,
-    });
-
-    const result = await resolveOnlineQualityUrl(makeWyPluginSong(), '320k', 'lower', null);
-
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
     expect(result).toBeNull();
+    // 不再种入 LX wy 元信息缓存（无兜底语义）
+    expect(cacheLxSong).not.toHaveBeenCalled();
   });
 
-  it('非网易云插件不触发 LX wy 兜底', async () => {
+  it('非网易云插件同样不走 LX 兜底', async () => {
     const kgPlugin = { ...wyPlugin, id: 'kg1', name: '酷狗音乐', sources: ['酷狗音乐'] };
     (getStoredPlugins as any).mockReturnValue([kgPlugin]);
     const song = { ...makeWyPluginSong(), rawData: { ...makeWyPluginSong().rawData, pluginId: 'kg1', platform: '酷狗音乐' } } as unknown as Song;

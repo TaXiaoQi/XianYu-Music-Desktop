@@ -1637,11 +1637,33 @@ export async function pluginGetMusicInfo(
   // Baka/Toskysun 系列插件请使用 pluginGetBakaMusicInfo
   const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
 
+  // [MF 原生音质键适配] 时迁酱等新式 MF 插件在 supportedQualities 中直接声明
+  // 原生档位键（'128k'/'320k'/'flac'/'flac24bit'/'hires'），且其内部 QUALITY_MAPPING
+  // 与标准 MF 三档语义不同（standard→320k、high→flac、super→hires，无 lossless）。
+  // 对这类插件传旧三档键会导致音质错位（请求 320k 实得 flac）或直传未知键失败，
+  // 因此声明含原生键时直接传原生键，旧三档仅作为无声明插件的兼容路径。
+  const declaredQualities = inst.instance.supportedQualities;
+  const nativeDeclaredKeys: Set<string> = new Set();
+  if (Array.isArray(declaredQualities)) {
+    for (const dq of declaredQualities) {
+      if (typeof dq === 'string' && normalizeQualityKey(dq)) {
+        nativeDeclaredKeys.add(dq.toLowerCase());
+      }
+    }
+  }
+  const useNativeQualityKeys = nativeDeclaredKeys.size > 0 && isQualityKey(quality);
+
   // [音质解析] 当有可用音质列表时，使用 resolveOnlinePlayQuality 统一解析
   // 原版 MF 插件：多 QualityKey 映射到同一三档，需去重
   const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
 
-  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
+  if (useNativeQualityKeys) {
+    // 原生键插件：按声明档位过滤原生键候选，并补充声明内未覆盖的降级档
+    const nativeCandidates = buildNativePluginQualityPairs(quality, fallbackBehavior, availableQualities);
+    const filtered = nativeCandidates.filter(pair => nativeDeclaredKeys.has(pair.pluginQ.toLowerCase()));
+    tryPairs.push(...(filtered.length > 0 ? filtered : nativeCandidates.slice(0, 1)));
+    log(`[getMediaSource] ${source.name} 声明原生音质键 ${JSON.stringify([...nativeDeclaredKeys])}，直传原生键: ${JSON.stringify(tryPairs.map(p => p.pluginQ))}`);
+  } else if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
     const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
     const seen = new Set<string>();
     for (const q of resolvedKeys) {
@@ -2339,9 +2361,19 @@ export function pluginSupportsSearchType(_source: PluginSource, _type: 'music' |
  * 返回的键值已映射为本项目的 QualityKey（'96k' → 'mgg'）。
  */
 export async function pluginGetSupportedQualities(source: PluginSource): Promise<QualityKey[] | null> {
-  await ensurePluginInstance(source);
+  const inst = await ensurePluginInstance(source);
   if (await BakaPluginManager.isBakaPlugin(source)) {
     return BakaPluginManager.getSupportedQualities(source);
+  }
+
+  // [MF 原生音质键适配] 新式 MF 插件（时迁酱等）在 supportedQualities 中
+  // 声明原生档位键（含 flac24bit/hires），直接作为 UI 展示与回退上界。
+  const declared = inst?.instance.supportedQualities;
+  if (Array.isArray(declared)) {
+    const keys = declared
+      .map((q: unknown) => normalizeQualityKey(q))
+      .filter((q): q is QualityKey => q !== null);
+    if (keys.length > 0) return keys;
   }
 
   // 原版 MusicFree 插件没有 Baka 的 12 档 supportedQualities，

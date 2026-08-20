@@ -365,7 +365,7 @@ function isNeteaseLikeSource(source: PluginSource, mediaItem: any): boolean {
   return text.includes('网易') || text.includes('netease') || /\bwy\b/.test(text);
 }
 
-/** 网易云系插件判定（供下载链路的 LX wy 兜底使用） */
+/** 网易云系插件判定（供外链预检等网易云专属处理使用） */
 export function isNeteaseMusicPluginSource(source: PluginSource): boolean {
   return isNeteaseLikeSource(source, null);
 }
@@ -611,7 +611,7 @@ async function probeKugouProxyCandidate(
  * 网易云官方外链可用性预检：跟随重定向后校验最终落点。
  * 版权受限歌的 outer/url 302 到 music.163.com/404（text/html），照常返回
  * 会在播放/下载阶段才暴露为"服务器返回非音频内容"。这里提前识别拒绝，
- * 让上层音质回退与 LX 兜底有机会接管。
+ * 让上层音质回退有机会尝试其余档位。
  */
 async function probeNeteaseOuterUrl(
   url: string,
@@ -1132,14 +1132,14 @@ class BakaPluginManagerClass {
       const candidateUrl = isKugou ? cleanKugouPluginUrl(candidateRawUrl) : sanitizeMediaUrl(candidateRawUrl);
       // QQ 60 秒试听链（RS02 前缀）不是可用播放源：免费公共中转（vkeys.cn 等）对
       // 游客恒返试听且各音质档同一文件，若照常返回用户只能听到 60 秒还误以为歌曲就这么短。
-      // 拒绝后由上层（resolveOnlineQualityUrl 的 LX 兜底）尝试用 LX 音源取完整版。
+      // 拒绝并继续尝试其余档位，全档失败时由起播失败行为（跳过/停止）与 toast 透出原因。
       if (!isKugou && isQqTrialMediaUrl(candidateUrl)) {
         lastError = new Error('该音源仅能获取 60 秒试听');
         log(`[getMediaSource] quality=${qualityLabel} 返回 QQ 试听链(RS02)，拒绝并继续: ${candidateUrl.substring(0, 80)}`);
         return false;
       }
       // 网易云官方外链：版权受限歌 302 到 404 HTML 页（各档同一 URL），
-      // 预检拒绝后音质回退继续，全档失败由上层 LX wy 兜底接管
+      // 预检拒绝后音质回退继续，全档失败时透出"该音源无法提供此歌曲"
       if (isNetease && candidateUrl && isNeteaseOuterUrl(candidateUrl)) {
         let probe = neteaseOuterUrlProbes.get(candidateUrl);
         if (!probe) {

@@ -152,10 +152,24 @@
   G.TextEncoder = function TextEncoder() {};
   G.TextEncoder.prototype.encode = function (s) { return utf8Encode(s); };
 
-  G.TextDecoder = function TextDecoder() {};
+  // TextDecoder 必须尊重编码标签：酷我等平台的歌词接口返回 GB18030 编码，
+  // 插件用 new TextDecoder("gb18030").decode() 解码。纯 JS 无法覆盖全部
+  // WHATWG 编码标签，统一桥到原生 encoding_rs（无效序列按浏览器语义输出 U+FFFD）
+  G.TextDecoder = function TextDecoder(label) {
+    this.__xyEncoding = label == null ? 'utf-8' : String(label);
+  };
   G.TextDecoder.prototype.decode = function (buf) {
     var u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-    return utf8Decode(u8);
+    if (!u8.length) return '';
+    var parts = [];
+    var CHUNK = 8192;
+    for (var i = 0; i < u8.length; i++) {
+      parts.push(String.fromCharCode(u8[i]));
+      if (parts.length >= CHUNK) {
+        parts = [parts.join('')];
+      }
+    }
+    return __xyNativeDecodeText(G.btoa(parts.join('')), this.__xyEncoding);
   };
 
   // ==================== packages 访问（packages_bundle.js 执行后可用）====================

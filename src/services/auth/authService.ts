@@ -277,13 +277,18 @@ const DEFAULT_OUTER_TIMEOUT_MS = 30_000;
 /**
  * 发起带签名的 POST 请求，返回完整响应信封。
  * 签名在 Rust 侧完成（md5(timestamp + nonce + body + api_secret)）。
+ * 已登录时自动注入登录态 token，供服务端 dispatch 层做用户资源属主校验。
  */
 async function requestEnvelope<T>(
   action: string,
   body: Record<string, unknown>,
   fetchTimeoutMs?: number,
 ): Promise<ApiEnvelope<T>> {
-  const payload = await authApi.authedRequest(action, body, fetchTimeoutMs);
+  const finalBody: Record<string, unknown> = { ...body };
+  if (cachedToken && !('token' in finalBody)) {
+    finalBody.token = cachedToken;
+  }
+  const payload = await authApi.authedRequest(action, finalBody, fetchTimeoutMs);
   return payload as unknown as ApiEnvelope<T>;
 }
 
