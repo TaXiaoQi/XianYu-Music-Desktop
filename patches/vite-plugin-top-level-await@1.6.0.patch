@@ -1,0 +1,17 @@
+diff --git a/dist/utils/make-node.js b/dist/utils/make-node.js
+index 838438b5b49d5bfd51f0550b325c021c45bb3350..0bee27a46469eb2a2ef347b99def43a5afdabceb 100644
+--- a/dist/utils/make-node.js
++++ b/dist/utils/make-node.js	
+@@ -146,10 +146,9 @@ function makeArrowFunction(args, statements, async) {
+             optional: false
+         })),
+         body: {
+-            type: "BlockStatement",
++            // @swc/core >= 1.13: 箭头函数块体必须是 FunctionBody 而非 BlockStatement
++            type: "FunctionBody",
+             span: span(),
+-            // @ts-ignore SWC is missing the "ctxt" property's
+-            ctxt: 0,
+             stmts: statements
+         },
+         async: !!async,

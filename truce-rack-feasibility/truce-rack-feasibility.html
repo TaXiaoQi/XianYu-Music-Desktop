@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>truce-rack 后端接入 VST3 / CLAP 可行性研究报告</title>
+<style>
+@font-face {
+  font-family: 'WorkSans';
+  src: url('./_shared/fonts/WorkSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'WorkSans';
+  src: url('./_shared/fonts/WorkSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+@font-face {
+  font-family: 'JetBrainsMono';
+  src: url('./_shared/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'JetBrainsMono';
+  src: url('./_shared/fonts/JetBrainsMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+:root {
+  --bg: #ffffff;
+  --bg2: #f6f4f2;
+  --ink: #20191c;
+  --muted: #6d6270;
+  --rule: #e5e0dc;
+  --accent: #b5423c;
+  --accent2: #2f5d7c;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'WorkSans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 28px 60px; }
+code, pre, .mono { font-family: 'JetBrainsMono', 'Cascadia Code', Consolas, monospace; }
+
+/* Header */
+header.cover { padding: 72px 28px 44px; border-bottom: 3px solid var(--ink); }
+header.cover .inner { max-width: 920px; margin: 0 auto; }
+.kicker {
+  font-family: 'JetBrainsMono', monospace;
+  font-size: 0.78rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: 18px;
+}
+h1 {
+  font-size: clamp(1.7rem, 4vw, 2.5rem); line-height: 1.25; font-weight: 700;
+  letter-spacing: -0.01em; max-width: 21em;
+}
+.subtitle { margin-top: 16px; color: var(--muted); font-size: 1.02rem; max-width: 40em; }
+.meta-row {
+  margin-top: 30px; display: flex; flex-wrap: wrap; gap: 10px 28px;
+  font-family: 'JetBrainsMono', monospace; font-size: 0.78rem; color: var(--muted);
+}
+.meta-row span b { color: var(--ink); font-weight: 700; }
+
+/* TOC */
+nav.toc {
+  border: 1px solid var(--rule); border-radius: 10px; background: var(--bg2);
+  padding: 20px 24px; margin: 40px 0 8px;
+}
+nav.toc .toc-title {
+  font-family: 'JetBrainsMono', monospace; font-size: 0.72rem; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 10px; font-weight: 700;
+}
+nav.toc ol { list-style: none; counter-reset: toc; columns: 2; column-gap: 40px; }
+nav.toc li { counter-increment: toc; margin-bottom: 4px; break-inside: avoid; }
+nav.toc li::before { content: counter(toc, decimal-leading-zero); color: var(--accent); font-family: 'JetBrainsMono', monospace; font-size: 0.78rem; margin-right: 10px; font-weight: 700; }
+nav.toc a { color: var(--ink); text-decoration: none; font-size: 0.92rem; }
+nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+@media (max-width: 640px) { nav.toc ol { columns: 1; } }
+
+/* Sections */
+section { margin-top: 64px; }
+h2 {
+  font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em;
+  padding-bottom: 12px; border-bottom: 2px solid var(--ink); margin-bottom: 26px;
+}
+h2 .no {
+  font-family: 'JetBrainsMono', monospace; color: var(--accent); font-size: 0.85em;
+  margin-right: 12px; font-weight: 700;
+}
+h3 { font-size: 1.12rem; font-weight: 700; margin: 34px 0 12px; color: var(--ink); }
+h3 .hash { color: var(--rule); font-weight: 700; margin-right: 8px; font-family: 'JetBrainsMono', monospace; }
+h3::before { content: ''; }
+h4 { font-size: 0.98rem; font-weight: 700; margin: 22px 0 8px; }
+p { margin-bottom: 14px; max-width: 46em; }
+ul.plain, ol.plain { padding-left: 1.3em; margin-bottom: 14px; }
+ul.plain li, ol.plain li { margin-bottom: 6px; }
+strong { font-weight: 700; }
+a { color: var(--accent); }
+mark.key { background: none; color: var(--accent); font-weight: 600; }
+
+/* Verdict banner */
+.verdict {
+  display: grid; grid-template-columns: 130px 1fr; gap: 0;
+  border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 26px;
+}
+.verdict .side {
+  background: var(--accent); color: #fff; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 22px 12px; gap: 4px;
+}
+.verdict .side .word { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.04em; }
+.verdict .side .en { font-family: 'JetBrainsMono', monospace; font-size: 0.68rem; letter-spacing: 0.14em; opacity: 0.85; }
+.verdict .body { padding: 20px 24px; background: var(--bg2); font-size: 0.95rem; }
+.verdict .body p { margin-bottom: 8px; max-width: none; }
+.verdict .body p:last-child { margin-bottom: 0; }
+@media (max-width: 560px) { .verdict { grid-template-columns: 1fr; } .verdict .side { flex-direction: row; } }
+
+/* Callouts */
+.callout {
+  border-left: 4px solid var(--accent); background: var(--bg2);
+  padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 20px 0; font-size: 0.94rem;
+}
+.callout.blue { border-left-color: var(--accent2); }
+.callout .co-title {
+  font-family: 'JetBrainsMono', monospace; font-size: 0.72rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 6px;
+}
+.callout.blue .co-title { color: var(--accent2); }
+.callout p { margin-bottom: 8px; max-width: none; }
+.callout p:last-child { margin-bottom: 0; }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 22px 0; }
+.card {
+  border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; background: var(--bg);
+}
+.card .card-label {
+  font-family: 'JetBrainsMono', monospace; font-size: 0.7rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 700;
+}
+.card .card-big { font-size: 1.7rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+.card .card-big .unit { font-size: 0.85rem; color: var(--muted); font-weight: 400; margin-left: 4px; }
+.card .card-desc { font-size: 0.85rem; color: var(--muted); margin-top: 6px; line-height: 1.55; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; overflow-y: auto; max-height: 600px; margin: 22px 0; border: 1px solid var(--rule); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 640px; }
+thead th {
+  text-align: left; font-family: 'JetBrainsMono', monospace; font-size: 0.72rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  padding: 12px 16px; border-bottom: 2px solid var(--ink); background: var(--bg2);
+  position: sticky; top: 0; z-index: 2;
+}
+tbody td { padding: 10px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+td.pass, td.ok { color: #256b46; font-weight: 700; }
+td.fail { color: var(--accent); font-weight: 700; }
+td .sub { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.mono-cell { font-family: 'JetBrainsMono', monospace; font-size: 0.82rem; }
+
+/* Code blocks */
+pre.code {
+  background: #211c20; color: #e8e2e4; border-radius: 10px; padding: 18px 22px;
+  overflow-x: auto; font-size: 0.83rem; line-height: 1.65; margin: 18px 0;
+}
+pre.code .cm { color: #8a7f8a; }
+pre.code .kw { color: #e88b84; }
+pre.code .st { color: #a3c9a8; }
+pre.code .hl { background: rgba(181, 66, 60, 0.22); display: inline-block; width: 100%; border-radius: 3px; }
+
+/* Terminal output */
+pre.term {
+  background: #211c20; color: #cfc7cb; border-radius: 10px; padding: 16px 20px;
+  overflow-x: auto; font-size: 0.8rem; line-height: 1.6; margin: 18px 0;
+  font-family: 'JetBrainsMono', monospace;
+}
+pre.term .g { color: #7fbf8e; font-weight: 700; }
+pre.term .r { color: #e88b84; font-weight: 700; }
+pre.term .y { color: #d9b36c; }
+
+/* Figures */
+figure.diagram { margin: 26px 0; text-align: left; }
+figure.diagram pre.mermaid {
+  background: var(--bg2); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 18px; overflow-x: auto; text-align: center;
+}
+figure.diagram figcaption, figure.chart-figure figcaption {
+  font-size: 0.8rem; color: var(--muted); margin-top: 10px; text-align: center;
+}
+figure.chart-figure { margin: 26px 0; }
+figure.chart-figure .chart-title {
+  font-size: 0.95rem; font-weight: 700; margin-bottom: 10px;
+}
+
+/* Patch diff blocks */
+.patch { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+.patch pre { margin: 0; min-height: 100%; }
+.patch .patch-col-title {
+  font-family: 'JetBrainsMono', monospace; font-size: 0.7rem; letter-spacing: 0.1em;
+  text-transform: uppercase; margin-bottom: 6px; font-weight: 700;
+}
+.patch .col-before .patch-col-title { color: var(--accent); }
+.patch .col-after .patch-col-title { color: #256b46; }
+@media (max-width: 720px) { .patch { grid-template-columns: 1fr; } }
+
+/* Footnote-ish */
+.src-note { font-size: 0.82rem; color: var(--muted); }
+
+/* Inline citations */
+sup a { color: var(--accent); text-decoration: none; font-size: 0.75em; font-weight: 600; }
+sup a:hover { text-decoration: underline; }
+
+/* Footer */
+footer { margin-top: 80px; border-top: 2px solid var(--ink); padding-top: 28px; }
+footer .sources h2 { border-bottom: none; font-size: 1.05rem; padding-bottom: 6px; margin-bottom: 16px; }
+footer .sources ol { padding-left: 1.2rem; font-size: 0.85rem; color: var(--muted); }
+footer .sources li { margin-bottom: 0.5rem; overflow-wrap: break-word; word-break: break-all; }
+footer .sources .src-title { color: var(--ink); word-break: normal; }
+footer .sources .src-url { display: block; margin-top: 0.15rem; font-size: 0.82rem; color: var(--accent); word-break: break-all; }
+footer .colophon { margin-top: 34px; font-family: 'JetBrainsMono', monospace; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.08em; }
+
+@media print {
+  nav.toc { display: none; }
+  section { page-break-before: auto; }
+  pre.code, pre.term { white-space: pre-wrap; }
+}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="inner">
+    <div class="kicker">Feasibility Study · Audio Plugin Hosting</div>
+    <h1>后端接入 truce-rack 以支持 VST3 / CLAP 插件宿主能力：可行性验证报告</h1>
+    <p class="subtitle">针对闲鱼音乐桌面版（Tauri + Rust 后端）的 PoC 驱动型可行性研究：端到端加载 nih-plug 测试插件、双格式 DSP 链路验证、上游缺陷定位与补丁验证、零冲突集成方案设计。</p>
+    <div class="meta-row">
+      <span><b>版本</b> v1.0</span>
+      <span><b>日期</b> 2026-08-20</span>
+      <span><b>验证对象</b> truce-rack 1.1.5</span>
+      <span><b>测试插件</b> nih-plug gain (VST3 + CLAP)</span>
+      <span><b>平台</b> Windows 11 · Rust 1.97.1</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <div class="toc-title">目录 / Contents</div>
+  <ol>
+    <li><a href="#s1">执行摘要</a></li>
+    <li><a href="#s2">背景、目标与边界</a></li>
+    <li><a href="#s3">验证方法与环境</a></li>
+    <li><a href="#s4">端到端验证结果</a></li>
+    <li><a href="#s5">上游缺陷定位与补丁验证</a></li>
+    <li><a href="#s6">集成架构方案</a></li>
+    <li><a href="#s7">风险评估与实施路线</a></li>
+    <li><a href="#s8">结论与下一步</a></li>
+  </ol>
+</nav>
+
+<!-- ================= 1 执行摘要 ================= -->
+<section id="s1">
+  <h2><span class="no">01</span>执行摘要</h2>
+
+  <div class="verdict">
+    <div class="side">
+      <div class="word">可 行</div>
+      <div class="en">FEASIBLE*</div>
+    </div>
+    <div class="body">
+      <p><strong>结论：技术路线可行，但不建议直接依赖 crates.io 上的 truce-rack 1.1.5 原版。</strong>本报告通过自建 PoC harness 完成双格式端到端验证：VST3 与 CLAP 插件的扫描、加载、激活、参数控制、DSP 处理、状态持久化全部通过，块处理耗时约为实时预算的 <mark class="key">万分之一</mark>，性能余量充裕。</p>
+      <p>前提条件：原版存在 <strong>2 个进程级崩溃缺陷</strong>（VST3 实例销毁崩溃、CLAP 加载崩溃），本研究已完成根因定位并验证了补丁——均为小体量修改（一行字段重排 + 约 40 行最小宿主结构）。建议以 <strong>vendor / fork 形式合入补丁</strong>后再集成。</p>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-label">VST3 端到端</div>
+      <div class="card-big">PASS</div>
+      <div class="card-desc">增益验证 ratio = 0.5003（期望 0.5），状态往返一致，补丁后销毁无崩溃</div>
+    </div>
+    <div class="card">
+      <div class="card-label">CLAP 端到端</div>
+      <div class="card-big">PASS</div>
+      <div class="card-desc">ratio = 0.5003，参数显示 "-6.02 dB" 正确，状态往返一致，销毁无崩溃</div>
+    </div>
+    <div class="card">
+      <div class="card-label">实时性能余量</div>
+      <div class="card-big">≈ 7500<span class="unit">×</span></div>
+      <div class="card-desc">512 帧块平均耗时 1.1–1.4 μs，块预算 10.67 ms（48 kHz）</div>
+    </div>
+    <div class="card">
+      <div class="card-label">对移植组影响</div>
+      <div class="card-big">0 文件</div>
+      <div class="card-desc">集成方案全部落在新建模块，仅播放管线两处各新增一行包装</div>
+    </div>
+  </div>
+
+  <p>必须向决策层澄清的三件事：</p>
+  <ul class="plain">
+    <li><strong>“可行” 是打补丁后的可行。</strong>原版 CLAP 路径在加载任何遵守 CLAP 规范断言的插件时会直接 abort 进程；VST3 路径在销毁插件实例时必然触发访问违例。两者都已在本研究中修复并回归验证。</li>
+    <li><strong>VST3 有一个运行时限制需要在宿主层规避：</strong>插件激活后 <code class="mono">set_parameter</code> 会被静默丢弃（详见 §5.3），播放器场景下可用“激活前设参 + 换曲重激活”策略完全规避，但实时调参面板的体验会受影响。</li>
+    <li><strong>上游活跃度偏低：</strong>truce-rack 最后一次提交为 2026-06-19（v1.1.5 发布），两个月无动静，不能指望上游及时修 bug——这直接决定了 vendor/fork 策略的必要性。</li>
+  </ul>
+</section>
+
+<!-- ================= 2 背景 ================= -->
+<section id="s2">
+  <h2><span class="no">02</span>背景、目标与边界</h2>
+
+  <h3><span class="hash">§</span>课题来源</h3>
+  <p>团队当前有两条并行的“插件”工作流：隔壁小组正在将<strong>前端插件引擎</strong>（MusicFree / LX / Baka 系 JS 音源插件）迁移至后端执行；本课题则研究<strong>后端音频 DSP 侧</strong>接入 VST3 / CLAP 这两类行业标准原生插件格式，为播放器引入专业音频效果生态（均衡、混响、动态处理、母带链等）铺路。</p>
+  <p>选型对象 <strong>truce-rack</strong> 是社区 Rust 插件宿主框架 <code class="mono">rack</code> 0.4.x 的重写版：纯 Rust 绑定原生插件 API（CLAP 走 <code class="mono">clap-sys</code>，VST3 走社区 <code class="mono">vst3</code> crate，无需 Steinberg SDK 子模块与 CMake），默认启用 CLAP + VST3 双格式，MIT OR Apache-2.0 双许可<sup><a href="#cite-1">[1]</a></sup>。此前调研已排除早期替代品 clack（v0.1.0，仅 CLAP，成熟度不足）。</p>
+
+  <h3><span class="hash">§</span>硬性边界（本次研究的约束）</h3>
+  <div class="callout blue">
+    <div class="co-title">Constraint · 不可影响移植组</div>
+    <p>前端插件引擎迁移是并行工作流。本研究<strong>只做只读分析与独立 PoC</strong>：不修改主工程任何文件；集成方案设计必须证明与移植组工作面<strong>零文件交集</strong>（见 §6.5）。</p>
+  </div>
+  <div class="callout">
+    <div class="co-title">Constraint · 项目音频硬规则</div>
+    <p>工程已有两条既定约束必须在方案中继承：① Bit-perfect 输出开启时，PCM 必须绕过所有 DSP（仅保留解码器与安全限幅）——VST3/CLAP 机架同样必须旁路；② DSD 直出链路不经过 PCM DSP，本特性不涉及。</p>
+  </div>
+</section>
+
+<!-- ================= 3 验证方法 ================= -->
+<section id="s3">
+  <h2><span class="no">03</span>验证方法与环境</h2>
+
+  <h3><span class="hash">§</span>测试插件构建</h3>
+  <p>本机此前未安装任何 VST3 / CLAP 插件，因此采用 <strong>nih-plug</strong>（社区广泛使用的 Rust 插件框架，同时是严格的宿主兼容性试金石）构建 gain 示例插件作为测试负载<sup><a href="#cite-3">[3]</a></sup>：</p>
+  <ul class="plain">
+    <li>gain 插件：线性增益参数，范围 −30 ~ +30 dB，幂律偏斜映射，50 ms 对数平滑——平滑特性要求验证套件必须等待过渡结束后再测量，否则会误判；</li>
+    <li>一次构建同时产出 <code class="mono">gain.vst3</code>（目录式 bundle，内含 x86_64-win DLL）与 <code class="mono">gain.clap</code>（单文件 DLL）；</li>
+    <li>安装至用户级扫描目录 <code class="mono">%LOCALAPPDATA%\Programs\Common\VST3</code> 与 <code class="mono">...\CLAP</code>（无需管理员权限，也正是 truce-rack 在 Windows 上声明的用户级路径）。</li>
+  </ul>
+
+  <h3><span class="hash">§</span>PoC harness 设计</h3>
+  <p>独立 Rust 工程（<code class="mono">truce-rack-poc</code>，不进主工程），对每个发现的插件执行完整生命周期测试：</p>
+
+  <figure class="diagram">
+    <pre class="mermaid">
+flowchart LR
+  A[scan_path<br/>用户级目录] --> B[load<br/>dlopen + create_instance]
+  B --> C[activate<br/>stereo / 48kHz / 512]
+  C --> D[set_parameter<br/>Gain → -6.02dB]
+  D --> E[DSP 验证<br/>2s 1kHz 正弦<br/>512 帧分块 process]
+  E --> F[RMS 比对<br/>末 500ms 稳态窗]
+  F --> G[状态往返<br/>save_state → 改值 → load_state]
+  G --> H[deactivate + drop<br/>teardown 稳定性]
+  style E fill:#f6f4f2,stroke:#b5423c,color:#20191c
+  style H fill:#f6f4f2,stroke:#b5423c,color:#20191c
+    </pre>
+    <figcaption>图 1 · PoC harness 测试流程：每个格式独立跑完整生命周期，任一环节失败即定位失败点</figcaption>
+  </figure>
+
+  <p>判定标准：稳态 RMS 输出/输入比应等于线性增益 0.5（±5%）；状态往返后参数值应精确还原；<code class="mono">process</code> 调用逐块计时评估实时余量；进程退出码必须为 0（teardown 无崩溃）。</p>
+
+  <div class="callout">
+    <div class="co-title">Note · 参数值语义踩坑记录</div>
+    <p>两处容易踩坑的语义在本研究中被实测澄清：① <strong>VST3 与 CLAP 的参数值均为归一化 [0,1]</strong>（VST3 走 <code class="mono">setParamNormalized</code>，CLAP 规范本身即归一化），并非 truce-rack 文档声称的 "native units"——两格式语义其实一致；② nih-plug 的 Skewed 参数范围是<strong>幂律</strong>映射（<code class="mono">plain = min + (max−min)·n^factor</code>，factor≈5.03），线性增益 0.5 对应归一化值 0.4328，按对数映射估算会得到错误目标值。</p>
+  </div>
+</section>
+
+<!-- ================= 4 验证结果 ================= -->
+<section id="s4">
+  <h2><span class="no">04</span>端到端验证结果</h2>
+
+  <p>打补丁后的完整双格式运行结果（harness 控制台输出节选）：</p>
+
+  <pre class="term">=== truce-rack host integration PoC ===
+[scan] user VST3 dir: ...\Programs/Common/VST3
+  found: [vst3] Gain —  (v0, Effect)
+[scan] user CLAP dir: ...\Programs/Common/CLAP
+  found: [clap] Gain — Moist Plugins GmbH (v256, Tool)
+
+[load] VST3 Gain
+  activated: stereo @ 48000Hz, block 512
+  params: 5   param[0]: 'Gain' [0..1] default=0.5000 unit=' dB'
+  gain now: 0.4328
+  rms in=0.35355 out=0.17689 ratio=0.5003 (expect ~0.5)
+  state saved: 170 bytes
+  state roundtrip: 0.4328 -> 0.4328 (ok)
+[vst3 instance dropped]
+
+[load] CLAP Gain
+  gain now: 0.4328
+  gain display: '-6.02 dB'
+  rms in=0.35355 out=0.17689 ratio=0.5003 (expect ~0.5)
+  state roundtrip: 0.4328 -> 0.4328 (ok)
+[clap instance dropped]
+
+=== summary ===
+<span class="g">[PASS] vst3 Gain  ratio=0.5003 state=ok display=''    block avg=1.1us max=8.3us</span>
+<span class="g">[PASS] clap Gain  ratio=0.5003 state=ok display='-6.02 dB' block avg=1.4us max=12.3us</span>
+（进程退出码 0，无崩溃）</pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>验证项</th><th>VST3</th><th>CLAP</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>扫描发现（用户级目录）</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="mono-cell">scan_path() 显式路径</td></tr>
+        <tr><td>加载（dlopen + 工厂实例化）</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="sub">CLAP 需 §5.2 补丁后方可通过</td></tr>
+        <tr><td>总线布局枚举</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="sub">CLAP 布局为 wrapper 硬编码 stereo</td></tr>
+        <tr><td>激活（48 kHz / 512 帧 / 立体声）</td><td class="pass">PASS</td><td class="pass">PASS</td><td></td></tr>
+        <tr><td>参数元数据枚举</td><td class="pass">PASS</td><td class="pass">PASS</td><td class="sub">5 参数，id/名称/范围/默认值/单位完整</td></tr>
+        <tr><td>参数设置（激活前 / 后）</td><td class="pass">前 ✓ / 后 ✗</td><td class="pass">前 ✓ / 后 ✓</td><td class="sub">VST3 激活后设参被静默丢弃（§5.3）</td></tr>
+        <tr><td>DSP 处理正确性</td><td class="pass">ratio 0.5003</td><td class="pass">ratio 0.5003</td><td class="sub">期望 0.5，误差 0.06%</td></tr>
+        <tr><td>参数值格式化显示</td><td class="fail">TODO</td><td class="pass">−6.02 dB</td><td class="sub">VST3 wrapper 未接 getParamStringByValue</td></tr>
+        <tr><td>状态保存/恢复往返</td><td class="pass">170 B 一致</td><td class="pass">185 B 一致</td><td></td></tr>
+        <tr><td>块处理耗时（avg / max）</td><td class="pass">1.1 / 8.3 μs</td><td class="pass">1.4 / 12.3 μs</td><td class="sub">预算 10 667 μs（512 帧 @ 48 kHz）</td></tr>
+        <tr><td>销毁 + 进程退出</td><td class="pass">无崩溃</td><td class="pass">无崩溃</td><td class="sub">VST3 需 §5.1 补丁后方可通过</td></tr>
+        <tr><td>工厂预设接口</td><td class="fail">未实现</td><td class="fail">未实现</td><td class="sub">两格式 preset 均为桩；播放器场景影响小</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <figure class="chart-figure">
+    <div class="chart-title">块处理耗时 vs 实时预算（对数刻度）</div>
+    <div id="chart-latency" style="width:100%;min-height:380px"></div>
+    <figcaption>图 2 · 512 帧块 @ 48 kHz 的实时预算为 10 667 μs；两种格式平均耗时 1–2 μs，最坏 12.3 μs，余量约三个数量级以上。即使串接十余个重型插件，块预算依然宽裕。</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 5 缺陷与补丁 ================= -->
+<section id="s5">
+  <h2><span class="no">05</span>上游缺陷定位与补丁验证</h2>
+
+  <p>原版 truce-rack 1.1.5（crates.io 与 git master 同源，最后提交 2026-06-19）存在两个进程级缺陷与两个需要宿主层规避的限制。本章给出根因、补丁与验证结果——这是本报告的核心增量：不仅回答“能不能用”，还回答“怎么修”。</p>
+
+  <h3><span class="hash">§</span>5.1 缺陷一：VST3 实例销毁必然崩溃（字段 drop 顺序错误）</h3>
+  <p><strong>现象：</strong>插件完成全部生命周期测试后，<code class="mono">Vst3Plugin</code> 被 drop 时进程以 <code class="mono">STATUS_ACCESS_VIOLATION (0xC0000005)</code> 崩溃。原版 harness 中 deactivate 成功但 drop 必炸。</p>
+  <p><strong>根因：</strong>Rust 按结构体字段<strong>声明顺序</strong> drop。<code class="mono">Vst3Plugin</code> 把持有 DLL 句柄的 <code class="mono">_module</code> 字段声明在 COM 指针字段<strong>之前</strong>，导致 DLL 先被卸载、随后 <code class="mono">ComPtr&lt;IComponent&gt;</code> 等 drop 时对已卸载代码调用 <code class="mono">Release()</code>——教科书级 use-after-unload。</p>
+
+  <div class="patch">
+    <div class="col-before">
+      <div class="patch-col-title">Before · truce-rack-vst3/src/lib.rs</div>
+      <pre class="code"><span class="kw">pub struct</span> Vst3Plugin {
+  info: PluginInfo,
+  layouts: Vec&lt;BusLayout&gt;,
+  active_layout: Option&lt;BusLayout&gt;,
+
+<span class="hl">  _module: LoadedModule,</span>   <span class="cm">// ← DLL 句柄在前</span>
+  component: ComPtr&lt;IComponent&gt;,
+  processor: ComPtr&lt;IAudioProcessor&gt;,
+  controller: ComPtr&lt;IEditController&gt;,
+  <span class="cm">// ... 其余字段</span>
+}</pre>
+    </div>
+    <div class="col-after">
+      <div class="patch-col-title">After · 一行字段重排</div>
+      <pre class="code"><span class="kw">pub struct</span> Vst3Plugin {
+  info: PluginInfo,
+  layouts: Vec&lt;BusLayout&gt;,
+  active_layout: Option&lt;BusLayout&gt;,
+  component: ComPtr&lt;IComponent&gt;,
+  processor: ComPtr&lt;IAudioProcessor&gt;,
+  controller: ComPtr&lt;IEditController&gt;,
+  <span class="cm">// ... 其余字段</span>
+
+<span class="hl">  _module: LoadedModule,</span>   <span class="cm">// ← 移到末尾：DLL 最后卸载</span>
+}</pre>
+    </div>
+  </div>
+
+  <p><strong>验证：</strong>仅重排该字段（零逻辑改动）后，VST3 全生命周期含销毁均无崩溃，进程退出码 0。该补丁体量一行，vendor 成本可忽略。</p>
+
+  <h3><span class="hash">§</span>5.2 缺陷二：CLAP 加载时崩溃（向插件传 NULL 宿主指针）</h3>
+  <p><strong>现象：</strong><code class="mono">ClapScanner::load()</code> 内部 <code class="mono">create_plugin(factory, host, id)</code> 调用后进程 abort（<code class="mono">STATUS_STACK_BUFFER_OVERRUN</code>，panic in non-unwinding FFI）。</p>
+  <p><strong>根因：</strong>truce-rack 源码中赫然写着 <code class="mono">let host = ptr::null(); // TODO(truce-rack): supply a real clap_host.</code>——直接把空指针当作宿主传给插件。CLAP 规范要求宿主指针非空；nih-plug 在 <code class="mono">Wrapper::new</code> 中 <code class="mono">assert!(!host_callback.is_null())</code>，断言失败即 abort。任何遵守规范的插件都会触发此崩溃。</p>
+  <p><strong>补丁：</strong>实现最小合法 <code class="mono">clap_host</code> 静态结构（约 40 行）：合法版本号、宿主名称字符串、<code class="mono">get_extension</code> 统一返回 NULL（不提供任何宿主扩展）、三个 request 回调为空操作。nih-plug 的 <code class="mono">init</code> 只查询 GUI / latency / params / voice-info / thread-check 五个扩展且对 NULL 返回均有优雅降级，最小宿主足够。</p>
+
+  <pre class="code"><span class="cm">// truce-rack-clap/src/lib.rs —— 替换 `let host = ptr::null();`</span>
+<span class="kw">static</span> MINIMAL_HOST: clap_host = clap_host {
+    clap_version: CLAP_VERSION,
+    host_data: ptr::null_mut(),
+    name: HOST_NAME.as_ptr().cast(),
+    <span class="cm">// vendor / url / version 同理，指向 C 字符串字面量</span>
+    get_extension: <span class="st">Some(host_get_extension)</span>,  <span class="cm">// 统一返回 NULL</span>
+    request_restart: <span class="st">Some(host_request_restart)</span>, <span class="cm">// 空操作</span>
+    request_process: <span class="st">Some(host_request_process)</span>,
+    request_callback: <span class="st">Some(host_request_callback)</span>,
+};
+<span class="cm">// load_from 中：</span>
+<span class="kw">let</span> host = &amp;<span class="kw">raw const</span> MINIMAL_HOST;</pre>
+
+  <p><strong>验证：</strong>补丁后 CLAP 全生命周期通过：加载、参数显示（<code class="mono">value_to_text</code> 返回 "-6.02 dB"）、DSP ratio=0.5003、状态往返、销毁全部正常。该补丁也为后续接 GUI 扩展留好了挂点。</p>
+
+  <h3><span class="hash">§</span>5.3 限制一：VST3 激活后参数设置被静默丢弃</h3>
+  <p><strong>现象：</strong>激活后调用 <code class="mono">set_parameter(gain, 0.4328)</code> 返回 Ok，但读回仍是 0.5（默认值），DSP 输出无变化。</p>
+  <p><strong>根因（双向夹击）：</strong>① truce-rack 的 VST3 wrapper 在 <code class="mono">process()</code> 中传 <code class="mono">inputParameterChanges: null</code>，完全不转发参数事件；② 其 <code class="mono">set_parameter</code> 走 <code class="mono">IEditController::setParamNormalized</code>，而 nih-plug 侧该函数在 <code class="mono">is_processing == true</code> 时<strong>静默 return kResultOk</strong>（符合 VST3 规范意图：处理中参数应走 process 队列）。truce-rack 的 activate() 即调 <code class="mono">setProcessing(1)</code>，因此激活后所有 set_parameter 全部无效。</p>
+  <p><strong>宿主层规避（无需改库）：</strong>播放器没有 DAW 式自动化录制需求，参数集合在加载时即确定。策略：<strong>先设参后激活</strong>（本研究已验证有效）；用户改参数时缓存变更，在换曲/重新激活时应用（nih-plug 在 deactivate 周期保留状态，无音频断点之外的代价）。若未来要实时调参，需给 wrapper 补 <code class="mono">inputParameterChanges</code> 转发——工程量中等，属于“可等待上游 / 自行补”的增强项。</p>
+
+  <h3><span class="hash">§</span>5.4 限制二：Windows 默认扫描漏掉用户级目录</h3>
+  <p><strong>现象：</strong><code class="mono">default_vst3_paths()</code> / <code class="mono">default_clap_paths()</code> 在 Windows 上读 <code class="mono">HOME</code> 环境变量拼用户级路径——而 Windows 标准 env 是 <code class="mono">USERPROFILE</code>，本机实测 <code class="mono">HOME</code> 未设置，默认 <code class="mono">scan()</code> 只能扫到 <code class="mono">CommonProgramFiles</code> 系统级目录。</p>
+  <p><strong>宿主层规避：</strong>不依赖默认 scan，用 <code class="mono">scan_path()</code> 显式传入 <code class="mono">%LOCALAPPDATA%\Programs\Common\{VST3,CLAP}</code> 与 <code class="mono">%CommonProgramFiles%\{VST3,CLAP}</code>——一行配置的事，但若不知道这个坑会误判“用户插件扫不到”。</p>
+
+  <h3><span class="hash">§</span>5.5 缺陷清单汇总</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>类型</th><th>影响</th><th>修复方式</th><th>体量</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>VST3 drop 崩溃</td><td>进程崩溃（必然）</td><td>字段重排补丁（§5.1）</td><td class="mono-cell">~1 行</td><td class="pass">已验证修复</td></tr>
+        <tr><td>2</td><td>CLAP null host</td><td>进程崩溃（必然）</td><td>最小 clap_host 补丁（§5.2）</td><td class="mono-cell">~40 行</td><td class="pass">已验证修复</td></tr>
+        <tr><td>3</td><td>VST3 激活后设参失效</td><td>功能限制</td><td>宿主层规避 / 补事件转发</td><td class="mono-cell">规避 0 行<br>根治 ~100 行</td><td class="ok">规避方案已验证</td></tr>
+        <tr><td>4</td><td>Windows 默认扫描缺用户目录</td><td>发现遗漏</td><td>宿主层显式 scan_path</td><td class="mono-cell">~3 行</td><td class="ok">已验证</td></tr>
+        <tr><td>5</td><td>VST3 参数值显示 TODO</td><td>UI 显示缺文字</td><td>接 getParamStringByValue（UTF-16 往返）</td><td class="mono-cell">~30 行</td><td class="fail">未修，非阻塞</td></tr>
+        <tr><td>6</td><td>preset 接口未实现（两格式）</td><td>预设浏览缺失</td><td>VST3 走 IUnitInfo / CLAP 走 preset-load 扩展</td><td class="mono-cell">中等</td><td class="fail">未修，非阻塞</td></tr>
+        <tr><td>7</td><td>CLAP 布局硬编码 stereo</td><td>多声道插件受限</td><td>解析音频端口扩展枚举布局</td><td class="mono-cell">中等</td><td class="fail">未修，播放器立体声场景够用</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 6 集成架构 ================= -->
+<section id="s6">
+  <h2><span class="no">06</span>集成架构方案</h2>
+
+  <h3><span class="hash">§</span>6.1 现有音频管线与插入点</h3>
+  <p>后端两条输出路径的 DSP 链已确认（共享模式 runtime.rs、独占模式 wasapi_exclusive.rs），插入点选在 <strong>SoundEffectSource 之后、UserVolumeSource 之前</strong>——与现有音效同级、位于主音量与限幅之前：</p>
+
+  <figure class="diagram">
+    <pre class="mermaid">
+flowchart LR
+  DEC[解码器<br/>convert_samples f32] --> BUF[BufferedSource<br/>后台预读]
+  BUF --> NORM[VolumeNormalizer<br/>音量平衡]
+  NORM --> EQ[Equalizer<br/>10 段 EQ]
+  EQ --> SE[SoundEffectSource<br/>内置音效机架]
+  SE --> VST[PluginHostSource<br/>VST3 / CLAP 机架<br/>NEW]
+  VST --> VOL[UserVolumeSource<br/>主音量]
+  VOL --> CG[ClipGuardSource<br/>安全限幅]
+  CG --> OUT1[cpal sink<br/>共享模式]
+  CG --> OUT2[WASAPI 独占]
+
+  BP[bit_perfect=true] -.旁路全部 DSP.-> CG
+
+  style VST fill:#b5423c,stroke:#b5423c,color:#ffffff
+  style BP stroke-dasharray: 4 3
+    </pre>
+    <figcaption>图 3 · 播放管线与 PluginHostSource 插入位置。bit_perfect 分支从解码器直达限幅，天然绕过新模块（继承项目硬约束）。</figcaption>
+  </figure>
+
+  <h3><span class="hash">§</span>6.2 逐样本 ↔ 块处理适配</h3>
+  <p>现有 DSP 均为 rodio <code class="mono">Source</code>（逐样本迭代器），而 truce-rack 的 <code class="mono">Plugin::process</code> 是块级平面（planar）接口。适配方案与现有 <code class="mono">SoundEffectSource</code> 的帧缓冲模式同构：<code class="mono">PluginHostSource</code> 内部积累 <strong>512 帧</strong>交织输入 → 解交织为平面通道缓冲 → 组装 <code class="mono">AudioBuffer</code>（含 BusRange）→ 逐插件 <code class="mono">process</code>（机架串行）→ 交织回逐样本输出。缓冲粒度 512 帧 ≈ 10.7 ms @ 48 kHz，与 cpal 输出缓冲同量级，不增加可感知延迟。</p>
+
+  <h3><span class="hash">§</span>6.3 新模块划分（全部新建文件）</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>文件（src-tauri/src/player/plugin_host/）</th><th>职责</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono-cell">mod.rs</td><td>模块声明与对外类型</td></tr>
+        <tr><td class="mono-cell">scanner.rs</td><td>显式路径扫描（规避 §5.4），VST3+CLAP 聚合结果缓存</td></tr>
+        <tr><td class="mono-cell">source.rs</td><td>PluginHostSource：rodio Source 适配（块缓冲、交织/解交织、采样率与声道变化时 deactivate→re-activate、bit-perfect 旁路）</td></tr>
+        <tr><td class="mono-cell">manager.rs</td><td>插件机架状态（加载哪些插件、参数值、启用开关）、Tauri command 面（scan_plugins / set_plugin_param / save_restore_state）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span class="hash">§</span>6.4 关键运行时策略</h3>
+  <ul class="plain">
+    <li><strong>参数应用时机：</strong>加载/激活前一次性下发全部参数（§5.3 规避策略）；UI 修改入队，下次激活周期生效。</li>
+    <li><strong>状态持久化：</strong><code class="mono">save_state()</code> 字节串以 base64 存入应用数据目录，随播放列表/设置同步体系走（与现有备份体系兼容）。</li>
+    <li><strong>采样率/声道切换：</strong>曲目间采样率不同时 deactivate → 按新采样率 activate（nih-plug 保留参数状态，已验证）。</li>
+    <li><strong>错误隔离：</strong>插件 process 返回 Error 时该块以静音穿透（fail-safe），并上报一次性 toast——第三方插件不可信，不能带崩播放线程。</li>
+    <li><strong>GUI（二期）：</strong>插件自带编辑器窗口走独立原生 Win32 窗口（truce-rack 已有 <code class="mono">PluginEditor</code> 抽象与 Win32 句柄支持），规避 WebView2 airspace 遮挡问题；首期只做自绘参数面板。</li>
+  </ul>
+
+  <h3><span class="hash">§</span>6.5 与移植组的零冲突证明</h3>
+  <div class="callout blue">
+    <div class="co-title">Impact Assessment · 对移植组工作面</div>
+    <p><strong>文件交集 = 0。</strong>前端插件引擎迁移涉及 <code class="mono">src/services</code>（pluginManager、lxSearch、Baka 宿主逻辑）与 <code class="mono">src-tauri/src/plugins.rs</code>（脚本加载/账号同步）——全部在“音源插件”域；本方案落在 <code class="mono">src-tauri/src/player/</code> 音频 DSP 域，新建 <code class="mono">plugin_host/</code> 目录不与任何现存文件重名。</p>
+    <p>唯一触碰现有代码的位置：runtime.rs 与 wasapi_exclusive.rs 的 DSP 链组装处<strong>各新增一行</strong>包装（SoundEffectSource 之后插入 PluginHostSource），该处属于播放管线组装而非插件引擎，且可做成默认旁路的 opt-in 开关，合并顺序上完全解耦。</p>
+  </div>
+</section>
+
+<!-- ================= 7 风险与路线 ================= -->
+<section id="s7">
+  <h2><span class="no">07</span>风险评估与实施路线</h2>
+
+  <h3><span class="hash">§</span>7.1 风险矩阵</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>风险</th><th>等级</th><th>依据与对策</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>上游停滞</strong>：最后提交 2026-06-19，两个崩溃级缺陷两个月无人修</td>
+          <td class="fail">高</td>
+          <td>采用 vendor / fork 策略（补丁已在本报告验证）；不向 crates.io 原版直接依赖。MIT OR Apache-2.0 与项目 AGPL-3.0-only 兼容，fork 无许可障碍<sup><a href="#cite-1">[1]</a></sup><sup><a href="#cite-2">[2]</a></sup></td>
+        </tr>
+        <tr>
+          <td><strong>第三方插件质量不可控</strong>：崩溃插件可带崩整个播放器进程</td>
+          <td class="fail">高</td>
+          <td>短期：静音穿透 + 错误上报（§6.4）；长期：可选子进程沙箱宿主（插件崩溃仅丢机架）</td>
+        </tr>
+        <tr>
+          <td><strong>VST3 实时调参受限</strong>（§5.3）</td>
+          <td>中</td>
+          <td>播放器参数非自动化场景，激活前设参已够用；要实时体验需自行补 inputParameterChanges 转发（~100 行）</td>
+        </tr>
+        <tr>
+          <td><strong>插件生态 Windows 主流为 VST3</strong>，CLAP 装机量小但增长快</td>
+          <td>低</td>
+          <td>双格式同引擎接入，无额外成本；CLAP 路径反而实现质量更好（参数语义规范、无 COM 心智负担）</td>
+        </tr>
+        <tr>
+          <td><strong>GUI airspace</strong>：WebView2 内嵌插件窗口遮挡问题</td>
+          <td>低（首期不做 GUI）</td>
+          <td>一期自绘参数面板；二期独立原生窗口承载插件编辑器</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span class="hash">§</span>7.2 分阶段路线</h3>
+  <ul class="plain">
+    <li><strong>P0 · 无 GUI 宿主（建议立即启动）</strong>：vendor truce-rack + 合入双补丁；落地 plugin_host 模块（扫描/机架/参数面板自绘/状态持久化）；接入两条输出管线的 opt-in 插入点。验收口径即本报告 harness 的全部 PASS 项 + 真实第三方插件冒烟（建议拿 TDR Nova / Valhalla Supermassive 等免费插件实测）。</li>
+    <li><strong>P1 · 原生窗口 GUI</strong>：PluginEditor → 独立 Win32 窗口；处理窗口生命周期与播放器窗口的 Z 序/模态关系。</li>
+    <li><strong>P2 · 增强补齐</strong>：VST3 inputParameterChanges 转发（实时调参）、参数值显示、preset 浏览、多声道布局解析。</li>
+  </ul>
+</section>
+
+<!-- ================= 8 结论 ================= -->
+<section id="s8">
+  <h2><span class="no">08</span>结论与下一步</h2>
+
+  <p><strong>结论：后端接入 truce-rack 以支持 VST3 / CLAP 在技术上完全可行</strong>，且代价可控——双格式端到端 PoC 全部通过，性能余量三个数量级以上，两个崩溃级上游缺陷的根因与补丁均已定位验证（合计约 40 行修改），集成方案与移植组工作面零文件冲突。</p>
+  <p>决策建议一句话：<mark class="key">以 vendor/fork 方式合入双补丁后按 P0 路线推进</mark>；不要直接依赖 crates.io 原版，也不要等待上游修复（活跃度不足）。</p>
+
+  <p>下一步行动清单：</p>
+  <ol class="plain">
+    <li>将本研究验证过的两个补丁整理为 fork 提交（或 [patch.crates-io] 本地覆盖）；</li>
+    <li>在主工程新建 <code class="mono">src-tauri/src/player/plugin_host/</code> 模块，按 §6.3 划分落地；</li>
+    <li>runtime.rs / wasapi_exclusive.rs 两处 opt-in 插入点与移植组约定合并时序（建议晚于其引擎迁移主线，彻底错峰）；</li>
+    <li>引入 2–3 款真实免费插件做兼容性冒烟，建立崩溃插件黑名单机制。</li>
+  </ol>
+
+  <p class="src-note">本研究全部结论基于本机 PoC 实测（Windows 11 / Rust 1.97.1 / truce-rack 1.1.5 / nih-plug gain v0.1.0）；PoC harness、两个补丁源码与复现步骤已归档至本报告同目录 <code class="mono">poc/</code>（README 见 <code class="mono">poc/README.md</code>），可随时复查或复跑。</p>
+</section>
+
+<footer>
+  <div class="sources">
+    <h2>Sources</h2>
+    <ol>
+      <li id="cite-1">
+        <span class="src-title">truce-audio/truce-rack（GitHub）— 跨格式音频插件宿主框架源码仓库，本研究缺陷定位与补丁验证的直接对象；MIT OR Apache-2.0。</span>
+        <a class="src-url" href="https://github.com/truce-audio/truce-rack" target="_blank" rel="noopener">https://github.com/truce-audio/truce-rack</a>
+      </li>
+      <li id="cite-2">
+        <span class="src-title">crates.io: truce-rack — 发布版 1.1.5 包页面；本 PoC 首轮直接依赖该版本复现两处崩溃。</span>
+        <a class="src-url" href="https://crates.io/crates/truce-rack" target="_blank" rel="noopener">https://crates.io/crates/truce-rack</a>
+      </li>
+      <li id="cite-3">
+        <span class="src-title">robbert-vdh/nih-plug（GitHub）— Rust 音频插件框架，本研究以其 gain 示例构建 VST3/CLAP 测试插件，并以其 wrapper 源码定位 CLAP host 断言与 VST3 setParamNormalized 丢弃行为。</span>
+        <a class="src-url" href="https://github.com/robbert-vdh/nih-plug" target="_blank" rel="noopener">https://github.com/robbert-vdh/nih-plug</a>
+      </li>
+      <li id="cite-4">
+        <span class="src-title">CLAP — CLAP Audio Plugin API 官方规范与参考实现；宿主指针非空、参数归一化 [0,1] 语义的规范依据。</span>
+        <a class="src-url" href="https://github.com/free-audio/clap" target="_blank" rel="noopener">https://github.com/free-audio/clap</a>
+      </li>
+      <li id="cite-5">
+        <span class="src-title">Steinberg VST 3 SDK — VST3 SDK 许可证页（MIT），社区 vst3 Rust crate 免 SDK 使用无许可障碍。</span>
+        <a class="src-url" href="https://github.com/steinbergmedia/vst3sdk" target="_blank" rel="noopener">https://github.com/steinbergmedia/vst3sdk</a>
+      </li>
+      <li id="cite-6">
+        <span class="src-title">本地 PoC 实测 — truce-rack-poc harness 运行日志（2026-08-20，本机）；本报告 §4 数据与 §5 补丁验证结论的唯一数据来源。</span>
+        <span class="src-url">本地验证产物（非公开链接）</span>
+      </li>
+    </ol>
+  </div>
+  <div class="colophon">XIANYU-MUSIC DESKTOP · FEASIBILITY STUDY · TRUCE-RACK VST3/CLAP HOSTING · 2026-08-20</div>
+</footer>
+
+</div>
+
+<script src="./_shared/js/echarts.min.js"></script>
+<script src="./_shared/js/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });</script>
+<script src="assets/charts.js"></script>
+</body>
+</html>

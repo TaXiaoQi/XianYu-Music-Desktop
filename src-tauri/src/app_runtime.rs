@@ -455,6 +455,10 @@ pub(crate) fn setup_app(
     app.manage(FullCoverImageConcurrencyLimit(Semaphore::new(
         FULL_COVER_IMAGE_CONCURRENCY_LIMIT,
     )));
+
+    // QuickJS 插件引擎：插件脚本在后端隔离执行，前端只做 UI 展示
+    app.manage(crate::plugin_host::commands::init_engine_state(app.handle()));
+
     run_cache_cleanup(app.handle());
 
     let current_exe = std::env::current_exe().ok();

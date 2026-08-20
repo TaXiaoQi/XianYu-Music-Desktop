@@ -900,6 +900,50 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: string;
   };
+  // ===== QuickJS 插件引擎命令（插件脚本在 Rust 后端隔离执行）=====
+  plugin_engine_load_musicfree: {
+    payload: { pluginId: string; script: string; userVarsJson: string };
+    response: PluginEngineLoadResultContract;
+  };
+  plugin_engine_load_lx: {
+    payload: { pluginId: string; script: string; scriptInfoJson: string };
+    response: PluginEngineLoadResultContract;
+  };
+  plugin_engine_call: {
+    payload: {
+      pluginId: string;
+      method: string;
+      argsJson: string;
+      userVarsJson?: string | null;
+      timeoutMs: number;
+    };
+    response: PluginEngineCallResultContract;
+  };
+  plugin_engine_destroy: {
+    payload: { pluginId: string };
+    response: void;
+  };
+  plugin_engine_destroy_all: {
+    payload: undefined;
+    response: void;
+  };
+  plugin_engine_store_import: {
+    payload: {
+      payload: {
+        cookies: Record<string, { value: string; domain: string }>;
+        storage: Record<string, string>;
+      };
+    };
+    response: void;
+  };
+  plugin_engine_cookie_header_for_domain: {
+    payload: { domain: string };
+    response: string;
+  };
+  plugin_engine_store_snapshot: {
+    payload: undefined;
+    response: { cookies: Record<string, { value: string; domain: string }>; storage: Record<string, string> };
+  };
   save_plugin_script: {
     payload: { id: string; script: string };
     response: string;
@@ -1182,6 +1226,31 @@ export interface PluginHttpResponseContract {
   url: string;
   headers: Record<string, string>;
   body: string;
+}
+
+// ===== QuickJS 插件引擎类型契约（与 Rust plugin_host 对应）=====
+
+/** 插件引擎日志条目（与 Rust EngineLog 对应，camelCase 序列化） */
+export interface PluginEngineLogContract {
+  level: string;
+  message: string;
+  callId: number;
+}
+
+/** 插件引擎加载结果（与 Rust EngineLoadResult 对应） */
+export interface PluginEngineLoadResultContract {
+  ok: boolean;
+  error: string | null;
+  metadata: any | null;
+  logs: PluginEngineLogContract[];
+}
+
+/** 插件引擎方法调用结果（与 Rust EngineCallResult 对应） */
+export interface PluginEngineCallResultContract {
+  ok: boolean;
+  error: string | null;
+  data: any;
+  logs: PluginEngineLogContract[];
 }
 
 /** 插件 HTTP 二进制代理响应（与 Rust PluginHttpBinaryResponse 对应） */

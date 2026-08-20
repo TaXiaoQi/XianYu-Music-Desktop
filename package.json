@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "build:plugin-packages": "node scripts/build-plugin-packages.js",
     "version": "node scripts/sync-version.js",
     "release:patch": "npm version patch --no-git-tag-version --force",
     "release:minor": "npm version minor --no-git-tag-version --force",
@@ -86,8 +87,7 @@
     "vue-tsc": "^2.1.10"
   },
   "overrides": {
-    "uuid": "^11.1.1",
-    "@swc/core": "1.15.18"
+    "uuid": "^11.1.1"
   },
   "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee"
 }
