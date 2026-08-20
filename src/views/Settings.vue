@@ -316,7 +316,7 @@ const tabs = computed(() => {
 
       <div
         v-if="settingsQuery"
-        class="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+        class="custom-scrollbar min-h-0 flex-1 -mr-2.5 overflow-y-auto overflow-x-hidden"
         aria-live="polite"
       >
         <div class="mb-2 px-1 text-[11px] font-medium text-gray-500 dark:text-white/45">
@@ -343,7 +343,7 @@ const tabs = computed(() => {
         </div>
       </div>
 
-      <nav v-else class="custom-scrollbar flex-1 space-y-1 overflow-y-auto overflow-x-hidden">
+      <nav v-else class="custom-scrollbar flex-1 -mr-2.5 space-y-1 overflow-y-auto overflow-x-hidden">
         <button
           v-for="tab in tabs"
           :key="tab.id"
@@ -373,8 +373,8 @@ const tabs = computed(() => {
       </div>
     </aside>
 
-    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 md:px-8 xl:px-12">
-      <div ref="contentRef" class="w-full pb-16">
+    <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto py-6">
+      <div ref="contentRef" class="w-full px-4 pb-16 sm:px-6 md:px-8 xl:px-12">
         <transition name="settings-fade" mode="out-in" @after-enter="onSettingsAfterEnter">
           <SettingsGeneral v-if="activeTab === 'general'" key="general" />
           <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />

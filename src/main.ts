@@ -10,6 +10,7 @@ import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartu
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger'
 import { reportError } from './services/usageStats'
+import { installScrollbarController } from './utils/scrollbarController'
 
 const currentWindowLabel = (() => {
   try {
@@ -126,6 +127,9 @@ app.config.errorHandler = (error, _instance, info) => {
 }
 
 document.addEventListener('contextmenu', (e) => e.preventDefault())
+
+// 统一滚动条浮现：鼠标悬停在滚动条条带上或滚动期间显示，带淡入淡出动画
+installScrollbarController()
 
 window.addEventListener('error', (event) => {
   const error = event.error ?? event.message

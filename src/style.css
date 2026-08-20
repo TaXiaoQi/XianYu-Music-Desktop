@@ -12,9 +12,20 @@
 
 :root {
   --theme-color: #EC4141;
+  /* 滚动条拇指色：RGB 分量 + 最大透明度（淡入上限），还原淡灰观感。
+     alpha 取自滚动容器自身的 --scrollbar-thumb-alpha（未设置时回退到 0 即隐藏），
+     由 scrollbarController.ts 按容器驱动淡入淡出，从而"滚动哪个区域就只显现哪个
+     区域的滚动条"。 */
+  --scrollbar-thumb-rgb: 0, 0, 0;
+  --scrollbar-thumb-max-alpha: 0.38;
   font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
   /* 防止整个窗口出现滚动条，我们只让中间区域滚动 */
+}
+
+.dark {
+  --scrollbar-thumb-rgb: 255, 255, 255;
+  --scrollbar-thumb-max-alpha: 0.32;
 }
 
 html,
@@ -78,18 +89,45 @@ body {
   line-height: 1.6;
 }
 
-/* 全局隐藏滚动条，但保留滚轮、触控板、触摸和程序滚动能力。 */
-html *,
-body {
-  -ms-overflow-style: none !important;
-  scrollbar-width: none !important;
-}
-
+/* 🎨 统一滚动条：占位但默认不可见，鼠标悬停在滚动条条带上或滚动期间才浮现，
+ * 并带淡入淡出动画。
+ *
+ * 说明：
+ * - 占位：始终保留 16px 轨道宽度，避免滚动条出现/消失导致内容横向跳动；
+ * - 拇指离边：thumb 四边各 5px 透明缩进，使可见拇指距容器边界 5px（不易误触），
+ *   可见宽度为 16 - 5×2 = 6px；
+ * - 默认不可见：thumb 背景 alpha 为 0（--scrollbar-thumb-alpha），仅保留透明轨道占位；
+ * - 显示时机与淡入淡出：由 scrollbarController.ts 统一驱动——
+ *   只响应"鼠标悬停在滚动条条带上"或"正在滚动"，不随鼠标进入容器而显示；
+ *   controller 用 rAF 逐帧刷新 --scrollbar-thumb-alpha 完成淡入淡出。
+ * - 用 !important 统一压过各页面此前各自实现的滚动条显隐规则，
+ *   保证整个软件行为一致。
+ *
+ * ⚠️ Chromium 陷阱：不能给元素设置标准属性 scrollbar-color / scrollbar-width
+ * （非 auto 值），否则该元素的 ::-webkit-scrollbar 伪元素样式会被整体禁用，
+ * 悬停/滚动显隐规则全部失效，表现为滚动条永久不可见。
+ */
 html *::-webkit-scrollbar,
 body::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+html *::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+html *::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  /* 左缩进 5px、右缩进 6px（右端更远离边界以防误触）、上下 5px；
+     可见宽度 = 16 - 左5 - 右6 = 5px */
+  border-width: 5px 6px 5px 5px !important;
+  border-style: solid !important;
+  border-color: transparent !important;
+  border-radius: 9999px !important;
+  background-clip: content-box !important;
+  background-color: rgba(var(--scrollbar-thumb-rgb), var(--scrollbar-thumb-alpha, 0)) !important;
 }
 
 /* 🟢 全局清除按钮聚焦时的默认实线外边框，防止偶发轮廓线破坏视觉体验 */
