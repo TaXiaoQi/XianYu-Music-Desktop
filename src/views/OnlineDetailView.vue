@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { defineAsyncComponent, ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from 'lucide-vue-next';
 
 import type { Song, PluginSearchResult } from '../types';
-import { useOnlineDetailStore, type OnlineDetailType } from '../features/onlineDetail/store';
+import { useOnlineDetailStore, type OnlineDetailType, type ArtistDetailStateCache } from '../features/onlineDetail/store';
 import {
   buildOnlineCollectionKey,
   resolveOnlineCollectionPlatformId,
@@ -100,6 +100,8 @@ const albums = ref<any[]>([]);
 const isBatchMode = ref(false);
 const selectedPaths = ref<Set<string>>(new Set());
 const artistActiveTab = ref<ArtistTabId>('songs');
+/** 从专辑详情返回歌手详情恢复 tab 期间置位：抑制 artistActiveTab 变化触发的重复加载（数据已随状态恢复） */
+let restoringArtistState = false;
 
 /** 竞态条件防护：每次 loadData 递增，异步回调中检查版本号防止旧数据覆盖新数据 */
 let loadVersion = 0;
@@ -965,6 +967,13 @@ function handleAlbumClick(album: any) {
   if (!ctx.value) return;
   if (!ctx.value.pluginSource) return;
   const isLx = isLxEngine.value && ctx.value.lxSourceId;
+  // 先保存当前歌手数据状态（歌曲/专辑/tab/滚动），随上下文入栈，返回歌手详情时恢复
+  const artistState: ArtistDetailStateCache = {
+    songs: songs.value,
+    albums: albums.value,
+    artistActiveTab: artistActiveTab.value,
+    scrollTop: detailScrollRef.value?.scrollTop || 0,
+  };
   // 使用带历史的上下文设置，保存当前歌手上下文
   onlineDetailStore.setContextWithHistory({
     type: 'album',
@@ -975,7 +984,7 @@ function handleAlbumClick(album: any) {
     rawData: album.rawData,
     sourceSearchType: 'artist', // 标记来源为歌手详情
     ...(isLx ? { engineType: 'lx' as const, lxSourceId: ctx.value.lxSourceId } : { engineType: 'musicfree' as const }),
-  });
+  }, artistState);
   artistActiveTab.value = 'songs'; // 重置 tab
   void router.push({ path: '/online-detail', query: { type: 'album' } });
 }
@@ -1034,11 +1043,20 @@ onMounted(() => {
 onBeforeUnmount(() => {
   mfCoverFetchVersion += 1; // 取消 pending 的 MF 封面拉取
   lxCoverFetchVersion += 1; // 取消 pending 的 LX 封面拉取
-  // 离开详情流但不回搜索页（如从详情切到底部导航其他页）时销毁待恢复的搜索会话与结果快照，
-  // 避免之后全新进入搜索页时错误恢复旧的 tab/插件/结果（此时 currentRoute 已是新路由）
-  if (router.currentRoute.value.path !== '/search') {
-    onlineDetailStore.setPendingSearchSession(null);
-    onlineDetailStore.setSearchResultsCache(null);
+  // 离开详情流：清空上下文与历史栈，避免下次进入残留旧上下文/嵌套导航状态
+  onlineDetailStore.clearContextFlow();
+  // 按去向清理一级缓存：
+  // - 返回搜索页：保留搜索会话（tab+插件源+结果快照），销毁榜单缓存（已离开榜单流）
+  // - 返回榜单页：保留榜单缓存，销毁搜索会话（已离开搜索流）
+  // - 其他去向（真正离开在线详情流）：销毁全部一级缓存
+  const destPath = router.currentRoute.value.path;
+  if (destPath === '/search') {
+    onlineDetailStore.clearTopListsCache();
+  } else if (destPath === '/top-lists') {
+    onlineDetailStore.clearSearchSession();
+  } else {
+    onlineDetailStore.clearSearchSession();
+    onlineDetailStore.clearTopListsCache();
   }
 });
 
@@ -1050,6 +1068,40 @@ watch(detailType, (newType, oldType) => {
   // 如果上下文类型与路由类型不匹配，尝试恢复上一个上下文
   if (isRestoring) {
     onlineDetailStore.restorePreviousContext();
+  }
+  // 前进/返回导航都取消上一个类型的加载与封面补获任务，避免旧数据写回新类型
+  loadVersion += 1;
+  mfCoverFetchVersion += 1;
+  lxCoverFetchVersion += 1;
+  mfMetaFetchVersion += 1;
+  // 从专辑详情返回歌手详情：恢复随上下文缓存的歌手数据状态（内容+tab+滚动），免重搜
+  if (isRestoring && newType === 'artist') {
+    const restored = ctx.value?.detailState;
+    if (restored) {
+      songs.value = restored.songs;
+      albums.value = restored.albums;
+      restoringArtistState = true;
+      artistActiveTab.value = restored.artistActiveTab as ArtistTabId;
+      void nextTick(() => { restoringArtistState = false; });
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          if (detailScrollRef.value) {
+            detailScrollRef.value.scrollTop = restored.scrollTop;
+          }
+        });
+      });
+      // 恢复后补获缺失封面/时长（与 loadData 行为一致）
+      if (isLxEngine.value) {
+        if (songs.value.some((s: LxSearchResultItem) => !s.img)) {
+          void fetchMissingLxCovers();
+        }
+      } else if (songs.value.some((s: PluginSearchResult) => !s.coverUrl || !s.duration)) {
+        void fetchMissingMfCovers();
+      }
+      // 消费后清除，避免后续导航复用过期状态
+      if (ctx.value) ctx.value.detailState = undefined;
+      return;
+    }
   }
   // 仅前进导航时重置整页滚动（返回导航由 SongTable 滚动记忆恢复）
   if (!isRestoring && detailScrollRef.value) detailScrollRef.value.scrollTop = 0;
@@ -1066,8 +1118,9 @@ watch(detailType, (newType, oldType) => {
   }
 });
 
-// 歌手 tab 切换时重新加载对应数据
+// 歌手 tab 切换时重新加载对应数据（恢复歌手状态期间抑制，数据已随状态恢复）
 watch(artistActiveTab, () => {
+  if (restoringArtistState) return;
   if (detailType.value === 'artist' && ctx.value) {
     // 清空上一个 tab 的数据，避免转场期间显示旧数据或加载失败时残留
     songs.value = [];
