@@ -693,6 +693,8 @@ export interface AudioSettings {
   autoSwitchSourceOnFailure: boolean;
   /** MV 背景视频默认画质（播放），默认 '720P' */
   mvDefaultQuality?: MvQualityKey;
+  /** MV 画面手动校准偏移（毫秒）：正值画面提前、负值画面延后 */
+  mvVideoSyncOffsetMs?: number;
 }
 
 /** MV 视频画质档位 */

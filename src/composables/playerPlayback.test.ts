@@ -45,6 +45,7 @@ vi.mock('../services/pluginEngine', () => ({
   pluginGetBakaMusicInfo: vi.fn().mockResolvedValue(null),
   pluginGetSupportedQualities: pluginGetSupportedQualitiesMock,
   isBakaPlugin: isBakaPluginMock,
+  getLastPluginError: vi.fn(() => ''),
 }));
 
 vi.mock('../services/downloadHistory', () => ({

@@ -30,6 +30,7 @@ import type {
   HttpProxyResponse,
   LxScriptInfo,
 } from './pluginSandboxTypes';
+import { randomizePinnedDeviceIdentity } from './pluginSandbox.deviceIdentity';
 
 type PluginRuntime = Record<string, any>;
 
@@ -1569,7 +1570,8 @@ function destroyPlugin(pluginId: string): void {
     switch (cmd.type) {
       case 'load_musicfree': {
         log('log', `加载 MusicFree 插件: ${cmd.pluginId}`);
-        const result = await loadMusicFreePlugin(cmd.pluginId, cmd.script, cmd.userVariables);
+        const script = randomizePinnedDeviceIdentity(cmd.script);
+        const result = await loadMusicFreePlugin(cmd.pluginId, script, cmd.userVariables);
         const event: WorkerEvent = {
           type: 'loaded',
           pluginId: cmd.pluginId,

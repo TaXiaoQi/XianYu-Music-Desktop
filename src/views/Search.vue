@@ -262,8 +262,9 @@ import {
 import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
 import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
-import { useOnlineDetailStore, type SourceSearchType } from '../features/onlineDetail/store';
+import { useOnlineDetailStore, type SourceSearchType, type SearchResultsSnapshot } from '../features/onlineDetail/store';
 import { fetchWyTrackMetaByIds } from '../services/playlistImport';
+import { qqFillSongDurations } from '../services/qqHostSearchFallback';
 import { reportSearch, reportInputStats } from '../services/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
@@ -947,6 +948,7 @@ const performSearch = async () => {
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
         void backfillWyTrackMeta(source.source, results);
+        void backfillQqTrackMeta(source.source, results);
       } else if (activeSearchType.value === 'artist') {
         // 歌手搜索
         pluginSearchResults.value = [];
@@ -1045,6 +1047,7 @@ const loadMore = async () => {
         hasMore.value = results.length >= 30;
         triggerMfCoverLoading(source.source);
         void backfillWyTrackMeta(source.source, results);
+        void backfillQqTrackMeta(source.source, results);
       } else {
         hasMore.value = false;
       }
@@ -1191,6 +1194,24 @@ async function backfillWyTrackMeta(pluginSource: PluginSource, items: PluginSear
   }
 
   if (changed) {
+    pluginSearchResults.value = [...pluginSearchResults.value];
+  }
+}
+
+/**
+ * QQ 音乐音源：按 songid 批量补全时长。
+ *
+ * QQ 插件 formatMusicItem 不输出时长、getMusicInfo 早退分支不回填，
+ * 搜索结果整页无时长。宿主用 UniformRuleCtrl 一次批量查询补齐。
+ */
+async function backfillQqTrackMeta(pluginSource: PluginSource, items: PluginSearchResult[]) {
+  const pending = items.filter(item => !item.duration && item.rawData?.id);
+  if (pending.length === 0) return;
+
+  const version = coverLoadVersion;
+  await qqFillSongDurations(pluginSource, undefined, pending);
+  if (version !== coverLoadVersion) return;
+  if (pending.some(item => item.duration)) {
     pluginSearchResults.value = [...pluginSearchResults.value];
   }
 }
@@ -1362,6 +1383,7 @@ const handleOnlineViewArtist = async (song: Song) => {
         pluginSource,
         rawData: artist.rawData,
         sourceSearchType: activeSearchType.value as SourceSearchType,
+        sourceSearchSourceId: selectedSourceId.value,
         engineType: 'musicfree',
       });
       void router.push({ path: '/online-detail', query: { type: 'artist' } });
@@ -1405,6 +1427,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
         pluginSource,
         rawData: album.rawData,
         sourceSearchType: activeSearchType.value as SourceSearchType,
+        sourceSearchSourceId: selectedSourceId.value,
       });
       void router.push({ path: '/online-detail', query: { type: 'album' } });
     } catch (e: any) {
@@ -1533,6 +1556,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: artist.rawData,
       sourceSearchType: 'artist' as SourceSearchType,
+      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
@@ -1553,6 +1577,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     pluginSource,
     rawData: artist.rawData,
     sourceSearchType: 'artist' as SourceSearchType,
+    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'artist' } });
@@ -1569,6 +1594,7 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: album.rawData,
       sourceSearchType: 'album' as SourceSearchType,
+      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
@@ -1588,6 +1614,7 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
     pluginSource,
     rawData: album.rawData,
     sourceSearchType: 'album' as SourceSearchType,
+    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'album' } });
@@ -1604,6 +1631,7 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: playlist.rawData,
       sourceSearchType: 'playlist' as SourceSearchType,
+      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
@@ -1623,6 +1651,7 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
     pluginSource,
     rawData: playlist.rawData,
     sourceSearchType: 'playlist' as SourceSearchType,
+    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
   void router.push({ path: '/online-detail', query: { type: 'playlist' } });
@@ -1702,23 +1731,70 @@ const getPlaylistCover = (playlist: Playlist): string => {
   return '';
 };
 
+// ==================== 搜索结果快照（进详情 → 返回时免重搜） ====================
+
+/** 快照当前搜索状态（各 tab 结果 + 分页），供从在线详情返回时直接还原，避免重复请求触发风控 */
+function captureResultsSnapshot(): SearchResultsSnapshot {
+  return {
+    hasMore: hasMore.value,
+    currentPage: currentPage.value,
+    lists: {
+      lxSearchResults: [...lxSearchResults.value],
+      pluginSearchResults: [...pluginSearchResults.value],
+      localSearchResults: [...localSearchResults.value],
+      localArtistResults: [...localArtistResults.value],
+      localAlbumResults: [...localAlbumResults.value],
+      localPlaylistResults: [...localPlaylistResults.value],
+      pluginArtistResults: [...pluginArtistResults.value],
+      pluginAlbumResults: [...pluginAlbumResults.value],
+      pluginPlaylistResults: [...pluginPlaylistResults.value],
+    },
+  };
+}
+
+/** 还原搜索状态快照（由 onMounted 恢复会话时调用，仅当关键词未变时） */
+function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
+  hasMore.value = snapshot.hasMore;
+  currentPage.value = snapshot.currentPage;
+  lxSearchResults.value = snapshot.lists.lxSearchResults as LxSearchResultItem[];
+  pluginSearchResults.value = snapshot.lists.pluginSearchResults as PluginSearchResult[];
+  localSearchResults.value = snapshot.lists.localSearchResults as Song[];
+  localArtistResults.value = snapshot.lists.localArtistResults as ArtistCatalogItem[];
+  localAlbumResults.value = snapshot.lists.localAlbumResults as AlbumCatalogItem[];
+  localPlaylistResults.value = snapshot.lists.localPlaylistResults as Playlist[];
+  pluginArtistResults.value = snapshot.lists.pluginArtistResults as PluginArtistResult[];
+  pluginAlbumResults.value = snapshot.lists.pluginAlbumResults as PluginAlbumResult[];
+  pluginPlaylistResults.value = snapshot.lists.pluginPlaylistResults as PluginPlaylistSearchResult[];
+  searching.value = false;
+  loadingMore.value = false;
+}
+
 // 初始化
 onMounted(() => {
   uiStore.showPlayerDetail = false;
   window.addEventListener('resize', handleWindowResize);
   refreshPluginSourceList();
-  // 初始化来源选择：优先选第一个插件，无插件则选本地
-  if (allSourceList.value.length > 0) {
+  // 从在线详情返回时，恢复离开前的搜索 tab 与插件源（"从哪儿来回哪儿去"）；
+  // 全新进入（含插件已不存在）则初始化为第一个可用源
+  const session = onlineDetailStore.consumePendingSearchSession();
+  const restoredSourceId = session?.sourceId ?? '';
+  if (restoredSourceId && allSourceList.value.some(s => s.id === restoredSourceId)) {
+    selectedSourceId.value = restoredSourceId;
+  } else if (allSourceList.value.length > 0) {
     selectedSourceId.value = allSourceList.value[0].id;
   }
-  // 从在线详情返回时，恢复对应的搜索 tab（"从哪儿来回哪儿去"）
-  const pendingType = onlineDetailStore.consumePendingSearchType();
-  if (pendingType) {
-    activeSearchType.value = pendingType;
+  if (session?.type) {
+    activeSearchType.value = session.type;
   }
   setupScrollResizeObserver();
+  // 会话结果快照直接还原（免重搜、防风控）；无快照才真正执行搜索
+  onlineDetailStore.setSearchResultsCache(null);
   if (!hasQuery.value) return;
-  performSearch();
+  if (session?.results) {
+    restoreResultsSnapshot(session.results);
+  } else {
+    performSearch();
+  }
 });
 
 // resultsScrollRef 在 track/catalog 视图切换时重新挂载，需重新绑定 ResizeObserver
@@ -1740,6 +1816,13 @@ onBeforeUnmount(() => {
   }
   if (playbackStore.tempQueue.length > 0) {
     playbackStore.tempQueue = [];
+  }
+  // 进入在线详情：快照搜索结果暂存，返回时免重搜（防重复请求触发风控）；
+  // 其他去向（真正离开搜索页）：销毁快照
+  if (router.currentRoute.value.path === '/online-detail') {
+    onlineDetailStore.setSearchResultsCache(captureResultsSnapshot());
+  } else {
+    onlineDetailStore.setSearchResultsCache(null);
   }
 });
 </script>

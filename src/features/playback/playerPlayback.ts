@@ -17,7 +17,7 @@ import {reportUserBehavior} from '../../services/usageStats';
 import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
-import {getStoredPlugins, pluginGetLyric} from '../../services/pluginEngine';
+import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/pluginEngine';
 import {checkDownloadExists} from '../../services/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
@@ -1416,6 +1416,14 @@ const authStore = useAuthStore();
           originalPath: song.path,
           resolvedPathPrefix: audioFilePath.slice(0, 120),
         });
+        // [失败原因提示] 试听链被拒（免费中转只发 60 秒试听）且 LX 兜底也失败时，
+        // 明确告知原因，避免用户以为歌曲损坏或软件故障
+        const pluginError = getLastPluginError();
+        if (pluginError.includes('60 秒试听')) {
+          showToast('该音源仅能获取 60 秒试听，且 LX 兜底音源解析失败，已跳过', 'error');
+        } else if (pluginError.includes('该音源无法提供此歌曲')) {
+          showToast(`${pluginError}，且 LX 兜底音源解析失败，已跳过`, 'error');
+        }
         await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
         return;
       }

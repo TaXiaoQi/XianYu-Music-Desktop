@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { usePlayer } from '../../features/playback';
+import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
 import { lyricsSettings } from '../../composables/lyrics';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useBilibiliVideoBackground } from '../../composables/useBilibiliVideoBackground';
@@ -12,7 +13,12 @@ const props = defineProps<{
 }>();
 
 const { dominantColors, currentCover, currentCoverFull, currentSongPath, currentTime, isPlaying } = usePlayer();
-const { active: videoBackgroundActive, videoUrl: backgroundVideoUrl } = useBilibiliVideoBackground();
+const {
+  active: videoBackgroundActive,
+  videoUrl: backgroundVideoUrl,
+  syncOffsetSec: mvSyncOffsetSec,
+} = useBilibiliVideoBackground();
+const soundEffectStore = useSoundEffectStore();
 const videoRef = ref<HTMLVideoElement | null>(null);
 const videoPlaybackFailed = ref(false);
 const coverImgFailed = ref(false);
@@ -94,12 +100,50 @@ const showBackgroundVideo = computed(() => (
   && !videoPlaybackFailed.value
 ));
 
+/**
+ * 音频实际播放倍速（音效链 Rust 侧变速，50~200%）。
+ * 视频必须以相同倍速播放，否则与音频进度持续漂移、被反复硬拉回。
+ */
+const audioPlaybackRate = computed(() => {
+  const percent = soundEffectStore.playbackRate;
+  const rate = typeof percent === 'number' && percent > 0 ? percent / 100 : 1;
+  return Math.min(2.5, Math.max(0.25, rate));
+});
+
+/**
+ * MV 自动音画对齐偏移（秒）：正值画面提前、负值画面延后。
+ * 播放时间轴对齐（syncBackgroundVideo）只能保证"视频进度条 = 音频进度条"，
+ * MV 片头/剪辑与音频内容的固有错位由该偏移补偿（mvAutoSync 互相关分析得出）。
+ */
 const syncBackgroundVideo = (force = false) => {
   const video = videoRef.value;
   if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
-  const target = Math.max(0, currentTime.value) % video.duration;
-  if (force || Math.abs(video.currentTime - target) > 0.8) {
+  // 环形取模：偏移后 target 可能为负或超过 duration，取最近一圈的位置
+  const rawTarget = Math.max(0, currentTime.value) + mvSyncOffsetSec.value;
+  const target = ((rawTarget % video.duration) + video.duration) % video.duration;
+  // 视频循环播放：换圈瞬间 target 与 currentTime 分居 0 和 duration 两端，
+  // 用环形距离避免把接缝误判成大偏差而回跳
+  let drift = target - video.currentTime;
+  if (Math.abs(drift) > video.duration / 2) {
+    drift += drift > 0 ? -video.duration : video.duration;
+  }
+  if (force || Math.abs(drift) > 0.6) {
+    // 大偏差（拖动进度条、缓冲停滞）：直接对齐并恢复基础倍速
+    video.playbackRate = audioPlaybackRate.value;
     video.currentTime = target;
+    return;
+  }
+  if (video.paused) {
+    if (Math.abs(drift) > 0.05) video.currentTime = target;
+    return;
+  }
+  // 小偏差（<0.12s）视为同步；中等偏差用 ±8% 内的微调倍速平滑追赶，避免可见跳帧
+  const nudge = Math.abs(drift) <= 0.12
+    ? 0
+    : Math.max(-0.08, Math.min(0.08, drift * 0.5));
+  const nextRate = audioPlaybackRate.value * (1 + nudge);
+  if (Math.abs(video.playbackRate - nextRate) > 0.001) {
+    video.playbackRate = nextRate;
   }
 };
 
@@ -107,6 +151,7 @@ const updateVideoPlayback = () => {
   const video = videoRef.value;
   if (!video) return;
   if (showBackgroundVideo.value && isPlaying.value) {
+    video.playbackRate = audioPlaybackRate.value;
     void video.play().catch(() => {});
   } else {
     video.pause();
@@ -121,6 +166,13 @@ watch(backgroundVideoUrl, async () => {
 });
 watch([isPlaying, () => props.active, showBackgroundVideo], updateVideoPlayback);
 watch(currentTime, () => syncBackgroundVideo(false));
+// 音频变速调整时同步视频倍速（纠偏微调会在下一帧进度同步中自动恢复）
+watch(audioPlaybackRate, (rate) => {
+  const video = videoRef.value;
+  if (video) video.playbackRate = rate;
+});
+// 自动对齐分析完成（偏移变化）时立即重对齐（暂停中 currentTime 不跳动，需显式触发）
+watch(mvSyncOffsetSec, () => syncBackgroundVideo(true));
 
 const handleVideoLoaded = () => {
   syncBackgroundVideo(true);
