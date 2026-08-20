@@ -52,6 +52,8 @@ export interface OnlineDetailContext {
   engineType?: 'musicfree' | 'lx';
   /** 落雪系音源 ID（engineType='lx' 时使用，如 'kw'/'kg'/'tx'/'wy'/'mg'） */
   lxSourceId?: string;
+  /** 来源标记：'toplist' 表示从榜单页进入，不提供"收藏整张"功能 */
+  origin?: 'toplist';
 }
 
 export const useOnlineDetailStore = defineStore('onlineDetail', () => {

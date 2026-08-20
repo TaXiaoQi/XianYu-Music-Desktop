@@ -2,6 +2,9 @@ import { ref } from 'vue';
 
 export type BanType = 'account' | 'device';
 
+/** 弹窗用途：ban=账号/设备封禁申诉；session=登录验证失效提示（复用同一套弹窗样式） */
+export type BanDialogMode = 'ban' | 'session';
+
 export interface BanDialogMeta {
   ciyuanxiId: string;
   nickname: string;
@@ -9,6 +12,7 @@ export interface BanDialogMeta {
 
 export interface BanDialogState {
   visible: boolean;
+  mode: BanDialogMode;
   banType: BanType;
   reason: string;
   ciyuanxiId: string;
@@ -20,6 +24,7 @@ export interface BanDialogState {
 
 const banDialogState = ref<BanDialogState>({
   visible: false,
+  mode: 'ban',
   banType: 'account',
   reason: '',
   ciyuanxiId: '',
@@ -38,6 +43,7 @@ export function showBanDialog(
   return new Promise<boolean>((resolve) => {
     banDialogState.value = {
       visible: true,
+      mode: 'ban',
       banType,
       reason,
       ciyuanxiId: meta.ciyuanxiId || '',
@@ -48,11 +54,30 @@ export function showBanDialog(
   });
 }
 
+/** 打开「登录验证失败，需要重新登录」提示框，复用封禁弹窗的视觉 */
+export function showSessionExpiredDialog(
+  reason = '登录状态已失效，请重新登录账号以继续使用。',
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    banDialogState.value = {
+      visible: true,
+      mode: 'session',
+      banType: 'account',
+      reason: reason || '登录状态已失效，请重新登录账号以继续使用。',
+      ciyuanxiId: '',
+      nickname: '',
+      debug: false,
+      resolver: resolve,
+    };
+  });
+}
+
 export function resolveBanDialog(confirmed: boolean): void {
   const state = banDialogState.value;
   state.resolver?.(confirmed);
   banDialogState.value = {
     visible: false,
+    mode: state.mode,
     banType: state.banType,
     reason: '',
     ciyuanxiId: '',

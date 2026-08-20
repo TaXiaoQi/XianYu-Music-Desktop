@@ -275,6 +275,29 @@ export type SignedRequestOptions = {
 const DEFAULT_OUTER_TIMEOUT_MS = 30_000;
 
 /**
+ * 登录态失效（token 被服务端判定为无效/过期/属主不符）时触发，
+ * 由 UI 层（authStore）注册回调，用于自动登出并回到登录页。
+ * 避免存量用户在 keyring 残留旧 token 时反复用失效 token 刷屏报错。
+ */
+let onAccountExpiredHandler: (() => void) | null = null;
+
+export function onAccountExpired(handler: () => void): void {
+  onAccountExpiredHandler = handler;
+}
+
+function triggerAccountExpired(): void {
+  onAccountExpiredHandler?.();
+}
+
+/** 服务端在硬模式下统一返回的 token 失效文案 */
+const SESSION_EXPIRED_MSG_RE = /登录状态已失效|登录已过期|登录状态与账号不匹配/;
+
+/** 判定一次账号请求的响应是否表示「登录态失效，需重新登录」 */
+function isSessionExpiredEnvelope(payload: ApiEnvelope<unknown>): boolean {
+  return payload.code === 401 && SESSION_EXPIRED_MSG_RE.test(payload?.msg ?? '');
+}
+
+/**
  * 发起带签名的 POST 请求，返回完整响应信封。
  * 签名在 Rust 侧完成（md5(timestamp + nonce + body + api_secret)）。
  * 已登录时自动注入登录态 token，供服务端 dispatch 层做用户资源属主校验。
@@ -289,6 +312,10 @@ async function requestEnvelope<T>(
     finalBody.token = cachedToken;
   }
   const payload = await authApi.authedRequest(action, finalBody, fetchTimeoutMs);
+  if (isSessionExpiredEnvelope(payload)) {
+    // 登录态已失效：触发自动登出，UI 回到登录页让用户重新登录
+    triggerAccountExpired();
+  }
   return payload as unknown as ApiEnvelope<T>;
 }
 

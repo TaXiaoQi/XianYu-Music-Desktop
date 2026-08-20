@@ -5,6 +5,11 @@ import { ArrowLeft } from 'lucide-vue-next';
 
 import type { Song, PluginSearchResult } from '../types';
 import { useOnlineDetailStore, type OnlineDetailType } from '../features/onlineDetail/store';
+import {
+  buildOnlineCollectionKey,
+  resolveOnlineCollectionPlatformId,
+  type FavoriteCollectionEntry,
+} from '../features/collections/store';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
@@ -77,6 +82,17 @@ const loading = ref(false);
 const hasInitialLoad = ref(false);
 /** 整页滚动容器：header 与歌曲列表一起滚动 */
 const detailScrollRef = ref<HTMLElement | null>(null);
+/**
+ * 内容唯一滚动记忆键：基于当前上下文的平台 ID 生成，
+ * 避免同类型不同内容（专辑 A→专辑 B）互相继承滚动位置。
+ * platformId 提取不到时回退到标题，确保不同内容仍有独立 key。
+ */
+const detailMemoryKey = computed(() => {
+  const c = ctx.value;
+  if (!c) return '';
+  const platformId = resolveOnlineCollectionPlatformId(c);
+  return platformId || c.title || '';
+});
 /** 歌曲列表：MF 引擎存 PluginSearchResult，LX 引擎存 LxSearchResultItem */
 const songs = ref<any[]>([]);
 /** 专辑列表：MF 引擎存 PluginAlbumResult，LX 引擎存 LxAlbumSearchResult */
@@ -133,6 +149,28 @@ watch(artistDetailAvailable, (available) => {
 
 /** 用户详情模式（排行榜"查看"进入）：展示被查看用户的云收藏与云歌单 */
 const isUserMode = computed(() => detailType.value === 'user');
+
+/** 当前在线歌单/专辑的"收藏整张"条目（歌手/用户详情页与榜单详情不提供） */
+const collectionFavoriteEntry = computed<FavoriteCollectionEntry | null>(() => {
+  const c = ctx.value;
+  if (!c || isUserMode.value) return null;
+  if (c.origin === 'toplist') return null;
+  if (detailType.value !== 'playlist' && detailType.value !== 'album') return null;
+
+  const kind = detailType.value;
+  const platformId = resolveOnlineCollectionPlatformId(c);
+  if (!platformId) return null;
+
+  return {
+    key: buildOnlineCollectionKey({ ...c, type: kind }, platformId),
+    type: kind,
+    title: c.title,
+    subtitle: c.subtitle,
+    coverUrl: c.coverUrl || '',
+    favoritedAt: 0,
+    onlineContext: { ...c },
+  };
+});
 
 /** 用户详情：被查看用户的弦予号（云同步查询键），优先取 rawData.ciyuanxi_id，回退 username */
 const targetUsername = computed(() => {
@@ -1007,10 +1045,14 @@ onBeforeUnmount(() => {
 // 路由 type 变化时：尝试恢复上下文并重新加载
 watch(detailType, (newType, oldType) => {
   if (newType === oldType) return;
+  // 检测是否为"返回"导航（上下文类型与路由类型不匹配 → 需恢复上一个上下文）
+  const isRestoring = !!(ctx.value && ctx.value.type !== newType);
   // 如果上下文类型与路由类型不匹配，尝试恢复上一个上下文
-  if (ctx.value && ctx.value.type !== newType) {
+  if (isRestoring) {
     onlineDetailStore.restorePreviousContext();
   }
+  // 仅前进导航时重置整页滚动（返回导航由 SongTable 滚动记忆恢复）
+  if (!isRestoring && detailScrollRef.value) detailScrollRef.value.scrollTop = 0;
   // 清空上一个类型的数据，避免转场期间显示旧数据
   songs.value = [];
   albums.value = [];
@@ -1119,7 +1161,7 @@ watch(
                 :songs="currentSongs"
                 :is-batch-mode="isBatchMode"
                 :selected-paths="selectedPaths"
-                :memory-scope-key="isUserMode ? 'online-detail-user' : 'online-detail-artist'"
+                :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey"
                 page-scroll-mode
                 :scroll-container-ref="detailScrollRef"
                 @play="handlePlaySong"
@@ -1202,6 +1244,7 @@ watch(
             :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
+            :favoriteEntry="collectionFavoriteEntry"
             @playAll="handlePlayAll"
             @addToPlaylist="handleAddToPlaylist"
             @selectAll="handleSelectAll"
@@ -1211,7 +1254,7 @@ watch(
               :songs="currentSongs"
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
-              memory-scope-key="online-detail-album"
+              memory-scope-key="'online-detail-album::' + detailMemoryKey"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               @play="handlePlaySong"
@@ -1232,6 +1275,7 @@ watch(
             :totalSongCount="currentSongs.length"
             :readOnly="true"
             :coverUrlOverride="coverUrl"
+            :favoriteEntry="collectionFavoriteEntry"
             @playAll="handlePlayAll"
             @openAddToPlaylist="handleAddToPlaylist"
             @selectAll="handleSelectAll"
@@ -1241,7 +1285,7 @@ watch(
               :songs="currentSongs"
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
-              memory-scope-key="online-detail-playlist"
+              memory-scope-key="'online-detail-playlist::' + detailMemoryKey"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               @play="handlePlaySong"

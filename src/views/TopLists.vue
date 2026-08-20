@@ -381,6 +381,7 @@ const handleTopListClick = (entry: GridEntry) => {
     rawData: item.rawData,
     sourceSearchType: 'playlist',
     engineType: 'musicfree',
+    origin: 'toplist',
   });
   void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 };

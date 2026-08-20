@@ -259,7 +259,7 @@ describe('player library view', () => {
     ]);
   });
 
-  it('applies favorites detail filters and local sorting rules', async () => {
+  it('lists favorite songs on the songs tab and keeps collection tabs song-free', async () => {
     const libraryStore = useLibraryStore();
     const collectionsStore = useCollectionsStore();
     const navigationStore = useNavigationStore();
@@ -293,16 +293,22 @@ describe('player library view', () => {
     libraryStore.librarySongs = [zebra, alpha, outsider];
     collectionsStore.favoritePaths = [zebra.path, alpha.path, outsider.path];
     navigationStore.currentViewMode = 'favorites';
-    navigationStore.favTab = 'artists';
-    navigationStore.favDetailFilter = { type: 'artist', name: 'Target Artist' };
+    navigationStore.favTab = 'songs';
     libraryStore.localSortMode = 'title';
 
-    const { displaySongList, favArtistList } = usePlayerLibraryView();
+    const { displaySongList } = usePlayerLibraryView();
     await flushPromises();
 
-    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha', 'Zebra']);
-    expect(favArtistList.value.map(item => item.name)).toContain('Target Artist');
-    expect(favArtistList.value.find(item => item.name === 'Target Artist')?.count).toBe(2);
+    expect(displaySongList.value.map(song => song.title)).toEqual(['Alpha', 'Other', 'Zebra']);
+
+    // 歌单/专辑 tab 展示收藏网格，歌曲列表应为空
+    navigationStore.favTab = 'playlists';
+    await flushPromises();
+    expect(displaySongList.value).toEqual([]);
+
+    navigationStore.favTab = 'albums';
+    await flushPromises();
+    expect(displaySongList.value).toEqual([]);
   });
 
   it('resolves recent songs from path-backed history entries', async () => {

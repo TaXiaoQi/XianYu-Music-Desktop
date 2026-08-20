@@ -5,12 +5,11 @@
       @clearHistory="handleClearHistory"
       @addAllToQueue="handleAddAllToQueue"
     />
-    
+
     <div class="flex-1 flex overflow-hidden relative">
-      
+
       <section class="flex-1 flex overflow-hidden">
         <SongTable
-          v-if="recentTab === 'songs'"
           ref="songTableRef"
           :songs="localSongList"
           :isBatchMode="isBatchMode"
@@ -21,78 +20,62 @@
           @contextmenu="handleContextMenu"
           @drag-start="handleTableDragStart"
         />
-        <RecentCollectionGrid
-          v-else
-          :items="recentCollectionItems"
-          :emptyMessage="recentTab === 'albums' ? '暂无最近播放的专辑' : '暂无最近播放的歌单'"
-          @open="handleOpenRecentCollection"
-        />
       </section>
     </div>
-    
+
     <!-- 弹窗组件 -->
     <DragGhost />
-    
-    <SongContextMenu 
+
+    <SongContextMenu
       v-if="showContextMenu"
-      :visible="showContextMenu" 
-      :x="contextMenuX" 
-      :y="contextMenuY" 
-      :song="contextMenuTargetSong" 
-      :is-playlist-view="false" 
+      :visible="showContextMenu"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :song="contextMenuTargetSong"
+      :is-playlist-view="false"
       :is-online-search="contextMenuIsOnlineSearch"
       :resolved-file-path="contextMenuResolvedPath"
-      @close="showContextMenu = false" 
+      @close="showContextMenu = false"
       @add-to-playlist="openAddToPlaylistSelection"
       @view-online-artist="handleOnlineViewArtist"
       @view-online-album="handleOnlineViewAlbum"
     />
-    
-    <ModernModal 
+
+    <ModernModal
       v-if="showConfirm"
-      :visible="showConfirm" 
-      title="删除记录" 
-      :content="confirmMessage" 
-      type="danger" 
-      confirm-text="删除" 
-      @confirm="executeConfirmAction" 
-      @cancel="showConfirm = false" 
+      :visible="showConfirm"
+      title="删除记录"
+      :content="confirmMessage"
+      type="danger"
+      confirm-text="删除"
+      @confirm="executeConfirmAction"
+      @cancel="showConfirm = false"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import type { Song } from '../types';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryCollections } from '../features/collections/useLibraryCollections';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { usePlayerLibraryView } from '../features/library/usePlayerLibraryView';
-import { usePlayerViewState } from '../composables/usePlayerViewState';
-import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { useSongContextActions } from '../composables/useSongContextActions';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 
 import { useSongDrag } from '../composables/useSongDrag';
-import type { RecentCollectionGridItem } from '../components/recent/RecentCollectionGrid.vue';
 
 const RecentHeader = defineAsyncComponent(() => import('../components/headers/RecentHeader.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
-const RecentCollectionGrid = defineAsyncComponent(() => import('../components/recent/RecentCollectionGrid.vue'));
 
 const {
   displaySongList,
-  recentAlbumList,
-  recentPlaylistList,
   searchQuery,
 } = usePlayerLibraryView();
-const { recentTab } = usePlayerViewState();
-const router = useRouter();
-const { openHomeAlbum, openHomePlaylist } = useHomeNavigation(router);
 const { playSong, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const {
@@ -100,35 +83,6 @@ const {
 } = useLibraryCollections();
 
 const localSongList = computed(() => displaySongList.value);
-const recentCollectionItems = computed<RecentCollectionGridItem[]>(() => {
-  const query = searchQuery.value.trim().toLocaleLowerCase();
-
-  if (recentTab.value === 'albums') {
-    return recentAlbumList.value
-      .filter(album => !query || `${album.name} ${album.artist}`.toLocaleLowerCase().includes(query))
-      .map(album => ({
-        id: album.key,
-        title: album.name,
-        subtitle: album.artist,
-        firstSongPath: album.firstSongPath,
-        playedAt: album.playedAt,
-      }));
-  }
-
-  if (recentTab.value === 'playlists') {
-    return recentPlaylistList.value
-      .filter(playlist => !query || playlist.name.toLocaleLowerCase().includes(query))
-      .map(playlist => ({
-        id: playlist.id,
-        title: playlist.name,
-        subtitle: `${playlist.count} 首歌曲`,
-        firstSongPath: playlist.firstSongPath,
-        playedAt: playlist.playedAt,
-      }));
-  }
-
-  return [];
-});
 
 // ========== 状态管理 ==========
 const isBatchMode = ref(false);
@@ -172,14 +126,6 @@ const handlePlaySong = (song: Song) => {
 
 const handleAddAllToQueue = () => {
   addSongsToQueue(localSongList.value);
-};
-
-const handleOpenRecentCollection = (id: string) => {
-  if (recentTab.value === 'albums') {
-    void openHomeAlbum(id);
-    return;
-  }
-  void openHomePlaylist(id);
 };
 
 const executeConfirmAction = async () => {

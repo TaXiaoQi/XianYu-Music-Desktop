@@ -8,6 +8,7 @@ import {
   getAuthBaseUrl,
   getStoredAuth,
   initAuthFromKeyring,
+  onAccountExpired,
   refreshSession,
   setAuthApiSecret,
   setAuthBaseUrl,
@@ -15,7 +16,11 @@ import {
   type AuthUser,
   type ProfileStats,
 } from '../../services/auth/authService';
-import { showBanDialog } from '../../composables/useBanDialog';
+import { showBanDialog, showSessionExpiredDialog } from '../../composables/useBanDialog';
+import router from '../../router/index';
+
+/** 只注册一次自动登出回调（setup store 可能被复用） */
+let expiredHandlerRegistered = false;
 
 /**
  * 账号认证状态
@@ -96,6 +101,19 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       initializing.value = false;
     }
+  }
+
+  // 服务端硬校验开启后，keyring 中可能残留旧版签发的失效 token。
+  // 任一账号请求返回「登录态失效」即自动登出，并用复用的封禁弹窗提示重新登录。
+  // 弹窗点「登录」时前往个人主页登录页。
+  if (!expiredHandlerRegistered) {
+    expiredHandlerRegistered = true;
+    onAccountExpired(() => {
+      reset();
+      void showSessionExpiredDialog().then((goLogin) => {
+        if (goLogin) router.push({ name: 'Auth' });
+      });
+    });
   }
 
   return {

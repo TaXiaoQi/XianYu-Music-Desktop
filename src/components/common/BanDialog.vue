@@ -8,6 +8,8 @@ const { showToast } = useToast();
 
 const { banDialogState, resolveBanDialog } = useBanDialog();
 
+const mode = computed(() => banDialogState.value.mode);
+
 const APPEAL_MAX = 1000;
 const appealing = ref(false);
 const appealText = ref('');
@@ -24,15 +26,29 @@ watch(
   },
 );
 
-const title = computed(() =>
-  banDialogState.value.banType === 'device' ? '设备已被封禁' : '账号已被封禁',
-);
+const title = computed(() => {
+  if (banDialogState.value.mode === 'session') return '登录验证失败';
+  return banDialogState.value.banType === 'device' ? '设备已被封禁' : '账号已被封禁';
+});
 
-const reasonText = computed(
-  () => banDialogState.value.reason || '你的账号已被管理员封禁，如有疑问请联系管理员。',
-);
+const reasonText = computed(() => {
+  if (banDialogState.value.mode === 'session') {
+    return banDialogState.value.reason || '登录状态已失效，请重新登录账号以继续使用。';
+  }
+  return banDialogState.value.reason || '你的账号已被管理员封禁，如有疑问请联系管理员。';
+});
 
 function confirm() {
+  resolveBanDialog(true);
+}
+
+/** session 模式：仅关闭弹窗，不跳转 */
+function confirmClose() {
+  resolveBanDialog(false);
+}
+
+/** 切换按钮：仅关闭并告知调用方「去登录」，由调用方跳转登录页 */
+function goLogin() {
   resolveBanDialog(true);
 }
 
@@ -88,7 +104,7 @@ async function submitAppealHandler() {
       <div
         v-if="banDialogState.visible"
         class="ban-overlay fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
-        @click.self="!appealing && confirm()"
+        @click.self="!appealing && (mode === 'session' ? confirmClose() : confirm())"
       >
         <div class="ban-card">
           <div class="ban-icon">
@@ -101,7 +117,8 @@ async function submitAppealHandler() {
             </svg>
           </div>
           <h3 class="ban-title">{{ title }}</h3>
-          <p v-if="banDialogState.ciyuanxiId" class="ban-version">弦予号 {{ banDialogState.ciyuanxiId }}</p>
+          <p v-if="mode === 'session'" class="ban-version">请重新登录账号以继续</p>
+          <p v-else-if="banDialogState.ciyuanxiId" class="ban-version">弦予号 {{ banDialogState.ciyuanxiId }}</p>
           <p v-else class="ban-version">当前设备已受限</p>
 
           <div v-if="!appealing" class="ban-content">
@@ -120,12 +137,22 @@ async function submitAppealHandler() {
           </div>
 
           <div v-if="!appealing" class="ban-actions">
-            <button type="button" class="ban-btn ban-btn--ghost" @click="startAppeal">
-              申诉
-            </button>
-            <button type="button" class="ban-btn ban-btn--primary" @click="confirm">
-              确认
-            </button>
+            <template v-if="mode === 'session'">
+              <button type="button" class="ban-btn ban-btn--ghost" @click="confirmClose">
+                确认
+              </button>
+              <button type="button" class="ban-btn ban-btn--primary" @click="goLogin">
+                登录
+              </button>
+            </template>
+            <template v-else>
+              <button type="button" class="ban-btn ban-btn--ghost" @click="startAppeal">
+                申诉
+              </button>
+              <button type="button" class="ban-btn ban-btn--primary" @click="confirm">
+                确认
+              </button>
+            </template>
           </div>
 
           <div v-else class="ban-actions">

@@ -1,4 +1,5 @@
 import type { AppSettings, HistoryItem, Playlist, Song, EqualizerPreset } from '../../types';
+import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import { localStore } from './localStore';
 import { fileStore } from './fileStore';
 
@@ -19,6 +20,7 @@ export const playerStorageKeys = {
   watchedFolders: 'player_watched_folders',
   favorites: 'player_favorites',
   favoriteSongMeta: 'player_favorite_song_meta',
+  favoriteCollections: 'player_favorite_collections',
   recentSongMeta: 'player_recent_song_meta',
   recentOnlineHistory: 'player_recent_online_history',
   queueSongMeta: 'player_queue_song_meta',
@@ -258,6 +260,22 @@ export const playerStorage = {
     return result;
   },
 
+  /** 读取收藏的歌单/专辑条目（整张收藏） */
+  readFavoriteCollections(): FavoriteCollectionEntry[] {
+    const parsed = localStore.getJson<unknown>(playerStorageKeys.favoriteCollections);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((entry): entry is FavoriteCollectionEntry =>
+      !!entry
+      && typeof entry === 'object'
+      && typeof (entry as FavoriteCollectionEntry).key === 'string'
+      && ((entry as FavoriteCollectionEntry).type === 'playlist' || (entry as FavoriteCollectionEntry).type === 'album')
+      && typeof (entry as FavoriteCollectionEntry).title === 'string',
+    );
+  },
+
   /** 读取持久化的在线最近播放条目（含 playedAt，毫秒） */
   readRecentOnlineHistory(): HistoryItem[] {
     return this.readHistory(playerStorageKeys.recentOnlineHistory);
@@ -296,6 +314,7 @@ export const playerStorage = {
     watchedFolders: string[];
     favoritePaths: string[];
     favoriteSongMeta: Record<string, Song>;
+    favoriteCollections: FavoriteCollectionEntry[];
     recentSongMeta: Record<string, Song>;
     recentOnlineHistory: HistoryItem[];
     queueSongMeta: Record<string, Song>;
@@ -311,6 +330,7 @@ export const playerStorage = {
     localStore.setJson(playerStorageKeys.watchedFolders, options.watchedFolders);
     localStore.setJson(playerStorageKeys.favorites, options.favoritePaths);
     localStore.setJson(playerStorageKeys.favoriteSongMeta, options.favoriteSongMeta);
+    localStore.setJson(playerStorageKeys.favoriteCollections, options.favoriteCollections);
     localStore.setJson(playerStorageKeys.recentSongMeta, options.recentSongMeta);
     localStore.setJson(playerStorageKeys.recentOnlineHistory, options.recentOnlineHistory);
     localStore.setJson(playerStorageKeys.queueSongMeta, options.queueSongMeta);

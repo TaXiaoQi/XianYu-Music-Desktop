@@ -78,6 +78,7 @@ export const createPlayerPersistence = ({ keys }: { keys: PlayerPersistenceKeys 
       watchedFolders: libraryStore.watchedFolders,
       favoritePaths: collectionsStore.favoritePaths,
       favoriteSongMeta: collectionsStore.favoriteSongMeta,
+      favoriteCollections: collectionsStore.favoriteCollections,
       recentSongMeta: collectionsStore.recentSongMeta,
       recentOnlineHistory: collectRecentOnlineHistory(),
       queueSongMeta: collectQueueSongMeta(),

@@ -3,12 +3,69 @@ import { defineStore } from 'pinia';
 
 import type { PlaylistSortMode } from '../../services/storage/playerStorage';
 import type { HistoryItem, Playlist, Song } from '../../types';
+import type { OnlineDetailContext } from '../onlineDetail/store';
 import { useLibraryStore } from '../library/store';
 
 const formatPlaylistDate = () => {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 };
+
+/** 收藏的歌单/专辑条目（收藏页"歌单/专辑"tab 数据源） */
+export interface FavoriteCollectionEntry {
+  /** 唯一键：`online:mf|lx:<源>:<type>:<平台ID>` 或 `local:playlist:<歌单ID>` */
+  key: string;
+  type: 'playlist' | 'album';
+  title: string;
+  subtitle: string;
+  coverUrl: string;
+  favoritedAt: number;
+  /** 在线详情上下文快照（在线歌单/专辑从收藏页重新打开详情用） */
+  onlineContext?: OnlineDetailContext | null;
+  /** 本地歌单 ID（收藏本地歌单时使用，打开走首页歌单详情） */
+  localPlaylistId?: string;
+}
+
+/** 在线歌单/专辑的收藏唯一键 */
+export const buildOnlineCollectionKey = (
+  ctx: {
+    type: 'playlist' | 'album';
+    engineType?: 'musicfree' | 'lx' | null;
+    lxSourceId?: string | null;
+    pluginSource?: { id: string } | null;
+  },
+  platformId: string,
+): string => {
+  const engine = ctx.engineType === 'lx'
+    ? `lx:${ctx.lxSourceId ?? ''}`
+    : `mf:${ctx.pluginSource?.id ?? ''}`;
+  return `online:${engine}:${ctx.type}:${platformId}`;
+};
+
+/** 从在线详情上下文 rawData 中提取平台 ID（收藏键标识），提取不到返回空串 */
+export const resolveOnlineCollectionPlatformId = (
+  ctx: { type: 'playlist' | 'album' | 'artist' | 'user'; rawData?: any },
+): string => {
+  const raw = ctx.rawData;
+  if (!raw || typeof raw !== 'object') {
+    return '';
+  }
+
+  const candidates = ctx.type === 'album'
+    ? [raw.albumId, raw.albumID, raw.AlbumID, raw.albumMID, raw.albumMid, raw.id, raw.ID]
+    : [raw.id, raw.ID, raw.playlistId, raw.playlistid, raw.specialid, raw.dissid, raw.disstid, raw.songListId, raw.songlistId, raw.rid];
+
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const value = String(candidate).trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+/** 本地歌单的收藏唯一键 */
+export const buildLocalPlaylistCollectionKey = (playlistId: string) =>
+  `local:playlist:${playlistId}`;
 
 export const useCollectionsStore = defineStore('collections', () => {
   const RECENT_SONG_LIMIT = 200;
@@ -28,9 +85,15 @@ export const useCollectionsStore = defineStore('collections', () => {
   const playlists = ref<Playlist[]>([]);
   const recentSongs = ref<HistoryItem[]>([]);
   const playlistSortMode = ref<PlaylistSortMode>('custom');
+  /** 收藏的歌单/专辑（整张收藏，区别于按单曲收藏） */
+  const favoriteCollections = ref<FavoriteCollectionEntry[]>([]);
 
   const setFavoritePaths = (paths: string[]) => {
     favoritePaths.value = paths;
+  };
+
+  const setFavoriteCollections = (entries: FavoriteCollectionEntry[]) => {
+    favoriteCollections.value = entries ?? [];
   };
 
   const setPlaylists = (nextPlaylists: Playlist[]) => {
@@ -267,6 +330,27 @@ export const useCollectionsStore = defineStore('collections', () => {
   const clearFavorites = () => {
     favoritePaths.value = [];
     favoriteSongMeta.value = {};
+    favoriteCollections.value = [];
+  };
+
+  /** 歌单/专辑整张是否已收藏 */
+  const isCollectionFavorited = (key: string) =>
+    favoriteCollections.value.some(entry => entry.key === key);
+
+  /** 收藏/取消收藏整张歌单或专辑，返回收藏后的状态 */
+  const toggleFavoriteCollection = (entry: FavoriteCollectionEntry) => {
+    const index = favoriteCollections.value.findIndex(item => item.key === entry.key);
+    if (index >= 0) {
+      favoriteCollections.value.splice(index, 1);
+      return false;
+    }
+
+    favoriteCollections.value.unshift({ ...entry, favoritedAt: Date.now() });
+    return true;
+  };
+
+  const removeFavoriteCollection = (key: string) => {
+    favoriteCollections.value = favoriteCollections.value.filter(entry => entry.key !== key);
   };
 
   const addRecentSong = (song: Song) => {
@@ -352,7 +436,9 @@ export const useCollectionsStore = defineStore('collections', () => {
     playlists,
     recentSongs,
     playlistSortMode,
+    favoriteCollections,
     setFavoritePaths,
+    setFavoriteCollections,
     setPlaylists,
     setRecentSongs,
     createPlaylist,
@@ -375,6 +461,9 @@ export const useCollectionsStore = defineStore('collections', () => {
     setFavoriteSongMetaMap,
     removeFavoritePaths,
     clearFavorites,
+    isCollectionFavorited,
+    toggleFavoriteCollection,
+    removeFavoriteCollection,
     addRecentSong,
     setRecentSongMeta,
     removeRecentSongMeta,

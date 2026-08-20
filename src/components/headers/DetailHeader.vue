@@ -7,7 +7,9 @@ import { useLibraryCollections } from '../../features/collections/useLibraryColl
 import { useCoverCache } from '../../composables/useCoverCache';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
+import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import SortModeIcon from '../common/SortModeIcon.vue';
+import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue';
 
 const { playlistSortMode, setPlaylistSortMode, currentViewMode, filterCondition } = usePlayerViewState();
 const { playlists } = useLibraryCollections();
@@ -59,6 +61,8 @@ const props = defineProps<{
   showHeaderAddToPlaylist?: boolean;
   /** 在线封面 URL（readOnly 模式下优先使用） */
   coverUrlOverride?: string;
+  /** 待收藏的歌单/专辑条目（传入即显示"收藏整张"按钮） */
+  favoriteEntry?: FavoriteCollectionEntry | null;
   /** 歌曲列表滚动容器（用于滚动缩小封面效果） */
   scrollContainerRef?: HTMLElement | null;
 }>();
@@ -328,6 +332,8 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
              收藏至歌单
            </button>
+
+           <CollectionFavoriteButton :entry="favoriteEntry ?? null" />
            
            <button
              v-if="!readOnly"
