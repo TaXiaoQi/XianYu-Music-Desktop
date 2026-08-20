@@ -41,6 +41,19 @@ describe('parseDuration', () => {
     expect(parseDuration('215000')).toBe(215000);
   });
 
+  it('parses long-video seconds (Bilibili collection 1000~59999s) as seconds, not milliseconds', () => {
+    // B 站"歌曲大全"合集视频普遍 4~5.5 小时（14400~19980 秒），
+    // 旧启发式（>1000 判毫秒）会把 5.5 小时合集显示成 19.9 秒
+    expect(parseDuration(19930)).toBe(19930000);
+    expect(parseDuration(1200)).toBe(1200000);
+    expect(parseDuration('19930')).toBe(19930000);
+  });
+
+  it('treats 60000 boundary as milliseconds (1-minute audio in ms)', () => {
+    expect(parseDuration(60000)).toBe(60000);
+    expect(parseDuration(59999)).toBe(59999000);
+  });
+
   it('returns 0 for empty or invalid values', () => {
     expect(parseDuration(0)).toBe(0);
     expect(parseDuration(null)).toBe(0);

@@ -121,8 +121,12 @@ export const parseDuration = (val: any): number => {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') {
     if (!Number.isFinite(val) || val <= 0) return 0;
-    // 如果大于 1000 视为毫秒 ms，否则视为秒 s 并转换为毫秒 ms
-    return val > 1000 ? Math.floor(val) : Math.floor(val * 1000);
+    // 单位启发式（ms/s 歧义区间 1000~59999 只能取一解）：
+    // 该区间按秒解释 = 16.7 分钟 ~ 16.6 小时（B 站音乐合集视频极常见，
+    // 播客/串烧也在此区间）；按毫秒解释 = 1~60 秒的铃声级短音频（罕见）。
+    // 毫秒来源（网易云 dt / B 站 timelength）正常歌曲 ≥ 60000（1 分钟），
+    // 秒来源（插件 duration）B 站最长合集 < 60000，故以 60000 为界。
+    return val >= 60000 ? Math.floor(val) : Math.floor(val * 1000);
   }
   if (typeof val === 'string') {
     const trimmed = val.trim();
@@ -139,10 +143,10 @@ export const parseDuration = (val: any): number => {
         }
       }
     }
-    // 处理纯数字字符串 "215" 或 "215000"
+    // 处理纯数字字符串 "215" 或 "215000"，单位启发式与数字分支一致（60000 为界）
     const n = parseFloat(trimmed);
     if (!isNaN(n) && n > 0) {
-      return n > 1000 ? Math.floor(n) : Math.floor(n * 1000);
+      return n >= 60000 ? Math.floor(n) : Math.floor(n * 1000);
     }
   }
   return 0;

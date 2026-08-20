@@ -108,7 +108,7 @@ export function normalizeKuwoCoverUrl(url: string | null | undefined): string | 
   if (!out) return null;
   out = out.replace(/^http:\/\//i, 'https://');
   out = out.replace(
-    /^https:\/\/[^\/]+\.kuwo\.cn\/(.+)$/i,
+    /^https:\/\/[^/]+\.kuwo\.cn\/(.+)$/i,
     (_m, path: string) => `https://img3.kuwo.cn/${path}`,
   );
   return out;
