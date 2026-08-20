@@ -944,6 +944,31 @@ export interface TauriCommandMap {
     payload: undefined;
     response: { cookies: Record<string, { value: string; domain: string }>; storage: Record<string, string> };
   };
+  // ===== 宿主侧平台签名/加密（Rust host_crypto）=====
+  host_zzc_sign: {
+    payload: { text: string };
+    response: string;
+  };
+  host_kugou_sign: {
+    payload: { params: string; platform: string; body?: string | null };
+    response: string;
+  };
+  host_migu_sign: {
+    payload: { text: string; time: string };
+    response: { sign: string; deviceId: string };
+  };
+  host_linuxapi_encrypt: {
+    payload: { payload: string };
+    response: string;
+  };
+  host_weapi_encrypt: {
+    payload: { payload: string };
+    response: { params: string; encSecKey: string };
+  };
+  host_sha256_hex: {
+    payload: { text: string };
+    response: string;
+  };
   save_plugin_script: {
     payload: { id: string; script: string };
     response: string;

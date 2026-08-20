@@ -10,8 +10,8 @@
  * - QQ音乐/酷我：直接 HTTP 请求
  */
 
-import CryptoJs from 'crypto-js';
 import { pluginApi } from './tauri/pluginApi';
+import { hostKugouSign, hostLinuxapiEncrypt, hostWeapiEncrypt } from './tauri/hostCryptoApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
 import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
@@ -158,45 +158,14 @@ function formatPlayTime(seconds: number): string {
   return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
 }
 
-// ==================== 加密工具 ====================
-
-/** MD5 哈希（32 位小写 hex，与 LxSdk.md5 一致） */
-function md5(str: string): string {
-  return CryptoJs.MD5(str).toString();
-}
-
-/**
- * AES-ECB 加密（与 LxSdk.aesEncrypt ECB_128_NoPadding 一致）
- * 注意：原版 "AES" 在 Java 中默认是 PKCS5Padding，等价于 PKCS7Padding（16 字节块）
- * @param data 明文字符串
- * @param key 密钥字符串（UTF-8）
- * @returns base64 编码的密文
- */
-function aesEcbEncrypt(data: string, key: string): string {
-  const keyBytes = CryptoJs.enc.Utf8.parse(key);
-  const encrypted = CryptoJs.AES.encrypt(data, keyBytes, {
-    mode: CryptoJs.mode.ECB,
-    padding: CryptoJs.pad.Pkcs7,
-  });
-  return encrypted.toString(); // base64
-}
-
-/** base64 → hex 大写 */
-function b64ToHexUpper(b64: string): string {
-  const words = CryptoJs.enc.Base64.parse(b64);
-  return words.toString(CryptoJs.enc.Hex).toUpperCase();
-}
-
-// ---- 网易云加密 ----
+// ==================== 加密工具（Rust host_crypto 计算） ====================
 
 /**
  * 网易云 linuxapi 加密（与 LxSdkSongList.linuxapiEncrypt 一致）
- * AES-ECB-128 (PKCS5Padding) + hex 大写
+ * AES-ECB-128 (PKCS7Padding) + hex 大写
  */
-function linuxapiEncrypt(obj: object): string {
-  const text = JSON.stringify(obj);
-  const encrypted = aesEcbEncrypt(text, 'rFgB&h#%2?^eDg:Q');
-  return b64ToHexUpper(encrypted);
+function linuxapiEncrypt(obj: object): Promise<string> {
+  return hostLinuxapiEncrypt(JSON.stringify(obj));
 }
 
 // ---- 酷狗签名 ----
@@ -205,13 +174,8 @@ function linuxapiEncrypt(obj: object): string {
  * 酷狗签名参数（与 LxSdkSongList.signatureParamsKg 一致）
  * sign = md5(keyparam + sortedParams + body + keyparam)
  */
-function signatureParamsKg(params: string, platform: string, body: string): string {
-  const keyparam = platform === 'web'
-    ? 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt'
-    : 'OIlwieks28dk2k092lksi2UIkp';
-  const paramList = params.split('&').sort();
-  const signParams = keyparam + paramList.join('') + body + keyparam;
-  return md5(signParams);
+function signatureParamsKg(params: string, platform: string, body: string): Promise<string> {
+  return hostKugouSign(params, platform, body);
 }
 
 // ==================== HTTP 请求 ====================
@@ -499,7 +463,7 @@ async function getListDetailWy(rawId: string): Promise<PlaylistImportResult> {
     url: 'https://music.163.com/api/v3/playlist/detail',
     params: { id, n: 100000, s: 8 },
   };
-  const eparams = linuxapiEncrypt(params);
+  const eparams = await linuxapiEncrypt(params);
 
   const resp = await httpFetch(
     'https://music.163.com/api/linux/forward',
@@ -574,58 +538,11 @@ async function getListDetailWy(rawId: string): Promise<PlaylistImportResult> {
 }
 
 /**
- * weapi 加密（移植自 YinDongMusic wyCrypto.ts，与 lx-music-desktop 一致）
+ * weapi 加密（Rust host_crypto 计算，与 lx-music-desktop 一致）
  * AES-CBC 双重加密 + RSA 加密随机密钥
  */
-const WEAPI_PRESET_KEY = CryptoJs.enc.Utf8.parse('0CoJUm6Qyw8W8jud');
-const WEAPI_IV = CryptoJs.enc.Utf8.parse('0102030405060708');
-const BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const RSA_MODULUS_HEX = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7';
-
-function uint8ArrayToWordArray(u8arr: Uint8Array): CryptoJs.lib.WordArray {
-  const words: number[] = [];
-  for (let i = 0; i < u8arr.length; i++) {
-    words[i >>> 2] |= u8arr[i] << (24 - (i % 4) * 8);
-  }
-  return CryptoJs.lib.WordArray.create(words, u8arr.length);
-}
-
-function rsaEncrypt(data: Uint8Array): string {
-  const padded = new Uint8Array(128);
-  padded.set(data, 128 - data.length);
-  let m = 0n;
-  for (const b of padded) m = (m << 8n) | BigInt(b);
-  const n = BigInt('0x' + RSA_MODULUS_HEX);
-  let result = 1n;
-  let base = m % n;
-  let exp = 65537n;
-  while (exp > 0n) {
-    if (exp & 1n) result = (result * base) % n;
-    base = (base * base) % n;
-    exp >>= 1n;
-  }
-  return result.toString(16).padStart(256, '0');
-}
-
-function weapiEncrypt(object: Record<string, any>): { params: string; encSecKey: string } {
-  const text = JSON.stringify(object);
-  const keyBytes = new Uint8Array(16);
-  crypto.getRandomValues(keyBytes);
-  for (let i = 0; i < 16; i++) keyBytes[i] = BASE62.charCodeAt(keyBytes[i] % 62);
-  const secretKey = uint8ArrayToWordArray(keyBytes);
-
-  const firstEncrypted = CryptoJs.AES.encrypt(CryptoJs.enc.Utf8.parse(text), WEAPI_PRESET_KEY, {
-    iv: WEAPI_IV, mode: CryptoJs.mode.CBC, padding: CryptoJs.pad.Pkcs7,
-  }).toString();
-  const params = CryptoJs.AES.encrypt(CryptoJs.enc.Utf8.parse(firstEncrypted), secretKey, {
-    iv: WEAPI_IV, mode: CryptoJs.mode.CBC, padding: CryptoJs.pad.Pkcs7,
-  }).toString();
-
-  const reversedKey = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) reversedKey[i] = keyBytes[15 - i];
-  const encSecKey = rsaEncrypt(reversedKey);
-
-  return { params, encSecKey };
+function weapiEncrypt(object: Record<string, any>): Promise<{ params: string; encSecKey: string }> {
+  return hostWeapiEncrypt(JSON.stringify(object));
 }
 
 /**
@@ -641,7 +558,7 @@ async function fetchWyMusicDetailList(ids: string[]): Promise<PluginSearchResult
 
   for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
     try {
-      const encrypted = weapiEncrypt({
+      const encrypted = await weapiEncrypt({
         c: '[' + ids.map(id => `{"id":${id}}`).join(',') + ']',
         ids: '[' + ids.join(',') + ']',
       });
@@ -1410,7 +1327,7 @@ async function resolveKgShareUrl(url: string): Promise<string | null> {
 async function decodeGcid(gcid: string): Promise<string> {
   const params = 'dfid=-&appid=1005&mid=0&clientver=20109&clienttime=640612895&uuid=-';
   const bodyStr = `{"ret_info":1,"data":[{"id":"${gcid}","id_type":2}]}`;
-  const signature = signatureParamsKg(params, 'android', bodyStr);
+  const signature = await signatureParamsKg(params, 'android', bodyStr);
   const url = `https://t.kugou.com/v1/songlist/batch_decode?${params}&signature=${signature}`;
 
   const resp = await httpFetch(url, 'POST', {
@@ -1459,7 +1376,7 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
 
   // 1. 获取歌单元信息
   const infoParams = `appid=1058&specialid=0&global_specialid=${id}&format=jsonp&srcappid=2919&clientver=20000&clienttime=1586163242519&mid=1586163242519&uuid=1586163242519&dfid=-`;
-  const infoSig = signatureParamsKg(infoParams, 'web', '');
+  const infoSig = await signatureParamsKg(infoParams, 'web', '');
   const infoUrl = `https://mobiles.kugou.com/api/v5/special/info_v2?${infoParams}&signature=${infoSig}`;
   const infoResp = await httpFetch(infoUrl, 'GET', commonHeaders);
   const infoBody = infoResp.body;
@@ -1488,7 +1405,7 @@ async function getKgUserListDetail2(globalCollectionId: string): Promise<Playlis
     total -= limit;
     p++;
     const songParams = `appid=1058&global_specialid=${id}&specialid=0&plat=0&version=8000&page=${p}&pagesize=${limit}&srcappid=2919&clientver=20000&clienttime=1586163263991&mid=1586163263991&uuid=1586163263991&dfid=-`;
-    const songSig = signatureParamsKg(songParams, 'web', '');
+    const songSig = await signatureParamsKg(songParams, 'web', '');
     const songUrl = `https://mobiles.kugou.com/api/v5/special/song_v2?${songParams}&signature=${songSig}`;
     const songResp = await httpFetch(songUrl, 'GET', commonHeaders);
     const songBody = songResp.body;

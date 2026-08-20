@@ -10,9 +10,8 @@
  * 返回 null 表示平台不受支持或缺少歌曲 id（调用方据此展示"不支持"）；
  * 网络失败等一律返回 { isEnd: true, data: [] }（展示"暂无评论"）。
  */
-import CryptoJs from 'crypto-js';
-
 import { pluginHttpRequest } from './tauri/pluginApi';
+import { hostKugouSign } from './tauri/hostCryptoApi';
 import type { PluginSearchResult, PluginSource } from '../types';
 
 export type CommentPlatform = 'wy' | 'tx' | 'kg' | 'kw' | 'mg' | 'qishui';
@@ -243,10 +242,9 @@ async function fetchTxComments(mediaItem: any, page: number): Promise<PlatformCo
 
 const KG_SIGN_KEY = 'OIlwieks28dk2k092lksi2UIkp';
 
-/** 酷狗评论接口签名：参数按字典序排序后加盐 MD5（与 Baka 插件 signatureParams 一致） */
-function kugouSignature(params: string): string {
-  const paramList = params.split('&').sort();
-  return CryptoJs.MD5(`${KG_SIGN_KEY}${paramList.join('')}${KG_SIGN_KEY}`).toString();
+/** 酷狗评论接口签名：参数按字典序排序后加盐 MD5（与 Baka 插件 signatureParams 一致，Rust host_crypto 计算） */
+function kugouSignature(params: string): Promise<string> {
+  return hostKugouSign(params, 'android');
 }
 
 /** 酷狗 hash → mixsongid（res_id），评论接口的必选参数 */
@@ -302,7 +300,7 @@ async function fetchKgComments(mediaItem: any, page: number): Promise<PlatformCo
     'uuid=0',
     'ver=10',
   ].join('&');
-  const signature = kugouSignature(params);
+  const signature = await kugouSignature(params);
 
   const data = await httpJson('GET', `http://m.comment.service.kugou.com/r/v1/rank/newest?${params}&signature=${signature}`, {
     accept: 'application/json',

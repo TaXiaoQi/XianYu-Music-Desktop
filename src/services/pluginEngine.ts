@@ -14,7 +14,6 @@
  */
 
 import axios from 'axios';
-import CryptoJs from 'crypto-js';
 import qs from 'qs';
 import { ref } from 'vue';
 import type {
@@ -29,6 +28,7 @@ import type { OnlineQualityFallbackBehavior } from '../types';
 import { buildBakaMfLyricsRaw } from './bakaMfLyricsBuilder';
 import { isLxPluginScript, loadLxPluginFromScript, initLxPlugin, destroyLxPlugin, parseLxScriptInfo, isSongLevelError, getLxPluginScript } from './lxPluginEngine';
 import { pluginApi } from './tauri/pluginApi';
+import { hostSha256Hex } from './tauri/hostCryptoApi';
 import {
   loadMusicFreeInSandbox,
   callSandboxMethod,
@@ -723,7 +723,7 @@ export async function loadPluginFromScript(
 
     // 预计算 hash，用于 env.getUserVariables() 按插件 ID 索引用户变量值。
     // 提前到 Step 1 之前，确保插件脚本执行期间调用 getUserVariables() 也能拿到值。
-    const hash = CryptoJs.SHA256(script).toString();
+    const hash = await hostSha256Hex(script);
 
     // ===== 沙箱模式：在 Web Worker 中隔离执行插件脚本 =====
     if (USE_SANDBOX) {

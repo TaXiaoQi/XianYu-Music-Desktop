@@ -1,33 +1,24 @@
 /**
  * 落雪（LX）插件引擎 —— 适配 lx-music-desktop UserApi 插件格式
  *
- * 核心设计（与 lx-music-desktop 一致）：
- *   lx-music-desktop 使用独立 BrowserWindow + contextBridge 隔离运行插件脚本
- *   本引擎直接在主窗口 eval 插件脚本，通过 globalThis.lx 对象暴露 API 与插件通信
- *   （与 lx-music-desktop webFrame.executeJavaScript + contextBridge.exposeInMainWorld 等价）
+ * 核心设计：
+ *   插件脚本全部在 Rust 后端 QuickJS 沙箱中隔离执行（plugin_host），
+ *   本模块仅作为前端编排层：加载委托 pluginSandboxManager → Tauri 命令，
+ *   脚本哈希、HTTP 代理、存储、Cookie 均由 Rust 侧完成
  *
  * 通信机制：
- *   主窗口 → 插件:  globalThis.lx = lxApi（暴露 EVENT_NAMES / request / send / on / utils 等）
- *   插件 → 主窗口:  lx.send(EVENT_NAMES.inited, info) 声明初始化完成
- *   插件 → 主窗口:  lx.on(EVENT_NAMES.request, handler) 注册请求处理器
- *   主窗口 → 插件:  调用 requestHandler({ source, action, info }) 触发请求
- *   插件 → 主窗口:  lx.request(url, options, callback) 发起 HTTP 请求（由主窗口 Tauri 后端代理）
+ *   前端 → Rust:  plugin_engine_load_lx / plugin_engine_call 命令
+ *   Rust 沙箱内:  globalThis.lx 暴露 EVENT_NAMES / request / send / on / utils
+ *   插件 HTTP:   由 Rust HttpBridge 代理并注入 Cookie
  *
  * 多插件隔离：
- *   多插件共享 globalThis.lx，通过初始化锁与请求锁串行化，调用时临时设置 globalThis.lx 指向对应插件
+ *   每个插件独立的 QuickJS Runtime/Context，天然隔离，无共享 globalThis 竞争
  */
 
-import CryptoJs from 'crypto-js';
-import {Buffer} from 'buffer';
 import type {PluginSource} from '../types';
-import {
-  BAKA_PLUGIN_QUALITY_KEYS,
-  normalizeQualityKey,
-  qualityKeyToBakaPluginQuality,
-} from '../types';
 import {pluginApi} from './tauri/pluginApi';
+import {hostSha256Hex} from './tauri/hostCryptoApi';
 import {fetchWithTimeout} from './pluginFetch';
-import {inflateAutoSync} from './pureInflate';
 import {
   loadLxInSandbox,
   callSandboxMethod,
@@ -38,84 +29,10 @@ import {
 
 // ==================== 常量 ====================
 
-const INIT_TIMEOUT = 15000;
 const REQUEST_TIMEOUT = 30000;
-
-// ==================== 沙箱隔离配置 ====================
-
-// 沙箱模式开关：启用后插件代码在 Web Worker 中隔离执行
-// 默认关闭，确保向后兼容；启用后可逐步验证各插件在沙箱中的表现
-const USE_SANDBOX = true;
 
 // 记录在沙箱中运行的插件 ID 集合
 const _sandboxedPlugins = new Set<string>();
-
-type LxRequestAction = 'musicUrl' | 'lyric' | 'pic';
-
-const LX_SOURCE_KEYS = ['kw', 'kg', 'tx', 'wy', 'mg', 'xm', 'local'] as const;
-const LX_MUSIC_ACTIONS: LxRequestAction[] = ['musicUrl', 'lyric', 'pic'];
-const LX_STANDARD_QUALITIES = BAKA_PLUGIN_QUALITY_KEYS;
-const LX_SUPPORT_QUALITIES: Record<string, string[]> = {
-  kw: LX_STANDARD_QUALITIES,
-  kg: LX_STANDARD_QUALITIES,
-  tx: LX_STANDARD_QUALITIES,
-  wy: LX_STANDARD_QUALITIES,
-  mg: LX_STANDARD_QUALITIES,
-  xm: LX_STANDARD_QUALITIES,
-  local: [],
-};
-
-function normalizeLxQualitys(raw: unknown[], allowed?: string[]): string[] {
-  const allowedSet = allowed && allowed.length > 0 ? new Set(allowed) : null;
-  const result: string[] = [];
-  const seen = new Set<string>();
-  for (const item of raw) {
-    const qualityKey = normalizeQualityKey(item);
-    const quality = qualityKey ? qualityKeyToBakaPluginQuality(qualityKey) : (typeof item === 'string' ? item.trim() : '');
-    if (!quality) continue;
-    if (allowedSet && !allowedSet.has(quality)) continue;
-    if (seen.has(quality)) continue;
-    seen.add(quality);
-    result.push(quality);
-  }
-  return result;
-}
-
-function normalizeLxSourceInfo(info: any): LxInitInfo {
-  const sourceInfo: LxInitInfo = { sources: {} };
-  if (!info?.sources || typeof info.sources !== 'object') return sourceInfo;
-
-  for (const source of LX_SOURCE_KEYS) {
-    const userSource = info.sources[source];
-    if (!userSource || userSource.type !== 'music') continue;
-    const declaredActions = Array.isArray(userSource.actions) ? userSource.actions : [];
-    const declaredQualitys = Array.isArray(userSource.qualitys) ? userSource.qualitys : [];
-    const qualitys = LX_SUPPORT_QUALITIES[source] || [];
-    sourceInfo.sources[source] = {
-      name: typeof userSource.name === 'string' ? userSource.name : undefined,
-      type: 'music',
-      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: normalizeLxQualitys(declaredQualitys, qualitys),
-    };
-  }
-
-  // 保留插件自定义的非标准源，避免新源或第三方源被初始化阶段裁剪掉。
-  for (const key of Object.keys(info.sources)) {
-    if (sourceInfo.sources[key]) continue;
-    const val = info.sources[key];
-    if (!val || val.type !== 'music') continue;
-    const declaredActions = Array.isArray(val.actions) ? val.actions : [];
-    const declaredQualitys = Array.isArray(val.qualitys) ? val.qualitys : [];
-    sourceInfo.sources[key] = {
-      name: typeof val.name === 'string' ? val.name : undefined,
-      type: 'music',
-      actions: LX_MUSIC_ACTIONS.filter(action => declaredActions.includes(action)),
-      qualitys: normalizeLxQualitys(declaredQualitys),
-    };
-  }
-
-  return sourceInfo;
-}
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -217,12 +134,6 @@ if (!_g.__lxPlugins) {
   _g.__lxPlugins = new Map<string, LxPluginState>();
 }
 const lxPlugins: Map<string, LxPluginState> = _g.__lxPlugins;
-
-// 初始化锁：多插件共享 globalThis.lx，必须串行初始化
-if (!_g.__lxInitLock) {
-  _g.__lxInitLock = Promise.resolve();
-}
-let _initLock: Promise<unknown> = _g.__lxInitLock;
 
 // 请求锁：避免插件A的 requestHandler 执行中 globalThis.lx 被插件B覆盖
 if (!_g.__lxRequestLock) {
@@ -352,35 +263,10 @@ export function parseLxScriptInfo(script: string): {
   };
 }
 
-// ==================== HTTP 请求桥接 ====================
-
-async function lxNativeRequest(
-  method: string, url: string, headers: Record<string, string>, body: string | undefined,
-  timeout?: number | null, follow?: number | null,
-): Promise<{ statusCode: number; statusMessage: string; headers: Record<string, string>; body: string }> {
-  try {
-    const response = await pluginApi.pluginHttpRequest(method, url, headers, body, timeout ?? undefined, follow ?? undefined);
-
-    // [修复防御]: 返回原始字符串 body，不在此处 JSON.parse
-    // JSON 解析在 handleLxHttpRequest 中按 needle 回调格式处理
-    return {
-      statusCode: response.status,
-      statusMessage: response.status >= 200 && response.status < 300 ? 'OK' : 'Error',
-      headers: response.headers,
-      body: response.body,  // 始终是原始字符串
-    };
-  } catch (e: any) {
-    // [修复防御]: Tauri IPC 错误可能没有 .message，需要完整序列化
-    const errMsg = e?.message || (typeof e === 'string' ? e : JSON.stringify(e)?.substring(0, 200)) || 'Tauri IPC request failed';
-    throw new Error(errMsg, { cause: e });
-  }
-}
-
 // ==================== 插件加载 ====================
 
 /**
- * 加载落雪 LX 插件脚本
- * 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）
+ * 加载落雪 LX 插件脚本（Rust QuickJS 沙箱执行，前端仅编排）
  */
 export async function loadLxPluginFromScript(
   script: string,
@@ -401,7 +287,7 @@ export async function loadLxPluginFromScript(
 
   // [修复防御]: 如果已有同 hash 且状态为 ready 的实例，直接复用，避免销毁重建 iframe
   // 之前每次 loadLxPluginFromScript 都会销毁已有实例并重建 iframe，导致 15s 初始化超时被重复触发
-  const hash = CryptoJs.SHA256(script).toString();
+  const hash = await hostSha256Hex(script);
   const existingState = lxPlugins.get(hash);
   if (existingState && existingState.status === 'ready' && existingState.source) {
     log(`[loadLxPluginFromScript] 复用已有就绪实例: ${hash}`);
@@ -413,398 +299,65 @@ export async function loadLxPluginFromScript(
     destroyLxPlugin(hash);
   }
 
-  // ===== 沙箱模式：在 Web Worker 中隔离执行插件脚本 =====
-  if (USE_SANDBOX) {
-    log(`[loadLxPluginFromScript] 沙箱模式加载: ${scriptInfo.name}`);
-    try {
-      const initInfo = await loadLxInSandbox(hash, script, {
-        name: scriptInfo.name,
-        version: scriptInfo.version,
-        author: scriptInfo.author,
-        description: scriptInfo.description,
-        homepage: scriptInfo.homepage,
-      });
+  // ===== Rust QuickJS 沙箱执行插件脚本（唯一路径，禁止回退主线程 eval）=====
+  log(`[loadLxPluginFromScript] 沙箱模式加载: ${scriptInfo.name}`);
+  try {
+    const initInfo = await loadLxInSandbox(hash, script, {
+      name: scriptInfo.name,
+      version: scriptInfo.version,
+      author: scriptInfo.author,
+      description: scriptInfo.description,
+      homepage: scriptInfo.homepage,
+    });
 
-      if (!initInfo?.sources || Object.keys(initInfo.sources).length === 0) {
-        log('沙箱: 插件未声明任何源 (sources 为空)');
-        return {
-          id: hash,
-          name: scriptInfo.name || '未知插件',
-          format: 'lx',
-          version: scriptInfo.version || '',
-          author: scriptInfo.author || '',
-          description: scriptInfo.description || '插件未声明任何音源',
-          filePath: uri,
-          importedAt: Date.now(),
-          enabled: false,
-          sources: [],
-        };
-      }
-
-      // 创建 LxPluginState 用于沙箱模式（requestHandler 和 lxApi 为 null，由 Worker 管理）
-      const sandboxState: LxPluginState = {
-        source: null as any,
-        initInfo,
-        status: 'ready',
-        requestHandler: null,
-        lxApi: null,
-        pendingRequests: new Map(),
-      };
-
-      const source: PluginSource = {
+    if (!initInfo?.sources || Object.keys(initInfo.sources).length === 0) {
+      log('沙箱: 插件未声明任何源 (sources 为空)');
+      return {
         id: hash,
         name: scriptInfo.name || '未知插件',
         format: 'lx',
         version: scriptInfo.version || '',
         author: scriptInfo.author || '',
-        description: scriptInfo.description || '',
+        description: scriptInfo.description || '插件未声明任何音源',
         filePath: uri,
         importedAt: Date.now(),
-        enabled: true,
-        sources: Object.keys(initInfo.sources),
+        enabled: false,
+        sources: [],
       };
-      sandboxState.source = source;
-      lxPlugins.set(hash, sandboxState);
-      _sandboxedPlugins.add(hash);
-
-      log(`=== 落雪插件沙箱加载成功: "${source.name}" (sources: ${Object.keys(initInfo.sources).join(',')}) ===`);
-      return source;
-    } catch (e: any) {
-      log(`[loadLxPluginFromScript] 沙箱加载失败，已阻止回退到主线程直接执行: ${e?.message}`);
-      throw e;
     }
-  }
 
-  // ----- 创建 init Promise -----
-  let initResolve: ((info: LxInitInfo) => void) | null = null;
-  let initReject: ((err: Error) => void) | null = null;
-  const initPromise = new Promise<LxInitInfo>((resolve, reject) => {
-    initResolve = resolve;
-    initReject = reject;
-  });
+    // 创建 LxPluginState（requestHandler/lxApi 恒为 null，请求由 Rust 引擎处理）
+    const sandboxState: LxPluginState = {
+      source: null as any,
+      initInfo,
+      status: 'ready',
+      requestHandler: null,
+      lxApi: null,
+      pendingRequests: new Map(),
+    };
 
-  const state: LxPluginState = {
-    source: null as any,
-    initInfo: null,
-    status: 'loading',
-    requestHandler: null,
-    lxApi: null,  // [修复防御] 初始为 null，创建 lx 对象后赋值
-    pendingRequests: new Map(),
-  };
+    const source: PluginSource = {
+      id: hash,
+      name: scriptInfo.name || '未知插件',
+      format: 'lx',
+      version: scriptInfo.version || '',
+      author: scriptInfo.author || '',
+      description: scriptInfo.description || '',
+      filePath: uri,
+      importedAt: Date.now(),
+      enabled: true,
+      sources: Object.keys(initInfo.sources),
+    };
+    sandboxState.source = source;
+    lxPlugins.set(hash, sandboxState);
+    _sandboxedPlugins.add(hash);
 
-  // ----- [新方案] 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）-----
-  // 放弃 iframe 方案：打包模式下 Tauri WebView2 CSP 阻止 iframe 内脚本执行
-  // lx-music-desktop 用 Electron webFrame.executeJavaScript 直接在主窗口执行，不使用 iframe
-  let isInitedApi = false;
-  const EVENT_NAMES = { request: 'request', inited: 'inited', updateAlert: 'updateAlert' };
-  const eventNames = Object.values(EVENT_NAMES);
-
-  // handleInit（与 lx-music-desktop preload.js 一致）
-  const handleInit = (info: any) => {
-    if (!info) {
-      initReject!(new Error('Missing required parameter init info'));
-      return;
-    }
-    try {
-      const sourceInfo = normalizeLxSourceInfo(info);
-      log(`[新方案] 插件初始化成功, sources: ${Object.keys(sourceInfo.sources).join(',')}`);
-      initResolve!(sourceInfo);
-    } catch (error: any) {
-      initReject!(new Error(error.message));
-      return;
-    }
-  };
-
-  // 创建 globalThis.lx 对象（与 lx-music-desktop preload.js initEnv 一致）
-  // [修复防御]: 把 lx 对象保存到 state.lxApi，供 lxPluginRequest 调用时临时设置 globalThis.lx
-  // 否则初始化完成后 globalThis.lx 被恢复/覆盖，插件内部 lx.request 会失效
-  const prevLx = (globalThis as any).lx;
-  const lxApi = {
-    EVENT_NAMES,
-    request(url: string, options: any, callback: (err: unknown, response: unknown, body: unknown) => void) {
-      const method = (options?.method || 'get').toLowerCase();
-      log(`[新方案] HTTP 请求: ${method} ${url}`);
-
-      // [修复防御]: 与 lx-music-desktop needle.request 行为对齐
-      // needle: body 原样发送；form 自动 url-encode；formData 自动 multipart
-      // 我们通过 Tauri reqwest 后端发送，需手动处理编码和 Content-Type
-      let bodyStr: string = '';
-      const reqHeaders: Record<string, string> = { ...(options?.headers || {}) };
-      if (options?.body != null) {
-        if (typeof options.body === 'string') {
-          bodyStr = options.body;
-        } else if (typeof options.body === 'object') {
-          bodyStr = JSON.stringify(options.body);
-          if (!reqHeaders['Content-Type'] && !reqHeaders['content-type']) reqHeaders['Content-Type'] = 'application/json';
-        }
-      } else if (options?.form != null) {
-        // form: application/x-www-form-urlencoded
-        if (typeof options.form === 'string') {
-          bodyStr = options.form;
-        } else if (typeof options.form === 'object') {
-          bodyStr = Object.entries(options.form)
-            .filter(([, v]) => v != null)
-            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-            .join('&');
-        }
-        if (!reqHeaders['Content-Type'] && !reqHeaders['content-type']) reqHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
-      } else if (options?.formData != null) {
-        // formData: 简化处理 —— 用 url-encode 代替 multipart（大多数 API 接受）
-        if (typeof options.formData === 'string') {
-          bodyStr = options.formData;
-        } else if (typeof options.formData === 'object') {
-          bodyStr = Object.entries(options.formData)
-            .filter(([, v]) => v != null)
-            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-            .join('&');
-        }
-        if (!reqHeaders['Content-Type'] && !reqHeaders['content-type']) reqHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
-      }
-
-      lxNativeRequest(
-        method,
-        url,
-        reqHeaders,
-        bodyStr,
-        options?.timeout,
-        options?.follow,
-      ).then((response) => {
-        try {
-          let body: any = response.body;
-          try { body = JSON.parse(response.body); } catch { /* 保持原始字符串 */ }
-          callback(null, {
-            statusCode: response.statusCode,
-            statusMessage: response.statusMessage,
-            headers: response.headers,
-            bytes: response.body.length,
-            raw: response.body,
-            body,
-          }, body);
-        } catch (err: any) {
-          if (!isInitedApi) {
-            log(`[新方案] request 回调异常: ${err?.message}`);
-            initReject!(new Error(err?.message || 'request callback error'));
-          }
-        }
-      }).catch((err) => {
-        try { callback(err, null, null); } catch { /* ignore */ }
-      });
-      return () => { /* cancel noop */ };
-    },
-    send(eventName: string, data: any) {
-      return new Promise((resolve, reject) => {
-        if (!eventNames.includes(eventName)) return reject(new Error('The event is not supported: ' + eventName));
-        switch (eventName) {
-          case EVENT_NAMES.inited:
-            if (isInitedApi) return reject(new Error('Script is inited'));
-            isInitedApi = true;
-            handleInit(data);
-            resolve(undefined);
-            break;
-          case EVENT_NAMES.updateAlert:
-            log('[新方案] updateAlert ignored');
-            resolve(undefined);
-            break;
-          default:
-            reject(new Error('Unknown event name: ' + eventName));
-        }
-      });
-    },
-    on(eventName: string, handler: (data: any) => any) {
-      if (!eventNames.includes(eventName)) return Promise.reject(new Error('The event is not supported: ' + eventName));
-      if (eventName === EVENT_NAMES.request) {
-        state.requestHandler = handler as any;
-      }
-      return Promise.resolve();
-    },
-    utils: {
-      crypto: {
-        aesEncrypt(buffer: any, mode: string, key: any, iv: any) {
-          // 简化实现：用 crypto-js
-          const CryptoJS = (window as any).CryptoJS || CryptoJs;
-          const encrypted = CryptoJS.AES.encrypt(buffer, key, { iv, mode: (CryptoJS as any)[mode] });
-          return Buffer.from(encrypted.toString(), 'base64');
-        },
-        rsaEncrypt(buffer: any, _key: string) {
-          // 简化实现：返回原始 buffer（大多数插件不依赖 RSA）
-          return buffer;
-        },
-        randomBytes(size: number) {
-          const arr = new Uint8Array(size);
-          crypto.getRandomValues(arr);
-          return Buffer.from(arr);
-        },
-        md5(str: string) {
-          return CryptoJs.MD5(str).toString();
-        },
-      },
-      buffer: {
-        from(...args: any[]) { return Buffer.from(...(args as [any, any])); },
-        bufToString(buf: any, format: string) { return Buffer.from(buf, 'binary').toString(format as any); },
-      },
-      zlib: {
-        async inflate(buf: any) {
-          // 使用纯 JS DEFLATE 解码器，支持 zlib/gzip/raw 格式自动检测
-          // 之前的 DecompressionStream('deflate') 仅支持 raw DEFLATE，
-          // 无法处理带 zlib 头的数据（如 KW 歌词解压）
-          try {
-            const data = buf instanceof Uint8Array ? buf : Buffer.from(buf);
-            return Buffer.from(inflateAutoSync(data));
-          } catch (e) {
-            log(`[zlib.inflate] 解压失败，返回原始数据: ${e}`);
-            return buf;
-          }
-        },
-        inflateSync(buf: any) {
-          try {
-            const data = buf instanceof Uint8Array ? buf : Buffer.from(buf);
-            return Buffer.from(inflateAutoSync(data));
-          } catch (e) {
-            log(`[zlib.inflateSync] 解压失败，返回原始数据: ${e}`);
-            return buf;
-          }
-        },
-        async deflate(data: any) {
-          try {
-            const src = data instanceof Uint8Array ? data : Buffer.from(data);
-            const cs = new CompressionStream('deflate');
-            const writer = cs.writable.getWriter();
-            writer.write(src).catch(() => {});
-            writer.close().catch(() => {});
-            const reader = cs.readable.getReader();
-            const chunks: Uint8Array[] = [];
-            while (true) {
-              const { done, value } = await reader.read();
-              if (value) chunks.push(value);
-              if (done) break;
-            }
-            reader.releaseLock();
-            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-            const result = new Uint8Array(totalLen);
-            let offset = 0;
-            for (const c of chunks) { result.set(c, offset); offset += c.length; }
-            return Buffer.from(result);
-          } catch (e) {
-            log(`[zlib.deflate] 压缩失败，返回原始数据: ${e}`);
-            return data;
-          }
-        },
-      },
-    },
-    currentScriptInfo: {
-      name: scriptInfo.name,
-      description: scriptInfo.description,
-      version: scriptInfo.version,
-      author: scriptInfo.author,
-      homepage: scriptInfo.homepage,
-      rawScript: script,
-    },
-    version: '2.0.0',
-    env: 'desktop',
-  };
-
-  // [修复防御]: 保存 lxApi 到 state，供 lxPluginRequest 调用时临时设置 globalThis.lx
-  state.lxApi = lxApi;
-  // 设置 globalThis.lx 供脚本 eval 时使用（与 lx-music-desktop contextBridge.exposeInMainWorld 一致）
-  (globalThis as any).lx = lxApi;
-
-  // [新方案] 用初始化锁确保串行初始化，避免 globalThis.lx 冲突
-  _initLock = _initLock.then(async () => {
-    log(`[新方案] 开始 eval 插件脚本: ${scriptInfo.name}`);
-    try {
-      // 直接在主窗口 eval 脚本（与 lx-music-desktop webFrame.executeJavaScript 一致）
-      (0, eval)(script);
-      log(`[新方案] 脚本 eval 完成(无同步异常)`);
-    } catch (e: any) {
-      log(`[新方案] 脚本 eval 异常: ${e?.message}`);
-      if (!isInitedApi) {
-        initReject!(new Error(e?.message || 'eval error'));
-      }
-    }
-  });
-
-  // ----- 等待初始化 -----
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`插件初始化超时(${INIT_TIMEOUT / 1000}s)`)), INIT_TIMEOUT),
-  );
-
-  let initInfo: LxInitInfo;
-  try {
-    initInfo = await Promise.race([initPromise, timeoutPromise]);
+    log(`=== 落雪插件沙箱加载成功: "${source.name}" (sources: ${Object.keys(initInfo.sources).join(',')}) ===`);
+    return source;
   } catch (e: any) {
-    // [DEBUG]: 记录完整错误堆栈，定位初始化失败的根本原因
-    log(`[DEBUG-loadLxPlugin] 插件初始化失败: ${e?.message}`);
-    log(`[DEBUG-loadLxPlugin] 错误堆栈: ${e?.stack || 'none'}`);
-    log(`[DEBUG-loadLxPlugin] 脚本前100字符: ${script.substring(0, 100)}`);
-    // [修复防御]: 初始化失败时恢复 globalThis.lx，避免残留无效的 lxApi 污染后续插件
-    (globalThis as any).lx = prevLx;
-    state.lxApi = null;
-
-    // [修复防御]: 初始化失败时仍允许导入，保存插件元数据
-    const fallbackSource: PluginSource = {
-      id: hash,
-      name: scriptInfo.name || '未知插件',
-      format: 'lx',
-      version: scriptInfo.version || '',
-      author: scriptInfo.author || '',
-      description: scriptInfo.description || `初始化失败: ${e?.message || '未知错误'}`,
-      filePath: uri,
-      importedAt: Date.now(),
-      enabled: false,
-      sources: [],
-    };
-    log(`=== 落雪插件导入(初始化失败): "${fallbackSource.name}" ===`);
-    return fallbackSource;
+    log(`[loadLxPluginFromScript] 沙箱加载失败，已阻止回退到主线程直接执行: ${e?.message}`);
+    throw e;
   }
-
-  // [修复防御]: 初始化成功后不恢复 globalThis.lx —— 插件后续 handleGetMusicUrl 等异步回调
-  // 仍需通过 globalThis.lx.request 发起 HTTP 请求。lxPluginRequest 调用时会临时设置
-  // globalThis.lx = state.lxApi 确保多插件场景下指向正确的 lxApi。
-  // (与 lx-music-desktop contextBridge.exposeInMainWorld 持久暴露 lx 一致)
-
-  if (!initInfo?.sources || Object.keys(initInfo.sources).length === 0) {
-    log('插件未声明任何源 (sources 为空)');
-    return {
-      id: hash,
-      name: scriptInfo.name || '未知插件',
-      format: 'lx',
-      version: scriptInfo.version || '',
-      author: scriptInfo.author || '',
-      description: scriptInfo.description || '插件未声明任何音源',
-      filePath: uri,
-      importedAt: Date.now(),
-      enabled: false,
-      sources: [],
-    };
-  }
-
-  // ----- 构建 PluginSource (复用已计算的 hash) -----
-  const source: PluginSource = {
-    id: hash,
-    name: scriptInfo.name || Object.keys(initInfo.sources).join('/'),
-    format: 'lx',
-    version: scriptInfo.version || '',
-    author: scriptInfo.author || '',
-    description: scriptInfo.description || '',
-    filePath: uri,
-    importedAt: Date.now(),
-    enabled: true,
-    sources: Object.keys(initInfo.sources),
-  };
-
-  // ----- 缓存实例 -----
-  state.source = source;
-  state.initInfo = initInfo;
-  state.status = 'ready';
-  lxPlugins.set(hash, state);
-  // [修复防御]: 同时用 uri 作为别名 key 缓存，确保 ensureLxPluginInstance 通过 source.id 也能找到
-  // source.id 可能与 hash 不同（脚本内容变化后 hash 变了，但 localStorage 中的 source.id 还是旧值）
-  if (uri && uri !== hash) {
-    lxPlugins.set(uri, state);
-  }
-
-  log(`=== 落雪插件加载成功: "${source.name}" sources=[${Object.keys(initInfo.sources).join(', ')}] ===`);
-  return source;
 }
 
 // ==================== 歌曲级错误 ====================
