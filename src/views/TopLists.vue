@@ -113,13 +113,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import type { PluginPlaylistSearchResult, PluginSource } from '../types';
 import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion } from '../services/pluginEngine';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
-import { useOnlineDetailStore } from '../features/onlineDetail/store';
+import { useOnlineDetailStore, type TopListsCache } from '../features/onlineDetail/store';
 
 const router = useRouter();
 const onlineDetailStore = useOnlineDetailStore();
@@ -145,10 +145,10 @@ const selectedSourceItem = computed(() =>
 
 const selectedSourceName = computed(() => selectedSourceItem.value?.name ?? '未知音源');
 
-/** 构建支持榜单接口的插件来源列表 */
-async function refreshSourceList() {
+/** 构建支持榜单接口的插件来源列表；silent 时（从缓存恢复后）不显示"检测音源"加载态 */
+async function refreshSourceList(silent = false) {
   const token = ++refreshToken;
-  checkingSources.value = true;
+  if (!silent) checkingSources.value = true;
   try {
     const plugins = getStoredPlugins()
       .filter(p => p.enabled && p.format === 'musicfree')
@@ -180,7 +180,7 @@ async function refreshSourceList() {
       selectedSourceId.value = '';
     }
   } finally {
-    if (token === refreshToken) {
+    if (token === refreshToken && !silent) {
       checkingSources.value = false;
     }
   }
@@ -218,7 +218,14 @@ const handleSelectSource = (source: SourceItem) => {
   selectedSourceId.value = source.id;
 };
 
+/** 从缓存恢复期间置位：抑制 selectedSourceId 首次变化触发的重复加载（榜单数据已随缓存恢复） */
+let restoringFromCache = false;
+
 watch(selectedSourceId, () => {
+  if (restoringFromCache) {
+    restoringFromCache = false;
+    return;
+  }
   loadTopLists();
 });
 
@@ -391,9 +398,32 @@ const handleWindowResize = () => {
   windowWidth.value = window.innerWidth;
 };
 
+/** 从在线详情返回：直接恢复缓存的来源/榜单/滚动，免重新检测与加载 */
+function restoreFromCache(cached: TopListsCache) {
+  restoringFromCache = true;
+  sourceList.value = cached.sourceList;
+  topLists.value = cached.topLists;
+  gridScrollTop.value = cached.gridScrollTop;
+  gridViewportHeight.value = cached.gridViewportHeight;
+  gridWidth.value = cached.gridWidth;
+  selectedSourceId.value = cached.selectedSourceId;
+  nextTick(() => {
+    restoringFromCache = false;
+    const el = resultsScrollRef.value;
+    if (el) el.scrollTop = cached.gridScrollTop;
+  });
+  // 后台静默刷新来源列表，检测详情停留期间插件变更（不打断已恢复的榜单）
+  void refreshSourceList(true);
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleWindowResize);
-  void refreshSourceList();
+  const cached = onlineDetailStore.consumeTopListsCache();
+  if (cached) {
+    restoreFromCache(cached);
+  } else {
+    void refreshSourceList();
+  }
 });
 
 // 插件变更（开关/排序/增删）时刷新来源列表
@@ -406,6 +436,21 @@ onBeforeUnmount(() => {
   loadVersion += 1;
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
+  // 进入在线详情：缓存榜单状态（来源 + 榜单 + 滚动），返回时恢复；
+  // 其他去向（真正离开榜单页）：销毁缓存
+  if (router.currentRoute.value.path === '/online-detail') {
+    syncGridScrollState();
+    onlineDetailStore.setTopListsCache({
+      sourceList: sourceList.value,
+      selectedSourceId: selectedSourceId.value,
+      topLists: topLists.value,
+      gridScrollTop: gridScrollTop.value,
+      gridViewportHeight: gridViewportHeight.value,
+      gridWidth: gridWidth.value,
+    });
+  } else {
+    onlineDetailStore.clearTopListsCache();
+  }
 });
 </script>
 

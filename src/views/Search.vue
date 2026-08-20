@@ -220,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -293,6 +293,9 @@ const searchTabs: { type: SearchTypeKey; label: string }[] = [
   { type: 'album', label: '专辑' },
   { type: 'playlist', label: '歌单' },
 ];
+
+/** 从在线详情返回恢复会话期间置位：抑制 selectedSourceId/activeSearchType 变化触发的重复搜索（结果已随快照恢复） */
+let restoringSession = false;
 
 const handleSearchTypeChange = (type: SearchTypeKey) => {
   activeSearchType.value = type;
@@ -1319,11 +1322,13 @@ watch(searchQuery, (newVal) => {
 
 // 监听来源变化，立即重新搜索
 watch(selectedSourceId, () => {
+  if (restoringSession) return;
   performSearch();
 });
 
 // 监听搜索类型变化，重新搜索
 watch(activeSearchType, () => {
+  if (restoringSession) return;
   performSearch();
 });
 
@@ -1733,7 +1738,7 @@ const getPlaylistCover = (playlist: Playlist): string => {
 
 // ==================== 搜索结果快照（进详情 → 返回时免重搜） ====================
 
-/** 快照当前搜索状态（各 tab 结果 + 分页），供从在线详情返回时直接还原，避免重复请求触发风控 */
+/** 快照当前搜索状态（各 tab 结果 + 分页 + 当前 tab 滚动），供从在线详情返回时直接还原，避免重复请求触发风控 */
 function captureResultsSnapshot(): SearchResultsSnapshot {
   return {
     hasMore: hasMore.value,
@@ -1749,6 +1754,7 @@ function captureResultsSnapshot(): SearchResultsSnapshot {
       pluginAlbumResults: [...pluginAlbumResults.value],
       pluginPlaylistResults: [...pluginPlaylistResults.value],
     },
+    scrollTop: catalogGridScrollTop.value,
   };
 }
 
@@ -1767,6 +1773,16 @@ function restoreResultsSnapshot(snapshot: SearchResultsSnapshot) {
   pluginPlaylistResults.value = snapshot.lists.pluginPlaylistResults as PluginPlaylistSearchResult[];
   searching.value = false;
   loadingMore.value = false;
+  // 恢复虚拟网格滚动位置（artist/album/playlist tab；track tab 由 SongTable 滚动记忆恢复）
+  if (typeof snapshot.scrollTop === 'number' && snapshot.scrollTop > 0) {
+    catalogGridScrollTop.value = snapshot.scrollTop;
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        const el = resultsScrollRef.value;
+        if (el) el.scrollTop = snapshot.scrollTop!;
+      });
+    });
+  }
 }
 
 // 初始化
@@ -1778,7 +1794,10 @@ onMounted(() => {
   // 全新进入（含插件已不存在）则初始化为第一个可用源
   const session = onlineDetailStore.consumePendingSearchSession();
   const restoredSourceId = session?.sourceId ?? '';
-  if (restoredSourceId && allSourceList.value.some(s => s.id === restoredSourceId)) {
+  // 仅当恢复的插件源仍存在时才还原其结果快照；源已失效则重新搜索新源
+  const sourceRestored = !!(restoredSourceId && allSourceList.value.some(s => s.id === restoredSourceId));
+  restoringSession = true;
+  if (sourceRestored) {
     selectedSourceId.value = restoredSourceId;
   } else if (allSourceList.value.length > 0) {
     selectedSourceId.value = allSourceList.value[0].id;
@@ -1789,12 +1808,16 @@ onMounted(() => {
   setupScrollResizeObserver();
   // 会话结果快照直接还原（免重搜、防风控）；无快照才真正执行搜索
   onlineDetailStore.setSearchResultsCache(null);
-  if (!hasQuery.value) return;
-  if (session?.results) {
+  if (!hasQuery.value) {
+    void nextTick(() => { restoringSession = false; });
+    return;
+  }
+  if (session?.results && sourceRestored) {
     restoreResultsSnapshot(session.results);
   } else {
     performSearch();
   }
+  void nextTick(() => { restoringSession = false; });
 });
 
 // resultsScrollRef 在 track/catalog 视图切换时重新挂载，需重新绑定 ResizeObserver
@@ -1820,9 +1843,10 @@ onBeforeUnmount(() => {
   // 进入在线详情：快照搜索结果暂存，返回时免重搜（防重复请求触发风控）；
   // 其他去向（真正离开搜索页）：销毁快照
   if (router.currentRoute.value.path === '/online-detail') {
+    syncCatalogGridVirtualScrollState();
     onlineDetailStore.setSearchResultsCache(captureResultsSnapshot());
   } else {
-    onlineDetailStore.setSearchResultsCache(null);
+    onlineDetailStore.clearSearchSession();
   }
 });
 </script>
