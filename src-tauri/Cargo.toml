@@ -8,6 +8,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# examples/ac4_verify.rs 是 AC-4 验证存档，引用的 oxideav 依赖已移除，不参与自动编译。
+# 恢复方法：加回 oxideav-ac4/oxideav-core 依赖并将此项改回 true（或显式声明 [[example]]）。
+autoexamples = false
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.

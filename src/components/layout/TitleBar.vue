@@ -132,8 +132,12 @@ const loadHotSearch = async () => {
     return;
   }
   hotSearchLoading.value = true;
-  clearRevealTimer();
-  revealedCount.value = 0;
+  // 仅在热搜 Tab 激活时重置逐条动画；历史 Tab 的动画由 handleSearchFocus/switchSearchTab 管理，
+  // 这里清掉会把刚启动的历史记录逐条浮现打断（revealedCount 卡在 0 → 面板空白）
+  if (searchTab.value === 'hot') {
+    clearRevealTimer();
+    revealedCount.value = 0;
+  }
   const list = await fetchHotSearch(10);
   hotSearchList.value = list;
   hotSearchLoadedAt = Date.now();

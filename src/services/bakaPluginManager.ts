@@ -63,6 +63,7 @@ import {
 import { isSongLevelError } from './lxPluginEngine';
 import { normalizeMediaRequestHeaders, sanitizeMediaUrl } from '../utils/mediaUrl';
 import { pluginHttpRequest, pluginApi } from './tauri/pluginApi';
+import { isQqTrialMediaUrl } from './qqHostSearchFallback';
 
 let _logCallback: ((msg: string) => void) | null = null;
 
@@ -350,6 +351,41 @@ function isKugouLikeSource(source: PluginSource, mediaItem: any): boolean {
   return text.includes('酷狗') || text.includes('kugou') || /\bkg\b/.test(text);
 }
 
+function isNeteaseLikeSource(source: PluginSource, mediaItem: any): boolean {
+  const text = [
+    source.name,
+    source.id,
+    mediaItem?.platform,
+    mediaItem?.source,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return text.includes('网易') || text.includes('netease') || /\bwy\b/.test(text);
+}
+
+/** 网易云系插件判定（供下载链路的 LX wy 兜底使用） */
+export function isNeteaseMusicPluginSource(source: PluginSource): boolean {
+  return isNeteaseLikeSource(source, null);
+}
+
+/**
+ * 网易云官方外链（music.163.com/song/media/outer/url?id=xxx.mp3）。
+ * Baka 系网易云插件的免费公共 API（bugpk/oiapi 等）恒返此格式：
+ * 非版权歌 302 到 CDN 音频，版权歌 302 到 music.163.com/404 HTML 页。
+ * URL 形态无法区分好坏，必须跟随重定向实测。
+ */
+export function isNeteaseOuterUrl(urlLike: string): boolean {
+  try {
+    const url = new URL(urlLike);
+    return url.hostname.toLowerCase().endsWith('music.163.com')
+      && url.pathname.toLowerCase().includes('/song/media/outer/url');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 酷狗插件专用 URL 清洗器。
  *
@@ -567,6 +603,46 @@ async function probeKugouProxyCandidate(
     return { playable: true };
   } catch (error: any) {
     // 探测失败不应误杀候选 URL，保留 Rust 播放链路的最终提取/重试能力。
+    return { playable: true, reason: error?.message || String(error || '') };
+  }
+}
+
+/**
+ * 网易云官方外链可用性预检：跟随重定向后校验最终落点。
+ * 版权受限歌的 outer/url 302 到 music.163.com/404（text/html），照常返回
+ * 会在播放/下载阶段才暴露为"服务器返回非音频内容"。这里提前识别拒绝，
+ * 让上层音质回退与 LX 兜底有机会接管。
+ */
+async function probeNeteaseOuterUrl(
+  url: string,
+): Promise<{ playable: boolean; reason?: string }> {
+  const judge = (status: number, headers: Record<string, string> | undefined, finalUrl: string) => {
+    if (status >= 400) {
+      return { playable: false, reason: `HTTP ${status}` };
+    }
+    const contentType = getHeaderValue(headers, 'content-type');
+    if (isAudioLikeContentType(contentType)) {
+      return { playable: true };
+    }
+    if (contentType.includes('text/html')) {
+      // 302 后落到 404 页/版权提示页；最终 URL 里的 /404 是最直接的证据
+      const finalPath = new URL(finalUrl).pathname.toLowerCase();
+      if (finalPath.includes('/404')) {
+        return { playable: false, reason: '版权受限（跳转 404 页）' };
+      }
+      return { playable: false, reason: `跳转到非音频内容 (${contentType})` };
+    }
+    return { playable: true };
+  };
+  try {
+    let resp = await pluginHttpRequest('HEAD', url, { Accept: '*/*' }, undefined, 8, 3);
+    // 部分节点对 HEAD 返回 405：改用 Range GET（限 4KB，避免整曲下载）
+    if (resp.status === 405 || resp.status === 501) {
+      resp = await pluginHttpRequest('GET', url, { Accept: '*/*', Range: 'bytes=0-4095' }, undefined, 8, 3);
+    }
+    return judge(resp.status, resp.headers, resp.url);
+  } catch (error: any) {
+    // 网络异常不判死，保留后续播放链路的重试机会
     return { playable: true, reason: error?.message || String(error || '') };
   }
 }
@@ -924,6 +1000,7 @@ class BakaPluginManagerClass {
     const cacheKey = buildMediaSourceCacheKey(source, item, musicItem, quality, fallbackBehavior, availableQualities);
     const now = Date.now();
     const isKugou = isKugouLikeSource(source, musicItem);
+    const isNetease = isNeteaseLikeSource(source, musicItem);
     const cached = this._mediaSourceCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       const cachedValue = clonePluginMusicInfo(cached.value);
@@ -934,6 +1011,14 @@ class BakaPluginManagerClass {
           return cachedValue;
         }
         log(`[getMediaSource] 短时缓存中的酷狗代理URL已失效，删除缓存并重新解析: ${probe.reason || cachedValue.url}`);
+        this._mediaSourceCache.delete(cacheKey);
+      } else if (isNetease && cachedValue.url && isNeteaseOuterUrl(cachedValue.url)) {
+        const probe = await probeNeteaseOuterUrl(cachedValue.url);
+        if (probe.playable) {
+          log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
+          return cachedValue;
+        }
+        log(`[getMediaSource] 短时缓存中的网易云外链不可用，删除缓存并重新解析: ${probe.reason || cachedValue.url}`);
         this._mediaSourceCache.delete(cacheKey);
       } else {
         log(`[getMediaSource] 命中短时缓存: ${source.name}, id=${getMediaItemStableId(item, musicItem)}, quality=${quality}`);
@@ -1037,11 +1122,36 @@ class BakaPluginManagerClass {
     let nextPairIdxOverride: number | null = null;
     const attemptedPluginQualities = new Set<string>();
     const isKugou = isKugouLikeSource(source, musicItem);
+    const isNetease = isNeteaseLikeSource(source, musicItem);
+    // 网易云外链预检结果记忆：各档位常返回同一 outer/url，避免重复探测同一 URL
+    const neteaseOuterUrlProbes = new Map<string, { playable: boolean; reason?: string }>();
     const shouldAcceptMediaResult = async (candidate: any, pairIdx: number, qualityLabel: string): Promise<boolean> => {
       const candidateRawUrl = typeof candidate?.url === 'string' ? candidate.url : '';
       if (!candidateRawUrl) return false;
 
       const candidateUrl = isKugou ? cleanKugouPluginUrl(candidateRawUrl) : sanitizeMediaUrl(candidateRawUrl);
+      // QQ 60 秒试听链（RS02 前缀）不是可用播放源：免费公共中转（vkeys.cn 等）对
+      // 游客恒返试听且各音质档同一文件，若照常返回用户只能听到 60 秒还误以为歌曲就这么短。
+      // 拒绝后由上层（resolveOnlineQualityUrl 的 LX 兜底）尝试用 LX 音源取完整版。
+      if (!isKugou && isQqTrialMediaUrl(candidateUrl)) {
+        lastError = new Error('该音源仅能获取 60 秒试听');
+        log(`[getMediaSource] quality=${qualityLabel} 返回 QQ 试听链(RS02)，拒绝并继续: ${candidateUrl.substring(0, 80)}`);
+        return false;
+      }
+      // 网易云官方外链：版权受限歌 302 到 404 HTML 页（各档同一 URL），
+      // 预检拒绝后音质回退继续，全档失败由上层 LX wy 兜底接管
+      if (isNetease && candidateUrl && isNeteaseOuterUrl(candidateUrl)) {
+        let probe = neteaseOuterUrlProbes.get(candidateUrl);
+        if (!probe) {
+          probe = await probeNeteaseOuterUrl(candidateUrl);
+          neteaseOuterUrlProbes.set(candidateUrl, probe);
+        }
+        if (!probe.playable) {
+          lastError = new Error(`该音源无法提供此歌曲（${probe.reason || '外链不可用'}）`);
+          log(`[getMediaSource] quality=${qualityLabel} 网易云外链不可用，拒绝并继续: ${probe.reason || candidateUrl.substring(0, 80)}`);
+          return false;
+        }
+      }
       if (isKugou && candidateUrl && isLikelyKugouProxyApiUrl(candidateUrl)) {
         const candidateHeaders = normalizeMediaRequestHeaders(
           candidateUrl,

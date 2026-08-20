@@ -53,6 +53,8 @@ import {
   flattenTopListCategories,
 } from './pluginResultMappers';
 import { fetchWithTimeout } from './pluginFetch';
+import { isQqMusicPluginSource, qqFillSongDurations, qqHostAlbumSearchFallback, qqHostAlbumSongsFallback, qqHostSearchFallback } from './qqHostSearchFallback';
+import { fetchPlatformMusicComments } from './platformComments';
 import {
   compareVersions,
   createPluginUpdateService,
@@ -944,6 +946,32 @@ export async function pluginMusicSearchWithDiagnostics(
 
     let { result, list } = await callSearch(1);
 
+    // QQ 音乐插件搜索兜底：无签名搜索端点已被腾讯累积风控（reqCode 2001 恒空列表），
+    // 插件返回空不代表真无结果。短间隔重试对累积风控无效，QQ 插件直接跳过重试，
+    // 改由宿主复用 LX 侧已验证的搜索链（签名 Mobile → Web 兜底）代取结果；
+    // 播放仍走插件自身 getMediaSource，不受影响。
+    if (list.length === 0 && isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+      log(`[pluginSearch] ${source.name} 插件搜索为空，走宿主 QQ 兜底链: "${keyword}"`);
+      const hostResults = await qqHostSearchFallback(source, keyword, page);
+      if (hostResults.length > 0) {
+        log(`[pluginSearch] ${source.name} 宿主兜底成功: ${hostResults.length} 首`);
+        return {
+          results: hostResults,
+          status: 'success',
+          reason: `插件搜索被风控，宿主兜底解析返回 ${hostResults.length} 首歌曲`,
+          searchType,
+          supportsLyrics: typeof inst.instance.getLyric === 'function',
+        };
+      }
+      return {
+        results: [],
+        status: 'empty',
+        reason: `插件搜索与宿主兜底均未找到与“${keyword}”匹配的歌曲`,
+        searchType,
+        supportsLyrics: true,
+      };
+    }
+
     // 部分 MusicFree QQ 插件的上游接口会偶发正常响应但 data=[]。
     // 参考落雪(lx) 的增量退避：不做短固定间隔的快速放弃，逐步拉长间隔反复重试，共 6 次约 12s
     if (list.length === 0) {
@@ -1080,36 +1108,8 @@ export async function pluginPlaylistSearch(
         }
       }
 
-      // 回退 2: 尝试 getTopLists（用户输入关键词搜索时，返回排行榜作为歌单列表）
-      if (page === 1 && typeof inst.instance.getTopLists === 'function') {
-        try {
-          const topLists = await inst.instance.getTopLists();
-          if (Array.isArray(topLists) && topLists.length > 0) {
-            const results: PluginPlaylistSearchResult[] = [];
-            for (const category of topLists) {
-              if (category?.data && Array.isArray(category.data)) {
-                for (const item of category.data) {
-                  results.push({
-                    id: String(item.id || ''),
-                    title: stripHtmlTags(item.title || item.name || ''),
-                    coverUrl: item.coverImg || item.cover || extractCoverUrl(item),
-                    playCount: item.playCount ?? item.playcount,
-                    trackCount: item.trackCount ?? item.trackcount,
-                    artist: stripHtmlTags(category.title || ''),
-                    platform: source.name,
-                    platformId: String(item.id || ''),
-                    pluginId: source.id,
-                    rawData: { ...item, _isTopList: true },
-                  });
-                }
-              }
-            }
-            if (results.length > 0) return results;
-          }
-        } catch (e: any) {
-          console.warn(`[${source.name}] getTopLists 回退失败:`, e?.message || e);
-        }
-      }
+      // 注意：不再回退 getTopLists——关键词与榜单无关，把榜单塞进歌单搜索结果
+      // 会让搜索页歌单 tab 偶现排行榜内容（榜单有专门的榜单页入口）。
 
       console.warn(
         `[${source.name}] 歌单搜索无结果: search(sheet/playlist) 返回 keys=`,
@@ -1177,7 +1177,7 @@ export async function pluginSupportsTopLists(source: PluginSource): Promise<bool
 
 // ==================== 插件歌单详情 ====================
 
-export async function pluginGetPlaylistDetail(
+async function pluginGetPlaylistDetailInner(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
@@ -1302,7 +1302,7 @@ export async function pluginImportMusicSheet(
 
 // ==================== 歌手作品（歌曲） ====================
 
-export async function pluginGetArtistWorks(
+async function pluginGetArtistWorksInner(
   source: PluginSource,
   artistItem: any,
   page: number = 1,
@@ -1470,7 +1470,7 @@ export async function pluginGetArtistInfo(
 
 // ==================== 专辑详情 ====================
 
-export async function pluginGetAlbumSongs(
+async function pluginGetAlbumSongsInner(
   source: PluginSource,
   albumItem: any,
   page: number = 1,
@@ -1485,6 +1485,14 @@ export async function pluginGetAlbumSongs(
   }
   const inst = await ensurePluginInstance(source);
   if (!inst) return [];
+
+  // QQ 插件 getAlbumInfo 读 albumItem.albumMID（大写），而歌曲推导/兜底结果里
+  // 常只有 albummid（小写）。缺失时统一补齐，否则请求 albumMid=undefined 得 104400，
+  // 表现为专辑页 6 次重试约 12s 后空白。
+  const albumMid = albumItem?.albumMID || albumItem?.albummid || albumItem?.albumMid;
+  if (albumMid && !albumItem?.albumMID) {
+    albumItem = { ...albumItem, albumMID: albumMid };
+  }
 
   try {
     // 优先用 getAlbumInfo 获取专辑曲目
@@ -1503,6 +1511,17 @@ export async function pluginGetAlbumSongs(
         }
       } catch (e: any) {
         log(`[${source.name}] getAlbumInfo 调用失败，尝试搜索回退: ${e?.message}`);
+      }
+    }
+
+    // QQ 插件兜底：getAlbumInfo 的无签名端点也可能被风控返回空。宿主用签名
+    // AlbumSongList 接口按 albumMid 代取曲目，映射回插件歌曲结构，播放不受影响。
+    if (isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+      const albumMidForHost = albumItem?.albumMID || albumItem?.albummid || albumItem?.albumMid;
+      if (albumMidForHost) {
+        log(`[pluginGetAlbumSongs] ${source.name} getAlbumInfo 为空，走宿主 QQ 专辑曲目兜底: ${albumMidForHost}`);
+        const hostSongs = await qqHostAlbumSongsFallback(source, albumMidForHost, page);
+        if (hostSongs.length > 0) return hostSongs;
       }
     }
 
@@ -1529,6 +1548,44 @@ export async function pluginGetAlbumSongs(
     log(`[${source.name}] 获取专辑详情失败: ${e?.message}`);
     return [];
   }
+}
+
+/**
+ * QQ 插件详情列表统一补时长。QQ formatMusicItem 丢弃 interval、getMusicInfo
+ * 对已带 artwork+qualities 的条目早退不回填，歌单/歌手/专辑详情会整页无时长；
+ * 宿主按 songid 批量查 UniformRuleCtrl 补齐（一次请求，非 QQ 插件零开销）。
+ */
+async function withQqDurations(
+  source: PluginSource,
+  results: PluginSearchResult[],
+): Promise<PluginSearchResult[]> {
+  if (!results.length) return results;
+  const inst = await ensurePluginInstance(source);
+  return qqFillSongDurations(source, (inst?.instance as any)?.platform, results);
+}
+
+export async function pluginGetPlaylistDetail(
+  source: PluginSource,
+  sheetItem: any,
+  page: number = 1,
+): Promise<PluginSearchResult[]> {
+  return withQqDurations(source, await pluginGetPlaylistDetailInner(source, sheetItem, page));
+}
+
+export async function pluginGetArtistWorks(
+  source: PluginSource,
+  artistItem: any,
+  page: number = 1,
+): Promise<PluginSearchResult[]> {
+  return withQqDurations(source, await pluginGetArtistWorksInner(source, artistItem, page));
+}
+
+export async function pluginGetAlbumSongs(
+  source: PluginSource,
+  albumItem: any,
+  page: number = 1,
+): Promise<PluginSearchResult[]> {
+  return withQqDurations(source, await pluginGetAlbumSongsInner(source, albumItem, page));
 }
 
 // ==================== 获取播放 URL（与 MusicFree PluginMethodsWrapper.getMediaSource 完全一致）====================
@@ -2206,6 +2263,18 @@ export async function pluginAlbumSearch(
       });
     }
 
+    // QQ 插件兜底：无签名专辑搜索（search_type=2）已被间歇风控（2001），插件返回空
+    // 不代表真无结果。宿主用签名 Desktop 接口代取，结果带插件原生 albumMID，
+    // 后续 getAlbumInfo 解析曲目不受影响。
+    if (list.length === 0 && page === 1 && isQqMusicPluginSource(source, (inst.instance as any)?.platform)) {
+      log(`[pluginAlbumSearch] ${source.name} 插件专辑搜索为空，走宿主 QQ 专辑兜底: "${keyword}"`);
+      const hostAlbums = await qqHostAlbumSearchFallback(source, keyword, page);
+      if (hostAlbums.length > 0) {
+        log(`[pluginAlbumSearch] ${source.name} 宿主专辑兜底成功: ${hostAlbums.length} 张`);
+        return hostAlbums;
+      }
+    }
+
     // 回退：直接专辑搜索返回空时，从音乐搜索结果中提取去重专辑
     // （Baka QQ 音乐等插件的 search('album') 可能不支持，但 search('music') 可返回带专辑信息的歌曲）
     if (page === 1) {
@@ -2225,15 +2294,20 @@ export async function pluginAlbumSearch(
           existing.songCount = (existing.songCount ?? 0) + 1;
           continue;
         }
+        // 专辑标识字段名跨插件不统一：QQ 是 albummid/albumMID，网易是 al.id，
+        // 统一提取并保留原字段，否则点击专辑后 getAlbumInfo 拿不到 albumMid
+        // 会请求出 104400 空结果（表现为专辑页打不开）
+        const rawAlbumId = song.rawData?.albumId || song.rawData?.albumid || song.rawData?.al?.id;
+        const rawAlbumMid = song.rawData?.albumMID || song.rawData?.albummid || song.rawData?.albumMid;
         albumMap.set(key, {
-          id: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+          id: String(rawAlbumId || albumName),
           name: albumName,
           artist: song.artist || '',
           coverUrl: song.coverUrl || '',
           platform: song.platform || source.name,
-          platformId: String(song.rawData?.albumId || song.rawData?.al?.id || albumName),
+          platformId: String(rawAlbumId || albumName),
           pluginId: source.id,
-          rawData: { albumName, artist: song.artist, albumId: song.rawData?.albumId || song.rawData?.al?.id },
+          rawData: { albumName, artist: song.artist, albumId: rawAlbumId, albummid: rawAlbumMid, albumMID: rawAlbumMid },
         });
       }
       return [...albumMap.values()];
@@ -2280,8 +2354,10 @@ export async function pluginGetSupportedQualities(source: PluginSource): Promise
 /**
  * 获取歌曲评论（Baka 插件扩展方法）
  *
- * 委托给 BakaPluginManager.getMusicComments。
- * 仅 Baka 系列插件实现了 getMusicComments 方法。
+ * 优先委托给 BakaPluginManager.getMusicComments（插件自实现评论 API）；
+ * 插件未实现或调用失败时（getMusicComments 是 BakaMusic 扩展，原版
+ * MusicFree 插件没有），按歌曲平台走宿主直连评论接口兜底——歌曲 id
+ * 全平台通用，评论区对 MF 插件歌曲同样可用。
  */
 export async function pluginGetMusicComments(
   source: PluginSource,
@@ -2289,7 +2365,9 @@ export async function pluginGetMusicComments(
   page: number = 1,
 ): Promise<{ isEnd?: boolean; data?: any[] } | null> {
   await ensurePluginInstance(source);
-  return BakaPluginManager.getMusicComments(source, item, page);
+  const result = await BakaPluginManager.getMusicComments(source, item, page);
+  if (result) return result;
+  return fetchPlatformMusicComments(source, item, page);
 }
 
 // ==================== 辅助函数 ====================

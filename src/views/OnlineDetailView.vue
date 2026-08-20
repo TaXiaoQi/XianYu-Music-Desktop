@@ -12,6 +12,13 @@ import { useToast } from '../composables/toast';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { downloadFavorites as downloadUserFavorites } from '../services/favoritesSync';
+import {
+  fetchWyTrackMetaByIds,
+  fetchQqTrackMetaByIds,
+  fetchKwTrackMetaByIds,
+  fetchKgTrackMetaByIds,
+  type WyTrackMetaPatch,
+} from '../services/playlistImport';
 import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong, firstRemoteSongCover } from '../services/playlistSync';
 import { getCiyuanxiId } from '../services/playlistSync';
 import { getSongAlbumKey } from '../features/library/playerLibraryViewShared';
@@ -310,27 +317,34 @@ const currentSongs = computed<Song[]>(() =>
   isUserMode.value ? userModeSongs.value : songList.value,
 );
 
-// MF 插件（如网易云）的 search/getAlbumInfo/getArtistWorks 可能不返回封面 URL，
-// 只在 getMusicInfo 时才有。此处异步补获列表中缺失封面的歌曲，不阻塞页面渲染。
+// MF 插件（如网易云）的 search/getAlbumInfo/getArtistWorks 可能不返回封面 URL 和时长，
+// 只在 getMusicInfo 时才有。此处异步补获列表中缺失封面或时长的歌曲，不阻塞页面渲染。
 let mfCoverFetchVersion = 0;
 const MF_COVER_CONCURRENCY = 3;
 
-async function fetchMissingMfCovers() {
+async function fetchMissingMfCovers(afterBatch?: Promise<void>) {
   if (!ctx.value) return;
   const { pluginSource } = ctx.value;
   if (!pluginSource) return;
   const version = ++mfCoverFetchVersion;
 
-  // 筛选没有封面的歌曲（拷贝索引，避免遍历期间数组变化）
+  // 等批量补全落盘（仅批量阶段，不含慢速逐首兜底；未传则跳过等待）
+  if (afterBatch) {
+    try { await afterBatch; } catch { /* 忽略，继续逐首兜底 */ }
+    if (version !== mfCoverFetchVersion) return; // 等待期间页面已切换
+  }
+
+  // 筛选缺封面或缺时长的歌曲（拷贝索引，避免遍历期间数组变化）。
+  // pluginGetCover 内部会调用 getMusicInfo 并把返回的时长写回 item.duration。
   const pending: { index: number; item: PluginSearchResult }[] = [];
   songs.value.forEach((item, index) => {
-    if (!item.coverUrl && item.rawData) {
+    if ((!item.coverUrl || !item.duration) && item.rawData) {
       pending.push({ index, item });
     }
   });
   if (pending.length === 0) return;
 
-  // 有限并发拉取封面
+  // 有限并发拉取封面与时长
   let cursor = 0;
   const worker = async () => {
     while (cursor < pending.length) {
@@ -339,10 +353,17 @@ async function fetchMissingMfCovers() {
       try {
         const cover = await pluginGetCover(pluginSource, item);
         if (version !== mfCoverFetchVersion) return;
-        if (cover && songs.value[index]) {
+        const current = songs.value[index];
+        if (!current) continue;
+        const patch: Record<string, any> = {};
+        if (cover) {
           // 升级 https，避免 http 封面被 WebView2 混合内容拦截；响应式更新触发 computed 重算
-          const normalizedCover = String(cover).replace(/^http:\/\//i, 'https://');
-          songs.value[index] = { ...songs.value[index], coverUrl: normalizedCover };
+          patch.coverUrl = String(cover).replace(/^http:\/\//i, 'https://');
+        }
+        // getMusicInfo 已把时长写回 item；仅当列表条目仍缺时长时补上（可能已被 weapi 批量补全抢占）
+        if (item.duration && !current.duration) patch.duration = item.duration;
+        if (Object.keys(patch).length > 0) {
+          songs.value[index] = { ...current, ...patch };
         }
       } catch { /* ignore */ }
     }
@@ -350,6 +371,108 @@ async function fetchMissingMfCovers() {
 
   const workers = Array.from({ length: Math.min(MF_COVER_CONCURRENCY, pending.length) }, () => worker());
   void Promise.all(workers);
+}
+
+/** MF 插件（时迁酱系网易/QQ/酷我）：官方 API 批量补全封面与时长。
+ *  插件详情接口（getArtistWorks/getAlbumInfo/getMusicSheetInfo）不回传时长，
+ *  且其 getMusicInfo 不可靠（QQ/酷我实测拿不到 duration），与搜索页 backfillWyTrackMeta 同策略：
+ *  网易走 weapi song/detail、QQ 走 fcg_play_single_song（逗号批量）、酷我走 musicInfo（逐首）。 */
+let mfMetaFetchVersion = 0;
+
+/** 提取歌曲的平台 ID：酷我歌单/歌手接口常返回 "MUSIC_123" 前缀或把 rid 放在 rawData（musicrid）；
+ *  酷狗主键是 hash（32 位十六进制）或 mixsongid（纯数字），统一多字段候选，
+ *  否则 ID 格式校验会整批滤掉导致补全静默跳过 */
+function extractMfSongId(s: PluginSearchResult, isQQ: boolean, isKugou: boolean): string {
+  const raw = s.rawData || {};
+  if (isQQ) {
+    return String(s.id || s.platformId || raw.songmid || raw.mid || raw.songMid || '').trim();
+  }
+  if (isKugou) {
+    for (const c of [s.id, s.platformId, raw.hash, raw.Hash, raw.FileHash, raw.fileHash, raw.mixsongid, raw.MixSongID, raw.audioId, raw.Audioid]) {
+      if (c === undefined || c === null) continue;
+      const n = String(c).trim();
+      if (n) return n;
+    }
+    return '';
+  }
+  for (const c of [s.id, s.platformId, raw.rid, raw.musicrid, raw.MUSICRID, raw.musicRid, raw.musicId]) {
+    if (c === undefined || c === null) continue;
+    const n = String(c).replace(/^MUSIC_/i, '').trim();
+    if (n) return n;
+  }
+  return '';
+}
+
+async function backfillMfTrackMeta(onBatchReady?: () => void) {
+  const c = ctx.value;
+  const pluginSource = c?.pluginSource;
+  if (!c || !pluginSource) { onBatchReady?.(); return; }
+  const sources = pluginSource.sources || [];
+  const name = pluginSource.name || '';
+  const isNetease = sources.includes('wy') || /网易云|netease/i.test(name);
+  const isQQ = sources.includes('tx') || /qq|企鹅/i.test(name);
+  const isKuwo = sources.includes('kw') || /酷我|kuwo/i.test(name);
+  const isKugou = sources.includes('kg') || /酷狗|kugou/i.test(name);
+  if (!isNetease && !isQQ && !isKuwo && !isKugou) { onBatchReady?.(); return; }
+
+  const version = ++mfMetaFetchVersion;
+  const idOk = (id: string) => {
+    if (isQQ) return /^[0-9A-Za-z]{6,32}$/.test(id);
+    if (isKugou) return /^[0-9A-Fa-f]{32}$/.test(id) || /^\d+$/.test(id);
+    return /^\d+$/.test(id);
+  };
+  const pending = songs.value
+    .map((s: PluginSearchResult) => ({ s, id: extractMfSongId(s, isQQ, isKugou) }))
+    .filter(({ s, id }) => (!s.coverUrl || !s.duration) && idOk(id));
+  if (pending.length === 0) { onBatchReady?.(); return; }
+
+  // 酷狗专辑页：从上下文取专辑 ID，整张专辑一次拉全（歌手页的 id 是歌手 ID，不能当专辑 ID 用）
+  const kgAlbumId = c.type === 'album' && c.rawData
+    ? String(c.rawData.albumId ?? c.rawData.albumid ?? c.rawData.AlbumID ?? c.rawData.id ?? '')
+    : '';
+
+  /** 仅补缺写入；可重复调用（增量回调与最终写入共用），补全期间切页则丢弃 */
+  const applyPatches = (map: ReadonlyMap<string, WyTrackMetaPatch>) => {
+    if (map.size === 0 || version !== mfMetaFetchVersion) return;
+    songs.value = songs.value.map((s: PluginSearchResult) => {
+      const patch = map.get(extractMfSongId(s, isQQ, isKugou));
+      if (!patch) return s;
+      const upd: Record<string, any> = {};
+      if (!s.coverUrl && patch.coverUrl) upd.coverUrl = patch.coverUrl.replace(/^http:\/\//i, 'https://');
+      if (!s.duration && patch.durationMs) upd.duration = patch.durationMs;
+      return Object.keys(upd).length > 0 ? { ...s, ...upd } : s;
+    });
+  };
+
+  try {
+    const patches = isNetease
+      ? await fetchWyTrackMetaByIds(pending.map(item => item.id))
+      : isQQ
+        ? await fetchQqTrackMetaByIds(pending.map(item => item.id))
+        : isKugou
+          ? await fetchKgTrackMetaByIds(
+              pending.map(item => ({ id: item.id, title: item.s.title, artist: item.s.artist })),
+              kgAlbumId,
+            )
+          : await fetchKwTrackMetaByIds(
+              pending.map(item => ({ id: item.id, title: item.s.title, artist: item.s.artist })),
+              {
+                // 歌单页/歌手页分别传源 ID，优先批量接口一次拉全时长（插件映射丢弃了接口自带 duration）。
+                // onPatches 增量落盘：批量命中秒级上屏，不等慢速逐首兜底
+                sheetId: c.type === 'playlist' ? String(c.rawData?.id ?? '') : '',
+                artistId: c.type === 'artist' ? String(c.rawData?.id ?? '') : '',
+                onPatches: (m) => {
+                  applyPatches(m);
+                  onBatchReady?.(); // 批量阶段完成即放行封面兜底（resolve 幂等）
+                },
+              },
+            );
+
+    applyPatches(patches);
+  } finally {
+    // 全部早退/异常路径也放行信号，避免封面兜底永久等待
+    onBatchReady?.();
+  }
 }
 
 /** LX 引擎：异步补获列表中缺失封面的歌曲（kw/kg 源搜索结果 img 可能为 null） */
@@ -465,8 +588,13 @@ async function loadData(page = 1) {
       void fetchMissingLxCovers();
     }
   } else {
-    if (songs.value.some((s: PluginSearchResult) => !s.coverUrl)) {
-      void fetchMissingMfCovers();
+    // 批量补全先行落盘（酷我歌单/歌手一次拉全时长，秒级上屏）；逐首封面兜底等"批量阶段
+    // 完成"信号后重新筛选，只补仍缺的条目——不排在整个慢速逐首兜底链后面
+    let signalBatchReady: (() => void) | null = null;
+    const batchReady = new Promise<void>(resolve => { signalBatchReady = resolve; });
+    void backfillMfTrackMeta(() => signalBatchReady?.());
+    if (songs.value.some((s: PluginSearchResult) => !s.coverUrl || !s.duration)) {
+      void fetchMissingMfCovers(batchReady);
     }
   }
 }
@@ -840,9 +968,14 @@ function handleBack() {
   if (onlineDetailStore.hasPreviousContext()) {
     void router.back();
   } else {
-    // 返回搜索页，设置 pendingSearchType 以恢复搜索 tab
+    // 返回搜索页，设置待恢复的搜索会话（tab + 插件源 + 结果快照）以还原离开前的状态，
+    // 结果快照直接还原免重搜（防重复请求触发风控）
     const sourceType = ctx.value?.sourceSearchType || (detailType.value === 'user' ? 'playlist' : detailType.value);
-    onlineDetailStore.setPendingSearchType(sourceType);
+    onlineDetailStore.setPendingSearchSession({
+      type: sourceType,
+      sourceId: ctx.value?.sourceSearchSourceId ?? null,
+      results: onlineDetailStore.searchResultsCache,
+    });
     void router.back();
   }
 }
@@ -863,6 +996,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   mfCoverFetchVersion += 1; // 取消 pending 的 MF 封面拉取
   lxCoverFetchVersion += 1; // 取消 pending 的 LX 封面拉取
+  // 离开详情流但不回搜索页（如从详情切到底部导航其他页）时销毁待恢复的搜索会话与结果快照，
+  // 避免之后全新进入搜索页时错误恢复旧的 tab/插件/结果（此时 currentRoute 已是新路由）
+  if (router.currentRoute.value.path !== '/search') {
+    onlineDetailStore.setPendingSearchSession(null);
+    onlineDetailStore.setSearchResultsCache(null);
+  }
 });
 
 // 路由 type 变化时：尝试恢复上下文并重新加载

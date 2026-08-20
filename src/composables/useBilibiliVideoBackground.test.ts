@@ -6,12 +6,14 @@ const {
   pluginHttpRequestMock,
   pluginGetVideoSourceMock,
   removeCachedBackgroundVideoMock,
+  analyzeMvAudioSyncMock,
 } = vi.hoisted(() => ({
   downloadVideoToCacheMock: vi.fn(),
   getStoredPluginsMock: vi.fn(),
   pluginHttpRequestMock: vi.fn(),
   pluginGetVideoSourceMock: vi.fn(),
   removeCachedBackgroundVideoMock: vi.fn(),
+  analyzeMvAudioSyncMock: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -31,8 +33,17 @@ vi.mock('../services/tauri/pluginApi', () => ({
   },
 }));
 
+vi.mock('../services/mvAutoSync', () => ({
+  analyzeMvAudioSync: analyzeMvAudioSyncMock,
+}));
+
+const playbackUrlMock = vi.hoisted(() => ({ value: null as string | null }));
+vi.mock('../features/playback/store', () => ({
+  usePlaybackStore: () => ({ currentPlayingAudioUrl: playbackUrlMock.value }),
+}));
+
 import type { Song } from '../types';
-import { isBilibiliPluginSong, useBilibiliVideoBackground } from './useBilibiliVideoBackground';
+import { isBilibiliPluginSong, supportsMusicVideo, useBilibiliVideoBackground } from './useBilibiliVideoBackground';
 
 const makeSong = (overrides: Partial<Song> = {}): Song => ({
   path: 'plugin://bilibili/BV1j3411D7pu',
@@ -59,12 +70,39 @@ const makeSong = (overrides: Partial<Song> = {}): Song => ({
   ...overrides,
 });
 
+const makeKugouSong = (overrides: Partial<Song> = {}): Song => ({
+  path: 'plugin://kg-plugin/abc123',
+  name: '晴天',
+  title: '晴天',
+  artist: '周杰伦',
+  artist_names: ['周杰伦'],
+  effective_artist_names: ['周杰伦'],
+  album: '叶惠美',
+  album_artist: '周杰伦',
+  album_key: 'kugou::jay',
+  is_various_artists_album: false,
+  collapse_artist_credits: false,
+  duration: 269,
+  source_type: 'plugin',
+  plugin_id: 'kg-plugin',
+  rawData: {
+    id: 'abc123',
+    title: '晴天',
+    platform: '酷狗音乐',
+    pluginId: 'kg-plugin',
+    mvHash: '92b86da2e11c3c84de3a944ed12d97f1',
+    rawData: { id: 'abc123', platform: '酷狗音乐', mvHash: '92b86da2e11c3c84de3a944ed12d97f1' },
+  },
+  ...overrides,
+});
+
 describe('Bilibili player-detail video background', () => {
   const background = useBilibiliVideoBackground();
 
   beforeEach(async () => {
     await background.stop();
     vi.clearAllMocks();
+    playbackUrlMock.value = null;
     getStoredPluginsMock.mockReturnValue([{ id: 'bili-plugin', name: '哔哩哔哩' }]);
     pluginGetVideoSourceMock.mockResolvedValue({
       url: 'https://upos-sz-mirror.example.bilivideo.com/video.m4s',
@@ -81,6 +119,66 @@ describe('Bilibili player-detail video background', () => {
       plugin_id: 'netease-plugin',
       rawData: { platform: 'netease' },
     }))).toBe(false);
+  });
+
+  it('非 B 站 MV 加载后自动分析音画偏移并应用', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    playbackUrlMock.value = 'https://isure.stream.qqmusic.qq.com/M800.mp3?vkey=abc';
+    analyzeMvAudioSyncMock.mockResolvedValue({ offsetSec: 2.5, confidence: 0.81 });
+    const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-a' });
+
+    await expect(background.start(song)).resolves.toBe(true);
+
+    expect(analyzeMvAudioSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining('asset://'),
+      playbackUrlMock.value,
+    );
+    await vi.waitFor(() => expect(background.syncOffsetSec.value).toBe(2.5));
+
+    await background.stop();
+    expect(background.syncOffsetSec.value).toBe(0);
+  });
+
+  it('B 站歌曲跳过自动对齐（音画同源）', async () => {
+    playbackUrlMock.value = 'https://upos-sz-mirror.example.bilivideo.com/audio.m4s';
+    analyzeMvAudioSyncMock.mockResolvedValue({ offsetSec: 3, confidence: 0.9 });
+
+    await expect(background.start(makeSong())).resolves.toBe(true);
+
+    expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
+    expect(background.syncOffsetSec.value).toBe(0);
+    await background.stop();
+  });
+
+  it('分析不可信时保持 0 偏移并缓存结果，切画质不重复分析', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    playbackUrlMock.value = 'https://track.example.com/song.flac';
+    analyzeMvAudioSyncMock.mockResolvedValue(null);
+    const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-b' });
+
+    await expect(background.start(song)).resolves.toBe(true);
+    await vi.waitFor(() => expect(analyzeMvAudioSyncMock).toHaveBeenCalledTimes(1));
+    expect(background.syncOffsetSec.value).toBe(0);
+
+    // 切换画质重新加载同曲视频：命中会话缓存，不再触发分析
+    pluginGetVideoSourceMock.mockResolvedValue({ url: 'https://mv.example.com/1080p.mp4' });
+    downloadVideoToCacheMock.mockResolvedValue('C:\\cache\\video-background\\xy_music_video_1080p.mp4');
+    await expect(background.setQuality('1080P')).resolves.toBe(true);
+    await vi.waitFor(() => expect(background.videoUrl.value).toContain('1080p'));
+    expect(analyzeMvAudioSyncMock).toHaveBeenCalledTimes(1);
+
+    await background.stop();
+  });
+
+  it('无播放直链时不触发分析', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    playbackUrlMock.value = null;
+    const song = makeKugouSong({ path: 'plugin://kg-plugin/mv-sync-c' });
+
+    await expect(background.start(song)).resolves.toBe(true);
+
+    expect(analyzeMvAudioSyncMock).not.toHaveBeenCalled();
+    await background.stop();
   });
 
   it('parses, caches and exposes a muted background-video asset', async () => {
@@ -184,5 +282,103 @@ describe('Bilibili player-detail video background', () => {
     expect(background.active.value).toBe(true);
 
     await background.stop();
+  });
+
+  it('treats Kugou plugin songs (with or without mvHash) as MV-capable', () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    expect(supportsMusicVideo(makeKugouSong())).toBe(true);
+    expect(supportsMusicVideo(makeKugouSong({
+      rawData: { id: 'abc123', platform: '酷狗音乐', pluginId: 'kg-plugin' },
+    }))).toBe(true);
+  });
+
+  it('resolves Kugou MV via the host fallback when the plugin route yields nothing', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginHttpRequestMock.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        status: 1,
+        timelength: 317400,
+        mvdata: {
+          le: { downurl: 'http://fsmvpc.kugou.com/le-480p.mp4', filesize: 21336568, bitrate: 537783, timelength: 317400 },
+          sq: { downurl: 'http://fsmvpc.kugou.com/sq-1080p.mp4', filesize: 84999924, bitrate: 2142405, timelength: 317400 },
+          rq: { downurl: 'http://fsmvpc.kugou.com/rq-4k.mp4', filesize: 163993391, bitrate: 4133418, timelength: 317400 },
+        },
+      }),
+    });
+
+    await expect(background.start(makeKugouSong())).resolves.toBe(true);
+
+    expect(pluginHttpRequestMock).toHaveBeenCalledWith(
+      'GET',
+      'https://m.kugou.com/app/i/mv.php?cmd=100&ext=mp4&hash=92b86da2e11c3c84de3a944ed12d97f1',
+      expect.objectContaining({ Referer: 'https://www.kugou.com/' }),
+      undefined,
+      20000,
+    );
+    // 默认档 720P：无 720P 码流时取不超标的最高档（480P）
+    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+      'http://fsmvpc.kugou.com/le-480p.mp4',
+      expect.objectContaining({ Referer: 'https://www.kugou.com/' }),
+    );
+    expect(background.availableQualities.value.map(q => q.key)).toEqual(['480P', '1080P', '4K']);
+    expect(background.activeQuality.value).toBe('480P');
+    expect(background.active.value).toBe(true);
+
+    await background.stop();
+  });
+
+  it('falls back to an exact Kugou quality match when requested', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginHttpRequestMock.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        status: 1,
+        mvdata: {
+          sd: { downurl: 'http://fsmvpc.kugou.com/sd-720p.mp4', filesize: 41000000 },
+          hd: { downurl: 'http://fsmvpc.kugou.com/hd-1080p.mp4', filesize: 82000000 },
+        },
+      }),
+    });
+
+    await expect(background.start(makeKugouSong(), '1080P')).resolves.toBe(true);
+    expect(downloadVideoToCacheMock).toHaveBeenCalledWith(
+      'http://fsmvpc.kugou.com/hd-1080p.mp4',
+      expect.any(Object),
+    );
+    expect(background.activeQuality.value).toBe('1080P');
+
+    await background.stop();
+  });
+
+  it('rejects with a cleared state when both plugin and Kugou host fallback fail', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginHttpRequestMock.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({ status: 0 }),
+    });
+
+    await expect(background.start(makeKugouSong())).rejects.toThrow('未能解析当前歌曲的 MV');
+    expect(background.requested.value).toBe(false);
+    expect(background.loading.value).toBe(false);
+  });
+
+  it('skips the Kugou host request when the song carries no usable mvHash', async () => {
+    getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
+    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    const song = makeKugouSong({
+      rawData: {
+        id: 'abc123',
+        platform: '酷狗音乐',
+        pluginId: 'kg-plugin',
+        mvHash: 'not-a-valid-hash',
+      },
+    });
+
+    await expect(background.start(song)).rejects.toThrow('未能解析当前歌曲的 MV');
+    expect(pluginHttpRequestMock).not.toHaveBeenCalled();
   });
 });

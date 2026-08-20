@@ -34,15 +34,19 @@ import {
   isBakaPlugin,
 } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric, lxPluginGetPic } from './lxPluginEngine';
+import { cacheLxSong, getCachedLxSong } from './lxSongCache';
 import {
   parseLxPath,
   resolveLxCachedInfo,
   findLxPluginForSource,
   buildLxSongInfo,
+  resolveLxUrl,
   resolveLxUrlForSingleQuality,
   resolveLxUrlViaRust,
 } from './lxUrlResolver';
 import { sanitizeMediaUrl } from '../utils/mediaUrl';
+import { isQqMusicPluginSource, isQqTrialMediaUrl } from './qqHostSearchFallback';
+import { isNeteaseMusicPluginSource, isNeteaseOuterUrl } from './bakaPluginManager';
 
 /** 统一音质档位（兼容 LX / MF）：插件支持多少，就显示多少 */
 type LxQuality = QualityKey;
@@ -466,6 +470,180 @@ export async function resolveOnlineQualityUrl(
     }
   }
 
+  // [QQ 插件 LX 兜底] QQ 系插件自身的免费中转（vkeys.cn 等）对游客只发 60 秒试听
+  // （RS02 链，bakaPluginManager 已拒绝），全档位失败后借用用户配置的 LX tx 音源
+  // 解析完整版直链——songmid 标识通用，播放/下载/探测共用此兜底。
+  if (isPlugin && ctx) {
+    const viaLx = await qqPluginLxFallback(
+      song,
+      ctx as PluginResolveContext,
+      requestedQuality,
+      fallbackBehavior,
+    );
+    if (viaLx) return viaLx;
+  }
+
+  // [网易云插件 LX 兜底] 网易云插件的免费公共 API（bugpk/oiapi）恒返官方外链，
+  // 版权受限歌外链 302 到 404 页（bakaPluginManager 预检已拒绝），全档位失败后
+  // 借用用户配置的 LX wy 音源解析直链——网易云歌曲 id 通用。
+  if (isPlugin && ctx) {
+    const viaWyLx = await wyPluginLxFallback(
+      song,
+      ctx as PluginResolveContext,
+      requestedQuality,
+      fallbackBehavior,
+    );
+    if (viaWyLx) return viaWyLx;
+  }
+
+  return null;
+}
+
+/**
+ * 为 QQ 插件歌曲合成最小 LX tx 元信息并种入搜索缓存。
+ *
+ * plugin:// 歌曲没有 LX 搜索缓存，resolveLxUrl 会因 cachedInfo 缺失在
+ * 「无 LX 插件」分支提前返回 null；种入后即使用户未配置 LX tx 插件，
+ * 也能走 Rust 公共 API 兜底解析完整版直链。
+ */
+function seedQqLxSongCache(song: Song, psr: any, songmidStr: string): void {
+  if (getCachedLxSong('tx', songmidStr)) return;
+  const raw = psr?.rawData ?? {};
+  cacheLxSong({
+    name: song.name || raw.title || '',
+    singer: song.artist || raw.artist || '',
+    albumName: song.album || raw.album || '',
+    albumId: raw.albumid ?? '',
+    songmid: songmidStr,
+    source: 'tx',
+    interval: raw.interval != null ? String(raw.interval) : '',
+    img: raw.artwork || null,
+    types: [],
+    _types: {},
+    songId: raw.id != null ? String(raw.id) : undefined,
+    albumMid: raw.albummid,
+  });
+}
+
+/**
+ * 为网易云插件歌曲合成最小 LX wy 元信息并种入搜索缓存（与 QQ 兜底同构）。
+ * 网易云歌曲 id 在 LX wy 音源同样通用，种入后未配置 LX 插件时也能走
+ * Rust 公共 API 兜底。
+ */
+function seedWyLxSongCache(song: Song, psr: any, songIdStr: string): void {
+  if (getCachedLxSong('wy', songIdStr)) return;
+  const raw = psr?.rawData ?? {};
+  cacheLxSong({
+    name: song.name || raw.title || '',
+    singer: song.artist || raw.artist || '',
+    albumName: song.album || raw.album || '',
+    albumId: raw.albumId ?? raw.albumId ?? '',
+    songmid: songIdStr,
+    source: 'wy',
+    interval: raw.duration != null ? String(Math.floor(Number(raw.duration))) : '',
+    img: raw.artwork || null,
+    types: [],
+    _types: {},
+    songId: songIdStr,
+    albumMid: raw.albumMid,
+  });
+}
+
+/**
+ * 网易云系插件全档位解析失败后的 LX wy 音源兜底（与 QQ 兜底同构）。
+ *
+ * 背景：cwo.cc.cd 分发的网易云插件 getMediaSource 走 bugpk/oiapi 等免费
+ * 公共 API，恒返 music.163.com 官方外链；版权受限歌外链 302 到 404 HTML
+ * 页（bakaPluginManager 预检已拒绝），插件自身没有任何档位可用。网易云
+ * 歌曲 id 全网通用，改借用户配置的 LX wy 音源解析直链。
+ *
+ * @param requestedQuality 期望档位（内部按 fallbackBehavior 自动降级尝试）
+ * @returns 可用直链结果；LX 音源未配置/解析失败时返回 null
+ */
+async function wyPluginLxFallback(
+  song: Song,
+  pluginCtx: PluginResolveContext,
+  requestedQuality: QualityKey,
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+): Promise<ResolvedOnlineQualityUrl | null> {
+  const psr = pluginCtx.pluginSearchResult as any;
+  const songId = psr?.rawData?.id || psr?.id;
+  if (!songId || !isNeteaseMusicPluginSource(pluginCtx.pluginSource)) return null;
+  const songIdStr = String(songId);
+  seedWyLxSongCache(song, psr, songIdStr);
+
+  try {
+    const lxResult = await resolveLxUrl(
+      song,
+      'wy',
+      songIdStr,
+      requestedQuality,
+      fallbackBehavior,
+      null,
+    );
+    if (lxResult?.url && !isNeteaseOuterUrl(lxResult.url)) {
+      console.warn(`[Download] 网易云插件解析失败，LX wy 音源兜底成功: ${song.name} (${lxResult.quality})`);
+      return {
+        quality: lxResult.quality,
+        url: lxResult.url,
+        headers: null,
+        ekey: undefined,
+        cek: undefined,
+      };
+    }
+  } catch (e) {
+    console.warn('[Download] 网易云插件 LX 兜底失败:', e);
+  }
+  return null;
+}
+
+/**
+ * QQ 系插件全档位解析失败后的 LX tx 音源兜底。
+ *
+ * 背景：cwo.cc.cd / quandouyao 等分发的 QQ 插件 getMediaSource 走 api.vkeys.cn
+ * 免费中转，游客请求一律返回 RS02 60 秒试听链（bakaPluginManager 已拒绝），
+ * 插件自身没有任何档位可用。QQ 的 songmid 全网通用，改借用户配置的 LX tx
+ * 音源解析完整版直链。
+ *
+ * @param requestedQuality 期望档位（内部按 fallbackBehavior 自动降级尝试）
+ * @returns 完整版直链结果；LX 音源未配置/解析失败/仍为试听链时返回 null
+ */
+async function qqPluginLxFallback(
+  song: Song,
+  pluginCtx: PluginResolveContext,
+  requestedQuality: QualityKey,
+  fallbackBehavior: OnlineQualityFallbackBehavior,
+): Promise<ResolvedOnlineQualityUrl | null> {
+  // pluginSearchResult 即 song.rawData（PluginSearchResult 形状），songmid 在其内层
+  // rawData（MusicFree 条目）上；部分路径可能平铺，两层都取
+  const psr = pluginCtx.pluginSearchResult as any;
+  const songmid = psr?.rawData?.songmid || psr?.songmid || psr?.rawData?.id;
+  if (!songmid || !isQqMusicPluginSource(pluginCtx.pluginSource)) return null;
+  const songmidStr = String(songmid);
+  seedQqLxSongCache(song, psr, songmidStr);
+
+  try {
+    const lxResult = await resolveLxUrl(
+      song,
+      'tx',
+      songmidStr,
+      requestedQuality,
+      fallbackBehavior,
+      null,
+    );
+    if (lxResult?.url && !isQqTrialMediaUrl(lxResult.url)) {
+      console.warn(`[Download] QQ 插件解析失败，LX tx 音源兜底成功: ${song.name} (${lxResult.quality})`);
+      return {
+        quality: lxResult.quality,
+        url: lxResult.url,
+        headers: null,
+        ekey: undefined,
+        cek: undefined,
+      };
+    }
+  } catch (e) {
+    console.warn('[Download] QQ 插件 LX 兜底失败:', e);
+  }
   return null;
 }
 
@@ -581,6 +759,28 @@ export async function probeDownloadableQualities(
       const rustResult = await resolveLxUrlViaRust(cachedInfo, targets);
       if (rustResult?.url) {
         resolvedUrls[rustResult.quality] = rustResult.url;
+      }
+    }
+  }
+
+  // [QQ 插件 LX 兜底] QQ 系插件（vkeys.cn 免费中转）只发 60 秒试听链已被拒绝，
+  // 全档位探测失败时逐档借 LX tx 音源重新探测，避免弹窗误显示"无音质可下载"。
+  // 逐档用 'pause' 单档解析，保证各档可用性结果真实（LX 侧不会自动降档）。
+  if (isPlugin && Object.keys(resolvedUrls).length === 0) {
+    const pluginCtx = ctx as PluginResolveContext;
+    const psr = pluginCtx.pluginSearchResult as any;
+    const songmid = psr?.rawData?.songmid || psr?.songmid || psr?.rawData?.id;
+    if (songmid && isQqMusicPluginSource(pluginCtx.pluginSource)) {
+      const songmidStr = String(songmid);
+      seedQqLxSongCache(song, psr, songmidStr);
+      for (const q of targets) {
+        if (options?.signal?.aborted) break;
+        try {
+          const lxResult = await resolveLxUrl(song, 'tx', songmidStr, q, 'pause', [q]);
+          if (lxResult?.url && !isQqTrialMediaUrl(lxResult.url)) {
+            resolvedUrls[lxResult.quality ?? q] = lxResult.url;
+          }
+        } catch { /* 单档失败不影响其余档位 */ }
       }
     }
   }
@@ -1032,6 +1232,29 @@ export async function downloadSong(
         } else {
           errors.push('Rust 兜底: 无可用直链');
         }
+      }
+    }
+  }
+
+  // [QQ 插件 LX 兜底] QQ 系插件（vkeys.cn 免费中转）只发 60 秒试听链已被拒绝，
+  // 全档位失败后借 LX tx 音源解析完整版直链，与播放路径的兜底保持一致。
+  if ((!filePath || !hitQuality) && isPlugin) {
+    const viaLx = await qqPluginLxFallback(
+      song,
+      ctx as PluginResolveContext,
+      options.quality,
+      options.qualityFallbackBehavior ?? 'lower',
+    );
+    if (viaLx?.url) {
+      const destPath = await resolveDownloadFullPath(song, viaLx.url, viaLx.quality, options);
+      try {
+        filePath = await downloadFromUrl(viaLx.url, destPath, options.onProgress);
+        hitQuality = viaLx.quality;
+      } catch (e: any) {
+        const msg = typeof e === 'string' ? e : (e?.message || String(e));
+        errors.push(`LX 兜底(${viaLx.quality}): 下载失败 ${msg}`);
+        console.warn('[Download] QQ 插件 LX 兜底下载失败:', msg);
+        options.onProgress?.(0);
       }
     }
   }

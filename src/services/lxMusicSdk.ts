@@ -798,6 +798,67 @@ async function requestTxSearch(str: string, page: number, limit: number): Promis
   });
 }
 
+/** Desktop 接口随机 guid：32 位大写 hex */
+function randomTxDeviceGuid(): string {
+  let value = '';
+  for (let i = 0; i < 32; i++) value += Math.floor(Math.random() * 16).toString(16).toUpperCase();
+  return value;
+}
+
+/** Desktop 接口随机 wid：19 位数字（首位非零） */
+function randomTxDeviceWid(): string {
+  let value = String(Math.floor(Math.random() * 9) + 1);
+  while (value.length < 19) value += Math.floor(Math.random() * 10);
+  return value;
+}
+
+function createTxDesktopSearchRequestData(str: string, page: number, limit: number) {
+  // Desktop 接口（DoSearchForQQMusicDesktop）按请求随机 guid/wid：
+  // 与 Mobile 分属不同风控池，实测持续稳定；固定共享身份反而易被按设备维度限流。
+  return {
+    comm: {
+      _channelid: '0',
+      _os_version: '6.2.9200-2',
+      ct: '19',
+      cv: '2151',
+      guid: randomTxDeviceGuid(),
+      patch: '118',
+      psrf_access_token_expiresAt: 0,
+      psrf_qqaccess_token: '',
+      psrf_qqopenid: '',
+      psrf_qqunionid: '',
+      tmeAppID: 'qqmusic',
+      tmeLoginType: 0,
+      uin: '0',
+      wid: randomTxDeviceWid(),
+    },
+    req: {
+      module: 'music.search.SearchCgiService',
+      method: 'DoSearchForQQMusicDesktop',
+      param: {
+        grp: 1,
+        num_per_page: limit,
+        page_num: page,
+        query: str,
+        remoteplace: 'txt.newclient.top',
+        search_type: 0,
+        searchid: `${randomTxDeviceGuid()}${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`,
+      },
+    },
+  };
+}
+
+async function requestTxSearchDesktop(str: string, page: number, limit: number): Promise<any> {
+  const requestData = createTxDesktopSearchRequestData(str, page, limit);
+  const sign = await zzcSign(JSON.stringify(requestData));
+  const url = `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`;
+  return httpPostJson(url, JSON.stringify(requestData), {
+    'User-Agent': 'QQMusic 14090508(android 12)',
+    'Content-Type': 'application/json',
+    'Referer': 'https://y.qq.com/',
+  });
+}
+
 /** 经典 Web 搜索接口兜底：不依赖新签名(Mobile)风控体系，Mobile 被持续风控时使用 */
 async function txSearchWebFallback(str: string, page: number, limit: number): Promise<LxSearchResult> {
   const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&inCharset=utf-8&outCharset=utf-8&cr=1&platform=h5&catZhida=0&w=${encodeURIComponent(str)}&p=${page}&n=${limit}`;
@@ -834,32 +895,149 @@ function txBuildSearchResult(data: any, rawList: any[], limit: number): LxSearch
   };
 }
 
-async function searchTx(str: string, page = 1, limit = 50, retryNum = 0): Promise<LxSearchResult> {
-  if (retryNum > 4) {
-    // Mobile 接口被持续风控(reqCode 2001)，走经典 Web 接口兜底，避免直接失败
-    console.warn('[LxMusicSdk] TX search: Mobile 重试耗尽，尝试 Web 兜底接口');
-    return txSearchWebFallback(str, page, limit);
+async function searchTx(str: string, page = 1, limit = 50): Promise<LxSearchResult> {
+  // 主通道：签名 Desktop 接口。实测 Mobile 接口（DoSearchForQQMusicMobile）请求两次
+  // 即累积风控（reqCode 2001，全列表恒空），而 Desktop 接口按请求随机 guid/wid，
+  // 与 Mobile 分属不同风控池，持续稳定且不累积。
+  try {
+    const desktopBody = await requestTxSearchDesktop(str, page, limit);
+    const desktopOk = desktopBody?.code === 0 && desktopBody?.req?.code === 0;
+    const desktopRaw = desktopOk ? pickTxSearchRawList(desktopBody.req.data) : [];
+    if (desktopRaw.length > 0) {
+      return txBuildSearchResult(desktopBody.req.data, desktopRaw, limit);
+    }
+    console.warn('[LxMusicSdk] TX search: Desktop 接口失败/为空', {
+      code: desktopBody?.code, reqCode: desktopBody?.req?.code,
+    });
+  } catch (e: any) {
+    console.warn('[LxMusicSdk] TX search: Desktop 接口异常', e?.message || e);
   }
 
-  // 仅使用 Mobile 接口（落雪官方验证有效）。请求两次会累积 QQ 音乐的风控（reqCode 2001），
-  // 导致结果随机失败，故完全移除已失效的 Desktop 兜底请求。
-  const mobileBody = await requestTxSearch(str, page, limit);
-  const reqCode = mobileBody?.req?.code;
-  const mobileOk = mobileBody?.code === 0 && reqCode === 0;
-  const mobileRaw = mobileOk ? pickTxSearchRawList(mobileBody.req.data) : [];
-  if (mobileRaw.length > 0) {
-    return txBuildSearchResult(mobileBody.req.data, mobileRaw, limit);
+  // 备用：签名 Mobile 接口（落雪官方链路，未风控环境可用）。
+  // 已被风控时恒 2001，不做重试退避——多轮重试只会加剧累积且白等十几秒。
+  try {
+    const mobileBody = await requestTxSearch(str, page, limit);
+    const reqCode = mobileBody?.req?.code;
+    const mobileOk = mobileBody?.code === 0 && reqCode === 0;
+    const mobileRaw = mobileOk ? pickTxSearchRawList(mobileBody.req.data) : [];
+    if (mobileRaw.length > 0) {
+      return txBuildSearchResult(mobileBody.req.data, mobileRaw, limit);
+    }
+    console.warn('[LxMusicSdk] TX search: Mobile 接口失败/为空', {
+      code: mobileBody?.code, reqCode,
+      bodyKeys: mobileBody?.req?.data?.body ? Object.keys(mobileBody.req.data.body) : null,
+      nested: describeTxSearchBody(mobileBody?.req?.data?.body),
+    });
+  } catch (e: any) {
+    console.warn('[LxMusicSdk] TX search: Mobile 接口异常', e?.message || e);
   }
 
-  // 风控(2001)/空列表时等待重试：2001 表示被风控，需更长间隔；空列表通常是降级响应，稍后重试。
-  console.warn('[LxMusicSdk] TX search: Mobile 接口失败/为空，等待重试', {
-    code: mobileBody?.code, reqCode, retry: retryNum,
-    bodyKeys: mobileBody?.req?.data?.body ? Object.keys(mobileBody.req.data.body) : null,
-    nested: describeTxSearchBody(mobileBody?.req?.data?.body),
-  });
-  const backoff = reqCode === 2001 ? 2000 * (retryNum + 1) : 500 * (retryNum + 1);
-  await new Promise(r => setTimeout(r, backoff));
-  return searchTx(str, page, limit, ++retryNum);
+  // 兜底：经典 Web 接口（无签名，独立于 musics.fcg 风控体系）
+  console.warn('[LxMusicSdk] TX search: Desktop/Mobile 均失败，走经典 Web 兜底接口');
+  return txSearchWebFallback(str, page, limit);
+}
+
+/**
+ * QQ 专辑搜索（签名 Desktop 接口，search_type=2）。
+ * 返回腾讯原始专辑条目（albumID/albumMID/albumName/albumPic/publicTime/singerName），
+ * 与 MusicFree QQ 插件 formatAlbumItem 的输入形状一致，供宿主对 QQ 插件的
+ * 专辑搜索兜底使用。无签名 musicu.fcg 的搜索全类型（含 type=2）已被间歇风控
+ * （reqCode 2001），签名 Desktop 接口独立稳定。
+ */
+export async function txSearchAlbumsRaw(
+  keyword: string,
+  page = 1,
+  limit = 30,
+): Promise<Array<Record<string, any>>> {
+  const requestData = {
+    comm: {
+      _channelid: '0',
+      _os_version: '6.2.9200-2',
+      ct: '19',
+      cv: '2151',
+      guid: randomTxDeviceGuid(),
+      patch: '118',
+      psrf_access_token_expiresAt: 0,
+      psrf_qqaccess_token: '',
+      psrf_qqopenid: '',
+      psrf_qqunionid: '',
+      tmeAppID: 'qqmusic',
+      tmeLoginType: 0,
+      uin: '0',
+      wid: randomTxDeviceWid(),
+    },
+    req: {
+      module: 'music.search.SearchCgiService',
+      method: 'DoSearchForQQMusicDesktop',
+      param: {
+        grp: 1,
+        num_per_page: limit,
+        page_num: page,
+        query: keyword,
+        remoteplace: 'txt.newclient.top',
+        search_type: 2,
+        searchid: `${randomTxDeviceGuid()}${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`,
+      },
+    },
+  };
+  const sign = await zzcSign(JSON.stringify(requestData));
+  const resp = await httpPostJson(
+    `https://u.y.qq.com/cgi-bin/musics.fcg?sign=${sign}`,
+    JSON.stringify(requestData),
+    {
+      'User-Agent': 'QQMusic 14090508(android 12)',
+      'Content-Type': 'application/json',
+      'Referer': 'https://y.qq.com/',
+    },
+  );
+  // Desktop 响应专辑在 body.album.list（Mobile/无签名接口才是 item_album）
+  const list = resp?.req?.data?.body?.album?.list;
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * 批量查询 QQ 歌曲时长（UniformRuleCtrl / CgiGetTrackInfo，按 songid）。
+ * QQ 系 MusicFree 插件的 formatMusicItem 不输出时长（interval 被丢弃），
+ * getMusicInfo 对已带 artwork+qualities 的条目又走早退分支，宿主只能自行批量补。
+ * 该端点与插件 getBatchQualities 同源，实测未受搜索类风控影响。
+ * 返回 Map<songId, 时长秒>；单批失败跳过，不抛异常。
+ */
+export async function txBatchTrackInterval(
+  songIds: Array<string | number>,
+): Promise<Map<string, number>> {
+  const durationMap = new Map<string, number>();
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < songIds.length; i += CHUNK_SIZE) {
+    const chunk = songIds.slice(i, i + CHUNK_SIZE);
+    const requestData = {
+      comm: { ct: '19', cv: '1859', uin: '0' },
+      req: {
+        module: 'music.trackInfo.UniformRuleCtrl',
+        method: 'CgiGetTrackInfo',
+        param: { types: chunk.map(() => 1), ids: chunk.map(id => Number(id)), ctx: 0 },
+      },
+    };
+    try {
+      const resp = await httpPostJson(
+        'https://u.y.qq.com/cgi-bin/musicu.fcg',
+        JSON.stringify(requestData),
+        {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36',
+          'Content-Type': 'application/json',
+          'Referer': 'https://y.qq.com/',
+          'Cookie': 'uin=',
+        },
+      );
+      const tracks = resp?.req?.data?.tracks;
+      if (Array.isArray(tracks)) {
+        for (const track of tracks) {
+          const interval = Number(track?.interval);
+          if (track?.id && interval > 0) durationMap.set(String(track.id), interval);
+        }
+      }
+    } catch { /* 单批失败不影响其余批次 */ }
+  }
+  return durationMap;
 }
 
 // ==================== WY (网易云) Search ====================
@@ -1628,12 +1806,14 @@ export async function lxGetAlbumSongs(
         return infoList.map((item: any) => kgFilterData(item));
       }
       case 'tx': {
+        // 模块必须用 music.musichallAlbum.AlbumSongList（PlaySingerSongs 是歌手歌曲接口，
+        // 组合 GetAlbumSongList 会返回 500003）。已实测该签名请求稳定可用。
         const requestData = {
           comm: { ct: '24', cv: '0' },
           req: {
-            module: 'music.musichallSong.PlaySingerSongs',
+            module: 'music.musichallAlbum.AlbumSongList',
             method: 'GetAlbumSongList',
-            param: { albumMid: albumId, songBegin: (page - 1) * limit, songNum: limit },
+            param: { albumMid: albumId, albumID: 0, begin: (page - 1) * limit, num: limit, order: 2 },
           },
         };
         const sign = await zzcSign(JSON.stringify(requestData));

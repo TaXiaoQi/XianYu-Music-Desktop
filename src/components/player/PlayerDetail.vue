@@ -441,7 +441,12 @@ const handleToggleCover = () => {
 // 打开时应用用户的封面默认偏好；退出时恢复封面，避免底栏封面被一起隐藏。
 // 详情页封面与底栏封面是同一个元素（靠 isExpanded 切换位置/大小），
 // 若不重置，收起后该元素仍带着 opacity-0，会导致底栏封面也看不见。
+// MV 模式下重新进入时强制保持封面隐藏，避免 MV 视频被恢复的封面遮挡。
 watch(showPlayerDetail, (visible) => {
+  if (visible && isMovieMode.value) {
+    coverHidden.value = true;
+    return;
+  }
   if (!visible) {
     coverHidden.value = false;
     return;
@@ -567,7 +572,19 @@ const toggleVideoBackground = async () => {
             </button>
           </div>
 
-          <div class="pointer-events-none flex-1"></div>
+          <!-- MV 模式：歌名收入顶部栏居中（随顶部栏一起隐藏/浮现）；平时为弹性占位 -->
+          <div
+            v-if="isMovieMode && currentSong"
+            class="pointer-events-none relative z-10 flex min-w-0 flex-1 items-baseline justify-center gap-2.5 px-6 text-center"
+          >
+            <span class="truncate text-[clamp(15px,2vh,21px)] font-semibold tracking-wide text-white drop-shadow-md">
+              {{ currentSong.title || currentSong.name }}
+            </span>
+            <span v-if="currentSong.artist" class="truncate text-[clamp(11px,1.4vh,14px)] text-white/60">
+              - {{ currentSong.artist }}
+            </span>
+          </div>
+          <div v-else class="pointer-events-none flex-1"></div>
 
           <div class="pointer-events-none relative z-10 flex w-1/4 items-center justify-end gap-2">
             <button
@@ -598,9 +615,9 @@ const toggleVideoBackground = async () => {
         </div>
       </div>
 
-      <!-- 歌名（始终显示，位于顶部工具栏下方） -->
+      <!-- 歌名（始终显示，位于顶部工具栏下方）。MV 模式下移入顶部栏居中显示（见上方 flex-1 区） -->
       <div
-        v-if="currentSong"
+        v-if="currentSong && !isMovieMode"
         class="pointer-events-none relative z-[55] flex min-w-0 items-baseline justify-center gap-3 px-6 pb-[clamp(2px,1vh,16px)] text-center"
         :class="showPlayerDetail ? 'detail-enter-title' : 'opacity-0'"
         :style="staggerStyle(1, 'Y', -6)"

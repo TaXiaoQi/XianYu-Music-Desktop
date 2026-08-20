@@ -31,6 +31,7 @@ vi.mock('./lxPluginEngine', () => ({
 
 vi.mock('./lxSongCache', () => ({
   getCachedLxSong: vi.fn().mockReturnValue(null),
+  cacheLxSong: vi.fn(),
 }));
 
 // lxUrlResolver 中的函数内部调用 lxPluginEngine / lxSongCache，
@@ -40,9 +41,11 @@ vi.mock('./lxSongCache', () => ({
 const {
   mockFindLxPluginForSource,
   mockResolveLxUrlForSingleQuality,
+  mockResolveLxUrl,
 } = vi.hoisted(() => ({
   mockFindLxPluginForSource: vi.fn(),
   mockResolveLxUrlForSingleQuality: vi.fn(),
+  mockResolveLxUrl: vi.fn(),
 }));
 
 vi.mock('./lxUrlResolver', async (importOriginal) => {
@@ -58,6 +61,7 @@ vi.mock('./lxUrlResolver', async (importOriginal) => {
     })),
     resolveLxUrlForSingleQuality: mockResolveLxUrlForSingleQuality,
     resolveLxUrlViaRust: vi.fn().mockResolvedValue(null),
+    resolveLxUrl: mockResolveLxUrl,
   };
 });
 
@@ -70,9 +74,10 @@ vi.mock('../features/playback/store', () => ({
 }));
 
 import { tauriInvoke } from './tauri/invoke';
-import { getStoredPlugins } from './pluginEngine';
+import { getStoredPlugins, isBakaPlugin, pluginGetBakaMusicInfo } from './pluginEngine';
 import { lxPluginGetMusicUrl } from './lxPluginEngine';
-import { downloadSong, probeDownloadableQualities } from './downloadService';
+import { cacheLxSong } from './lxSongCache';
+import { downloadSong, probeDownloadableQualities, resolveOnlineQualityUrl } from './downloadService';
 import type { QualityKey, Song } from '../types';
 
 const makeOnlineSong = (): Song => ({
@@ -141,6 +146,180 @@ describe('downloadService: quality candidates', () => {
     ]);
     // '128k' → 128k及以下
     expect(qualityToLxCandidates('128k')).toEqual(['128k', 'mgg']);
+  });
+});
+
+describe('downloadService: QQ 插件试听链的 LX 兜底', () => {
+  const qqPlugin = { id: 'qq1', enabled: true, format: 'musicfree', sources: ['QQ音乐'], name: 'QQ音乐', filePath: 'x.js' };
+
+  const makeQqPluginSong = (): Song => ({
+    path: 'plugin://0039MnYb0qxYhV',
+    name: '晴天',
+    title: '晴天',
+    artist: '周杰伦',
+    album: '叶惠美',
+    source_type: 'remote',
+    rawData: {
+      pluginId: 'qq1',
+      id: '97773',
+      platform: 'QQ音乐',
+      rawData: {
+        id: '97773',
+        songmid: '0039MnYb0qxYhV',
+        qualities: { '320k': {}, '128k': {} },
+      },
+    },
+  } as unknown as Song);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getStoredPlugins as any).mockReturnValue([qqPlugin]);
+    (isBakaPlugin as any).mockResolvedValue(true);
+    (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
+  });
+
+  it('插件全档失败后走 LX tx 音源兜底取完整版', async () => {
+    mockResolveLxUrl.mockResolvedValueOnce({
+      url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
+      quality: '320k' as QualityKey,
+      source: 'plugin' as const,
+    });
+
+    const result = await resolveOnlineQualityUrl(makeQqPluginSong(), '320k', 'lower', null);
+
+    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'lower', null);
+    expect(result?.url).toContain('M800');
+    expect(result?.quality).toBe('320k');
+  });
+
+  it('LX 兜底返回的试听链同样拒绝', async () => {
+    mockResolveLxUrl.mockResolvedValueOnce({
+      url: 'http://ws.stream.qqmusic.qq.com/RS02003Qui1q2u1Zho.mp3?vkey=abc',
+      quality: '128k' as QualityKey,
+      source: 'plugin' as const,
+    });
+
+    const result = await resolveOnlineQualityUrl(makeQqPluginSong(), '320k', 'lower', null);
+
+    expect(result).toBeNull();
+  });
+
+  it('非 QQ 插件不触发 LX 兜底', async () => {
+    const kgPlugin = { ...qqPlugin, id: 'kg1', name: '酷狗音乐', sources: ['酷狗音乐'] };
+    (getStoredPlugins as any).mockReturnValue([kgPlugin]);
+    const song = { ...makeQqPluginSong(), rawData: { ...makeQqPluginSong().rawData, pluginId: 'kg1', platform: '酷狗音乐' } } as unknown as Song;
+
+    await resolveOnlineQualityUrl(song, '320k', 'lower', null);
+
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
+  });
+
+  it('下载时插件全档失败后走 LX tx 音源兜底落盘', async () => {
+    mockResolveLxUrl.mockResolvedValueOnce({
+      url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
+      quality: '320k' as QualityKey,
+      source: 'plugin' as const,
+    });
+    (tauriInvoke as any).mockImplementation(async (cmd: string, args: any) => {
+      if (cmd === 'download_online_song') return args.destPath;
+      if (cmd === 'resolve_download_full_path') return mockResolveDownloadFullPath(args);
+      if (cmd === 'file_exists') return false;
+      return null;
+    });
+
+    const result = await downloadSong(makeQqPluginSong(), { ...baseOptions, quality: '320k' });
+
+    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'lower', null);
+    expect(result.hitQuality).toBe('320k');
+    expect(result.filePath).toContain('周杰伦 - 晴天');
+  });
+
+  it('探测时插件全档失败后逐档走 LX tx 音源兜底', async () => {
+    mockResolveLxUrl.mockImplementation(
+      async (_song: unknown, _src: string, _mid: string, q: QualityKey) =>
+        q === '320k'
+          ? {
+              url: 'http://isure.stream.qqmusic.qq.com/M800003Qui1q2u1Zho.mp3?vkey=abc',
+              quality: '320k' as QualityKey,
+              source: 'plugin' as const,
+            }
+          : null,
+    );
+
+    const result = await probeDownloadableQualities(makeQqPluginSong(), ['320k', '128k']);
+
+    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '320k', 'pause', ['320k']);
+    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'tx', '0039MnYb0qxYhV', '128k', 'pause', ['128k']);
+    expect(result.available).toEqual(['320k']);
+    expect(result.resolvedUrls['320k']).toContain('M800');
+  });
+});
+
+describe('downloadService: 网易云插件的 LX wy 兜底', () => {
+  const wyPlugin = { id: 'wy1', enabled: true, format: 'musicfree', sources: ['网易云音乐'], name: '网易云音乐', filePath: 'x.js' };
+
+  const makeWyPluginSong = (): Song => ({
+    path: 'plugin://186016',
+    name: '晴天',
+    title: '晴天',
+    artist: '周杰伦',
+    album: '叶惠美',
+    source_type: 'remote',
+    rawData: {
+      pluginId: 'wy1',
+      id: '186016',
+      platform: '网易云音乐',
+      rawData: {
+        id: '186016',
+        platform: '网易云音乐',
+        qualities: { '320k': {}, '128k': {} },
+      },
+    },
+  } as unknown as Song);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getStoredPlugins as any).mockReturnValue([wyPlugin]);
+    (isBakaPlugin as any).mockResolvedValue(true);
+    (pluginGetBakaMusicInfo as any).mockResolvedValue(null);
+  });
+
+  it('插件全档失败后走 LX wy 音源兜底取完整版', async () => {
+    mockResolveLxUrl.mockResolvedValueOnce({
+      url: 'http://m701.music.126.net/20260820/x/y/186016.mp3',
+      quality: '320k' as QualityKey,
+      source: 'plugin' as const,
+    });
+
+    const result = await resolveOnlineQualityUrl(makeWyPluginSong(), '320k', 'lower', null);
+
+    expect(mockResolveLxUrl).toHaveBeenCalledWith(expect.anything(), 'wy', '186016', '320k', 'lower', null);
+    expect(result?.url).toContain('music.126.net');
+    expect(result?.quality).toBe('320k');
+    // 兜底前先种入 LX wy 元信息缓存，未配置 LX 插件时也能走 Rust 公共 API
+    expect(cacheLxSong).toHaveBeenCalledWith(expect.objectContaining({ source: 'wy', songmid: '186016' }));
+  });
+
+  it('LX 兜底返回的官方外链同样拒绝', async () => {
+    mockResolveLxUrl.mockResolvedValueOnce({
+      url: 'https://music.163.com/song/media/outer/url?id=186016.mp3',
+      quality: '128k' as QualityKey,
+      source: 'plugin' as const,
+    });
+
+    const result = await resolveOnlineQualityUrl(makeWyPluginSong(), '320k', 'lower', null);
+
+    expect(result).toBeNull();
+  });
+
+  it('非网易云插件不触发 LX wy 兜底', async () => {
+    const kgPlugin = { ...wyPlugin, id: 'kg1', name: '酷狗音乐', sources: ['酷狗音乐'] };
+    (getStoredPlugins as any).mockReturnValue([kgPlugin]);
+    const song = { ...makeWyPluginSong(), rawData: { ...makeWyPluginSong().rawData, pluginId: 'kg1', platform: '酷狗音乐' } } as unknown as Song;
+
+    await resolveOnlineQualityUrl(song, '320k', 'lower', null);
+
+    expect(mockResolveLxUrl).not.toHaveBeenCalled();
   });
 });
 

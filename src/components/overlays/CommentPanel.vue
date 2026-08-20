@@ -36,6 +36,8 @@ const loadingMore = ref(false);
 const currentPage = ref(1);
 const isEnd = ref(false);
 const error = ref<string | null>(null);
+/** 插件与宿主平台兜底都无法提供评论（平台不支持），区别于"暂无评论" */
+const unsupported = ref(false);
 const scrollContainer = ref<HTMLElement | null>(null);
 const canLoadMore = computed(() => !isEnd.value && !loadingMore.value && comments.value.length > 0);
 
@@ -47,6 +49,13 @@ const expandedReplies = ref<Set<string>>(new Set());
 
 const resolvedSong = computed<Song | null>(() => props.song ?? currentSong.value ?? null);
 const commentCount = computed(() => comments.value.length);
+
+/** 当前歌曲所属插件 id：播放链路构造的 Song 不写 plugin_id，回退 rawData.pluginId（与播放解析/MV 判定一致） */
+const activePluginId = computed(() =>
+  resolvedSong.value?.plugin_id
+  || (resolvedSong.value?.rawData as Record<string, unknown> | undefined)?.pluginId as string | undefined
+  || '',
+);
 
 /** 排序后的评论列表（仅排序一级评论，不影响分页加载） */
 const sortedComments = computed(() => {
@@ -78,26 +87,31 @@ function isRepliesExpanded(comment: CommentItem, idx: number): boolean {
   return expandedReplies.value.has(getCommentKey(comment, idx));
 }
 
-function buildSearchResult(song: Song): PluginSearchResult | null {
+function buildSearchResult(song: Song, pluginId: string): PluginSearchResult | null {
   if (!song.rawData) return null;
+  const raw = song.rawData as Record<string, any>;
+  // 播放主路径把搜索阶段的 PluginSearchResult 整个存进 song.rawData；
+  // 插件 getMediaSource / 宿主平台兜底消费的是内层 MusicFree 条目
+  // （songmid/id/qualities 都在内层），外层整体传入会让插件读到
+  // songmid=undefined（QQ 插件报"无效的歌曲ID: null"）。
+  const mediaItem = raw.rawData && typeof raw.rawData === 'object' ? raw.rawData : raw;
   return {
-    id: String(song.rawData.id || song.rawData.songId || ''),
+    id: String(raw.id || raw.songId || ''),
     title: song.title || song.name || '',
     artist: song.artist || '',
     album: song.album || '',
     coverUrl: '',
     duration: song.duration || 0,
-    platform: song.rawData.platform || '',
-    platformId: String(song.rawData.id || ''),
-    pluginId: song.plugin_id || '',
-    rawData: song.rawData,
+    platform: raw.platform || '',
+    platformId: String(raw.id || ''),
+    pluginId,
+    rawData: mediaItem,
   } as PluginSearchResult;
 }
 
-function buildPluginSource(song: Song): PluginSource | null {
-  if (!song.plugin_id) return null;
+function buildPluginSource(song: Song, pluginId: string): PluginSource | null {
   return {
-    id: song.plugin_id,
+    id: pluginId,
     name: song.rawData?.platform || '',
     format: 'musicfree',
     version: '',
@@ -112,10 +126,11 @@ function buildPluginSource(song: Song): PluginSource | null {
 
 async function fetchComments(page: number = 1) {
   const song = resolvedSong.value;
-  if (!song || !song.plugin_id) return;
+  const pluginId = activePluginId.value;
+  if (!song || !pluginId) return;
 
-  const source = buildPluginSource(song);
-  const item = buildSearchResult(song);
+  const source = buildPluginSource(song, pluginId);
+  const item = buildSearchResult(song, pluginId);
   if (!source || !item) return;
 
   try {
@@ -123,6 +138,7 @@ async function fetchComments(page: number = 1) {
       loading.value = true;
       comments.value = [];
       expandedReplies.value.clear();
+      unsupported.value = false;
     } else {
       loadingMore.value = true;
     }
@@ -142,6 +158,7 @@ async function fetchComments(page: number = 1) {
     } else {
       if (page === 1) {
         comments.value = [];
+        unsupported.value = true;
       }
       isEnd.value = true;
     }
@@ -285,7 +302,7 @@ onUnmounted(() => {
 
         <!-- Sort Bar -->
         <div
-          v-if="resolvedSong?.plugin_id && comments.length > 0"
+          v-if="activePluginId && comments.length > 0"
           class="flex items-center gap-1 px-4 py-2 border-b border-[#d9e0ea]/60 dark:border-white/8 bg-[#f3f6fa]/80 dark:bg-[#2a2a2a]/80"
         >
           <button
@@ -318,7 +335,7 @@ onUnmounted(() => {
         >
           <!-- Not supported -->
           <div
-            v-if="!resolvedSong?.plugin_id"
+            v-if="!activePluginId || unsupported"
             class="h-full flex flex-col items-center justify-center text-[#34445c] dark:text-white/90 space-y-4 py-20"
           >
             <div class="w-20 h-20 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-inner">
@@ -326,7 +343,8 @@ onUnmounted(() => {
             </div>
             <div class="space-y-1 text-center">
               <span class="text-sm font-medium block">当前歌曲不支持评论</span>
-              <span class="text-xs text-[#42526a] dark:text-white/60 block">评论功能仅对在线插件源歌曲开放</span>
+              <span v-if="!activePluginId" class="text-xs text-[#42526a] dark:text-white/60 block">评论功能仅对在线插件源歌曲开放</span>
+              <span v-else class="text-xs text-[#42526a] dark:text-white/60 block">该音源暂不支持评论</span>
             </div>
           </div>
 

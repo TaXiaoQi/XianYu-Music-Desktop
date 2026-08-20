@@ -339,9 +339,12 @@ const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 
 // --- Comment State (复用全局 UI store，弹窗挂在 MainShell 上) ---
+// 播放链路构造的 Song 不写 plugin_id，回退 rawData.pluginId（与 CommentPanel/播放解析一致）
 const isPluginSong = computed(() => {
   const song = currentSong.value;
-  return !!song && song.source_type === 'plugin' && !!song.plugin_id;
+  return !!song
+    && song.source_type === 'plugin'
+    && !!(song.plugin_id || (song.rawData as Record<string, unknown> | undefined)?.pluginId);
 });
 const wrapToggleComment = () => {
   if (!isPluginSong.value) return;
@@ -358,12 +361,17 @@ const wrapToggleComment = () => {
 const videoBackground = useBilibiliVideoBackground();
 const mvActive = videoBackground.requested;
 const mvLoading = videoBackground.loading;
+// MV 播放中（视频已实际加载）暂时隐藏频谱：与歌词页封面/背景模糊的联动同语义，
+// 条件响应式——关闭 MV 后自动恢复用户设置的频谱开关，无需暂存状态
+const mvVideoActive = videoBackground.active;
 const mvSupport = supportsMusicVideo;
 const { showToast } = useToast();
 const isMvVideoDownloading = ref(false);
 
 const toggleMv = async () => {
   if (!currentSong.value) return;
+  // 点击 MV 控件后自动收纳折叠菜单
+  showFooterTools.value = false;
   try {
     await videoBackground.toggle(currentSong.value);
   } catch (e: any) {
@@ -688,6 +696,8 @@ const selectQuality = async (qualityKey: string) => {
 };
 
 const toggleVisualizer = () => {
+  // 点击可视化开关后自动收纳折叠菜单
+  showFooterTools.value = false;
   isVisualizerEnabled.value = !isVisualizerEnabled.value;
   localStorage.setItem('footer_visualizer_enabled', isVisualizerEnabled.value.toString());
 };
@@ -856,6 +866,12 @@ const startDrag = (e: PointerEvent) => {
 const onGlobalPointerMove = (e: PointerEvent) => {
   if (isDraggingVolume.value) { e.preventDefault(); updateVolume(e.clientY); }
   if (isDraggingProgress.value) { e.preventDefault(); updateProgressFromEvent(e); }
+  // MV 播放中：任意鼠标移动唤醒底栏（B站控制栏行为），静止 2s 后重新折叠。
+  // 指针悬停在底栏内时由底栏自身的 enter/leave 事件管理，避免悬停中被全局计时器折叠
+  if (showPlayerDetail.value && mvVideoActive.value && !isPointerOverFooter.value) {
+    if (isIdle.value) clearIdle();
+    startIdleTimer();
+  }
 };
 
 const onGlobalPointerEnd = (commitProgress = true) => {
@@ -934,6 +950,10 @@ watch(isAudioControlLocked, (locked) => {
 
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
+  // 折叠工具面板：点击外部区域即关闭（类似页面样式面板的点击关闭）
+  if (showFooterTools.value && footerToolsRef.value && !footerToolsRef.value.contains(target)) {
+    showFooterTools.value = false;
+  }
   if (showQualityMenu.value && qualityMenuRef.value && qualityButtonRef.value) {
     if (!qualityMenuRef.value.contains(target) && !qualityButtonRef.value.contains(target)) {
       showQualityMenu.value = false;
@@ -956,6 +976,11 @@ const isPinned = computed(() => showPlayerDetail.value ? isPinnedDetail.value : 
 const isIdleFooter = ref(false);
 const isIdleDetail = ref(false);
 const isIdle = computed(() => showPlayerDetail.value ? isIdleDetail.value : isIdleFooter.value);
+// MV 播放中且鼠标静止：底栏内容整体下滑出窗（B站播放器控制栏风格），
+// 进度条随之贴到窗口最底边；固定(pin)状态下不会进入 idle，天然不折叠
+const isMvCollapsed = computed(() =>
+  Boolean(showPlayerDetail.value && mvVideoActive.value && isIdle.value),
+);
 const isMarqueeAnimationPaused = computed(() =>
   isMarqueePaused.value || isIdle.value || isMainWindowLowPower.value
 );
@@ -1005,7 +1030,10 @@ const startIdleTimer = () => {
   }, 2000);
 };
 
+const isPointerOverFooter = ref(false);
+
 const handleFooterMouseEnter = () => {
+  isPointerOverFooter.value = true;
   clearIdle();
   if (idleTimer) clearTimeout(idleTimer);
 };
@@ -1016,6 +1044,7 @@ const handleFooterMouseMove = () => {
 };
 
 const handleFooterMouseLeave = () => {
+  isPointerOverFooter.value = false;
   startIdleTimer();
 };
 
@@ -1139,20 +1168,21 @@ onUnmounted(() => {
   >
     
     <div
-      v-if="showPlayerDetail && currentSong && isVisualizerEnabled"
+      v-if="showPlayerDetail && currentSong && isVisualizerEnabled && !mvVideoActive"
       class="pointer-events-none absolute left-5 right-5 top-[-76px] h-16 z-40 transition-opacity duration-500 [mask-image:linear-gradient(90deg,transparent,black_1.5%,black_98.5%,transparent)]"
       :class="isIdle ? 'opacity-25' : 'opacity-100'"
     >
       <AudioVisualizer
-        :active="showPlayerDetail && isVisualizerEnabled"
+        :active="showPlayerDetail && isVisualizerEnabled && !mvVideoActive"
         :is-playing="isPlaying"
         :song-path="currentSong.path"
       />
     </div>
 
-    <div 
+    <div
       ref="progressBarRef"
-      class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none]"
+      class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      :class="isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0'"
       @pointerdown="startProgressDrag"
     >
       <div class="absolute inset-y-0 left-0 right-0 flex items-center">
@@ -1169,7 +1199,7 @@ onUnmounted(() => {
             <!-- 白色滑块圆球 (Thumb) -->
             <div
               class="absolute right-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full transition-all duration-150 z-40 border shadow-[0_2.5px_6px_rgba(0,0,0,0.15)]"
-              :class="[progressThumbClass, isDraggingProgress && !isProgressHidden ? 'opacity-100 scale-100' : progressVisualState.thumbClass]"
+              :class="[progressThumbClass, isDraggingProgress && !isProgressHidden ? 'opacity-100 scale-100' : (isMvCollapsed ? 'opacity-0 scale-75' : progressVisualState.thumbClass)]"
             ></div>
 
             <!-- 拖拽时间提示气泡的外层定位容器 (与白色滑块平级) -->
@@ -1193,6 +1223,12 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- MV 播放中鼠标静止：三个区段整体下滑出窗隐藏（B站控制栏风格），进度条同步贴底；
+         鼠标移回底栏区域（mouseenter/mousemove 清除 idle）即上滑恢复 -->
+    <div
+      class="flex h-full min-w-0 flex-1 items-center justify-between transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      :class="isMvCollapsed ? 'pointer-events-none translate-y-[calc(100%+12px)] opacity-0' : 'translate-y-0 opacity-100'"
+    >
     <div
       class="footer-left-section flex items-center w-1/3 min-w-[150px]"
       @contextmenu="handleContextMenu"
@@ -1370,6 +1406,7 @@ onUnmounted(() => {
           />
         </button>
       </div>
+    </div>
     </div>
         <FooterContextMenu
           v-if="showContextMenu"
