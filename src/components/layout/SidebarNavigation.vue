@@ -100,7 +100,9 @@ const activeKey = computed<SidebarItemKey | null>(() => {
 });
 
 const baseNavClasses = 'px-3 py-2 mx-2 rounded-md cursor-pointer flex items-center transition-all duration-100 text-sm font-medium active:scale-[0.97]';
-const activeNavClasses = 'bg-black/10 dark:bg-white/10 text-black dark:text-white font-semibold shadow-sm translate-x-1';
+/* 选中态不再 translate-x-1：高亮块基于 mx-2 左右对称，
+   右移会破坏对称（左 12px / 右 4px），视觉上"左边更宽" */
+const activeNavClasses = 'bg-black/10 dark:bg-white/10 text-black dark:text-white font-semibold shadow-sm';
 const idleClasses = 'text-gray-800 dark:text-gray-200';
 const hoverClasses = 'bg-black/5 dark:bg-white/5 text-black dark:text-white translate-x-1';
 
