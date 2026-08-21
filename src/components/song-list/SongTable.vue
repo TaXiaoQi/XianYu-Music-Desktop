@@ -887,14 +887,14 @@ const getRowStyle = (songIndex: number, songPath: string) => {
 <template>
   <div
     ref="rootRef"
-    class="min-w-0 relative overflow-x-hidden"
+    class="min-w-0 relative overflow-x-auto"
     :class="{ 'flex-1 min-h-0': !pageScrollMode }"
     @pointermove="handleSongTablePointerMove"
     @mouseleave="handleSongTableMouseLeave"
   >
     <div
       ref="containerRef"
-      class="overflow-x-hidden pl-2.5 pb-8 custom-scrollbar song-list-scroll-container"
+      class="overflow-x-auto pl-2.5 pb-8 custom-scrollbar song-list-scroll-container"
       :class="{
         'h-full overflow-y-auto': !pageScrollMode,
         'song-list-scrollbar-active': isScrollbarActive,
@@ -913,7 +913,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
           @dblclick="!isBatchMode && songClickAction !== 'single' && handlePlayClick(song)"
           @contextmenu.prevent="emit('contextmenu', $event, song)"
           @dragstart.prevent
-          class="group w-full min-w-0 border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 select-none cursor-default relative flex items-center pl-2 pr-6 gap-3 [touch-action:none]"
+          class="group w-full min-w-[580px] border-b border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 select-none cursor-default relative flex items-center pl-2 pr-6 gap-3 [touch-action:none]"
           :class="{ 'bg-red-500/10 dark:bg-red-500/20': selectedPaths.has(song.path) }"
           :style="getRowStyle(song.virtualIndex, song.path)"
         >
@@ -957,7 +957,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             </svg>
           </div>
 
-          <div class="flex-[0_1_40%] min-w-0 flex flex-col justify-center gap-0.5">
+          <div class="flex-[1_1_40%] max-w-[44%] min-w-[100px] flex flex-col justify-center gap-0.5">
             <div class="min-w-0 flex items-baseline gap-1.5 leading-snug">
               <span class="min-w-0 truncate text-[15px] text-gray-900 dark:text-gray-100 font-semibold">{{ song.title || song.name.replace(/\.[^/.]+$/, '') }}</span>
               <span
@@ -980,7 +980,7 @@ const getRowStyle = (songIndex: number, songPath: string) => {
             </div>
           </div>
 
-          <div class="flex-1 min-w-0 truncate text-xs text-gray-900 dark:text-gray-100">
+          <div class="flex-1 min-w-[9rem] truncate text-xs text-gray-900 dark:text-gray-100" :title="song.album">
             {{ song.album }}
           </div>
 

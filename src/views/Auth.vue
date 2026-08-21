@@ -1141,7 +1141,7 @@ async function silentPoll() {
             <div class="pt-4 flex items-center gap-5 flex-wrap">
               <button
                 type="submit"
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full text-base font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 :disabled="loading"
               >
                 {{ loading ? '提交中…' : '重置密码' }}
@@ -1291,7 +1291,7 @@ async function silentPoll() {
             <div class="pt-4 flex items-center gap-5 flex-wrap">
               <button
                 type="submit"
-                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-10 py-3 rounded-full text-base font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                class="bg-[#EC4141] hover:bg-[#d13b3b] text-white px-6 py-2 rounded-full text-sm font-medium transition flex items-center gap-1 active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                 :disabled="loading || !agreementAccepted"
               >
                 {{ loading ? '提交中…' : mode === 'login' ? '登录' : '注册' }}

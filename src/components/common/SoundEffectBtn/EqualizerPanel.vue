@@ -38,6 +38,20 @@ const algoReverbItems = algorithmicReverbs.map(ar => ({
 }));
 const customAlgoReverbActive = computed(() => store.algoIsCustom && store.activeAlgoReverb != null);
 
+// 「无」：卷积与算法混响均未启用（默认状态）。选中时增益滑杆置灰并禁止拖动
+const reverbNoneActive = computed(
+  () => store.activeConvolution == null && store.activeAlgoReverb == null,
+);
+
+const handleReverbNone = () => {
+  if (reverbNoneActive.value) return;
+  // 显式关闭全部混响，与「再次点击已选预设」的关闭分支行为一致
+  store.activeAlgoReverb = null;
+  store.activeConvolution = null;
+  store.algoIsCustom = false;
+  store.convIsCustom = false;
+};
+
 const handleReverbToggle = (label: string) => {
   store.toggleConvolution(label);
 };
@@ -176,6 +190,15 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </h3>
                       <div class="grid grid-cols-4 gap-1.5">
                         <label
+                          class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
+                          :class="reverbNoneActive
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                          @click.prevent="handleReverbNone"
+                        >
+                          无
+                        </label>
+                        <label
                           v-for="item in reverbItems"
                           :key="item.label"
                           class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
@@ -206,6 +229,15 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </h3>
                       <div class="flex flex-wrap gap-1.5">
                         <label
+                          class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
+                          :class="reverbNoneActive
+                            ? 'bg-[#EC4141]/10 text-[#EC4141]'
+                            : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                          @click.prevent="handleReverbNone"
+                        >
+                          无
+                        </label>
+                        <label
                           v-for="item in algoReverbItems"
                           :key="item.label"
                           class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-1 text-[12px] transition-colors"
@@ -228,16 +260,19 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                       </div>
                     </section>
 
-                    <!-- 增益控制 -->
-                    <div class="space-y-3 rounded-xl border border-gray-200/70 bg-white/40 p-4 dark:border-white/10 dark:bg-white/5">
+                    <!-- 增益控制：「无」混响时整体置灰并禁止拖动 -->
+                    <div
+                      class="space-y-3 rounded-xl border border-gray-200/70 bg-white/40 p-4 dark:border-white/10 dark:bg-white/5 transition-opacity"
+                      :class="{ 'opacity-50': reverbNoneActive }"
+                    >
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">原始增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain" @input="handleReverbGainInput">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.originalGain" :disabled="reverbNoneActive" @input="handleReverbGainInput">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.originalGain }}%</span>
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="w-16 shrink-0 text-[12px] text-gray-600 dark:text-gray-300">环境增益</span>
-                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain" @input="handleReverbGainInput">
+                        <input type="range" class="fx-slider" min="0" max="100" v-model.number="store.envGain" :disabled="reverbNoneActive" @input="handleReverbGainInput">
                         <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ store.envGain }}%</span>
                       </div>
                     </div>
@@ -1017,6 +1052,33 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
   background: #ec4141;
   box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
   cursor: pointer;
+}
+
+/* ===== 滑杆禁用态（混响为「无」时）：轨道与滑块置灰，禁止拖动 ===== */
+.fx-slider:disabled {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.14));
+  cursor: not-allowed;
+}
+
+:global(html.dark) .fx-slider:disabled {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.14));
+}
+
+.fx-slider:disabled::-webkit-slider-thumb {
+  background: #b9b9b9;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.fx-slider:disabled::-webkit-slider-thumb:hover,
+.fx-slider:disabled:active::-webkit-slider-thumb {
+  transform: none;
+}
+
+.fx-slider:disabled::-moz-range-thumb {
+  background: #b9b9b9;
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 /* 音调/速度滑块的进度条填充（中心对齐 100%） */
