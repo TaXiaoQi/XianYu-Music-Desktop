@@ -77,12 +77,13 @@ export default defineConfig(async () => ({
           ) {
             return 'vendor-crypto';
           }
-          if (id.includes('/axios/') || id.includes('/qs/')) {
-            return 'vendor-http';
-          }
           if (id.includes('/dayjs/') || id.includes('/he/') || id.includes('/pinyin-pro/')) {
             return 'vendor-utils';
           }
+          // 其余第三方库统一收入 vendor-misc，避免 node_modules 撑大入口 chunk。
+          // 注意：axios/qs、cheerio、crypto-js 等有相互依赖的库统一并入 misc，
+          // 若拆成独立 chunk 会与 misc 形成循环依赖、触发 Rollup 的循环 chunk 告警。
+          return 'vendor-misc';
         },
       },
     },
