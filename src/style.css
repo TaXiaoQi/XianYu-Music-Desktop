@@ -11,6 +11,10 @@
 }
 
 :root {
+  /* 原生控件配色方案：跟随 .dark 类切换，让 <select> 弹层、滚动条等
+     WebView 原生渲染的部分与当前主题一致（否则深色模式下弹层是白底，
+     配合控件的浅色文字几乎不可读） */
+  color-scheme: light;
   --theme-color: #EC4141;
   /* 滚动条拇指色：RGB 分量 + 最大透明度（淡入上限），还原淡灰观感。
      alpha 取自滚动容器自身的 --scrollbar-thumb-alpha（未设置时回退到 0 即隐藏），
@@ -24,8 +28,28 @@
 }
 
 .dark {
+  color-scheme: dark;
   --scrollbar-thumb-rgb: 255, 255, 255;
   --scrollbar-thumb-max-alpha: 0.32;
+}
+
+/* ---- 原生 <select> 下拉选项 ---- */
+/* WebView2/Chromium 原生弹层的 <option> 不继承祖先的背景/前景色
+   （即使 color-scheme:dark 在部分 WebView2 版本下也不生效），
+   导致深色模式下弹层白底浅字看不清。显式给 option 设底色和文字色，
+   保证选中/未选中在两种主题下都可读。 */
+select option {
+  background-color: #ffffff;
+  color: #1f2937;
+  padding: 6px 10px;
+}
+.dark select option {
+  background-color: #1f2937; /* gray-800 */
+  color: #e5e7eb; /* gray-200 */
+}
+select option:checked {
+  background-color: #EC4141;
+  color: #ffffff;
 }
 
 html,
