@@ -29,7 +29,7 @@ use tauri::{Emitter, Manager};
 use truce_rack::core::info::ParameterFlags;
 use truce_rack::core::plugin::Plugin;
 
-use super::scanner::{load_instance, scan_all_directories, PluginScanEntry};
+use super::scanner::{load_instance, scan_directories_with_extra, PluginScanEntry};
 use super::{rack_handle, RackConfig};
 
 /// 编辑器关闭通知事件名（payload: { format, uniqueId }）。
@@ -101,10 +101,18 @@ fn preset_cache() -> &'static Mutex<HashMap<String, Vec<PluginPresetEntry>>> {
     PRESET_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// 扫描全部标准插件目录（用户级 + 系统级 VST3/CLAP）。
+/// 扫描全部标准插件目录（用户级 + 系统级 VST3/CLAP），合并前端传入的自定义目录。
+///
+/// `dirs` 为自定义插件目录（绝对路径列表），与标准目录一起去重合并；
+/// 目录类别（VST3/CLAP）由 scanner 按目录名/内容判定。
 #[tauri::command]
-pub async fn plugin_host_scan_plugins() -> Vec<PluginScanEntry> {
-    scan_all_directories()
+pub async fn plugin_host_scan_plugins(dirs: Vec<String>) -> Vec<PluginScanEntry> {
+    let extra: Vec<std::path::PathBuf> = dirs
+        .into_iter()
+        .filter(|d| !d.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .collect();
+    scan_directories_with_extra(&extra)
 }
 
 /// 读取当前机架配置。

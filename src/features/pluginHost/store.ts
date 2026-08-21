@@ -76,6 +76,22 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   const isScanning = ref(false);
   const hasScanned = ref(false);
 
+  // ===== 自定义扫描目录（持久化，扫描时传给后端合并） =====
+  const extraDirs = ref<string[]>([]);
+  try {
+    const saved = playerStorage.readStringArray(playerStorageKeys.pluginHostExtraDirs);
+    if (saved) extraDirs.value = saved;
+  } catch (err) {
+    console.warn('[pluginHostStore] 恢复自定义插件目录失败（使用默认值）:', err);
+  }
+  const persistExtraDirs = () => {
+    try {
+      localStore.setJson(playerStorageKeys.pluginHostExtraDirs, extraDirs.value);
+    } catch (err) {
+      console.warn('[pluginHostStore] 保存自定义插件目录失败:', err);
+    }
+  };
+
   // ===== 编辑器窗口状态 =====
   const openEditorKeys = ref<Set<string>>(new Set());
 
@@ -176,7 +192,7 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     if (isScanning.value) return;
     isScanning.value = true;
     try {
-      scannedPlugins.value = await scanPlugins();
+      scannedPlugins.value = await scanPlugins(extraDirs.value);
       hasScanned.value = true;
     } catch (err) {
       console.warn('[pluginHostStore] 插件扫描失败:', err);
@@ -184,6 +200,23 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     } finally {
       isScanning.value = false;
     }
+  };
+
+  // ===== 自定义目录管理 =====
+  const addExtraDir = (path: string) => {
+    const dir = path.trim();
+    if (!dir || extraDirs.value.includes(dir)) return;
+    extraDirs.value.push(dir);
+    persistExtraDirs();
+    void scan();
+  };
+
+  const removeExtraDir = (path: string) => {
+    const index = extraDirs.value.indexOf(path);
+    if (index < 0) return;
+    extraDirs.value.splice(index, 1);
+    persistExtraDirs();
+    void scan();
   };
 
   // ===== 机架操作 =====
@@ -304,8 +337,12 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     isScanning,
     hasScanned,
     hasActiveSlots,
+    extraDirs,
     // 扫描
     scan,
+    // 自定义目录
+    addExtraDir,
+    removeExtraDir,
     // 机架
     setMasterEnabled,
     isSlotInRack,

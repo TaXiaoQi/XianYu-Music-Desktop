@@ -80,25 +80,30 @@ pub fn standard_scan_directories() -> Vec<PathBuf> {
 }
 
 /// 扫描全部标准目录，聚合 VST3 + CLAP 结果。
+#[allow(dead_code)] // 供 source.rs 的真实插件冒烟测试（#[ignore]）使用
+pub fn scan_all_directories() -> Vec<PluginScanEntry> {
+    scan_directories(standard_scan_directories())
+}
+
+/// 标准目录 + 自定义目录合并扫描（自定义目录排在标准目录之后，
+/// 全程按 (format, unique_id) 去重，标准目录优先保留）。
 ///
 /// 逐目录容错：单个目录不存在/读取失败只跳过，不影响其余目录。
-/// 按 (format, unique_id) 去重（用户级优先，系统级重复条目丢弃）。
 /// 扫描含 dlopen 级操作，只应在命令线程调用，禁止实时上下文。
-pub fn scan_all_directories() -> Vec<PluginScanEntry> {
+pub fn scan_directories_with_extra(extra: &[std::path::PathBuf]) -> Vec<PluginScanEntry> {
+    scan_directories(
+        standard_scan_directories()
+            .into_iter()
+            .chain(extra.iter().filter(|d| !d.as_os_str().is_empty()).cloned()),
+    )
+}
+
+fn scan_directories(dirs: impl IntoIterator<Item = std::path::PathBuf>) -> Vec<PluginScanEntry> {
     let mut seen = std::collections::HashSet::new();
     let mut entries = Vec::new();
 
-    for dir in standard_scan_directories() {
-        let is_vst3_dir = dir
-            .extension()
-            .map(|e| e.eq_ignore_ascii_case("vst3"))
-            .unwrap_or_else(|| dir.to_string_lossy().to_uppercase().contains("VST3"));
-        let infos: Vec<PluginInfo> = if is_vst3_dir {
-            Vst3Scanner::new().scan_path(&dir).unwrap_or_default()
-        } else {
-            ClapScanner::new().scan_path(&dir).unwrap_or_default()
-        };
-        for info in infos {
+    for dir in dirs {
+        for info in scan_dir_plugin_infos(&dir) {
             let key = (info.format.to_string(), info.unique_id.clone());
             if seen.insert(key) {
                 entries.push(PluginScanEntry::from(&info));
@@ -107,6 +112,68 @@ pub fn scan_all_directories() -> Vec<PluginScanEntry> {
     }
 
     entries
+}
+
+/// 目录扫描类别：决定用哪个 scanner（VST3 目录 / CLAP 目录 / 两者混扫）。
+#[derive(Clone, Copy)]
+enum DirKind {
+    Vst3,
+    Clap,
+    Both,
+}
+
+/// 判定目录类别：优先按目录名含 "vst3"/"clap" 关键字（与标准目录一致），
+/// 目录名无语义时按顶层条目标题后缀（`*.vst3` / `*.clap`）内容探测一层，
+/// 仍无法判定或为空目录时默认按 CLAP 目录处理。
+fn classify_dir(dir: &std::path::Path) -> DirKind {
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let has_vst3 = name.contains("vst3");
+    let has_clap = name.contains("clap");
+    if has_vst3 && has_clap {
+        return DirKind::Both;
+    }
+    if has_vst3 {
+        return DirKind::Vst3;
+    }
+    if has_clap {
+        return DirKind::Clap;
+    }
+
+    let mut vst3 = false;
+    let mut clap = false;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten().take(128) {
+            let n = entry.file_name().to_string_lossy().to_lowercase();
+            if n.ends_with(".vst3") {
+                vst3 = true;
+            } else if n.ends_with(".clap") {
+                clap = true;
+            }
+            if vst3 && clap {
+                break;
+            }
+        }
+    }
+    match (vst3, clap) {
+        (true, true) => DirKind::Both,
+        (true, false) => DirKind::Vst3,
+        _ => DirKind::Clap,
+    }
+}
+
+fn scan_dir_plugin_infos(dir: &std::path::Path) -> Vec<PluginInfo> {
+    match classify_dir(dir) {
+        DirKind::Vst3 => Vst3Scanner::new().scan_path(dir).unwrap_or_default(),
+        DirKind::Clap => ClapScanner::new().scan_path(dir).unwrap_or_default(),
+        DirKind::Both => {
+            let mut out = Vst3Scanner::new().scan_path(dir).unwrap_or_default();
+            out.extend(ClapScanner::new().scan_path(dir).unwrap_or_default());
+            out
+        }
+    }
 }
 
 /// 按格式 + unique_id 加载一个插件实例（dlopen + 工厂实例化）。
