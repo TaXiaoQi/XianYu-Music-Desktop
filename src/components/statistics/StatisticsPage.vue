@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { fetchLeaderboard, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchAllLeaderboards, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 import SongContextMenu from '../overlays/SongContextMenu.vue';
@@ -143,16 +143,16 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
     if (requestId !== leaderboardRequestId) return;
-    // 一次性并行请求日/周/总三个周期并全部缓存，切换周期秒开。
-    // 上报带 30s 节流：三次请求中只有第一次真正上报，其余直接拉取。
-    const [daily, weekly, total] = await Promise.all([
-      fetchLeaderboard(15, durations, 'daily'),
-      fetchLeaderboard(15, durations, 'weekly'),
-      fetchLeaderboard(15, durations, 'total'),
-    ]);
+    // 一次性请求日/周/总三榜（period=all，单次往返）并全部缓存，切换周期秒开。
+    // 上报带 30s 节流：频繁刷新时只有第一次真正上报，其余直接拉取。
+    const all = await fetchAllLeaderboards(15, durations);
     if (requestId !== leaderboardRequestId) return;
-    const resetApplied = Boolean(daily.resetApplied || weekly.resetApplied || total.resetApplied);
-    const results: Record<LeaderboardPeriod, LeaderboardData> = { daily, weekly, total };
+    const resetApplied = Boolean(all.resetApplied);
+    const results: Record<LeaderboardPeriod, LeaderboardData> = {
+      daily: all.daily,
+      weekly: all.weekly,
+      total: all.total,
+    };
     for (const p of (['daily', 'weekly', 'total'] as LeaderboardPeriod[])) {
       const data = results[p];
       const list = [...data.leaderboard];

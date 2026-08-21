@@ -110,8 +110,8 @@ const zhCN = {
   'topbar.close': '关闭',
 
   'pluginHost.effectsRack': '效果插件机架',
-  'pluginHost.enableRack': '启用插件机架',
-  'pluginHost.rackDesc': '按机架顺序处理播放音频（均衡器之后、音量之前）；Bit-perfect 与 DSD 直出时自动旁路。',
+  'pluginHost.enableRack': '音效插件机架',
+  'pluginHost.rackDesc': '音效插件机架在最终音量前按机架顺序串联处理音频，当前支持 VST3 与 CLAP 格式。开启期间会自动禁用 WASAPI 独占、原生 DSD 直通与 Bit-perfect 直出（它们会绕过机架），并锁定全局均衡器；音量与音质切换仍可正常使用。',
   'pluginHost.customScanDirs': '自定义扫描目录',
   'pluginHost.count': '{count} 个',
   'pluginHost.scanDirsHint': '添加后自动重新扫描，插件将出现在下方「可用插件」列表。目录类别按目录名或内容自动识别 VST3 / CLAP。',
@@ -152,6 +152,8 @@ const zhCN = {
   'pluginHost.catTool': '工具',
   'pluginHost.removeTitle': '移除插件',
   'pluginHost.removeContent': '确定要从机架中移除「{name}」吗？其参数设置会被一并清除。',
+  'pluginHost.removeDirTitle': '移除扫描目录',
+  'pluginHost.removeDirContent': '确定要移除该扫描目录吗？移除后该目录下的插件不会被扫描加载。',
 } as const;
 
 export type I18nKey = keyof typeof zhCN;
@@ -261,8 +263,8 @@ const enUS: Record<I18nKey, string> = {
   'topbar.close': 'Close',
 
   'pluginHost.effectsRack': 'Effects Plugin Rack',
-  'pluginHost.enableRack': 'Enable plugin rack',
-  'pluginHost.rackDesc': 'Processes playback audio in rack order (after the equalizer, before the volume); auto-bypasses during Bit-perfect and DSD direct output.',
+  'pluginHost.enableRack': 'Audio Effect Rack',
+  'pluginHost.rackDesc': 'Chains audio plugins in rack order right before the final volume stage. Currently supports VST3 and CLAP formats. While enabled, WASAPI exclusive mode, native DSD passthrough and Bit-perfect output are disabled (they bypass the rack) and the global EQ is locked; volume and quality switching remain available.',
   'pluginHost.customScanDirs': 'Custom scan directories',
   'pluginHost.count': '{count} items',
   'pluginHost.scanDirsHint': 'Plugins auto-rescan after adding and appear in the "Available plugins" list below. The directory type (VST3 / CLAP) is detected automatically by name or content.',
@@ -303,6 +305,8 @@ const enUS: Record<I18nKey, string> = {
   'pluginHost.catTool': 'Tool',
   'pluginHost.removeTitle': 'Remove plugin',
   'pluginHost.removeContent': 'Remove "{name}" from the rack? Its parameter settings will also be cleared.',
+  'pluginHost.removeDirTitle': 'Remove scan directory',
+  'pluginHost.removeDirContent': 'Remove this scan directory? Plugins in it will no longer be scanned.',
 };
 
 const messages: Record<AppLanguage, Record<I18nKey, string>> = {

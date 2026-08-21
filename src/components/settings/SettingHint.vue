@@ -11,7 +11,7 @@ export const SETTING_HINT_Z_INDEX: InjectionKey<number | undefined> = Symbol('se
 
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue';
-import { CircleAlert } from 'lucide-vue-next';
+import { CircleAlert, CircleHelp } from 'lucide-vue-next';
 
 defineOptions({ inheritAttrs: false });
 
@@ -111,7 +111,8 @@ onBeforeUnmount(() => {
     @keydown="handleKeydown"
     @click.stop.prevent
   >
-    <CircleAlert class="h-4 w-4" aria-hidden="true" />
+    <CircleHelp v-if="props.severity !== 'warning'" class="h-4 w-4" aria-hidden="true" />
+    <CircleAlert v-else class="h-4 w-4" aria-hidden="true" />
   </span>
 
   <Teleport to="body">

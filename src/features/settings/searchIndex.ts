@@ -165,7 +165,7 @@ const staticItems: SettingsSearchItem[] = [
   ]),
 
   ...makeItems('audioOutput', '播放设置', [
-    { label: '启用插件机架', keywords: 'VST3 CLAP 原生 效果 DSP 串联' },
+    { label: '音效插件机架', keywords: 'VST3 CLAP 原生 效果 DSP 串联 均衡器 Bit-perfect DSD 独占 互斥' },
   ]),
   ...makeItems('audioOutput', '可用插件', [
     { label: '重新扫描', keywords: 'VST3 CLAP 目录 扫描 发现 安装' },
