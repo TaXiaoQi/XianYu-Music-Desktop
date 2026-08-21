@@ -99,6 +99,31 @@ const playbackRateProgress = computed(() => {
   return ((store.playbackRate - 50) / (200 - 50)) * 100;
 });
 
+// ===== 音调模式：百分比 / 半音 =====
+// 十二平均律（12-TET）：n 个半音的频率比 ratio = 2^(n/12)，
+// 反算 n = 12·log2(ratio)。±12 半音 = ±1 个八度，恰好对应滑杆 50%~200%。
+const pitchMode = ref<'percent' | 'semitone'>('percent');
+const SEMITONE_MIN = -12;
+const SEMITONE_MAX = 12;
+
+// 半音视图：从 store.pitchShift（百分比）反算半音数写入；拖动时按半音换算回百分比
+const pitchSemitones = computed({
+  get: () => Math.round(12 * Math.log2(store.pitchShift / 100)),
+  set: (n: number) => {
+    store.pitchShift = Math.round(100 * Math.pow(2, n / 12));
+  },
+});
+
+const semitoneProgress = computed(() => {
+  return ((pitchSemitones.value - SEMITONE_MIN) / (SEMITONE_MAX - SEMITONE_MIN)) * 100;
+});
+
+const semitoneLabel = computed(() => {
+  const n = pitchSemitones.value;
+  if (n === 0) return '原调';
+  return `${n > 0 ? '+' : ''}${n} 半音`;
+});
+
 // ===== 关闭 =====
 const handleClose = () => {
   emit('update:visible', false);
@@ -409,11 +434,32 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
                           <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
                           音调升降调节
                         </h3>
-                        <button class="fx-reset-btn" @click="handleResetPitch">重置</button>
+                        <div class="flex items-center gap-2">
+                          <div class="flex gap-1.5">
+                            <button class="fx-mode-btn" :class="{ active: pitchMode === 'percent' }" @click="pitchMode = 'percent'">百分比</button>
+                            <button class="fx-mode-btn" :class="{ active: pitchMode === 'semitone' }" @click="pitchMode = 'semitone'">半音</button>
+                          </div>
+                          <button class="fx-reset-btn" @click="handleResetPitch">重置</button>
+                        </div>
                       </div>
-                      <div class="flex items-center gap-2.5">
+                      <!-- 百分比模式 -->
+                      <div v-if="pitchMode === 'percent'" class="flex items-center gap-2.5">
                         <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ (store.pitchShift / 100).toFixed(2) }}x</span>
                         <input type="range" class="fx-slider flex-1" min="50" max="200" v-model.number="store.pitchShift" :style="{ '--pitch-progress': pitchProgress + '%' }">
+                      </div>
+                      <!-- 半音模式（十二平均律：n 半音 = 2^(n/12) 倍频率） -->
+                      <div v-else class="flex items-center gap-2.5">
+                        <span class="min-w-[48px] text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-100">{{ semitoneLabel }}</span>
+                        <input
+                          type="range"
+                          class="fx-slider flex-1"
+                          :min="SEMITONE_MIN"
+                          :max="SEMITONE_MAX"
+                          step="1"
+                          v-model.number="pitchSemitones"
+                          :style="{ '--pitch-progress': semitoneProgress + '%' }"
+                        >
+                        <span class="text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ (store.pitchShift / 100).toFixed(2) }}x</span>
                       </div>
                     </section>
 
@@ -1149,32 +1195,33 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 
 /* ===== 预设按钮 ===== */
 .fx-preset-btn {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   padding: 4px 14px;
-  border: 1px solid rgba(229, 231, 235, 0.7);
-  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.75);
   border-radius: 6px;
-  color: #6b7280;
+  color: #374151;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 :global(html.dark) .fx-preset-btn {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #d1d5db;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
 }
 
 .fx-preset-btn:hover {
-  border-color: rgba(236, 65, 65, 0.4);
+  border-color: rgba(236, 65, 65, 0.5);
   color: #ec4141;
-  background: rgba(255, 255, 255, 0.6);
+  background: #fff;
   transform: translateY(-1px);
 }
 
 :global(html.dark) .fx-preset-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .fx-preset-btn:active {
@@ -1182,19 +1229,28 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 }
 
 .fx-preset-advanced {
-  border-color: rgba(236, 65, 65, 0.25);
-  background: rgba(236, 65, 65, 0.06);
-  color: #ec4141;
+  font-weight: 600;
+  border-color: rgba(236, 65, 65, 0.35);
+  background: rgba(236, 65, 65, 0.1);
+  color: #d13b3b;
 }
 
-/* ===== 模式选择按钮（单次/乒乓、软/硬失真等） ===== */
+:global(html.dark) .fx-preset-advanced {
+  border-color: rgba(236, 65, 65, 0.45);
+  background: rgba(236, 65, 65, 0.18);
+  color: #ff8b8b;
+}
+
+/* ===== 模式选择按钮（百分比/半音、单次/乒乓、软/硬失真等） =====
+   深色文字 + 实底背景 + 中等字重，保证半透明卡片上的可读性 */
 .fx-mode-btn {
-  font-size: 11px;
-  padding: 3px 14px;
-  border: 1px solid rgba(229, 231, 235, 0.7);
-  background: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.75);
   border-radius: 6px;
-  color: #6b7280;
+  color: #374151;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
@@ -1202,47 +1258,57 @@ const formatBandGain = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 }
 
 :global(html.dark) .fx-mode-btn {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #d1d5db;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
 }
 
 .fx-mode-btn:hover {
-  border-color: rgba(236, 65, 65, 0.4);
+  border-color: rgba(236, 65, 65, 0.5);
   color: #ec4141;
+  background: #fff;
+}
+
+:global(html.dark) .fx-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .fx-mode-btn.active {
   background: #ec4141;
   border-color: #ec4141;
   color: #fff;
+  box-shadow: 0 2px 6px rgba(236, 65, 65, 0.35);
 }
 
 /* ===== 重置按钮 ===== */
 .fx-reset-btn {
-  font-size: 11px;
-  padding: 2px 12px;
-  border: 1px solid rgba(229, 231, 235, 0.7);
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 5px;
-  color: #ec4141;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border: 1px solid rgba(236, 65, 65, 0.35);
+  background: rgba(236, 65, 65, 0.08);
+  border-radius: 6px;
+  color: #d13b3b;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
 }
 
 :global(html.dark) .fx-reset-btn {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(236, 65, 65, 0.45);
+  background: rgba(236, 65, 65, 0.15);
+  color: #ff8b8b;
 }
 
 .fx-reset-btn:hover {
-  border-color: rgba(236, 65, 65, 0.4);
-  background: rgba(255, 255, 255, 0.6);
+  border-color: #ec4141;
+  background: rgba(236, 65, 65, 0.16);
+  color: #c62f2f;
 }
 
 :global(html.dark) .fx-reset-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(236, 65, 65, 0.25);
+  color: #ffa3a3;
 }
 
 .fx-reset-btn:active {
