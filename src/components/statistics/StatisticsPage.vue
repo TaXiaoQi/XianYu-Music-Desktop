@@ -849,6 +849,7 @@ const losslessRatio = computed(() => {
 
 .leaderboard-period-tab:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  /* 加载中短暂禁用仍保持手型光标，避免鼠标闪成「禁止」图标 */
+  cursor: pointer;
 }
 </style>
