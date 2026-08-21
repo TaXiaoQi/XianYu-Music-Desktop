@@ -39,6 +39,7 @@ export const playerStorageKeys = {
   equalizerPresets: 'player_equalizer_presets',
   soundEffectState: 'player_sound_effect_state',
   pluginHostRack: 'player_plugin_host_rack',
+  pluginHostExtraDirs: 'player_plugin_host_extra_dirs',
   consumedInstallLanguage: 'player_consumed_install_language',
 } as const;
 
