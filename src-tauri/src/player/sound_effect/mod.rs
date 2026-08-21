@@ -24,6 +24,7 @@ pub mod convolution;
 pub mod dsp;
 pub mod dynamics;
 pub mod modulation;
+pub mod phase_vocoder;
 pub mod pitch;
 pub mod reverb;
 pub mod shaper;
