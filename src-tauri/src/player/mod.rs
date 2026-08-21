@@ -7,6 +7,7 @@ pub mod equalizer;
 pub mod loudness;
 mod output;
 pub(crate) mod qmc2;
+pub mod plugin_host;
 mod runtime;
 mod session;
 pub mod sound_effect;
@@ -26,6 +27,12 @@ pub use commands::{
 pub use device::{
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,
     set_output_device,
+};
+pub use plugin_host::manager::{
+    plugin_host_close_editor, plugin_host_editor_states, plugin_host_get_parameter_values,
+    plugin_host_get_plugin_parameters, plugin_host_get_plugin_presets, plugin_host_get_rack,
+    plugin_host_load_preset, plugin_host_open_editor, plugin_host_scan_plugins,
+    plugin_host_set_parameter, plugin_host_set_rack, plugin_host_take_process_error,
 };
 pub use runtime::init_player;
 pub use session::{

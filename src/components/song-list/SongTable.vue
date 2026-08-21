@@ -104,6 +104,11 @@ const props = defineProps<{
   /** 整页滚动模式下的外层滚动容器 */
   scrollContainerRef?: HTMLElement | null;
   /**
+   * 禁用滚动记忆（离开即销毁的容器，如在线详情专辑/歌单）：不保存也不恢复滚动位置，
+   * 返回时全新加载从顶部开始，避免继承上次访问该容器时的旧滚动位置。
+   */
+  disableScrollMemory?: boolean;
+  /**
    * 已下载在线歌曲的展示策略：
    * true（我的收藏/最近播放/歌单等本地容器）时，下载完成的歌视为本地——音质列不占位且来源列显示"本地"；
    * false（搜索/在线详情容器）时，下载完成显示与底栏一致的绿色对勾且来源列保留音源名。
@@ -493,7 +498,7 @@ const saveViewportCoverSnapshot = (key = tableViewportKey.value) => {
 const {
   saveScrollPosition,
   restoreScrollPosition,
-} = useListScrollMemory(tableViewportKey, activeScrollContainer);
+} = useListScrollMemory(tableViewportKey, activeScrollContainer, { disabled: props.disableScrollMemory });
 
 // 整页滚动模式：歌曲列表更新后若存在保存的滚动位置，触发恢复
 // 解决返回导航时歌曲异步加载晚于 useListScrollMemory 初始恢复尝试的问题

@@ -36,6 +36,9 @@ import ConfirmModal from '../overlays/ConfirmModal.vue';
 import BackupImportResultModal from './BackupImportResultModal.vue';
 import AppBackupResultModal from './AppBackupResultModal.vue';
 import LogExportActions from './LogExportActions.vue';
+import ExportBackupDialog, {
+  type ExportSelection,
+} from './ExportBackupDialog.vue';
 
 const { showToast } = useToast();
 const { patchSettings, replaceSettings } = useSettings();
@@ -300,8 +303,11 @@ const myFeedbackTypeLabel = (type: string): string => {
 
 // ==================== 应用备份导出 ====================
 
-const handleExportAppBackup = async () => {
+const showExportDialog = ref(false);
+
+const handleExportAppBackup = async (selection: ExportSelection) => {
   if (exportingAppBackup.value) return;
+  showExportDialog.value = false;
 
   try {
     const filePath = await saveDialog({
@@ -313,9 +319,10 @@ const handleExportAppBackup = async () => {
     exportingAppBackup.value = true;
 
     const { json, summary } = await exportAppBackup(collectionsStore.playlists, {
-      includePlugins: true,
-      includeSettings: true,
-      includeFavorites: true,
+      includePlaylists: selection.playlists,
+      includePlugins: selection.plugins,
+      includeSettings: selection.settings,
+      includeFavorites: selection.favorites,
       favorites: {
         paths: collectionsStore.favoritePaths,
         songMeta: collectionsStore.favoriteSongMeta,
@@ -517,7 +524,7 @@ onUnmounted(() => {
           type="button"
           :disabled="exportingAppBackup"
           class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 shadow-sm transition hover:border-[#EC4141]/25 hover:bg-white/30 disabled:cursor-wait disabled:opacity-55 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/8"
-          @click="handleExportAppBackup"
+          @click="showExportDialog = true"
         >
           <Loader2 v-if="exportingAppBackup" class="h-4 w-4 animate-spin" />
           <FileUp v-else class="h-4 w-4 text-[#EC4141]" />
@@ -838,6 +845,12 @@ onUnmounted(() => {
       :visible="showAppBackupResult"
       :result="appBackupResult"
       @close="showAppBackupResult = false"
+    />
+
+    <ExportBackupDialog
+      :visible="showExportDialog"
+      @close="showExportDialog = false"
+      @confirm="handleExportAppBackup"
     />
 
     <!-- 备份导入弹窗（拖放 .json / .zip） -->

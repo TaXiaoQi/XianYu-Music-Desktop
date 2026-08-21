@@ -4,14 +4,14 @@ import { useRouter } from 'vue-router';
 
 import type { Song } from '../../types';
 import type { HomeDiscoverTab } from './HomeDiscoverTabs.vue';
+import StatisticsPage from '../statistics/StatisticsPage.vue';
+import DailyRecommend from '../../views/DailyRecommend.vue';
+import TopLists from '../../views/TopLists.vue';
 
 const AlbumDetailHeader = defineAsyncComponent(() => import('../headers/AlbumDetailHeader.vue'));
 const ArtistDetailHeader = defineAsyncComponent(() => import('../headers/ArtistDetailHeader.vue'));
 const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
 const SongTable = defineAsyncComponent(() => import('../song-list/SongTable.vue'));
-const StatisticsPage = defineAsyncComponent(() => import('../statistics/StatisticsPage.vue'));
-const DailyRecommend = defineAsyncComponent(() => import('../../views/DailyRecommend.vue'));
-const TopLists = defineAsyncComponent(() => import('../../views/TopLists.vue'));
 const HomeDiscoverTabs = defineAsyncComponent(() => import('./HomeDiscoverTabs.vue'));
 const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
 const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
@@ -151,7 +151,9 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
            列表状态与滚动位置保留，避免每次切换都出现加载动画像"整页刷新" -->
       <div v-if="isDiscoverMode" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
-        <Transition name="discover-swap" mode="out-in">
+        <!-- 发现区 TAB 切换：复用全局 page-fade（与侧边栏路由切换同一套动效，
+     opacity 0.3s ease + 自上而下/从下往上的 6px 位移），三视图统一 -->
+<Transition name="page-fade" mode="out-in">
           <KeepAlive>
             <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
             <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
@@ -210,20 +212,5 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
 .tab-slide-leave-to {
   opacity: 0;
   transform: translateY(-8px);
-}
-
-/* 发现区 TAB 切换：快速纯淡入淡出（无位移），配合 KeepAlive 缓存态瞬时呈现 */
-.discover-swap-enter-active {
-  transition: opacity 0.15s ease;
-}
-
-.discover-swap-leave-active {
-  pointer-events: none;
-  transition: opacity 0.1s ease;
-}
-
-.discover-swap-enter-from,
-.discover-swap-leave-to {
-  opacity: 0;
 }
 </style>

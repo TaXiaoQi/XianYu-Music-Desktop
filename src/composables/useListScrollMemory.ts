@@ -6,8 +6,11 @@ const RESTORE_MAX_ATTEMPTS = 120;
 export function useListScrollMemory(
   keySource: string | Ref<string>,
   containerRef: Ref<HTMLElement | null>,
+  options?: { disabled?: boolean },
 ) {
   const resolveKey = () => unref(keySource);
+  /** 禁用滚动记忆（离开即销毁的容器）：不保存也不恢复，避免返回时继承旧滚动位置 */
+  const isDisabled = () => options?.disabled ?? false;
   let attachedElement: HTMLElement | null = null;
   let keyChanged = false;
 
@@ -36,6 +39,10 @@ export function useListScrollMemory(
   };
 
   const saveScrollPosition = (key = resolveKey()) => {
+    if (isDisabled()) {
+      return;
+    }
+
     if (!key) {
       return;
     }
@@ -48,6 +55,10 @@ export function useListScrollMemory(
   };
 
   const restoreScrollPosition = async (key = resolveKey()) => {
+    if (isDisabled()) {
+      return;
+    }
+
     if (!key) {
       return;
     }

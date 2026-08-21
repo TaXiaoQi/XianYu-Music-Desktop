@@ -906,9 +906,12 @@ fn append_decoded_source<R>(
             let se_source =
                 crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
 
+            // 2.6 PluginHostSource VST3/CLAP 插件机架（空机架硬旁路零开销）
+            let plugin_source = crate::player::plugin_host::wrap(se_source);
+
             // 3. UserVolumeSource 自定义主音量节点
             let vol_source =
-                crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
+                crate::player::equalizer::UserVolumeSource::new(plugin_source, user_volume);
 
             // 4. ClipGuardSource 最终安全限幅源
             let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);

@@ -40,6 +40,9 @@ encoding_rs = "0.8"
 base64 = "0.22.1"
 rodio = { version = "0.20", default-features = false, features = ["wav", "mp3", "symphonia-aac", "symphonia-aiff", "symphonia-alac", "symphonia-flac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-opus", "dsd", "ape", "wv"] }
 symphonia = { version = "0.5.5", default-features = false, features = ["aac", "adpcm", "aiff", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+# VST3/CLAP 原生插件宿主（可行性研究见 truce-rack-feasibility/，2026-08-20）。
+# vendor fork 基于 1.1.5，含两个已验证补丁：VST3 drop 字段顺序修复、CLAP 最小宿主指针修复。
+truce-rack = { path = "vendor/truce-rack/crates/truce-rack" }
 
 image = { version = "0.25", features = ["jpeg", "png", "webp"] }
 urlencoding = "2"
@@ -74,7 +77,7 @@ num-bigint = "0.4"
 rquickjs = { version = "0.12", features = ["futures", "parallel"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_Com"] }
 windows-core = "0.61"
 webview2-com = "0.38"
