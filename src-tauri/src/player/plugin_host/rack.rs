@@ -358,6 +358,24 @@ impl SharedRack {
         find_chain_slot(&mut state, format, unique_id).map(f)
     }
 
+    /// 非阻塞版 `with_slot`：拿不到 `state` 锁立即返回 `None`。
+    ///
+    /// 窗口过程里对插件的空闲驱动（on_idle / set_size 等）不得在等锁上
+    /// 排队——它们若持锁后又被插件回调宿主而互等，会像“点编辑器整应用
+    /// 无响应”那样死锁。拿不到锁就跳过本帧，与音频线程的 try_lock 纪律
+    /// 一致。
+    pub fn try_with_slot<R>(
+        &self,
+        format: &str,
+        unique_id: &str,
+        f: impl FnOnce(&mut RackSlot) -> R,
+    ) -> Option<R> {
+        let Ok(mut state) = self.state.try_lock() else {
+            return None;
+        };
+        find_chain_slot(&mut state, format, unique_id).map(f)
+    }
+
     // ------------------------------------------------------------------
     // 音频路径
     // ------------------------------------------------------------------
