@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
+import { Check, ChevronDown, CircleHelp, Library, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
@@ -7,6 +7,8 @@ import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
+import PluginLibraryDialog from './PluginLibraryDialog.vue';
+import { storeToRefs } from 'pinia';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -37,6 +39,9 @@ const rackMasterEnabled = computed(() => pluginHostStore.rackConfig.masterEnable
 const toggleRackMaster = () => {
   pluginHostStore.setMasterEnabled(!pluginHostStore.rackConfig.masterEnabled);
 };
+
+const showLibrary = ref(false);
+const { scannedPlugins } = storeToRefs(pluginHostStore);
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 const showVolumeBalancePopover = ref(false);
@@ -1099,24 +1104,26 @@ onScopeDispose(() => {
             </button>
           </div>
         </div>
-        <div v-if="isBitPerfectEnabled" class="px-5 pb-4">
-          <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
-            <p class="mb-1 text-gray-700 dark:text-gray-200">
-              设备原生能力（
-              {{ summaryDeviceFormats?.name || '当前设备' }}
-              ）：
-            </p>
-            <p>
-              采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
-            </p>
-            <p>
-              样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
-            </p>
-            <p class="mt-1">
-              仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
-            </p>
+        <transition name="settings-pop-panel">
+          <div v-if="isBitPerfectEnabled" class="px-5 pb-4">
+            <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
+              <p class="mb-1 text-gray-700 dark:text-gray-200">
+                设备原生能力（
+                {{ summaryDeviceFormats?.name || '当前设备' }}
+                ）：
+              </p>
+              <p>
+                采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
+              </p>
+              <p>
+                样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
+              </p>
+              <p class="mt-1">
+                仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
+              </p>
+            </div>
           </div>
-        </div>
+        </transition>
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</div>
@@ -1136,6 +1143,27 @@ onScopeDispose(() => {
             </button>
           </div>
         </div>
+        <transition name="settings-pop-panel">
+          <div v-if="rackMasterEnabled" class="px-5 pb-4">
+            <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200/40 bg-black/5 p-3 dark:border-gray-800/40 dark:bg-white/5">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.availablePlugins') }}</span>
+                <span
+                  v-if="scannedPlugins.length > 0"
+                  class="shrink-0 text-xs text-gray-400 dark:text-white/35"
+                >{{ t('pluginHost.count', { count: scannedPlugins.length }) }}</span>
+              </div>
+              <button
+                type="button"
+                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
+                @click="showLibrary = true"
+              >
+                <Library class="h-3.5 w-3.5" />
+                {{ t('pluginHost.open') }}
+              </button>
+            </div>
+          </div>
+        </transition>
       </div>
     </section>
 
@@ -1181,6 +1209,11 @@ onScopeDispose(() => {
 
     <!-- 音频插件：并入播放设置，置于最下方 -->
     <SettingsPluginHost />
+
+    <PluginLibraryDialog
+      :visible="showLibrary"
+      @close="showLibrary = false"
+    />
   </div>
 </template>
 

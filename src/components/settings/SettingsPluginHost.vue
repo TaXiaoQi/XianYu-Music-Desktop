@@ -5,7 +5,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
   FolderOpen,
   GripVertical,
-  Library,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-vue-next';
@@ -15,16 +14,12 @@ import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetI
 import type { PluginHostRackSlotConfig } from '../../services/tauri/contracts';
 import SlotParamsDialog from './SlotParamsDialog.vue';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
-import PluginLibraryDialog from './PluginLibraryDialog.vue';
 
 const store = usePluginHostStore();
-const { rackConfig, scannedPlugins, isScanning, hasScanned, extraDirs } = storeToRefs(store);
+const { rackConfig, isScanning, hasScanned, extraDirs } = storeToRefs(store);
 const { t } = useI18n();
 
 const slotKey = (slot: PluginHostRackSlotConfig) => `${slot.format}::${slot.uniqueId}`;
-
-// ===== 可用插件库弹窗 =====
-const showLibrary = ref(false);
 
 // ===== 自定义面板目录 =====
 const handleAddExtraDir = async () => {
@@ -200,42 +195,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- 可用插件 -->
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ t('pluginHost.availablePlugins') }}
-        <span
-          v-if="hasScanned && scannedPlugins.length > 0"
-          class="text-xs font-normal text-gray-400 dark:text-white/35"
-        >{{ t('pluginHost.count', { count: scannedPlugins.length }) }}</span>
-      </h2>
-      <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-        <div class="flex items-center justify-between gap-3 px-4 py-3">
-          <div class="text-xs leading-relaxed text-gray-500 dark:text-white/45">
-            {{ t('pluginHost.scanDirsDesc') }}
-          </div>
-          <button
-            type="button"
-            class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
-            @click="showLibrary = true"
-          >
-            <Library class="h-3.5 w-3.5" />
-            {{ t('pluginHost.open') }}
-          </button>
-        </div>
-        <div class="border-t border-gray-200/40 px-4 py-6 text-center text-xs leading-relaxed text-gray-400 dark:border-gray-800/40 dark:text-white/35">
-          <template v-if="hasScanned && scannedPlugins.length > 0">
-            {{ t('pluginHost.openLibraryHint', { count: scannedPlugins.length }) }}
-          </template>
-          <template v-else>
-            {{ t('pluginHost.noPluginsFoundA') }}<br>
-            {{ t('pluginHost.noPluginsFoundB') }}
-          </template>
-        </div>
-      </div>
-    </section>
-
     <!-- 机架链路（已安装插件式容器 + 拖拽排序） -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -328,14 +287,9 @@ onMounted(() => {
     </section>
 
     <SlotParamsDialog
-      v-if="paramsSlot"
+      :visible="paramsSlot !== null"
       :entry="paramsSlot"
       @close="paramsSlot = null"
-    />
-
-    <PluginLibraryDialog
-      v-if="showLibrary"
-      @close="showLibrary = false"
     />
 
     <ConfirmModal

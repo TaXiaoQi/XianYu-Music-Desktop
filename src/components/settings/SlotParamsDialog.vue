@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { X } from 'lucide-vue-next';
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useI18n } from '../../features/i18n';
@@ -17,12 +17,36 @@ import type {
   PluginHostRackSlotConfig,
 } from '../../services/tauri/contracts';
 
-const props = defineProps<{ entry: PluginHostRackSlotConfig }>();
+const props = defineProps<{ visible: boolean; entry: PluginHostRackSlotConfig | null }>();
 const emit = defineEmits<{ close: [] }>();
 
 const store = usePluginHostStore();
 const { t } = useI18n();
 const { showToast } = useToast();
+
+const open = ref(false);
+
+const openAnimated = () => {
+  nextTick(() => { open.value = true; });
+};
+
+watch(() => props.visible, (visible) => {
+  if (visible) {
+    openAnimated();
+    void load();
+  } else {
+    open.value = false;
+  }
+});
+
+onMounted(() => {
+  if (props.visible) {
+    openAnimated();
+    void load();
+  }
+});
+
+const requestClose = () => emit('close');
 
 const formatLabel = (format: string) => (format === 'vst3' ? 'VST3' : 'CLAP');
 
@@ -35,13 +59,15 @@ const presets = ref<PluginHostPresetEntry[]>([]);
 const presetNumber = ref<number | null>(null);
 
 const load = async () => {
+  if (!props.entry) return;
+  const entry = props.entry;
   loading.value = true;
   error.value = null;
   try {
     const [paramList, valueList, presetList] = await Promise.all([
-      getPluginParameters(props.entry.format, props.entry.uniqueId, props.entry.path),
-      getParameterValues(props.entry.format, props.entry.uniqueId, props.entry.path),
-      getPluginPresets(props.entry.format, props.entry.uniqueId, props.entry.path).catch(() => []),
+      getPluginParameters(entry.format, entry.uniqueId, entry.path),
+      getParameterValues(entry.format, entry.uniqueId, entry.path),
+      getPluginPresets(entry.format, entry.uniqueId, entry.path).catch(() => []),
     ]);
     params.value = paramList;
     presets.value = presetList;
@@ -56,8 +82,6 @@ const load = async () => {
     loading.value = false;
   }
 };
-
-onMounted(() => { void load(); });
 
 const visibleParams = () => params.value.filter(p => !p.hidden);
 
@@ -84,18 +108,21 @@ const handleParamInput = (param: PluginHostParameterEntry, event: Event) => {
     value,
     text: existing?.text ?? '',
   };
+  if (!props.entry) return;
   void store.setSlotParameter(props.entry.format, props.entry.uniqueId, param.index, value);
 };
 
 const handlePresetChange = async (next: number) => {
+  if (!props.entry) return;
+  const entry = props.entry;
   try {
-    await loadPreset(props.entry.format, props.entry.uniqueId, props.entry.path, next);
-    const valueList = await getParameterValues(props.entry.format, props.entry.uniqueId, props.entry.path);
-    for (const entry of valueList) values[entry.index] = entry;
+    await loadPreset(entry.format, entry.uniqueId, entry.path, next);
+    const valueList = await getParameterValues(entry.format, entry.uniqueId, entry.path);
+    for (const valueEntry of valueList) values[valueEntry.index] = valueEntry;
     presetNumber.value = next;
     store.applySlotParams(
-      props.entry.format,
-      props.entry.uniqueId,
+      entry.format,
+      entry.uniqueId,
       Object.fromEntries(valueList.map(v => [v.index, v.value])),
     );
   } catch (err) {
@@ -106,28 +133,34 @@ const handlePresetChange = async (next: number) => {
 
 <template>
   <Teleport to="body">
-    <div class="slot-params-overlay fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @click.self="emit('close')">
-      <div class="flex max-h-[calc(100vh-4rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#262626]">
-        <!-- 顶栏 -->
-        <div class="flex shrink-0 items-center justify-between border-b border-black/10 px-5 py-4 dark:border-white/10">
-          <div class="flex min-w-0 items-center gap-2">
-            <span
-              class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
-              :class="entry.format === 'vst3'
-                ? 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300'
-                : 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300'"
-            >{{ formatLabel(entry.format) }}</span>
-            <h2 class="truncate text-sm font-bold text-gray-800 dark:text-gray-100">{{ entry.name }}</h2>
+    <Transition name="modal-pop">
+      <div
+        v-if="open"
+        class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      >
+        <div
+          class="modal-content flex max-h-[calc(100vh-4rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#262626]/95 dark:ring-white/10"
+        >
+          <!-- 顶栏 -->
+          <div class="flex shrink-0 items-center justify-between border-b border-gray-200/70 px-5 py-4 dark:border-white/10">
+            <div class="flex min-w-0 items-center gap-2">
+              <span
+                class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
+                :class="entry?.format === 'vst3'
+                  ? 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300'
+                  : 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300'"
+              >{{ entry ? formatLabel(entry.format) : '' }}</span>
+              <h2 class="truncate text-sm font-bold text-gray-800 dark:text-gray-100">{{ entry?.name }}</h2>
+            </div>
+            <button
+              type="button"
+              class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
+              :title="t('topbar.close')"
+              @click="requestClose"
+            >
+              <X class="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
-            :title="t('topbar.close')"
-            @click="emit('close')"
-          >
-            <X class="h-4 w-4" />
-          </button>
-        </div>
 
         <!-- 主体 -->
         <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -137,7 +170,7 @@ const handlePresetChange = async (next: number) => {
           <div v-else-if="error" class="py-10 text-center text-xs text-red-500">
             {{ error }}
           </div>
-          <template v-else>
+          <template v-else-if="entry">
             <!-- 工厂预设 -->
             <div v-if="presets.length > 0" class="mb-4 flex items-center gap-2">
               <span class="shrink-0 text-[11px] font-medium text-gray-500 dark:text-white/45">{{ t('pluginHost.factoryPresets') }}</span>
@@ -189,5 +222,6 @@ const handlePresetChange = async (next: number) => {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
