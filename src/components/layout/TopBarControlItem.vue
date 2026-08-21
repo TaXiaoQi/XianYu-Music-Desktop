@@ -109,7 +109,7 @@ const ctx = inject<{
   >
     <TopBarControlIcon
       item-key="settings"
-      class="h-5 w-5 transition-transform duration-300 ease-out"
+      class="h-[22px] w-[22px] transition-transform duration-300 ease-out"
       :style="{ transform: `rotate(${ctx.settingsRotation.value}deg)` }"
     />
   </button>
