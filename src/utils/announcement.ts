@@ -19,34 +19,30 @@ export interface Announcement {
 }
 
 export async function fetchAnnouncement(): Promise<Announcement | null> {
-  try {
-    const auth = getStoredAuth();
-    const data = await signedRequest<Record<string, unknown>>(
-      'get_announcement',
-      {
-        ciyuanxi_id: auth?.user?.ciyuanxi_id ?? auth?.user?.id ?? '',
-        device_id: getDeviceId(),
-      },
-      { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
-    );
-    if (!data || !data.id || !data.title || !data.content) {
-      return null;
-    }
-
-    return {
-      id: String(data.id),
-      title: String(data.title),
-      content: String(data.content),
-      type: (data.type === 'warning' || data.type === 'update') ? data.type : 'info',
-      date: typeof data.date === 'string' ? data.date : undefined,
-      actionUrl: typeof data.actionUrl === 'string' ? data.actionUrl : undefined,
-      actionText: typeof data.actionText === 'string' ? data.actionText : undefined,
-      updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
-    };
-  } catch (error) {
-    console.error('[Announcement] 获取公告失败:', error);
+  const auth = getStoredAuth();
+  const data = await signedRequest<Record<string, unknown>>(
+    'get_announcement',
+    {
+      ciyuanxi_id: auth?.user?.ciyuanxi_id ?? auth?.user?.id ?? '',
+      device_id: getDeviceId(),
+    },
+    { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
+  );
+  if (!data || !data.id || !data.title || !data.content) {
+    // 服务端正常响应但无有效公告（data 为空对象/缺少必要字段）
     return null;
   }
+
+  return {
+    id: String(data.id),
+    title: String(data.title),
+    content: String(data.content),
+    type: (data.type === 'warning' || data.type === 'update') ? data.type : 'info',
+    date: typeof data.date === 'string' ? data.date : undefined,
+    actionUrl: typeof data.actionUrl === 'string' ? data.actionUrl : undefined,
+    actionText: typeof data.actionText === 'string' ? data.actionText : undefined,
+    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
+  };
 }
 
 export async function confirmAnnouncement(ann: Announcement): Promise<void> {

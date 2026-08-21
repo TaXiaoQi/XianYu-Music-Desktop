@@ -542,7 +542,7 @@ onUnmounted(() => {
 
 <template>
   <aside
-    class="h-full border-r border-white/10 bg-transparent shrink-0 select-none relative group/sidebar"
+    class="h-full border-r border-white/10 bg-transparent shrink-0 select-none relative group/sidebar min-w-0 max-w-[40%]"
     :style="{ width: `${sidebarWidth}px` }"
   >
     <div

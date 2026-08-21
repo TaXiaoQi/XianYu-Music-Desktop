@@ -409,7 +409,7 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
 // --- 一级侧边栏拖拽调整宽度逻辑 ---
 const STORAGE_KEY_MAIN_SIDEBAR_WIDTH = 'main_sidebar_width';
 const DEFAULT_SIDEBAR_WIDTH = 192;
-const MIN_SIDEBAR_WIDTH = 140;
+const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
 
 const loadInitialSidebarWidth = (): number => {
