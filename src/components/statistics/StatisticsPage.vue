@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchLeaderboard, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 import SongContextMenu from '../overlays/SongContextMenu.vue';
@@ -114,8 +114,10 @@ const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
 /** 各周期排行榜缓存：切换周期时优先展示缓存，避免每次重新请求造成卡顿 */
-const LEADERBOARD_CACHE_TTL = 30_000;
 const leaderboardCache = new Map<LeaderboardPeriod, { list: LeaderboardEntry[]; fetchedAt: number }>();
+
+/** 切换周期时递增，强制重新挂载排行榜列表以重播逐行动画 */
+const leaderboardSwitchKey = ref(0);
 
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
@@ -141,17 +143,28 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
     if (requestId !== leaderboardRequestId) return;
-    const data = await fetchLeaderboard(15, durations, period);
+    // 一次性并行请求日/周/总三个周期并全部缓存，切换周期秒开。
+    // 上报带 30s 节流：三次请求中只有第一次真正上报，其余直接拉取。
+    const [daily, weekly, total] = await Promise.all([
+      fetchLeaderboard(15, durations, 'daily'),
+      fetchLeaderboard(15, durations, 'weekly'),
+      fetchLeaderboard(15, durations, 'total'),
+    ]);
     if (requestId !== leaderboardRequestId) return;
-    const list = [...data.leaderboard];
-    // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
-    if (data.me && !list.some(u => u.isMe)) {
-      list.push(data.me);
+    const resetApplied = Boolean(daily.resetApplied || weekly.resetApplied || total.resetApplied);
+    const results: Record<LeaderboardPeriod, LeaderboardData> = { daily, weekly, total };
+    for (const p of (['daily', 'weekly', 'total'] as LeaderboardPeriod[])) {
+      const data = results[p];
+      const list = [...data.leaderboard];
+      // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
+      if (data.me && !list.some(u => u.isMe)) {
+        list.push(data.me);
+      }
+      leaderboardCache.set(p, { list, fetchedAt: Date.now() });
     }
-    leaderboardCache.set(period, { list, fetchedAt: Date.now() });
-    leaderboard.value = list;
+    leaderboard.value = leaderboardCache.get(period)?.list ?? [];
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
-    if (data.resetApplied) {
+    if (resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
     }
     if (silent) leaderboardError.value = null;
@@ -173,14 +186,16 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
 function switchPeriod(period: LeaderboardPeriod) {
   if (currentPeriod.value === period) return;
   currentPeriod.value = period;
-  // 有缓存时直接展示缓存并静默刷新，避免每次切换都重新请求造成卡顿
+  leaderboardRequestId++; // 取消进行中的请求，避免旧周期数据覆盖新周期
+  leaderboardSwitchKey.value++; // 强制重新挂载列表，重播逐行动画
   const cached = leaderboardCache.get(period);
   if (cached) {
+    // 有缓存：直接展示缓存数据（重播逐行动画），不触发网络更新（由定时器/手动刷新负责）
     leaderboard.value = cached.list;
     leaderboardLoading.value = false;
     leaderboardError.value = null;
-    void loadLeaderboard(true, period);
   } else {
+    // 无缓存（如缓存被清空）：按需拉取
     void loadLeaderboard(false, period);
   }
 }
@@ -494,7 +509,7 @@ const losslessRatio = computed(() => {
           </div>
 
           <!-- 排行榜列表 -->
-          <div v-else class="grid gap-1.5">
+          <div v-else :key="leaderboardSwitchKey" class="grid gap-1.5">
             <div
               v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
