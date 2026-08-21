@@ -278,7 +278,9 @@ onMounted(async () => {
   startStatsTimer();
 });
 
-// KeepAlive 场景：从其他 TAB 切回时，补上离开期间的行为统计与排行榜增量（静默刷新）
+// KeepAlive 场景：从其他 TAB 切回时，补上离开期间的行为统计与排行榜增量。
+// 排行榜用非静默刷新：每次切回都重新显示骨架屏 + 逐行淡入，
+// 与切日榜/周榜触发的加载动画保持一致（不以 silent 原地更新掩盖变化）。
 onActivated(() => {
   if (statsFirstActivation) {
     statsFirstActivation = false;
@@ -288,7 +290,7 @@ onActivated(() => {
   void (async () => {
     try {
       await statisticsStore.refreshBehaviorOnly('All');
-      await loadLeaderboard(true);
+      await loadLeaderboard();
     } catch {
       // 刷新失败静默处理
     }
