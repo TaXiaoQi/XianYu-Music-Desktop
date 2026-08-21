@@ -113,6 +113,10 @@ const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
+/** 各周期排行榜缓存：切换周期时优先展示缓存，避免每次重新请求造成卡顿 */
+const LEADERBOARD_CACHE_TTL = 30_000;
+const leaderboardCache = new Map<LeaderboardPeriod, { list: LeaderboardEntry[]; fetchedAt: number }>();
+
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
     case 'daily': return isEnglish.value ? 'Daily listening time' : '单日听歌时长排行';
@@ -121,10 +125,14 @@ const periodLabel = computed(() => {
   }
 });
 
-async function loadLeaderboard(silent = false) {
+async function loadLeaderboard(silent = false, period: LeaderboardPeriod = currentPeriod.value) {
   const requestId = ++leaderboardRequestId;
-  // 静默刷新时不清空列表、不显示骨架屏，原地更新数据，避免刷新造成闪烁
-  if (!silent) {
+  const cached = leaderboardCache.get(period);
+  // 有缓存时先展示缓存数据，避免骨架屏闪烁；无缓存且非静默时显示骨架屏
+  if (cached && leaderboard.value.length === 0) {
+    leaderboard.value = cached.list;
+  }
+  if (!silent && !cached) {
     leaderboard.value = [];
     leaderboardLoading.value = true;
     leaderboardError.value = null;
@@ -133,16 +141,18 @@ async function loadLeaderboard(silent = false) {
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
     if (requestId !== leaderboardRequestId) return;
-    const data = await fetchLeaderboard(15, durations, currentPeriod.value);
+    const data = await fetchLeaderboard(15, durations, period);
     if (requestId !== leaderboardRequestId) return;
-    leaderboard.value = data.leaderboard;
+    const list = [...data.leaderboard];
+    // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
+    if (data.me && !list.some(u => u.isMe)) {
+      list.push(data.me);
+    }
+    leaderboardCache.set(period, { list, fetchedAt: Date.now() });
+    leaderboard.value = list;
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
     if (data.resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
-    }
-    // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
-    if (data.me && !leaderboard.value.some(u => u.isMe)) {
-      leaderboard.value.push(data.me);
     }
     if (silent) leaderboardError.value = null;
   } catch (e) {
@@ -163,7 +173,16 @@ async function loadLeaderboard(silent = false) {
 function switchPeriod(period: LeaderboardPeriod) {
   if (currentPeriod.value === period) return;
   currentPeriod.value = period;
-  void loadLeaderboard();
+  // 有缓存时直接展示缓存并静默刷新，避免每次切换都重新请求造成卡顿
+  const cached = leaderboardCache.get(period);
+  if (cached) {
+    leaderboard.value = cached.list;
+    leaderboardLoading.value = false;
+    leaderboardError.value = null;
+    void loadLeaderboard(true, period);
+  } else {
+    void loadLeaderboard(false, period);
+  }
 }
 
 const PERIOD_OPTIONS = computed<{ value: LeaderboardPeriod; label: string }[]>(() => isEnglish.value ? [

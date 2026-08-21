@@ -3,8 +3,10 @@ import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
+import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
+import SettingsPluginHost from './SettingsPluginHost.vue';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -27,8 +29,14 @@ import {
 const { settings, patchSettings } = useSettings();
 const playbackStore = usePlaybackStore();
 const soundEffectStore = useSoundEffectStore();
+const pluginHostStore = usePluginHostStore();
 const { showToast } = useToast();
 const { isEnglish, t } = useI18n();
+
+const rackMasterEnabled = computed(() => pluginHostStore.rackConfig.masterEnabled);
+const toggleRackMaster = () => {
+  pluginHostStore.setMasterEnabled(!pluginHostStore.rackConfig.masterEnabled);
+};
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 const showVolumeBalancePopover = ref(false);
@@ -959,73 +967,6 @@ onScopeDispose(() => {
             <ChevronDown class="h-4 w-4 text-gray-400 shrink-0" aria-hidden="true" />
           </button>
         </div>
-        <div class="desktop-setting-row">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
-            <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
-          </div>
-        </div>
-        <div class="desktop-setting-row">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">原生 DSD 直通</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint :text="dsdNativePassthroughTip" />
-            <button
-              type="button"
-              role="switch"
-              aria-label="原生 DSD 直通"
-              :aria-checked="isDsdNativePassthroughEnabled"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-              :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-              @click="toggleDsdNativePassthrough"
-            >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
-          </div>
-        </div>
-        <div class="desktop-setting-row">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">Bit-perfect 输出</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint :text="bitPerfectTip" />
-            <button
-              type="button"
-              role="switch"
-              aria-label="Bit-perfect 输出"
-              :aria-checked="isBitPerfectEnabled"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-              :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-              @click="toggleBitPerfect"
-            >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
-          </div>
-        </div>
-        <div v-if="isBitPerfectEnabled || summaryDeviceFormats" class="px-5 pb-4">
-          <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
-            <p class="mb-1 text-gray-700 dark:text-gray-200">
-              设备原生能力（
-              {{ summaryDeviceFormats?.name || '当前设备' }}
-              ）：
-            </p>
-            <p>
-              采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
-            </p>
-            <p>
-              样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
-            </p>
-            <p class="mt-1">
-              仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
-            </p>
-          </div>
-        </div>
         <div>
           <button
             type="button"
@@ -1109,6 +1050,92 @@ onScopeDispose(() => {
             </div>
           </transition>
         </div>
+        <div class="desktop-setting-row">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">WASAPI 独占模式</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
+            <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">原生 DSD 直通</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <SettingHint :text="dsdNativePassthroughTip" />
+            <button
+              type="button"
+              role="switch"
+              aria-label="原生 DSD 直通"
+              :aria-checked="isDsdNativePassthroughEnabled"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleDsdNativePassthrough"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
+        <div class="desktop-setting-row">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">Bit-perfect 输出</div>
+          </div>
+          <div class="flex items-center gap-3">
+            <SettingHint :text="bitPerfectTip" />
+            <button
+              type="button"
+              role="switch"
+              aria-label="Bit-perfect 输出"
+              :aria-checked="isBitPerfectEnabled"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleBitPerfect"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
+        <div v-if="isBitPerfectEnabled" class="px-5 pb-4">
+          <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
+            <p class="mb-1 text-gray-700 dark:text-gray-200">
+              设备原生能力（
+              {{ summaryDeviceFormats?.name || '当前设备' }}
+              ）：
+            </p>
+            <p>
+              采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
+            </p>
+            <p>
+              样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
+            </p>
+            <p class="mt-1">
+              仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
+            </p>
+          </div>
+        </div>
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">{{ t('pluginHost.rackDesc') }}</div>
+          </div>
+          <div class="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              role="switch"
+              :aria-label="t('pluginHost.enableRack')"
+              :aria-checked="rackMasterEnabled"
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              :class="rackMasterEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              @click="toggleRackMaster"
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="rackMasterEnabled ? 'translate-x-6' : 'translate-x-1'" />
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1151,6 +1178,9 @@ onScopeDispose(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 音频插件：并入播放设置，置于最下方 -->
+    <SettingsPluginHost />
   </div>
 </template>
 

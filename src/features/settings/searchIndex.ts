@@ -7,7 +7,6 @@ export type SettingsTabId =
   | 'theme'
   | 'desktopLyrics'
   | 'audioOutput'
-  | 'pluginHost'
   | 'download'
   | 'toolbox'
   | 'library'
@@ -37,10 +36,9 @@ type SearchItemInput = string | {
 const TAB_NAMES: Record<SettingsTabId, string> = {
   account: '账号',
   general: '常规',
-  plugins: '音源插件',
+  plugins: '音源',
   theme: '外观',
   audioOutput: '播放',
-  pluginHost: '音频插件',
   download: '下载',
   library: '音乐库',
   toolbox: '工具箱',
@@ -166,10 +164,10 @@ const staticItems: SettingsSearchItem[] = [
     { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },
   ]),
 
-  ...makeItems('pluginHost', '效果插件机架', [
+  ...makeItems('audioOutput', '播放设置', [
     { label: '启用插件机架', keywords: 'VST3 CLAP 原生 效果 DSP 串联' },
   ]),
-  ...makeItems('pluginHost', '可用插件', [
+  ...makeItems('audioOutput', '可用插件', [
     { label: '重新扫描', keywords: 'VST3 CLAP 目录 扫描 发现 安装' },
   ]),
 
