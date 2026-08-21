@@ -86,7 +86,9 @@
                   v-for="entry in row.items"
                   :key="entry.key"
                   type="button"
-                  class="rounded-xl p-3 transition-colors cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 flex flex-col gap-2"
+                  class="toplist-card rounded-xl p-3 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 flex flex-col gap-2"
+                  :class="{ 'toplist-card-enter': gridEnterAnimating }"
+                  :style="gridEnterAnimating ? { animationDelay: `${ROW_ENTER_BASE_DELAY + row.index * ROW_ENTER_STAGGER}ms` } : undefined"
                   @click="handleTopListClick(entry)"
                 >
                   <div
@@ -209,11 +211,13 @@ async function loadTopLists() {
 
   const version = ++loadVersion;
   loading.value = true;
+  stopGridEnterAnimation();
   resetGridScroll();
   try {
     const results = await pluginGetTopLists(source.source);
     if (version !== loadVersion) return;
     topLists.value = results;
+    if (results.length > 0) playGridEnterAnimation();
   } catch {
     if (version !== loadVersion) return;
     topLists.value = [];
@@ -222,6 +226,32 @@ async function loadTopLists() {
       loading.value = false;
     }
   }
+}
+
+// ==================== 榜单逐行入场动画 ====================
+/** 行入场节奏（ms）：基础延迟避开外层 page-fade 容器淡入（0.3s）对前几行的掩盖，
+    行间隔放大到 140ms、单行 600ms，让逐行波浪清晰可辨 */
+const ROW_ENTER_BASE_DELAY = 200;
+const ROW_ENTER_STAGGER = 140;
+const ROW_ENTER_DURATION = 600;
+/** 入场动画进行中：卡片带动画类与行号 delay；结束后移除，滚动加载的新行不再重播 */
+const gridEnterAnimating = ref(false);
+let gridEnterTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** 数据加载完成后播放逐行入场：按首屏可见行数（含 overscan）估算总时长，超时自动收尾 */
+function playGridEnterAnimation() {
+  clearTimeout(gridEnterTimer);
+  gridEnterAnimating.value = true;
+  const rows = Math.ceil(gridViewportHeight.value / Math.max(1, gridRowHeight.value)) + 1 + GRID_OVERSCAN_ROWS;
+  gridEnterTimer = setTimeout(() => {
+    gridEnterAnimating.value = false;
+  }, ROW_ENTER_BASE_DELAY + (rows - 1) * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
+/** 立即终止入场动画：用户滚动时调用，避免虚拟滚动新挂载的行带着长 delay 迟迟不出现 */
+function stopGridEnterAnimation() {
+  clearTimeout(gridEnterTimer);
+  gridEnterAnimating.value = false;
 }
 
 const handleSelectSource = (source: SourceItem) => {
@@ -326,6 +356,7 @@ type GridEntry = {
 type VirtualGridRow = {
   key: string;
   start: number;
+  index: number;
   items: GridEntry[];
 };
 
@@ -348,6 +379,7 @@ const virtualGridRows = computed<VirtualGridRow[]>(() => {
     rows.push({
       key: `toplist-row-${rowIndex}`,
       start: rowIndex * rowHeight,
+      index: rowIndex,
       items: gridEntries.value.slice(startIndex, startIndex + gridColumns.value),
     });
   }
@@ -373,6 +405,8 @@ const resetGridScroll = () => {
 };
 
 const handleGridScroll = () => {
+  // 入场动画期间用户主动滚动：立即终止，让滚动加载的新行直接呈现
+  if (gridEnterAnimating.value) stopGridEnterAnimation();
   syncGridScrollState();
 };
 
@@ -483,6 +517,7 @@ watch(pluginsVersion, () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleWindowResize);
   loadVersion += 1;
+  clearTimeout(gridEnterTimer);
   scrollResizeObserver?.disconnect();
   scrollResizeObserver = null;
   // 进入在线详情：缓存榜单状态（来源 + 榜单 + 滚动），返回时恢复；
@@ -504,6 +539,53 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* ==================== 榜单卡片逐行入场动画 ==================== */
+/* 卡片基础过渡：hover 底色平滑、移开后跳跃偏移平滑滑回原位、入场动画类移除时 opacity 平滑回落 */
+.toplist-card {
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 悬停跳跃：高亮的同时向右跳一步——抛物线主跳（上行减速/下行加速=重力感）
+   + 落地后两次衰减回弹（-16px → -6px → -2px），共 360ms。
+   动画结束停在右侧 12px，与 :hover 静态 transform 一致（无跳变）；
+   移开后由基础 transform 过渡滑回原位。
+   入场动画期间不触发，避免两个 animation 互相顶掉导致入场重播 */
+.toplist-card:hover:not(.toplist-card-enter) {
+  transform: translateX(12px);
+  animation: toplist-card-hop 0.36s;
+}
+
+@keyframes toplist-card-hop {
+  /* 主跳：腾空到落点 */
+  0%   { transform: translate(0, 0);         animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  22%  { transform: translate(3px, -16px);   animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  45%  { transform: translate(6px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  /* 回弹一：高度约 1/3 */
+  57%  { transform: translate(7.5px, -6px);  animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  70%  { transform: translate(9px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  /* 回弹二：再衰减 */
+  79%  { transform: translate(10.5px, -2px); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  90%  { transform: translate(12px, 0); }
+  100% { transform: translate(12px, 0); }
+}
+
+/* 逐行入场：按行号错峰上浮淡入；backwards 保证 delay 期间保持隐藏。
+   只在数据加载完成时短暂挂载该类，虚拟滚动后续挂载的行不受影响 */
+.toplist-card-enter {
+  animation: toplist-card-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes toplist-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* 来源条隐藏原生横向滚动条：
    经典滚动条在内容溢出时会额外撑高 auto 高度容器（厚度固定、不随 clamp 字号缩放），
    pb+负 mb 只能部分抵消且两种状态间仍有高度跳变，导致与「来源」标签/数量错位。
