@@ -285,6 +285,7 @@ const handleOnlineViewArtist = async (song: Song) => {
       coverUrl: artist.avatarUrl,
       pluginSource,
       rawData: artist.rawData,
+      platformId: artist.platformId || artist.id,
     });
     closePlayerDetail();
     void router.push({ path: '/online-detail', query: { type: 'artist' } });
@@ -327,6 +328,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
       coverUrl: album.coverUrl,
       pluginSource,
       rawData: album.rawData,
+      platformId: album.platformId || album.id,
     });
     closePlayerDetail();
     void router.push({ path: '/online-detail', query: { type: 'album' } });

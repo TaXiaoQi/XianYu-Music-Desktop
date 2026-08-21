@@ -42,10 +42,16 @@ export const buildOnlineCollectionKey = (
   return `online:${engine}:${ctx.type}:${platformId}`;
 };
 
-/** 从在线详情上下文 rawData 中提取平台 ID（收藏键标识），提取不到返回空串 */
+/** 从在线详情上下文提取平台 ID（收藏键/滚动记忆键标识），提取不到返回空串 */
 export const resolveOnlineCollectionPlatformId = (
-  ctx: { type: 'playlist' | 'album' | 'artist' | 'user'; rawData?: any },
+  ctx: { type: 'playlist' | 'album' | 'artist' | 'user'; rawData?: any; platformId?: string },
 ): string => {
+  // 优先使用上下文自带的 platformId（搜索结果显式计算，比 rawData 字段提取更可靠）
+  if (ctx.platformId) {
+    const pid = String(ctx.platformId).trim();
+    if (pid) return pid;
+  }
+
   const raw = ctx.rawData;
   if (!raw || typeof raw !== 'object') {
     return '';

@@ -64,6 +64,8 @@ export interface OnlineDetailContext {
   pluginSource?: PluginSource;
   /** 插件搜索结果的 rawData（用于调用 getArtistWorks/getAlbumInfo/getMusicSheetInfo） */
   rawData: any;
+  /** 平台唯一 ID（搜索结果自带的 platformId / LX 的 id），用于生成内容唯一滚动记忆键与收藏键 */
+  platformId?: string;
   /** 搜索页来源类型，返回搜索时恢复对应 tab */
   sourceSearchType?: SourceSearchType;
   /** 进入详情时搜索页选中的插件源 ID（Search.vue 的 selectedSourceId），返回搜索时恢复 */

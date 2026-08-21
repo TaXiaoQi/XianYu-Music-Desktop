@@ -386,6 +386,7 @@ const handleTopListClick = (entry: GridEntry) => {
     coverUrl: item.coverUrl,
     pluginSource: source.source,
     rawData: item.rawData,
+    platformId: item.platformId || item.id,
     sourceSearchType: 'playlist',
     engineType: 'musicfree',
     origin: 'toplist',
