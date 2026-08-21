@@ -210,3 +210,22 @@ html.theme-transitioning * {
   opacity: 0;
   transform: scale(0.92) translateY(12px);
 }
+
+/* 🟢 统一弹窗毛玻璃材质（半透明 + 背景模糊 + 圆角 + 阴影），
+   与调试页「设置同步冲突」等弹窗保持一致；所有弹窗卡片统一添加
+   modal-content 类即可复用。 */
+.modal-content {
+  background: rgba(255, 255, 255, 0.84);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.16), 0 4px 16px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  color: #1f2937;
+}
+
+.dark .modal-content {
+  background: rgba(38, 38, 38, 0.86);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+}

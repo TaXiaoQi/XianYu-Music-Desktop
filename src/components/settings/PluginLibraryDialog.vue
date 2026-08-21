@@ -69,7 +69,7 @@ const handleScan = () => {
         class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       >
         <div
-          class="modal-content flex max-h-[calc(100vh-4rem)] w-full max-w-[480px] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl ring-1 ring-black/5 dark:bg-[#262626]/95 dark:ring-white/10"
+          class="modal-content flex max-h-[calc(100vh-4rem)] w-full max-w-[480px] flex-col overflow-hidden"
         >
           <!-- 顶栏 -->
           <div class="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200/70 px-5 py-4 dark:border-white/10">

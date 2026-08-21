@@ -10,6 +10,7 @@ import { checkDownloadExists, type DownloadRecord } from '../../services/downloa
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
 import { useSettings } from '../../features/settings/useSettings';
+import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
@@ -920,6 +921,20 @@ const audioLockTooltip = computed(() => {
   return 'DSD 直出中';
 });
 
+// --- 开启插件机架时锁定音效(EQ)：EQ 排在插件机架之前，双开会双重处理冲突；
+// 音量/音质在插件之后仍有效，故不入 isAudioControlLocked，只锁音效。 ---
+const pluginHostStore = usePluginHostStore();
+const isRackEffectActive = computed(() =>
+  pluginHostStore.rackConfig.masterEnabled
+  && pluginHostStore.rackConfig.slots.some((s) => s.enabled),
+);
+const isEffectLocked = computed(() => isAudioControlLocked.value || isRackEffectActive.value);
+const effectLockTooltip = computed(() => {
+  if (isAudioControlLocked.value) return audioLockTooltip.value;
+  if (isRackEffectActive.value) return '插件机架处理中';
+  return '';
+});
+
 // --- 底栏右侧工具按钮收纳（隐藏进度条/可视化/桌面歌词/均衡器/固定）---
 const showFooterTools = ref(false);
 const footerToolsRef = ref<HTMLElement | null>(null);
@@ -938,13 +953,13 @@ watch(
 
 const toggleEqPanel = (e: MouseEvent) => {
   e.stopPropagation();
-  // Bit-perfect / DSD 直出期间禁止打开音效菜单，避免在独占直出中使能 DSP 破坏状态一致性
-  if (isAudioControlLocked.value) return;
+  // 独占直出 或 插件机架开启 期间禁止打开音效菜单，避免双重处理/状态不一致
+  if (isEffectLocked.value) return;
   showEqPanel.value = !showEqPanel.value;
 };
 
-// Bit-perfect / DSD 直通开启时若音效面板正处于打开状态，强制关闭
-watch(isAudioControlLocked, (locked) => {
+// Bit-perfect / DSD 直通 或 插件机架开启 时若音效面板正处于打开状态，强制关闭
+watch(isEffectLocked, (locked) => {
   if (locked) showEqPanel.value = false;
 });
 
@@ -1106,9 +1121,11 @@ provide('footerContext', {
   volumeBarRef,
   startDrag,
   toggleMute,
-  // Bit-perfect / DSD 直通禁用态
+  // Bit-perfect / DSD / 插件机架 禁用态
   isAudioControlLocked,
   audioLockTooltip,
+  isEffectLocked,
+  effectLockTooltip,
   // 均衡器
   showEqPanel,
   toggleEqPanel,

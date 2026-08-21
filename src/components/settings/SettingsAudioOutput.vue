@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Check, ChevronDown, CircleHelp, Library, Minus, Plus } from 'lucide-vue-next';
+import { Check, ChevronDown, CircleHelp, FolderOpen, Library, Minus, Plus, Trash2 } from 'lucide-vue-next';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
@@ -8,6 +9,7 @@ import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
 import PluginLibraryDialog from './PluginLibraryDialog.vue';
+import ConfirmModal from '../overlays/ConfirmModal.vue';
 import { storeToRefs } from 'pinia';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
@@ -36,12 +38,99 @@ const { showToast } = useToast();
 const { isEnglish, t } = useI18n();
 
 const rackMasterEnabled = computed(() => pluginHostStore.rackConfig.masterEnabled);
+// WASAPI 独占 / 原生 DSD 直通 / Bit-perfect 组成的"直出绕过"路径，任一开启即禁用机架开关
+const outputExclusivePathActive = computed(
+  () => isWasapiExclusiveEnabled.value
+    || isDsdNativePassthroughEnabled.value
+    || isBitPerfectEnabled.value,
+);
 const toggleRackMaster = () => {
+  // 与直出路径互斥：任一开启时禁用机架，避免互相冲突的竞态
+  if (outputExclusivePathActive.value) return;
   pluginHostStore.setMasterEnabled(!pluginHostStore.rackConfig.masterEnabled);
 };
 
 const showLibrary = ref(false);
-const { scannedPlugins } = storeToRefs(pluginHostStore);
+const { scannedPlugins, extraDirs } = storeToRefs(pluginHostStore);
+
+// ===== 自定义扫描目录（并入音效播放机架展开面板）=====
+const handleAddExtraDir = async () => {
+  try {
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected === 'string' && selected.trim()) {
+      pluginHostStore.addExtraDir(selected);
+    }
+  } catch {
+    // 对话框取消
+  }
+};
+
+const showRemoveDirConfirm = ref(false);
+const dirToRemove = ref<string | null>(null);
+
+const requestRemoveDir = (dir: string) => {
+  dirToRemove.value = dir;
+  showRemoveDirConfirm.value = true;
+};
+
+const confirmRemoveDir = () => {
+  showRemoveDirConfirm.value = false;
+  if (!dirToRemove.value) return;
+  pluginHostStore.removeExtraDir(dirToRemove.value);
+  dirToRemove.value = null;
+};
+
+// --- 音效插件机架 说明（灰色感叹号 popover） ---
+const rackSupportPopoverRef = ref<HTMLElement | null>(null);
+const rackSupportTriggerRef = ref<HTMLElement | null>(null);
+const showRackSupportPopover = ref(false);
+const rackSupportPopoverStyle = ref<Record<string, string>>({});
+
+function updateRackSupportPopoverPosition() {
+  const trigger = rackSupportTriggerRef.value;
+  const popover = rackSupportPopoverRef.value;
+  if (!trigger || !popover) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const popoverWidth = popover.offsetWidth;
+  const popoverHeight = popover.offsetHeight;
+  const gap = 8;
+  const viewportPadding = 12;
+
+  let left = rect.right - popoverWidth;
+  left = Math.min(Math.max(left, viewportPadding), window.innerWidth - popoverWidth - viewportPadding);
+
+  const fitsBelow = rect.bottom + gap + popoverHeight <= window.innerHeight - viewportPadding;
+  const top = fitsBelow
+    ? rect.bottom + gap
+    : Math.max(viewportPadding, rect.top - popoverHeight - gap);
+
+  rackSupportPopoverStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
+}
+
+function toggleRackSupportPopover() {
+  showRackSupportPopover.value = !showRackSupportPopover.value;
+  if (showRackSupportPopover.value) {
+    nextTick(() => {
+      updateRackSupportPopoverPosition();
+    });
+  }
+}
+
+function handleRackSupportPopoverOutsideClick(event: MouseEvent) {
+  if (
+    showRackSupportPopover.value
+    && rackSupportTriggerRef.value
+    && !rackSupportTriggerRef.value.contains(event.target as Node)
+    && rackSupportPopoverRef.value
+    && !rackSupportPopoverRef.value.contains(event.target as Node)
+  ) {
+    showRackSupportPopover.value = false;
+  }
+}
 
 const volumeBalanceTip = '音量平衡会读取歌曲内置 ReplayGain 标签，在切歌时自动平衡音量。默认完全按标签播放，不改变歌曲内部动态。不存在标签时则无变化。';
 const showVolumeBalancePopover = ref(false);
@@ -99,14 +188,20 @@ function handleVolumeBalancePopoverOutsideClick(event: MouseEvent) {
 
 onMounted(() => {
   window.addEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
+  window.addEventListener('mousedown', handleRackSupportPopoverOutsideClick);
   window.addEventListener('resize', updateVolumeBalancePopoverPosition);
+  window.addEventListener('resize', updateRackSupportPopoverPosition);
   window.addEventListener('scroll', updateVolumeBalancePopoverPosition, true);
+  window.addEventListener('scroll', updateRackSupportPopoverPosition, true);
 });
 
 onScopeDispose(() => {
   window.removeEventListener('mousedown', handleVolumeBalancePopoverOutsideClick);
+  window.removeEventListener('mousedown', handleRackSupportPopoverOutsideClick);
   window.removeEventListener('resize', updateVolumeBalancePopoverPosition);
+  window.removeEventListener('resize', updateRackSupportPopoverPosition);
   window.removeEventListener('scroll', updateVolumeBalancePopoverPosition, true);
+  window.removeEventListener('scroll', updateRackSupportPopoverPosition, true);
 });
 
 const showQualityModal = ref(false);
@@ -253,6 +348,9 @@ const isWasapiExclusiveEnabled = computed(
   () => settings.value.audio.outputMode === 'wasapiExclusive',
 );
 
+// WASAPI 开关切换期间抑制过渡事件用旧值反写 outputMode，避免面板反复启停闪烁
+let suppressModeReplay = false;
+
 const defaultOutputDeviceName = computed(() => isEnglish.value ? 'System Default' : '系统默认');
 const outputDeviceOptions = computed(() => buildAudioOutputDeviceOptions(
   audioOutputDevices.value,
@@ -268,14 +366,22 @@ const selectedOutputDeviceLabel = computed(() => (
   )
 ));
 
-const applyAudioOutputStatus = (status: AudioOutputStatus) => {
+const applyAudioOutputStatus = (
+  status: AudioOutputStatus,
+  opts?: { skipModeSync?: boolean },
+) => {
   audioOutputStatus.value = status;
   selectedOutputDeviceId.value = status.selected_device_id ?? '';
 
   // 同步 requested_output_mode 到设置（用户请求的输出模式）。
   // 不再在降级时关闭 DSD/Bit-perfect — 保留用户意图，等设备恢复后自动切回。
   // 底栏 UI 通过 playbackStore.activeOutputMode 判断是否真正在独占模式。
-  if (settings.value.audio.outputMode !== status.requested_output_mode) {
+  // suppressModeReplay：WASAPI 开关切换期间抑制事件旧值反写，避免面板反复启停闪烁。
+  if (
+    !opts?.skipModeSync
+    && !suppressModeReplay
+    && settings.value.audio.outputMode !== status.requested_output_mode
+  ) {
     patchSettings({
       audio: {
         ...settings.value.audio,
@@ -321,9 +427,12 @@ const handleOutputDeviceSelect = async (deviceId: string) => {
 };
 
 const toggleWasapiExclusive = async () => {
+  // 音效插件机架开启时禁用独占，避免与机架互斥冲突
+  if (rackMasterEnabled.value) return;
   const next = isWasapiExclusiveEnabled.value ? 'shared' : 'wasapiExclusive';
   const isNowShared = next === 'shared';
   settings.value.audio.outputMode = next;
+  suppressModeReplay = true;
   // 关闭独占模式时，自动关闭依赖独占的 DSD 直通与 Bit-perfect
   if (isNowShared) {
     if (isDsdNativePassthroughEnabled.value) {
@@ -335,10 +444,15 @@ const toggleWasapiExclusive = async () => {
   }
   try {
     await playbackApi.setAudioOutputMode(next);
-    applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice());
+    // 用最终状态刷新设备信息，但跳过 outputMode 反写：
+    // 切换过渡期 getCurrentOutputDevice 返回的 requested_output_mode 可能是滞后的旧值，
+    // 反写会让面板在收起后又被弹开；最终真实模式由 device-changed 事件校正。
+    applyAudioOutputStatus(await playbackApi.getCurrentOutputDevice(), { skipModeSync: true });
   } catch (error) {
     console.error('Failed to update audio output mode:', error);
     showToast(isEnglish.value ? 'Could not switch the audio output mode' : '切换音频输出模式失败', 'error');
+  } finally {
+    suppressModeReplay = false;
   }
 };
 
@@ -354,6 +468,8 @@ const dsdNativePassthroughTip = isEnglish.value
   : '开启后，播放 DSF (DSD) 文件时以 DoP 1.0 协议将 1-bit DSD 原生码流封装进 24-bit PCM，直接交给支持 DoP 的 DSD-DAC 逐位解码输出。仅对 .dsf 文件 + WASAPI 独占模式生效（DSD64→353kHz / DSD128→705kHz），开启时会自动切到 WASAPI 独占模式。当前设备不支持 DoP 采样率时仍会自动回退到 PCM。';
 
 const toggleDsdNativePassthrough = async () => {
+  // 音效插件机架开启时禁用 DSD 直通，避免与机架互斥冲突
+  if (rackMasterEnabled.value) return;
   const next = !isDsdNativePassthroughEnabled.value;
   if (next) {
     // 先确保 WASAPI 独占已开启并等待切换完成，再应用 DSD 直通，避免独占未就绪导致无声/卡死
@@ -420,6 +536,8 @@ const ensureWasapiExclusive = async (): Promise<boolean> => {
 };
 
 const toggleBitPerfect = async () => {
+  // 音效插件机架开启时禁用 Bit-perfect，避免与机架互斥冲突
+  if (rackMasterEnabled.value) return;
   const next = !isBitPerfectEnabled.value;
   if (next) {
     // 先确保 WASAPI 独占已开启并等待切换完成，再应用 bit-perfect，避免独占未就绪导致无声/卡死
@@ -499,10 +617,8 @@ onScopeDispose(() => {
         </div>
 
         <!-- 渐入渐出时长设置子区域 -->
-        <div
-          v-if="settings.audio.fadeInOutEnabled"
-          class="flex flex-col bg-white/20 transition-all duration-300 animate-in fade-in dark:bg-black/10"
-        >
+        <Transition name="settings-pop-panel">
+          <div v-if="settings.audio.fadeInOutEnabled" class="flex flex-col">
           <div class="desktop-setting-row pl-8">
             <div class="flex-1 space-y-1">
               <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
@@ -527,6 +643,7 @@ onScopeDispose(() => {
             </div>
           </div>
         </div>
+        </Transition>
 
         <!-- 音量平衡主开关行 -->
         <div
@@ -1061,91 +1178,122 @@ onScopeDispose(() => {
           </div>
           <div class="flex items-center gap-3">
             <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
-            <button @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+            <button :disabled="rackMasterEnabled" @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')">
               <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
             </button>
           </div>
         </div>
-        <div class="desktop-setting-row">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">原生 DSD 直通</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint :text="dsdNativePassthroughTip" />
-            <button
-              type="button"
-              role="switch"
-              aria-label="原生 DSD 直通"
-              :aria-checked="isDsdNativePassthroughEnabled"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-              :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-              @click="toggleDsdNativePassthrough"
-            >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
-          </div>
-        </div>
-        <div class="desktop-setting-row">
-          <div>
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">Bit-perfect 输出</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <SettingHint :text="bitPerfectTip" />
-            <button
-              type="button"
-              role="switch"
-              aria-label="Bit-perfect 输出"
-              :aria-checked="isBitPerfectEnabled"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-              :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-              @click="toggleBitPerfect"
-            >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
-          </div>
-        </div>
+        <!-- 依赖独占的 原生 DSD 直通 与 Bit-perfect：WASAPI 独占开启时整体渐入 -->
         <transition name="settings-pop-panel">
-          <div v-if="isBitPerfectEnabled" class="px-5 pb-4">
-            <div class="rounded-lg border border-gray-200/40 bg-black/5 p-3 text-xs leading-relaxed text-gray-500 dark:border-gray-800/40 dark:bg-white/5 dark:text-gray-400">
-              <p class="mb-1 text-gray-700 dark:text-gray-200">
-                设备原生能力（
-                {{ summaryDeviceFormats?.name || '当前设备' }}
-                ）：
-              </p>
-              <p>
-                采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
-              </p>
-              <p>
-                样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
-              </p>
-              <p class="mt-1">
-                仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
-              </p>
+          <div v-if="isWasapiExclusiveEnabled" class="pb-4">
+            <div class="desktop-setting-row pl-8">
+              <div>
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">原生 DSD 直通</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <SettingHint :text="dsdNativePassthroughTip" />
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="原生 DSD 直通"
+                  :aria-checked="isDsdNativePassthroughEnabled"
+                  :disabled="rackMasterEnabled"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+                  :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')"
+                  @click="toggleDsdNativePassthrough"
+                >
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
+                </button>
+              </div>
             </div>
+            <div class="desktop-setting-row pl-8">
+              <div>
+                <div class="text-sm font-medium text-gray-800 dark:text-gray-200">Bit-perfect 输出</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <SettingHint :text="bitPerfectTip" />
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Bit-perfect 输出"
+                  :aria-checked="isBitPerfectEnabled"
+                  :disabled="rackMasterEnabled"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+                  :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')"
+                  @click="toggleBitPerfect"
+                >
+                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
+                </button>
+              </div>
+            </div>
+            <transition name="settings-fade">
+              <div v-if="isBitPerfectEnabled" class="px-10 pb-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                <p class="mb-1 text-gray-700 dark:text-gray-200">
+                  设备原生能力（
+                  {{ summaryDeviceFormats?.name || '当前设备' }}
+                  ）：
+                </p>
+                <p>
+                  采样率支持：{{ summaryDeviceFormats ? summaryDeviceFormats.rates.join(' / ') + ' Hz' : '加载中…' }}
+                </p>
+                <p>
+                  样本格式：{{ summaryDeviceFormats ? summaryDeviceFormats.formats.join(' / ') : '加载中…' }}
+                </p>
+                <p class="mt-1">
+                  仅当歌曲采样率在此列表中时，Bit-perfect 才会以源采样率直出；否则独占模式请求会失败并自动回退。
+                </p>
+              </div>
+            </transition>
           </div>
         </transition>
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">{{ t('pluginHost.rackDesc') }}</div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</span>
+            </div>
           </div>
           <div class="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              ref="rackSupportTriggerRef"
+              class="grid h-5 w-5 shrink-0 place-items-center rounded-md text-gray-400 transition hover:bg-black/5 hover:text-gray-600 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/70"
+              :aria-expanded="showRackSupportPopover"
+              @click.stop="toggleRackSupportPopover"
+            >
+              <CircleHelp class="h-4 w-4" aria-hidden="true" />
+            </button>
             <button
               type="button"
               role="switch"
               :aria-label="t('pluginHost.enableRack')"
               :aria-checked="rackMasterEnabled"
+              :disabled="outputExclusivePathActive"
               class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-              :class="rackMasterEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              :class="rackMasterEnabled
+                ? 'bg-[#EC4141]'
+                : outputExclusivePathActive
+                  ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800'
+                  : 'bg-gray-300 dark:bg-gray-700'"
               @click="toggleRackMaster"
             >
               <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="rackMasterEnabled ? 'translate-x-6' : 'translate-x-1'" />
             </button>
           </div>
         </div>
+        <div
+          v-if="showRackSupportPopover"
+          ref="rackSupportPopoverRef"
+          class="volume-balance-popover"
+          role="tooltip"
+          :style="rackSupportPopoverStyle"
+          @click.stop
+        >
+          <p class="text-xs leading-relaxed">{{ t('pluginHost.rackDesc') }}</p>
+        </div>
         <transition name="settings-pop-panel">
-          <div v-if="rackMasterEnabled" class="px-5 pb-4">
-            <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200/40 bg-black/5 p-3 dark:border-gray-800/40 dark:bg-white/5">
+          <div v-if="rackMasterEnabled" class="pb-4">
+            <!-- 可用插件 -->
+            <div class="desktop-setting-row pl-8">
               <div class="flex min-w-0 items-center gap-2">
                 <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.availablePlugins') }}</span>
                 <span
@@ -1161,6 +1309,52 @@ onScopeDispose(() => {
                 <Library class="h-3.5 w-3.5" />
                 {{ t('pluginHost.open') }}
               </button>
+            </div>
+            <!-- 自定义扫描目录 -->
+            <div class="desktop-setting-row pl-8">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.customScanDirs') }}</span>
+                  <span
+                    v-if="extraDirs.length > 0"
+                    class="shrink-0 text-xs text-gray-400 dark:text-white/35"
+                  >{{ t('pluginHost.count', { count: extraDirs.length }) }}</span>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-white/45">{{ t('pluginHost.scanDirsHint') }}</div>
+              </div>
+              <button
+                type="button"
+                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
+                @click="handleAddExtraDir"
+              >
+                <FolderOpen class="h-3.5 w-3.5" />
+                {{ t('pluginHost.addDir') }}
+              </button>
+            </div>
+            <div class="px-10">
+              <p
+                v-if="extraDirs.length === 0"
+                class="py-2 text-center text-xs text-gray-400 dark:text-white/35"
+              >
+                {{ t('pluginHost.noDirsHint') }}
+              </p>
+              <div v-else class="custom-scrollbar max-h-40 space-y-px overflow-y-auto py-2">
+                <div
+                  v-for="dir in extraDirs"
+                  :key="dir"
+                  class="group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                  <div class="min-w-0 flex-1 truncate text-xs text-gray-800 dark:text-gray-200" :title="dir">{{ dir }}</div>
+                  <button
+                    type="button"
+                    class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 dark:text-white/40"
+                    :title="t('pluginHost.removeDirTooltip')"
+                    @click="requestRemoveDir(dir)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </transition>
@@ -1209,6 +1403,14 @@ onScopeDispose(() => {
 
     <!-- 音频插件：并入播放设置，置于最下方 -->
     <SettingsPluginHost />
+
+    <ConfirmModal
+      :visible="showRemoveDirConfirm"
+      :title="t('pluginHost.removeDirTitle')"
+      :content="dirToRemove ? t('pluginHost.removeDirContent') : ''"
+      @confirm="confirmRemoveDir"
+      @cancel="showRemoveDirConfirm = false"
+    />
 
     <PluginLibraryDialog
       :visible="showLibrary"
@@ -1327,7 +1529,18 @@ onScopeDispose(() => {
 .settings-pop-panel-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
-  max-height: 240px;
+  max-height: 360px;
+}
+
+/* WASAPI 卡片内 Bit 详情的内层过渡：仅淡入淡出，不含位移/高度动画，
+   避免与外层 settings-pop-panel 的 transform 嵌套叠加导致关闭时"先下弹再上收" */
+.settings-fade-enter-active,
+.settings-fade-leave-active {
+  transition: opacity 160ms ease;
+}
+.settings-fade-enter-from,
+.settings-fade-leave-to {
+  opacity: 0;
 }
 
 :global(.dark) .settings-expand-panel {
