@@ -349,6 +349,8 @@ export async function submitFeedback(
     title: title.trim(),
     content: content.trim(),
     feedback_type: feedbackType,
+    platform: 'desktop',
+    app_version: APP_VERSION,
   };
   if (options.errorLogs) payload.error_logs = options.errorLogs;
   if (options.allLogs) payload.all_logs = options.allLogs;

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { storeToRefs } from 'pinia';
+import { open } from '@tauri-apps/plugin-dialog';
 import {
   Check,
   ChevronDown,
   ChevronUp,
+  FolderOpen,
   Plus,
   RefreshCw,
   SlidersHorizontal,
@@ -28,7 +30,7 @@ import type {
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 
 const store = usePluginHostStore();
-const { rackConfig, scannedPlugins, isScanning, hasScanned } = storeToRefs(store);
+const { rackConfig, scannedPlugins, isScanning, hasScanned, extraDirs } = storeToRefs(store);
 const { showToast } = useToast();
 
 const slotKey = (slot: PluginHostRackSlotConfig) => `${slot.format}::${slot.uniqueId}`;
@@ -36,6 +38,22 @@ const slotKey = (slot: PluginHostRackSlotConfig) => `${slot.format}::${slot.uniq
 // ===== 扫描 =====
 const handleScan = () => {
   void store.scan();
+};
+
+// ===== 自定义面板目录 =====
+const handleAddExtraDir = async () => {
+  try {
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected === 'string' && selected.trim()) {
+      store.addExtraDir(selected);
+    }
+  } catch {
+    // 对话框取消
+  }
+};
+
+const handleRemoveExtraDir = (dir: string) => {
+  store.removeExtraDir(dir);
 };
 
 const formatLabel = (format: string) => (format === 'vst3' ? 'VST3' : 'CLAP');
@@ -281,6 +299,59 @@ onUnmounted(() => {
               :class="rackConfig.masterEnabled ? 'translate-x-6' : 'translate-x-1'"
             />
           </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 自定义扫描目录 -->
+    <section class="space-y-3">
+      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+        自定义扫描目录
+        <span
+          v-if="extraDirs.length > 0"
+          class="text-xs font-normal text-gray-400 dark:text-white/35"
+        >{{ extraDirs.length }} 个</span>
+      </h2>
+      <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="flex items-center justify-between gap-3 px-4 py-3">
+          <div class="text-xs leading-relaxed text-gray-500 dark:text-white/45">
+            添加后自动重新扫描，插件将出现在下方「可用插件」列表。目录类别按目录名或内容自动识别 VST3 / CLAP。
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
+            @click="handleAddExtraDir"
+          >
+            <FolderOpen class="h-3.5 w-3.5" />
+            添加目录
+          </button>
+        </div>
+
+        <div
+          v-if="extraDirs.length === 0"
+          class="border-t border-gray-200/40 px-4 py-6 text-center text-xs text-gray-400 dark:border-gray-800/40 dark:text-white/35"
+        >
+          未添加自定义目录。插件默认从系统标准目录扫描；如需从其他位置加载，请在此添加。
+        </div>
+        <div v-else class="custom-scrollbar max-h-56 space-y-px overflow-y-auto border-t border-gray-200/40 px-1.5 py-1.5 dark:border-gray-800/40">
+          <div
+            v-for="dir in extraDirs"
+            :key="dir"
+            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <div class="min-w-0 flex-1 truncate text-xs text-gray-800 dark:text-gray-200" :title="dir">
+              {{ dir }}
+            </div>
+            <button
+              type="button"
+              class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 dark:text-white/40"
+              title="移除该扫描目录"
+              @click="handleRemoveExtraDir(dir)"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </section>
