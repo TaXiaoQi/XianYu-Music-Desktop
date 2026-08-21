@@ -23,8 +23,15 @@ use std::collections::VecDeque;
 
 /// 窗长（毫秒）——兼顾时间分辨率与 crossfade 平滑度。
 const WINDOW_MS: f32 = 40.0;
-/// 搜索半径 = 窗长比例。放大些可消除更多相位跳变，但增加计算。
-const SEARCH_RATIO: f32 = 0.10;
+/// 搜索半径 = 窗长比例。半径越大消除越多相位跳变，但单步输入推进的
+/// 浮动幅度也越大（hop_out=20ms 时 0.10 → ±4ms → 单步速度波动可达 ±20%，
+/// 听感为节奏忽快忽慢）。收敛到 0.05 后单步波动 ≤±10%。
+const SEARCH_RATIO: f32 = 0.05;
+/// 中心偏好惩罚系数：距理想推进位置越远的候选，在相似度上叠加越重的
+/// 能量惩罚（以输出交叠区能量归一）。相似度明显更好的候选仍会胜出
+/// （保住消相位跳变能力），但相似度接近时优先取理想位置，
+/// 消除相似度搜索的系统性偏移（连续偏向瞬态导致的节奏抖动）。
+const CENTRAL_BIAS_RATIO: f32 = 0.02;
 /// 速度比例防护范围（与外面 resampler 一致）。
 const STRETCH_MIN: f32 = 0.25;
 const STRETCH_MAX: f32 = 4.0;
@@ -206,8 +213,17 @@ impl Wsola {
 
         // 相似度搜索：候选起点 s ∈ [base, hi]，比较其前 overlap 帧与输出交叠区
         // （上一窗的末尾 overlap 帧 = output 末端 overlap 帧）。
+        // 叠加中心偏好惩罚：偏离理想位置会带来实际推进 ≠ 理想推进（速度抖动），
+        // 以交叠区能量为参考对偏移二次惩罚，相似度接近时回靠理想位置。
         let out_total = self.output.len() / ch;
         let tail_base = out_total.saturating_sub(self.overlap);
+        let mut overlap_energy = 1e-9_f32;
+        for j in 0..self.overlap {
+            let b = self.output[(tail_base + j) * ch];
+            overlap_energy += b * b;
+        }
+        let bias_coef = overlap_energy * CENTRAL_BIAS_RATIO;
+        let inv_sr = if self.sr > 0 { 1.0 / self.sr as f64 } else { 0.0 };
         let mut best = self.cur_in_f;
         let mut best_diff = f32::INFINITY;
         for s in base..=hi {
@@ -219,6 +235,9 @@ impl Wsola {
                 let d = a - b;
                 diff += d * d;
             }
+            // 中心偏好：归一化偏移的平方 × 交叠区能量参考
+            let off = (s as f64 - ideal) * inv_sr;
+            diff += (off * off) as f32 * bias_coef;
             if diff < best_diff {
                 best_diff = diff;
                 best = s as f64;
@@ -341,5 +360,89 @@ mod tests {
             "减速后长度 {out_frames} 偏离预期 {expected} (ratio={ratio})"
         );
         assert!(ws.output.iter().all(|v| v.is_finite()));
+    }
+
+    /// 节奏稳定性回归测试（BPM 忽快忽慢问题的防线）。
+    ///
+    /// 用周期性节拍信号（每 0.5s 一个衰减正弦脉冲）过 WSOLA，
+    /// 统计输出节拍间隔的相对标准差。相似度搜索若系统性偏向瞬态，
+    /// 间隔方差会显著增大（听感为节奏抖动）。阈值 2% 对应
+    /// 人耳几乎不可察觉的抖动水平。
+    #[test]
+    fn test_tempo_stability() {
+        let mut ws = Wsola::new();
+        ws.prepare(44100.0, 2);
+        // 模拟 +3 半音变调的速度补偿 stretch（1/2^(3/12) ≈ 0.841）
+        ws.set_stretch(1.0 / 2.0f32.powf(3.0 / 12.0));
+
+        let sr = ws.sample_rate as usize;
+        let period = (0.5 * sr as f32) as usize; // 0.5s 一拍
+        let beats = 12;
+        let total = beats * period;
+        let mut buf = Vec::with_capacity(total * 2);
+        for i in 0..total {
+            let phase = i % period;
+            let t = phase as f32 / sr as f32;
+            // 节拍脉冲：220Hz 衰减正弦，占前半拍
+            let s = if phase < period / 2 {
+                (2.0 * std::f32::consts::PI * 220.0 * t).sin() * (-8.0 * t).exp()
+            } else {
+                0.0
+            };
+            buf.push(s);
+            buf.push(s);
+        }
+        for chunk in buf.chunks(8192) {
+            ws.push_input(chunk);
+            while ws.produce() {}
+        }
+        ws.set_input_eof();
+        ws.flush();
+
+        // 提取节拍峰间隔：需连续静音（50ms）后才重新武装，保证每拍只触发一次
+        // （衰减正弦单个脉冲内正弦周期会多次过阈值，简单去抖会误检）
+        let mut intervals: Vec<usize> = Vec::new();
+        let mut last_peak: Option<usize> = None;
+        let mut armed = false;
+        let mut quiet = 0usize;
+        let quiet_need = (0.05 * sr as f32) as usize;
+        let frames = ws.output.len() / 2;
+        for f in 0..frames {
+            let v = ws.output[f * 2];
+            if v < 0.1 {
+                quiet += 1;
+            } else {
+                quiet = 0;
+            }
+            if quiet >= quiet_need {
+                armed = true;
+            }
+            if armed && v > 0.5 {
+                if let Some(l) = last_peak {
+                    intervals.push(f - l);
+                }
+                last_peak = Some(f);
+                armed = false;
+                quiet = 0;
+            }
+        }
+        assert!(
+            intervals.len() >= beats - 2,
+            "检测到的节拍数不足: {} (期望约 {beats})",
+            intervals.len()
+        );
+
+        let n = intervals.len() as f32;
+        let mean = intervals.iter().sum::<usize>() as f32 / n;
+        let var = intervals
+            .iter()
+            .map(|&x| (x as f32 - mean).powi(2))
+            .sum::<f32>()
+            / n;
+        let rstd = var.sqrt() / mean;
+        assert!(
+            rstd < 0.02,
+            "节拍间隔相对标准差过大: {rstd:.4} (mean={mean:.1} 帧) —— 节奏抖动回退"
+        );
     }
 }
