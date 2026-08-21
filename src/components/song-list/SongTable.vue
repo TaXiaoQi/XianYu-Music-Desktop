@@ -802,7 +802,12 @@ onDeactivated(() => {
 });
 
 onBeforeUnmount(() => {
-  saveScrollPosition();
+  const scrollEl = activeScrollContainer.value;
+  // 整页滚动模式下父容器可能在卸载前已把滚动清零（如在线详情类型切换），
+  // 此时保存 0 会覆盖此前真实滚动位置；滚动监听已实时保存过真实位置，跳过即可
+  if (!(props.pageScrollMode && scrollEl && scrollEl.scrollTop === 0)) {
+    saveScrollPosition();
+  }
   saveViewportCoverSnapshot();
   clearScrollbarActiveTimer();
   displayedCoverUrls.clear();

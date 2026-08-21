@@ -44,6 +44,7 @@ function handleViewLeaderboardUser() {
     coverUrl: entry.avatar || '',
     // username 用于同步查询键，必须用弦予号(ciyuanxi_id)，昵称仅用于展示
     rawData: { username: entry.ciyuanxi_id || entry.username, ciyuanxi_id: entry.ciyuanxi_id },
+    platformId: entry.ciyuanxi_id || entry.username,
     engineType: 'musicfree',
   });
   showContextMenu.value = false;

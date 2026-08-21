@@ -140,6 +140,7 @@ export function useSongContextActions({
         coverUrl: artist.avatarUrl,
         pluginSource,
         rawData: artist.rawData,
+        platformId: artist.platformId || artist.id,
         sourceSearchType: 'track',
       });
       void router.push({ path: '/online-detail', query: { type: 'artist' } });
@@ -183,6 +184,7 @@ export function useSongContextActions({
         coverUrl: album.coverUrl,
         pluginSource,
         rawData: album.rawData,
+        platformId: album.platformId || album.id,
         sourceSearchType: 'track',
       });
       void router.push({ path: '/online-detail', query: { type: 'album' } });

@@ -86,12 +86,18 @@ const detailScrollRef = ref<HTMLElement | null>(null);
  * 内容唯一滚动记忆键：基于当前上下文的平台 ID 生成，
  * 避免同类型不同内容（专辑 A→专辑 B）互相继承滚动位置。
  * platformId 提取不到时回退到标题，确保不同内容仍有独立 key。
+ * 前缀引擎/来源，避免不同来源同 ID 的内容互相继承滚动位置。
  */
 const detailMemoryKey = computed(() => {
   const c = ctx.value;
   if (!c) return '';
   const platformId = resolveOnlineCollectionPlatformId(c);
-  return platformId || c.title || '';
+  const base = platformId || c.title || '';
+  if (!base) return '';
+  const engine = c.engineType === 'lx'
+    ? `lx:${c.lxSourceId ?? ''}`
+    : `mf:${c.pluginSource?.id ?? ''}`;
+  return `${engine}::${base}`;
 });
 /** 歌曲列表：MF 引擎存 PluginSearchResult，LX 引擎存 LxSearchResultItem */
 const songs = ref<any[]>([]);
@@ -863,6 +869,7 @@ async function handleOnlineViewArtist(song: Song) {
         coverUrl: artist.avatarUrl,
         pluginSource: ctx.value.pluginSource,
         rawData: artist.rawData,
+        platformId: (artist as any).platformId || artist.id,
         sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'lx',
         lxSourceId: ctx.value.lxSourceId,
@@ -887,6 +894,7 @@ async function handleOnlineViewArtist(song: Song) {
         coverUrl: artist.avatarUrl,
         pluginSource: ctx.value.pluginSource,
         rawData: artist.rawData,
+        platformId: artist.platformId || artist.id,
         sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'musicfree',
       });
@@ -929,6 +937,7 @@ async function handleOnlineViewAlbum(song: Song) {
         coverUrl: album.coverUrl,
         pluginSource: ctx.value.pluginSource,
         rawData: album.rawData,
+        platformId: (album as any).platformId || album.id,
         sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'lx',
         lxSourceId: ctx.value.lxSourceId,
@@ -952,6 +961,7 @@ async function handleOnlineViewAlbum(song: Song) {
         coverUrl: album.coverUrl,
         pluginSource: ctx.value.pluginSource,
         rawData: album.rawData,
+        platformId: album.platformId || album.id,
         sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'musicfree',
       });
@@ -982,6 +992,7 @@ function handleAlbumClick(album: any) {
     coverUrl: album.coverUrl,
     pluginSource: ctx.value.pluginSource,
     rawData: album.rawData,
+    platformId: album.platformId || album.id,
     sourceSearchType: 'artist', // 标记来源为歌手详情
     ...(isLx ? { engineType: 'lx' as const, lxSourceId: ctx.value.lxSourceId } : { engineType: 'musicfree' as const }),
   }, artistState);
@@ -1004,6 +1015,7 @@ function handleUserPlaylistClick(playlistId: string) {
     engineType: 'musicfree',
     // 云歌单歌曲已随上下文携带，歌单详情页直接渲染，无需在线加载
     rawData: { userPlaylistSongs: songs },
+    platformId: playlist.id,
     sourceSearchType: 'playlist',
   });
   // 不重置 tab：跳转前切 tab 会先播放一次容器内切换动画（歌单网格淡出→收藏列表）再跳转，观感多余
@@ -1103,8 +1115,8 @@ watch(detailType, (newType, oldType) => {
       return;
     }
   }
-  // 仅前进导航时重置整页滚动（返回导航由 SongTable 滚动记忆恢复）
-  if (!isRestoring && detailScrollRef.value) detailScrollRef.value.scrollTop = 0;
+  // 不在此重置整页滚动：清零共享容器会触发滚动监听把 0 写回旧 SongTable 的滚动记忆，
+  // 返回时滚动位置被重置；新容器滚动由 SongTable 自身 reset/restore 处理
   // 清空上一个类型的数据，避免转场期间显示旧数据
   songs.value = [];
   albums.value = [];
