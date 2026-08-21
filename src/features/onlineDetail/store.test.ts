@@ -1,7 +1,30 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-import { useOnlineDetailStore, type OnlineDetailContext } from './store';
+import type { OnlineDetailContext, OnlineDetailStateCache } from './store';
+
+// node 环境无 localStorage，真实路由的 onboarding 门会拦截一切导航；
+// openDetail 依赖 router.currentRoute 区分"详情流内下钻"与"一级/外部进入"，这里用可控行路由替身
+const { routeState, pushMock, replaceMock } = vi.hoisted(() => {
+  const routeState = { path: '/' };
+  const pushMock = vi.fn(async (to: any) => {
+    routeState.path = typeof to === 'string' ? to : (to?.path ?? '/');
+  });
+  const replaceMock = vi.fn(async (to: any) => {
+    routeState.path = typeof to === 'string' ? to : (to?.path ?? '/');
+  });
+  return { routeState, pushMock, replaceMock };
+});
+
+vi.mock('../../router', () => ({
+  default: {
+    currentRoute: { get value() { return routeState; } },
+    push: pushMock,
+    replace: replaceMock,
+  },
+}));
+
+import { useOnlineDetailStore, openOnlineDetail } from './store';
 
 const makeArtistContext = (overrides: Partial<OnlineDetailContext> = {}): OnlineDetailContext => ({
   type: 'artist',
@@ -10,7 +33,6 @@ const makeArtistContext = (overrides: Partial<OnlineDetailContext> = {}): Online
   coverUrl: 'https://example.com/artist.jpg',
   pluginSource: { id: 'p1', name: '测试插件', format: 'musicfree', sources: ['wy'], enabled: true } as any,
   rawData: { id: 'artist-1' },
-  sourceSearchType: 'artist',
   engineType: 'musicfree',
   ...overrides,
 });
@@ -22,17 +44,52 @@ const makeAlbumContext = (overrides: Partial<OnlineDetailContext> = {}): OnlineD
   coverUrl: 'https://example.com/album.jpg',
   pluginSource: { id: 'p1', name: '测试插件', format: 'musicfree', sources: ['wy'], enabled: true } as any,
   rawData: { id: 'album-1' },
-  sourceSearchType: 'artist',
   engineType: 'musicfree',
   ...overrides,
 });
 
-describe('onlineDetail store 层级缓存', () => {
+const makeState = (tag: string): OnlineDetailStateCache => ({
+  songs: [{ id: `${tag}-s1` }],
+  albums: [{ id: `${tag}-a1` }],
+  activeTab: 'albums',
+  scrollTop: 300,
+});
+
+/** 模拟"已处于详情流"的路由状态 */
+async function enterDetailRoute() {
+  await pushMock({ path: '/online-detail' });
+}
+
+describe('onlineDetail store 帧栈模型', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    pushMock.mockClear();
+    replaceMock.mockClear();
+    routeState.path = '/';
   });
 
-  describe('榜单页（一级）缓存', () => {
+  describe('一级页面缓存（搜索页）', () => {
+    it('setSearchPageCache 后 consume 一次性取走并清空', () => {
+      const store = useOnlineDetailStore();
+      const cache = {
+        selectedSourceId: 'p1',
+        activeSearchType: 'artist' as const,
+        snapshot: { hasMore: false, currentPage: 1, lists: {} },
+      };
+      store.setSearchPageCache(cache);
+      expect(store.consumeSearchPageCache()).toEqual(cache);
+      expect(store.consumeSearchPageCache()).toBeNull();
+    });
+
+    it('clearSearchPageCache 销毁缓存（离开搜索页时）', () => {
+      const store = useOnlineDetailStore();
+      store.setSearchPageCache({} as any);
+      store.clearSearchPageCache();
+      expect(store.consumeSearchPageCache()).toBeNull();
+    });
+  });
+
+  describe('一级页面缓存（榜单页）', () => {
     it('setTopListsCache 后 consume 一次性取走并清空', () => {
       const store = useOnlineDetailStore();
       const cache = {
@@ -56,113 +113,183 @@ describe('onlineDetail store 层级缓存', () => {
     });
   });
 
-  describe('歌手详情状态随上下文入栈（歌手→专辑→返回）', () => {
-    it('setContextWithHistory 携带 detailState 入栈，返回时随上下文一起恢复', () => {
+  describe('详情流导航（openDetail/popDetail）', () => {
+    it('从一级/外部页面进入：清空帧栈开启全新详情流，导航令牌递增', async () => {
       const store = useOnlineDetailStore();
-      const artistCtx = makeArtistContext();
-      store.setContext(artistCtx);
+      // 先制造一个旧详情流
+      await enterDetailRoute();
+      store.openDetail(makeArtistContext({ title: '旧歌手' }));
+      store.openDetail(makeAlbumContext({ title: '旧专辑' }));
+      expect(store.detailStack.length).toBe(1);
 
-      const artistState = {
-        songs: [{ id: 's1' }],
-        albums: [{ id: 'a1' }],
-        artistActiveTab: 'albums',
-        scrollTop: 300,
-      };
-      store.setContextWithHistory(makeAlbumContext(), artistState);
-
-      // 当前上下文是专辑，栈顶是携带 detailState 的歌手上下文
-      expect(store.context?.type).toBe('album');
-      expect(store.hasPreviousContext()).toBe(true);
-
-      // 返回歌手详情：恢复上下文，detailState 随上下文带回
-      expect(store.restorePreviousContext()).toBe(true);
-      expect(store.context?.type).toBe('artist');
-      expect(store.context?.detailState).toEqual(artistState);
+      // 离开详情流后再次进入：帧栈清空
+      routeState.path = '/';
+      const d = store.openDetail(makeArtistContext({ title: '新歌手' }));
+      expect(d).toBeGreaterThan(0);
+      expect(store.detailStack).toHaveLength(0);
+      expect(store.currentDetail?.context.title).toBe('新歌手');
+      expect(store.canPopDetail()).toBe(false);
     });
 
-    it('不带 detailState 的入栈（如歌单→查看歌手）返回时不携带状态', () => {
+    it('详情流内下钻：当前帧入栈（一级打开二级，一级保留）', async () => {
       const store = useOnlineDetailStore();
-      store.setContext(makeArtistContext());
-      store.setContextWithHistory(makeAlbumContext());
-      expect(store.restorePreviousContext()).toBe(true);
-      expect(store.context?.detailState).toBeUndefined();
+      const d1 = store.openDetail(makeArtistContext({ title: '歌手' }));
+      await enterDetailRoute();
+      const d2 = store.openDetail(makeAlbumContext({ title: '专辑' }));
+
+      expect(d2).toBeGreaterThan(d1);
+      expect(store.detailStack).toHaveLength(1);
+      expect(store.detailStack[0].context.title).toBe('歌手');
+      expect(store.currentDetail?.context.title).toBe('专辑');
+      expect(store.canPopDetail()).toBe(true);
     });
 
-    it('嵌套导航下 detailState 与对应上下文绑定，不与其他上下文错位', () => {
+    it('popDetail：弹栈恢复上一级帧（二级退出回一级详情容器）', async () => {
+      const store = useOnlineDetailStore();
+      store.openDetail(makeArtistContext({ title: '歌手' }));
+      await enterDetailRoute();
+      store.openDetail(makeAlbumContext({ title: '专辑' }));
+
+      const frame = store.popDetail();
+      expect(frame?.context.title).toBe('歌手');
+      expect(store.currentDetail?.context.title).toBe('歌手');
+      expect(store.canPopDetail()).toBe(false);
+    });
+
+    it('栈空时 popDetail 返回 null 且当前帧不变', () => {
+      const store = useOnlineDetailStore();
+      store.openDetail(makeArtistContext({ title: '歌手' }));
+      expect(store.popDetail()).toBeNull();
+      expect(store.currentDetail?.context.title).toBe('歌手');
+    });
+  });
+
+  describe('容器状态随帧缓存（统一规则：下钻保存，返回恢复）', () => {
+    it('openDetail 携带 state 时随被离开的容器帧入栈，返回时带回', async () => {
+      const store = useOnlineDetailStore();
+      store.openDetail(makeArtistContext({ title: '歌手A' }));
+      await enterDetailRoute();
+
+      const stateA = makeState('A');
+      store.openDetail(makeAlbumContext({ title: '专辑A' }), stateA);
+
+      // 当前帧是专辑，栈顶是携带状态快照的歌手帧
+      expect(store.currentDetail?.context.type).toBe('album');
+      expect(store.canPopDetail()).toBe(true);
+
+      const frame = store.popDetail();
+      expect(frame?.context.type).toBe('artist');
+      expect(frame?.state).toEqual(stateA);
+    });
+
+    it('setTopFrameState 补写栈顶帧状态（外部入口下钻时由详情页对账补上）', async () => {
+      const store = useOnlineDetailStore();
+      store.openDetail(makeArtistContext({ title: '歌手A' }));
+      await enterDetailRoute();
+      // 外部入口（弹窗）下钻：openOnlineDetail 未携带状态
+      store.openDetail(makeAlbumContext({ title: '专辑A' }));
+
+      const stateA = makeState('A');
+      store.setTopFrameState(stateA);
+
+      const frame = store.popDetail();
+      expect(frame?.context.title).toBe('歌手A');
+      expect(frame?.state).toEqual(stateA);
+    });
+
+    it('嵌套导航下 state 与对应帧绑定，不与其他帧错位', async () => {
       const store = useOnlineDetailStore();
       // 歌手A → 专辑A（携带歌手A状态）
-      const artistA = makeArtistContext({ title: '歌手A' });
-      store.setContext(artistA);
-      const stateA = { songs: ['A'], albums: [], artistActiveTab: 'songs', scrollTop: 100 };
-      store.setContextWithHistory(makeAlbumContext({ title: '专辑A' }), stateA);
-      // 专辑A → 查看歌手 → 歌手B（不携带状态）
-      store.setContextWithHistory(makeArtistContext({ title: '歌手B' }));
+      store.openDetail(makeArtistContext({ title: '歌手A' }));
+      await enterDetailRoute();
+      const stateA = makeState('A');
+      store.openDetail(makeAlbumContext({ title: '专辑A' }), stateA);
+      // 专辑A → 查看歌手 → 歌手B（携带专辑A状态）
+      const stateAlbumA = makeState('albumA');
+      store.openDetail(makeArtistContext({ title: '歌手B' }), stateAlbumA);
       // 歌手B → 专辑B（携带歌手B状态）
-      const stateB = { songs: ['B'], albums: [], artistActiveTab: 'albums', scrollTop: 200 };
-      store.setContextWithHistory(makeAlbumContext({ title: '专辑B' }), stateB);
+      const stateB = makeState('B');
+      store.openDetail(makeAlbumContext({ title: '专辑B' }), stateB);
+      expect(store.detailStack).toHaveLength(3);
 
       // 返回歌手B：恢复的是歌手B的状态
-      store.restorePreviousContext();
-      expect(store.context?.title).toBe('歌手B');
-      expect(store.context?.detailState).toEqual(stateB);
-      // 返回专辑A：无 detailState，不恢复状态
-      store.restorePreviousContext();
-      expect(store.context?.title).toBe('专辑A');
-      expect(store.context?.detailState).toBeUndefined();
+      expect(store.popDetail()?.state).toEqual(stateB);
+      // 返回专辑A：恢复专辑A的状态
+      const albumFrame = store.popDetail();
+      expect(albumFrame?.context.title).toBe('专辑A');
+      expect(albumFrame?.state).toEqual(stateAlbumA);
       // 返回歌手A：恢复歌手A的状态
-      store.restorePreviousContext();
-      expect(store.context?.title).toBe('歌手A');
-      expect(store.context?.detailState).toEqual(stateA);
+      expect(store.popDetail()?.state).toEqual(stateA);
+    });
+  });
+
+  describe('统一导航入口 openOnlineDetail', () => {
+    it('从一级/外部页面进入：push 打开全新详情流，返回导航令牌', () => {
+      const store = useOnlineDetailStore();
+      const ctx = makeArtistContext({ title: '歌手' });
+      const d = openOnlineDetail(ctx);
+
+      expect(d).toBeGreaterThan(0);
+      expect(store.currentDetail?.context.title).toBe('歌手');
+      expect(store.currentDetail?.d).toBe(d);
+      expect(pushMock).toHaveBeenCalledWith({
+        path: '/online-detail',
+        query: expect.objectContaining({ type: 'artist', d: String(d) }),
+      });
+      expect(replaceMock).not.toHaveBeenCalled();
+    });
+
+    it('详情流内下钻：replace 跳转（不堆积历史条目，避免浏览器历史错位跳级）', async () => {
+      const store = useOnlineDetailStore();
+      openOnlineDetail(makeArtistContext({ title: '歌手' }));
+      await enterDetailRoute();
+      pushMock.mockClear();
+
+      const d2 = openOnlineDetail(makeAlbumContext({ title: '专辑' }), makeState('A'));
+
+      expect(d2).toBeGreaterThan(store.detailStack[0].d);
+      expect(replaceMock).toHaveBeenCalledWith({
+        path: '/online-detail',
+        query: expect.objectContaining({ type: 'album', d: String(d2) }),
+      });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('复现用户流程：搜索→歌手→专辑→返回，弹栈回到歌手帧（携带缓存状态与原导航令牌）', async () => {
+      const store = useOnlineDetailStore();
+      const dArtist = openOnlineDetail(makeArtistContext({ title: '歌手A' }));
+      await enterDetailRoute();
+      const stateA = makeState('A');
+      openOnlineDetail(makeAlbumContext({ title: '专辑A' }), stateA);
+
+      expect(store.currentDetail?.context.type).toBe('album');
+
+      const frame = store.popDetail();
+      expect(frame?.context.type).toBe('artist');
+      expect(frame?.state).toEqual(stateA);
+      // 返回该帧时用其原始令牌 replace 回 URL
+      expect(frame?.d).toBe(dArtist);
+      expect(store.currentDetail?.context.title).toBe('歌手A');
     });
   });
 
   describe('离开详情流清理', () => {
-    it('clearContextFlow 清空上下文与历史栈，但不触碰搜索/榜单缓存', () => {
+    it('clearDetailFlow 清空帧栈与当前帧，但不触碰搜索/榜单一级缓存', async () => {
       const store = useOnlineDetailStore();
-      store.setContextWithHistory(makeArtistContext(), { songs: [], albums: [], artistActiveTab: 'songs', scrollTop: 0 });
+      store.openDetail(makeArtistContext());
+      await enterDetailRoute();
+      store.openDetail(makeAlbumContext(), makeState('X'));
       store.setTopListsCache({} as any);
-      store.setSearchResultsCache({ hasMore: false, currentPage: 1, lists: {} });
-      store.setPendingSearchSession({ type: 'artist', sourceId: 'p1' });
+      store.setSearchPageCache({} as any);
 
-      store.clearContextFlow();
+      store.clearDetailFlow();
 
-      expect(store.context).toBeNull();
-      expect(store.hasPreviousContext()).toBe(false);
-      // 搜索/榜单缓存保留，由调用方按去向决定是否清理
+      expect(store.currentDetail).toBeNull();
+      expect(store.detailStack).toHaveLength(0);
+      expect(store.canPopDetail()).toBe(false);
+      // 一级页面缓存保留，由调用方按去向决定是否清理
       expect(store.topListsCache).not.toBeNull();
-      expect(store.searchResultsCache).not.toBeNull();
-      expect(store.pendingSearchSession).not.toBeNull();
-    });
-
-    it('clearSearchSession 仅清理搜索会话，保留榜单缓存', () => {
-      const store = useOnlineDetailStore();
-      store.setTopListsCache({} as any);
-      store.setSearchResultsCache({ hasMore: false, currentPage: 1, lists: {} });
-      store.clearSearchSession();
-      expect(store.searchResultsCache).toBeNull();
-      expect(store.pendingSearchSession).toBeNull();
-      expect(store.topListsCache).not.toBeNull();
-    });
-
-    it('clearTopListsCache 仅清理榜单缓存，保留搜索会话', () => {
-      const store = useOnlineDetailStore();
-      store.setTopListsCache({} as any);
-      store.setSearchResultsCache({ hasMore: false, currentPage: 1, lists: {} });
-      store.clearTopListsCache();
-      expect(store.topListsCache).toBeNull();
-      expect(store.searchResultsCache).not.toBeNull();
-    });
-
-    it('clearContext 清空全部缓存', () => {
-      const store = useOnlineDetailStore();
-      store.setContext(makeArtistContext());
-      store.setTopListsCache({} as any);
-      store.setSearchResultsCache({ hasMore: false, currentPage: 1, lists: {} });
-      store.clearContext();
-      expect(store.context).toBeNull();
-      expect(store.topListsCache).toBeNull();
-      expect(store.searchResultsCache).toBeNull();
-      expect(store.pendingSearchSession).toBeNull();
+      expect(store.searchPageCache).not.toBeNull();
     });
   });
 });

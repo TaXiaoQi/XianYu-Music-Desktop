@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import type { Song } from '../../types';
+import type { HomeDiscoverTab } from './HomeDiscoverTabs.vue';
 
 const AlbumDetailHeader = defineAsyncComponent(() => import('../headers/AlbumDetailHeader.vue'));
 const ArtistDetailHeader = defineAsyncComponent(() => import('../headers/ArtistDetailHeader.vue'));
 const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
 const SongTable = defineAsyncComponent(() => import('../song-list/SongTable.vue'));
 const StatisticsPage = defineAsyncComponent(() => import('../statistics/StatisticsPage.vue'));
+const DailyRecommend = defineAsyncComponent(() => import('../../views/DailyRecommend.vue'));
+const TopLists = defineAsyncComponent(() => import('../../views/TopLists.vue'));
+const HomeDiscoverTabs = defineAsyncComponent(() => import('./HomeDiscoverTabs.vue'));
 const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
 const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
 
@@ -85,6 +90,22 @@ const handleSongContextMenu = (...args: [MouseEvent, Song]) => {
 const handleTableDragStart = (...args: any[]) => {
   emit('tableDragStart', ...args);
 };
+
+const router = useRouter();
+
+/** 发现区（统计 / 每日推荐 / 音源榜单）：首页顶部 TAB 切换的三种内容视图 */
+const isDiscoverMode = computed(() =>
+  ['statistics', 'dailyRecommend', 'topLists'].includes(props.localViewMode),
+);
+
+/** TAB 切换：走路由 query，由 useHomeRouteSync 双向同步回 currentViewMode */
+const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
+  if (props.localViewMode === tab) return;
+  void router.replace({
+    path: '/',
+    query: tab === 'statistics' ? {} : { view: tab },
+  });
+};
 </script>
 
 <template>
@@ -125,11 +146,23 @@ const handleTableDragStart = (...args: any[]) => {
         @batchMove="$emit('batchMove')"
       />
 
-      <Transition name="tab-slide">
-        <StatisticsPage v-if="localViewMode === 'statistics'" />
+      <!-- 发现区：顶部 TAB（统计 / 每日推荐 / 音源榜单）。
+           KeepAlive 缓存三个视图：切 TAB 仅 deactivate/activate，不重新挂载，
+           列表状态与滚动位置保留，避免每次切换都出现加载动画像"整页刷新" -->
+      <div v-if="isDiscoverMode" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
+        <Transition name="discover-swap" mode="out-in">
+          <KeepAlive>
+            <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
+            <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
+            <TopLists v-else-if="localViewMode === 'topLists'" key="topLists" class="flex-1 min-h-0" />
+          </KeepAlive>
+        </Transition>
+      </div>
 
+      <Transition v-else name="tab-slide">
         <ArtistAlbumGrid
-          v-else-if="localViewMode === 'artist' && artistActiveTab === 'albums'"
+          v-if="localViewMode === 'artist' && artistActiveTab === 'albums'"
           :albums="artistAlbumList"
           :coverCache="coverCache"
           :loadingSet="loadingSet"
@@ -177,5 +210,20 @@ const handleTableDragStart = (...args: any[]) => {
 .tab-slide-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* 发现区 TAB 切换：快速纯淡入淡出（无位移），配合 KeepAlive 缓存态瞬时呈现 */
+.discover-swap-enter-active {
+  transition: opacity 0.15s ease;
+}
+
+.discover-swap-leave-active {
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.discover-swap-enter-from,
+.discover-swap-leave-to {
+  opacity: 0;
 }
 </style>

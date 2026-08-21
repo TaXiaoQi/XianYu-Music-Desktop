@@ -9,7 +9,9 @@ export type NavigationViewMode =
   | 'playlist'
   | 'recent'
   | 'favorites'
-  | 'statistics';
+  | 'statistics'
+  | 'dailyRecommend'
+  | 'topLists';
 
 const SEARCH_HISTORY_KEY = 'search_history';
 const MAX_HISTORY_ITEMS = 20;

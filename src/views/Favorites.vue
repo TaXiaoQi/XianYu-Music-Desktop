@@ -96,7 +96,7 @@ import {
   useCollectionsStore,
   type FavoriteCollectionEntry,
 } from '../features/collections/store';
-import { useOnlineDetailStore } from '../features/onlineDetail/store';
+import { openOnlineDetail } from '../features/onlineDetail/store';
 import { useNavigationStore } from '../shared/stores/navigation';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
@@ -120,7 +120,6 @@ const ModernModal = defineAsyncComponent(() => import('../components/common/Mode
 const router = useRouter();
 const navigationStore = useNavigationStore();
 const collectionsStore = useCollectionsStore();
-const onlineDetailStore = useOnlineDetailStore();
 const { openHomePlaylist } = useHomeNavigation(router);
 const { favTab } = storeToRefs(navigationStore);
 const { favoriteCollections } = storeToRefs(collectionsStore);
@@ -187,9 +186,7 @@ const handleOpenCollection = (entry: FavoriteCollectionEntry) => {
   }
 
   if (entry.onlineContext) {
-    onlineDetailStore.clearContext();
-    onlineDetailStore.setContext({ ...entry.onlineContext });
-    void router.push({ path: '/online-detail', query: { type: entry.onlineContext.type } });
+    openOnlineDetail({ ...entry.onlineContext });
   }
 };
 
@@ -356,6 +353,7 @@ const openAddToPlaylistSelection = () => {
   transition: opacity 240ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .fav-tab-leave-active {
+  pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 .fav-tab-enter-from {

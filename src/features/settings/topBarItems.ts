@@ -16,8 +16,8 @@ export const TOPBAR_FIXED_ITEMS: TopBarItemKey[] = ['search', 'settings'];
 /** 默认顶部栏布局（恢复默认时使用；与当前布局一致） */
 export const DEFAULT_TOPBAR_LAYOUT: TopBarLayoutSettings = {
   left: ['back'],
-  right: ['theme', 'announcement', 'settings', 'account'],
-  hidden: ['colorScheme'],
+  right: ['theme', 'colorScheme', 'settings', 'account'],
+  hidden: ['announcement'],
 };
 
 /** 容器显示信息 */

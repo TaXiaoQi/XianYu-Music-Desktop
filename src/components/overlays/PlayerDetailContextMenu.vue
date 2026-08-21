@@ -7,7 +7,7 @@ import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { useToast } from '../../composables/toast';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
 import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
-import { useOnlineDetailStore } from '../../features/onlineDetail/store';
+import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
 import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
@@ -48,7 +48,6 @@ const { showToast } = useToast();
 const { openSongInfo } = useSongInfoDialog();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
-const onlineDetailStore = useOnlineDetailStore();
 const { closePlayerDetail } = usePlaybackController();
 
 const menuRef = ref<HTMLElement | null>(null);
@@ -277,7 +276,7 @@ const handleOnlineViewArtist = async (song: Song) => {
       return;
     }
     const artist = results[0];
-    onlineDetailStore.setContext({
+    openOnlineDetail({
       type: 'artist',
       title: artist.name,
       subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -288,7 +287,6 @@ const handleOnlineViewArtist = async (song: Song) => {
       platformId: artist.platformId || artist.id,
     });
     closePlayerDetail();
-    void router.push({ path: '/online-detail', query: { type: 'artist' } });
   } catch (e: any) {
     showToast(`查看歌手失败: ${e?.message || e}`, 'error');
   }
@@ -321,7 +319,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
       return;
     }
     const album = results[0];
-    onlineDetailStore.setContext({
+    openOnlineDetail({
       type: 'album',
       title: album.name,
       subtitle: album.artist,
@@ -331,7 +329,6 @@ const handleOnlineViewAlbum = async (song: Song) => {
       platformId: album.platformId || album.id,
     });
     closePlayerDetail();
-    void router.push({ path: '/online-detail', query: { type: 'album' } });
   } catch (e: any) {
     showToast(`查看专辑失败: ${e?.message || e}`, 'error');
   }

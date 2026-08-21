@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import { useStatisticsStore } from '../../features/statistics/store';
@@ -7,7 +7,7 @@ import { useAuthStore } from '../../features/auth/store';
 import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
-import { useOnlineDetailStore } from '../../features/onlineDetail/store';
+import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
@@ -17,7 +17,6 @@ const authStore = useAuthStore();
 const router = useRouter();
 const { theme } = useSettings();
 const { isEnglish } = useI18n();
-const onlineDetailStore = useOnlineDetailStore();
 
 // 排行榜右键菜单状态
 const showContextMenu = ref(false);
@@ -37,7 +36,7 @@ function handleLeaderboardContextMenu(e: MouseEvent, item: LeaderboardEntry) {
 function handleViewLeaderboardUser() {
   const entry = contextMenuTargetEntry.value;
   if (!entry) return;
-  onlineDetailStore.setContextWithHistory({
+  openOnlineDetail({
     type: 'user',
     title: entry.nickname || entry.username,
     subtitle: `@${entry.username}`,
@@ -48,7 +47,6 @@ function handleViewLeaderboardUser() {
     engineType: 'musicfree',
   });
   showContextMenu.value = false;
-  void router.push({ path: '/online-detail', query: { type: 'user' } });
 }
 
 const hasCustomBackground = computed(() => (
@@ -215,6 +213,27 @@ const {
 const { canonicalSongs } = useLibraryBrowse();
 
 let statsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+/** KeepAlive 首次激活与 onMounted 同帧触发，跳过首次重复刷新 */
+let statsFirstActivation = true;
+
+const startStatsTimer = () => {
+  if (statsRefreshTimer) return;
+  statsRefreshTimer = setInterval(async () => {
+    try {
+      await statisticsStore.refreshBehaviorOnly('All');
+      await loadLeaderboard(true);
+    } catch {
+      // 刷新失败静默处理，不影响用户使用
+    }
+  }, 60_000);
+};
+
+const stopStatsTimer = () => {
+  if (statsRefreshTimer) {
+    clearInterval(statsRefreshTimer);
+    statsRefreshTimer = null;
+  }
+};
 const isLeaderboardReady = ref(false);
 
 const route = useRoute();
@@ -256,22 +275,34 @@ onMounted(async () => {
 
   // 每分钟自动刷新行为统计，「总听歌时长」按分钟粒度更新，
   // 同时静默刷新排行榜（原地更新、不闪骨架屏），使停留页面期间排行榜持续同步最新时长。
-  statsRefreshTimer = setInterval(async () => {
+  startStatsTimer();
+});
+
+// KeepAlive 场景：从其他 TAB 切回时，补上离开期间的行为统计与排行榜增量（静默刷新）
+onActivated(() => {
+  if (statsFirstActivation) {
+    statsFirstActivation = false;
+    return;
+  }
+  startStatsTimer();
+  void (async () => {
     try {
       await statisticsStore.refreshBehaviorOnly('All');
       await loadLeaderboard(true);
     } catch {
-      // 刷新失败静默处理，不影响用户使用
+      // 刷新失败静默处理
     }
-  }, 60_000);
+  })();
+});
+
+// KeepAlive 场景：切到其他 TAB 时暂停轮询，避免后台空转
+onDeactivated(() => {
+  stopStatsTimer();
 });
 
 onUnmounted(() => {
   statisticsStore.scheduleHeavyDataRelease();
-  if (statsRefreshTimer) {
-    clearInterval(statsRefreshTimer);
-    statsRefreshTimer = null;
-  }
+  stopStatsTimer();
 });
 
 async function handleRefresh() {

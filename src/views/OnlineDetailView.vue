@@ -4,7 +4,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from 'lucide-vue-next';
 
 import type { Song, PluginSearchResult } from '../types';
-import { useOnlineDetailStore, type OnlineDetailType, type ArtistDetailStateCache } from '../features/onlineDetail/store';
+import {
+  useOnlineDetailStore,
+  openOnlineDetail,
+  type OnlineDetailType,
+  type OnlineDetailStateCache,
+} from '../features/onlineDetail/store';
 import {
   buildOnlineCollectionKey,
   resolveOnlineCollectionPlatformId,
@@ -74,8 +79,13 @@ const libraryStore = useLibraryStore();
 const onlineDetailStore = useOnlineDetailStore();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 
-const detailType = computed<OnlineDetailType>(() => (route.query.type as OnlineDetailType) || 'artist');
-const ctx = computed(() => onlineDetailStore.context);
+/** 当前详情类型：以详情流当前帧为唯一事实来源（路由 query.type 仅作兜底展示） */
+const detailType = computed<OnlineDetailType>(() =>
+  onlineDetailStore.currentDetail?.context.type
+  ?? (route.query.type as OnlineDetailType)
+  ?? 'artist',
+);
+const ctx = computed(() => onlineDetailStore.currentDetail?.context ?? null);
 
 const loading = ref(false);
 /** 初始加载是否完成：完成后 Transition 始终留在 DOM 中，保证切换有动画 */
@@ -83,24 +93,64 @@ const hasInitialLoad = ref(false);
 /** 整页滚动容器：header 与歌曲列表一起滚动 */
 const detailScrollRef = ref<HTMLElement | null>(null);
 /**
- * 内容唯一滚动记忆键：基于当前上下文的平台 ID 生成，
- * 避免同类型不同内容（专辑 A→专辑 B）互相继承滚动位置。
- * platformId 提取不到时回退到标题，确保不同内容仍有独立 key。
- * 前缀引擎/来源，避免不同来源同 ID 的内容互相继承滚动位置。
+ * 内容唯一滚动记忆键：引擎/来源前缀 + 平台 ID（rawData 提取回退，再回退标题），
+ * 避免不同来源或同类型不同内容（专辑 A→专辑 B）互相继承滚动位置。
  */
 const detailMemoryKey = computed(() => {
   const c = ctx.value;
   if (!c) return '';
-  const platformId = resolveOnlineCollectionPlatformId(c);
-  const base = platformId || c.title || '';
-  if (!base) return '';
   const engine = c.engineType === 'lx'
     ? `lx:${c.lxSourceId ?? ''}`
     : `mf:${c.pluginSource?.id ?? ''}`;
-  return `${engine}::${base}`;
+  return `${engine}::${resolveOnlineCollectionPlatformId(c) || c.title || ''}`;
 });
+/** 当前导航令牌（路由 query.d）：拼进滚动记忆键，使每次进入详情容器都是全新滚动状态（退出即销毁） */
+const navToken = computed(() => String(route.query.d ?? ''));
 /** 歌曲列表：MF 引擎存 PluginSearchResult，LX 引擎存 LxSearchResultItem */
 const songs = ref<any[]>([]);
+
+/**
+ * 待应用的滚动位置：容器切换（下钻 → 0 / 返回 → 帧快照）时设置，在新容器进入
+ * （detail-slide 的 @enter：旧容器已移除、新容器已挂载）后应用。
+ * 不能在切换瞬间直接赋值 —— out-in 离场期间旧内容仍在文档流中，赋值会被旧内容
+ * 高度 clamp；容器交换时 scrollTop 又会被重置，导致返回恢复不稳定。
+ */
+let pendingScrollTop: number | null = null;
+/** 滚动应用循环令牌：新一轮应用或用户主动滚动时递增，作废旧循环 */
+let scrollApplyToken = 0;
+
+/** 用户主动滚动（滚轮/触摸）时放弃待应用的恢复位置 */
+const cancelPendingScroll = () => {
+  pendingScrollTop = null;
+  scrollApplyToken += 1;
+};
+
+/**
+ * detail-slide 进入钩子：新容器挂载后应用待定滚动位置。
+ * 分段虚拟列表未渲染足够高度时赋值会被 clamp，重试循环配合派发的 scroll 事件
+ * 驱动 SongTable 增量加载下一段，直至滚动到位（与 useListScrollMemory 同策略）。
+ * SongTable 自身的滚动记忆恢复（缓存可能被离场 clamp 污染）与本循环同帧竞争时，
+ * 本循环注册更晚、每帧最后执行，最终值以帧快照为准。
+ */
+const handleDetailEnter = () => {
+  if (pendingScrollTop === null) return;
+  const target = pendingScrollTop;
+  const token = ++scrollApplyToken;
+  let attempts = 0;
+  const step = () => {
+    const el = detailScrollRef.value;
+    if (token !== scrollApplyToken || !el) return;
+    el.scrollTop = target;
+    el.dispatchEvent(new Event('scroll'));
+    if (Math.abs(el.scrollTop - target) < 2 || attempts >= 120) {
+      pendingScrollTop = null;
+      return;
+    }
+    attempts += 1;
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+};
 /** 专辑列表：MF 引擎存 PluginAlbumResult，LX 引擎存 LxAlbumSearchResult */
 const albums = ref<any[]>([]);
 const isBatchMode = ref(false);
@@ -837,6 +887,43 @@ function handleContextMenuAddToPlaylist() {
   openAddToPlaylistDialog([song.path], { songs: [song] });
 }
 
+/** 切换详情容器前重置在途任务与批量选择等瞬时 UI 状态 */
+function resetTransientUiState() {
+  cancelPendingTasks();
+  isBatchMode.value = false;
+  selectedPaths.value = new Set();
+}
+
+/** 已由本地导航（pushDetail/handleBack）同步处理的导航令牌，对账 watch 据此跳过重复加载 */
+let lastHandledNavToken = 0;
+
+/** 统一下钻导航：压入详情帧栈（携带当前容器状态快照）并 replace 跳转（不堆积历史条目，
+ * 返回由帧栈显式驱动）。流内下钻组件不重新挂载，需显式按新帧加载内容。 */
+function pushDetail(context: Parameters<typeof openOnlineDetail>[0]) {
+  const inFlow = router.currentRoute.value.path === '/online-detail';
+  const d = openOnlineDetail(context, captureState());
+  if (inFlow) {
+    lastHandledNavToken = d;
+    resetTransientUiState();
+    loadFrameFresh(context.type);
+  }
+}
+
+/** 快照当前容器状态（歌曲/专辑内容 + tab + 滚动；用户容器含收藏与歌单），下钻时随帧缓存 */
+function captureState(): OnlineDetailStateCache {
+  const state: OnlineDetailStateCache = {
+    songs: songs.value,
+    albums: albums.value,
+    activeTab: artistActiveTab.value,
+    scrollTop: detailScrollRef.value?.scrollTop || 0,
+  };
+  if (isUserMode.value) {
+    state.userFavorites = viewedFavorites.value;
+    state.userPlaylists = viewedPlaylists.value;
+  }
+  return state;
+}
+
 /** 右键菜单：查看歌手（仅在歌单容器中显示） */
 async function handleOnlineViewArtist(song: Song) {
   if (!ctx.value) return;
@@ -862,7 +949,7 @@ async function handleOnlineViewArtist(song: Song) {
         return;
       }
       const artist = results[0];
-      onlineDetailStore.setContextWithHistory({
+      pushDetail({
         type: 'artist',
         title: artist.name,
         subtitle: artist.songCount ? `${artist.songCount} 首歌曲` : '',
@@ -870,7 +957,6 @@ async function handleOnlineViewArtist(song: Song) {
         pluginSource: ctx.value.pluginSource,
         rawData: artist.rawData,
         platformId: (artist as any).platformId || artist.id,
-        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'lx',
         lxSourceId: ctx.value.lxSourceId,
       });
@@ -886,7 +972,7 @@ async function handleOnlineViewArtist(song: Song) {
         return;
       }
       const artist = results[0];
-      onlineDetailStore.setContextWithHistory({
+      pushDetail({
         type: 'artist',
         title: artist.name,
         subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -895,11 +981,9 @@ async function handleOnlineViewArtist(song: Song) {
         pluginSource: ctx.value.pluginSource,
         rawData: artist.rawData,
         platformId: artist.platformId || artist.id,
-        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'musicfree',
       });
     }
-    void router.push({ path: '/online-detail', query: { type: 'artist' } });
   } catch (e: any) {
     showToast(`查看歌手失败: ${e?.message || e}`, 'error');
   }
@@ -930,7 +1014,7 @@ async function handleOnlineViewAlbum(song: Song) {
         return;
       }
       const album = results[0];
-      onlineDetailStore.setContextWithHistory({
+      pushDetail({
         type: 'album',
         title: album.name,
         subtitle: album.artist,
@@ -938,7 +1022,6 @@ async function handleOnlineViewAlbum(song: Song) {
         pluginSource: ctx.value.pluginSource,
         rawData: album.rawData,
         platformId: (album as any).platformId || album.id,
-        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'lx',
         lxSourceId: ctx.value.lxSourceId,
       });
@@ -954,7 +1037,7 @@ async function handleOnlineViewAlbum(song: Song) {
         return;
       }
       const album = results[0];
-      onlineDetailStore.setContextWithHistory({
+      pushDetail({
         type: 'album',
         title: album.name,
         subtitle: album.artist,
@@ -962,30 +1045,20 @@ async function handleOnlineViewAlbum(song: Song) {
         pluginSource: ctx.value.pluginSource,
         rawData: album.rawData,
         platformId: album.platformId || album.id,
-        sourceSearchType: ctx.value.sourceSearchType || 'playlist',
         engineType: 'musicfree',
       });
     }
-    void router.push({ path: '/online-detail', query: { type: 'album' } });
   } catch (e: any) {
     showToast(`查看专辑失败: ${e?.message || e}`, 'error');
   }
 }
 
-/** 点击歌手详情中的专辑，导航到在线专辑详情 */
+/** 点击歌手详情中的专辑，导航到在线专辑详情：当前歌手容器状态随帧入栈，返回时恢复 */
 function handleAlbumClick(album: any) {
   if (!ctx.value) return;
   if (!ctx.value.pluginSource) return;
   const isLx = isLxEngine.value && ctx.value.lxSourceId;
-  // 先保存当前歌手数据状态（歌曲/专辑/tab/滚动），随上下文入栈，返回歌手详情时恢复
-  const artistState: ArtistDetailStateCache = {
-    songs: songs.value,
-    albums: albums.value,
-    artistActiveTab: artistActiveTab.value,
-    scrollTop: detailScrollRef.value?.scrollTop || 0,
-  };
-  // 使用带历史的上下文设置，保存当前歌手上下文
-  onlineDetailStore.setContextWithHistory({
+  pushDetail({
     type: 'album',
     title: album.name,
     subtitle: album.artist,
@@ -993,11 +1066,8 @@ function handleAlbumClick(album: any) {
     pluginSource: ctx.value.pluginSource,
     rawData: album.rawData,
     platformId: album.platformId || album.id,
-    sourceSearchType: 'artist', // 标记来源为歌手详情
     ...(isLx ? { engineType: 'lx' as const, lxSourceId: ctx.value.lxSourceId } : { engineType: 'musicfree' as const }),
-  }, artistState);
-  artistActiveTab.value = 'songs'; // 重置 tab
-  void router.push({ path: '/online-detail', query: { type: 'album' } });
+  });
 }
 
 /** 点击用户详情中的云歌单，跳转到独立歌单详情页（与歌手页点专辑跳专辑详情同模式） */
@@ -1005,44 +1075,51 @@ function handleUserPlaylistClick(playlistId: string) {
   const playlist = viewedPlaylists.value.find(p => p.id === playlistId);
   if (!playlist) return;
   const songs = playlist.songs ?? [];
-  // 使用带历史的上下文设置，保存当前用户上下文，返回时恢复
-  onlineDetailStore.setContextWithHistory({
+  // 云歌单歌曲已随上下文携带，歌单详情页直接渲染，无需在线加载
+  pushDetail({
     type: 'playlist',
     title: playlist.name,
     subtitle: `${songs.length} 首歌曲`,
     // 封面与歌单卡片同源：云端封面缺失时回退歌单内在线歌曲的远程封面
     coverUrl: playlist.cloudCoverUrl || firstRemoteSongCover(songs) || '',
     engineType: 'musicfree',
-    // 云歌单歌曲已随上下文携带，歌单详情页直接渲染，无需在线加载
     rawData: { userPlaylistSongs: songs },
     platformId: playlist.id,
-    sourceSearchType: 'playlist',
   });
-  // 不重置 tab：跳转前切 tab 会先播放一次容器内切换动画（歌单网格淡出→收藏列表）再跳转，观感多余
-  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 }
 
 function handleBack() {
-  // 如果有上一个上下文（从歌手详情进入专辑），直接 router.back
-  if (onlineDetailStore.hasPreviousContext()) {
-    void router.back();
-  } else {
-    // 返回搜索页，设置待恢复的搜索会话（tab + 插件源 + 结果快照）以还原离开前的状态，
-    // 结果快照直接还原免重搜（防重复请求触发风控）
-    const sourceType = ctx.value?.sourceSearchType || (detailType.value === 'user' ? 'playlist' : detailType.value);
-    onlineDetailStore.setPendingSearchSession({
-      type: sourceType,
-      sourceId: ctx.value?.sourceSearchSourceId ?? null,
-      results: onlineDetailStore.searchResultsCache,
-    });
-    void router.back();
+  // 栈内有上一级：显式弹栈恢复（带状态快照的帧整体还原内容+tab+滚动；无快照的旧帧全新加载），
+  // 并 replace 回该帧的导航令牌 —— 不依赖浏览器历史，历史链中的任何 replace 都不会导致跳级；
+  // 栈已空：退回来源一级页面，一级页面从自身缓存恢复（内容 + 滚动）
+  if (onlineDetailStore.canPopDetail()) {
+    const frame = onlineDetailStore.popDetail();
+    if (frame) {
+      lastHandledNavToken = frame.d;
+      resetTransientUiState();
+      if (frame.state) {
+        restoreFrame(frame.state);
+      } else {
+        loadFrameFresh(frame.context.type);
+      }
+      void router.replace({
+        path: '/online-detail',
+        query: { type: frame.context.type, d: String(frame.d) },
+      });
+      return;
+    }
   }
+  void router.back();
 }
 
 onMounted(() => {
   if (!ctx.value) {
     showToast('详情数据不可用，请从搜索页进入', 'info');
-    void router.replace('/search');
+    // 延后跳转：宿主页面转场进行中立即 replace 会与 out-in 离场完成回调竞态
+    // （afterLeave 强制更新时 leaving 元素已脱离 DOM，insertBefore(null) 崩溃）
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!ctx.value) void router.replace('/search');
+    }));
     return;
   }
   if (isUserMode.value) {
@@ -1052,82 +1129,91 @@ onMounted(() => {
   }
 });
 
-onBeforeUnmount(() => {
-  mfCoverFetchVersion += 1; // 取消 pending 的 MF 封面拉取
-  lxCoverFetchVersion += 1; // 取消 pending 的 LX 封面拉取
-  // 离开详情流：清空上下文与历史栈，避免下次进入残留旧上下文/嵌套导航状态
-  onlineDetailStore.clearContextFlow();
-  // 按去向清理一级缓存：
-  // - 返回搜索页：保留搜索会话（tab+插件源+结果快照），销毁榜单缓存（已离开榜单流）
-  // - 返回榜单页：保留榜单缓存，销毁搜索会话（已离开搜索流）
-  // - 其他去向（真正离开在线详情流）：销毁全部一级缓存
-  const destPath = router.currentRoute.value.path;
-  if (destPath === '/search') {
-    onlineDetailStore.clearTopListsCache();
-  } else if (destPath === '/top-lists') {
-    onlineDetailStore.clearSearchSession();
-  } else {
-    onlineDetailStore.clearSearchSession();
-    onlineDetailStore.clearTopListsCache();
-  }
-});
-
-// 路由 type 变化时：尝试恢复上下文并重新加载
-watch(detailType, (newType, oldType) => {
-  if (newType === oldType) return;
-  // 检测是否为"返回"导航（上下文类型与路由类型不匹配 → 需恢复上一个上下文）
-  const isRestoring = !!(ctx.value && ctx.value.type !== newType);
-  // 如果上下文类型与路由类型不匹配，尝试恢复上一个上下文
-  if (isRestoring) {
-    onlineDetailStore.restorePreviousContext();
-  }
-  // 前进/返回导航都取消上一个类型的加载与封面补获任务，避免旧数据写回新类型
+/** 取消所有在途异步任务（加载 / 封面 / 元信息补全），容器切换时防止旧数据写回新容器 */
+function cancelPendingTasks() {
   loadVersion += 1;
   mfCoverFetchVersion += 1;
   lxCoverFetchVersion += 1;
   mfMetaFetchVersion += 1;
-  // 从专辑详情返回歌手详情：恢复随上下文缓存的歌手数据状态（内容+tab+滚动），免重搜
-  if (isRestoring && newType === 'artist') {
-    const restored = ctx.value?.detailState;
-    if (restored) {
-      songs.value = restored.songs;
-      albums.value = restored.albums;
-      restoringArtistState = true;
-      artistActiveTab.value = restored.artistActiveTab as ArtistTabId;
-      void nextTick(() => { restoringArtistState = false; });
-      nextTick(() => {
-        requestAnimationFrame(() => {
-          if (detailScrollRef.value) {
-            detailScrollRef.value.scrollTop = restored.scrollTop;
-          }
-        });
-      });
-      // 恢复后补获缺失封面/时长（与 loadData 行为一致）
-      if (isLxEngine.value) {
-        if (songs.value.some((s: LxSearchResultItem) => !s.img)) {
-          void fetchMissingLxCovers();
-        }
-      } else if (songs.value.some((s: PluginSearchResult) => !s.coverUrl || !s.duration)) {
-        void fetchMissingMfCovers();
-      }
-      // 消费后清除，避免后续导航复用过期状态
-      if (ctx.value) ctx.value.detailState = undefined;
-      return;
-    }
-  }
-  // 不在此重置整页滚动：清零共享容器会触发滚动监听把 0 写回旧 SongTable 的滚动记忆，
-  // 返回时滚动位置被重置；新容器滚动由 SongTable 自身 reset/restore 处理
-  // 清空上一个类型的数据，避免转场期间显示旧数据
+}
+
+/** 清空容器内容（进入新详情容器时，避免转场期间显示旧数据）。
+ *  不翻转 hasInitialLoad：保持内容分支（含 Transition）始终在 DOM 中，
+ *  下钻/返回的容器切换走 Transition 动画而非整块卸载重挂（否则动画丢失）。 */
+function resetContentState() {
   songs.value = [];
   albums.value = [];
-  if (ctx.value) {
-    if (newType === 'user') {
-      // 返回用户页：保留已加载的收藏/歌单避免闪现空态，后台静默刷新
-      void loadUserModeData();
-    } else {
-      void loadData(1);
-    }
+  viewedFavorites.value = [];
+  viewedPlaylists.value = [];
+}
+
+/** 全新加载当前帧容器（首次进入，或无状态快照的旧帧返回时） */
+function loadFrameFresh(type: OnlineDetailType) {
+  resetContentState();
+  // 全新容器从顶部开始：清掉滚动容器上残留的上一容器位置（在 @enter 应用）
+  pendingScrollTop = 0;
+  if (type === 'artist' || type === 'user') {
+    // 歌手/用户容器全新进入默认歌曲 tab（抑制 tab watcher，避免与本次加载重复请求）
+    restoringArtistState = true;
+    artistActiveTab.value = 'songs';
+    void nextTick(() => { restoringArtistState = false; });
   }
+  if (type === 'user') {
+    void loadUserModeData();
+  } else {
+    void loadData(1);
+  }
+}
+
+/** 恢复帧的状态快照（返回上级容器时）：内容 + tab + 滚动整体还原，免重搜防风控 */
+function restoreFrame(state: OnlineDetailStateCache) {
+  songs.value = state.songs;
+  albums.value = state.albums;
+  if (state.userFavorites) viewedFavorites.value = state.userFavorites;
+  if (state.userPlaylists) viewedPlaylists.value = state.userPlaylists;
+  hasInitialLoad.value = true;
+  // 恢复期间抑制 tab 切换触发的重载（数据已随状态恢复）
+  restoringArtistState = true;
+  artistActiveTab.value = state.activeTab as ArtistTabId;
+  void nextTick(() => { restoringArtistState = false; });
+  // 滚动位置在新容器进入时应用（@enter）：切换瞬间赋值会被离场内容 clamp
+  pendingScrollTop = state.scrollTop;
+  // 恢复后补获缺失封面/时长（与 loadData 行为一致）
+  if (isLxEngine.value) {
+    if (songs.value.some((s: LxSearchResultItem) => !s.img)) {
+      void fetchMissingLxCovers();
+    }
+  } else if (songs.value.some((s: PluginSearchResult) => !s.coverUrl || !s.duration)) {
+    void fetchMissingMfCovers();
+  }
+}
+
+onBeforeUnmount(() => {
+  cancelPendingTasks();
+  // 离开详情流：清空帧栈与当前帧，避免下次进入残留旧容器状态
+  onlineDetailStore.clearDetailFlow();
+  // 按去向处理一级页面缓存：返回对应一级页保留其缓存（返回时恢复），其余去向销毁全部
+  const dest = router.currentRoute.value;
+  if (dest.path === '/search') {
+    onlineDetailStore.clearTopListsCache();
+  } else if (dest.path === '/' && dest.query.view === 'topLists') {
+    onlineDetailStore.clearSearchPageCache();
+  } else {
+    onlineDetailStore.clearSearchPageCache();
+    onlineDetailStore.clearTopListsCache();
+  }
+});
+
+// 对账 watch：query.d 变化但未经本地导航（pushDetail/handleBack）处理时，
+// 说明外部入口在详情流内打开了新容器（如详情页中通过播放器详情弹窗查看歌手/专辑）——
+// 组件不会重新挂载，此处把当前容器状态快照补写到被离开的栈顶帧，再按新帧全新加载
+watch(() => Number(route.query.d ?? 0), (newD) => {
+  if (!ctx.value) return;
+  if (newD === lastHandledNavToken) return;
+  lastHandledNavToken = newD;
+  resetTransientUiState();
+  onlineDetailStore.setTopFrameState(captureState());
+  loadFrameFresh(detailType.value);
 });
 
 // 歌手 tab 切换时重新加载对应数据（恢复歌手状态期间抑制，数据已随状态恢复）
@@ -1196,11 +1282,19 @@ watch(
 
     <!-- 详情内容：hasInitialLoad 后始终在 DOM 中，保证 Transition 动画生效 -->
     <div v-else class="flex-1 min-h-0 relative flex flex-col">
-      <!-- 整页滚动容器：header 与歌曲列表一起滚动 -->
-      <div ref="detailScrollRef" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative">
-      <Transition name="detail-slide" mode="out-in">
-        <!-- 歌手详情 / 用户详情（排行榜"查看"进入，复用歌手页样式） -->
-        <div v-if="detailType === 'artist' || detailType === 'user'" key="artist">
+      <!-- 整页滚动容器：header 与歌曲列表一起滚动；用户主动滚动时放弃待应用的恢复位置 -->
+      <div
+        ref="detailScrollRef"
+        class="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative"
+        @wheel="cancelPendingScroll"
+        @touchmove="cancelPendingScroll"
+      >
+      <!-- 顺序转场（先淡出后淡进）：hasInitialLoad 首次加载后不再翻转，内容分支（含本 Transition）
+           始终在 DOM 中，容器切换不会在离场进行中卸载宿主分支，out-in 安全；
+           @enter 在新容器挂载后应用待定滚动位置（下钻归零 / 返回恢复帧快照） -->
+      <Transition name="detail-slide" mode="out-in" @enter="handleDetailEnter">
+        <!-- 歌手详情 / 用户详情（排行榜"查看"进入，复用歌手页样式）。key 含平台 ID：同类型下钻也播转场 -->
+        <div v-if="detailType === 'artist' || detailType === 'user'" :key="`artist-${ctx?.platformId ?? ''}`">
           <ArtistDetailHeader
             v-model:isBatchMode="isBatchMode"
             v-model:activeTab="artistActiveTab"
@@ -1218,15 +1312,15 @@ watch(
             @selectAll="handleSelectAll"
           />
 
-          <!-- 歌曲列表 / 专辑列表 tab（不使用 mode="out-in"，避免切换 tab 时内容空白） -->
+          <!-- 歌曲列表 / 专辑列表 tab（顺序转场：旧 tab 淡出后新 tab 淡入） -->
           <div class="relative">
-          <Transition name="tab-fade">
+          <Transition name="tab-fade" mode="out-in">
             <div v-if="artistActiveTab === 'songs'" key="songs">
               <SongTable
                 :songs="currentSongs"
                 :is-batch-mode="isBatchMode"
                 :selected-paths="selectedPaths"
-                :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey"
+                :memory-scope-key="(isUserMode ? 'online-detail-user' : 'online-detail-artist') + '::' + detailMemoryKey + '::d' + navToken"
                 page-scroll-mode
                 :scroll-container-ref="detailScrollRef"
                 @play="handlePlaySong"
@@ -1299,7 +1393,7 @@ watch(
         </div>
 
         <!-- 专辑详情 -->
-        <div v-else-if="detailType === 'album'" key="album">
+        <div v-else-if="detailType === 'album'" :key="`album-${ctx?.platformId ?? ''}`">
           <AlbumDetailHeader
             v-model:isBatchMode="isBatchMode"
             :albumName="title"
@@ -1319,7 +1413,7 @@ watch(
               :songs="currentSongs"
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
-              memory-scope-key="'online-detail-album::' + detailMemoryKey"
+              memory-scope-key="'online-detail-album::' + detailMemoryKey + '::d' + navToken"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               @play="handlePlaySong"
@@ -1330,7 +1424,7 @@ watch(
         </div>
 
         <!-- 歌单详情 -->
-        <div v-else-if="detailType === 'playlist'" key="playlist">
+        <div v-else-if="detailType === 'playlist'" :key="`playlist-${ctx?.platformId ?? ''}`">
           <DetailHeader
             :title="title"
             :subtitle="subtitle"
@@ -1350,7 +1444,7 @@ watch(
               :songs="currentSongs"
               :is-batch-mode="isBatchMode"
               :selected-paths="selectedPaths"
-              memory-scope-key="'online-detail-playlist::' + detailMemoryKey"
+              memory-scope-key="'online-detail-playlist::' + detailMemoryKey + '::d' + navToken"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
               @play="handlePlaySong"
@@ -1397,6 +1491,7 @@ watch(
   transition: opacity 280ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 280ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .detail-slide-leave-active {
+  pointer-events: none;
   transition: opacity 200ms ease, transform 200ms ease;
 }
 .detail-slide-enter-from {
@@ -1408,15 +1503,12 @@ watch(
   transform: translateX(-32px);
 }
 
-/* 歌手页歌曲/专辑 tab 切换动画（不使用 mode="out-in"，离场元素绝对定位避免布局偏移） */
+/* 歌手页歌曲/专辑 tab 切换动画（顺序转场：旧 tab 淡出后新 tab 淡入） */
 .tab-fade-enter-active {
   transition: opacity 240ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 240ms cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .tab-fade-leave-active {
-  position: absolute;
-  width: 100%;
-  top: 0;
-  left: 0;
+  pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 .tab-fade-enter-from {

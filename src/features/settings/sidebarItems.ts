@@ -24,13 +24,6 @@ export interface SidebarItemMeta {
 
 export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   {
-    key: 'topLists',
-    label: '榜单',
-    visibilityKey: 'showTopLists',
-    iconKind: 'path',
-    iconPath: 'M3 17l5-5 4 4 6-8 3 3V5h-6l2 2-4 5-4-4-6 6z',
-  },
-  {
     key: 'localMusic',
     label: '本地音乐',
     visibilityKey: 'showLocalMusic',
@@ -89,10 +82,16 @@ export const SIDEBAR_ITEMS: SidebarItemMeta[] = [
   },
 ];
 
-/** 默认排列顺序（与历史上硬编码的顺序保持一致，榜单默认排在首页下） */
+/** 默认排列顺序 */
 export const DEFAULT_SIDEBAR_ORDER: SidebarItemKey[] = [
-  'topLists',
-  ...SIDEBAR_ITEMS.filter(item => item.key !== 'topLists').map(item => item.key),
+  'artists',
+  'albums',
+  'folders',
+  'plugins',
+  'account',
+  'localMusic',
+  'recent',
+  'favorites',
 ];
 
 const SIDEBAR_ITEM_KEY_SET = new Set<SidebarItemKey>(DEFAULT_SIDEBAR_ORDER);
@@ -122,12 +121,6 @@ export const normalizeSidebarOrder = (value: unknown): SidebarItemKey[] => {
     if (!SIDEBAR_ITEM_KEY_SET.has(key) || seen.has(key)) continue;
     seen.add(key);
     result.push(key);
-  }
-
-  // 榜单是新功能：老用户的已存顺序里没有它，默认插到首页下方（而不是追加到末尾）
-  if (!seen.has('topLists')) {
-    result.unshift('topLists');
-    seen.add('topLists');
   }
 
   for (const key of DEFAULT_SIDEBAR_ORDER) {

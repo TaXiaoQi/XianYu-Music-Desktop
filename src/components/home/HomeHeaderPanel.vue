@@ -130,7 +130,7 @@ const isManagementModeModel = computed({
   />
 
   <LocalMusicHeader
-    v-else-if="!['statistics', 'artist', 'album'].includes(localViewMode)"
+    v-else-if="!['statistics', 'artist', 'album', 'dailyRecommend', 'topLists'].includes(localViewMode)"
     v-model:isBatchMode="isBatchModeModel"
     :selectedCount="selectedCount"
     :totalSongCount="localSongList.length"

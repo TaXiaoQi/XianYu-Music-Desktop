@@ -161,8 +161,17 @@ window.addEventListener('unhandledrejection', (event) => {
   showFatalError('未处理的异步错误', event.reason)
 })
 
-try {
-  app.mount('#app')
-} catch (error) {
-  showFatalError('应用挂载失败', error)
+const mountApp = () => {
+  try {
+    app.mount('#app')
+  } catch (error) {
+    showFatalError('应用挂载失败', error)
+  }
 }
+
+// 等初始导航完成再挂载：否则首屏先按 '/' 渲染 Home，初始导航落定后立即切到上次会话路由，
+// page-fade 的 out-in 离场回调与后续路由更新竞态会导致 insertBefore(null) 崩溃
+router.isReady().then(mountApp, (error) => {
+  showFatalError('初始路由解析失败', error)
+  mountApp()
+})

@@ -990,10 +990,10 @@ describe('lyrics settings normalization', async () => {
     expect(normalized.playerOffsetY).toBe(MIN_PLAYER_OFFSET_Y);
   });
 
-  it('defaults desktop auto-hide on fullscreen to enabled', () => {
+  it('defaults desktop auto-hide on fullscreen to disabled', () => {
     const normalized = normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.autoHideWhenFullscreen).toBe(true);
+    expect(normalized.autoHideWhenFullscreen).toBe(false);
   });
 
   it('defaults desktop auto-hide on pause to disabled', () => {
@@ -1002,10 +1002,10 @@ describe('lyrics settings normalization', async () => {
     expect(normalized.autoHideWhenPaused).toBe(false);
   });
 
-  it('defaults desktop double line display to disabled', () => {
+  it('defaults desktop double line display to enabled', () => {
     const normalized = normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.showDoubleLine).toBe(false);
+    expect(normalized.showDoubleLine).toBe(true);
   });
 
   it('defaults desktop word effect to enabled', () => {
@@ -1060,10 +1060,10 @@ describe('lyrics settings normalization', async () => {
     expect(normalized.enableWordEffect).toBe(false);
   });
 
-  it('defaults desktop readability settings with outline disabled and independent disabled shadows', () => {
+  it('defaults desktop readability settings with outline enabled and independent disabled shadows', () => {
     const normalized = normalizeDesktopLyricsSettingsPatch({});
 
-    expect(normalized.enableTextOutline).toBe(false);
+    expect(normalized.enableTextOutline).toBe(true);
     expect(normalized.textOpacity).toBe(1);
     expect(normalized.textShadowColor).toBe('#000000');
     expect(normalized.firstLineTextShadowStrength).toBe(0);

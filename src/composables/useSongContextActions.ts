@@ -1,11 +1,10 @@
 import { ref, type Ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import type { Song } from '../types';
 import { useToast } from './toast';
 import { checkDownloadExists, getDownloadRecord } from '../services/downloadHistory';
 import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../services/pluginEngine';
-import { useOnlineDetailStore } from '../features/onlineDetail/store';
+import { openOnlineDetail } from '../features/onlineDetail/store';
 
 /**
  * 判断是否为在线歌曲（覆盖 lx://、plugin://、remote:// 协议及 source_type 字段）。
@@ -31,9 +30,7 @@ export function useSongContextActions({
   isBatchMode,
   deleteFromDisk,
 }: UseSongContextActionsOptions) {
-  const router = useRouter();
   const { showToast } = useToast();
-  const onlineDetailStore = useOnlineDetailStore();
 
   const showContextMenu = ref(false);
   const contextMenuX = ref(0);
@@ -132,7 +129,7 @@ export function useSongContextActions({
         return;
       }
       const artist = results[0];
-      onlineDetailStore.setContext({
+      openOnlineDetail({
         type: 'artist',
         title: artist.name,
         subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -141,9 +138,7 @@ export function useSongContextActions({
         pluginSource,
         rawData: artist.rawData,
         platformId: artist.platformId || artist.id,
-        sourceSearchType: 'track',
       });
-      void router.push({ path: '/online-detail', query: { type: 'artist' } });
     } catch (e: any) {
       showToast(`查看歌手失败: ${e?.message || e}`, 'error');
     }
@@ -177,7 +172,7 @@ export function useSongContextActions({
         return;
       }
       const album = results[0];
-      onlineDetailStore.setContext({
+      openOnlineDetail({
         type: 'album',
         title: album.name,
         subtitle: album.artist,
@@ -185,9 +180,7 @@ export function useSongContextActions({
         pluginSource,
         rawData: album.rawData,
         platformId: album.platformId || album.id,
-        sourceSearchType: 'track',
       });
-      void router.push({ path: '/online-detail', query: { type: 'album' } });
     } catch (e: any) {
       showToast(`查看专辑失败: ${e?.message || e}`, 'error');
     }

@@ -98,7 +98,10 @@ const songTableMemoryScopeKey = computed(() =>
           props.localFilterCondition || '',
         ].join('::');
       case 'statistics':
-        return 'statistics';
+      case 'dailyRecommend':
+      case 'topLists':
+        // 发现区三种 TAB 共用同一容器（KeepAlive 缓存各自滚动记忆，无需参与 key）
+        return 'discover';
       default:
         return 'all';
     }
@@ -107,15 +110,19 @@ const songTableMemoryScopeKey = computed(() =>
 
 // 主页内的详情容器（歌单/歌手/专辑/文件夹等）按 key 销毁重建。
 // 歌单切换时旧 SongTable 会完整卸载，新歌单再重新挂载，避免旧页面状态和缓存残留。
-const viewInstanceKey = computed(() =>
-  [
-    props.localViewMode,
+// 发现区三种 TAB（统计/每日推荐/音源榜单）是同一容器内切换，统一用固定 key：
+// 避免切 TAB 时整个面板（含 TAB 栏与 KeepAlive 缓存）被销毁重建导致"整页刷新"。
+const viewInstanceKey = computed(() => {
+  const mode = props.localViewMode;
+  const discoverModes = ['statistics', 'dailyRecommend', 'topLists'];
+  return [
+    discoverModes.includes(mode) ? 'discover' : mode,
     props.localFilterCondition || '',
     props.currentFolderFilter || '',
     props.activeRootPath || '',
     props.artistActiveTab || '',
-  ].join('::'),
-);
+  ].join('::');
+});
 </script>
 
 <template>
@@ -200,6 +207,7 @@ const viewInstanceKey = computed(() =>
 }
 
 .home-view-switch-leave-active {
+  pointer-events: none;
   transition:
     opacity 220ms ease,
     transform 220ms cubic-bezier(0.4, 0, 0.2, 1);

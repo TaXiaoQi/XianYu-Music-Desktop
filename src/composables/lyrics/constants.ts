@@ -28,7 +28,7 @@ export const DEFAULT_PLAYER_OFFSET_Y = 0;
 export const MIN_PLAYER_OFFSET_Y = -25;
 export const MAX_PLAYER_OFFSET_Y = 25;
 export const DEFAULT_PLAYER_ALIGNMENT: LyricsPlayerAlignment = 'left';
-export const DEFAULT_DESKTOP_PLAYER_ALIGNMENT: DesktopLyricsPlayerAlignment = 'center';
+export const DEFAULT_DESKTOP_PLAYER_ALIGNMENT: DesktopLyricsPlayerAlignment = 'split-corners';
 export const DEFAULT_PLAYER_FONT_PRESET: LyricsFontPreset = 'system';
 export const DEFAULT_PLAYER_RENDER_MODE: LyricsPlayerRenderMode = 'amll';
 export const DEFAULT_BACKGROUND_BLUR = 100;
@@ -125,17 +125,17 @@ export const defaultLyricsSettings: LyricsSettings = {
 };
 
 export const defaultDesktopLyricsSettings: DesktopLyricsSettings = {
-  isAlwaysOnTop: false,
+  isAlwaysOnTop: true,
   alwaysShowShadowBackground: false,
-  autoHideWhenFullscreen: true,
+  autoHideWhenFullscreen: false,
   autoHideWhenPaused: false,
-  showDoubleLine: false,
+  showDoubleLine: true,
   enableWordEffect: true,
-  enableTextOutline: false,
+  enableTextOutline: true,
   textOutlineWidth: DEFAULT_DESKTOP_TEXT_OUTLINE_WIDTH,
   textOutlineColor: DEFAULT_DESKTOP_TEXT_OUTLINE_COLOR,
   isLocked: false,
-  persistLock: false,
+  persistLock: true,
   centerHorizontally: false,
   colorScheme: 'auto',
   customPlayedColor: DEFAULT_DESKTOP_CUSTOM_PLAYED_COLOR,
