@@ -61,6 +61,7 @@ const EDITOR_IDLE_PERIOD_MS: u32 = 15;
 
 /// 线程本地上下文：窗口过程只在创建它的编辑器线程上被调用，
 /// 借 thread_local 把机架与槽位标识递给 wndproc。
+#[derive(Clone)]
 struct EditorCtx {
     rack: Arc<SharedRack>,
     format: String,
@@ -140,6 +141,21 @@ pub fn open_editor(
     let title_owned = title.to_string();
     let owner = SendHwnd(owner);
 
+    // 幂等：该插件已有打开的编辑器时，聚焦既有窗口而非新建。对同一实例
+    // 重复 open() 会让插件卡在二次 attached，而该 open 持阻塞机架锁 →
+    // 整应用无响应（观测日志：第二次 window created 后停在 open，无 open ok）。
+    if let Some(hwnd) = editors()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key)
+        .map(|e| e.hwnd)
+    {
+        unsafe {
+            let _ = PostMessageW(hwnd.0, WM_APP_FOCUS, 0, 0);
+        }
+        return Ok(());
+    }
+
     let spawned = std::thread::Builder::new()
         .name(format!("plugin-editor-{key}"))
         .spawn(move || {
@@ -157,7 +173,7 @@ pub fn open_editor(
     // JoinHandle 丢弃即 detach：线程经 WM_CLOSE / 窗口销毁自行终止
     drop(spawned.map_err(|e| format!("编辑器线程启动失败: {e}"))?);
 
-    match ready_rx.recv() {
+    match ready_rx.recv_timeout(std::time::Duration::from_secs(8)) {
         Ok(Ok(hwnd_bits)) => {
             // 注册表项在 open 成功后写入（含窗口句柄 + 完成信号接收端）。
             // 用户极快关闭的竞态由线程退出路径的幂等移除兜底。
@@ -174,7 +190,7 @@ pub fn open_editor(
             Ok(())
         }
         Ok(Err(e)) => Err(e),
-        Err(_) => Err("编辑器线程意外退出".into()),
+        Err(_) => Err("编辑器打开超时（插件无响应或已崩溃）".into()),
     }
 }
 
@@ -267,6 +283,7 @@ fn editor_thread_main(
             let _ = done_tx.send(());
             return;
         }
+        editor_log(&format!("[{}@{format}] window created hwnd={}", std::process::id(), hwnd as usize));
 
         // 安装线程上下文供 wndproc 使用
         CURRENT_CTX.with(|c| {
@@ -278,32 +295,60 @@ fn editor_thread_main(
             });
         });
 
-        // 持机架锁打开编辑器（音频线程此间 try_lock 失败走旁路，可接受）
-        let open_result = rack.with_slot(format, unique_id, |slot| {
-            let Some(editor) = slot.instance.editor() else {
-                return Err("该插件未提供编辑器".to_string());
-            };
-            let scale = f64::from(dpi) / 96.0;
-            editor
-                .open(WindowHandle::HWND(hwnd.cast()), scale)
-                .map_err(|e| format!("插件编辑器打开失败: {e}"))?;
-            Ok((editor.size().unwrap_or(FALLBACK_SIZE), editor.is_resizable()))
-        });
-        let (size, resizable) = match open_result {
-            Some(Ok(v)) => v,
-            Some(Err(e)) => {
+        // 持机架锁打开编辑器（音频线程此间 try_lock 失败走旁路，可接受）。
+        // 注意：open() 是必须成功的 FFI，也是插件最容易在此引爆 panic / 崩溃
+        // 的点，必须用 catch_unwind 兜底——否则未捕获的 panic 会让线程静默
+        // 死亡而永不发 ready，open_editor 的 recv() 就会无限期挂起（假死）。
+        let open_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            rack.with_slot(format, unique_id, |slot| {
+                let Some(editor) = slot.instance.editor() else {
+                    return Err("该插件未提供编辑器".to_string());
+                };
+                let scale = f64::from(dpi) / 96.0;
+                editor
+                    .open(WindowHandle::HWND(hwnd.cast()), scale)
+                    .map_err(|e| format!("插件编辑器打开失败: {e}"))?;
+                // getSize 在插件 GUI 未就绪/未上报有效布局时可能返回 0 或极小异常值，
+                // 直接信任会把窗口压成不可用的畸变小窗（此处最小被钳到 160×100）。
+                // 判定有效性：宽高任一边 < 48 即视为无效，回落到 FALLBACK_SIZE 兜底。
+                let reported = editor.size();
+                let from_fallback = !matches!(reported, Some((w, h)) if w >= 48 && h >= 48);
+                let size = reported
+                    .filter(|&(w, h)| w >= 48 && h >= 48)
+                    .unwrap_or(FALLBACK_SIZE);
+                Ok((size, editor.is_resizable(), from_fallback))
+            })
+        }));
+        let (size, resizable, from_fallback) = match open_outcome {
+            Ok(Some(Ok(v))) => v,
+            Ok(Some(Err(e))) => {
+                editor_log(&format!("[{}@{format}] open Err: {e}", std::process::id()));
                 DestroyWindow(hwnd);
                 let _ = ready_tx.send(Err(e));
                 let _ = done_tx.send(());
                 return;
             }
-            None => {
+            Ok(None) => {
                 DestroyWindow(hwnd);
                 let _ = ready_tx.send(Err("机架中找不到该插件实例".into()));
                 let _ = done_tx.send(());
                 return;
             }
+            Err(payload) => {
+                let any: &(dyn std::any::Any + Send) = &*payload;
+                let msg = any
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .or_else(|| any.downcast_ref::<&str>().copied())
+                    .unwrap_or("<非字符串 panic>");
+                editor_log(&format!("[{}@{format}] open PANICKED: {msg}", std::process::id()));
+                DestroyWindow(hwnd);
+                let _ = ready_tx.send(Err("插件编辑器打开时崩溃（已捕获）".into()));
+                let _ = done_tx.send(());
+                return;
+            }
         };
+        editor_log(&format!("[{}@{format}] open ok size={}x{}", std::process::id(), size.0, size.1));
 
         let mut effective_styles = styles;
         if resizable {
@@ -337,8 +382,23 @@ fn editor_thread_main(
             }
         });
 
+        // getSize 未就绪回落时，把兜底客户区主动通知**可缩放**插件按此布局
+        // 渲染。固定大小插件不可据此布局，也不应被宿主调 set_size（VST3 规范），
+        // 去强制调用会在该插件同步等宿主时持机架锁 → 点编辑器整应用无响应。
+        if from_fallback {
+            rack.try_with_slot(format, unique_id, |slot| {
+                if let Some(editor) = slot.instance.editor() {
+                    if editor.is_resizable() && editor.is_open() {
+                        let _ = editor.set_size(size.0, size.1);
+                    }
+                }
+            });
+        }
+
+        editor_log(&format!("[{}@{format}] sending ready", std::process::id()));
         let _ = ready_tx.send(Ok(hwnd as isize));
         ShowWindow(hwnd, SW_SHOW);
+        editor_log(&format!("[{}@{format}] entering message loop", std::process::id()));
         // 空闲驱动：阻塞的 GetMessageW 平时无消息可派，靠周期性
         // WM_TIMER 唤醒消息循环给插件 GUI 送 idle tick
         SetTimer(hwnd, EDITOR_IDLE_TIMER_ID, EDITOR_IDLE_PERIOD_MS, None);
@@ -357,7 +417,7 @@ fn editor_thread_main(
             c.borrow().as_ref().is_some_and(|ctx| ctx.opened)
         });
         if still_open {
-            close_editor_view_and_harvest(&rack, format, unique_id);
+            let _ = guard_plugin_panic(|| close_editor_view_and_harvest(&rack, format, unique_id));
         }
 
         editors()
@@ -371,18 +431,35 @@ fn editor_thread_main(
     }
 }
 
+/// 取 CURRENT_CTX 的只读快照（克隆），借用立即释放。
+///
+/// 窗口过程是**可重入**的：插件回调可能在其内部同步 `SendMessage`/`PostMessage`
+/// 重新进入本 wndproc。若在调用插件期间一直持有 `RefCell` 借用，重入路径的
+/// 第二次 `borrow()` 会抛 "RefCell already borrowed"（此前正是这个 panic 越过
+/// `guard_plugin_panic` 触发 abort）。因此所有触碰插件的分支都先快照、立刻
+/// 放掉借用，再持 owned 上下文操作。
+fn ctx_snapshot() -> Option<EditorCtx> {
+    CURRENT_CTX.with(|c| c.borrow().clone())
+}
+
+/// 在短暂、不与插件调用重叠的窗口内把 opened 置为 false。
+fn clear_ctx_opened() {
+    CURRENT_CTX.with(|c| {
+        if let Some(ctx) = c.borrow_mut().as_mut() {
+            ctx.opened = false;
+        }
+    });
+}
+
 /// 关闭插件视图并收获编辑器内手工调参到配置。
 ///
 /// 1. 持机架锁 `editor.close()`（VST3 规范：removed() 须在父窗口销毁前）；
 /// 2. 读出全部参数当前值（performEdit 不经过宿主 set_parameter，只有插件
 ///    自己知道），写回配置持久化。注意：update_slot_param 自身会加机架锁，
 ///    不能在 with_slot 闭包内调用（死锁）。
+///
+/// 本函数不再触碰 CURRENT_CTX（重入防护），调用方先 clear_ctx_opened()。
 fn close_editor_view_and_harvest(rack: &Arc<SharedRack>, format: &str, unique_id: &str) {
-    CURRENT_CTX.with(|c| {
-        if let Some(ctx) = c.borrow_mut().as_mut() {
-            ctx.opened = false;
-        }
-    });
     rack.with_slot(format, unique_id, |slot| {
         if let Some(editor) = slot.instance.editor() {
             editor.close();
@@ -400,6 +477,34 @@ fn close_editor_view_and_harvest(rack: &Arc<SharedRack>, format: &str, unique_id
     for (index, value) in harvested {
         rack.update_slot_param(format, unique_id, index, value);
     }
+}
+
+/// 对插件编辑器的 FFI 调用做 panic 防护。
+///
+/// 窗口过程是 `extern "system"`：Rust panic 无法越过该 ABI 边界，任何未被
+/// 捕获的 panic 都会触发 "non-unwinding panic" 直接 abort 整个进程（详见
+/// 崩溃日志 0xc0000409 / `_CxxFrameHandler3`）。插件 DLL 不可信，其视图
+/// 交互（on_idle / set_size / close / performEdit）可能在任意时机 panic，
+/// 必须在此拦下——与音频 process 链上的 catch_unwind 同理，单一插件崩溃
+/// 不应拖垮宿主。返回是否发生了 panic。
+fn guard_plugin_panic<F: FnOnce()>(f: F) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+}
+
+/// 把编辑器线程生命周期打点写到临时日志，用于在“点编辑器死机”时定位
+/// 卡住/崩溃在哪一步。行尾不换行缓冲，立即 flush 以便强杀后日志可见。
+fn editor_log(msg: &str) {
+    use std::io::Write;
+    let Ok(file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("plugin_editor.log"))
+    else {
+        return;
+    };
+    let mut f = std::io::BufWriter::new(file);
+    let _ = writeln!(f, "{} {msg}", std::process::id());
+    let _ = f.flush();
 }
 
 fn register_class_once() {
@@ -439,14 +544,18 @@ unsafe extern "system" fn editor_wndproc(
             0
         }
         WM_CLOSE => {
-            // 先摘插件视图再销毁父窗口（VST3 规范顺序），失败也继续关闭
-            CURRENT_CTX.with(|c| {
-                if let Some(ctx) = c.borrow().as_ref() {
-                    if ctx.opened {
-                        close_editor_view_and_harvest(&ctx.rack, &ctx.format, &ctx.unique_id);
-                    }
+            // 快照优先、借用即放，避免重入二次借阅同一 RefCell。
+            let ctx = ctx_snapshot();
+            if let Some(ctx) = ctx {
+                if ctx.opened {
+                    // 先摘插件视图再销毁父窗口（VST3 规范顺序），失败也继续关闭；
+                    // 插件 removed/收获可能 panic，绝不能 abort 整个进程。
+                    let _ = guard_plugin_panic(|| {
+                        close_editor_view_and_harvest(&ctx.rack, &ctx.format, &ctx.unique_id)
+                    });
                 }
-            });
+            }
+            clear_ctx_opened();
             unsafe { DestroyWindow(hwnd) };
             0
         }
@@ -459,35 +568,45 @@ unsafe extern "system" fn editor_wndproc(
             let width = (rect.right - rect.left).max(0) as u32;
             let height = (rect.bottom - rect.top).max(0) as u32;
             if width > 0 && height > 0 {
-                CURRENT_CTX.with(|c| {
-                    if let Some(ctx) = c.borrow().as_ref() {
-                        if ctx.opened {
-                            ctx.rack.with_slot(&ctx.format, &ctx.unique_id, |slot| {
-                                if let Some(editor) = slot.instance.editor() {
-                                    if editor.is_resizable() && editor.is_open() {
-                                        let _ = editor.set_size(width, height);
-                                    }
-                                }
-                            });
-                        }
+                let ctx = ctx_snapshot();
+                let crashed = ctx.as_ref().is_some_and(|ctx| {
+                    if !ctx.opened {
+                        return false;
                     }
+                    guard_plugin_panic(|| {
+                        ctx.rack.try_with_slot(&ctx.format, &ctx.unique_id, |slot| {
+                            if let Some(editor) = slot.instance.editor() {
+                                if editor.is_resizable() && editor.is_open() {
+                                    let _ = editor.set_size(width, height);
+                                }
+                            }
+                        });
+                    })
                 });
+                if crashed {
+                    unsafe { let _ = PostMessageW(hwnd, WM_CLOSE, 0, 0); };
+                }
             }
             0
         }
         WM_TIMER => {
             if wparam == EDITOR_IDLE_TIMER_ID {
-                CURRENT_CTX.with(|c| {
-                    if let Some(ctx) = c.borrow().as_ref() {
-                        if ctx.opened {
-                            ctx.rack.with_slot(&ctx.format, &ctx.unique_id, |slot| {
-                                if let Some(editor) = slot.instance.editor() {
-                                    editor.on_idle();
-                                }
-                            });
-                        }
+                let ctx = ctx_snapshot();
+                let crashed = ctx.as_ref().is_some_and(|ctx| {
+                    if !ctx.opened {
+                        return false;
                     }
+                    guard_plugin_panic(|| {
+                        ctx.rack.try_with_slot(&ctx.format, &ctx.unique_id, |slot| {
+                            if let Some(editor) = slot.instance.editor() {
+                                editor.on_idle();
+                            }
+                        });
+                    })
                 });
+                if crashed {
+                    unsafe { let _ = PostMessageW(hwnd, WM_CLOSE, 0, 0); };
+                }
             }
             0
         }

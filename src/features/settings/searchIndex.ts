@@ -37,10 +37,10 @@ type SearchItemInput = string | {
 const TAB_NAMES: Record<SettingsTabId, string> = {
   account: '账号',
   general: '常规',
-  plugins: '插件',
+  plugins: '音源插件',
   theme: '外观',
   audioOutput: '播放',
-  pluginHost: '插件宿主',
+  pluginHost: '音频插件',
   download: '下载',
   library: '音乐库',
   toolbox: '工具箱',
@@ -171,11 +171,6 @@ const staticItems: SettingsSearchItem[] = [
   ]),
   ...makeItems('pluginHost', '可用插件', [
     { label: '重新扫描', keywords: 'VST3 CLAP 目录 扫描 发现 安装' },
-  ]),
-  ...makeItems('pluginHost', '机架链路', [
-    { label: '插件原生编辑器', keywords: 'VST3 CLAP GUI 窗口 打开 关闭' },
-    { label: '参数与预设', keywords: '滑块 实时 工厂预设 加载 数值' },
-    { label: '从机架移除', keywords: '删除 槽位 插件' },
   ]),
 
   ...makeItems('download', '下载位置', [
