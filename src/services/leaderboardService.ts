@@ -119,14 +119,24 @@ async function handleResetSignal(resetAt: string): Promise<void> {
   }
 }
 
+/** 上报听歌时长的节流间隔：频繁切换排行榜周期时避免每次都重复上报 */
+const REPORT_THROTTLE_MS = 30_000;
+let lastReportAt = 0;
+
 /**
  * 上报本地听歌时长，并处理服务端下发的重置信号。
  * 若检测到更新重置信号，会清空本地统计并重新上报 0 同步服务端，返回 true。
+ *
+ * 上报带 30s 节流：排行榜周期切换/首页轮询都会触发上报，
+ * 短时间内重复上报对排名更新无意义，跳过可显著减少切换等待。
  *
  * @param durations 三个周期的听歌时长
  * @returns 是否实际触发了本地统计重置
  */
 async function reportAndHandleReset(durations: ListenDurations): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastReportAt < REPORT_THROTTLE_MS) return false;
+  lastReportAt = now;
   const result = await reportListenDuration(durations);
   // 检查是否有服务端下发的重置信号
   if (result?.reset_at) {

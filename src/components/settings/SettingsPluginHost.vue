@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  Check,
   FolderOpen,
   GripVertical,
-  Plus,
-  RefreshCw,
+  Library,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-vue-next';
@@ -17,6 +15,7 @@ import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetI
 import type { PluginHostRackSlotConfig } from '../../services/tauri/contracts';
 import SlotParamsDialog from './SlotParamsDialog.vue';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
+import PluginLibraryDialog from './PluginLibraryDialog.vue';
 
 const store = usePluginHostStore();
 const { rackConfig, scannedPlugins, isScanning, hasScanned, extraDirs } = storeToRefs(store);
@@ -24,10 +23,8 @@ const { t } = useI18n();
 
 const slotKey = (slot: PluginHostRackSlotConfig) => `${slot.format}::${slot.uniqueId}`;
 
-// ===== 扫描 =====
-const handleScan = () => {
-  void store.scan();
-};
+// ===== 可用插件库弹窗 =====
+const showLibrary = ref(false);
 
 // ===== 自定义面板目录 =====
 const handleAddExtraDir = async () => {
@@ -46,31 +43,6 @@ const handleRemoveExtraDir = (dir: string) => {
 };
 
 const formatLabel = (format: string) => (format === 'vst3' ? 'VST3' : 'CLAP');
-
-const categoryLabel = (category: string) => {
-  switch (category) {
-    case 'effect': return t('pluginHost.catEffect');
-    case 'instrument': return t('pluginHost.catInstrument');
-    case 'noteEffect': return t('pluginHost.catNoteEffect');
-    case 'analyzer': return t('pluginHost.catAnalyzer');
-    case 'tool': return t('pluginHost.catTool');
-    default: return category;
-  }
-};
-
-const versionLabel = (version: number) => {
-  if (!version) return '';
-  return `v${(version >> 16) & 0xffff}.${(version >> 8) & 0xff}.${version & 0xff}`;
-};
-
-const handleAddSlot = (index: number) => {
-  const entry = scannedPlugins.value[index];
-  if (!entry) return;
-  if (store.isSlotInRack(entry.format, entry.uniqueId)) return;
-  store.addSlot(entry);
-};
-
-const scannedSorted = computed(() => [...scannedPlugins.value]);
 
 // ===== 槽位移除确认 =====
 const showRemoveConfirm = ref(false);
@@ -175,35 +147,6 @@ onMounted(() => {
 
 <template>
   <div class="settings-content space-y-6">
-    <!-- 机架总开关 -->
-    <section class="space-y-3">
-      <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-        <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
-        {{ t('pluginHost.effectsRack') }}
-      </h2>
-      <div class="flex flex-col overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
-        <div class="flex items-center justify-between p-4 transition-colors hover:bg-white/40 dark:hover:bg-white/10">
-          <div class="min-w-0">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.enableRack') }}</div>
-            <div class="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-white/45">
-              {{ t('pluginHost.rackDesc') }}
-            </div>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="rackConfig.masterEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            @click="store.setMasterEnabled(!rackConfig.masterEnabled)"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
-              :class="rackConfig.masterEnabled ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
-        </div>
-      </div>
-    </section>
-
     <!-- 自定义扫描目录 -->
     <section class="space-y-3">
       <h2 class="flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -274,59 +217,21 @@ onMounted(() => {
           </div>
           <button
             type="button"
-            class="flex shrink-0 items-center gap-1.5 rounded-lg border border-black/10 bg-white/45 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-white/70 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:bg-white/10"
-            :disabled="isScanning"
-            @click="handleScan"
+            class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
+            @click="showLibrary = true"
           >
-            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': isScanning }" />
-            {{ isScanning ? t('pluginHost.scanning') : t('pluginHost.rescan') }}
+            <Library class="h-3.5 w-3.5" />
+            {{ t('pluginHost.open') }}
           </button>
         </div>
-
-        <div v-if="!hasScanned && !isScanning" class="px-4 pb-5 pt-2 text-center text-xs text-gray-400 dark:text-white/35">
-          {{ t('pluginHost.scanningDirs') }}
-        </div>
-        <div v-else-if="isScanning" class="px-4 pb-5 pt-2 text-center text-xs text-gray-400 dark:text-white/35">
-          {{ t('pluginHost.scanningDirs') }}
-        </div>
-        <div v-else-if="scannedSorted.length === 0" class="px-4 pb-5 pt-2 text-center text-xs leading-relaxed text-gray-400 dark:text-white/35">
-          {{ t('pluginHost.noPluginsFoundA') }}<br>
-          {{ t('pluginHost.noPluginsFoundB') }}
-        </div>
-        <div v-else class="custom-scrollbar max-h-72 space-y-px overflow-y-auto px-1.5 pb-1.5">
-          <div
-            v-for="(entry, index) in scannedSorted"
-            :key="`${entry.format}-${entry.uniqueId}`"
-            class="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <span
-              class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
-              :class="entry.format === 'vst3'
-                ? 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300'
-                : 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300'"
-            >{{ formatLabel(entry.format) }}</span>
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-xs font-medium text-gray-800 dark:text-gray-200" :title="entry.path">
-                {{ entry.name }}
-              </div>
-              <div class="truncate text-[11px] text-gray-400 dark:text-white/35">
-                {{ [entry.vendor, categoryLabel(entry.category), versionLabel(entry.version)].filter(Boolean).join(' · ') }}
-              </div>
-            </div>
-            <button
-              type="button"
-              class="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition"
-              :class="store.isSlotInRack(entry.format, entry.uniqueId)
-                ? 'cursor-default text-gray-400 dark:text-white/30'
-                : 'border border-[#EC4141]/25 bg-[#EC4141]/10 text-[#EC4141] hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]'"
-              :disabled="store.isSlotInRack(entry.format, entry.uniqueId)"
-              @click="handleAddSlot(index)"
-            >
-              <Check v-if="store.isSlotInRack(entry.format, entry.uniqueId)" class="h-3 w-3" />
-              <Plus v-else class="h-3 w-3" />
-              {{ store.isSlotInRack(entry.format, entry.uniqueId) ? t('pluginHost.alreadyInRack') : t('pluginHost.add') }}
-            </button>
-          </div>
+        <div class="border-t border-gray-200/40 px-4 py-6 text-center text-xs leading-relaxed text-gray-400 dark:border-gray-800/40 dark:text-white/35">
+          <template v-if="hasScanned && scannedPlugins.length > 0">
+            {{ t('pluginHost.openLibraryHint', { count: scannedPlugins.length }) }}
+          </template>
+          <template v-else>
+            {{ t('pluginHost.noPluginsFoundA') }}<br>
+            {{ t('pluginHost.noPluginsFoundB') }}
+          </template>
         </div>
       </div>
     </section>
@@ -426,6 +331,11 @@ onMounted(() => {
       v-if="paramsSlot"
       :entry="paramsSlot"
       @close="paramsSlot = null"
+    />
+
+    <PluginLibraryDialog
+      v-if="showLibrary"
+      @close="showLibrary = false"
     />
 
     <ConfirmModal
