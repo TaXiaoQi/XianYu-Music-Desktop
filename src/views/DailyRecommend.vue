@@ -4,17 +4,17 @@
     <div class="px-6 pt-4 pb-3 shrink-0 select-none">
       <div class="flex items-end justify-between gap-6 flex-wrap">
         <div class="min-w-0 flex items-center gap-3 flex-wrap">
-          <span class="px-3 py-1 rounded-full text-[clamp(0.875rem,1.2vw,1.125rem)] text-[#EC4141] font-medium bg-red-50 dark:bg-red-500/10 whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded-full text-[clamp(0.75rem,1vw,0.875rem)] text-[#EC4141] font-medium bg-red-50 dark:bg-red-500/10 whitespace-nowrap">
             {{ dateLabel }}
           </span>
-          <span class="text-[clamp(0.875rem,1.2vw,1.125rem)] text-black/50 dark:text-white/50 font-light tracking-wider">
+          <span class="text-[clamp(0.75rem,1vw,0.875rem)] text-black/50 dark:text-white/50 font-light tracking-wider">
             {{ subtitleText }}
           </span>
         </div>
         <div v-if="songList.length > 0" class="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-[#EC4141] text-white text-[clamp(0.8rem,1vw,0.9rem)] font-medium hover:bg-[#d63a3a] transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5"
+            class="px-3 py-1.5 rounded-lg bg-[#EC4141] text-white text-[clamp(0.7rem,0.9vw,0.8rem)] font-medium hover:bg-[#d63a3a] transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5"
             @click="handlePlayAll"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -25,7 +25,7 @@
           <button
             type="button"
             :disabled="refreshing"
-            class="px-4 py-2 rounded-lg text-[clamp(0.8rem,1vw,0.9rem)] font-medium text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-3 py-1.5 rounded-lg text-[clamp(0.7rem,0.9vw,0.8rem)] font-medium text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             @click="handleRefresh"
           >
             <svg
