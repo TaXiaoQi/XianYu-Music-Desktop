@@ -20,8 +20,8 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   left: ['favorite', 'download'],
   middleLeft: 'playMode',
   middleRight: 'desktopLyrics',
-  right: ['quality', 'volume', 'equalizer', 'playlist', 'comment'],
-  hidden: [],
+  right: ['quality', 'comment', 'volume', 'equalizer', 'playlist'],
+  hidden: ['mv'],
 };
 
 /** 容器显示信息 */

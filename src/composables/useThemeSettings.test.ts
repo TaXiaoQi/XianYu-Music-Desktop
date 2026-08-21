@@ -12,7 +12,7 @@ describe('useThemeSettings', () => {
   it('toggles between light and dark theme modes', () => {
     const { theme, toggleThemeMode } = useThemeSettings();
 
-    expect(theme.value.mode).toBe('light');
+    expect(theme.value.mode).toBe('system');
 
     toggleThemeMode();
     expect(theme.value.mode).toBe('dark');

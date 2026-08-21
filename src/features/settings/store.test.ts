@@ -12,15 +12,15 @@ describe('settings store', () => {
     setActivePinia(createPinia());
   });
 
-  it('uses Chinese by default and validates persisted app languages', () => {
+  it('uses system language by default and validates persisted app languages', () => {
     const settingsStore = useSettingsStore();
 
-    expect(settingsStore.settings.language).toBe('zh-CN');
+    expect(settingsStore.settings.language).toBe('system');
     expect(mergeAppSettings(settingsStore.settings, { language: 'en-US' }).language).toBe('en-US');
     expect(mergeAppSettings(settingsStore.settings, { language: 'system' }).language).toBe('system');
     expect(mergeAppSettings(settingsStore.settings, {
       language: 'fr-FR' as unknown as 'zh-CN',
-    }).language).toBe('zh-CN');
+    }).language).toBe('system');
   });
 
   it('enables sleep prevention by default and preserves an explicit disabled value', () => {
@@ -64,20 +64,20 @@ describe('settings store', () => {
   it('stores the player detail cover behavior and last in-page choice', () => {
     const settingsStore = useSettingsStore();
 
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
     expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(true);
     settingsStore.patchTheme({
-      playerDetailCoverBehavior: 'remember',
+      playerDetailCoverBehavior: 'show',
       lastPlayerDetailCoverVisible: false,
     });
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
     expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
 
     settingsStore.patchTheme({
       playerDetailCoverBehavior: 'invalid' as 'remember',
       lastPlayerDetailCoverVisible: 'invalid' as unknown as boolean,
     });
-    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('remember');
+    expect(settingsStore.theme.playerDetailCoverBehavior).toBe('show');
     expect(settingsStore.theme.lastPlayerDetailCoverVisible).toBe(false);
   });
 
@@ -354,7 +354,7 @@ describe('settings store', () => {
 
     expect(settingsStore.settings.desktopLyrics.autoHideWhenFullscreen).toBe(false);
     expect(settingsStore.settings.desktopLyrics.colorScheme).toBe('pink');
-    expect(settingsStore.settings.desktopLyrics.playerAlignment).toBe('center');
+    expect(settingsStore.settings.desktopLyrics.playerAlignment).toBe('split-corners');
   });
 
   it('merges desktop romaji played and unplayed custom colors independently', () => {

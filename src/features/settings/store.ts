@@ -96,13 +96,13 @@ export const normalizeForegroundStyle = (
 ): ThemeSettings['customBackground']['foregroundStyle'] => (foregroundStyle === 'dark' ? 'dark' : 'light');
 
 export const defaultThemeSettings: ThemeSettings = {
-  mode: 'light',
+  mode: 'system',
   accentColor: DEFAULT_THEME_COLOR,
-  playerDetailCoverBehavior: 'show',
+  playerDetailCoverBehavior: 'remember',
   lastPlayerDetailCoverVisible: true,
   dynamicBgType: 'none',
   windowMaterial: 'none',
-  keepWindowMaterialOnBlur: false,
+  keepWindowMaterialOnBlur: true,
   useCustomTrayMenu: true,
   showLeaderboard: true,
   flowColorBoost: 25,
@@ -128,15 +128,14 @@ export const defaultThemeSettings: ThemeSettings = {
 
 export const defaultSidebarSettings: SidebarSettings = {
   showLocalMusic: true,
-  showArtists: false,
-  showAlbums: false,
+  showArtists: true,
+  showAlbums: true,
   showFavorites: true,
   showRecent: true,
   showFolders: true,
   showStatistics: true,
   showPlugins: true,
-  showAccount: false,
-  showTopLists: true,
+  showAccount: true,
   order: [...DEFAULT_SIDEBAR_ORDER],
 };
 
@@ -157,7 +156,7 @@ export const defaultTopBarLayoutSettings: TopBarLayoutSettings = {
 export const defaultAudioSettings: AudioSettings = {
   outputMode: 'shared',
   outputBitPerfect: false,
-  dsdNativePassthrough: true,
+  dsdNativePassthrough: false,
   volumeBalance: {
     enabled: false,
     gainOffsetDb: 0,
@@ -169,13 +168,13 @@ export const defaultAudioSettings: AudioSettings = {
     gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
   showEqualizerInFooter: true,
-  onlineDefaultQuality: '320k',
-  onlineFailureBehavior: 'skip',
+  onlineDefaultQuality: 'flac',
+  onlineFailureBehavior: 'stop',
   onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512,
-  fadeInOutEnabled: false,
-  fadeInOutDurationMs: 1000,
-  autoSwitchSourceOnFailure: true,
+  fadeInOutEnabled: true,
+  fadeInOutDurationMs: 500,
+  autoSwitchSourceOnFailure: false,
   mvDefaultQuality: '720P',
 };
 
@@ -184,13 +183,13 @@ export const defaultDownloadSettings: DownloadSettings = {
   behavior: 'default',
   batchDownloadLimit: 2,
   format: 'mp3',
-  quality: '320k',
+  quality: 'flac',
   downloadLyrics: false,
   lyricsFormat: 'lrc',
   lyricsStyle: 'word-by-word',
   overwriteExisting: false,
   keepSourceFilename: false,
-  fileNameStyle: 'artist-title',
+  fileNameStyle: 'title-artist',
   rememberDownloadPath: false,
   qualityFallbackBehavior: 'lower',
   embedMetadata: true,
@@ -209,14 +208,14 @@ export const defaultUploadSettings: UploadSettings = {
 
 export const defaultPluginSettings: PluginSettings = {
   autoUpdateOnStartup: false,
-  lazyLoad: false,
+  lazyLoad: true,
   skipVersionCheck: false,
 };
 
 export const defaultAutoSyncConfig: AutoSyncConfig = {
   enabled: true,
   syncIntervalSeconds: 3600,
-  maxDelayMinutes: 30,
+  maxDelayMinutes: 5,
   delayedCount: 0,
   lastSyncAttemptAt: 0,
   lastSyncSuccessAt: 0,
@@ -230,7 +229,7 @@ export const defaultLogSettings: LogSettings = {
 };
 
 export const defaultAppSettings: AppSettings = {
-  language: 'zh-CN',
+  language: 'system',
   closeToTray: true,
   preventSleepWhilePlaying: true,
   showDesktopLyrics: false,

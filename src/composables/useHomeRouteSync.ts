@@ -8,7 +8,15 @@ import type {
 import type { FolderNode } from '../types';
 import { normalizePath } from '../utils/path';
 
-type SyncedHomeViewMode = 'all' | 'folder' | 'artist' | 'album' | 'playlist' | 'statistics';
+type SyncedHomeViewMode =
+  | 'all'
+  | 'folder'
+  | 'artist'
+  | 'album'
+  | 'playlist'
+  | 'statistics'
+  | 'dailyRecommend'
+  | 'topLists';
 
 interface HomeRouteState {
   viewMode: SyncedHomeViewMode;
@@ -59,6 +67,10 @@ const parseHomeRouteState = (query: LocationQuery): HomeRouteState => {
       return { viewMode: 'folder', filter: '', folder };
     case 'statistics':
       return { viewMode: 'statistics', filter: '', folder: '' };
+    case 'dailyRecommend':
+      return { viewMode: 'dailyRecommend', filter: '', folder: '' };
+    case 'topLists':
+      return { viewMode: 'topLists', filter: '', folder: '' };
     default:
       return { viewMode: 'statistics', filter: '', folder: '' };
   }
@@ -91,6 +103,10 @@ const buildHomeRouteQuery = (
       return filterCondition ? { view: currentViewMode, filter: filterCondition } : {};
     case 'statistics':
       return {};
+    case 'dailyRecommend':
+      return { view: 'dailyRecommend' };
+    case 'topLists':
+      return { view: 'topLists' };
     case 'folder':
       return currentFolderFilter ? { view: 'folder', folder: currentFolderFilter } : { view: 'folder' };
     default:

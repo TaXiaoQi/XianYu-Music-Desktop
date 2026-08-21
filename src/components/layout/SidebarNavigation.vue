@@ -24,7 +24,6 @@ const sidebarLabelKeys: Record<SidebarItemKey, I18nKey> = {
   folders: 'sidebar.folders',
   plugins: 'sidebar.plugins',
   account: 'sidebar.account',
-  topLists: 'sidebar.topLists',
 };
 
 const emit = defineEmits<{
@@ -61,9 +60,11 @@ const orderedItems = computed(() => {
     .filter(item => props.sidebar[item.visibilityKey] === true);
 });
 
-/** 首页是否激活（统计页） */
+/** 首页是否激活（发现区三种 TAB：统计/每日推荐/音源榜单都属于首页） */
 const isHomeActive = computed(
-  () => props.currentViewMode === 'statistics' && props.currentPath === '/',
+  () =>
+    props.currentPath === '/' &&
+    ['statistics', 'dailyRecommend', 'topLists'].includes(props.currentViewMode),
 );
 
 /**
@@ -93,8 +94,6 @@ const activeKey = computed<SidebarItemKey | null>(() => {
       return 'plugins';
     case '/auth':
       return 'account';
-    case '/top-lists':
-      return 'topLists';
     default:
       return null;
   }

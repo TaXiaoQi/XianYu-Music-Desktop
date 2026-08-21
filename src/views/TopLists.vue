@@ -1,24 +1,31 @@
 <template>
   <div class="flex flex-col h-full">
-    <!-- 头部：来源选择 -->
+    <!-- 头部：来源选择（横向滚动，单行显示） -->
     <div class="px-6 shrink-0 select-none">
       <div class="flex items-center justify-between gap-4 py-3">
-        <div class="flex items-center gap-1 flex-wrap">
-          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1">来源</span>
-          <button
-            v-for="source in allSourceList"
-            :key="source.id"
-            type="button"
-            class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
-            :class="selectedSourceId === source.id
-              ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
-              : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
-            @click="handleSelectSource(source)"
+        <div class="flex items-center min-w-0 flex-1">
+          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1 shrink-0">来源</span>
+          <div
+            ref="sourceScrollRef"
+            class="flex items-center gap-1 overflow-x-auto no-h-scrollbar min-w-0 pr-3 cursor-grab select-none"
+            :class="{ 'cursor-grabbing': isDragging, 'scroll-smooth': !isDragging }"
           >
-            {{ source.name }}
-          </button>
+            <button
+              v-for="source in allSourceList"
+              :key="source.id"
+              type="button"
+              :data-active="selectedSourceId === source.id ? 'true' : 'false'"
+              class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              :class="selectedSourceId === source.id
+                ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
+                : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
+              @click="handleSelectSource(source)"
+            >
+              {{ source.name }}
+            </button>
+          </div>
         </div>
-        <span v-if="!loading && topLists.length > 0" class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 whitespace-nowrap">
+        <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 whitespace-nowrap shrink-0" :class="{ 'opacity-0': loading || checkingSources || topLists.length === 0 }">
           {{ topLists.length }} 个榜单
         </span>
       </div>
@@ -26,10 +33,12 @@
 
     <!-- 榜单内容 -->
     <div class="flex-1 flex overflow-hidden relative">
-      <section class="flex-1 flex overflow-hidden">
-        <transition name="page-fade" mode="out-in">
+      <section class="flex-1 flex overflow-hidden relative">
+        <!-- 同时交叉淡入淡出（分支绝对定位）：不用 out-in —— 分支由异步数据切换，
+             out-in 的延迟入场会在数据到达时与 keyed 虚拟行更新竞态导致 insertBefore 崩溃 -->
+        <transition name="page-fade">
           <!-- 加载中 -->
-          <div v-if="loading || checkingSources" key="loading" class="flex-1 flex items-center justify-center">
+          <div v-if="loading || checkingSources" key="loading" class="absolute inset-0 flex items-center justify-center">
             <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
               <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -40,7 +49,7 @@
           </div>
 
           <!-- 无插件 -->
-          <div v-else-if="allSourceList.length === 0" key="no-plugin" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+          <div v-else-if="allSourceList.length === 0" key="no-plugin" class="absolute inset-0 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
             </svg>
@@ -49,7 +58,7 @@
           </div>
 
           <!-- 空榜单 -->
-          <div v-else-if="topLists.length === 0" key="empty" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
+          <div v-else-if="topLists.length === 0" key="empty" class="absolute inset-0 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
             </svg>
@@ -62,7 +71,7 @@
             v-else
             key="grid"
             ref="resultsScrollRef"
-            class="flex-1 overflow-y-auto custom-scrollbar p-4"
+            class="absolute inset-0 overflow-y-auto custom-scrollbar p-4"
             @scroll="handleGridScroll"
           >
             <div class="relative w-full" :style="{ height: `${gridVirtualTotalHeight}px` }">
@@ -119,7 +128,8 @@ import { useRouter } from 'vue-router';
 import type { PluginPlaylistSearchResult, PluginSource } from '../types';
 import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion } from '../services/pluginEngine';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
-import { useOnlineDetailStore, type TopListsCache } from '../features/onlineDetail/store';
+import { useOnlineDetailStore, openOnlineDetail, type TopListsCache } from '../features/onlineDetail/store';
+import { useDragScrollX } from '../composables/useDragScrollX';
 
 const router = useRouter();
 const onlineDetailStore = useOnlineDetailStore();
@@ -217,6 +227,46 @@ async function loadTopLists() {
 const handleSelectSource = (source: SourceItem) => {
   selectedSourceId.value = source.id;
 };
+
+// ==================== 来源横向滚动 ====================
+const sourceScrollRef = ref<HTMLElement | null>(null);
+const { isDragging } = useDragScrollX(sourceScrollRef);
+
+/** 选中的来源按钮滚入视野（横向 nearest），避免选中的项停在滚动可视区外 */
+function scrollSelectedSourceIntoView() {
+  const container = sourceScrollRef.value;
+  if (!container) return;
+  const active = container.querySelector<HTMLElement>('[data-active="true"]');
+  active?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+}
+
+watch(selectedSourceId, () => {
+  nextTick(() => scrollSelectedSourceIntoView());
+});
+
+// 窗口尺寸变化（容器宽度随窗口自适应）后重新校准选中项可见性：
+// 拖动窗口从最小尺寸恢复时，滚动偏移可能停在可视区外
+const sourceResizeObserver = new ResizeObserver(() => {
+  const container = sourceScrollRef.value;
+  if (!container) return;
+  const active = container.querySelector<HTMLElement>('[data-active="true"]');
+  if (!active) return;
+  const left = active.offsetLeft;
+  const right = left + active.offsetWidth;
+  const viewLeft = container.scrollLeft;
+  const viewRight = viewLeft + container.clientWidth;
+  if (left < viewLeft || right > viewRight) {
+    scrollSelectedSourceIntoView();
+  }
+});
+watch(sourceScrollRef, (el) => {
+  sourceResizeObserver.disconnect();
+  if (el) sourceResizeObserver.observe(el);
+});
+
+onBeforeUnmount(() => {
+  sourceResizeObserver.disconnect();
+});
 
 /** 从缓存恢复期间置位：抑制 selectedSourceId 首次变化触发的重复加载（榜单数据已随缓存恢复） */
 let restoringFromCache = false;
@@ -379,7 +429,7 @@ const handleTopListClick = (entry: GridEntry) => {
   const source = selectedSourceItem.value;
   if (!source) return;
   const item = entry.item;
-  onlineDetailStore.setContext({
+  openOnlineDetail({
     type: 'playlist',
     title: item.title,
     subtitle: item.trackCount ? `${item.trackCount} 首` : (item.artist || ''),
@@ -387,11 +437,9 @@ const handleTopListClick = (entry: GridEntry) => {
     pluginSource: source.source,
     rawData: item.rawData,
     platformId: item.platformId || item.id,
-    sourceSearchType: 'playlist',
     engineType: 'musicfree',
     origin: 'toplist',
   });
-  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 };
 
 // ==================== 初始化 ====================
@@ -456,8 +504,22 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 来源条隐藏原生横向滚动条：
+   经典滚动条在内容溢出时会额外撑高 auto 高度容器（厚度固定、不随 clamp 字号缩放），
+   pb+负 mb 只能部分抵消且两种状态间仍有高度跳变，导致与「来源」标签/数量错位。
+   隐藏后容器高度恒等于按钮高度，任意窗口尺寸精确对齐；
+   滚动能力由拖拽（useDragScrollX）、滚轮、选中项自动滚入视野保证。 */
+.no-h-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-h-scrollbar::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;

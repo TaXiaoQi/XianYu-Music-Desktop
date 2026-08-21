@@ -280,8 +280,7 @@ export type SidebarItemKey =
   | 'recent'
   | 'folders'
   | 'plugins'
-  | 'account'
-  | 'topLists';
+  | 'account';
 
 export interface SidebarSettings {
   showLocalMusic: boolean;
@@ -293,7 +292,6 @@ export interface SidebarSettings {
   showStatistics: boolean;
   showPlugins: boolean;
   showAccount: boolean;
-  showTopLists: boolean;
   /** 侧边栏项目的排列顺序 */
   order: SidebarItemKey[];
 }

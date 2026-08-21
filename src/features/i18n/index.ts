@@ -79,6 +79,7 @@ const zhCN = {
   'sidebar.plugins': '插件管理',
   'sidebar.account': '个人中心',
   'sidebar.topLists': '榜单',
+  'sidebar.dailyRecommend': '每日推荐',
 
   'topbar.search': '搜索音乐...',
   'topbar.recognize': '听歌识曲',
@@ -184,6 +185,7 @@ const enUS: Record<I18nKey, string> = {
   'sidebar.plugins': 'Plugin Manager',
   'sidebar.account': 'Account',
   'sidebar.topLists': 'Top Lists',
+  'sidebar.dailyRecommend': 'Daily Mix',
 
   'topbar.search': 'Search music...',
   'topbar.recognize': 'Identify Song',

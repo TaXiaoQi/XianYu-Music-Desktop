@@ -24,26 +24,33 @@
 
       <!-- 第二层：来源横向选择 + 搜索关键词提示 -->
       <div class="flex items-center justify-between gap-4 py-3">
-        <!-- 来源横向平铺选择 -->
-        <div class="flex items-center gap-1 flex-wrap">
-          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1">来源</span>
-          <button
-            v-for="source in allSourceList"
-            :key="source.id"
-            type="button"
-            class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap"
-            :class="selectedSourceId === source.id
-              ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
-              : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
-            @click="handleSelectSource(source)"
+        <!-- 来源横向滚动选择（单行显示，支持拖动） -->
+        <div class="flex items-center min-w-0 flex-1">
+          <span class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 mr-1 shrink-0">来源</span>
+          <div
+            ref="sourceScrollRef"
+            class="flex items-center gap-1 overflow-x-auto no-h-scrollbar min-w-0 pr-3 cursor-grab select-none"
+            :class="{ 'cursor-grabbing': isDragging, 'scroll-smooth': !isDragging }"
           >
-            {{ source.name }}
-          </button>
+            <button
+              v-for="source in allSourceList"
+              :key="source.id"
+              type="button"
+              :data-active="selectedSourceId === source.id ? 'true' : 'false'"
+              class="px-3 py-1.5 rounded-md text-[clamp(0.8rem,1vw,0.9rem)] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              :class="selectedSourceId === source.id
+                ? 'text-[#EC4141] bg-red-50 dark:bg-red-500/10'
+                : 'text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5'"
+              @click="handleSelectSource(source)"
+            >
+              {{ source.name }}
+            </button>
+          </div>
         </div>
 
         <!-- 搜索关键词 + 结果数 -->
-        <div class="flex items-center gap-2 min-w-0">
-          <span v-if="searchQuery.trim()" class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 truncate">
+        <div class="flex items-center gap-2 min-w-0 shrink-0">
+          <span v-if="searchQuery.trim()" class="text-[clamp(0.75rem,0.9vw,0.875rem)] text-black/50 dark:text-white/50 truncate max-w-[16rem]">
             "{{ searchQuery }}" · {{ resultCount }} 个结果
           </span>
         </div>
@@ -52,10 +59,12 @@
 
     <!-- 搜索结果列表 -->
     <div class="flex-1 flex overflow-hidden relative">
-      <section class="flex-1 flex overflow-hidden">
-        <transition name="page-fade" mode="out-in">
+      <section class="flex-1 flex overflow-hidden relative">
+        <!-- 同时交叉淡入淡出（分支绝对定位）：不用 out-in —— 分支由异步数据切换，
+             out-in 的延迟入场会在数据到达时与 keyed 虚拟行更新竞态导致 insertBefore 崩溃 -->
+        <transition name="page-fade">
         <!-- 音乐 tab：在线搜索结果，使用 SongTable 作为容器（来源列显示底栏同款下载 UI） -->
-        <div v-if="activeSearchType === 'track' && !searching && hasQuery && !hasNoResults" key="track" class="flex-1 flex overflow-hidden">
+        <div v-if="activeSearchType === 'track' && !searching && hasQuery && !hasNoResults" key="track" class="absolute inset-0 flex overflow-hidden">
           <SongTable
             :songs="onlineTrackSongs"
             :is-batch-mode="false"
@@ -68,7 +77,7 @@
         </div>
 
         <!-- 歌手/专辑/歌单：加载中 -->
-        <div v-else-if="searching" key="searching" class="flex-1 flex items-center justify-center">
+        <div v-else-if="searching" key="searching" class="absolute inset-0 flex items-center justify-center">
           <div class="flex flex-col items-center gap-3 text-black/40 dark:text-white/40">
             <svg class="animate-spin h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -79,7 +88,7 @@
         </div>
 
         <!-- 歌手/专辑/歌单：空状态 -->
-        <div v-else-if="!hasQuery" key="no-query" class="flex-1 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
+        <div v-else-if="!hasQuery" key="no-query" class="absolute inset-0 flex flex-col items-center justify-center text-black/30 dark:text-white/30">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -88,7 +97,7 @@
         </div>
 
         <!-- 歌手/专辑/歌单：无结果 -->
-        <div v-else-if="hasNoResults" key="no-results" class="flex-1 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
+        <div v-else-if="hasNoResults" key="no-results" class="absolute inset-0 flex flex-col items-center justify-center text-black/40 dark:text-white/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -101,7 +110,7 @@
           v-else-if="activeSearchType === 'artist' || activeSearchType === 'album' || activeSearchType === 'playlist'"
           :key="activeSearchType"
           ref="resultsScrollRef"
-          class="flex-1 overflow-y-auto custom-scrollbar p-4"
+          class="absolute inset-0 overflow-y-auto custom-scrollbar p-4"
           @scroll="handleCatalogGridScroll"
         >
           <div class="relative w-full" :style="{ height: `${catalogGridVirtualTotalHeight}px` }">
@@ -249,6 +258,7 @@ import {
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
 import { extractDurationMs } from '../services/pluginResultMappers';
+import { useDragScrollX } from '../composables/useDragScrollX';
 import {
   getStoredPlugins,
   pluginsVersion,
@@ -262,7 +272,7 @@ import {
 import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
 import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
-import { useOnlineDetailStore, type SourceSearchType, type SearchResultsSnapshot } from '../features/onlineDetail/store';
+import { useOnlineDetailStore, openOnlineDetail, type SearchResultsSnapshot } from '../features/onlineDetail/store';
 import { fetchWyTrackMetaByIds } from '../services/playlistImport';
 import { qqFillSongDurations } from '../services/qqHostSearchFallback';
 import { reportSearch, reportInputStats } from '../services/usageStats';
@@ -1303,6 +1313,47 @@ const handleSelectSource = (source: SourceItem) => {
   selectedSourceId.value = source.id;
 };
 
+
+// ==================== 来源横向滚动 ====================
+const sourceScrollRef = ref<HTMLElement | null>(null);
+const { isDragging } = useDragScrollX(sourceScrollRef);
+
+/** 选中的来源按钮滚入视野（横向 nearest），避免选中的项停在滚动可视区外 */
+function scrollSelectedSourceIntoView() {
+  const container = sourceScrollRef.value;
+  if (!container) return;
+  const active = container.querySelector<HTMLElement>('[data-active="true"]');
+  active?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+}
+
+watch(selectedSourceId, () => {
+  nextTick(() => scrollSelectedSourceIntoView());
+});
+
+// 窗口尺寸变化后重新校准选中项可见性：容器宽度随窗口自适应，
+// 拖动窗口从最小尺寸恢复时滚动偏移可能停在可视区外
+const sourceResizeObserver = new ResizeObserver(() => {
+  const container = sourceScrollRef.value;
+  if (!container) return;
+  const active = container.querySelector<HTMLElement>('[data-active="true"]');
+  if (!active) return;
+  const left = active.offsetLeft;
+  const right = left + active.offsetWidth;
+  const viewLeft = container.scrollLeft;
+  const viewRight = viewLeft + container.clientWidth;
+  if (left < viewLeft || right > viewRight) {
+    scrollSelectedSourceIntoView();
+  }
+});
+watch(sourceScrollRef, (el) => {
+  sourceResizeObserver.disconnect();
+  if (el) sourceResizeObserver.observe(el);
+});
+
+onBeforeUnmount(() => {
+  sourceResizeObserver.disconnect();
+});
+
 // 监听关键词变化（防抖）
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let lastQueryLength = 0;
@@ -1380,7 +1431,7 @@ const handleOnlineViewArtist = async (song: Song) => {
         return;
       }
       const artist = results[0];
-      onlineDetailStore.setContext({
+      pushDetail({
         type: 'artist',
         title: artist.name,
         subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -1388,11 +1439,8 @@ const handleOnlineViewArtist = async (song: Song) => {
         pluginSource,
         rawData: artist.rawData,
         platformId: artist.platformId || artist.id,
-        sourceSearchType: activeSearchType.value as SourceSearchType,
-        sourceSearchSourceId: selectedSourceId.value,
         engineType: 'musicfree',
       });
-      void router.push({ path: '/online-detail', query: { type: 'artist' } });
     } catch (e: any) {
       showToast(`查看歌手失败: ${e?.message || e}`, 'error');
     }
@@ -1425,7 +1473,7 @@ const handleOnlineViewAlbum = async (song: Song) => {
         return;
       }
       const album = results[0];
-      onlineDetailStore.setContext({
+      pushDetail({
         type: 'album',
         title: album.name,
         subtitle: album.artist,
@@ -1433,10 +1481,8 @@ const handleOnlineViewAlbum = async (song: Song) => {
         pluginSource,
         rawData: album.rawData,
         platformId: album.platformId || album.id,
-        sourceSearchType: activeSearchType.value as SourceSearchType,
-        sourceSearchSourceId: selectedSourceId.value,
+        engineType: 'musicfree',
       });
-      void router.push({ path: '/online-detail', query: { type: 'album' } });
     } catch (e: any) {
       showToast(`查看专辑失败: ${e?.message || e}`, 'error');
     }
@@ -1545,6 +1591,11 @@ const handlePlaylistClick = (playlist: Playlist) => {
 
 const onlineDetailStore = useOnlineDetailStore();
 
+/** 打开在线详情容器（帧栈导航统一入口）：进入详情流时本页（一级）由 onBeforeUnmount 快照缓存 */
+function pushDetail(context: Parameters<typeof openOnlineDetail>[0]) {
+  openOnlineDetail(context);
+}
+
 /** 根据 pluginId 查找对应的 PluginSource */
 function findPluginSource(pluginId: string): PluginSource | undefined {
   const item = pluginSourceList.value.find(s => s.id === pluginId && s.type === 'musicfree');
@@ -1554,7 +1605,7 @@ function findPluginSource(pluginId: string): PluginSource | undefined {
 const handlePluginArtistClick = (artist: PluginArtistResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
-    onlineDetailStore.setContext({
+    pushDetail({
       type: 'artist',
       title: artist.name,
       subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -1563,12 +1614,9 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: artist.rawData,
       platformId: artist.platformId || artist.id,
-      sourceSearchType: 'artist' as SourceSearchType,
-      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
-    void router.push({ path: '/online-detail', query: { type: 'artist' } });
     return;
   }
   const pluginSource = findPluginSource(artist.pluginId);
@@ -1576,7 +1624,7 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     void router.push({ path: '/search', query: { q: artist.name } });
     return;
   }
-  onlineDetailStore.setContext({
+  pushDetail({
     type: 'artist',
     title: artist.name,
     subtitle: artist.description || (artist.songCount ? `${artist.songCount} 首歌曲` : ''),
@@ -1585,17 +1633,14 @@ const handlePluginArtistClick = (artist: PluginArtistResult) => {
     pluginSource,
     rawData: artist.rawData,
     platformId: artist.platformId || artist.id,
-    sourceSearchType: 'artist' as SourceSearchType,
-    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
-  void router.push({ path: '/online-detail', query: { type: 'artist' } });
 };
 
 const handlePluginAlbumClick = (album: PluginAlbumResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
-    onlineDetailStore.setContext({
+    pushDetail({
       type: 'album',
       title: album.name,
       subtitle: album.artist,
@@ -1603,12 +1648,9 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: album.rawData,
       platformId: album.platformId || album.id,
-      sourceSearchType: 'album' as SourceSearchType,
-      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
-    void router.push({ path: '/online-detail', query: { type: 'album' } });
     return;
   }
   const pluginSource = findPluginSource(album.pluginId);
@@ -1616,7 +1658,7 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
     void router.push({ path: '/search', query: { q: album.name } });
     return;
   }
-  onlineDetailStore.setContext({
+  pushDetail({
     type: 'album',
     title: album.name,
     subtitle: album.artist,
@@ -1624,17 +1666,14 @@ const handlePluginAlbumClick = (album: PluginAlbumResult) => {
     pluginSource,
     rawData: album.rawData,
     platformId: album.platformId || album.id,
-    sourceSearchType: 'album' as SourceSearchType,
-    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
-  void router.push({ path: '/online-detail', query: { type: 'album' } });
 };
 
 const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
   if (selectedSourceItem.value?.type === 'lx') {
     const lxSourceId = selectedSourceItem.value.lxSourceId!;
-    onlineDetailStore.setContext({
+    pushDetail({
       type: 'playlist',
       title: playlist.title,
       subtitle: playlist.trackCount ? `${playlist.trackCount} 首` : (playlist.artist || ''),
@@ -1642,12 +1681,9 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
       pluginSource: selectedSourceItem.value.source!,
       rawData: playlist.rawData,
       platformId: playlist.platformId || playlist.id,
-      sourceSearchType: 'playlist' as SourceSearchType,
-      sourceSearchSourceId: selectedSourceId.value,
       engineType: 'lx',
       lxSourceId,
     });
-    void router.push({ path: '/online-detail', query: { type: 'playlist' } });
     return;
   }
   const pluginSource = findPluginSource(playlist.pluginId);
@@ -1655,7 +1691,7 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
     void router.push({ path: '/search', query: { q: playlist.title } });
     return;
   }
-  onlineDetailStore.setContext({
+  pushDetail({
     type: 'playlist',
     title: playlist.title,
     subtitle: playlist.trackCount ? `${playlist.trackCount} 首` : (playlist.artist || ''),
@@ -1663,11 +1699,8 @@ const handlePluginPlaylistClick = (playlist: PluginPlaylistSearchResult) => {
     pluginSource,
     rawData: playlist.rawData,
     platformId: playlist.platformId || playlist.id,
-    sourceSearchType: 'playlist' as SourceSearchType,
-    sourceSearchSourceId: selectedSourceId.value,
     engineType: 'musicfree',
   });
-  void router.push({ path: '/online-detail', query: { type: 'playlist' } });
 };
 
 const handlePluginImgError = (e: Event) => {
@@ -1798,10 +1831,10 @@ onMounted(() => {
   uiStore.showPlayerDetail = false;
   window.addEventListener('resize', handleWindowResize);
   refreshPluginSourceList();
-  // 从在线详情返回时，恢复离开前的搜索 tab 与插件源（"从哪儿来回哪儿去"）；
+  // 从在线详情返回：恢复离开前的搜索 tab、插件源与结果快照（免重搜防风控）；
   // 全新进入（含插件已不存在）则初始化为第一个可用源
-  const session = onlineDetailStore.consumePendingSearchSession();
-  const restoredSourceId = session?.sourceId ?? '';
+  const cache = onlineDetailStore.consumeSearchPageCache();
+  const restoredSourceId = cache?.selectedSourceId ?? '';
   // 仅当恢复的插件源仍存在时才还原其结果快照；源已失效则重新搜索新源
   const sourceRestored = !!(restoredSourceId && allSourceList.value.some(s => s.id === restoredSourceId));
   restoringSession = true;
@@ -1810,18 +1843,16 @@ onMounted(() => {
   } else if (allSourceList.value.length > 0) {
     selectedSourceId.value = allSourceList.value[0].id;
   }
-  if (session?.type) {
-    activeSearchType.value = session.type;
+  if (cache?.activeSearchType) {
+    activeSearchType.value = cache.activeSearchType;
   }
   setupScrollResizeObserver();
-  // 会话结果快照直接还原（免重搜、防风控）；无快照才真正执行搜索
-  onlineDetailStore.setSearchResultsCache(null);
   if (!hasQuery.value) {
     void nextTick(() => { restoringSession = false; });
     return;
   }
-  if (session?.results && sourceRestored) {
-    restoreResultsSnapshot(session.results);
+  if (cache?.snapshot && sourceRestored) {
+    restoreResultsSnapshot(cache.snapshot);
   } else {
     performSearch();
   }
@@ -1831,7 +1862,8 @@ onMounted(() => {
 // resultsScrollRef 在 track/catalog 视图切换时重新挂载，需重新绑定 ResizeObserver
 watch(resultsScrollRef, () => setupScrollResizeObserver());
 
-// 搜索页不再缓存。离开时终止未完成任务并释放只属于搜索页的临时状态。
+// 一级页面缓存：进入在线详情流时快照搜索状态（tab + 源 + 各 tab 结果 + 滚动），
+// 返回时免重搜（防风控）；切换插件/顶部 tab 由 watcher 重新加载；离开到其他一级页面时销毁。
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleWindowResize);
   searchAbortController?.abort();
@@ -1848,20 +1880,38 @@ onBeforeUnmount(() => {
   if (playbackStore.tempQueue.length > 0) {
     playbackStore.tempQueue = [];
   }
-  // 进入在线详情：快照搜索结果暂存，返回时免重搜（防重复请求触发风控）；
-  // 其他去向（真正离开搜索页）：销毁快照
+  // 进入在线详情：快照搜索页状态暂存，返回时恢复；
+  // 其他去向（真正离开搜索页）：销毁缓存
   if (router.currentRoute.value.path === '/online-detail') {
     syncCatalogGridVirtualScrollState();
-    onlineDetailStore.setSearchResultsCache(captureResultsSnapshot());
+    onlineDetailStore.setSearchPageCache({
+      selectedSourceId: selectedSourceId.value,
+      activeSearchType: activeSearchType.value,
+      snapshot: captureResultsSnapshot(),
+    });
   } else {
-    onlineDetailStore.clearSearchSession();
+    onlineDetailStore.clearSearchPageCache();
   }
 });
 </script>
 
 <style scoped>
+/* 来源条隐藏原生横向滚动条：
+   经典滚动条在内容溢出时会额外撑高 auto 高度容器（厚度固定、不随 clamp 字号缩放），
+   pb+负 mb 只能部分抵消且两种状态间仍有高度跳变，导致与「来源」标签/数量错位。
+   隐藏后容器高度恒等于按钮高度，任意窗口尺寸精确对齐；
+   滚动能力由拖拽（useDragScrollX）、滚轮、选中项自动滚入视野保证。 */
+.no-h-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-h-scrollbar::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
