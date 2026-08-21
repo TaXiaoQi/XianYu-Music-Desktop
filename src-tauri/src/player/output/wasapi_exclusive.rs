@@ -215,13 +215,16 @@ impl ExclusiveSource {
                 crate::player::loudness::GainRamp::new(1.0, sample_rate, 100).get_handle();
             (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, dummy_handle)
         } else {
-            // 常规管线: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> UserVolumeSource -> ClipGuardSource
+            // 常规管线: Decoder -> VolumeNormalizer -> Equalizer -> SoundEffect -> PluginHost -> UserVolumeSource -> ClipGuardSource
             let (normalized, normalizer_handle) =
                 crate::player::loudness::VolumeNormalizer::new(decoded, volume_balance_gain, 100);
             let eq_source = crate::player::equalizer::Equalizer::new(normalized, equalizer_handle);
             let se_source =
                 crate::player::sound_effect::SoundEffectSource::new(eq_source, sound_effect_handle);
-            let vol_source = crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
+            // VST3/CLAP 插件机架（空机架硬旁路零开销）；bit-perfect 分支不走此处
+            let plugin_source = crate::player::plugin_host::wrap(se_source);
+            let vol_source =
+                crate::player::equalizer::UserVolumeSource::new(plugin_source, user_volume);
             let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);
             (Box::new(clip_source) as Box<dyn Source<Item = f32> + Send>, normalizer_handle)
         };

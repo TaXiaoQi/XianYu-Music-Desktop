@@ -113,9 +113,29 @@ const showFatalError = (title: string, error: unknown) => {
 const app = createApp(App)
 const pinia = createPinia()
 
+/** 从 Vue 实例回溯父链，拼出崩溃所在的组件链（供诊断致命渲染错误定位）。
+ * 沿用 Vue 内部 devtools 读取组件名的方式，避免无谓计算。 */
+const formatComponentChain = (instance: unknown): string => {
+  const names: string[] = []
+  let current: any = instance
+  while (current) {
+    const type = current.type
+    const name = type ? (type.__name || type.name) : undefined
+    if (name) names.push(`<${name}>`)
+    current = current.parent
+  }
+  return names.length > 0 ? `\n\ncomponent chain:\n${names.join(' at ')}` : ''
+}
+
 app.use(pinia)
 app.use(router)
 app.config.errorHandler = (error, _instance, info) => {
+  // 渲染崩溃时回溯组件链，并写入致命错误页明细，便于直接定位到具体组件。
+  const chain = _instance ? formatComponentChain(_instance) : ''
+  console.error(`[VueError ${info}] component chain: ${chain || '(no instance)'}`)
+  if (chain && error instanceof Error) {
+    error = Object.assign(new Error(`${error.message}${chain}`), { name: error.name })
+  }
   // 上报到后台报错日志（fire-and-forget，失败静默）
   if (error instanceof Error) {
     reportError(error.name || 'VueError', error.message, error.stack, info)

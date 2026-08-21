@@ -1116,6 +1116,40 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: void;
   };
+  // ============ VST3/CLAP 原生插件宿主 ============
+  plugin_host_scan_plugins: { payload: undefined; response: PluginHostScanEntry[] };
+  plugin_host_get_rack: { payload: undefined; response: PluginHostRackConfig };
+  plugin_host_set_rack: { payload: { config: PluginHostRackConfig }; response: void };
+  plugin_host_get_plugin_parameters: {
+    payload: { format: string; uniqueId: string; path: string };
+    response: PluginHostParameterEntry[];
+  };
+  plugin_host_get_parameter_values: {
+    payload: { format: string; uniqueId: string; path: string };
+    response: PluginHostParameterValueEntry[];
+  };
+  plugin_host_set_parameter: {
+    payload: { format: string; uniqueId: string; index: number; value: number };
+    response: void;
+  };
+  plugin_host_get_plugin_presets: {
+    payload: { format: string; uniqueId: string; path: string };
+    response: PluginHostPresetEntry[];
+  };
+  plugin_host_load_preset: {
+    payload: { format: string; uniqueId: string; path: string; presetNumber: number };
+    response: void;
+  };
+  plugin_host_open_editor: {
+    payload: { format: string; uniqueId: string; title: string };
+    response: void;
+  };
+  plugin_host_close_editor: {
+    payload: { format: string; uniqueId: string };
+    response: void;
+  };
+  plugin_host_editor_states: { payload: undefined; response: PluginHostEditorStateEntry[] };
+  plugin_host_take_process_error: { payload: undefined; response: string | null };
 }
 
 /** 听歌识曲接口响应 */
@@ -1284,4 +1318,83 @@ export interface PluginHttpBinaryResponseContract {
   url: string;
   headers: Record<string, string>;
   body_base64: string;
+}
+
+// ===== VST3/CLAP 原生插件宿主类型契约（与 Rust plugin_host 对应）=====
+
+/** 扫描到的插件条目（与 Rust PluginScanEntry 对应，camelCase 序列化） */
+export interface PluginHostScanEntry {
+  /** "vst3" | "clap" */
+  format: string;
+  /** 格式内稳定 ID（加载实例的 key） */
+  uniqueId: string;
+  name: string;
+  vendor: string;
+  version: number;
+  /** "effect" | "instrument" | ... */
+  category: string;
+  path: string;
+  hasEditor: boolean;
+  acceptsMidi: boolean;
+}
+
+/** 机架槽位配置（与 Rust RackSlotConfig 对应） */
+export interface PluginHostRackSlotConfig {
+  format: string;
+  uniqueId: string;
+  path: string;
+  name: string;
+  vendor: string;
+  enabled: boolean;
+  /** 参数下标（枚举序）→ 归一化值 [0,1] */
+  params: Record<string, number>;
+}
+
+/** 机架完整配置（与 Rust RackConfig 对应） */
+export interface PluginHostRackConfig {
+  masterEnabled: boolean;
+  /** 顺序即处理顺序 */
+  slots: PluginHostRackSlotConfig[];
+}
+
+/** 插件参数元数据（与 Rust PluginParameterEntry 对应） */
+export interface PluginHostParameterEntry {
+  index: number;
+  id: number;
+  name: string;
+  unit: string;
+  /** 原生单位区间（set_parameter 写入的是归一化 [0,1]） */
+  min: number;
+  max: number;
+  default: number;
+  /** 步进参数的离散档位数（0 = 连续） */
+  stepCount: number;
+  isBypass: boolean;
+  automatable: boolean;
+  hidden: boolean;
+  readOnly: boolean;
+}
+
+/** 参数当前值（实时轮询用，与 Rust PluginParameterValueEntry 对应） */
+export interface PluginHostParameterValueEntry {
+  index: number;
+  id: number;
+  /** 归一化值 [0,1] */
+  value: number;
+  /** 插件原生格式化文本（如 "-6.0 dB"） */
+  text: string;
+}
+
+/** 工厂预设条目（与 Rust PluginPresetEntry 对应） */
+export interface PluginHostPresetEntry {
+  index: number;
+  name: string;
+  /** load_preset 入参 */
+  presetNumber: number;
+}
+
+/** 打开中的编辑器（与 Rust EditorStateEntry 对应） */
+export interface PluginHostEditorStateEntry {
+  format: string;
+  uniqueId: string;
 }
