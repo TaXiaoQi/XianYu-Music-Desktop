@@ -270,15 +270,18 @@ onMounted(() => {
         <TitleBar />
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
-            <!-- 顺序转场（先淡出后淡进）。跳过转场时必须同时置 css=false：
-                 仅把 name 置空并不会跳过 —— Vue 仍会按页面根元素自身的 CSS 过渡时长
-                 等待离场，启动重绘的两次连续路由替换会与 out-in 的延迟挂载竞态，
-                 导致 patch 中途崩溃（insertBefore / emitsOptions） -->
-            <transition
-              :name="skipNextPageTransition ? '' : 'page-fade'"
-              :css="!skipNextPageTransition"
-              mode="out-in"
-            >
+            <!-- 顺序转场（先淡出后淡进）。跳过转场时走"无 transition"分支：
+                 skip 期间不经过 out-in 的进出 Frag 管理，直接替换组件，
+                 避免启动重绘的两次连续路由替换与 out-in 延迟挂载产生 patch 竞态
+                 （此前 :name='' + :css=false 仍会走 out-in，双导航下
+                 parentNode / subTree / insertBefore 崩溃屡发）。 -->
+            <template v-if="skipNextPageTransition">
+              <component
+                :is="Component"
+                :key="String(route.name ?? route.path)"
+              />
+            </template>
+            <transition v-else name="page-fade" mode="out-in">
               <component
                 :is="Component"
                 :key="String(route.name ?? route.path)"

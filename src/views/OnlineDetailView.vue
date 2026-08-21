@@ -133,13 +133,21 @@ const cancelPendingScroll = () => {
  * 本循环注册更晚、每帧最后执行，最终值以帧快照为准。
  */
 const handleDetailEnter = () => {
-  if (pendingScrollTop === null) return;
-  const target = pendingScrollTop;
+  // 专辑/歌单"离开即销毁"：进入时一律归零（即使待定位置被用户滚动取消），
+  // 杜绝继承上一容器滚动位置；歌手/用户按帧快照恢复（pendingScrollTop 为 0 或快照值）
+  const isStateless = detailType.value === 'album' || detailType.value === 'playlist';
+  const target = isStateless ? 0 : pendingScrollTop;
+  if (target === null) return;
   const token = ++scrollApplyToken;
   let attempts = 0;
   const step = () => {
     const el = detailScrollRef.value;
     if (token !== scrollApplyToken || !el) return;
+    // 已在目标位（如全新挂载本就在顶部）：无需赋值与派发，避免多余的 scroll 事件
+    if (el.scrollTop === target) {
+      pendingScrollTop = null;
+      return;
+    }
     el.scrollTop = target;
     el.dispatchEvent(new Event('scroll'));
     if (Math.abs(el.scrollTop - target) < 2 || attempts >= 120) {
@@ -897,11 +905,13 @@ function resetTransientUiState() {
 /** 已由本地导航（pushDetail/handleBack）同步处理的导航令牌，对账 watch 据此跳过重复加载 */
 let lastHandledNavToken = 0;
 
-/** 统一下钻导航：压入详情帧栈（携带当前容器状态快照）并 replace 跳转（不堆积历史条目，
- * 返回由帧栈显式驱动）。流内下钻组件不重新挂载，需显式按新帧加载内容。 */
+/** 统一下钻导航：压入详情帧栈（携带当前容器状态快照，仅带 tab 的歌手/用户容器）并 replace
+ * 跳转（不堆积历史条目，返回由帧栈显式驱动）。专辑/歌单不携带快照——"离开即销毁"，
+ * 返回时全新加载而非恢复，避免滚动位置继承。流内下钻组件不重新挂载，需显式按新帧加载。 */
 function pushDetail(context: Parameters<typeof openOnlineDetail>[0]) {
   const inFlow = router.currentRoute.value.path === '/online-detail';
-  const d = openOnlineDetail(context, captureState());
+  const isStateful = ctx.value?.type === 'artist' || ctx.value?.type === 'user';
+  const d = openOnlineDetail(context, isStateful ? captureState() : undefined);
   if (inFlow) {
     lastHandledNavToken = d;
     resetTransientUiState();
@@ -1089,15 +1099,17 @@ function handleUserPlaylistClick(playlistId: string) {
 }
 
 function handleBack() {
-  // 栈内有上一级：显式弹栈恢复（带状态快照的帧整体还原内容+tab+滚动；无快照的旧帧全新加载），
-  // 并 replace 回该帧的导航令牌 —— 不依赖浏览器历史，历史链中的任何 replace 都不会导致跳级；
+  // 栈内有上一级：显式弹栈恢复，并 replace 回该帧的导航令牌 —— 不依赖浏览器历史，
+  // 历史链中的任何 replace 都不会导致跳级；
   // 栈已空：退回来源一级页面，一级页面从自身缓存恢复（内容 + 滚动）
   if (onlineDetailStore.canPopDetail()) {
     const frame = onlineDetailStore.popDetail();
     if (frame) {
       lastHandledNavToken = frame.d;
       resetTransientUiState();
-      if (frame.state) {
+      // 差异化：带 tab 的歌手/用户容器返回时还原状态快照（内容+tab+滚动）；
+      // 专辑/歌单容器"离开即销毁"——返回时全新加载（从顶、重新拉数据），不继承滚动位置
+      if (frame.state && (frame.context.type === 'artist' || frame.context.type === 'user')) {
         restoreFrame(frame.state);
       } else {
         loadFrameFresh(frame.context.type);
@@ -1206,13 +1218,15 @@ onBeforeUnmount(() => {
 
 // 对账 watch：query.d 变化但未经本地导航（pushDetail/handleBack）处理时，
 // 说明外部入口在详情流内打开了新容器（如详情页中通过播放器详情弹窗查看歌手/专辑）——
-// 组件不会重新挂载，此处把当前容器状态快照补写到被离开的栈顶帧，再按新帧全新加载
+// 组件不会重新挂载，此处把当前容器状态快照补写到被离开的栈顶帧，再按新帧全新加载。
+// 仅带 tab 的歌手/用户容器补写快照（返回时恢复）；专辑/歌单"离开即销毁"，不补写，保持帧无状态
 watch(() => Number(route.query.d ?? 0), (newD) => {
   if (!ctx.value) return;
   if (newD === lastHandledNavToken) return;
   lastHandledNavToken = newD;
   resetTransientUiState();
-  onlineDetailStore.setTopFrameState(captureState());
+  const isStateful = ctx.value?.type === 'artist' || ctx.value?.type === 'user';
+  if (isStateful) onlineDetailStore.setTopFrameState(captureState());
   loadFrameFresh(detailType.value);
 });
 
@@ -1293,8 +1307,11 @@ watch(
            始终在 DOM 中，容器切换不会在离场进行中卸载宿主分支，out-in 安全；
            @enter 在新容器挂载后应用待定滚动位置（下钻归零 / 返回恢复帧快照） -->
       <Transition name="detail-slide" mode="out-in" @enter="handleDetailEnter">
-        <!-- 歌手详情 / 用户详情（排行榜"查看"进入，复用歌手页样式）。key 含平台 ID：同类型下钻也播转场 -->
-        <div v-if="detailType === 'artist' || detailType === 'user'" :key="`artist-${ctx?.platformId ?? ''}`">
+        <!-- 歌手详情 / 用户详情（排行榜"查看"进入，复用歌手页样式）。
+             key 含平台 ID + 导航令牌 d：d 每帧唯一（弹栈返回旧 d 时也必异于当前帧），
+             任意两帧 key 必不相同 —— 转场动画与 @enter 滚动应用（归零/恢复）必定触发，
+             杜绝 platformId 缺失或相同时同类型容器间静默继承滚动位置 -->
+        <div v-if="detailType === 'artist' || detailType === 'user'" :key="`artist-${ctx?.platformId ?? ''}-d${navToken}`">
           <ArtistDetailHeader
             v-model:isBatchMode="isBatchMode"
             v-model:activeTab="artistActiveTab"
@@ -1392,8 +1409,8 @@ watch(
           </div>
         </div>
 
-        <!-- 专辑详情 -->
-        <div v-else-if="detailType === 'album'" :key="`album-${ctx?.platformId ?? ''}`">
+        <!-- 专辑详情（key 含平台 ID + 导航令牌 d，见歌手分支注释） -->
+        <div v-else-if="detailType === 'album'" :key="`album-${ctx?.platformId ?? ''}-d${navToken}`">
           <AlbumDetailHeader
             v-model:isBatchMode="isBatchMode"
             :albumName="title"
@@ -1416,6 +1433,7 @@ watch(
               memory-scope-key="'online-detail-album::' + detailMemoryKey + '::d' + navToken"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
+              :disable-scroll-memory="true"
               @play="handlePlaySong"
               @contextmenu="handleMySongContextMenu"
               @update:selectedPaths="selectedPaths = $event"
@@ -1423,8 +1441,8 @@ watch(
           </div>
         </div>
 
-        <!-- 歌单详情 -->
-        <div v-else-if="detailType === 'playlist'" :key="`playlist-${ctx?.platformId ?? ''}`">
+        <!-- 歌单详情（key 含平台 ID + 导航令牌 d，见歌手分支注释） -->
+        <div v-else-if="detailType === 'playlist'" :key="`playlist-${ctx?.platformId ?? ''}-d${navToken}`">
           <DetailHeader
             :title="title"
             :subtitle="subtitle"
@@ -1447,6 +1465,7 @@ watch(
               memory-scope-key="'online-detail-playlist::' + detailMemoryKey + '::d' + navToken"
               page-scroll-mode
               :scroll-container-ref="detailScrollRef"
+              :disable-scroll-memory="true"
               @play="handlePlaySong"
               @contextmenu="handleMySongContextMenu"
               @update:selectedPaths="selectedPaths = $event"

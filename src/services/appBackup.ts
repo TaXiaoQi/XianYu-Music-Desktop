@@ -145,6 +145,7 @@ function buildFavoriteSongs(
 export async function exportAppBackup(
   playlists: Playlist[],
   options: {
+    includePlaylists?: boolean;
     includePlugins?: boolean;
     includeSettings?: boolean;
     includeFavorites?: boolean;
@@ -153,6 +154,7 @@ export async function exportAppBackup(
   } = {},
 ): Promise<AppBackupExportResult> {
   const {
+    includePlaylists = true,
     includePlugins = true,
     includeSettings = true,
     includeFavorites = true,
@@ -166,29 +168,31 @@ export async function exportAppBackup(
   let localSongs = 0;
   let onlineSongs = 0;
 
-  for (const pl of playlists) {
-    // 跳过收藏歌单（收藏作为独立数据，不纳入歌单导出）
-    if (pl.isFavorite) continue;
+  if (includePlaylists) {
+    for (const pl of playlists) {
+      // 跳过收藏歌单（收藏作为独立数据，不纳入歌单导出）
+      if (pl.isFavorite) continue;
 
-    // 优先使用内联歌曲；若无则从本地库解析
-    let songs = pl.songs ?? [];
-    if (songs.length === 0 && pl.songPaths.length > 0 && resolveSongsByPaths) {
-      songs = resolveSongsByPaths(pl.songPaths);
-    }
-    if (songs.length === 0) continue;
+      // 优先使用内联歌曲；若无则从本地库解析
+      let songs = pl.songs ?? [];
+      if (songs.length === 0 && pl.songPaths.length > 0 && resolveSongsByPaths) {
+        songs = resolveSongsByPaths(pl.songPaths);
+      }
+      if (songs.length === 0) continue;
 
-    const type = classifyPlaylist(songs);
-    backupPlaylists.push({
-      name: pl.name,
-      type,
-      songs,
-      createdAt: pl.createdAt,
-    });
+      const type = classifyPlaylist(songs);
+      backupPlaylists.push({
+        name: pl.name,
+        type,
+        songs,
+        createdAt: pl.createdAt,
+      });
 
-    totalSongs += songs.length;
-    for (const song of songs) {
-      if (classifySong(song) === 'local') localSongs++;
-      else onlineSongs++;
+      totalSongs += songs.length;
+      for (const song of songs) {
+        if (classifySong(song) === 'local') localSongs++;
+        else onlineSongs++;
+      }
     }
   }
 
