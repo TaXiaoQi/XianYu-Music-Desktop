@@ -1117,7 +1117,7 @@ export interface TauriCommandMap {
     response: void;
   };
   // ============ VST3/CLAP 原生插件宿主 ============
-  plugin_host_scan_plugins: { payload: undefined; response: PluginHostScanEntry[] };
+  plugin_host_scan_plugins: { payload: { dirs: string[] }; response: PluginHostScanEntry[] };
   plugin_host_get_rack: { payload: undefined; response: PluginHostRackConfig };
   plugin_host_set_rack: { payload: { config: PluginHostRackConfig }; response: void };
   plugin_host_get_plugin_parameters: {
