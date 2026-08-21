@@ -11,6 +11,7 @@ import { DESKTOP_LYRICS_WINDOW_LABEL } from './features/desktopLyrics/shared';
 import { MINI_PLAYER_WINDOW_LABEL, VOLUME_POPOVER_WINDOW_LABEL } from './features/miniPlayer/shared';
 import { TASKBAR_PLAYER_WINDOW_LABEL } from './features/taskbarPlayer/shared';
 import { useSettings } from './features/settings/useSettings';
+import { usePluginHostStore } from './features/pluginHost/store';
 import { TRAY_MENU_WINDOW_LABEL } from './features/tray/actions';
 import { loadPlugins, checkAllPluginUpdates, performPluginUpdate, getStoredPlugins } from './services/pluginEngine';
 import { configureApplicationLogger } from './services/applicationLogger';
@@ -79,6 +80,9 @@ watch(isImmersiveFullscreen, (fs) => {
 if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
   const { clearCoverCaches } = useCoverCache();
+
+  // VST3/CLAP 插件宿主：实例化即恢复机架配置并推送 Rust 共享机架（起播前完成）。
+  usePluginHostStore();
 
   // 主程序语言变化时同步到注册表，使卸载器语言跟随主程序当前语言。
   watch(language, (value) => {

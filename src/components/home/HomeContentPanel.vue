@@ -4,14 +4,14 @@ import { useRouter } from 'vue-router';
 
 import type { Song } from '../../types';
 import type { HomeDiscoverTab } from './HomeDiscoverTabs.vue';
+import StatisticsPage from '../statistics/StatisticsPage.vue';
+import DailyRecommend from '../../views/DailyRecommend.vue';
+import TopLists from '../../views/TopLists.vue';
 
 const AlbumDetailHeader = defineAsyncComponent(() => import('../headers/AlbumDetailHeader.vue'));
 const ArtistDetailHeader = defineAsyncComponent(() => import('../headers/ArtistDetailHeader.vue'));
 const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
 const SongTable = defineAsyncComponent(() => import('../song-list/SongTable.vue'));
-const StatisticsPage = defineAsyncComponent(() => import('../statistics/StatisticsPage.vue'));
-const DailyRecommend = defineAsyncComponent(() => import('../../views/DailyRecommend.vue'));
-const TopLists = defineAsyncComponent(() => import('../../views/TopLists.vue'));
 const HomeDiscoverTabs = defineAsyncComponent(() => import('./HomeDiscoverTabs.vue'));
 const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
 const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));

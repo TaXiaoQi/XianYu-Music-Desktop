@@ -7,6 +7,7 @@ export type SettingsTabId =
   | 'theme'
   | 'desktopLyrics'
   | 'audioOutput'
+  | 'pluginHost'
   | 'download'
   | 'toolbox'
   | 'library'
@@ -39,6 +40,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   plugins: '插件',
   theme: '外观',
   audioOutput: '播放',
+  pluginHost: '插件宿主',
   download: '下载',
   library: '音乐库',
   toolbox: '工具箱',
@@ -162,6 +164,18 @@ const staticItems: SettingsSearchItem[] = [
     { label: '原生 DSD 直通', keywords: 'DSD DoP 直通 独占 无损' },
     { label: 'Bit-perfect 输出', keywords: '位完美 直出 采样率 独占 无损' },
     { label: '歌词同步补偿', keywords: '延迟 偏移 ms 输出设备' },
+  ]),
+
+  ...makeItems('pluginHost', '效果插件机架', [
+    { label: '启用插件机架', keywords: 'VST3 CLAP 原生 效果 DSP 串联' },
+  ]),
+  ...makeItems('pluginHost', '可用插件', [
+    { label: '重新扫描', keywords: 'VST3 CLAP 目录 扫描 发现 安装' },
+  ]),
+  ...makeItems('pluginHost', '机架链路', [
+    { label: '插件原生编辑器', keywords: 'VST3 CLAP GUI 窗口 打开 关闭' },
+    { label: '参数与预设', keywords: '滑块 实时 工厂预设 加载 数值' },
+    { label: '从机架移除', keywords: '删除 槽位 插件' },
   ]),
 
   ...makeItems('download', '下载位置', [

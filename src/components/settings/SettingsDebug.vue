@@ -7,16 +7,132 @@ import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { showProfileLimitDialog } from '../../composables/useProfileLimitDialog';
 import { showBanDialog, showSessionExpiredDialog } from '../../composables/useBanDialog';
 import { showCiyuanxiDialog } from '../../composables/useCiyuanxiDialog';
+import { showChangePasswordDialog } from '../../composables/useChangePasswordDialog';
+import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
+import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
+import { useDownloadDialog } from '../../composables/useDownloadDialog';
+import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
+import { useToast } from '../../composables/toast';
+import { useCollectionsStore } from '../../features/collections/store';
 import { useAuthStore } from '../../features/auth/store';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
 import { resolveOnlineQualityUrl, isDownloadableOnlineSong } from '../../services/downloadService';
 import type { QualityKey, Song, OnlineQualityFallbackBehavior } from '../../types';
 import { ref } from 'vue';
+import ModernModal from '../common/ModernModal.vue';
+import ModernInputModal from '../common/ModernInputModal.vue';
+import HumanCaptchaModal from '../common/HumanCaptchaModal.vue';
+import ConfirmModal from '../overlays/ConfirmModal.vue';
+import ExportBackupDialog from '../settings/ExportBackupDialog.vue';
+import MoveToFolderModal from '../overlays/MoveToFolderModal.vue';
+import LyricsReplacementModal from '../overlays/LyricsReplacementModal.vue';
+import PlaylistModal from '../overlays/PlaylistModal.vue';
+import PlaylistEditInfoModal from '../overlays/PlaylistEditInfoModal.vue';
+import AppBackupResultModal from '../settings/AppBackupResultModal.vue';
+import BackupImportResultModal from '../settings/BackupImportResultModal.vue';
+import type { AppBackupImportResult } from '../../services/appBackup';
+import type { PreparedPluginBackupImport } from '../../services/pluginBackupImport';
 
 const authStore = useAuthStore();
 const playbackStore = usePlaybackStore();
 const settingsStore = useSettingsStore();
+const collectionsStore = useCollectionsStore();
+const { showToast } = useToast();
+const { openSongInfo } = useSongInfoDialog();
+const { openDownloadDialog } = useDownloadDialog();
+const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
+
+/** 构造一个假的在线歌曲，用于触发需要 song 参数的弹窗调试 */
+function makeFakeOnlineSong(): Song {
+  return {
+    name: '测试歌曲',
+    title: '测试歌曲',
+    path: 'plugin://demo/测试歌曲',
+    artist: '测试歌手',
+    artist_names: ['测试歌手'],
+    effective_artist_names: ['测试歌手'],
+    album: '测试专辑',
+    album_artist: '测试歌手',
+    album_key: 'demo-album',
+    is_various_artists_album: false,
+    collapse_artist_credits: false,
+    duration: 240,
+    source_type: 'plugin',
+    plugin_id: 'mf_demo',
+  };
+}
+const fakeSong = makeFakeOnlineSong();
+
+/** 组件式弹窗（普通弹窗组件）：本地可见性状态 */
+const showModernModal = ref(false);
+const showModernInputModal = ref(false);
+const showCaptchaModal = ref(false);
+const showConfirmModal = ref(false);
+const showExportDialog = ref(false);
+const showMoveToFolderModal = ref(false);
+const showLyricsReplacementModal = ref(false);
+const showPlaylistModal = ref(false);
+const showPlaylistEditModal = ref(false);
+const showAppBackupResultModal = ref(false);
+const showBackupImportResultModal = ref(false);
+
+/** 应用备份导入结果（假数据，供调试展示） */
+const fakeAppBackupResult: AppBackupImportResult = {
+  summary: {
+    playlistCount: 2,
+    localPlaylistCount: 1,
+    onlinePlaylistCount: 1,
+    mixedPlaylistCount: 0,
+    totalSongs: 26,
+    localSongs: 12,
+    onlineSongs: 14,
+    favoriteCount: 5,
+    pluginCount: 3,
+    hasSettings: true,
+  },
+  importedPlaylists: 2,
+  importedFavorites: 5,
+  importedPlugins: 3,
+  skippedPlugins: 1,
+  settingsApplied: true,
+  errors: [],
+};
+
+/** 插件备份导入结果（假数据，供调试展示） */
+const fakePluginBackupResult: PreparedPluginBackupImport = {
+  format: 'lxmusic',
+  sourcePlaylistCount: 2,
+  totalSongCount: 12,
+  importedSongCount: 9,
+  playlists: [],
+  failures: [
+    {
+      playlist: '收藏',
+      title: '无法导入的歌曲',
+      artist: '测试歌手',
+      platform: 'QQ音乐',
+      reason: '缺少对应插件',
+      reasonCode: 'missing-plugin',
+    },
+  ],
+  associations: [
+    {
+      pluginId: 'mf_demo',
+      pluginName: '测试插件',
+      pluginFormat: 'lx',
+      enabled: true,
+      platform: 'QQ音乐',
+      songCount: 8,
+    },
+  ],
+  missingPlugins: [
+    { platform: '网易云', songCount: 2 },
+  ],
+  backupVersion: null,
+  migratedTrackIds: false,
+  migratedTrackIdCount: 0,
+};
 
 const qualityProbe = ref('');
 const qualityProbing = ref(false);
@@ -153,6 +269,40 @@ function testCiyuanxiDialog() {
     authStore.user?.ciyuanxi_id || authStore.user?.username || 'CN00000001',
     { debug: true },
   );
+}
+
+function testToastSuccess() {
+  showToast('这是一条成功的提示消息', 'success');
+}
+function testToastError() {
+  showToast('这是一条失败的提示消息', 'error');
+}
+function testToastInfo() {
+  showToast('这是一条普通提示消息', 'info');
+}
+
+function testChangePasswordDialog() {
+  void showChangePasswordDialog();
+}
+
+function testDeleteAccountDialog() {
+  void showDeleteAccountDialog();
+}
+
+function testSongInfoDialog() {
+  openSongInfo(fakeSong, 'default');
+}
+
+function testDownloadDialog() {
+  openDownloadDialog(fakeSong);
+}
+
+function testAddToPlaylistDialog() {
+  openAddToPlaylistDialog(fakeSong.path);
+}
+
+function testPlaylistEditDialog() {
+  showPlaylistEditModal.value = true;
 }
 </script>
 
@@ -331,6 +481,260 @@ function testCiyuanxiDialog() {
           弹出
         </button>
       </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">全局消息提示</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试成功 / 失败 / 普通三种类型的底部消息提示</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-xs font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+            @click="testToastSuccess"
+          >
+            成功
+          </button>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-xs font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+            @click="testToastError"
+          >
+            失败
+          </button>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-2 text-xs font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+            @click="testToastInfo"
+          >
+            普通
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">修改密码弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试统一样式的修改密码弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testChangePasswordDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">注销账号弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试统一样式的注销账号确认弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testDeleteAccountDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">歌曲信息弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试歌曲信息/歌词/封面查看弹窗（假歌曲数据）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testSongInfoDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">下载弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试下载歌曲的音质与内容选择弹窗（假歌曲数据）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testDownloadDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">添加到歌单弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试选择歌单并添加歌曲的弹窗（假歌曲路径）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testAddToPlaylistDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">通用确认弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试 ModernModal 通用确认弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showModernModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">通用输入弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试 ModernInputModal 通用输入弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showModernInputModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">人机验证弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试登录相关的人机验证弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showCaptchaModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">简单确认框</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试 ConfirmModal 简单确认框</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showConfirmModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">导出备份选择弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试选择导出内容（设置/歌单/插件/收藏）的弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showExportDialog = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">移动到文件夹弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试批量移动歌曲到文件夹的弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showMoveToFolderModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">歌词替换弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试从插件/本地替换歌词的弹窗（假歌曲数据）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showLyricsReplacementModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">新建/导入歌单弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试新建与从云端/本地导入歌单的弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showPlaylistModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">编辑歌单信息弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试编辑歌单名称与封面的弹窗</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="testPlaylistEditDialog"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">备份导入结果弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试应用备份导入结果展示（假数据）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showAppBackupResultModal = true"
+        >
+          弹出
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between gap-6 px-5 py-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">插件备份导入结果弹窗</p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-white/45">测试插件备份（BakaMusic/MusicFree）导入结果展示（假数据）</p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg border border-gray-200/40 bg-white/20 px-4 py-2 text-sm font-medium text-gray-800 transition hover:bg-white/30 active:scale-95 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-100 dark:hover:bg-white/15"
+          @click="showBackupImportResultModal = true"
+        >
+          弹出
+        </button>
+      </div>
     </section>
 
     <section class="overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
@@ -353,5 +757,74 @@ function testCiyuanxiDialog() {
         class="mx-5 mb-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-black/5 p-3 font-mono text-xs leading-relaxed text-gray-700 dark:bg-white/5 dark:text-gray-200"
       >{{ qualityProbe }}</pre>
     </section>
+
+    <!-- 弹窗组件挂载（仅用于调试触发） -->
+    <ModernModal
+      :visible="showModernModal"
+      title="通用确认弹窗"
+      content="这是 ModernModal 通用确认弹窗的调试内容，用于验证弹窗样式与交互。"
+      confirm-text="确认"
+      cancel-text="取消"
+      @update:visible="showModernModal = $event"
+    />
+    <ModernInputModal
+      :visible="showModernInputModal"
+      title="通用输入弹窗"
+      placeholder="请输入内容"
+      initial-value="调试初始值"
+      confirm-text="确定"
+      cancel-text="取消"
+      @update:visible="showModernInputModal = $event"
+    />
+    <HumanCaptchaModal
+      :open="showCaptchaModal"
+      @cancel="showCaptchaModal = false"
+      @verified="showCaptchaModal = false"
+    />
+    <ConfirmModal
+      :visible="showConfirmModal"
+      title="确认操作"
+      content="确定要执行这个调试操作吗？此弹窗仅用于验证确认框样式。"
+      @confirm="showConfirmModal = false"
+      @cancel="showConfirmModal = false"
+    />
+    <ExportBackupDialog
+      :visible="showExportDialog"
+      @close="showExportDialog = false"
+      @confirm="showExportDialog = false"
+    />
+    <MoveToFolderModal
+      :visible="showMoveToFolderModal"
+      :selected-count="3"
+      @close="showMoveToFolderModal = false"
+      @confirm="showMoveToFolderModal = false"
+    />
+    <LyricsReplacementModal
+      :visible="showLyricsReplacementModal"
+      :song="fakeSong"
+      @close="showLyricsReplacementModal = false"
+    />
+    <PlaylistModal
+      :visible="showPlaylistModal"
+      :playlists="collectionsStore.playlists"
+      @update:visible="showPlaylistModal = $event"
+    />
+    <PlaylistEditInfoModal
+      :visible="showPlaylistEditModal"
+      playlist-id="demo-playlist-id"
+      initial-name="测试歌单"
+      @update:visible="showPlaylistEditModal = $event"
+    />
+    <AppBackupResultModal
+      :visible="showAppBackupResultModal"
+      :result="fakeAppBackupResult"
+      @close="showAppBackupResultModal = false"
+    />
+    <BackupImportResultModal
+      :visible="showBackupImportResultModal"
+      :result="fakePluginBackupResult"
+      :created-playlist-count="2"
+      @close="showBackupImportResultModal = false"
+    />
   </div>
 </template>
