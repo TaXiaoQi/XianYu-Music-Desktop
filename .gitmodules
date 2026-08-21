@@ -1,0 +1,3 @@
+[submodule "src-tauri/vendor/truce-rack"]
+	path = src-tauri/vendor/truce-rack
+	url = https://github.com/TaXiaoQi/truce-rack.git
