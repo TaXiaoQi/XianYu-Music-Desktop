@@ -87,7 +87,7 @@ const ctx = inject<{
     v-else-if="itemKey === 'announcement'"
     type="button"
     class="p-2 text-gray-900 dark:text-gray-100 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors cursor-pointer"
-    :class="{ 'opacity-50 pointer-events-none': ctx.isFetchingAnnouncement.value }"
+    :class="{ 'opacity-50': ctx.isFetchingAnnouncement.value }"
     :title="t('topbar.announcement')"
     :aria-label="t('topbar.viewAnnouncement')"
     @click.stop="ctx.manualCheckAnnouncement"
