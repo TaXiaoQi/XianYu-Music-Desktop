@@ -186,14 +186,20 @@ async function envelopeFromBytes(bytes: ArrayBuffer): Promise<Float32Array | nul
 export async function analyzeMvAudioSync(
   mvAssetUrl: string,
   audioHttpUrl: string,
+  audioHeaders?: Record<string, string> | null,
 ): Promise<MvSyncEstimate | null> {
   const { pluginApi } = await import('./tauri/pluginApi');
   const { convertFileSrc } = await import('@tauri-apps/api/core');
 
-  // 复用视频缓存下载命令把音频拉到应用缓存（asset 协议可读），任何失败路径都要删除
+  // 复用视频缓存下载命令把音频拉到应用缓存（asset 协议可读），任何失败路径都要删除。
+  // 需带上播放用的插件 headers（Referer/Cookie 等）：网易云等外链不带 Referer 会
+  // 下载失败或落回 404 页面，导致此处拿不到音频包络、认为分析不可信而偏移恒为 0。
   let audioCachePath = '';
   try {
-    audioCachePath = await pluginApi.downloadVideoToCache(audioHttpUrl);
+    audioCachePath = await pluginApi.downloadVideoToCache(
+      audioHttpUrl,
+      audioHeaders ?? undefined,
+    );
     const [mvBytes, songBytes] = await Promise.all([
       fetch(mvAssetUrl).then(response => {
         if (!response.ok) throw new Error(`MV cache fetch HTTP ${response.status}`);

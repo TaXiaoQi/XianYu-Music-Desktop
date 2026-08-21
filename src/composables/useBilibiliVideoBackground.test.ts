@@ -132,6 +132,7 @@ describe('Bilibili player-detail video background', () => {
     expect(analyzeMvAudioSyncMock).toHaveBeenCalledWith(
       expect.stringContaining('asset://'),
       playbackUrlMock.value,
+      undefined,
     );
     await vi.waitFor(() => expect(background.syncOffsetSec.value).toBe(2.5));
 
