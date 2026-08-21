@@ -29,6 +29,9 @@ export function useAnnouncement() {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
       }
+    } catch (error) {
+      // 启动时静默失败，仅在控制台记录
+      console.error('[Announcement] 启动检查公告失败:', error);
     } finally {
       isFetchingAnnouncement.value = false;
     }
@@ -36,11 +39,11 @@ export function useAnnouncement() {
 
   /**
    * 手动查看公告（点击标题栏铃铛按钮时调用）
-   * 无论是否已读，只要有公告就显示；无公告或失败时给出提示，避免「点击没反应」
-   * （启动时才做「有新公告才弹」的校验，手动点击始终展示当前公告）
+   * 每次点击都重新请求服务器获取最新公告并展示；
+   * 不受启动检查的 isFetchingAnnouncement 影响，避免启动拉取期间点击被静默吞掉
+   * （fetchAnnouncement 为幂等读取请求，并发调用无副作用）
    */
   const manualCheckAnnouncement = async () => {
-    if (isFetchingAnnouncement.value) return;
     isFetchingAnnouncement.value = true;
     try {
       const announcement = await fetchAnnouncement();
@@ -48,12 +51,13 @@ export function useAnnouncement() {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
       } else {
-        // fetchAnnouncement 返回 null：可能是无启用公告，也可能是请求失败（已在控制台打印错误）
+        // 服务端正常响应但无有效公告内容
         showToast('暂无公告', 'info');
       }
     } catch (e) {
       console.error('[Announcement] 手动获取公告失败:', e);
-      showToast('获取公告失败，请稍后重试', 'error');
+      const reason = e instanceof Error && e.message ? e.message : '未知错误';
+      showToast(`获取公告失败：${reason}`, 'error');
     } finally {
       isFetchingAnnouncement.value = false;
     }
