@@ -452,7 +452,7 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
   if (!audioUrl || !/^https?:\/\//i.test(audioUrl)) return;
 
   try {
-    const estimate = await analyzeMvAudioSync(videoUrl.value, audioUrl);
+    const estimate = await analyzeMvAudioSync(videoUrl.value, audioUrl, song.remote_headers);
     // 分析期间可能已切歌/关闭 MV，过期结果丢弃
     if (requestId !== requestVersion || sourceSongPath.value !== song.path) return;
     if (estimate) {
@@ -464,6 +464,8 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
     } else {
       syncOffsetSec.value = 0;
       syncOffsetCache.set(song.path, 0);
+      // 诊断：分析不可信/失败时透出，便于确认是否下载带不上 Referer 或 MV 无音轨
+      console.warn(`[MV自动对齐] ${song.name}: 未得出可信偏移，保持 0（本次不校正内容错位）`);
     }
   } catch (e) {
     console.warn('[MV自动对齐] 分析失败，保持 0 偏移:', e);
