@@ -14,10 +14,10 @@
         <div v-if="songList.length > 0" class="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-[#EC4141] text-white text-[clamp(0.8rem,1vw,0.9rem)] font-medium hover:bg-[#d63a3a] transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5"
+            class="px-4 py-2 rounded-lg bg-[#EC4141] text-white text-[clamp(0.9rem,1.2vw,1rem)] leading-none font-medium hover:bg-[#d63a3a] transition-colors cursor-pointer active:scale-[0.97] flex items-center gap-1.5"
             @click="handlePlayAll"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z" />
             </svg>
             播放全部
