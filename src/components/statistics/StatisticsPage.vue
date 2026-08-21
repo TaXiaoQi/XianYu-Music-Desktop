@@ -546,6 +546,7 @@ const losslessRatio = computed(() => {
               <span>···</span>
             </div>
             <div
+              :key="leaderboardSwitchKey"
               class="leaderboard-row is-me is-sticky animate-fade-in-up"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
               :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"

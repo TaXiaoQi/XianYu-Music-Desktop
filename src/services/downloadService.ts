@@ -195,7 +195,7 @@ interface ResolveDownloadContext {
 
 /**
  * 准备解析上下文：定位插件、构造 songInfo、按目标音质生成候选档位列表。
- * 真正的直链解析交给 resolveUrlForQuality 逐档位进行，以便下载失败时回退。
+ * 真正的直链解析交给 resolveLxAudioForQuality 逐档位进行，以便下载失败时回退。
  */
 async function prepareResolveContext(
   song: Song,
@@ -252,13 +252,6 @@ async function resolveLxAudioForQuality(
     return null;
   }
   return { quality: resolveActualQuality(reportedQuality, url), url };
-}
-
-async function resolveUrlForQuality(
-  ctx: ResolveDownloadContext,
-  q: LxQuality,
-): Promise<string | null> {
-  return (await resolveLxAudioForQuality(ctx, q))?.url ?? null;
 }
 
 /** plugin:// 协议的解析上下文 */
@@ -385,13 +378,6 @@ async function resolvePluginAudioForQuality(
     ekey: musicInfo?.ekey,
     cek: musicInfo?.cek,
   };
-}
-
-async function resolvePluginUrlForQuality(
-  ctx: PluginResolveContext,
-  q: LxQuality,
-): Promise<string | null> {
-  return (await resolvePluginAudioForQuality(ctx, q))?.url ?? null;
 }
 
 /** 使用下载链路解析在线音频直链，并按播放回退策略返回实际命中的档位 */
@@ -542,10 +528,17 @@ export async function probeDownloadableQualities(
 
   if (options?.signal?.aborted) return empty;
 
-  const resolveUrl = (q: QualityKey): Promise<string | null> =>
-    isPlugin
-      ? resolvePluginUrlForQuality(ctx as PluginResolveContext, q)
-      : resolveUrlForQuality(ctx as ResolveDownloadContext, q);
+  const resolveUrl = async (q: QualityKey): Promise<{ url: string; quality: QualityKey } | null> => {
+    if (isPlugin) {
+      // 用完整解析拿插件上报的实际音质（actualQuality），而不是只取 URL。
+      // 否则咪咕等音源把 hires/flac24bit 等高请求档实际返回 320k/mp3 时，
+      // 探测会仍以请求档 q 登记为可用，导致音质菜单显示高档位、实际却是低档。
+      const r = await resolvePluginAudioForQuality(ctx as PluginResolveContext, q);
+      return r?.url ? { url: r.url, quality: r.quality } : null;
+    }
+    const r = await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
+    return r?.url ? { url: r.url, quality: r.quality } : null;
+  };
 
   const resolvedUrls: Partial<Record<QualityKey, string>> = {};
 
@@ -560,10 +553,14 @@ export async function probeDownloadableQualities(
       if (!q) return;
 
       try {
-        const url = await resolveUrl(q);
+        // 返回 { url, quality }，其中 quality 为插件/落雪实际报告的档位（可能低于请求档 q）
+        const resolved = await resolveUrl(q);
         // 结果回来时可能已中止，丢弃避免污染
         if (options?.signal?.aborted) return;
-        if (url) resolvedUrls[q] = url;
+        // 以实际返回的档位登记，而非请求档 q：咪咕把 hires/atmos/atmos_plus 等高请求
+        // 实际降级为同一档（如 flac24bit）时，多个请求档会塌缩到同一实际档，
+        // 音质菜单只显示真实可得的档位，杜绝档位虚高与体积重复（多个档位共用同一 URL）。
+        if (resolved?.url) resolvedUrls[resolved.quality] = resolved.url;
       } catch (e: any) {
         // 单档位失败不影响其他档位
         console.warn(`[Probe] ${q} 探测失败:`, e?.message || e);
