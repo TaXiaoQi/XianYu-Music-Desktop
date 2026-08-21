@@ -628,6 +628,16 @@ const losslessRatio = computed(() => {
   border-color: rgba(236, 65, 65, 0.25);
 }
 
+/* 悬停规则需置于 is-top-3 / is-me 之后并提高优先级，否则静态底色会覆盖 hover 高亮 */
+.leaderboard-row.is-top-3:hover {
+  background: rgba(236, 65, 65, 0.09);
+  border-color: rgba(236, 65, 65, 0.2);
+}
+
+.leaderboard-row.is-me:not(.is-sticky):hover {
+  background: rgba(236, 65, 65, 0.13);
+}
+
 .leaderboard-row.is-sticky {
   position: sticky;
   bottom: 0;
@@ -812,6 +822,15 @@ const losslessRatio = computed(() => {
 .dark .leaderboard-row.is-me {
   background: rgba(236, 65, 65, 0.12);
   border-color: rgba(236, 65, 65, 0.35);
+}
+
+.dark .leaderboard-row.is-top-3:hover {
+  background: rgba(236, 65, 65, 0.15);
+  border-color: rgba(236, 65, 65, 0.3);
+}
+
+.dark .leaderboard-row.is-me:not(.is-sticky):hover {
+  background: rgba(236, 65, 65, 0.19);
 }
 
 /* is-sticky 放在 is-me 之后，确保 sticky 行的模糊背景优先于 is-me 的红色背景 */
