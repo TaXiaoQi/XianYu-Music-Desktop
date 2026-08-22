@@ -186,9 +186,14 @@ pub(crate) fn restore_current_playback(
                 // 否则设备切换恢复后会丢失全部音效（混响/变调/空间/EQ 等）。
                 let se_source = SoundEffectSource::new(eq_source, sound_effect_handle);
 
+                // 2.6 PluginHostSource VST3/CLAP 插件机架
+                // 注意：必须与 runtime.rs 的 append_decoded_source 保持一致，
+                // 否则设备切换恢复后丢失机架：本曲开启机架不生效，直到下一首才加载。
+                let plugin_source = crate::player::plugin_host::wrap(se_source);
+
                 // 3. UserVolumeSource
                 let vol_source =
-                    crate::player::equalizer::UserVolumeSource::new(se_source, user_volume);
+                    crate::player::equalizer::UserVolumeSource::new(plugin_source, user_volume);
 
                 // 4. ClipGuardSource
                 let clip_source = crate::player::equalizer::ClipGuardSource::new(vol_source);

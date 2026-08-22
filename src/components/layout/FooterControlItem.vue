@@ -67,9 +67,11 @@ const ctx = inject<{
   volumeBarRef: Ref<HTMLElement | null>;
   startDrag: (e: PointerEvent) => void;
   toggleMute: () => void;
-  // Bit-perfect / DSD 直通禁用态
+  // Bit-perfect / DSD / 插件机架 音效锁定态（仅均衡器使用）
   isAudioControlLocked: Ref<boolean>;
   audioLockTooltip: Ref<string>;
+  isEffectLocked: Ref<boolean>;
+  effectLockTooltip: Ref<string>;
   // 均衡器
   showEqPanel: Ref<boolean>;
   toggleEqPanel: (e: MouseEvent) => void;
@@ -127,6 +129,8 @@ const {
   toggleMute,
   isAudioControlLocked,
   audioLockTooltip,
+  isEffectLocked,
+  effectLockTooltip,
   showEqPanel,
   toggleEqPanel,
   showPlaylist,
@@ -500,11 +504,11 @@ watch(
   <!-- 均衡器按钮与弹出面板 -->
   <div v-else-if="itemKey === 'equalizer'" class="relative flex items-center justify-center h-full z-[70]">
     <button
-      @click="!isAudioControlLocked && toggleEqPanel($event)"
-      :disabled="isAudioControlLocked"
+      @click="!isEffectLocked && toggleEqPanel($event)"
+      :disabled="isEffectLocked"
       :class="[
         'transition-colors w-8 h-8 flex items-center justify-center rounded-full',
-        isAudioControlLocked
+        isEffectLocked
           ? 'opacity-40 cursor-not-allowed'
           : showEqPanel
             ? 'text-[#EC4141] bg-[#EC4141]/10'
@@ -512,7 +516,7 @@ watch(
                 ? 'text-white/80 hover:text-white hover:bg-white/10'
                 : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
       ]"
-      :title="isAudioControlLocked ? audioLockTooltip : '均衡器 (EQ)'"
+      :title="isEffectLocked ? (effectLockTooltip || audioLockTooltip) : '均衡器 (EQ)'"
     >
       <FooterControlIcon item-key="equalizer" class="h-4 w-4" />
     </button>

@@ -1563,18 +1563,20 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let qrc_t = data.get("qrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
-                let lrc_t = data.get("lrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
                 #[cfg(debug_assertions)]
-                eprintln!(
-                    "[lyric_fetcher] tx musicu songmid={} lyric_len={} qrc_t={} lrc_t={} trans_len={} roma_len={}",
-                    songmid,
-                    lyric_field.len(),
-                    qrc_t,
-                    lrc_t,
-                    trans_field.len(),
-                    roma_field.len(),
-                );
+                {
+                    let qrc_t = data.get("qrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let lrc_t = data.get("lrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
+                    eprintln!(
+                        "[lyric_fetcher] tx musicu songmid={} lyric_len={} qrc_t={} lrc_t={} trans_len={} roma_len={}",
+                        songmid,
+                        lyric_field.len(),
+                        qrc_t,
+                        lrc_t,
+                        trans_field.len(),
+                        roma_field.len(),
+                    );
+                }
                 if !lyric_field.trim().is_empty() {
                     match qrc_decrypt(lyric_field.trim()) {
                         Ok(decrypted) => {
@@ -2021,11 +2023,11 @@ fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
     dec.truncate(dec.len() - pad);
     match serde_json::from_slice(&dec) {
         Ok(v) => Some(v),
-        Err(e) => {
+        Err(_e) => {
             #[cfg(debug_assertions)]
             eprintln!(
                 "[lyric_fetcher] wy eapi 响应解密后 JSON 解析失败 err={:?} pt_head={:?}",
-                e,
+                _e,
                 &dec[..dec.len().min(80)]
             );
             None

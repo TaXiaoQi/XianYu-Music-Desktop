@@ -77,6 +77,10 @@ struct RackState {
 pub struct SharedRack {
     config: Mutex<RackConfig>,
     state: Mutex<RackState>,
+    /// 最近一次起播传入的真实采样率/声道。链为空且 `set_config`（播放中
+    /// 开启机架/添加首槽）时用它对当前曲目立即构建，避免"本曲不生效、
+    /// 要下一首才生效"。从未播放时为 `None`。
+    last_ready: Mutex<Option<Activation>>,
     /// 音频线程无锁快速路径：链为空时逐样本直通。
     chain_empty: AtomicBool,
     /// 命令线程重建串行化（不挡音频线程）。
@@ -93,6 +97,7 @@ impl SharedRack {
                 activation: None,
                 retired: Vec::new(),
             }),
+            last_ready: Mutex::new(None),
             chain_empty: AtomicBool::new(true),
             rebuild_lock: Mutex::new(()),
             last_process_error: Mutex::new(None),
@@ -142,7 +147,12 @@ impl SharedRack {
     /// 起播/编辑器路径：按 `channels × sample_rate` 同步链到当前配置。
     /// 采样率/声道与已激活参数一致且槽位集合未变时不做任何事（复用实例）。
     pub fn ensure_ready(&self, channels: u16, sample_rate: u32) {
-        self.sync_chain(Some(Activation { channels, sample_rate }), &HashMap::new());
+        let act = Activation { channels, sample_rate };
+        {
+            let mut last = self.last_ready.lock().unwrap_or_else(|e| e.into_inner());
+            *last = Some(act);
+        }
+        self.sync_chain(Some(act), &HashMap::new());
     }
 
     /// 编辑器先行打开：从未播放时以默认参数构建链。
@@ -167,7 +177,9 @@ impl SharedRack {
         let _guard = self.rebuild_lock.lock().unwrap_or_else(|e| e.into_inner());
         let config = self.snapshot_config();
 
-        // 快速路径：链为空且 set_config 路径 → 推迟到起播
+        // 快速路径：链空且 set_config 路径 → 若已有最近起播参数则据此立即构建，
+        // 让播放中的开启机架/添加首槽本曲即时生效；从未播放（无参数可沿用）
+        // 才推迟到下次起播。
         let (current_keys, current_activation) = {
             let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             (
@@ -176,7 +188,10 @@ impl SharedRack {
             )
         };
         if current_keys.is_empty() && desired.is_none() {
-            return;
+            let last = self.last_ready.lock().unwrap_or_else(|e| e.into_inner());
+            if last.is_none() {
+                return;
+            }
         }
 
         // 目标：启用槽位（顺序即处理顺序）；总开关关闭时目标为空链
@@ -191,8 +206,11 @@ impl SharedRack {
             .map(|s| RackSlot::key(&s.format, &s.unique_id))
             .collect();
 
-        // 期望激活参数：set_config 路径沿用现有（链非空必有）
-        let activation = desired.or(current_activation);
+        // 期望激活参数：set_config 路径沿用现有（链非空必有）；
+        // 链为空时改用最近一次起播的真实参数，使本曲开关机架立即生效。
+        let activation = desired
+            .or(current_activation)
+            .or(*self.last_ready.lock().unwrap_or_else(|e| e.into_inner()));
 
         // 槽位集合与顺序都未变，且激活参数匹配 → 只下发参数差异
         let activation_matches = activation.is_some() && activation == current_activation;
@@ -355,6 +373,24 @@ impl SharedRack {
         f: impl FnOnce(&mut RackSlot) -> R,
     ) -> Option<R> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        find_chain_slot(&mut state, format, unique_id).map(f)
+    }
+
+    /// 非阻塞版 `with_slot`：拿不到 `state` 锁立即返回 `None`。
+    ///
+    /// 窗口过程里对插件的空闲驱动（on_idle / set_size 等）不得在等锁上
+    /// 排队——它们若持锁后又被插件回调宿主而互等，会像“点编辑器整应用
+    /// 无响应”那样死锁。拿不到锁就跳过本帧，与音频线程的 try_lock 纪律
+    /// 一致。
+    pub fn try_with_slot<R>(
+        &self,
+        format: &str,
+        unique_id: &str,
+        f: impl FnOnce(&mut RackSlot) -> R,
+    ) -> Option<R> {
+        let Ok(mut state) = self.state.try_lock() else {
+            return None;
+        };
         find_chain_slot(&mut state, format, unique_id).map(f)
     }
 
