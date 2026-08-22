@@ -77,8 +77,19 @@ const showFatalError = (title: string, error: unknown) => {
   const message = formatError(error)
   console.error(title, error)
 
+  // 附带崩溃现场快照（如排行榜状态流转记录），便于离线定位崩溃诱因
+  let diagnosticDump = ''
   try {
-    localStorage.setItem('xianyu_last_fatal_error', `${title}\n\n${message}`)
+    const lbTrace = (window as any).__lbTrace
+    if (Array.isArray(lbTrace) && lbTrace.length > 0) {
+      diagnosticDump = `\n\nleaderboard trace:\n${lbTrace.join('\n')}`
+    }
+  } catch {
+    // 诊断信息获取失败不影响错误展示
+  }
+
+  try {
+    localStorage.setItem('xianyu_last_fatal_error', `${title}\n\n${message}${diagnosticDump}`)
   } catch {
     // Ignore storage failures. The visible fallback is the important part.
   }
@@ -104,7 +115,7 @@ const showFatalError = (title: string, error: unknown) => {
 
   const detail = document.createElement('pre')
   detail.className = 'fatal-error-detail'
-  detail.textContent = message
+  detail.textContent = `${message}${diagnosticDump}`
 
   card.append(titleEl, hint, detail)
   page.append(card)
@@ -121,10 +132,13 @@ setActivePinia(pinia)
 installCriticalFirstPaintSync(router)
 
 /** 从 Vue 实例回溯父链，拼出崩溃所在的组件链（供诊断致命渲染错误定位）。
- * 沿用 Vue 内部 devtools 读取组件名的方式，避免无谓计算。 */
+ * 沿用 Vue 内部 devtools 读取组件名的方式，避免无谓计算。
+ * 注意：errorHandler 收到的第二参是 instance.proxy（公开代理），
+ * 其 parent/type 挂在 proxy.$（即内部实例）上，需先取 $ 再回溯。 */
 const formatComponentChain = (instance: unknown): string => {
   const names: string[] = []
   let current: any = instance
+  if (current && current.$) current = current.$
   while (current) {
     const type = current.type
     const name = type ? (type.__name || type.name) : undefined

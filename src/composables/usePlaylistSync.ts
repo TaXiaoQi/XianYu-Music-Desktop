@@ -1124,31 +1124,34 @@ export function usePlaylistSync() {
 
   /**
    * 根据上传设置执行自动同步
-   * 按用户开启的同步项依次执行
+   * 歌单/插件/收藏互不依赖，并行执行以压缩同步总耗时（远程服务器 RTT 较高，
+   * 串行会把各阶段的网络往返累加）；设置同步放最后，因其冲突弹窗内的
+   * 按类别选择可能再次触发歌单/插件同步，需等上述阶段完成后再执行。
    */
   async function performAutoSync(): Promise<void> {
     logSync('performAutoSync: 开始自动同步');
     const upload = settingsStore.settings.upload;
     let hasError = false;
 
+    const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
     if (upload.playlists) {
-      try {
-        logSync('performAutoSync: 同步歌单');
-        await syncPlaylists();
-      } catch (e) {
-        logSyncError('performAutoSync: 同步歌单失败', e);
-        hasError = true;
-      }
+      parallelTasks.push({ label: '同步歌单', run: syncPlaylists });
+    }
+    if (upload.plugins) {
+      parallelTasks.push({ label: '同步插件', run: syncPlugins });
+    }
+    if (upload.favorites) {
+      parallelTasks.push({ label: '同步收藏', run: uploadFavoritesOnly });
     }
 
-    if (upload.plugins) {
-      try {
-        logSync('performAutoSync: 同步插件');
-        await syncPlugins();
-      } catch (e) {
-        logSyncError('performAutoSync: 同步插件失败', e);
-        hasError = true;
-      }
+    if (parallelTasks.length > 0) {
+      const results = await Promise.allSettled(parallelTasks.map(task => task.run()));
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          logSyncError(`performAutoSync: ${parallelTasks[index].label}失败`, result.reason);
+          hasError = true;
+        }
+      });
     }
 
     if (upload.settings) {
@@ -1157,16 +1160,6 @@ export function usePlaylistSync() {
         await syncSettings();
       } catch (e) {
         logSyncError('performAutoSync: 同步设置失败', e);
-        hasError = true;
-      }
-    }
-
-    if (upload.favorites) {
-      try {
-        logSync('performAutoSync: 同步收藏');
-        await uploadFavoritesOnly();
-      } catch (e) {
-        logSyncError('performAutoSync: 同步收藏失败', e);
         hasError = true;
       }
     }

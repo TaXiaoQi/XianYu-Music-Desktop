@@ -113,6 +113,17 @@ const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
+/** 崩溃诊断埋点：记录排行榜每次状态流转，致命错误时随 localStorage 一并导出 */
+const lbTrace: string[] = [];
+const lbDebug = (msg: string) => {
+  try {
+    lbTrace.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+    if (lbTrace.length > 40) lbTrace.shift();
+    (window as any).__lbTrace = lbTrace;
+  } catch { /* 诊断埋点绝不能影响业务 */ }
+};
+lbDebug(`init period=${currentPeriod.value} loading=${leaderboardLoading.value}`);
+
 /** 各周期排行榜缓存：切换周期时优先展示缓存，避免每次重新请求造成卡顿 */
 const leaderboardCache = new Map<LeaderboardPeriod, { list: LeaderboardEntry[]; fetchedAt: number }>();
 
@@ -129,12 +140,15 @@ const periodLabel = computed(() => {
 
 async function loadLeaderboard(silent = false, period: LeaderboardPeriod = currentPeriod.value) {
   const requestId = ++leaderboardRequestId;
+  lbDebug(`load req=${requestId} silent=${silent} period=${period} len=${leaderboard.value.length} loading=${leaderboardLoading.value} hasCache=${leaderboardCache.has(period)}`);
   const cached = leaderboardCache.get(period);
   // 有缓存时先展示缓存数据，避免骨架屏闪烁；无缓存且非静默时显示骨架屏
   if (cached && leaderboard.value.length === 0) {
+    lbDebug(`show-cache req=${requestId} len=${cached.list.length}`);
     leaderboard.value = cached.list;
   }
   if (!silent && !cached) {
+    lbDebug(`show-skeleton req=${requestId}`);
     leaderboard.value = [];
     leaderboardLoading.value = true;
     leaderboardError.value = null;
@@ -163,6 +177,7 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
       leaderboardCache.set(p, { list, fetchedAt: Date.now() });
     }
     leaderboard.value = leaderboardCache.get(period)?.list ?? [];
+    lbDebug(`data-applied req=${requestId} period=${period} len=${leaderboard.value.length} silent=${silent} prevLen=${leaderboardDisplay.value.top.length}`);
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
     if (resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
@@ -173,11 +188,13 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     // 静默刷新失败时保留已展示的数据，不打断用户
     if (!silent || leaderboard.value.length === 0) {
       const msg = e instanceof Error ? e.message : String(e);
+      lbDebug(`error req=${requestId} silent=${silent} msg=${msg.slice(0, 60)}`);
       leaderboardError.value = msg;
       leaderboard.value = [];
     }
   } finally {
     if (requestId === leaderboardRequestId) {
+      lbDebug(`loading-off req=${requestId} len=${leaderboard.value.length}`);
       leaderboardLoading.value = false;
     }
   }
@@ -185,12 +202,14 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
 
 function switchPeriod(period: LeaderboardPeriod) {
   if (currentPeriod.value === period) return;
+  lbDebug(`switch ${currentPeriod.value}->${period} len=${leaderboard.value.length}`);
   currentPeriod.value = period;
   leaderboardRequestId++; // 取消进行中的请求，避免旧周期数据覆盖新周期
   leaderboardSwitchKey.value++; // 强制重新挂载列表，重播逐行动画
   const cached = leaderboardCache.get(period);
   if (cached) {
     // 有缓存：直接展示缓存数据（重播逐行动画），不触发网络更新（由定时器/手动刷新负责）
+    lbDebug(`switch-cache len=${cached.list.length}`);
     leaderboard.value = cached.list;
     leaderboardLoading.value = false;
     leaderboardError.value = null;
@@ -509,7 +528,11 @@ const losslessRatio = computed(() => {
           </div>
 
           <!-- 排行榜列表 -->
-          <div v-else :key="leaderboardSwitchKey" class="grid gap-1.5">
+          <!-- key 必须带字符串前缀：正式构建剥离模板注释后，v-if 各分支的隐式 key(0/1/2)
+               直接落在分支 div 上，纯数字的 leaderboardSwitchKey(初始 0) 会与骨架屏分支
+               撞 key，Vue 将骨架屏原地补丁成列表（跨结构 patch 读到 null el 崩溃）。
+               dev 保留注释时分支被包进 Fragment(key:3) 而幸免——正是"正式崩、dev 不崩"。 -->
+          <div v-else :key="`lb-list-${leaderboardSwitchKey}`" class="grid gap-1.5">
             <div
               v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
@@ -546,7 +569,7 @@ const losslessRatio = computed(() => {
               <span>···</span>
             </div>
             <div
-              :key="leaderboardSwitchKey"
+              :key="`lb-me-${leaderboardSwitchKey}`"
               class="leaderboard-row is-me is-sticky animate-fade-in-up"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
               :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"

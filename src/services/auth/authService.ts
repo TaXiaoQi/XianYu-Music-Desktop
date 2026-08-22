@@ -411,19 +411,33 @@ function withCaptcha(body: Record<string, unknown>, captcha: HumanCaptchaPayload
   };
 }
 
+/** 人机验证配置缓存有效期：配置极少变动，缓存可避免每次弹验证题都先请求一次配置 */
+const CAPTCHA_CONFIG_CACHE_MS = 10 * 60 * 1000;
+let cachedCaptchaConfig: { value: HumanCaptchaConfig; fetchedAt: number } | null = null;
+
 /**
- * 获取新版人机验证配置。
+ * 获取新版人机验证配置（10 分钟本地缓存）。
  * 启用 Turnstile / hCaptcha 时，客户端弹窗直接渲染第三方组件；未启用时回退旧算术题。
+ * 远程服务器 RTT 较高，缓存命中时验证题弹窗可少一次网络往返。
  */
 export async function getHumanCaptchaConfig(): Promise<HumanCaptchaConfig> {
+  if (cachedCaptchaConfig && Date.now() - cachedCaptchaConfig.fetchedAt < CAPTCHA_CONFIG_CACHE_MS) {
+    return cachedCaptchaConfig.value;
+  }
   try {
     const data = await requestAction<Record<string, unknown>>('email_get_captcha_config', {});
-    return {
+    const value: HumanCaptchaConfig = {
       enabled: Boolean(data.enabled) && Boolean(data.site_key),
       provider: String(data.provider || 'off'),
       siteKey: String(data.site_key || ''),
     };
+    cachedCaptchaConfig = { value, fetchedAt: Date.now() };
+    return value;
   } catch {
+    // 请求失败时回退旧缓存（若有），避免网络抖动时误降级为算术题
+    if (cachedCaptchaConfig) {
+      return cachedCaptchaConfig.value;
+    }
     return {
       enabled: false,
       provider: 'off',
