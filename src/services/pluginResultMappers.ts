@@ -1,6 +1,7 @@
 import type { PluginPlaylistSearchResult, PluginSearchResult, PluginSource, QualityKey } from '../types';
 import { qualityKeyToBakaPluginQuality } from '../types';
 import { extractNeteasePicId, neteasePicIdToUrl, normalizeKuwoCoverUrl } from '../utils/coverUrl';
+import { dispatchFallbackModuleSync } from './fallbackModules/registry';
 
 export const stripHtmlTags = (str: unknown): string => {
   if (!str || typeof str !== 'string') return '';
@@ -37,6 +38,11 @@ const extractCoverFromNode = (node: any): string => {
 const NESTED_ITEM_KEYS = ['song', 'data', 'music', 'musicInfo', 'detail'];
 
 export const extractCoverUrl = (item: any): string => {
+  return dispatchFallbackModuleSync('lx_cover', 'extractCoverUrl', { item },
+    () => extractCoverUrlBuiltin(item));
+};
+
+const extractCoverUrlBuiltin = (item: any): string => {
   if (!item || typeof item !== 'object') return '';
   let url = extractCoverFromNode(item);
   for (const k of NESTED_ITEM_KEYS) {
