@@ -10,6 +10,7 @@ import router from './router'
 import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartupThemePaint } from './composables/startupTheme'
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger'
+import { initFallbackModuleSync } from './services/fallbackModules/sync'
 import { reportError } from './services/usageStats'
 import { installScrollbarController } from './utils/scrollbarController'
 
@@ -22,6 +23,12 @@ const currentWindowLabel = (() => {
 })()
 
 installApplicationLogger(currentWindowLabel)
+
+// 兜底模块同步：拉取服务器下发的兜底实现覆盖并缓存（仅主窗口，
+// 迷你窗口/歌词窗口复用主窗口已写入的本地缓存）
+if (currentWindowLabel === 'main') {
+  initFallbackModuleSync()
+}
 
 applyPersistedThemeColor()
 
