@@ -140,7 +140,12 @@ import { useI18n } from '../features/i18n';
 const { isEnglish } = useI18n();
 
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
-const HomeViewPane = defineAsyncComponent(() => import('../components/home/HomeViewPane.vue'));
+// 首页关键路径（HomeViewPane→HomeContentPanel→SongTable）必须同步静态加载：
+// 正式构建下每一层懒加载 chunk 都要经 tauri.localhost 协议真实加载，链越长、
+// 迟到挂载越晚，越容易在 page-fade/home-view-switch 的 out-in 过渡取消/重挂进行中
+// 才挂载 SongTable 虚拟列表（:key="song.path" keyed diff），其卸载 phase 会读到
+// 已脱离的 el.parentNode 为 null 崩溃。vite 内存加载瞬时，故 dev 从不复现该竞态。
+import HomeViewPane from '../components/home/HomeViewPane.vue';
 const ModernInputModal = defineAsyncComponent(() => import('../components/common/ModernInputModal.vue'));
 const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
 const MoveToFolderModal = defineAsyncComponent(() => import('../components/overlays/MoveToFolderModal.vue'));

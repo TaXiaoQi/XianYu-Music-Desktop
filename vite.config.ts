@@ -38,6 +38,7 @@ export default defineConfig(async () => ({
   },
   build: {
     target: 'esnext',
+    sourcemap: 'hidden', // 仅诊断 parentNode 崩溃用；排查完成后移除
     // 桌面端 Tauri 包本地加载资源，当前主包约 1.6 MB；使用显式预算替代 Web 默认阈值。
     chunkSizeWarningLimit: 1800,
     rollupOptions: {
@@ -55,7 +56,16 @@ export default defineConfig(async () => ({
           if (id.includes('/@tauri-apps/')) {
             return 'vendor-tauri';
           }
-          if (id.includes('/vue/') || id.includes('/vue-router/') || id.includes('/pinia/')) {
+          // Vue 框架：主包是薄壳（re-export 存根），真正运行时在 /@vue/* 子包。
+          // 二者必须同 chunk，避免 schema/运行时出现两份实例导致 vnode/DOM 元数据错位。
+          // （parentNode 崩溃的根因不在分包，而在 MainShell 启动重绘时的
+          //   transition 分支切换整树重挂载——见 MainShell.vue router-view。）
+          if (
+            id.includes('/@vue/')
+            || id.includes('/vue/')
+            || id.includes('/vue-router/')
+            || id.includes('/pinia/')
+          ) {
             return 'vendor-vue';
           }
           if (
