@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
+import { installCriticalFirstPaintSync } from './composables/criticalFirstPaint'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import './style.css'
 import '@applemusic-like-lyrics/core/style.css'
@@ -112,6 +113,12 @@ const showFatalError = (title: string, error: unknown) => {
 
 const app = createApp(App)
 const pinia = createPinia()
+setActivePinia(pinia)
+
+// 必须在初始导航 resolve 前注册首次进入同步直换的 guard：
+// 若不提前，初始导航直接落在 '/'（首页）时 guard 拦不到，首页首次挂载仍会
+// 走进 page-fade out-in 窗口而被异步列表补丁踩到 el=null 崩溃。
+installCriticalFirstPaintSync(router)
 
 /** 从 Vue 实例回溯父链，拼出崩溃所在的组件链（供诊断致命渲染错误定位）。
  * 沿用 Vue 内部 devtools 读取组件名的方式，避免无谓计算。 */

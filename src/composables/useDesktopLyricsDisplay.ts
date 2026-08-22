@@ -566,9 +566,14 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   const blockTransitionKey = computed(() => {
     if (!activeLyricLine.value) return `${lyricsStatus.value}:${fallbackText.value}`;
 
+    // 块容器 key 必须稳定（不与具体行内容绑定）：一旦按行变化，外层
+    // mode="out-in" 会在每次切行时整块卸载（含内层 transition-group）。
+    // 而内层 transition-group 恰在按行重排行节点（FLIP），外层的卸载会把
+    // 已置 null 的行 vnode 送入 remove → 读 null.parentNode 崩溃。
+    // 稳定 key 后块容器常驻，只由内层 transition-group 动画行切换（与
+    // 双行模式一致，双行模式此前即稳定，从未复现该崩溃）。
     if (!settings.value.showDoubleLine) {
-      const line = activeLyricLine.value;
-      return `${line.time}:${line.text}:${line.translation}:${line.romaji}`;
+      return `single-line:${lyricsStatus.value}`;
     }
 
     return `double-line:${lyricsStatus.value}`;
