@@ -44,7 +44,9 @@ symphonia = { version = "0.5.5", default-features = false, features = ["aac", "a
 # vendor fork 基于 1.1.5，含两个已验证补丁：VST3 drop 字段顺序修复、CLAP 最小宿主指针修复。
 truce-rack = { path = "vendor/truce-rack/crates/truce-rack" }
 
-image = { version = "0.25", features = ["jpeg", "png", "webp"] }
+# default-features 必须关掉：默认特性含 avif（ravif→rav1e AV1 编码器）、exr、tiff 等，
+# 会让 exe 白涨约 5-8MB（封面只需 jpeg/png/webp）
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 urlencoding = "2"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 sha2 = "0.10.9"
@@ -101,3 +103,7 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[profile.release]
+# 去掉 release exe 中的符号表，减小体积（不影响运行时功能，仅 release 崩溃回溯无符号名）
+strip = "symbols"
