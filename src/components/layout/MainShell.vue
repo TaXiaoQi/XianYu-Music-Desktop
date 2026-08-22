@@ -270,18 +270,20 @@ onMounted(() => {
         <TitleBar />
         <main class="flex-1 overflow-hidden relative min-h-0">
           <router-view v-slot="{ Component, route }">
-            <!-- 顺序转场（先淡出后淡进）。跳过转场时走"无 transition"分支：
-                 skip 期间不经过 out-in 的进出 Frag 管理，直接替换组件，
-                 避免启动重绘的两次连续路由替换与 out-in 延迟挂载产生 patch 竞态
-                 （此前 :name='' + :css=false 仍会走 out-in，双导航下
-                 parentNode / subTree / insertBefore 崩溃屡发）。 -->
-            <template v-if="skipNextPageTransition">
-              <component
-                :is="Component"
-                :key="String(route.name ?? route.path)"
-              />
-            </template>
-            <transition v-else name="page-fade" mode="out-in">
+            <!-- 顺序转场（先淡出后淡进）。始终使用同一个 <transition> 容器，
+                 绝不切换 'template 分支 / transition 分支' 两种结构，否则
+                 skipNextPageTransition 翻转时会把整个页面子树重挂载，在页面
+                 异步列表（音乐库扫描/歌单加载）更新进行中把子 vnode 的 el 置空，
+                 触发 patchKeyedChildren 卸载时读取 null 的 parentNode 崩溃。
+                 skip 期间同时关闭 css 与 out-in（mode 置空），让组件替换变成
+                 同步直换，避免启动重绘的两次连续路由替换经过 out-in 的
+                 进出 Frag 管理与延迟挂载产生 patch 竞态（此前 :name='' + :css=false
+                 仍会走 out-in，双导航下 parentNode / subTree / insertBefore 崩溃屡发）。 -->
+            <transition
+              :name="skipNextPageTransition ? '' : 'page-fade'"
+              :css="skipNextPageTransition ? false : true"
+              :mode="skipNextPageTransition ? undefined : 'out-in'"
+            >
               <component
                 :is="Component"
                 :key="String(route.name ?? route.path)"

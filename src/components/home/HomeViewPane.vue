@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue';
+import { computed } from 'vue';
 import type { FolderNode, Song } from '../../types';
-
-const HomeContentPanel = defineAsyncComponent(() => import('./HomeContentPanel.vue'));
-const HomeHeaderPanel = defineAsyncComponent(() => import('./HomeHeaderPanel.vue'));
+// 首页关键路径必须静态加载（禁用 defineAsyncComponent）：
+// 正式构建下每个懒加载 chunk 都要经 tauri.localhost 协议真实加载，若 SongTable
+// 在 page-fade/home-view-switch 的 out-in 过渡进行中"迟到挂载"，会与取消/重挂
+// 中的路由树共享对 SongTable 虚拟列表 :key="song.path" 行节点的 patch 管理，
+// 卸载时读到已脱离的 el.parentNode 为 null 而崩溃（dev 下 Vite 内存加载几乎
+// 瞬时，整条链在同一过渡内同步完成，故从未复现——这正是"正式崩、dev 不崩"）。
+import HomeContentPanel from './HomeContentPanel.vue';
+import HomeHeaderPanel from './HomeHeaderPanel.vue';
 
 interface PlaylistDetail {
   name: string;
