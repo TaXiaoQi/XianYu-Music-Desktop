@@ -493,3 +493,39 @@ describe('downloadService: probeDownloadableQualities', () => {
     expect(mockResolveLxUrlForSingleQuality).not.toHaveBeenCalled();
   });
 });
+
+describe('downloadService: probe collapse to actual quality (咪咕降级场景)', () => {
+  const mgPlugin = { id: 'mg1', enabled: true, format: 'musicfree', sources: ['咪咕音乐'], name: '咪咕音乐', filePath: 'x.js' };
+
+  const makeMiguSong = (): Song => ({
+    path: 'plugin://migu0001',
+    name: '测试曲',
+    title: '测试曲',
+    artist: '歌手',
+    album: '专辑',
+    source_type: 'remote',
+    rawData: { pluginId: 'mg1', id: '1', platform: '咪咕音乐', rawData: { qualities: {} } },
+  } as unknown as Song);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getStoredPlugins as any).mockReturnValue([mgPlugin]);
+    (isBakaPlugin as any).mockResolvedValue(true);
+    // 咪咕把 hires/atmos/atmos_plus/flac24bit 全部降级为同一 flac24bit 直链
+    (pluginGetBakaMusicInfo as any).mockImplementation(
+      async () => ({
+        url: 'https://cdn.migu.cn/audio.flac',
+        actualQuality: 'flac24bit',
+      }),
+    );
+  });
+
+  it('高请求档降级到同一实际档时塌缩登记，音质菜单只显示真实可得的档位', async () => {
+    const declared: QualityKey[] = ['flac', 'flac24bit', 'hires', 'atmos', 'atmos_plus'];
+    const result = await probeDownloadableQualities(makeMiguSong(), declared);
+
+    // 高档位都不应再虚高显示，只保留实际命中的 flac24bit
+    expect(result.available).toEqual(['flac24bit']);
+    expect(result.resolvedUrls).toEqual({ flac24bit: 'https://cdn.migu.cn/audio.flac' });
+  });
+});

@@ -14,7 +14,6 @@ const SettingsShortcuts = defineAsyncComponent(() => import("../components/setti
 const SettingsTheme = defineAsyncComponent(() => import("../components/settings/SettingsTheme.vue"));
 const SettingsToolbox = defineAsyncComponent(() => import("../components/settings/SettingsToolbox.vue"));
 const SettingsAudioOutput = defineAsyncComponent(() => import("../components/settings/SettingsAudioOutput.vue"));
-const SettingsPluginHost = defineAsyncComponent(() => import("../components/settings/SettingsPluginHost.vue"));
 const SettingsDownload = defineAsyncComponent(() => import("../components/settings/SettingsDownload.vue"));
 const SettingsDebug = defineAsyncComponent(() => import("../components/settings/SettingsDebug.vue"));
 const SettingsAdvanced = defineAsyncComponent(() => import("../components/settings/SettingsAdvanced.vue"));
@@ -29,7 +28,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'pluginHost', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -264,7 +263,6 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'plugins', name: t('settings.plugins') },
   { id: 'theme', name: t('settings.theme') },
   { id: 'audioOutput', name: t('settings.playback') },
-  { id: 'pluginHost', name: t('settings.pluginHost') },
   { id: 'download', name: t('settings.download') },
   { id: 'library', name: t('settings.library') },
   { id: 'toolbox', name: t('settings.toolbox') },
@@ -384,7 +382,6 @@ const tabs = computed(() => {
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
           <SettingsDesktopLyrics v-else-if="activeTab === 'desktopLyrics'" key="desktopLyrics" />
           <SettingsAudioOutput v-else-if="activeTab === 'audioOutput'" key="audioOutput" />
-          <SettingsPluginHost v-else-if="activeTab === 'pluginHost'" key="pluginHost" />
           <SettingsDownload v-else-if="activeTab === 'download'" key="download" />
           <SettingsToolbox v-else-if="activeTab === 'toolbox'" key="toolbox" />
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />

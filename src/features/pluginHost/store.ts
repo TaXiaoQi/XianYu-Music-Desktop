@@ -269,6 +269,14 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     rackConfig.slots.splice(target, 0, slot);
   };
 
+  /** 拖拽排序：把 from 索引的槽位移动到 to 索引。 */
+  const reorderSlot = (from: number, to: number) => {
+    const count = rackConfig.slots.length;
+    if (from < 0 || to < 0 || from >= count || to >= count || from === to) return;
+    const [slot] = rackConfig.slots.splice(from, 1);
+    rackConfig.slots.splice(to, 0, slot);
+  };
+
   /**
    * 实时设置单个参数：本地配置回写（持久 + 防抖 set_rack 兜底）+
    * plugin_host_set_parameter 参数队列（下一个 process 块生效）。
@@ -350,6 +358,7 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     removeSlot,
     toggleSlot,
     moveSlot,
+    reorderSlot,
     // 参数
     setSlotParameter,
     applySlotParams,

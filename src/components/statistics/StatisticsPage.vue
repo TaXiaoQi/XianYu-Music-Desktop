@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { fetchLeaderboard, getLocalListenDurations, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchAllLeaderboards, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 import SongContextMenu from '../overlays/SongContextMenu.vue';
@@ -113,45 +113,6 @@ const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
-// ==================== 排行榜逐行入场动画 ====================
-/** 行入场错峰间隔与单行动画时长（ms）：间隔拉大到 100ms 让逐行波浪清晰可辨 */
-const ROW_ENTER_STAGGER = 100;
-const ROW_ENTER_DURATION = 450;
-/** 入场动画进行中：行动画类生效；结束后移除类，
-    悬停跳跃动画才能安全接管 animation 属性（否则会把入场动画顶掉导致 opacity 回落为 0） */
-const rowEnterAnimating = ref(false);
-/** 已完成入场动画的行（username 集合）：这些行立即解除入场类，
-    悬停冲刺即刻可用，无需等整个榜单全部入场结束 */
-const enteredRowKeys = ref<Set<string>>(new Set());
-let rowEnterAnimTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** 数据加载完成后播放逐行入场：总时长按行数（Top + 底部个人排名/登录栏）估算，超时自动收尾 */
-function playRowEnterAnimation() {
-  clearTimeout(rowEnterAnimTimer);
-  rowEnterAnimating.value = true;
-  enteredRowKeys.value = new Set();
-  const rows = leaderboardDisplay.value.top.length + 1;
-  rowEnterAnimTimer = setTimeout(() => {
-    rowEnterAnimating.value = false;
-  }, rows * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
-}
-
-function stopRowEnterAnimation() {
-  clearTimeout(rowEnterAnimTimer);
-  rowEnterAnimating.value = false;
-  enteredRowKeys.value = new Set();
-}
-
-/** 行入场动画结束（animationend）：按行解除入场类，让该行悬停冲刺立即可用。
-    只认行自身的 fadeInUp（e.target === e.currentTarget），
-    排除从排名徽章 animate-rank-pop 冒泡上来的同名事件 */
-function handleRowAnimationEnd(e: AnimationEvent, key: string) {
-  if (e.animationName !== 'fadeInUp' || e.target !== e.currentTarget) return;
-  const next = new Set(enteredRowKeys.value);
-  next.add(key);
-  enteredRowKeys.value = next;
-}
-
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
     case 'daily': return isEnglish.value ? 'Daily listening time' : '单日听歌时长排行';
@@ -160,10 +121,14 @@ const periodLabel = computed(() => {
   }
 });
 
-async function loadLeaderboard(silent = false) {
+async function loadLeaderboard(silent = false, period: LeaderboardPeriod = currentPeriod.value) {
   const requestId = ++leaderboardRequestId;
-  // 静默刷新时不清空列表、不显示骨架屏，原地更新数据，避免刷新造成闪烁
-  if (!silent) {
+  const cached = leaderboardCache.get(period);
+  // 有缓存时先展示缓存数据，避免骨架屏闪烁；无缓存且非静默时显示骨架屏
+  if (cached && leaderboard.value.length === 0) {
+    leaderboard.value = cached.list;
+  }
+  if (!silent && !cached) {
     stopRowEnterAnimation();
     leaderboard.value = [];
     leaderboardLoading.value = true;
@@ -173,19 +138,34 @@ async function loadLeaderboard(silent = false) {
     // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
     const durations = await getLocalListenDurations();
     if (requestId !== leaderboardRequestId) return;
-    const data = await fetchLeaderboard(15, durations, currentPeriod.value);
+    // 一次性请求日/周/总三榜（period=all，单次往返）并全部缓存，切换周期秒开。
+    // 上报带 30s 节流：频繁刷新时只有第一次真正上报，其余直接拉取。
+    const all = await fetchAllLeaderboards(15, durations);
     if (requestId !== leaderboardRequestId) return;
-    leaderboard.value = data.leaderboard;
+    const resetApplied = Boolean(all.resetApplied);
+    const results: Record<LeaderboardPeriod, LeaderboardData> = {
+      daily: all.daily,
+      weekly: all.weekly,
+      total: all.total,
+    };
+    for (const p of (['daily', 'weekly', 'total'] as LeaderboardPeriod[])) {
+      const data = results[p];
+      const list = [...data.leaderboard];
+      // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
+      if (data.me && !list.some(u => u.isMe)) {
+        list.push(data.me);
+      }
+      leaderboardCache.set(p, { list, fetchedAt: Date.now() });
+    }
+    leaderboard.value = leaderboardCache.get(period)?.list ?? [];
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
-    if (data.resetApplied) {
+    if (resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
     }
     // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
     if (data.me && !leaderboard.value.some(u => u.isMe)) {
       leaderboard.value.push(data.me);
     }
-    // 非静默加载（周期切换/手动刷新/路由返回）：列表重建后播放逐行入场动画
-    if (!silent) playRowEnterAnimation();
     if (silent) leaderboardError.value = null;
   } catch (e) {
     if (requestId !== leaderboardRequestId) return;
@@ -205,7 +185,18 @@ async function loadLeaderboard(silent = false) {
 function switchPeriod(period: LeaderboardPeriod) {
   if (currentPeriod.value === period) return;
   currentPeriod.value = period;
-  void loadLeaderboard();
+  leaderboardRequestId++; // 取消进行中的请求，避免旧周期数据覆盖新周期
+  leaderboardSwitchKey.value++; // 强制重新挂载列表，重播逐行动画
+  const cached = leaderboardCache.get(period);
+  if (cached) {
+    // 有缓存：直接展示缓存数据（重播逐行动画），不触发网络更新（由定时器/手动刷新负责）
+    leaderboard.value = cached.list;
+    leaderboardLoading.value = false;
+    leaderboardError.value = null;
+  } else {
+    // 无缓存（如缓存被清空）：按需拉取
+    void loadLeaderboard(false, period);
+  }
 }
 
 const PERIOD_OPTIONS = computed<{ value: LeaderboardPeriod; label: string }[]>(() => isEnglish.value ? [
@@ -518,7 +509,7 @@ const losslessRatio = computed(() => {
           </div>
 
           <!-- 排行榜列表 -->
-          <div v-else class="grid gap-1.5">
+          <div v-else :key="leaderboardSwitchKey" class="grid gap-1.5">
             <div
               v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
@@ -556,6 +547,7 @@ const losslessRatio = computed(() => {
               <span>···</span>
             </div>
             <div
+              :key="leaderboardSwitchKey"
               class="leaderboard-row is-me is-sticky"
               :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground, 'animate-fade-in-up': rowEnterAnimating }"
               :style="rowEnterAnimating ? { animationDelay: `${leaderboardDisplay.top.length * ROW_ENTER_STAGGER + 150}ms` } : undefined"
