@@ -8,10 +8,17 @@ import StatisticsPage from '../statistics/StatisticsPage.vue';
 import DailyRecommend from '../../views/DailyRecommend.vue';
 import TopLists from '../../views/TopLists.vue';
 
-const AlbumDetailHeader = defineAsyncComponent(() => import('../headers/AlbumDetailHeader.vue'));
-const ArtistDetailHeader = defineAsyncComponent(() => import('../headers/ArtistDetailHeader.vue'));
+// SongTable 与歌手/专辑详情头处于同一组 v-if / v-else 的 <Transition> 分支，
+// 且 SongTable 内部是虚拟滚动（:key="song.path" 的 keyed diff）。它们必须与
+// 父级（HomeContentPanel，已被 HomeViewPane 静态加载）同步挂载——若其中任一懒
+// 加载 chunk 在过渡进行中迟到挂载，会与 out-in 取消/重挂中的路由树并发 patch，
+// 卸载虚拟列表行时读到 el.parentNode 为 null 崩溃（正式协议加载有时延，dev 无）。
+// MasterPanel / 发现区 TAB 等非同一竞争分支，仍保持懒加载控制分包体积。
+import AlbumDetailHeader from '../headers/AlbumDetailHeader.vue';
+import ArtistDetailHeader from '../headers/ArtistDetailHeader.vue';
+import SongTable from '../song-list/SongTable.vue';
+
 const MasterPanel = defineAsyncComponent(() => import('../song-list/MasterPanel.vue'));
-const SongTable = defineAsyncComponent(() => import('../song-list/SongTable.vue'));
 const HomeDiscoverTabs = defineAsyncComponent(() => import('./HomeDiscoverTabs.vue'));
 const ArtistAlbumGrid = defineAsyncComponent(() => import('./ArtistAlbumGrid.vue'));
 const HomeEmptyState = defineAsyncComponent(() => import('./HomeEmptyState.vue'));
