@@ -239,7 +239,7 @@ watch(
     @click.stop="toggleFavorite(currentSong)"
     class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
     :class="isFavorite(currentSong)
-      ? 'text-[#EC4141]'
+      ? 'text-[color:var(--favorite-color)]'
       : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
     :title="isFavorite(currentSong) ? '取消收藏' : '添加到收藏'"
   >

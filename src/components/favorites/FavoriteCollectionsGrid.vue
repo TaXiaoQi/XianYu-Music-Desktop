@@ -79,7 +79,7 @@ const formatFavoritedAt = (timestamp: number) => new Intl.DateTimeFormat('zh-CN'
               {{ entry.title.slice(0, 1).toUpperCase() || '♪' }}
             </div>
           </div>
-          <h3 class="mt-3 truncate text-sm font-semibold text-gray-800 transition-colors group-hover:text-[#EC4141] dark:text-gray-200">
+          <h3 class="mt-3 truncate text-sm font-semibold text-gray-800 transition-colors group-hover:text-[color:var(--favorite-color)] dark:text-gray-200">
             {{ entry.title }}
           </h3>
           <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ entry.subtitle }}</p>
@@ -89,7 +89,7 @@ const formatFavoritedAt = (timestamp: number) => new Intl.DateTimeFormat('zh-CN'
         <!-- 悬停显示的取消收藏按钮 -->
         <button
           type="button"
-          class="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition hover:bg-[#EC4141] active:scale-90 group-hover:opacity-100"
+          class="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition hover:bg-[color:var(--favorite-color)] active:scale-90 group-hover:opacity-100"
           :title="entry.type === 'playlist' ? '取消收藏歌单' : '取消收藏专辑'"
           @click.stop="$emit('remove', entry)"
         >
