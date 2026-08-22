@@ -55,7 +55,15 @@ export default defineConfig(async () => ({
           if (id.includes('/@tauri-apps/')) {
             return 'vendor-tauri';
           }
-          if (id.includes('/vue/') || id.includes('/vue-router/') || id.includes('/pinia/')) {
+          // Vue 框架：主包是薄壳（re-export 存根），真正运行时在 /@vue/* 子包。
+          // 二者必须同 chunk，否则正式构建跨 chunk 再导出会在 DOM 卸载路径触发
+          // `remove` 时 parentNode 已为 null 的竞态崩溃（dev 常不触发）。
+          if (
+            id.includes('/@vue/')
+            || id.includes('/vue/')
+            || id.includes('/vue-router/')
+            || id.includes('/pinia/')
+          ) {
             return 'vendor-vue';
           }
           if (
