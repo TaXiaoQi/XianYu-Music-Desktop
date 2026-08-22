@@ -113,6 +113,50 @@ const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
+/** 各周期排行榜缓存：切换周期时优先展示缓存，避免每次重新请求造成卡顿 */
+const leaderboardCache = new Map<LeaderboardPeriod, { list: LeaderboardEntry[]; fetchedAt: number }>();
+/** 切换周期时递增，强制重新挂载排行榜列表以重播逐行动画 */
+const leaderboardSwitchKey = ref(0);
+
+// ==================== 排行榜逐行入场动画 ====================
+/** 行入场错峰间隔与单行动画时长（ms）：间隔拉大到 100ms 让逐行波浪清晰可辨 */
+const ROW_ENTER_STAGGER = 100;
+const ROW_ENTER_DURATION = 450;
+/** 入场动画进行中：行动画类生效；结束后移除类，
+    悬停跳跃动画才能安全接管 animation 属性（否则会把入场动画顶掉导致 opacity 回落为 0） */
+const rowEnterAnimating = ref(false);
+/** 已完成入场动画的行（username 集合）：这些行立即解除入场类，
+    悬停冲刺即刻可用，无需等整个榜单全部入场结束 */
+const enteredRowKeys = ref<Set<string>>(new Set());
+let rowEnterAnimTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** 数据加载完成后播放逐行入场：总时长按行数（Top + 底部个人排名/登录栏）估算，超时自动收尾 */
+function playRowEnterAnimation() {
+  clearTimeout(rowEnterAnimTimer);
+  rowEnterAnimating.value = true;
+  enteredRowKeys.value = new Set();
+  const rows = (leaderboardCache.get(currentPeriod.value)?.list.length ?? 0) + 1;
+  rowEnterAnimTimer = setTimeout(() => {
+    rowEnterAnimating.value = false;
+  }, rows * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
+}
+
+function stopRowEnterAnimation() {
+  clearTimeout(rowEnterAnimTimer);
+  rowEnterAnimating.value = false;
+  enteredRowKeys.value = new Set();
+}
+
+/** 行入场动画结束（animationend）：按行解除入场类，让该行悬停冲刺立即可用。
+    只认行自身的 fadeInUp（e.target === e.currentTarget），
+    排除从排名徽章 animate-rank-pop 冒泡上来的同名事件 */
+function handleRowAnimationEnd(e: AnimationEvent, key: string) {
+  if (e.animationName !== 'fadeInUp' || e.target !== e.currentTarget) return;
+  const next = new Set(enteredRowKeys.value);
+  next.add(key);
+  enteredRowKeys.value = next;
+}
+
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
     case 'daily': return isEnglish.value ? 'Daily listening time' : '单日听歌时长排行';
@@ -158,13 +202,12 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
       leaderboardCache.set(p, { list, fetchedAt: Date.now() });
     }
     leaderboard.value = leaderboardCache.get(period)?.list ?? [];
+    if (!silent && !cached) {
+      playRowEnterAnimation();
+    }
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
     if (resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
-    }
-    // 如果当前用户不在 Top 列表中，将其追加到列表末尾（用于底部固定显示）
-    if (data.me && !leaderboard.value.some(u => u.isMe)) {
-      leaderboard.value.push(data.me);
     }
     if (silent) leaderboardError.value = null;
   } catch (e) {
