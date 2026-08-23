@@ -351,6 +351,7 @@ export async function submitFeedback(
     feedback_type: feedbackType,
     platform: 'desktop',
     app_version: APP_VERSION,
+    device_id: getDeviceId(),
   };
   if (options.errorLogs) payload.error_logs = options.errorLogs;
   if (options.allLogs) payload.all_logs = options.allLogs;
