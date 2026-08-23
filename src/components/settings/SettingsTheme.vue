@@ -4,6 +4,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref }
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
+import ColorPickerPopover from './ColorPickerPopover.vue';
 
 const { isEnglish } = useI18n();
 
@@ -201,6 +202,14 @@ const commitAccentColor = (event: Event) => {
   const input = event.target as HTMLInputElement;
   setAccentColor(input.value);
   input.value = theme.value.accentColor;
+};
+
+// ---- 自定义主题色调色盘弹窗 ----
+const isPickerOpen = ref(false);
+const pickerTriggerRef = ref<HTMLElement | null>(null);
+
+const toggleColorPicker = () => {
+  isPickerOpen.value = !isPickerOpen.value;
 };
 
 // ---- 歌词页封面选择（自定义弹窗，替代原生 <select>） ----
@@ -719,15 +728,27 @@ onUnmounted(() => {
         <div class="mt-4 flex flex-col gap-3 border-t border-gray-200/40 pt-4 sm:flex-row sm:items-end dark:border-white/10">
           <label class="flex min-w-0 flex-1 items-center gap-3">
             <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentCustom }}</span>
-            <span class="relative h-9 w-12 shrink-0 overflow-hidden rounded-lg border border-black/10 shadow-sm dark:border-white/15">
-              <input
-                :value="theme.accentColor"
-                type="color"
-                class="absolute -inset-2 h-14 w-16 cursor-pointer border-0 bg-transparent p-0"
-                :aria-label="TEXT.accentCustom"
-                @input="commitAccentColor"
-              />
-            </span>
+            <button
+              ref="pickerTriggerRef"
+              type="button"
+              class="relative h-9 w-12 shrink-0 overflow-hidden rounded-xl border border-black/10 shadow-sm transition-transform active:scale-95 dark:border-white/15 cursor-pointer flex items-center justify-center group"
+              :title="TEXT.accentCustom"
+              @click="toggleColorPicker"
+            >
+              <span
+                class="absolute inset-0 transition-colors"
+                :style="{ backgroundColor: theme.accentColor }"
+              ></span>
+            </button>
+
+            <!-- 带大圆角与平滑打开/关闭动画的自定义调色盘面板 -->
+            <ColorPickerPopover
+              :model-value="theme.accentColor"
+              :is-open="isPickerOpen"
+              :trigger-ref="pickerTriggerRef"
+              @update:model-value="setAccentColor"
+              @close="isPickerOpen = false"
+            />
           </label>
 
           <label class="flex min-w-0 flex-1 flex-col gap-1.5">
