@@ -433,6 +433,32 @@ pub(crate) fn setup_app(
     app.manage(PendingOpenPaths::default());
     app.manage(TrayMenuRuntimeState::default());
 
+    // 初次安装（无窗口状态存档）时，把主窗口默认大小对齐为配置的最小尺寸
+    // （minWidth/minHeight 按当前显示器缩放换算成物理像素，与框架对拖动下限的
+    // 换算同源），保证默认窗口恰好等于可拖动缩小的下限。
+    // 已有存档的用户由 window-state 插件恢复上次大小，不在此干预。
+    let min_size_cfg = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW_LABEL)
+        .and_then(|w| match (w.min_width, w.min_height) {
+            (Some(w), Some(h)) => Some((w, h)),
+            _ => None,
+        });
+    if let (Some(main), Ok(config_dir), Some((min_w, min_h))) = (
+        app.get_webview_window(MAIN_WINDOW_LABEL),
+        app.path().app_config_dir(),
+        min_size_cfg,
+    ) {
+        if !config_dir.join(".window-state.json").exists() {
+            let scale = main.scale_factor().unwrap_or(1.0);
+            let _ = main.set_size(tauri::PhysicalSize::new(min_w * scale, min_h * scale));
+            let _ = main.center();
+        }
+    }
+
     let db_state = DbState::new(app.handle())?;
 
     // 播放会话状态：启动时立即从 SQLite 预加载到内存，
