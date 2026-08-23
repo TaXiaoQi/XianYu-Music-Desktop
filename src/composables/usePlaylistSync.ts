@@ -485,7 +485,7 @@ export function usePlaylistSync() {
     if (!canSync()) {
       logSyncError('syncPlugins: 未登录或无弦予号，取消同步');
       showToast('请先登录后再同步', 'error');
-      return { uploadedPlugins: 0, downloadedPlugins: 0, errors: ['未登录'] };
+      return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: ['未登录'] };
     }
 
     pluginSyncing.value = true;
@@ -497,6 +497,7 @@ export function usePlaylistSync() {
       let uploadResult: PluginSyncResult = {
         uploadedPlugins: 0,
         downloadedPlugins: 0,
+        syncedSubscriptions: 0,
         errors: [],
       };
       if (isPluginUploadEnabled()) {
@@ -518,6 +519,7 @@ export function usePlaylistSync() {
       const combined: PluginSyncResult = {
         uploadedPlugins: uploadResult.uploadedPlugins,
         downloadedPlugins: downloadResult.downloadedPlugins,
+        syncedSubscriptions: downloadResult.syncedSubscriptions,
         errors: [...uploadResult.errors, ...downloadResult.errors],
       };
 
@@ -535,6 +537,7 @@ export function usePlaylistSync() {
         const parts: string[] = [];
         if (combined.uploadedPlugins > 0) parts.push(`上传 ${combined.uploadedPlugins} 个插件`);
         if (combined.downloadedPlugins > 0) parts.push(`恢复 ${combined.downloadedPlugins} 个插件`);
+        if (combined.syncedSubscriptions > 0) parts.push(`同步 ${combined.syncedSubscriptions} 个订阅`);
         showToast(parts.length > 0 ? `插件同步完成：${parts.join('，')}` : '插件已是最新', 'success');
       }
 
@@ -544,7 +547,7 @@ export function usePlaylistSync() {
       const msg = error instanceof Error ? error.message : String(error);
       logSyncError(`syncPlugins 异常: ${msg}`, error);
       showToast(`插件同步失败：${msg}`, 'error');
-      return { uploadedPlugins: 0, downloadedPlugins: 0, errors: [msg] };
+      return { uploadedPlugins: 0, downloadedPlugins: 0, syncedSubscriptions: 0, errors: [msg] };
     } finally {
       pluginSyncing.value = false;
       pluginSyncProgress.value = '';

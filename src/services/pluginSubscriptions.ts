@@ -94,6 +94,39 @@ export const createPluginSubscriptionService = ({
     saveSubscriptions(getSubscriptions().filter(s => s.id !== id));
   };
 
+  /** 将云端同步下来的订阅按 URL 合并进本地列表（本地已有的保留原记录），返回新增条数。 */
+  const mergeSubscriptionsFromCloud = (
+    cloud: Array<{ url?: unknown; name?: unknown; id?: unknown; addedAt?: unknown }>,
+  ): number => {
+    const list = getSubscriptions();
+    const knownUrls = new Set(list.map(s => s.url));
+    let added = 0;
+    for (const raw of cloud) {
+      const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+      if (!url || knownUrls.has(url)) continue;
+      let name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : '';
+      if (!name) {
+        try {
+          const u = new URL(url);
+          const lastSeg = u.pathname.split('/').pop() || '';
+          name = u.hostname + (lastSeg ? `/${lastSeg}` : '');
+        } catch {
+          name = url;
+        }
+      }
+      list.push({
+        id: typeof raw.id === 'string' && raw.id ? raw.id : genSubscriptionId(),
+        name,
+        url,
+        addedAt: typeof raw.addedAt === 'number' ? raw.addedAt : Date.now(),
+      });
+      knownUrls.add(url);
+      added++;
+    }
+    if (added > 0) saveSubscriptions(list);
+    return added;
+  };
+
   const fetchSubscriptionContent = async (url: string): Promise<string> => {
     let content = '';
     try {
@@ -131,7 +164,11 @@ export const createPluginSubscriptionService = ({
 
   const installFromSubscriptionUrl = async (
     url: string,
-    options: { skipVersionCheck?: boolean } = {},
+    options: {
+      skipVersionCheck?: boolean;
+      /** 插件级进度：done 为已完成数（0 起），total 为有效插件总数 */
+      onPluginProgress?: (done: number, total: number, name?: string) => void;
+    } = {},
   ): Promise<SubscriptionInstallResult> => {
     const result: SubscriptionInstallResult = { successCount: 0, failCount: 0, names: [], errors: [] };
     const skipVersionCheck = !!options.skipVersionCheck;
@@ -149,8 +186,10 @@ export const createPluginSubscriptionService = ({
         const json = JSON.parse(trimmed);
         const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
         if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
-          for (const item of pluginList) {
-            if (!item.url) continue;
+          const validList = pluginList.filter((item: any) => item?.url);
+          for (let idx = 0; idx < validList.length; idx++) {
+            const item = validList[idx];
+            options.onPluginProgress?.(idx, validList.length, item.name);
             try {
               const script = await fetchSubscriptionContent(item.url);
               if (!script || !script.trim()) {
@@ -171,6 +210,7 @@ export const createPluginSubscriptionService = ({
               result.errors.push(`${item.name || item.url}: ${e?.message || e}`);
             }
           }
+          options.onPluginProgress?.(validList.length, validList.length);
           return result;
         }
       } catch { /* 不是有效 JSON，当作单插件脚本处理 */ }
@@ -226,6 +266,7 @@ export const createPluginSubscriptionService = ({
     addSubscription,
     updateSubscription,
     removeSubscription,
+    mergeSubscriptionsFromCloud,
     installFromSubscriptionUrl,
     installAllSubscriptions,
   };

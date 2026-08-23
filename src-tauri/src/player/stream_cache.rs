@@ -1063,6 +1063,32 @@ fn apply_stream_request_headers(
     req
 }
 
+/// 发送音频流 GET 请求；http 直链优先升级 https。
+///
+/// IDM 等下载工具经 Winsock LSP 拦截系统级明文 HTTP 流量嗅探音频直链并弹窗接管，
+/// https 的 TLS 加密让嗅探失效；CDN 不支持 https（连接失败/非 2xx）时回退原 URL。
+/// 返回原 URL 的响应（含非成功状态），错误处理交由调用方。
+fn send_audio_request(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    headers: Option<&std::collections::HashMap<String, String>>,
+    user_agent: Option<&str>,
+) -> Result<reqwest::blocking::Response, String> {
+    if let Some(rest) = url.strip_prefix("http://") {
+        let https_url = format!("https://{rest}");
+        if let Ok(r) = apply_stream_request_headers(client.get(&https_url), headers, user_agent)
+            .send()
+        {
+            if r.status().is_success() {
+                return Ok(r);
+            }
+        }
+    }
+    apply_stream_request_headers(client.get(url), headers, user_agent)
+        .send()
+        .map_err(|e| e.to_string())
+}
+
 fn download_thread(
     url: &str,
     hash: &str,
@@ -1112,9 +1138,7 @@ fn download_thread(
         }
     };
 
-    let req = apply_stream_request_headers(client.get(url), headers, user_agent);
-
-    let mut response = match req.send() {
+    let mut response = match send_audio_request(&client, url, headers, user_agent) {
         Ok(r) => r,
         Err(e) => {
             fail_download(&format!("下载请求失败: {}", e), 0);
@@ -1154,8 +1178,7 @@ fn download_thread(
                 }
             }
             // 用提取到的 URL 重新请求
-            let retry_req = apply_stream_request_headers(client.get(&real_url), headers, user_agent);
-            match retry_req.send() {
+            match send_audio_request(&client, &real_url, headers, user_agent) {
                 Ok(retry_resp) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
                         .headers()
@@ -1173,12 +1196,7 @@ fn download_thread(
                         let retry_body: String = retry_resp.text().unwrap_or_default();
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
                             // 用二次提取的 URL 再次请求
-                            let resp2_req = apply_stream_request_headers(
-                                client.get(&real_url2),
-                                headers,
-                                user_agent,
-                            );
-                            match resp2_req.send() {
+                            match send_audio_request(&client, &real_url2, headers, user_agent) {
                                 Ok(resp2) if resp2.status().is_success() => {
                                     let ct2 = resp2
                                         .headers()
