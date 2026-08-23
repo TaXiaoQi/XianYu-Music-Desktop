@@ -4,7 +4,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref }
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
-import ColorPickerPopover from './ColorPickerPopover.vue';
+import CustomColorPicker from './CustomColorPicker.vue';
 
 const { isEnglish } = useI18n();
 
@@ -204,13 +204,13 @@ const commitAccentColor = (event: Event) => {
   input.value = theme.value.accentColor;
 };
 
-// ---- 自定义主题色调色盘弹窗 ----
-const isPickerOpen = ref(false);
-const pickerTriggerRef = ref<HTMLElement | null>(null);
+// ---- 自定义 2D 调色盘弹窗控制器 ----
+const isCustomColorPickerOpen = ref(false);
+const colorPickerTriggerRef = ref<HTMLElement | null>(null);
 
-const toggleColorPicker = () => {
-  isPickerOpen.value = !isPickerOpen.value;
-};
+function toggleCustomColorPicker() {
+  isCustomColorPickerOpen.value = !isCustomColorPickerOpen.value;
+}
 
 // ---- 歌词页封面选择（自定义弹窗，替代原生 <select>） ----
 const COVER_OPTIONS = computed<Array<{ value: 'show' | 'hide' | 'remember'; label: string }>>(() => [
@@ -429,7 +429,7 @@ onUnmounted(() => {
           <transition name="flow-panel">
             <div
               v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled"
-              class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
+              class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
             >
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -664,7 +664,7 @@ onUnmounted(() => {
         <transition name="flow-panel">
           <div
             v-if="materialMode === 'blur' && showBlurTuning"
-            class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
+            class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
           >
             <div class="mb-4 flex items-center justify-between gap-3">
               <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div>
@@ -729,11 +729,11 @@ onUnmounted(() => {
           <label class="flex min-w-0 flex-1 items-center gap-3">
             <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentCustom }}</span>
             <button
-              ref="pickerTriggerRef"
+              ref="colorPickerTriggerRef"
               type="button"
-              class="relative h-9 w-12 shrink-0 overflow-hidden rounded-xl border border-black/10 shadow-sm transition-transform active:scale-95 dark:border-white/15 cursor-pointer flex items-center justify-center group"
+              class="relative h-9 w-12 shrink-0 overflow-hidden rounded-xl border border-black/10 shadow-sm transition-transform active:scale-95 dark:border-white/15 cursor-pointer"
               :title="TEXT.accentCustom"
-              @click="toggleColorPicker"
+              @click="toggleCustomColorPicker"
             >
               <span
                 class="absolute inset-0 transition-colors"
@@ -741,13 +741,13 @@ onUnmounted(() => {
               ></span>
             </button>
 
-            <!-- 带大圆角与平滑打开/关闭动画的自定义调色盘面板 -->
-            <ColorPickerPopover
+            <!-- 具备大圆角（rounded-2xl）与平滑打开/关闭动画（picker-pop）的 2D 调色盘面板 -->
+            <CustomColorPicker
               :model-value="theme.accentColor"
-              :is-open="isPickerOpen"
-              :trigger-ref="pickerTriggerRef"
+              :is-open="isCustomColorPickerOpen"
+              :trigger-ref="colorPickerTriggerRef"
               @update:model-value="setAccentColor"
-              @close="isPickerOpen = false"
+              @close="isCustomColorPickerOpen = false"
             />
           </label>
 
@@ -908,13 +908,15 @@ onUnmounted(() => {
 <style scoped>
 .flow-panel-enter-active,
 .flow-panel-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s ease;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
 }
 
 .flow-panel-enter-from,
 .flow-panel-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: scale(0.96) translateY(-10px);
 }
 
 .flow-slider {
