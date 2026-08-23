@@ -17,6 +17,7 @@ import { getStoredPlugins } from './pluginEngine';
 import { ensureLxPluginInstance, lxPluginGetLyric } from './lxPluginEngine';
 import { lyricsApi } from './tauri/lyricsApi';
 import { buildLxLyricsRaw } from './lxLyricsBuilder';
+import { dispatchFallbackModule } from './fallbackModules/registry';
 
 // ==================== Types ====================
 
@@ -109,6 +110,14 @@ export function getCachedLxSongInfo(source: string, songmid: string | number): L
  * 注意：返回的 lxlyric 统一使用相对偏移格式 <offsetMs,durationMs>（相对于行首）。
  */
 export async function fetchLxLyric(
+  source: 'kw' | 'kg' | 'tx' | 'wy',
+  songInfo: LxSongInfo,
+): Promise<LxLyricResult | null> {
+  return dispatchFallbackModule('lx_lyric', 'fetchLyric', { source, songInfo },
+    () => fetchLxLyricBuiltin(source, songInfo));
+}
+
+async function fetchLxLyricBuiltin(
   source: 'kw' | 'kg' | 'tx' | 'wy',
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {

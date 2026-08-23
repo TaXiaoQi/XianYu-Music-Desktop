@@ -134,6 +134,7 @@ export async function uploadSettings(settings: AppSettings): Promise<SettingsSyn
 
     await signedRequest('settings_sync_upload', {
       user_id: ciyuanxiId,
+      platform: 'desktop',
       settings: settingsToUpload,
     }, {
       fetchTimeoutMs: 15_000,
@@ -176,6 +177,7 @@ export async function downloadSettings(): Promise<{ settings: AppSettings | null
   try {
     const downloadData = await signedRequest<SettingsSyncDownloadData>('settings_sync_download', {
       user_id: ciyuanxiId,
+      platform: 'desktop',
     });
 
     if (!downloadData || !downloadData.settings) {

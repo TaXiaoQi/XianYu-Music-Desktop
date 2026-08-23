@@ -3185,6 +3185,7 @@ export const isValidSubscriptionUrl = pluginSubscriptionService.isValidSubscript
 export const addSubscription = pluginSubscriptionService.addSubscription;
 export const updateSubscription = pluginSubscriptionService.updateSubscription;
 export const removeSubscription = pluginSubscriptionService.removeSubscription;
+export const mergeSubscriptionsFromCloud = pluginSubscriptionService.mergeSubscriptionsFromCloud;
 export const installFromSubscriptionUrl = pluginSubscriptionService.installFromSubscriptionUrl;
 export const installAllSubscriptions = pluginSubscriptionService.installAllSubscriptions;
 

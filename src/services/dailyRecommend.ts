@@ -94,7 +94,7 @@ function mulberry32(seed: number): () => number {
 function normalizeText(input: string): string {
   return (input || '')
     .toLowerCase()
-    .replace(/[（(【\[][^）)】\]]*[）)】\]]/g, '')
+    .replace(/[（(【[][^）)】\]]*[）)】\]]/g, '')
     .replace(/[\s'’`·・~～!！?？.。,，、]/g, '')
     .trim();
 }

@@ -18,6 +18,8 @@ import {
   getPluginScript,
   restorePluginFromSync,
   loadPlugins,
+  getSubscriptions,
+  mergeSubscriptionsFromCloud,
 } from './pluginEngine';
 
 /** 日志前缀 */
@@ -79,14 +81,28 @@ export interface PluginSyncDownloadData {
   timestamp: number;
   stats: {
     plugin_count: number;
+    subscription_count?: number;
   };
   plugins: PluginSyncItem[];
+  /** 云端订阅链接列表 */
+  subscriptions?: CloudSubscriptionItem[];
+}
+
+/** 云端订阅条目（字段与本地 PluginSubscription 兼容） */
+export interface CloudSubscriptionItem {
+  id?: string;
+  name?: string;
+  url: string;
+  addedAt?: number;
+  [key: string]: unknown;
 }
 
 /** 同步结果 */
 export interface PluginSyncResult {
   uploadedPlugins: number;
   downloadedPlugins: number;
+  /** 本次合并进本地的云端订阅数 */
+  syncedSubscriptions: number;
   errors: string[];
 }
 
@@ -95,11 +111,13 @@ export interface PluginSyncResult {
 /**
  * 上传所有本地插件到云端
  * 逐个上传以避免 WAF 拦截大请求体，每个插件的脚本经反转 Base64 编码。
+ * 订阅链接列表随每个请求一并上传（服务端整包替换）。
  */
 export async function uploadPlugins(): Promise<PluginSyncResult> {
   const result: PluginSyncResult = {
     uploadedPlugins: 0,
     downloadedPlugins: 0,
+    syncedSubscriptions: 0,
     errors: [],
   };
 
@@ -116,11 +134,33 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
   const plugins = getStoredPlugins();
   // 过滤掉内置插件
   const userPlugins = plugins.filter(p => !p.isBuiltin);
+  // 订阅链接列表随插件一起上传
+  const subscriptions = getSubscriptions();
 
-  logSync(`uploadPlugins: 本地用户插件 ${userPlugins.length} 个`);
+  logSync(`uploadPlugins: 本地用户插件 ${userPlugins.length} 个, 订阅 ${subscriptions.length} 个`);
 
   if (userPlugins.length === 0) {
-    logSync('uploadPlugins: 无用户插件需要上传');
+    if (subscriptions.length > 0) {
+      // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
+      try {
+        await signedRequest<{ plugin_count: number }>('plugin_sync_upload_one', {
+          user_id: ciyuanxiId,
+          plugin: {},
+          is_first: true,
+          subscriptions,
+        }, {
+          fetchTimeoutMs: 55_000,
+          timeoutMs: 60_000,
+        });
+        logSync('uploadPlugins: 已单独上传订阅链接');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logSyncError('uploadPlugins: 订阅上传失败:', msg);
+        result.errors.push(`订阅链接上传失败: ${msg}`);
+      }
+    } else {
+      logSync('uploadPlugins: 无用户插件需要上传');
+    }
     return result;
   }
 
@@ -148,6 +188,7 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
         user_id: ciyuanxiId,
         plugin: syncItem,
         is_first: i === 0,
+        subscriptions,
       }, {
         fetchTimeoutMs: 55_000,
         timeoutMs: 60_000,
@@ -170,12 +211,14 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
 
 /**
  * 从云端下载并恢复所有插件
- * 对每个云端插件，解析脚本并安装到本地
+ * 对每个云端插件，解析脚本并安装到本地；
+ * 云端订阅链接按 URL 合并进本地订阅列表（本地已有的保留）。
  */
 export async function downloadPlugins(): Promise<PluginSyncResult> {
   const result: PluginSyncResult = {
     uploadedPlugins: 0,
     downloadedPlugins: 0,
+    syncedSubscriptions: 0,
     errors: [],
   };
 
@@ -192,6 +235,14 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
     const downloadData = await signedRequest<PluginSyncDownloadData>('plugin_sync_download', {
       user_id: ciyuanxiId,
     });
+
+    // 云端订阅链接合并进本地（即使云端无插件也要合并）
+    const cloudSubs = downloadData?.subscriptions;
+    if (Array.isArray(cloudSubs) && cloudSubs.length > 0) {
+      const added = mergeSubscriptionsFromCloud(cloudSubs);
+      result.syncedSubscriptions = added;
+      logSync(`downloadPlugins: 订阅链接合并完成, 新增 ${added} 个`);
+    }
 
     if (!downloadData || !downloadData.plugins || downloadData.plugins.length === 0) {
       logSync('downloadPlugins: 云端无插件数据');
