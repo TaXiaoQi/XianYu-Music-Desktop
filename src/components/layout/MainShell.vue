@@ -72,7 +72,7 @@ const {
   currentDownloadInitialQuality,
   closeDownloadDialog,
 } = useDownloadDialog();
-const { skipNextPageTransition, startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
+const { startupCompositionMaskVisible, fullscreenAnimState } = storeToRefs(useUiStore());
 const uiStore = useUiStore();
 const { materialTransitionMaskVisible, materialSwitching } = useWindowMaterial();
 
@@ -283,9 +283,9 @@ onMounted(() => {
                  淡入：该动画只改合成属性、不参与 Vue 的 DOM 重排，天然不会把
                  异步列表行 el 置 null，在手感上也避免首帧硬切/整页突然出现。 -->
             <transition
-              :name="skipNextPageTransition ? 'page-enter' : 'page-fade'"
+              name="page-fade"
               :css="true"
-              :mode="skipNextPageTransition ? undefined : 'out-in'"
+              mode="out-in"
             >
               <component
                 :is="Component"
@@ -657,5 +657,32 @@ onMounted(() => {
   to {
     transform: translateX(14%);
   }
+}
+
+/* ---- 左侧边栏/路由页面切换（微上滑 + 柔和淡入淡出动画） ---- */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scale(0.996);
+}
+
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.996);
+}
+
+.page-enter-active {
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

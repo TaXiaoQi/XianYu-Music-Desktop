@@ -648,6 +648,19 @@
         throw new TypeError('Failed to parse URL from ' + urlStr);
       }
 
+      // 对直接拼接在 URL 中的 Query 参数自动补全 type <-> quality
+      if (urlStr.indexOf('type=') >= 0 && urlStr.indexOf('quality=') < 0) {
+        var matchType = urlStr.match(/[?&]type=([^&]+)/);
+        if (matchType && matchType[1]) {
+          urlStr += '&quality=' + matchType[1];
+        }
+      } else if (urlStr.indexOf('quality=') >= 0 && urlStr.indexOf('type=') < 0) {
+        var matchQual = urlStr.match(/[?&]quality=([^&]+)/);
+        if (matchQual && matchQual[1]) {
+          urlStr += '&type=' + matchQual[1];
+        }
+      }
+
       var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
       var headers = {};
       var h = init.headers || (input && input.headers);
@@ -1004,11 +1017,30 @@
         for (var key in config.params) {
           if (!Object.prototype.hasOwnProperty.call(config.params, key)) continue;
           var value = config.params[key];
-          // 数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值数组的行为
+          // 数组值取第一个元素，模拟 axios 默认 paramsSerializer 对单值行为
           cleanParams[key] = Array.isArray(value) ? value[0] : value;
+        }
+        // 兼容音源服务端 v1：自动对齐 type 与 quality 字段
+        if (cleanParams.type && !cleanParams.quality) {
+          cleanParams.quality = cleanParams.type;
+        } else if (cleanParams.quality && !cleanParams.type) {
+          cleanParams.type = cleanParams.quality;
         }
         var paramStr = pkgs.qs.stringify(cleanParams);
         url += (url.indexOf('?') >= 0 ? '&' : '?') + paramStr;
+      }
+
+      // 对直接拼接在 URL 中的 Query 参数同样自动补全 type <-> quality
+      if (url.indexOf('type=') >= 0 && url.indexOf('quality=') < 0) {
+        var matchType = url.match(/[?&]type=([^&]+)/);
+        if (matchType && matchType[1]) {
+          url += '&quality=' + matchType[1];
+        }
+      } else if (url.indexOf('quality=') >= 0 && url.indexOf('type=') < 0) {
+        var matchQual = url.match(/[?&]quality=([^&]+)/);
+        if (matchQual && matchQual[1]) {
+          url += '&type=' + matchQual[1];
+        }
       }
 
       var headers = {};
@@ -1030,7 +1062,27 @@
 
       var body;
       if (config.data !== undefined && config.data !== null) {
-        body = typeof config.data === 'string' ? config.data : JSON.stringify(config.data);
+        var reqData = config.data;
+        // 自动适配对齐音源服务端：若数据为对象，同时填充 type 与 quality，兼容仅认 quality 的 v1 接口
+        if (typeof reqData === 'object' && reqData !== null) {
+          try {
+            if (reqData.type && !reqData.quality) {
+              reqData.quality = reqData.type;
+            } else if (reqData.quality && !reqData.type) {
+              reqData.type = reqData.quality;
+            }
+          } catch (e) { /* ignore */ }
+        } else if (typeof reqData === 'string' && reqData.indexOf('{') >= 0) {
+          try {
+            var parsed = JSON.parse(reqData);
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.type && !parsed.quality) parsed.quality = parsed.type;
+              else if (parsed.quality && !parsed.type) parsed.type = parsed.quality;
+              reqData = JSON.stringify(parsed);
+            }
+          } catch (e) { /* ignore */ }
+        }
+        body = typeof reqData === 'string' ? reqData : JSON.stringify(reqData);
         if (body && body.length > 256 * 1024) {
           body = body.substring(0, 256 * 1024);
         }

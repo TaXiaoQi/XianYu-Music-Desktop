@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { X } from 'lucide-vue-next';
+import { ExternalLink, X } from 'lucide-vue-next';
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useI18n } from '../../features/i18n';
 import {
@@ -129,6 +129,11 @@ const handlePresetChange = async (next: number) => {
     showToast(t('pluginHost.presetLoadFailed', { err: String(err) }), 'error');
   }
 };
+
+const handleOpenNativeEditor = () => {
+  if (!props.entry) return;
+  void store.openSlotEditor(props.entry.format, props.entry.uniqueId, props.entry.name);
+};
 </script>
 
 <template>
@@ -152,14 +157,25 @@ const handlePresetChange = async (next: number) => {
               >{{ entry ? formatLabel(entry.format) : '' }}</span>
               <h2 class="truncate text-sm font-bold text-gray-800 dark:text-gray-100">{{ entry?.name }}</h2>
             </div>
-            <button
-              type="button"
-              class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
-              :title="t('topbar.close')"
-              @click="requestClose"
-            >
-              <X class="h-4 w-4" />
-            </button>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="flex shrink-0 items-center gap-1 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-2.5 py-1 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
+                title="打开插件原生 GUI 编辑窗口"
+                @click="handleOpenNativeEditor"
+              >
+                <ExternalLink class="h-3.5 w-3.5" />
+                原生 UI
+              </button>
+              <button
+                type="button"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-black/5 hover:text-gray-700 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white/80"
+                :title="t('topbar.close')"
+                @click="requestClose"
+              >
+                <X class="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
         <!-- 主体 -->

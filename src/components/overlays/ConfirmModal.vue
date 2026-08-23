@@ -2,7 +2,7 @@
 defineProps<{
   visible: boolean;
   title: string;
-  content: string;
+  content?: string;
 }>();
 
 const emit = defineEmits(['confirm', 'cancel']);
@@ -21,8 +21,9 @@ const emit = defineEmits(['confirm', 'cancel']);
             <h3 class="text-lg font-bold text-gray-800 dark:text-white">{{ title }}</h3>
           </div>
 
-          <div class="px-6 pb-6 text-center">
-            <p class="text-sm text-gray-500 dark:text-gray-300 leading-relaxed">{{ content }}</p>
+          <div class="px-6 pb-4 text-center">
+            <p v-if="content" class="text-sm text-gray-500 dark:text-gray-300 leading-relaxed">{{ content }}</p>
+            <slot />
           </div>
 
           <div class="flex border-t border-black/5 dark:border-white/10">
