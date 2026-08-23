@@ -18,9 +18,9 @@ import type {
 /** 编辑器关闭通知事件名（payload: { format, uniqueId }）。 */
 export const PLUGIN_HOST_EDITOR_CLOSED_EVENT = 'plugin-host-editor-closed';
 
-/** 扫描标准插件目录（用户级 + 系统级 VST3/CLAP）+ 自定义目录，dlopen 级重操作。 */
-export async function scanPlugins(extraDirs: string[]): Promise<PluginHostScanEntry[]> {
-  return tauriInvoke('plugin_host_scan_plugins', { dirs: extraDirs });
+/** 扫描标准插件目录（用户级 + 系统级 VST3/CLAP）+ 自定义目录，支持跳过黑名单插件。 */
+export async function scanPlugins(extraDirs: string[], disabledPaths?: string[]): Promise<PluginHostScanEntry[]> {
+  return tauriInvoke('plugin_host_scan_plugins', { dirs: extraDirs, disabledPaths: disabledPaths ?? [] });
 }
 
 /** 读取当前机架配置。 */

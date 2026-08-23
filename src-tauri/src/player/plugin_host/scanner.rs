@@ -13,6 +13,7 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
+use tauri::Emitter;
 use truce_rack::clap::ClapScanner;
 use truce_rack::core::info::{PluginCategory, PluginInfo};
 use truce_rack::core::plugin::Plugin;
@@ -76,37 +77,64 @@ pub fn standard_scan_directories() -> Vec<PathBuf> {
         dirs.push(base.join("VST3"));
         dirs.push(base.join("CLAP"));
     }
+    #[cfg(target_os = "windows")]
+    {
+        let default_vst3 = PathBuf::from(r"C:\Program Files\Common Files\VST3");
+        if !dirs.contains(&default_vst3) {
+            dirs.push(default_vst3);
+        }
+        let default_clap = PathBuf::from(r"C:\Program Files\Common Files\CLAP");
+        if !dirs.contains(&default_clap) {
+            dirs.push(default_clap);
+        }
+    }
     dirs
 }
 
 /// 扫描全部标准目录，聚合 VST3 + CLAP 结果。
 #[allow(dead_code)] // 供 source.rs 的真实插件冒烟测试（#[ignore]）使用
 pub fn scan_all_directories() -> Vec<PluginScanEntry> {
-    scan_directories(standard_scan_directories())
+    scan_directories_with_extra(&[], &[], None)
 }
 
-/// 标准目录 + 自定义目录合并扫描（自定义目录排在标准目录之后，
-/// 全程按 (format, unique_id) 去重，标准目录优先保留）。
-///
-/// 逐目录容错：单个目录不存在/读取失败只跳过，不影响其余目录。
-/// 扫描含 dlopen 级操作，只应在命令线程调用，禁止实时上下文。
-pub fn scan_directories_with_extra(extra: &[std::path::PathBuf]) -> Vec<PluginScanEntry> {
-    scan_directories(
-        standard_scan_directories()
-            .into_iter()
-            .chain(extra.iter().filter(|d| !d.as_os_str().is_empty()).cloned()),
-    )
-}
+/// 标准目录 + 自定义目录合并扫描，支持跳过禁用列表与实时上报条目。
+pub fn scan_directories_with_extra(
+    extra: &[std::path::PathBuf],
+    disabled_paths: &[String],
+    app: Option<&tauri::AppHandle>,
+) -> Vec<PluginScanEntry> {
+    let disabled_set: std::collections::HashSet<String> = disabled_paths
+        .iter()
+        .map(|p| p.trim().to_lowercase())
+        .collect();
 
-fn scan_directories(dirs: impl IntoIterator<Item = std::path::PathBuf>) -> Vec<PluginScanEntry> {
+    let dirs = standard_scan_directories()
+        .into_iter()
+        .chain(extra.iter().filter(|d| !d.as_os_str().is_empty()).cloned());
+
     let mut seen = std::collections::HashSet::new();
     let mut entries = Vec::new();
 
+    let on_current = |path: &std::path::Path| {
+        let path_str = path.display().to_string();
+        if let Some(app) = app {
+            let _ = app.emit("plugin-host-scan-current", &path_str);
+        }
+    };
+
     for dir in dirs {
-        for info in scan_dir_plugin_infos(&dir) {
+        if !dir.exists() {
+            continue;
+        }
+
+        for info in scan_dir_plugin_infos_recursive(&dir, &disabled_set, &on_current) {
             let key = (info.format.to_string(), info.unique_id.clone());
             if seen.insert(key) {
-                entries.push(PluginScanEntry::from(&info));
+                let scan_entry = PluginScanEntry::from(&info);
+                if let Some(app) = app {
+                    let _ = app.emit("plugin-host-scan-item", &scan_entry);
+                }
+                entries.push(scan_entry);
             }
         }
     }
@@ -114,66 +142,51 @@ fn scan_directories(dirs: impl IntoIterator<Item = std::path::PathBuf>) -> Vec<P
     entries
 }
 
-/// 目录扫描类别：决定用哪个 scanner（VST3 目录 / CLAP 目录 / 两者混扫）。
-#[derive(Clone, Copy)]
-enum DirKind {
-    Vst3,
-    Clap,
-    Both,
-}
-
-/// 判定目录类别：优先按目录名含 "vst3"/"clap" 关键字（与标准目录一致），
-/// 目录名无语义时按顶层条目标题后缀（`*.vst3` / `*.clap`）内容探测一层，
-/// 仍无法判定或为空目录时默认按 CLAP 目录处理。
-fn classify_dir(dir: &std::path::Path) -> DirKind {
-    let name = dir
-        .file_name()
-        .map(|n| n.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    let has_vst3 = name.contains("vst3");
-    let has_clap = name.contains("clap");
-    if has_vst3 && has_clap {
-        return DirKind::Both;
-    }
-    if has_vst3 {
-        return DirKind::Vst3;
-    }
-    if has_clap {
-        return DirKind::Clap;
+fn scan_dir_plugin_infos_recursive(
+    dir: &std::path::Path,
+    disabled_set: &std::collections::HashSet<String>,
+    on_current: &impl Fn(&std::path::Path),
+) -> Vec<PluginInfo> {
+    if !dir.exists() {
+        return Vec::new();
     }
 
-    let mut vst3 = false;
-    let mut clap = false;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten().take(128) {
-            let n = entry.file_name().to_string_lossy().to_lowercase();
-            if n.ends_with(".vst3") {
-                vst3 = true;
-            } else if n.ends_with(".clap") {
-                clap = true;
-            }
-            if vst3 && clap {
-                break;
-            }
+    let path_str = dir.display().to_string();
+    let path_lower = path_str.to_lowercase();
+    if disabled_set.contains(&path_lower) {
+        return Vec::new();
+    }
+
+    let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let is_vst3 = name.ends_with(".vst3");
+    let is_clap = name.ends_with(".clap");
+
+    // 避开 UAD 硬件框架与 Waves 虚拟壳（无需直连 LoadLibrary，防止 C++ 段错误杀死宿主）
+    let name_lower = name.to_lowercase();
+    if name.eq_ignore_ascii_case("Universal Audio.vst3") || name_lower.contains("waveshell") {
+        eprintln!("[scanner] 自动避开已知特异/壳依赖崩溃项: {path_str}");
+        return Vec::new();
+    }
+
+    if is_vst3 || is_clap {
+        on_current(dir);
+        if is_vst3 {
+            return Vst3Scanner::new().scan_path(dir).unwrap_or_default();
+        } else {
+            return ClapScanner::new().scan_path(dir).unwrap_or_default();
         }
     }
-    match (vst3, clap) {
-        (true, true) => DirKind::Both,
-        (true, false) => DirKind::Vst3,
-        _ => DirKind::Clap,
-    }
-}
 
-fn scan_dir_plugin_infos(dir: &std::path::Path) -> Vec<PluginInfo> {
-    match classify_dir(dir) {
-        DirKind::Vst3 => Vst3Scanner::new().scan_path(dir).unwrap_or_default(),
-        DirKind::Clap => ClapScanner::new().scan_path(dir).unwrap_or_default(),
-        DirKind::Both => {
-            let mut out = Vst3Scanner::new().scan_path(dir).unwrap_or_default();
-            out.extend(ClapScanner::new().scan_path(dir).unwrap_or_default());
-            out
-        }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let child = entry.path();
+        out.extend(scan_dir_plugin_infos_recursive(&child, disabled_set, on_current));
     }
+    out
 }
 
 /// 按格式 + unique_id 加载一个插件实例（dlopen + 工厂实例化）。

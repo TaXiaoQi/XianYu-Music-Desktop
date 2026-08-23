@@ -424,15 +424,38 @@ impl SharedRack {
         let Ok(mut state) = self.state.try_lock() else {
             return false;
         };
-        let Some(act) = state.activation else {
+
+        if state.chain.is_empty() {
             return false;
+        }
+
+        eprintln!("[rack] process_block 收到音频块: frames={}, channels={}, sample_rate={}, 链上插件数={}", frames, channels, sample_rate, state.chain.len());
+
+        // 动态适配：如果当前音频流的采样率/声道数与插件激活参数不一致，
+        // 自动按真实的 channels 和 sample_rate 重新激活全链，避免被误判旁路
+        let needs_reactivate = match state.activation {
+            Some(act) => act.channels != channels || act.sample_rate != sample_rate,
+            None => true,
         };
-        if act.channels != channels || act.sample_rate != sample_rate || state.chain.is_empty() {
-            return false;
+
+        if needs_reactivate {
+            let layout = layout_for_channels(channels as usize);
+            let rate = sample_rate as f64;
+            for slot in state.chain.iter_mut() {
+                if slot.instance.is_active() {
+                    slot.instance.deactivate();
+                }
+                let _ = slot.instance.activate(layout.clone(), rate, BLOCK_SIZE);
+            }
+            state.activation = Some(Activation { channels, sample_rate });
         }
 
         let ch = channels as usize;
         for slot in state.chain.iter_mut() {
+            // 复制当前输入到输出平面，避免 Out-of-Place 时全 0 或不覆盖
+            for (dest, src) in planar_b.iter_mut().zip(planar_a.iter()) {
+                dest[..frames].copy_from_slice(&src[..frames]);
+            }
             let result = {
                 let inputs: Vec<&[f32]> = planar_a.iter().map(|c| &c[..frames]).collect();
                 let mut outputs: Vec<&mut [f32]> =
@@ -444,7 +467,16 @@ impl SharedRack {
                 let mut context = ProcessContext {
                     sample_rate: sample_rate as f64,
                     max_block_size: BLOCK_SIZE,
-                    transport: None,
+                    transport: Some(truce_rack::core::transport::TransportInfo {
+                        tempo_bpm: Some(120.0),
+                        playing: true,
+                        time_signature: Some((4, 4)),
+                        song_position_samples: None,
+                        song_position_beats: None,
+                        bar_start_beats: None,
+                        loop_active: false,
+                        recording: false,
+                    }),
                     output_events,
                 };
                 slot.instance
