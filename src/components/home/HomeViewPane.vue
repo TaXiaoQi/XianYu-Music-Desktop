@@ -132,8 +132,13 @@ const viewInstanceKey = computed(() => {
 
 <template>
   <div class="flex flex-1 flex-col min-h-0 min-w-0">
-    <Transition name="home-view-switch" mode="out-in">
-      <div :key="viewInstanceKey" class="flex flex-1 flex-col min-h-0 min-w-0">
+    <!-- 视图切换（viewInstanceKey 变化）按 key 销毁重建整棵内容（含 SongTable 虚拟列表），
+         但不能再包 <transition mode="out-in">：out-in 会持有旧的虚拟列表 Fragment，
+         其 enter/leave 临时重排期间若异步加载/扫描继续把行 patch 成 el=null，
+         patchKeyedChildren 卸载时读 parentNode 为 null 而崩溃（正式构建时序触发，dev 不触发）。
+         保留 key 重挂（达到"销毁重建、不残留旧状态"的意图），过渡交给纯 CSS 入场动画：
+         CSS 动画只改合成属性，不参与 Vue 的 DOM 重排，天然不会把 el 置 null。 -->
+      <div :key="viewInstanceKey" class="home-view-switch-host flex flex-1 flex-col min-h-0 min-w-0">
       <HomeHeaderPanel
         :localViewMode="localViewMode"
         :isBatchMode="isBatchMode"
@@ -200,31 +205,22 @@ const viewInstanceKey = computed(() => {
         @artistAlbumClick="$emit('artistAlbumClick', $event)"
       />
       </div>
-    </Transition>
     </div>
 </template>
 
 <style scoped>
-.home-view-switch-enter-active {
-  transition:
-    opacity 260ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+.home-view-switch-host {
+  animation: home-view-switch-in 260ms ease;
 }
 
-.home-view-switch-leave-active {
-  pointer-events: none;
-  transition:
-    opacity 220ms ease,
-    transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.home-view-switch-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.home-view-switch-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+@keyframes home-view-switch-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -113,49 +113,22 @@ const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
 
+/** 崩溃诊断埋点：记录排行榜每次状态流转，致命错误时随 localStorage 一并导出 */
+const lbTrace: string[] = [];
+const lbDebug = (msg: string) => {
+  try {
+    lbTrace.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+    if (lbTrace.length > 40) lbTrace.shift();
+    (window as any).__lbTrace = lbTrace;
+  } catch { /* 诊断埋点绝不能影响业务 */ }
+};
+lbDebug(`init period=${currentPeriod.value} loading=${leaderboardLoading.value}`);
+
 /** 各周期排行榜缓存：切换周期时优先展示缓存，避免每次重新请求造成卡顿 */
 const leaderboardCache = new Map<LeaderboardPeriod, { list: LeaderboardEntry[]; fetchedAt: number }>();
+
 /** 切换周期时递增，强制重新挂载排行榜列表以重播逐行动画 */
 const leaderboardSwitchKey = ref(0);
-
-// ==================== 排行榜逐行入场动画 ====================
-/** 行入场错峰间隔与单行动画时长（ms）：间隔拉大到 100ms 让逐行波浪清晰可辨 */
-const ROW_ENTER_STAGGER = 100;
-const ROW_ENTER_DURATION = 450;
-/** 入场动画进行中：行动画类生效；结束后移除类，
-    悬停跳跃动画才能安全接管 animation 属性（否则会把入场动画顶掉导致 opacity 回落为 0） */
-const rowEnterAnimating = ref(false);
-/** 已完成入场动画的行（username 集合）：这些行立即解除入场类，
-    悬停冲刺即刻可用，无需等整个榜单全部入场结束 */
-const enteredRowKeys = ref<Set<string>>(new Set());
-let rowEnterAnimTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** 数据加载完成后播放逐行入场：总时长按行数（Top + 底部个人排名/登录栏）估算，超时自动收尾 */
-function playRowEnterAnimation() {
-  clearTimeout(rowEnterAnimTimer);
-  rowEnterAnimating.value = true;
-  enteredRowKeys.value = new Set();
-  const rows = (leaderboardCache.get(currentPeriod.value)?.list.length ?? 0) + 1;
-  rowEnterAnimTimer = setTimeout(() => {
-    rowEnterAnimating.value = false;
-  }, rows * ROW_ENTER_STAGGER + ROW_ENTER_DURATION + 120);
-}
-
-function stopRowEnterAnimation() {
-  clearTimeout(rowEnterAnimTimer);
-  rowEnterAnimating.value = false;
-  enteredRowKeys.value = new Set();
-}
-
-/** 行入场动画结束（animationend）：按行解除入场类，让该行悬停冲刺立即可用。
-    只认行自身的 fadeInUp（e.target === e.currentTarget），
-    排除从排名徽章 animate-rank-pop 冒泡上来的同名事件 */
-function handleRowAnimationEnd(e: AnimationEvent, key: string) {
-  if (e.animationName !== 'fadeInUp' || e.target !== e.currentTarget) return;
-  const next = new Set(enteredRowKeys.value);
-  next.add(key);
-  enteredRowKeys.value = next;
-}
 
 const periodLabel = computed(() => {
   switch (currentPeriod.value) {
@@ -167,13 +140,15 @@ const periodLabel = computed(() => {
 
 async function loadLeaderboard(silent = false, period: LeaderboardPeriod = currentPeriod.value) {
   const requestId = ++leaderboardRequestId;
+  lbDebug(`load req=${requestId} silent=${silent} period=${period} len=${leaderboard.value.length} loading=${leaderboardLoading.value} hasCache=${leaderboardCache.has(period)}`);
   const cached = leaderboardCache.get(period);
   // 有缓存时先展示缓存数据，避免骨架屏闪烁；无缓存且非静默时显示骨架屏
   if (cached && leaderboard.value.length === 0) {
+    lbDebug(`show-cache req=${requestId} len=${cached.list.length}`);
     leaderboard.value = cached.list;
   }
   if (!silent && !cached) {
-    stopRowEnterAnimation();
+    lbDebug(`show-skeleton req=${requestId}`);
     leaderboard.value = [];
     leaderboardLoading.value = true;
     leaderboardError.value = null;
@@ -202,9 +177,7 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
       leaderboardCache.set(p, { list, fetchedAt: Date.now() });
     }
     leaderboard.value = leaderboardCache.get(period)?.list ?? [];
-    if (!silent && !cached) {
-      playRowEnterAnimation();
-    }
+    lbDebug(`data-applied req=${requestId} period=${period} len=${leaderboard.value.length} silent=${silent} prevLen=${leaderboardDisplay.value.top.length}`);
     // 如果本次上报触发了服务端重置信号，本地统计已被清空，需刷新展示
     if (resetApplied) {
       await statisticsStore.refreshBehaviorOnly('All');
@@ -215,11 +188,13 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     // 静默刷新失败时保留已展示的数据，不打断用户
     if (!silent || leaderboard.value.length === 0) {
       const msg = e instanceof Error ? e.message : String(e);
+      lbDebug(`error req=${requestId} silent=${silent} msg=${msg.slice(0, 60)}`);
       leaderboardError.value = msg;
       leaderboard.value = [];
     }
   } finally {
     if (requestId === leaderboardRequestId) {
+      lbDebug(`loading-off req=${requestId} len=${leaderboard.value.length}`);
       leaderboardLoading.value = false;
     }
   }
@@ -227,12 +202,14 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
 
 function switchPeriod(period: LeaderboardPeriod) {
   if (currentPeriod.value === period) return;
+  lbDebug(`switch ${currentPeriod.value}->${period} len=${leaderboard.value.length}`);
   currentPeriod.value = period;
   leaderboardRequestId++; // 取消进行中的请求，避免旧周期数据覆盖新周期
   leaderboardSwitchKey.value++; // 强制重新挂载列表，重播逐行动画
   const cached = leaderboardCache.get(period);
   if (cached) {
     // 有缓存：直接展示缓存数据（重播逐行动画），不触发网络更新（由定时器/手动刷新负责）
+    lbDebug(`switch-cache len=${cached.list.length}`);
     leaderboard.value = cached.list;
     leaderboardLoading.value = false;
     leaderboardError.value = null;
@@ -381,7 +358,6 @@ onDeactivated(() => {
 onUnmounted(() => {
   statisticsStore.scheduleHeavyDataRelease();
   stopStatsTimer();
-  stopRowEnterAnimation();
 });
 
 async function handleRefresh() {
@@ -552,20 +528,23 @@ const losslessRatio = computed(() => {
           </div>
 
           <!-- 排行榜列表 -->
-          <div v-else :key="leaderboardSwitchKey" class="grid gap-1.5">
+          <!-- key 必须带字符串前缀：正式构建剥离模板注释后，v-if 各分支的隐式 key(0/1/2)
+               直接落在分支 div 上，纯数字的 leaderboardSwitchKey(初始 0) 会与骨架屏分支
+               撞 key，Vue 将骨架屏原地补丁成列表（跨结构 patch 读到 null el 崩溃）。
+               dev 保留注释时分支被包进 Fragment(key:3) 而幸免——正是"正式崩、dev 不崩"。 -->
+          <div v-else :key="`lb-list-${leaderboardSwitchKey}`" class="grid gap-1.5">
             <div
               v-for="(item, index) in leaderboardDisplay.top"
               :key="item.username"
-              class="leaderboard-row"
-              :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3, 'animate-fade-in-up': rowEnterAnimating && !enteredRowKeys.has(item.username) }"
-              :style="rowEnterAnimating && !enteredRowKeys.has(item.username) ? { animationDelay: `${index * ROW_ENTER_STAGGER}ms` } : undefined"
+              class="leaderboard-row animate-fade-in-up"
+              :class="{ 'is-me': item.isMe, 'is-top-3': item.rank <= 3 }"
+              :style="{ animationDelay: `${index * 60}ms` }"
               @contextmenu="handleLeaderboardContextMenu($event, item)"
-              @animationend="handleRowAnimationEnd($event, item.username)"
             >
               <div
                 class="leaderboard-rank animate-rank-pop"
                 :class="`rank-${item.rank <= 3 ? item.rank : 'normal'}`"
-                :style="{ animationDelay: `${index * ROW_ENTER_STAGGER + 250}ms` }"
+                :style="{ animationDelay: `${index * 60 + 200}ms` }"
               >
                 {{ item.rank }}
               </div>
@@ -590,16 +569,16 @@ const losslessRatio = computed(() => {
               <span>···</span>
             </div>
             <div
-              :key="leaderboardSwitchKey"
-              class="leaderboard-row is-me is-sticky"
-              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground, 'animate-fade-in-up': rowEnterAnimating }"
-              :style="rowEnterAnimating ? { animationDelay: `${leaderboardDisplay.top.length * ROW_ENTER_STAGGER + 150}ms` } : undefined"
+              :key="`lb-me-${leaderboardSwitchKey}`"
+              class="leaderboard-row is-me is-sticky animate-fade-in-up"
+              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
+              :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 200}ms` }"
               @contextmenu="handleLeaderboardContextMenu($event, leaderboardDisplay.me)"
             >
               <div
                 class="leaderboard-rank animate-rank-pop"
                 :class="`rank-${leaderboardDisplay.me.rank <= 3 ? leaderboardDisplay.me.rank : 'normal'}`"
-                :style="{ animationDelay: `${leaderboardDisplay.top.length * ROW_ENTER_STAGGER + 400}ms` }"
+                :style="{ animationDelay: `${leaderboardDisplay.top.length * 60 + 400}ms` }"
               >
                 {{ leaderboardDisplay.me.rank }}
               </div>
@@ -626,8 +605,7 @@ const losslessRatio = computed(() => {
             <button
               type="button"
               class="leaderboard-row leaderboard-row--login is-me is-sticky w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#EC4141]/50"
-              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground, 'animate-fade-in-up': rowEnterAnimating }"
-              :style="rowEnterAnimating ? { animationDelay: '150ms' } : undefined"
+              :class="{ 'leaderboard-row--glass-on-custom-background': hasCustomBackground }"
               :aria-label="TEXT.loginAria"
               :title="TEXT.loginTitle"
               @click="openLoginPage"
@@ -694,30 +672,7 @@ const losslessRatio = computed(() => {
 
 .leaderboard-row:hover {
   background: rgba(0, 0, 0, 0.05);
-}
-
-/* 悬停冲刺：高亮的同时向右冲——全程纯水平运动，无任何上下位移。
-   物理模型为水平阻尼弹簧：主冲越过落点（14px）→ 反向回弹（5px）
-   → 再小幅冲回（9.5px）→ 落定 8px，振幅每半周期衰减一半（+6 → -3 → +1.5），
-   共 360ms；移开后由基础 transform 过渡滑回原位。
-   入场动画类挂着时不触发（dash 会顶掉入场动画导致 opacity 回落为 0）；
-   钉底的 sticky 行（个人排名/登录栏）不动，保持稳定 */
-.leaderboard-row:hover:not(.animate-fade-in-up):not(.is-sticky) {
-  transform: translateX(8px);
-  animation: leaderboard-dash 0.36s forwards;
-}
-
-@keyframes leaderboard-dash {
-  /* 主冲：初速冲出，阻尼减速冲过落点 */
-  0%   { transform: translateX(0);     animation-timing-function: cubic-bezier(0.17, 0.67, 0.35, 1); }
-  /* 冲过头：最远点 14px，速度归零 */
-  50%  { transform: translateX(14px);  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
-  /* 回弹一：反向冲过落点到 5px */
-  70%  { transform: translateX(5px);   animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
-  /* 回弹二：再小幅冲回到 9.5px */
-  85%  { transform: translateX(9.5px); animation-timing-function: cubic-bezier(0.3, 0.6, 0.4, 1); }
-  /* 落定：与 :hover 静态 transform 一致 */
-  100% { transform: translateX(8px); }
+  transform: translateX(2px);
 }
 
 .leaderboard-row--login {
@@ -731,16 +686,6 @@ const losslessRatio = computed(() => {
 .leaderboard-row.is-me {
   background: rgba(236, 65, 65, 0.08);
   border-color: rgba(236, 65, 65, 0.25);
-}
-
-/* 悬停规则需置于 is-top-3 / is-me 之后并提高优先级，否则静态底色会覆盖 hover 高亮 */
-.leaderboard-row.is-top-3:hover {
-  background: rgba(236, 65, 65, 0.09);
-  border-color: rgba(236, 65, 65, 0.2);
-}
-
-.leaderboard-row.is-me:not(.is-sticky):hover {
-  background: rgba(236, 65, 65, 0.13);
 }
 
 .leaderboard-row.is-sticky {
@@ -877,11 +822,9 @@ const losslessRatio = computed(() => {
   }
 }
 
-/* 入场动画：both 填充（delay 期 backwards 隐藏、结束 forwards 保持终态），
-   不在类上声明基础 opacity: 0——这样即使动画被悬停冲刺顶掉，
-   opacity 也会回到默认值 1 而不是闪失为 0 */
 .animate-fade-in-up {
-  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  opacity: 0;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* 排名数字：放大淡入效果，延迟于整行之后触发。
@@ -911,11 +854,6 @@ const losslessRatio = computed(() => {
   .animate-rank-pop {
     animation: none;
   }
-
-  .leaderboard-row:hover:not(.animate-fade-in-up):not(.is-sticky) {
-    animation: none;
-    transform: translateX(2px);
-  }
 }
 
 /* ==================== 听歌排行榜深色模式适配 ==================== */
@@ -934,15 +872,6 @@ const losslessRatio = computed(() => {
 .dark .leaderboard-row.is-me {
   background: rgba(236, 65, 65, 0.12);
   border-color: rgba(236, 65, 65, 0.35);
-}
-
-.dark .leaderboard-row.is-top-3:hover {
-  background: rgba(236, 65, 65, 0.15);
-  border-color: rgba(236, 65, 65, 0.3);
-}
-
-.dark .leaderboard-row.is-me:not(.is-sticky):hover {
-  background: rgba(236, 65, 65, 0.19);
 }
 
 /* is-sticky 放在 is-me 之后，确保 sticky 行的模糊背景优先于 is-me 的红色背景 */

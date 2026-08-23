@@ -245,10 +245,11 @@ export async function fetchAllLeaderboards(
   resetApplied?: boolean;
 }> {
   const ciyuanxiId = getCiyuanxiId();
-  let resetApplied = false;
-  if (ciyuanxiId) {
-    resetApplied = await reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 });
-  }
+  // 上报与拉榜并行：上报带 30s 节流、失败已在内部吞掉，串行等待只会把一次网络往返
+  // （远程服务器 RTT 较高）叠加进排行榜首屏时间；服务端榜单本身也有 30s 缓存
+  const reportPromise: Promise<boolean> = ciyuanxiId
+    ? reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 })
+    : Promise.resolve(false);
 
   try {
     const data = await signedRequest<{
@@ -269,9 +270,11 @@ export async function fetchAllLeaderboards(
         fetchLeaderboard(limit, undefined, 'weekly'),
         fetchLeaderboard(limit, undefined, 'total'),
       ]);
+      const resetApplied = await reportPromise;
       return { daily, weekly, total, resetApplied };
     }
 
+    const resetApplied = await reportPromise;
     return {
       daily: mapLeaderboardPayload(data.leaderboards.daily, ciyuanxiId),
       weekly: mapLeaderboardPayload(data.leaderboards.weekly, ciyuanxiId),
@@ -288,7 +291,8 @@ export async function fetchAllLeaderboards(
 /**
  * 获取听歌排行榜
  *
- * 会先上报本地听歌时长（日/周/总）到后端，再获取排行榜数据。
+ * 上报本地听歌时长（日/周/总）与拉取排行榜并行发起（上报带 30s 节流），
+ * 避免把上报往返叠加进加载等待。
  *
  * @param limit 返回的排行数量，默认 50
  * @param durations 三个周期的听歌时长，上报到后端用于分周期排行榜
@@ -302,12 +306,10 @@ export async function fetchLeaderboard(
   const ciyuanxiId = getCiyuanxiId();
 
   // 记录本次调用是否实际触发了本地统计重置（供调用方刷新本地统计展示）
-  let resetApplied = false;
-
-  // 只有登录用户才上报个人听歌时长；公共排行榜无需登录即可获取。
-  if (ciyuanxiId) {
-    resetApplied = await reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 });
-  }
+  // 上报与拉榜并行：只有登录用户才上报，且上报带 30s 节流、失败已在内部吞掉
+  const reportPromise: Promise<boolean> = ciyuanxiId
+    ? reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 })
+    : Promise.resolve(false);
 
   try {
     const data = await signedRequest<LeaderboardPeriodPayload>('get_leaderboard', {
@@ -319,6 +321,7 @@ export async function fetchLeaderboard(
       timeoutMs: 15_000,
     });
 
+    const resetApplied = await reportPromise;
     return {
       ...mapLeaderboardPayload(data, ciyuanxiId),
       resetApplied,

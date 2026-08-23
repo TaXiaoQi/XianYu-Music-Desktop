@@ -35,7 +35,7 @@ const handleToggle = () => {
     :title="isFavorited ? '取消收藏' : favoriteLabel"
     class="bg-white/1 hover:bg-white/10 border border-white/1 px-5 py-2 rounded-full text-sm font-medium transition flex items-center gap-2 active:scale-95 shadow-sm hover:border-gray-200 dark:hover:border-white/20"
     :class="isFavorited
-      ? 'text-[#EC4141] border-[#EC4141]/40 dark:border-[#EC4141]/40'
+      ? 'collection-favorite-btn--active text-[color:var(--favorite-color)]'
       : 'text-gray-900 dark:text-gray-100'"
   >
     <svg
@@ -52,3 +52,9 @@ const handleToggle = () => {
     {{ isFavorited ? '已收藏' : favoriteLabel }}
   </button>
 </template>
+
+<style scoped>
+.collection-favorite-btn--active {
+  border-color: color-mix(in srgb, var(--favorite-color) 40%, transparent);
+}
+</style>

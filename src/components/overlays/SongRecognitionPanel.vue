@@ -354,8 +354,8 @@ onUnmounted(() => {
                 <button
                   class="grid h-8 w-8 place-items-center rounded-full transition-colors cursor-pointer"
                   :class="isFavorite(match)
-                    ? 'text-[#EC4141] hover:bg-[#EC4141]/10'
-                    : 'text-gray-400 hover:text-[#EC4141] hover:bg-[#EC4141]/10 dark:text-gray-500'"
+                    ? 'recognition-favorite-btn--active'
+                    : 'text-gray-400 recognition-favorite-btn hover:text-[color:var(--favorite-color)] dark:text-gray-500'"
                   :title="isFavorite(match) ? '已收藏' : '收藏'"
                   @click="handleFavorite(match)"
                 >
@@ -398,5 +398,17 @@ onUnmounted(() => {
   50% {
     transform: scaleY(1);
   }
+}
+
+/* 收藏按钮：颜色独立于主题色，使用 --favorite-color 变量 */
+.recognition-favorite-btn:hover {
+  background-color: color-mix(in srgb, var(--favorite-color) 10%, transparent);
+}
+.recognition-favorite-btn--active {
+  color: var(--favorite-color);
+  background-color: color-mix(in srgb, var(--favorite-color) 10%, transparent);
+}
+.recognition-favorite-btn--active:hover {
+  background-color: color-mix(in srgb, var(--favorite-color) 15%, transparent);
 }
 </style>

@@ -275,13 +275,16 @@ onMounted(() => {
                  skipNextPageTransition 翻转时会把整个页面子树重挂载，在页面
                  异步列表（音乐库扫描/歌单加载）更新进行中把子 vnode 的 el 置空，
                  触发 patchKeyedChildren 卸载时读取 null 的 parentNode 崩溃。
-                 skip 期间同时关闭 css 与 out-in（mode 置空），让组件替换变成
-                 同步直换，避免启动重绘的两次连续路由替换经过 out-in 的
-                 进出 Frag 管理与延迟挂载产生 patch 竞态（此前 :name='' + :css=false
-                 仍会走 out-in，双导航下 parentNode / subTree / insertBefore 崩溃屡发）。 -->
+                 skip 期间必须把 mode 置空（不 hold 旧树、不走 out-in 的进出 Frag
+                 管理），否则启动重绘的两次连续路由替换会经 out-in 产生 patch 竞态
+                 （此前 :name='' + :css=false 仍会走 out-in，双导航下
+                 parentNode / subTree / insertBefore 崩溃屡发）。
+                 css 保持开启并用纯 CSS 入场动画（page-enter-in）给首进入口补一个
+                 淡入：该动画只改合成属性、不参与 Vue 的 DOM 重排，天然不会把
+                 异步列表行 el 置 null，在手感上也避免首帧硬切/整页突然出现。 -->
             <transition
-              :name="skipNextPageTransition ? '' : 'page-fade'"
-              :css="skipNextPageTransition ? false : true"
+              :name="skipNextPageTransition ? 'page-enter' : 'page-fade'"
+              :css="true"
               :mode="skipNextPageTransition ? undefined : 'out-in'"
             >
               <component
@@ -399,6 +402,21 @@ onMounted(() => {
 .page-fade-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+/* 首进入口：纯 CSS 入场动画。只定义 enter-active（入场淡入），不定义任何
+   leave 规则 —— 旧树由 Vue 在下一帧直接移除，不进入 out-in 状态机。 */
+.page-enter-enter-active {
+  animation: page-enter-in 0.22s ease;
+}
+
+@keyframes page-enter-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .footer-slide-enter-active,
