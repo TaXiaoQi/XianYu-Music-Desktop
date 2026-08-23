@@ -199,8 +199,8 @@ onUnmounted(() => {
 
       <section class="transport" aria-label="播放控制">
         <button
-          class="transport-circle"
-          :class="{ 'transport-circle--active': isFavorite }"
+          class="transport-circle transport-favorite"
+          :class="{ 'transport-favorite--active': isFavorite }"
           title="收藏"
           @click="sendAction('toggle-favorite', { hide: false })"
         >
@@ -439,6 +439,11 @@ onUnmounted(() => {
   background: rgba(236, 65, 65, 0.1);
 }
 
+.transport-favorite--active {
+  color: var(--favorite-color);
+  background: color-mix(in srgb, var(--favorite-color) 10%, transparent);
+}
+
 .transport-circle:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
@@ -448,6 +453,11 @@ onUnmounted(() => {
 .transport-circle--active:hover {
   color: #EC4141;
   background: rgba(236, 65, 65, 0.16);
+}
+
+.transport-favorite--active:hover {
+  color: var(--favorite-color);
+  background: color-mix(in srgb, var(--favorite-color) 16%, transparent);
 }
 
 .menu-row:hover {

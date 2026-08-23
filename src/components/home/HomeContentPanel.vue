@@ -156,20 +156,46 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
       <!-- 发现区：顶部 TAB（统计 / 每日推荐 / 音源榜单）。
            KeepAlive 缓存三个视图：切 TAB 仅 deactivate/activate，不重新挂载，
            列表状态与滚动位置保留，避免每次切换都出现加载动画像"整页刷新" -->
-      <div v-if="isDiscoverMode" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+      <div v-if="isDiscoverMode" data-test="discover-container" class="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
         <HomeDiscoverTabs :active-mode="localViewMode" @change="handleDiscoverTabChange" />
-        <!-- 发现区 TAB 切换：复用全局 page-fade（与侧边栏路由切换同一套动效，
-     opacity 0.3s ease + 自上而下/从下往上的 6px 位移），三视图统一 -->
-<Transition name="page-fade" mode="out-in">
+        <!-- 发现区 TAB 用 KeepAlive 缓存三视图（切 TAB 仅 deactivate/activate，
+             保留列表状态与滚动位置）。绝不能再用 <transition mode="out-in"> 包住
+             KeepAlive：out-in 离场时会把 KeepAlive 缓存子树移到隐藏容器（deactivate），
+             同时 leave 又在删节点，双重重删导致 remove(el.parentNode) 读到 null 崩溃
+             （正式构建启动即命中，dev 内存加载恰好不触发）。KeepAlive 必须单独存在，
+             不包裹在任何 Vue 过渡状态机里。 -->
           <KeepAlive>
             <StatisticsPage v-if="localViewMode === 'statistics'" key="statistics" class="flex-1 min-h-0" />
             <DailyRecommend v-else-if="localViewMode === 'dailyRecommend'" key="dailyRecommend" class="flex-1 min-h-0" />
             <TopLists v-else-if="localViewMode === 'topLists'" key="topLists" class="flex-1 min-h-0" />
           </KeepAlive>
-        </Transition>
       </div>
 
-      <Transition v-else name="tab-slide">
+      <!-- 虚拟滚动 SongTable 不能再放进 <Transition>：它的行是 keyed v-for Fragment，
+           补丁时 patchBlockChildren→patch→processFragment→patchKeyedChildren 卸载行节点。
+           若 SongTable 由外层 <transition mode="out-in"> 持有（其 enter/leave 会临时重排、
+           甚至把已置 null 的行 el 送入 hostRemove），加载/扫描异步更新它的虚拟列表时，
+           卸载 phase 会读到 el.parentNode 为 null 崩溃（正式构建时序触发，dev 恰好不触发）。
+           故 SongTable 永远渲染为普通条件分支，不参与任何 Vue 过渡状态机；
+           仅歌手的两个从属子视图（专辑/详情）可用 tab-slide 过渡，它们是非虚拟列表轻量内容。 -->
+      <SongTable
+        v-if="!isDiscoverMode && !(localViewMode === 'artist' && (artistActiveTab === 'albums' || artistActiveTab === 'details'))"
+        ref="localSongTableRef"
+        :songs="localSongList"
+        :song-paths="localViewMode === 'playlist' ? localSongPaths : undefined"
+        :resolve-song-by-path="localViewMode === 'playlist' ? resolveSongByPath : undefined"
+        :isBatchMode="isBatchMode"
+        :selectedPaths="selectedPaths"
+        :memoryScopeKey="songTableMemoryScopeKey"
+        :download-completed-as-local="true"
+        class="min-h-0"
+        @play="$emit('playSong', $event)"
+        @contextmenu="handleSongContextMenu"
+        @update:selectedPaths="$emit('update:selectedPaths', $event)"
+        @drag-start="handleTableDragStart"
+      />
+
+      <Transition v-if="localViewMode === 'artist' && (artistActiveTab === 'albums' || artistActiveTab === 'details')" name="tab-slide">
         <ArtistAlbumGrid
           v-if="localViewMode === 'artist' && artistActiveTab === 'albums'"
           :albums="artistAlbumList"
@@ -182,23 +208,6 @@ const handleDiscoverTabChange = (tab: HomeDiscoverTab) => {
           v-else-if="localViewMode === 'artist' && artistActiveTab === 'details'"
           message="Artist details coming soon"
           icon-path="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-
-        <SongTable
-          v-else
-          ref="localSongTableRef"
-          :songs="localSongList"
-          :song-paths="localViewMode === 'playlist' ? localSongPaths : undefined"
-          :resolve-song-by-path="localViewMode === 'playlist' ? resolveSongByPath : undefined"
-          :isBatchMode="isBatchMode"
-          :selectedPaths="selectedPaths"
-          :memoryScopeKey="songTableMemoryScopeKey"
-          :download-completed-as-local="true"
-          class="min-h-0"
-          @play="$emit('playSong', $event)"
-          @contextmenu="handleSongContextMenu"
-          @update:selectedPaths="$emit('update:selectedPaths', $event)"
-          @drag-start="handleTableDragStart"
         />
       </Transition>
     </section>
