@@ -38,7 +38,7 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
   try {
     const data = await signedRequest<Record<string, unknown>>(
       'get_about_config',
-      {},
+      { platform: 'desktop' },
       { fetchTimeoutMs: 8_000, timeoutMs: 10_000 },
     );
 

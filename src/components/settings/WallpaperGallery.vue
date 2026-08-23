@@ -109,7 +109,7 @@ const fetchWallpapers = async () => {
   isLoading.value = true;
   loadError.value = '';
   try {
-    const data = await signedRequest<Record<string, unknown>[]>('list_wallpapers', {});
+    const data = await signedRequest<Record<string, unknown>[]>('list_wallpapers', { platform: 'desktop' });
     wallpapers.value = Array.isArray(data) ? data.map((w: Record<string, unknown>) => ({
       id: Number(w.id || 0),
       title: String(w.title || ''),
@@ -134,6 +134,7 @@ const fetchMyWallpapers = async () => {
   try {
     const data = await signedRequest<Record<string, unknown>[]>('my_wallpapers', {
       ciyuanxi_id: currentUser.value.ciyuanxi_id,
+      platform: 'desktop',
     });
     // 与 fetchWallpapers 一致，对 API 返回字段做容错映射，
     // 兼容 camelCase / snake_case 以及 pending 状态下缺少 thumbnailUrl 的情况
@@ -319,6 +320,7 @@ const doUpload = async () => {
         title,
         description: uploadForm.value.description.trim(),
         category: uploadForm.value.category.trim() || '用户上传',
+        platform: 'desktop',
         image_data: imageData,
       },
       { fetchTimeoutMs: 90_000, timeoutMs: 95_000 },
