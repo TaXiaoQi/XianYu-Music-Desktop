@@ -776,6 +776,18 @@ pub struct SongDownloadProgress {
     pub speed: f64,
 }
 
+/// 生成媒体流请求的 URL 候选：http 直链优先升级为 https。
+///
+/// IDM 等下载工具经 Winsock LSP 拦截系统级明文 HTTP 流量，按 URL 扩展名/
+/// MIME 嗅探音频直链并弹窗接管；https 的 TLS 加密让嗅探失效。
+/// 音源 CDN 不支持 https（连接失败/非 2xx）时由调用方回退原 http URL。
+pub(crate) fn media_url_candidates(url: &str) -> Vec<String> {
+    match url.strip_prefix("http://") {
+        Some(rest) => vec![format!("https://{rest}"), url.to_string()],
+        None => vec![url.to_string()],
+    }
+}
+
 /// 下载在线歌曲的真实音源直链到指定目标路径（流式写入 + 进度回报）。
 ///
 /// 前端负责解析音源直链、计算最终目标文件路径（含扩展名与命名冲突处理），
@@ -810,8 +822,8 @@ pub async fn download_online_song(
     // 模拟浏览器媒体流请求（Accept/Range），降低被下载器识别为“文件下载”的概率。
     // 但部分音源 CDN 对开放式 Range（高品/无损直链节点尤其常见）会返回 502/416/403，
     // 此时自动回退到不带 Range 的普通 GET。
-    let send_with_range = |with_range: bool| {
-        let mut builder = client.get(&url).header(
+    let send_with_range = |req_url: &str, with_range: bool| {
+        let mut builder = client.get(req_url).header(
             "Accept",
             "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5",
         );
@@ -830,20 +842,38 @@ pub async fn download_online_song(
         builder.send()
     };
 
-    let mut response = send_with_range(true)
-        .await
-        .map_err(|e| format!("发送下载请求失败: {e}"))?;
-    let status_code = response.status().as_u16();
-    if !response.status().is_success()
-        && (status_code == 502 || status_code == 416 || status_code == 403)
-    {
-        response = send_with_range(false)
-            .await
-            .map_err(|e| format!("发送下载请求（无 Range 回退）失败: {e}"))?;
+    // http 直链优先升级 https（规避 IDM 等下载工具的系统级明文嗅探），
+    // 每个 URL 候选先带 Range 请求，CDN 拒绝开放式 Range 时回退普通 GET。
+    let mut response: Option<reqwest::Response> = None;
+    let mut last_err = String::new();
+    for candidate in media_url_candidates(&url) {
+        match send_with_range(&candidate, true).await {
+            Ok(resp) if resp.status().is_success() => {
+                response = Some(resp);
+                break;
+            }
+            Ok(resp) => {
+                let status_code = resp.status().as_u16();
+                if status_code == 502 || status_code == 416 || status_code == 403 {
+                    match send_with_range(&candidate, false).await {
+                        Ok(resp) if resp.status().is_success() => {
+                            response = Some(resp);
+                            break;
+                        }
+                        Ok(resp) => last_err = format!("下载服务器返回错误状态: {}", resp.status()),
+                        Err(e) => last_err = format!("发送下载请求失败: {e}"),
+                    }
+                } else {
+                    last_err = format!("下载服务器返回错误状态: {}", resp.status());
+                }
+            }
+            Err(e) => last_err = format!("发送下载请求失败: {e}"),
+        }
     }
-    if !response.status().is_success() {
-        return Err(format!("下载服务器返回错误状态: {}", response.status()));
-    }
+    let mut response = match response {
+        Some(r) => r,
+        None => return Err(last_err),
+    };
 
     let total_size = response.content_length().unwrap_or(0);
 
@@ -861,7 +891,6 @@ pub async fn download_online_song(
     let start_time = Instant::now();
     let mut last_emit = Instant::now();
 
-    let mut response = response;
     loop {
         match response.chunk().await {
             Ok(Some(chunk)) => {
@@ -1389,23 +1418,46 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
         .build()
         .map_err(|e| format!("创建探测客户端失败: {e}"))?;
 
-    let resp = match client
-        .get(&url)
-        .header(reqwest::header::RANGE, "bytes=0-0")
-        .header(
-            reqwest::header::ACCEPT,
-            "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,*/*;q=0.5",
-        )
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
+    // http 直链优先 https（规避下载工具嗅探）；https 失败/非 2xx 时回退原 URL
+    let candidates = media_url_candidates(&url);
+    let mut resp_opt: Option<reqwest::Response> = None;
+    let mut probe_err: Option<String> = None;
+    for candidate in &candidates {
+        match client
+            .get(candidate)
+            .header(reqwest::header::RANGE, "bytes=0-0")
+            .header(
+                reqwest::header::ACCEPT,
+                "audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,*/*;q=0.5",
+            )
+            .send()
+            .await
+        {
+            Ok(r) => {
+                if r.status().is_success() || candidates.len() == 1 {
+                    resp_opt = Some(r);
+                    break;
+                }
+                // https 非 2xx：CDN 可能不支持 https，记录状态后回退 http
+                if probe_err.is_none() {
+                    probe_err = Some(format!("HTTP {}", r.status()));
+                }
+            }
+            Err(e) => {
+                if probe_err.is_none() {
+                    probe_err = Some(format!("请求失败: {e}"));
+                }
+            }
+        }
+    }
+    let resp = match resp_opt {
+        Some(r) => r,
+        None => {
             return Ok(ProbeUrlInfo {
                 url,
                 size: 0,
-                error: Some(format!("请求失败: {e}")),
-            });
+                error: probe_err,
+            })
         }
     };
 

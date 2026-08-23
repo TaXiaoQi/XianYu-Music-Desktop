@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "弦予音乐",
-        "width": 1200,
-        "height": 800,
+        "width": 960,
+        "height": 600,
         "minWidth": 960,
         "minHeight": 600,
         "decorations": false,

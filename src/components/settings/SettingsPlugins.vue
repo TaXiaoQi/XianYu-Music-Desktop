@@ -25,7 +25,7 @@ if (overlayZMatch) {
   provide(SETTING_HINT_Z_INDEX, parseInt(overlayZMatch[1], 10) + 100);
 }
 
-const { showToast } = useToast();
+const { showToast, showProgressToast } = useToast();
 const { settings, patchSettings } = useSettings();
 
 // 插件设置快捷访问
@@ -327,9 +327,22 @@ async function setupDragDropListeners() {
 
     if (pluginFiles.length === 0) return;
 
-    for (const filePath of pluginFiles) {
-      await installFromFilePath(filePath);
+    if (pluginFiles.length === 1) {
+      await installFromFilePath(pluginFiles[0]);
+      return;
     }
+
+    // 多文件批量导入：进度 toast 展示处理进度（单个成败由各自安装流程提示）
+    const progress = showProgressToast(`正在导入插件文件 (0/${pluginFiles.length})`);
+    for (let i = 0; i < pluginFiles.length; i++) {
+      const fileName = pluginFiles[i].split(/[\\/]/).pop() || pluginFiles[i];
+      progress.update(
+        `正在导入 ${fileName} (${i + 1}/${pluginFiles.length})`,
+        ((i + 1) / pluginFiles.length) * 100,
+      );
+      await installFromFilePath(pluginFiles[i]);
+    }
+    progress.complete(`已处理 ${pluginFiles.length} 个插件文件`, 'success');
   });
 }
 
@@ -430,12 +443,20 @@ async function handleInstallFromUrl() {
 
 /** 批量导入多插件 JSON 中的所有插件 */
 async function importMultiplePlugins(pluginList: Array<{ name?: string; url: string; version?: string }>) {
+  const items = pluginList.filter(p => p?.url);
+  if (items.length === 0) return;
+
   let successCount = 0;
   let failCount = 0;
   const names: string[] = [];
+  const progress = showProgressToast(`正在导入插件 (0/${items.length})`);
 
-  for (const item of pluginList) {
-    if (!item.url) continue;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    progress.update(
+      `正在导入 ${item.name || '未命名插件'} (${i + 1}/${items.length})`,
+      ((i + 1) / items.length) * 100,
+    );
     try {
       // 下载单个插件脚本
       let script = '';
@@ -470,9 +491,12 @@ async function importMultiplePlugins(pluginList: Array<{ name?: string; url: str
 
   refreshPluginList();
   if (successCount > 0) {
-    showToast(`成功导入 ${successCount} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`, 'success');
+    progress.complete(
+      `成功导入 ${successCount} 个插件: ${names.join(', ')}${failCount > 0 ? `，${failCount} 个失败` : ''}`,
+      'success',
+    );
   } else {
-    showToast(`所有插件导入失败 (${failCount} 个)`, 'error');
+    progress.fail(`所有插件导入失败 (${failCount} 个)`);
   }
 }
 
@@ -716,9 +740,17 @@ function confirmAddSubscription() {
 async function handleInstallFromSubscription(sub: PluginSubscription) {
   if (isPluginBusy.value) return;
   isPluginBusy.value = true;
+  const progress = showProgressToast(`正在同步订阅 ${sub.name}...`);
   try {
     const result = await installFromSubscriptionUrl(sub.url, {
       skipVersionCheck: pluginSettings.value.skipVersionCheck,
+      onPluginProgress: (done, total, name) => {
+        const current = Math.min(done + 1, total);
+        progress.update(
+          name ? `正在安装 ${name} (${current}/${total})` : `正在安装插件 (${current}/${total})`,
+          total > 0 ? (current / total) * 100 : 100,
+        );
+      },
     });
     // 更新该订阅的同步状态
     updateSubscription(sub.id, {
@@ -730,17 +762,18 @@ async function handleInstallFromSubscription(sub: PluginSubscription) {
     subscriptions.value = getSubscriptions();
     refreshPluginList();
     if (result.successCount > 0) {
-      showToast(
+      progress.complete(
         `从 ${sub.name} 安装 ${result.successCount} 个插件${result.failCount ? `，${result.failCount} 个失败` : ''}`,
         'success',
       );
     } else {
-      showToast(`从 ${sub.name} 安装失败: ${result.errors[0] || '无可安装插件'}`, 'error');
+      progress.fail(`从 ${sub.name} 安装失败: ${result.errors[0] || '无可安装插件'}`);
     }
   } catch (e: any) {
-    showToast(`同步失败: ${e?.message || e}`, 'error');
+    progress.fail(`同步失败: ${e?.message || e}`);
   } finally {
     isPluginBusy.value = false;
+    progress.close();
   }
 }
 
@@ -753,18 +786,25 @@ async function handleSyncAllSubscriptions() {
     return;
   }
   syncingAll.value = true;
+  const progress = showProgressToast(`正在同步订阅 (0/${subscriptions.value.length})`);
   try {
-    const res = await installAllSubscriptions();
+    const res = await installAllSubscriptions((index, total, sub) => {
+      progress.update(
+        `正在同步 ${sub.name || '订阅'} (${index + 1}/${total})`,
+        ((index + 1) / total) * 100,
+      );
+    });
     subscriptions.value = getSubscriptions();
     refreshPluginList();
-    showToast(
+    progress.complete(
       `同步完成: 共安装 ${res.totalInstalled} 个插件${res.failedSubs ? `，${res.failedSubs} 个订阅失败` : ''}`,
       res.failedSubs ? 'info' : 'success',
     );
   } catch (e: any) {
-    showToast(`同步失败: ${e?.message || e}`, 'error');
+    progress.fail(`同步失败: ${e?.message || e}`);
   } finally {
     syncingAll.value = false;
+    progress.close();
   }
 }
 
