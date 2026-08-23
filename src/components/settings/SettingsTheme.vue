@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue';
+import { Check, ChevronDown } from 'lucide-vue-next';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
+import CustomColorPicker from './CustomColorPicker.vue';
 
 const { isEnglish } = useI18n();
 
@@ -201,6 +203,109 @@ const commitAccentColor = (event: Event) => {
   setAccentColor(input.value);
   input.value = theme.value.accentColor;
 };
+
+// ---- 自定义 2D 调色盘弹窗控制器 ----
+const isCustomColorPickerOpen = ref(false);
+const colorPickerTriggerRef = ref<HTMLElement | null>(null);
+
+function toggleCustomColorPicker() {
+  isCustomColorPickerOpen.value = !isCustomColorPickerOpen.value;
+}
+
+// ---- 歌词页封面选择（自定义弹窗，替代原生 <select>） ----
+const COVER_OPTIONS = computed<Array<{ value: 'show' | 'hide' | 'remember'; label: string }>>(() => [
+  { value: 'show', label: TEXT.value.playerDetailCoverShow },
+  { value: 'hide', label: TEXT.value.playerDetailCoverHide },
+  { value: 'remember', label: TEXT.value.playerDetailCoverRemember },
+]);
+
+const selectedCoverOption = computed(() =>
+  COVER_OPTIONS.value.find((option) => option.value === playerDetailCoverBehavior.value),
+);
+
+const coverTriggerRef = ref<HTMLElement | null>(null);
+const coverMenuRef = ref<HTMLElement | null>(null);
+const isCoverMenuOpen = ref(false);
+const coverMenuStyle = ref<Record<string, string>>({});
+
+async function toggleCoverMenu() {
+  isCoverMenuOpen.value = !isCoverMenuOpen.value;
+  if (isCoverMenuOpen.value) {
+    await nextTick();
+    updateCoverMenuPosition();
+  }
+}
+
+function closeCoverMenu() {
+  isCoverMenuOpen.value = false;
+}
+
+function updateCoverMenuPosition() {
+  const trigger = coverTriggerRef.value;
+  if (!trigger) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportPadding = 16;
+  const gap = 8;
+  const menuWidth = Math.max(rect.width, 200);
+  const menuHeight = 160; // 3 选项 + padding，足够
+
+  let left = rect.right - menuWidth;
+  left = Math.min(left, window.innerWidth - viewportPadding - menuWidth);
+  left = Math.max(viewportPadding, left);
+
+  const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+  const shouldOpenUpward = availableBelow < menuHeight && rect.top - viewportPadding > menuHeight;
+
+  coverMenuStyle.value = shouldOpenUpward
+    ? {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        bottom: `${Math.round(window.innerHeight - rect.top + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+      }
+    : {
+        position: 'fixed',
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(rect.bottom + gap)}px`,
+        width: `${Math.round(menuWidth)}px`,
+      };
+}
+
+function handleCoverSelect(value: 'show' | 'hide' | 'remember') {
+  setPlayerDetailCoverBehavior(value);
+  closeCoverMenu();
+}
+
+function handlePointerDownOutside(event: MouseEvent) {
+  const target = event.target as Node | null;
+  if (!target) return;
+  if (coverTriggerRef.value?.contains(target)) return;
+  if (coverMenuRef.value?.contains(target)) return;
+  closeCoverMenu();
+}
+
+function handleCoverEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeCoverMenu();
+}
+
+function handleCoverViewportChange() {
+  if (isCoverMenuOpen.value) updateCoverMenuPosition();
+}
+
+onMounted(() => {
+  window.addEventListener('mousedown', handlePointerDownOutside);
+  window.addEventListener('keydown', handleCoverEscape);
+  window.addEventListener('resize', handleCoverViewportChange);
+  document.addEventListener('scroll', handleCoverViewportChange, true);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('mousedown', handlePointerDownOutside);
+  window.removeEventListener('keydown', handleCoverEscape);
+  window.removeEventListener('resize', handleCoverViewportChange);
+  document.removeEventListener('scroll', handleCoverViewportChange, true);
+});
 </script>
 
 <template>
@@ -324,7 +429,7 @@ const commitAccentColor = (event: Event) => {
           <transition name="flow-panel">
             <div
               v-if="theme.dynamicBgType === 'flow' && showFlowTuning && !isDynamicBgDisabled"
-              class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
+              class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
             >
               <div class="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -559,7 +664,7 @@ const commitAccentColor = (event: Event) => {
         <transition name="flow-panel">
           <div
             v-if="materialMode === 'blur' && showBlurTuning"
-            class="mt-4 rounded-2xl border border-gray-200/40 bg-white/20 p-4 shadow-sm dark:border-gray-800/40 dark:bg-black/10"
+            class="mt-4 rounded-2xl border border-gray-200/50 bg-white/30 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-black/20"
           >
             <div class="mb-4 flex items-center justify-between gap-3">
               <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ BLUR_TEXT.panelTitle }}</div>
@@ -623,15 +728,27 @@ const commitAccentColor = (event: Event) => {
         <div class="mt-4 flex flex-col gap-3 border-t border-gray-200/40 pt-4 sm:flex-row sm:items-end dark:border-white/10">
           <label class="flex min-w-0 flex-1 items-center gap-3">
             <span class="text-xs font-medium text-gray-600 dark:text-white/60">{{ TEXT.accentCustom }}</span>
-            <span class="relative h-9 w-12 shrink-0 overflow-hidden rounded-lg border border-black/10 shadow-sm dark:border-white/15">
-              <input
-                :value="theme.accentColor"
-                type="color"
-                class="absolute -inset-2 h-14 w-16 cursor-pointer border-0 bg-transparent p-0"
-                :aria-label="TEXT.accentCustom"
-                @input="commitAccentColor"
-              />
-            </span>
+            <button
+              ref="colorPickerTriggerRef"
+              type="button"
+              class="relative h-9 w-12 shrink-0 overflow-hidden rounded-xl border border-black/10 shadow-sm transition-transform active:scale-95 dark:border-white/15 cursor-pointer"
+              :title="TEXT.accentCustom"
+              @click="toggleCustomColorPicker"
+            >
+              <span
+                class="absolute inset-0 transition-colors"
+                :style="{ backgroundColor: theme.accentColor }"
+              ></span>
+            </button>
+
+            <!-- 具备大圆角（rounded-2xl）与平滑打开/关闭动画（picker-pop）的 2D 调色盘面板 -->
+            <CustomColorPicker
+              :model-value="theme.accentColor"
+              :is-open="isCustomColorPickerOpen"
+              :trigger-ref="colorPickerTriggerRef"
+              @update:model-value="setAccentColor"
+              @close="isCustomColorPickerOpen = false"
+            />
           </label>
 
           <label class="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -670,33 +787,47 @@ const commitAccentColor = (event: Event) => {
         <SettingHint :text="TEXT.playerDetailCoverHint" />
       </h2>
 
-      <label class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
+      <label class="relative flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 dark:border-gray-800/40 dark:bg-black/10">
         <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
           {{ TEXT.playerDetailCoverLabel }}
         </span>
-        <span class="relative w-52 shrink-0">
-          <select
-            :value="playerDetailCoverBehavior"
-            class="h-9 w-full cursor-pointer appearance-none rounded-lg border border-black/10 bg-white/55 pl-3 pr-9 text-xs font-medium text-gray-700 outline-none transition focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200"
-            @change="setPlayerDetailCoverBehavior(($event.target as HTMLSelectElement).value as 'show' | 'hide' | 'remember')"
-          >
-            <option value="show">{{ TEXT.playerDetailCoverShow }}</option>
-            <option value="hide">{{ TEXT.playerDetailCoverHide }}</option>
-            <option value="remember">{{ TEXT.playerDetailCoverRemember }}</option>
-          </select>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </span>
+        <button
+          ref="coverTriggerRef"
+          type="button"
+          class="cover-select-trigger flex h-9 w-52 shrink-0 items-center justify-between gap-2 rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-700 transition hover:bg-white/70 focus:border-[#EC4141]/50 focus:outline-none focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/[0.15]"
+          :class="isCoverMenuOpen ? 'cover-select-trigger--open' : ''"
+          @click="toggleCoverMenu"
+        >
+          <span class="truncate">{{ selectedCoverOption?.label }}</span>
+          <ChevronDown class="h-4 w-4 shrink-0 text-gray-400 transition-transform dark:text-gray-500" :class="isCoverMenuOpen ? 'rotate-180' : ''" aria-hidden="true" />
+        </button>
+
+        <Teleport to="body">
+          <Transition name="cover-select-menu">
+            <div
+              v-if="isCoverMenuOpen"
+              ref="coverMenuRef"
+              class="cover-select-menu"
+              :style="coverMenuStyle"
+              @click.stop
+              @mousedown.stop
+            >
+              <div class="cover-select-list">
+                <button
+                  v-for="option in COVER_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  class="cover-select-option"
+                  :class="playerDetailCoverBehavior === option.value ? 'cover-select-option--active' : ''"
+                  @click="handleCoverSelect(option.value)"
+                >
+                  <span>{{ option.label }}</span>
+                  <Check v-if="playerDetailCoverBehavior === option.value" class="h-4 w-4 shrink-0" />
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
       </label>
     </section>
 
@@ -777,13 +908,15 @@ const commitAccentColor = (event: Event) => {
 <style scoped>
 .flow-panel-enter-active,
 .flow-panel-leave-active {
-  transition: opacity 0.24s ease, transform 0.24s ease;
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
 }
 
 .flow-panel-enter-from,
 .flow-panel-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: scale(0.96) translateY(-10px);
 }
 
 .flow-slider {
@@ -814,5 +947,103 @@ const commitAccentColor = (event: Event) => {
   background: #ec4141;
   box-shadow: 0 4px 10px rgba(236, 65, 65, 0.35);
   cursor: pointer;
+}
+
+/* ---- 歌词页封面 inline 下拉面板 ---- */
+.cover-select-trigger {
+  cursor: pointer;
+}
+
+.cover-select-trigger--open {
+  border-color: rgba(236, 65, 65, 0.5);
+  box-shadow: 0 0 0 3px rgba(236, 65, 65, 0.1);
+}
+
+.cover-select-menu {
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16), 0 8px 20px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  z-index: 120;
+}
+
+.dark .cover-select-menu {
+  background: rgba(43, 43, 43, 0.9);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.34), 0 8px 20px rgba(0, 0, 0, 0.24);
+}
+
+.cover-select-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cover-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(55 65 81);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.dark .cover-select-option {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.cover-select-option:hover {
+  border-color: rgba(236, 65, 65, 0.16);
+  background: rgba(236, 65, 65, 0.06);
+  color: rgb(17 24 39);
+}
+
+.dark .cover-select-option:hover {
+  border-color: rgba(236, 65, 65, 0.22);
+  background: rgba(236, 65, 65, 0.1);
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.cover-select-option--active,
+.cover-select-option--active:hover {
+  border-color: rgba(236, 65, 65, 0.2);
+  background: linear-gradient(180deg, rgba(236, 65, 65, 0.12), rgba(236, 65, 65, 0.06));
+  color: #ec4141;
+}
+
+.dark .cover-select-option--active,
+.dark .cover-select-option--active:hover {
+  border-color: rgba(236, 65, 65, 0.28);
+  background: linear-gradient(180deg, rgba(236, 65, 65, 0.18), rgba(236, 65, 65, 0.08));
+  color: #ff9a9a;
+}
+
+.cover-select-menu-enter-active,
+.cover-select-menu-leave-active {
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+
+.cover-select-menu-enter-from,
+.cover-select-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
 }
 </style>

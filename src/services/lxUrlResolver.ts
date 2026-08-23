@@ -138,7 +138,10 @@ export function buildLxSongInfo(
   lxSource: string,
   cachedInfo: LxSearchResultItem | null,
 ): Record<string, unknown> {
-  const normalizedTypes = normalizeLxTypes(cachedInfo?._types);
+  const anySong = song as any;
+  const normalizedTypes = normalizeLxTypes(cachedInfo?._types ?? anySong._types ?? anySong.rawData?._types);
+  const hash = cachedInfo?.hash || anySong._hash || anySong.hash || anySong.rawData?.hash || (lxSource === 'kg' ? songmid : undefined);
+
   return {
     songId: songmid,
     name: song.name,
@@ -146,14 +149,14 @@ export function buildLxSongInfo(
     albumName: song.album,
     source: lxSource,
     songmid,
-    hash: cachedInfo?.hash,
-    copyrightId: cachedInfo?.copyrightId,
-    strMediaMid: cachedInfo?.strMediaMid,
-    albumId: cachedInfo?.albumId,
-    albumMid: cachedInfo?.albumMid,
-    interval: cachedInfo?.interval,
+    hash,
+    copyrightId: cachedInfo?.copyrightId || anySong._copyrightId || anySong.copyrightId || anySong.rawData?.copyrightId,
+    strMediaMid: cachedInfo?.strMediaMid || anySong._strMediaMid || anySong.strMediaMid || anySong.rawData?.strMediaMid,
+    albumId: cachedInfo?.albumId || anySong._albumId || anySong.albumId || anySong.rawData?.albumId,
+    albumMid: cachedInfo?.albumMid || anySong._albumMid || anySong.albumMid || anySong.rawData?.albumMid,
+    interval: cachedInfo?.interval || anySong.rawData?.interval,
     _types: normalizedTypes,
-    types: cachedInfo?.types,
+    types: cachedInfo?.types || anySong.rawData?.types,
   };
 }
 

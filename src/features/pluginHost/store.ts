@@ -71,10 +71,57 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   // ===== 机架配置（唯一数据源）=====
   const rackConfig = reactive<PluginHostRackConfig>({ masterEnabled: false, slots: [] });
 
-  // ===== 扫描结果 =====
+  // ===== 扫描结果（持久化记忆） =====
   const scannedPlugins = ref<PluginHostScanEntry[]>([]);
   const isScanning = ref(false);
   const hasScanned = ref(false);
+  const currentScanningPath = ref<string>('');
+  const timeoutPluginPath = ref<string>('');
+
+  // 从本地恢复上一次成功扫描的插件列表
+  try {
+    const saved = localStore.getJson<PluginHostScanEntry[]>('plugin_host_scanned_plugins');
+    if (Array.isArray(saved) && saved.length > 0) {
+      scannedPlugins.value = saved;
+      hasScanned.value = true;
+    }
+  } catch (err) {
+    console.warn('[pluginHostStore] 恢复已扫描插件列表失败:', err);
+  }
+
+  const persistScannedPlugins = () => {
+    try {
+      localStore.setJson('plugin_host_scanned_plugins', scannedPlugins.value);
+    } catch (err) {
+      console.warn('[pluginHostStore] 保存已扫描插件列表失败:', err);
+    }
+  };
+
+  // ===== 禁用/黑名单插件路径列表（跳过崩溃/超时插件） =====
+  const disabledPluginPaths = ref<string[]>([]);
+  try {
+    const saved = playerStorage.readStringArray('plugin_host_disabled_paths');
+    if (saved) disabledPluginPaths.value = saved;
+  } catch (err) {
+    console.warn('[pluginHostStore] 恢复禁用插件列表失败:', err);
+  }
+  const persistDisabledPaths = () => {
+    try {
+      localStore.setJson('plugin_host_disabled_paths', disabledPluginPaths.value);
+    } catch (err) {
+      console.warn('[pluginHostStore] 保存禁用插件列表失败:', err);
+    }
+  };
+
+  const disablePluginPath = (path: string) => {
+    const clean = path.trim();
+    if (!clean) return;
+    if (!disabledPluginPaths.value.some(p => p.toLowerCase() === clean.toLowerCase())) {
+      disabledPluginPaths.value.push(clean);
+      persistDisabledPaths();
+      showToast(`已跳过并禁用插件: ${clean.split(/[\/\\]/).pop()}`, 'info');
+    }
+  };
 
   // ===== 自定义扫描目录（持久化，扫描时传给后端合并） =====
   const extraDirs = ref<string[]>([]);
@@ -123,19 +170,25 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     slots: rackConfig.slots.map(s => ({ ...s, params: { ...s.params } })),
   });
 
+  const syncRackNow = async () => {
+    if (syncTimer) {
+      clearTimeout(syncTimer);
+      syncTimer = null;
+    }
+    const config = snapshotConfig();
+    try {
+      await setRack(config);
+      localStore.setJson(playerStorageKeys.pluginHostRack, config);
+    } catch (err) {
+      console.warn('[pluginHostStore] 同步/保存机架配置失败:', err);
+    }
+  };
+
   watch(rackConfig, () => {
     if (!restored) return;
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
-      const config = snapshotConfig();
-      setRack(config).catch(err => {
-        console.warn('[pluginHostStore] 同步机架配置失败:', err);
-      });
-      try {
-        localStore.setJson(playerStorageKeys.pluginHostRack, config);
-      } catch (err) {
-        console.warn('[pluginHostStore] 保存机架配置失败:', err);
-      }
+      void syncRackNow();
     }, 200);
   }, { deep: true });
 
@@ -187,18 +240,61 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     }
   };
 
+  // ===== 实时扫描监听 =====
+  let scanTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const resetScanTimer = () => {
+    if (scanTimeoutTimer) {
+      clearTimeout(scanTimeoutTimer);
+      scanTimeoutTimer = null;
+    }
+  };
+
+  void listen<PluginHostScanEntry>('plugin-host-scan-item', event => {
+    resetScanTimer();
+    const entry = event.payload;
+    if (!scannedPlugins.value.some(p => p.format === entry.format && p.uniqueId === entry.uniqueId)) {
+      scannedPlugins.value.push(entry);
+      persistScannedPlugins();
+    }
+  }).catch(() => {});
+
+  void listen<string>('plugin-host-scan-current', event => {
+    const path = event.payload;
+    currentScanningPath.value = path;
+    resetScanTimer();
+    // 如果单个插件处理时间超过 4000ms，触发超时弹窗询问
+    scanTimeoutTimer = setTimeout(() => {
+      if (isScanning.value && currentScanningPath.value === path) {
+        timeoutPluginPath.value = path;
+      }
+    }, 4000);
+  }).catch(() => {});
+
   // ===== 扫描 =====
-  const scan = async () => {
+  const scan = async (options?: { forceFullRescan?: boolean }) => {
     if (isScanning.value) return;
     isScanning.value = true;
+    currentScanningPath.value = '';
+    timeoutPluginPath.value = '';
+
+    // 如果是强制全新重扫，则清空；否则在现有记忆的基础上增量扫描
+    if (options?.forceFullRescan) {
+      scannedPlugins.value = [];
+    }
+    resetScanTimer();
     try {
-      scannedPlugins.value = await scanPlugins(extraDirs.value);
+      const results = await scanPlugins(extraDirs.value, disabledPluginPaths.value);
+      scannedPlugins.value = results;
       hasScanned.value = true;
+      persistScannedPlugins();
     } catch (err) {
       console.warn('[pluginHostStore] 插件扫描失败:', err);
       showToast(`插件扫描失败: ${err}`, 'error');
     } finally {
+      resetScanTimer();
       isScanning.value = false;
+      currentScanningPath.value = '';
     }
   };
 
@@ -314,6 +410,8 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   // ===== 编辑器操作 =====
   const openSlotEditor = async (format: string, uniqueId: string, title: string) => {
     try {
+      // 立即刷新并把机架配置输入 Rust 共享机架，避免防抖延迟导致打开编辑器时后端找不到槽位/产生死锁
+      await syncRackNow();
       await openEditor(format, uniqueId, title);
       const next = new Set(openEditorKeys.value);
       next.add(slotKey(format, uniqueId));
@@ -346,8 +444,12 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     hasScanned,
     hasActiveSlots,
     extraDirs,
-    // 扫描
+    currentScanningPath,
+    timeoutPluginPath,
+    disabledPluginPaths,
+    // 扫描 & 禁用黑名单
     scan,
+    disablePluginPath,
     // 自定义目录
     addExtraDir,
     removeExtraDir,
@@ -355,6 +457,7 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     setMasterEnabled,
     isSlotInRack,
     addSlot,
+    syncRackNow,
     removeSlot,
     toggleSlot,
     moveSlot,
