@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { signedRequest, getStoredAuth } from '../services/auth/authService';
+import { getDeviceId } from '../services/usageStats';
 import type { Announcement } from '../utils/announcement';
 
 // 模块级单例状态，全局共享同一份反馈通知状态
@@ -38,6 +39,7 @@ async function fetchFeedbackNotifications(): Promise<FeedbackNotificationRaw[]> 
       'get_my_feedback_notifications',
       {
         ciyuanxi_id: auth.user.ciyuanxi_id ?? auth.user.id ?? '',
+        device_id: getDeviceId(),
       },
       { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
     );

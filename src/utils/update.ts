@@ -88,7 +88,7 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
   try {
     const data = await signedRequest<Record<string, unknown>>(
       'get_latest_version',
-      {},
+      { platform: 'desktop' },
       { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
     );
     if (!data || !data.version) {

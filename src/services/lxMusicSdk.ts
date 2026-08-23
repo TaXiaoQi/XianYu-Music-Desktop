@@ -11,6 +11,7 @@ import {
 import { pluginApi } from './tauri/pluginApi';
 import { hostMiguSign, hostZzcSign } from './tauri/hostCryptoApi';
 import type { LxUrlSongInfoContract } from './tauri/contracts';
+import { dispatchFallbackModule } from './fallbackModules/registry';
 
 /**
  * 将 LxSearchResultItem 转换为 Rust URL 解析器所需的合约类型
@@ -798,6 +799,15 @@ export async function txSearchAlbumsRaw(
   page = 1,
   limit = 30,
 ): Promise<Array<Record<string, any>>> {
+  return dispatchFallbackModule('lx_album', 'searchAlbums', { keyword, page, limit },
+    () => txSearchAlbumsRawBuiltin(keyword, page, limit));
+}
+
+async function txSearchAlbumsRawBuiltin(
+  keyword: string,
+  page = 1,
+  limit = 30,
+): Promise<Array<Record<string, any>>> {
   const requestData = {
     comm: {
       _channelid: '0',
@@ -852,6 +862,19 @@ export async function txSearchAlbumsRaw(
  * 返回 Map<songId, 时长秒>；单批失败跳过，不抛异常。
  */
 export async function txBatchTrackInterval(
+  songIds: Array<string | number>,
+): Promise<Map<string, number>> {
+  const result = await dispatchFallbackModule('lx_duration', 'batchTrackInterval', { songIds },
+    () => txBatchTrackIntervalBuiltin(songIds));
+  // 下发模块返回普通对象（JSON 边界），转换为 Map 保持原契约
+  if (result instanceof Map) return result;
+  if (result && typeof result === 'object') {
+    return new Map(Object.entries(result as Record<string, number>));
+  }
+  return new Map();
+}
+
+async function txBatchTrackIntervalBuiltin(
   songIds: Array<string | number>,
 ): Promise<Map<string, number>> {
   const durationMap = new Map<string, number>();
@@ -1546,6 +1569,11 @@ export const LX_SOURCE_NAMES: Record<LxSourceId, string> = {
  * @param limit Results per page
  */
 export async function lxSearch(source: LxSourceId, keyword: string, page = 1, limit?: number): Promise<LxSearchResult> {
+  return dispatchFallbackModule('lx_search', 'search', { source, keyword, page, limit },
+    () => lxSearchBuiltin(source, keyword, page, limit));
+}
+
+async function lxSearchBuiltin(source: LxSourceId, keyword: string, page = 1, limit?: number): Promise<LxSearchResult> {
   const searchFnMap: Record<string, (str: string, page: number, limit: number) => Promise<LxSearchResult>> = {
     kw: searchKw,
     kg: searchKg,
@@ -1613,6 +1641,16 @@ function isValidAlbumId(source: LxSourceId, albumId: string): boolean {
  * @returns 歌曲列表；若 albumId 无效或 API 失败则返回空数组（由调用方走搜索回退）
  */
 export async function lxGetAlbumSongs(
+  source: LxSourceId,
+  albumRawData: any,
+  page = 1,
+  limit = 30,
+): Promise<LxSearchResultItem[]> {
+  return dispatchFallbackModule('lx_album', 'getAlbumSongs', { source, albumRawData, page, limit },
+    () => lxGetAlbumSongsBuiltin(source, albumRawData, page, limit));
+}
+
+async function lxGetAlbumSongsBuiltin(
   source: LxSourceId,
   albumRawData: any,
   page = 1,
