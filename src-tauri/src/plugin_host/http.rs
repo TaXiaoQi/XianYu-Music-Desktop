@@ -138,7 +138,7 @@ impl HttpBridge {
 
         let mut has_cookie_header = false;
         for (key, value) in &headers {
-            if key.trim().is_empty() || value.trim().is_empty() {
+            if key.trim().is_empty() {
                 continue;
             }
             if key.eq_ignore_ascii_case("cookie") {

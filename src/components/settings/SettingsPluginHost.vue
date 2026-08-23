@@ -14,7 +14,7 @@ import SlotParamsDialog from './SlotParamsDialog.vue';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 
 const store = usePluginHostStore();
-const { rackConfig, isScanning, hasScanned } = storeToRefs(store);
+const { rackConfig } = storeToRefs(store);
 const { t } = useI18n();
 
 const slotKey = (slot: PluginHostRackSlotConfig) => `${slot.format}::${slot.uniqueId}`;
@@ -35,6 +35,15 @@ const confirmRemoveSlot = () => {
   if (!slotToRemove.value) return;
   store.removeSlot(slotToRemove.value.format, slotToRemove.value.uniqueId);
   slotToRemove.value = null;
+};
+
+// ===== 双击直接调起插件原生 UI 编辑器窗口 =====
+const handleSlotDblClick = async (slot: PluginHostRackSlotConfig) => {
+  if (!slot.enabled) {
+    store.toggleSlot(slot.format, slot.uniqueId);
+    await store.syncRackNow();
+  }
+  void store.openSlotEditor(slot.format, slot.uniqueId, slot.name);
 };
 
 // ===== 参数/预设弹窗（点击展开的详细机架）=====
@@ -116,9 +125,7 @@ const startDragging = (index: number, event: PointerEvent) => {
 };
 
 onMounted(() => {
-  if (!hasScanned.value && !isScanning.value) {
-    void store.scan();
-  }
+  // 移除自动扫描全盘 VST3 插件，避免加载系统损坏/加密的第三方 VST3 插件时引起崩溃闪退
 });
 </script>
 
@@ -151,8 +158,10 @@ onMounted(() => {
               v-for="(slot, index) in rackConfig.slots"
               :key="slotKey(slot)"
               data-rack-row
-              class="rack-slot-card"
+              class="rack-slot-card cursor-pointer"
               :class="{ 'rack-slot-card--dragging': draggingIndex === index }"
+              title="双击调起插件原生 UI 编辑器"
+              @dblclick="handleSlotDblClick(slot)"
             >
               <!-- 拖拽手柄 -->
               <div

@@ -421,7 +421,11 @@ export async function lxPluginRequest(
         callSandboxMethod(source.id, 'request', [{
           source: data.source,
           action,
-          info: { type: data.type, musicInfo: data.musicInfo },
+          info: {
+            type: data.type,
+            quality: data.type,
+            musicInfo: data.musicInfo,
+          },
         }], REQUEST_TIMEOUT),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`请求超时(${REQUEST_TIMEOUT / 1000}s)`)), REQUEST_TIMEOUT),
@@ -511,6 +515,7 @@ export async function lxPluginRequest(
           action,
           info: {
             type: data.type,
+            quality: data.type,
             musicInfo: data.musicInfo,
           },
         })),

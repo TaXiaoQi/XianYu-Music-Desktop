@@ -295,42 +295,41 @@ fn editor_thread_main(
             });
         });
 
-        // 持机架锁打开编辑器（音频线程此间 try_lock 失败走旁路，可接受）。
-        // 注意：open() 是必须成功的 FFI，也是插件最容易在此引爆 panic / 崩溃
-        // 的点，必须用 catch_unwind 兜底——否则未捕获的 panic 会让线程静默
-        // 死亡而永不发 ready，open_editor 的 recv() 就会无限期挂起（假死）。
+        // 用非阻塞式 try_with_slot 结合短重试打开编辑器，避免长时间独占机架锁
+        // 导致音频线程 try_lock 失败产生 2ms 声音卡顿
         let open_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            rack.with_slot(format, unique_id, |slot| {
-                let Some(editor) = slot.instance.editor() else {
-                    return Err("该插件未提供编辑器".to_string());
-                };
-                let scale = f64::from(dpi) / 96.0;
-                editor
-                    .open(WindowHandle::HWND(hwnd.cast()), scale)
-                    .map_err(|e| format!("插件编辑器打开失败: {e}"))?;
-                // getSize 在插件 GUI 未就绪/未上报有效布局时可能返回 0 或极小异常值，
-                // 直接信任会把窗口压成不可用的畸变小窗（此处最小被钳到 160×100）。
-                // 判定有效性：宽高任一边 < 48 即视为无效，回落到 FALLBACK_SIZE 兜底。
-                let reported = editor.size();
-                let from_fallback = !matches!(reported, Some((w, h)) if w >= 48 && h >= 48);
-                let size = reported
-                    .filter(|&(w, h)| w >= 48 && h >= 48)
-                    .unwrap_or(FALLBACK_SIZE);
-                Ok((size, editor.is_resizable(), from_fallback))
-            })
+            let start = std::time::Instant::now();
+            loop {
+                let res = rack.try_with_slot(format, unique_id, |slot| {
+                    let Some(editor) = slot.instance.editor() else {
+                        return Err("该插件未提供编辑器".to_string());
+                    };
+                    let scale = f64::from(dpi) / 96.0;
+                    editor
+                        .open(WindowHandle::HWND(hwnd.cast()), scale)
+                        .map_err(|e| format!("插件编辑器打开失败: {e}"))?;
+                    let reported = editor.size();
+                    let from_fallback = !matches!(reported, Some((w, h)) if w >= 48 && h >= 48);
+                    let size = reported
+                        .filter(|&(w, h)| w >= 48 && h >= 48)
+                        .unwrap_or(FALLBACK_SIZE);
+                    Ok((size, editor.is_resizable(), from_fallback))
+                });
+                if let Some(r) = res {
+                    return r;
+                }
+                if start.elapsed() > std::time::Duration::from_millis(500) {
+                    return Err("获取插件实例超时".to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
         }));
         let (size, resizable, from_fallback) = match open_outcome {
-            Ok(Some(Ok(v))) => v,
-            Ok(Some(Err(e))) => {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
                 editor_log(&format!("[{}@{format}] open Err: {e}", std::process::id()));
                 DestroyWindow(hwnd);
                 let _ = ready_tx.send(Err(e));
-                let _ = done_tx.send(());
-                return;
-            }
-            Ok(None) => {
-                DestroyWindow(hwnd);
-                let _ = ready_tx.send(Err("机架中找不到该插件实例".into()));
                 let _ = done_tx.send(());
                 return;
             }

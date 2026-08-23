@@ -106,25 +106,25 @@ where
             return Some(s);
         }
 
-        // 2. 元数据变化兜底（正常换轨走管线重建，不进此分支）：
-        //    永久旁路，机架保持原激活参数与实例（下次起播 ensure_ready 重建）
+        // 2. 动态采样率/声道数同步：当底层解码器音频属性确定后，自动对齐缓冲区与机架
         if !self.stale {
             let cur_rate = self.inner.sample_rate();
             let cur_ch = self.inner.channels();
-            if cur_rate != self.sample_rate || cur_ch != self.channels {
-                if !self.error_reported && !self.rack.is_bypassed() {
-                    self.rack.report_process_error(
-                        "音轨采样率/声道数中途变化，插件机架本曲已旁路（下次起播恢复）".into(),
-                    );
-                    self.error_reported = true;
-                }
-                self.stale = true;
+            if (cur_rate != self.sample_rate || cur_ch != self.channels) && cur_rate > 0 && cur_ch > 0 {
+                self.sample_rate = cur_rate;
+                self.channels = cur_ch;
+                self.allocate_buffers();
             }
         }
 
         // 3. 机架链为空 / 元数据已失配：逐样本直通（无锁快速路径）
         if self.rack.is_bypassed() || self.stale {
             return self.inner.next();
+        }
+
+        static LOG_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOG_ONCE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("[source] PluginHostSource 正在处理音频数据流! sample_rate={}, channels={}", self.sample_rate, self.channels);
         }
 
         // 4. 从 inner 拉取整块（流末尾可能不足 512 帧，按完整帧截断）

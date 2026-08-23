@@ -18,17 +18,17 @@ import { dispatchFallbackModule } from './fallbackModules/registry';
  */
 export function toUrlSongInfo(item: LxSearchResultItem): LxUrlSongInfoContract {
   return {
-    songmid: item.songmid,
+    songmid: String(item.songmid ?? ''),
     source: item.source,
     hash: item.hash,
     name: item.name,
     singer: item.singer,
     albumName: item.albumName,
-    albumId: item.albumId,
-    albumMid: item.albumMid,
-    copyrightId: item.copyrightId,
-    strMediaMid: item.strMediaMid,
-    songId: item.songId,
+    albumId: item.albumId != null ? String(item.albumId) : undefined,
+    albumMid: item.albumMid != null ? String(item.albumMid) : undefined,
+    copyrightId: item.copyrightId != null ? String(item.copyrightId) : undefined,
+    strMediaMid: item.strMediaMid != null ? String(item.strMediaMid) : undefined,
+    songId: item.songId != null ? String(item.songId) : undefined,
     _types: normalizeLxTypes(item._types) as Record<string, { size?: string | null; hash?: string }> | undefined,
   };
 }

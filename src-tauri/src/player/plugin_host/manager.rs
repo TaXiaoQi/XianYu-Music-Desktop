@@ -106,13 +106,18 @@ fn preset_cache() -> &'static Mutex<HashMap<String, Vec<PluginPresetEntry>>> {
 /// `dirs` 为自定义插件目录（绝对路径列表），与标准目录一起去重合并；
 /// 目录类别（VST3/CLAP）由 scanner 按目录名/内容判定。
 #[tauri::command]
-pub async fn plugin_host_scan_plugins(dirs: Vec<String>) -> Vec<PluginScanEntry> {
+pub async fn plugin_host_scan_plugins(
+    app: tauri::AppHandle,
+    dirs: Vec<String>,
+    disabled_paths: Option<Vec<String>>,
+) -> Vec<PluginScanEntry> {
     let extra: Vec<std::path::PathBuf> = dirs
         .into_iter()
         .filter(|d| !d.trim().is_empty())
         .map(std::path::PathBuf::from)
         .collect();
-    scan_directories_with_extra(&extra)
+    let disabled = disabled_paths.unwrap_or_default();
+    scan_directories_with_extra(&extra, &disabled, Some(&app))
 }
 
 /// 读取当前机架配置。
