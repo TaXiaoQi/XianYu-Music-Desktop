@@ -849,6 +849,22 @@ pub async fn download_online_song(
     for candidate in media_url_candidates(&url) {
         match send_with_range(&candidate, true).await {
             Ok(resp) if resp.status().is_success() => {
+                // https 升级候选返回 200 但内容非音频（CDN 错误页）时跳过，回退 http 原 URL
+                let ct = resp
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let is_non_audio = ct.contains("text/html")
+                    || ct.contains("application/json")
+                    || ct.contains("text/plain")
+                    || ct.contains("application/xml")
+                    || ct.contains("text/xml");
+                if is_non_audio && candidate.starts_with("https://") && url.starts_with("http://") {
+                    last_err = format!("https 候选返回非音频内容 (Content-Type: {})，回退 http", ct);
+                    continue;
+                }
                 response = Some(resp);
                 break;
             }

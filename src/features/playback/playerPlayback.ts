@@ -1404,6 +1404,13 @@ const authStore = useAuthStore();
       // [lx:// URL 解析失败] 落雪插件获取直链失败（token 过期/无权限/接口异常等），
       // audioFilePath 仍是 lx:// 开头，既非在线直链也非本地文件，直接触发失败处理（含自动换源）
       if (!isNetworkAudio && audioFilePath.startsWith('lx://')) {
+        console.warn('[Audio] lx:// 直链解析失败（audioFilePath 仍为 lx://）:', {
+          path: song.path,
+          audioFilePath: audioFilePath.slice(0, 150),
+          requestedQuality: (playbackStore.sessionQualityOverride || settingsStore.settings.audio.onlineDefaultQuality || '320k'),
+          hasRawData: !!song.rawData,
+          hasTypes: !!(song as any)._types || !!(song as any).rawData?._types,
+        });
         await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
         return;
       }
@@ -1540,6 +1547,12 @@ const authStore = useAuthStore();
       // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
       // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
+        console.log('[Audio] 在线直链走 Rust 起播:', {
+          url: audioFilePath.slice(0, 160),
+          hasHeaders: !!pluginHeaders,
+          hasEkey: !!pluginEkey,
+          hasCek: !!pluginCek,
+        });
         try {
           await playbackApi.playAudio({
             path: audioFilePath,
@@ -1663,6 +1676,10 @@ const authStore = useAuthStore();
           }
         } else {
           // [在线播放起播失败] Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时）
+          console.warn('[Audio] Rust 起播失败（tryPlayOnlineViaRust=false）:', {
+            path: song.path,
+            audioFilePath: audioFilePath.slice(0, 150),
+          });
           await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
           return;
         }

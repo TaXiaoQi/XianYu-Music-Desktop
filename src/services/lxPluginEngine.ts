@@ -404,6 +404,35 @@ export function isSongLevelError(message: string): boolean {
 // ==================== 请求方法 ====================
 
 /**
+ * 规范化插件返回的 musicUrl：
+ * 1. 部分插件返回 JSON 字符串（含 url 字段），尝试解析提取
+ * 2. 部分插件返回 `http://...`（反引号包裹），去除首尾反引号
+ * 返回清洗后的 URL，无效返回 null
+ */
+function normalizeLxMusicUrl(response: unknown): string | null {
+  let musicUrl: unknown = response;
+  if (typeof response === 'object' && response !== null) {
+    const obj = response as Record<string, any>;
+    musicUrl = obj?.url ?? obj?.link ?? obj?.playUrl ?? '';
+  } else if (typeof response === 'string' && /^\s*\{/.test(response)) {
+    try {
+      const parsed = JSON.parse(response);
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, any>;
+        const extracted = obj?.url ?? obj?.link ?? obj?.playUrl ?? '';
+        if (extracted) musicUrl = extracted;
+      }
+    } catch { /* 保持原样 */ }
+  }
+  if (typeof musicUrl !== 'string') return null;
+  const cleaned = musicUrl.trim().replace(/^`+/, '').replace(/`+$/, '');
+  if (cleaned.length === 0 || cleaned.length > 2048 || !/^https?:/.test(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
+
+/**
  * 向落雪插件发送请求
  * [修复防御]: 与 lx-music-desktop handleRequest 一致，调用 events.request.call(context, { source, action, info })
  * 关键点：调用前临时设置 globalThis.lx = state.lxApi，确保插件内部 lx.request 可用
@@ -414,7 +443,16 @@ export async function lxPluginRequest(
   data: { source: string; type?: string; musicInfo: any },
 ): Promise<any> {
   // ===== 沙箱模式路由：插件在 Web Worker 中隔离执行 =====
-  if (_sandboxedPlugins.has(source.id) && isSandboxReady(source.id)) {
+  const _inSandboxSet = _sandboxedPlugins.has(source.id);
+  const _sandboxReady = isSandboxReady(source.id);
+  // 播放传入的 source.id 可能与脚本内容 hash 不一致，导致 _sandboxedPlugins 缺登记，
+  // 从而误走直接路径（沙箱实例 requestHandler 为 null）而静默失败。
+  // 因此以后端沙箱实例是否就绪为准强制走沙箱，并在进入时补登记。
+  if (_inSandboxSet || _sandboxReady) {
+    if (!_inSandboxSet) {
+      _sandboxedPlugins.add(source.id);
+      console.warn(`[lxPluginRequest] ${source.name} id=${source.id} 沙箱集合缺登记，已补登记并走沙箱`);
+    }
     log(`[lxPluginRequest] 沙箱模式调用 ${source.name} ${action} source=${data.source} type=${data.type || '-'}`);
     try {
       const response = await Promise.race([
@@ -437,17 +475,24 @@ export async function lxPluginRequest(
         case 'musicUrl': {
           // 部分混淆插件（baka 风格）musicUrl 返回对象 { url, type, ... } 而非纯字符串。
           // 一律提取 url 字符串；但保留原始 shape 打印，避免影响后续加密音源处理。
-          let musicUrl = response;
           let reportedType: unknown = data.type;
           if (typeof response === 'object' && response !== null) {
             const rawShape = JSON.stringify(response)?.substring(0, 300);
             console.warn(`[lxPluginRequest] ${source.name} musicUrl 返回对象，提取 url 字段: ${rawShape}`);
             const obj = response as Record<string, any>;
-            musicUrl = obj?.url ?? obj?.link ?? obj?.playUrl ?? '';
             if (obj?.type != null) reportedType = obj.type;
+          } else if (typeof response === 'string' && /^\s*\{/.test(response)) {
+            try {
+              const parsed = JSON.parse(response);
+              if (parsed && typeof parsed === 'object' && (parsed as Record<string, any>)?.type != null) {
+                reportedType = (parsed as Record<string, any>).type;
+              }
+            } catch { /* 忽略 */ }
           }
-          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${typeof musicUrl === 'string' ? musicUrl.substring(0, 120) : (response === null ? 'null' : JSON.stringify(response)?.substring(0, 120))}`);
-          if (typeof musicUrl !== 'string' || musicUrl.length === 0 || musicUrl.length > 2048 || !/^https?:/.test(musicUrl)) {
+          const musicUrl = normalizeLxMusicUrl(response);
+          console.warn(`[lxPluginRequest] ${source.name} musicUrl 清洗诊断: rawType=${typeof response} raw=${typeof response === 'string' ? response.substring(0, 150) : JSON.stringify(response)?.substring(0, 150)} → cleaned=${musicUrl}`);
+          log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${musicUrl ?? (response === null ? 'null' : JSON.stringify(response)?.substring(0, 120))}`);
+          if (!musicUrl) {
             throw new Error('Invalid musicUrl response');
           }
           log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 成功: ${musicUrl.substring(0, 80)}...`);
@@ -472,6 +517,7 @@ export async function lxPluginRequest(
         log(`[lxPluginRequest] 沙箱 ${source.name} lyric 不支持，交给后备歌词接口处理`);
         return null;
       }
+      console.error(`[lxPluginRequest] 沙箱模式 ${source.name} ${action} 失败: ${errMsg}`);
       log(`[lxPluginRequest] 沙箱模式 ${source.name} ${action} 失败: ${errMsg}`);
       if (action === 'musicUrl' && isSongLevelError(errMsg)) {
         throw new LxSongLevelError(errMsg);
@@ -526,16 +572,18 @@ export async function lxPluginRequest(
 
       // 构造与 lx-music-desktop handleRequest 一致的返回格式
       switch (action) {
-        case 'musicUrl':
-          if (typeof response !== 'string' || response.length > 2048 || !/^https?:/.test(response)) {
+        case 'musicUrl': {
+          const musicUrl = normalizeLxMusicUrl(response);
+          if (!musicUrl) {
             throw new Error('Invalid musicUrl response');
           }
-          log(`[lxPluginRequest] ${source.name} musicUrl 成功: ${response.substring(0, 80)}...`);
+          log(`[lxPluginRequest] ${source.name} musicUrl 成功: ${musicUrl.substring(0, 80)}...`);
           return {
             source: data.source,
             action,
-            data: { type: data.type, url: response },
+            data: { type: data.type, url: musicUrl },
           };
+        }
         case 'lyric':
           return {
             source: data.source,

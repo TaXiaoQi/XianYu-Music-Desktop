@@ -338,23 +338,50 @@ function kgFilterData(rawData: any): LxSearchResultItem {
   };
 }
 
+function kgItemQualityScore(item: LxSearchResultItem): number {
+  // 音质档位权重：128k < 320k < flac < flac24bit。同一首歌的多个专辑版本里，
+  // 保留最高音质档的那条，避免去重后留下低码率版本。
+  const rank: Record<string, number> = { '128k': 1, '320k': 2, flac: 3, flac24bit: 4 };
+  let score = 0;
+  for (const t of item?.types || []) {
+    if (t && rank[t.type]) score = Math.max(score, rank[t.type]);
+  }
+  return score;
+}
+
+function kgNormalKey(name: string): string {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
 function kgHandleResult(rawData: any[]): LxSearchResultItem[] {
-  const ids = new Set<string>();
-  const list: LxSearchResultItem[] = [];
+  const rawList: LxSearchResultItem[] = [];
   rawData.forEach(item => {
-    const key = item.Audioid + item.FileHash;
-    if (ids.has(key)) return;
-    ids.add(key);
-    list.push(kgFilterData(item));
+    rawList.push(kgFilterData(item));
     if (item.Grp) {
-      for (const childItem of item.Grp) {
-        const childKey = childItem.Audioid + childItem.FileHash;
-        if (ids.has(childKey)) continue;
-        ids.add(childKey);
-        list.push(kgFilterData(childItem));
-      }
+      for (const childItem of item.Grp) rawList.push(kgFilterData(childItem));
     }
   });
+  // 酷狗搜索常把同一首歌按不同专辑版本重复返回（同名同歌手、仅专辑不同），
+  // 连带 Grp 一起展开后会出现成批重名的歌。这里按「歌名+歌手」去重并保留最高
+  // 音质档的那条，既消除批量同名，又不误伤同名但不同歌手的歌曲。
+  const best = new Map<string, LxSearchResultItem>();
+  for (const item of rawList) {
+    const key = `${kgNormalKey(item.name)}|${kgNormalKey(item.singer)}`;
+    if (!kgNormalKey(item.name)) continue;
+    const prev = best.get(key);
+    if (!prev || kgItemQualityScore(item) >= kgItemQualityScore(prev)) {
+      best.set(key, item);
+    }
+  }
+  // 保持首次出现顺序，内容替换为最高音质版本
+  const list: LxSearchResultItem[] = [];
+  const seen = new Set<string>();
+  for (const item of rawList) {
+    const key = `${kgNormalKey(item.name)}|${kgNormalKey(item.singer)}`;
+    if (!kgNormalKey(item.name) || seen.has(key)) continue;
+    seen.add(key);
+    list.push(best.get(key)!);
+  }
   return list;
 }
 
