@@ -38,7 +38,13 @@ export function useAppThemeSync() {
     applyDarkClassWithTransition(isDarkTheme.value);
 
     try {
-      await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
+      // 跟随系统时传 null 让窗口主题跟随 OS，否则强制 light/dark 会覆盖
+      // WebView 的 prefers-color-scheme，导致系统主题变化后不再跟随
+      if (theme.value.mode === 'system') {
+        await appWindow.setTheme(null);
+      } else {
+        await appWindow.setTheme(isDarkTheme.value ? 'dark' : 'light');
+      }
     } catch (error) {
       console.warn('Failed to set window theme:', error);
     }

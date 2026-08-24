@@ -2,6 +2,7 @@
 import { Check, ChevronDown } from 'lucide-vue-next';
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
+import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
 import CustomColorPicker from './CustomColorPicker.vue';
@@ -204,6 +205,16 @@ const commitAccentColor = (event: Event) => {
   input.value = theme.value.accentColor;
 };
 
+const openCustomSkin = () => {
+  // 保存当前主题，取消时恢复配色方案与窗口材质
+  skinModalOriginalTheme.value = {
+    ...theme.value,
+    customBackground: { ...theme.value.customBackground },
+  };
+  setColorScheme('custom');
+  openCustomModal();
+};
+
 // ---- 自定义 2D 调色盘弹窗控制器 ----
 const isCustomColorPickerOpen = ref(false);
 const colorPickerTriggerRef = ref<HTMLElement | null>(null);
@@ -351,7 +362,7 @@ onUnmounted(() => {
             type="button"
             class="group flex flex-col items-start gap-2 rounded-xl border px-4 py-3 text-left transition-all"
             :class="colorScheme === 'custom' ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]' : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
-            @click="setColorScheme('custom'); openCustomModal()"
+            @click="openCustomSkin()"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-90 transition-transform group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"></path></svg>
             <span class="text-sm font-semibold">{{ TEXT.customShort }}</span>

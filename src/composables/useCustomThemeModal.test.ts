@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { effectScope, nextTick, type EffectScope } from 'vue';
 
 import { useSettingsStore } from '../features/settings/store';
-import { useCustomThemeModal } from './useCustomThemeModal';
+import { skinModalOriginalTheme, useCustomThemeModal } from './useCustomThemeModal';
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn(),
@@ -20,6 +20,7 @@ describe('useCustomThemeModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     scope = effectScope();
+    skinModalOriginalTheme.value = null;
   });
 
   afterEach(() => {
@@ -89,5 +90,58 @@ describe('useCustomThemeModal', () => {
     expect(settingsStore.theme.mode).toBe('light');
     expect(settingsStore.theme.customBackground.blur).toBe(20);
     expect(settingsStore.theme.customBackground.foregroundStyle).toBe('light');
+  });
+
+  it('restores the original color scheme and window material on cancel when opened from the top bar skin shortcut', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.patchTheme({
+      mode: 'light',
+      dynamicBgType: 'flow',
+      windowMaterial: 'acrylic',
+      customBackground: {
+        imagePath: '/covers/original.jpg',
+        blur: 20,
+        foregroundStyle: 'light',
+      },
+    });
+
+    // 模拟顶栏皮肤快捷键：保存原始主题并切换到 custom
+    skinModalOriginalTheme.value = { ...settingsStore.theme };
+    const modal = scope!.run(() => useCustomThemeModal())!;
+    modal.preview.value.blur = 42;
+    modal.preview.value.foregroundStyle = 'dark';
+    await flushPreviewUpdates();
+
+    modal.handleCancel();
+
+    expect(settingsStore.theme.mode).toBe('light');
+    expect(settingsStore.theme.dynamicBgType).toBe('flow');
+    expect(settingsStore.theme.windowMaterial).toBe('acrylic');
+    expect(settingsStore.theme.customBackground.blur).toBe(20);
+    expect(settingsStore.theme.customBackground.foregroundStyle).toBe('light');
+    expect(skinModalOriginalTheme.value).toBeNull();
+  });
+
+  it('clears the saved original theme after saving the custom skin', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.patchTheme({
+      mode: 'light',
+      customBackground: {
+        imagePath: '/covers/original.jpg',
+        blur: 20,
+        foregroundStyle: 'light',
+      },
+    });
+
+    skinModalOriginalTheme.value = { ...settingsStore.theme };
+    const modal = scope!.run(() => useCustomThemeModal())!;
+    modal.preview.value.blur = 36;
+    await flushPreviewUpdates();
+
+    modal.handleSave();
+
+    expect(settingsStore.theme.mode).toBe('custom');
+    expect(settingsStore.theme.customBackground.blur).toBe(36);
+    expect(skinModalOriginalTheme.value).toBeNull();
   });
 });

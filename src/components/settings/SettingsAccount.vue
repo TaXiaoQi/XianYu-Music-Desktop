@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 
 import { useAuthStore } from '../../features/auth/store';
 import { useSettingsStore } from '../../features/settings/store';
@@ -27,6 +28,11 @@ const pad = (n: number) => n.toString().padStart(2, '0');
 
 const draftBaseUrl = ref(getAuthBaseUrl());
 const draftApiSecret = ref(getAuthApiSecret() ?? '');
+// 密码可见性状态
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
+const pwdFocused = reactive<Record<string, boolean>>({});
 const isDirty = computed(() =>
   draftBaseUrl.value.trim() !== getAuthBaseUrl()
   || draftApiSecret.value.trim() !== (getAuthApiSecret() ?? '')
@@ -363,14 +369,27 @@ function updateAutoSyncMaxDelay(event: Event) {
         </label>
         <label class="flex flex-col gap-1.5">
           <span class="text-xs font-medium text-gray-500 dark:text-white/50">服务器密钥</span>
-          <input
-            v-model="draftApiSecret"
-            type="password"
-            placeholder="API 签名密钥"
-            spellcheck="false"
-            autocomplete="off"
-            class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-          />
+          <div class="relative" @focusin="pwdFocused.apiSecret = true" @focusout="pwdFocused.apiSecret = false; pwdVisible.apiSecret = false">
+            <input
+              v-model="draftApiSecret"
+              :type="pwdVisible.apiSecret ? 'text' : 'password'"
+              placeholder="API 签名密钥"
+              spellcheck="false"
+              autocomplete="off"
+              class="w-full h-8 rounded-lg border border-black/10 bg-white/45 px-3 pr-9 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+            />
+            <button
+              type="button"
+              v-show="pwdFocused.apiSecret && draftApiSecret.length > 0"
+              class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+              :aria-label="pwdVisible.apiSecret ? '隐藏密码' : '查看密码'"
+              @mousedown.prevent
+              @click="pwdVisible.apiSecret = !pwdVisible.apiSecret"
+            >
+              <EyeOff v-if="pwdVisible.apiSecret" class="h-4 w-4" />
+              <Eye v-else class="h-4 w-4" />
+            </button>
+          </div>
         </label>
       </div>
       <div class="flex items-stretch gap-2 flex-wrap">

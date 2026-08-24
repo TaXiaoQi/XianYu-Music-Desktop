@@ -14,6 +14,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useI18n } from '../../features/i18n';
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
+import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
 import { fetchHotSearch, type HotSearchItem } from '../../services/usageStats';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
 import TopBarControlItem from './TopBarControlItem.vue';
@@ -38,6 +39,7 @@ const authStore = useAuthStore();
 const navigationStore = useNavigationStore();
 const rotation = ref(0); // For settings icon animation
 const lastNonSettingsRoute = ref(route.path === '/settings' ? '/' : route.fullPath);
+const lastNonAuthRoute = ref(route.path === '/auth' ? '/' : route.fullPath);
 const isSettingsRoute = computed(() => route.path === '/settings');
 const isAuthRoute = computed(() => route.path === '/auth');
 const hasCustomBackground = computed(() => (
@@ -199,13 +201,23 @@ const toggleSettingsPage = () => {
 };
 
 const openColorScheme = () => {
+  // 保存当前主题，取消时恢复配色方案与窗口材质
+  skinModalOriginalTheme.value = {
+    ...theme.value,
+    customBackground: { ...theme.value.customBackground },
+  };
   // 切换到自定义皮肤并直接打开自定义配色弹窗
   setThemeMode('custom');
   uiStore.showCustomSkinModal = true;
 };
 
 const openAccountPage = () => {
-  void router.push('/auth');
+  if (isAuthRoute.value) {
+    void router.push(lastNonAuthRoute.value);
+  } else {
+    lastNonAuthRoute.value = route.fullPath;
+    void router.push('/auth');
+  }
 };
 
 // 给 TopBarControlItem 提供渲染上下文

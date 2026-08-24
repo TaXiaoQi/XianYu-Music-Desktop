@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue';
+import { onUnmounted, reactive, ref, watch } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 import { useChangePasswordDialog } from '../../composables/useChangePasswordDialog';
 import { useAuthStore } from '../../features/auth/store';
 import {
@@ -24,6 +25,12 @@ const loading = ref(false);
 const codeLoading = ref(false);
 const countdown = ref(0);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+// 密码可见性状态
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
+const pwdFocused = reactive<Record<string, boolean>>({});
 
 // 人机验证
 const captchaOpen = ref(false);
@@ -164,33 +171,72 @@ async function submit() {
           <div class="change-pwd-form">
             <label class="change-pwd-field">
               <span class="change-pwd-label">当前密码</span>
-              <input
-                v-model="oldPassword"
-                type="password"
-                placeholder="输入当前密码"
-                autocomplete="current-password"
-                class="change-pwd-input"
-              />
+              <div class="relative" @focusin="pwdFocused.oldPassword = true" @focusout="pwdFocused.oldPassword = false; pwdVisible.oldPassword = false">
+                <input
+                  v-model="oldPassword"
+                  :type="pwdVisible.oldPassword ? 'text' : 'password'"
+                  placeholder="输入当前密码"
+                  autocomplete="current-password"
+                  class="change-pwd-input pr-9"
+                />
+                <button
+                  type="button"
+                  v-show="pwdFocused.oldPassword && oldPassword.length > 0"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                  :aria-label="pwdVisible.oldPassword ? '隐藏密码' : '查看密码'"
+                  @mousedown.prevent
+                  @click="pwdVisible.oldPassword = !pwdVisible.oldPassword"
+                >
+                  <EyeOff v-if="pwdVisible.oldPassword" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                </button>
+              </div>
             </label>
             <label class="change-pwd-field">
               <span class="change-pwd-label">新密码</span>
-              <input
-                v-model="newPassword"
-                type="password"
-                placeholder="输入新密码"
-                autocomplete="new-password"
-                class="change-pwd-input"
-              />
+              <div class="relative" @focusin="pwdFocused.newPassword = true" @focusout="pwdFocused.newPassword = false; pwdVisible.newPassword = false">
+                <input
+                  v-model="newPassword"
+                  :type="pwdVisible.newPassword ? 'text' : 'password'"
+                  placeholder="输入新密码"
+                  autocomplete="new-password"
+                  class="change-pwd-input pr-9"
+                />
+                <button
+                  type="button"
+                  v-show="pwdFocused.newPassword && newPassword.length > 0"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                  :aria-label="pwdVisible.newPassword ? '隐藏密码' : '查看密码'"
+                  @mousedown.prevent
+                  @click="pwdVisible.newPassword = !pwdVisible.newPassword"
+                >
+                  <EyeOff v-if="pwdVisible.newPassword" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                </button>
+              </div>
             </label>
             <label class="change-pwd-field">
               <span class="change-pwd-label">确认新密码</span>
-              <input
-                v-model="confirmPassword"
-                type="password"
-                placeholder="再次输入新密码"
-                autocomplete="new-password"
-                class="change-pwd-input"
-              />
+              <div class="relative" @focusin="pwdFocused.confirmPassword = true" @focusout="pwdFocused.confirmPassword = false; pwdVisible.confirmPassword = false">
+                <input
+                  v-model="confirmPassword"
+                  :type="pwdVisible.confirmPassword ? 'text' : 'password'"
+                  placeholder="再次输入新密码"
+                  autocomplete="new-password"
+                  class="change-pwd-input pr-9"
+                />
+                <button
+                  type="button"
+                  v-show="pwdFocused.confirmPassword && confirmPassword.length > 0"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                  :aria-label="pwdVisible.confirmPassword ? '隐藏密码' : '查看密码'"
+                  @mousedown.prevent
+                  @click="pwdVisible.confirmPassword = !pwdVisible.confirmPassword"
+                >
+                  <EyeOff v-if="pwdVisible.confirmPassword" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                </button>
+              </div>
             </label>
             <div class="change-pwd-code-row">
               <label class="change-pwd-field change-pwd-code-field">
