@@ -2991,6 +2991,8 @@ const pluginUpdateService = createPluginUpdateService({
   ensurePluginInstance,
   loadPluginFromScript,
   getStoredPlugins,
+  // 订阅服务在本模块后部创建，此处以闭包惰性引用，运行时必然已初始化。
+  getSubscriptions: () => pluginSubscriptionService.getSubscriptions(),
   addPluginSource,
   removePluginSource,
   updatePluginSource,

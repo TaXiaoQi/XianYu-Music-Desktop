@@ -1547,15 +1547,20 @@ const authStore = useAuthStore();
       // [在线走 Rust] 所有在线音频统一通过 Rust 后端流式下载到临时文件 + 本地引擎播放。
       // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
+        // 在线直链可能带反引号/引号等脏字符（汽水等插件返回），先清洗再交给后端取流，
+        // 否则 Rust 侧 URL 解析失败导致起播失败。
+        const finalAudioPath = /^https?:\/\//i.test(audioFilePath)
+          ? (sanitizeMediaUrl(audioFilePath) || audioFilePath)
+          : audioFilePath;
         console.log('[Audio] 在线直链走 Rust 起播:', {
-          url: audioFilePath.slice(0, 160),
+          url: finalAudioPath.slice(0, 160),
           hasHeaders: !!pluginHeaders,
           hasEkey: !!pluginEkey,
           hasCek: !!pluginCek,
         });
         try {
           await playbackApi.playAudio({
-            path: audioFilePath,
+            path: finalAudioPath,
             title: getSmtcTitle(song),
             artist: song.artist || 'Unknown Artist',
             album: song.album || 'Unknown Album',
