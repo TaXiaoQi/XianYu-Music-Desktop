@@ -170,9 +170,9 @@ fn scan_dir_plugin_infos_recursive(
     if is_vst3 || is_clap {
         on_current(dir);
         if is_vst3 {
-            return Vst3Scanner::new().scan_path(dir).unwrap_or_default();
+            return Vst3Scanner::new().scan_bundle(dir).unwrap_or_default();
         } else {
-            return ClapScanner::new().scan_path(dir).unwrap_or_default();
+            return ClapScanner::new().scan_bundle(dir).unwrap_or_default();
         }
     }
 
