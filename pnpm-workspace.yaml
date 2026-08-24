@@ -1,8 +1,8 @@
 allowBuilds:
-  '@applemusic-like-lyrics/core': set this to true or false
-  '@applemusic-like-lyrics/lyric': set this to true or false
-  '@applemusic-like-lyrics/vue': set this to true or false
-  '@swc/core': set this to true or false
-  esbuild: set this to true or false
+  '@applemusic-like-lyrics/core': true
+  '@applemusic-like-lyrics/lyric': true
+  '@applemusic-like-lyrics/vue': true
+  '@swc/core': true
+  esbuild: true
 patchedDependencies:
   vite-plugin-top-level-await@1.6.0: patches/vite-plugin-top-level-await@1.6.0.patch

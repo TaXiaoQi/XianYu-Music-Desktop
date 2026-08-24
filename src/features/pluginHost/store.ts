@@ -139,6 +139,23 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     }
   };
 
+  // ===== 已从机架移除的插件（扫描时不再自动加入）=====
+  const dismissedRackKeys = ref<Set<string>>(new Set());
+  try {
+    const saved = localStore.getJson<string[]>('plugin_host_dismissed_rack');
+    if (Array.isArray(saved)) dismissedRackKeys.value = new Set(saved);
+  } catch (err) {
+    console.warn('[pluginHostStore] 恢复已移除插件列表失败:', err);
+  }
+  const persistDismissed = () => {
+    try {
+      localStore.setJson('plugin_host_dismissed_rack', [...dismissedRackKeys.value]);
+    } catch (err) {
+      console.warn('[pluginHostStore] 保存已移除插件列表失败:', err);
+    }
+  };
+  const dismissedCount = computed(() => dismissedRackKeys.value.size);
+
   // ===== 编辑器窗口状态 =====
   const openEditorKeys = ref<Set<string>>(new Set());
 
@@ -158,6 +175,8 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     console.warn('[pluginHostStore] 恢复机架配置失败（使用默认值）:', err);
   }
   restored = true;
+  // 保持"扫描结果即机架"的一致性：把已扫描插件并入机架（默认停用），已移除的不再出现
+  mergeScannedIntoRack();
   if (rackConfig.slots.length > 0 || rackConfig.masterEnabled) {
     setRack({ ...rackConfig, slots: rackConfig.slots.map(s => ({ ...s, params: { ...s.params } })) })
       .catch(err => console.warn('[pluginHostStore] 启动同步机架配置失败:', err));
@@ -288,6 +307,7 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
       scannedPlugins.value = results;
       hasScanned.value = true;
       persistScannedPlugins();
+      mergeScannedIntoRack();
     } catch (err) {
       console.warn('[pluginHostStore] 插件扫描失败:', err);
       showToast(`插件扫描失败: ${err}`, 'error');
@@ -296,6 +316,35 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
       isScanning.value = false;
       currentScanningPath.value = '';
     }
+  };
+
+  /** 把扫描到的插件自动并入机架（默认停用）；已在机架或已移除的不重复添加。 */
+  function mergeScannedIntoRack() {
+    let changed = false;
+    for (const entry of scannedPlugins.value) {
+      const key = slotKey(entry.format, entry.uniqueId);
+      if (dismissedRackKeys.value.has(key)) continue;
+      if (rackConfig.slots.some(s => s.format === entry.format && s.uniqueId === entry.uniqueId)) continue;
+      rackConfig.slots.push({
+        format: entry.format,
+        uniqueId: entry.uniqueId,
+        path: entry.path,
+        name: entry.name,
+        vendor: entry.vendor,
+        enabled: false,
+        params: {},
+      });
+      changed = true;
+    }
+    return changed;
+  }
+
+  /** 恢复所有已移除插件（清空移除记录并重新并入机架）。 */
+  const restoreDismissed = () => {
+    if (dismissedRackKeys.value.size === 0) return;
+    dismissedRackKeys.value.clear();
+    persistDismissed();
+    mergeScannedIntoRack();
   };
 
   // ===== 自定义目录管理 =====
@@ -323,22 +372,6 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
   const findSlotIndex = (format: string, uniqueId: string) =>
     rackConfig.slots.findIndex(s => s.format === format && s.uniqueId === uniqueId);
 
-  const isSlotInRack = (format: string, uniqueId: string) => findSlotIndex(format, uniqueId) >= 0;
-
-  const addSlot = (entry: PluginHostScanEntry) => {
-    if (isSlotInRack(entry.format, entry.uniqueId)) return;
-    rackConfig.slots.push({
-      format: entry.format,
-      uniqueId: entry.uniqueId,
-      path: entry.path,
-      name: entry.name,
-      vendor: entry.vendor,
-      enabled: true,
-      params: {},
-    });
-    if (!rackConfig.masterEnabled) rackConfig.masterEnabled = true;
-  };
-
   const removeSlot = (format: string, uniqueId: string) => {
     const index = findSlotIndex(format, uniqueId);
     if (index < 0) return;
@@ -348,6 +381,8 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     next.delete(key);
     openEditorKeys.value = next;
     rackConfig.slots.splice(index, 1);
+    dismissedRackKeys.value.add(key);
+    persistDismissed();
   };
 
   const toggleSlot = (format: string, uniqueId: string) => {
@@ -444,19 +479,20 @@ export const usePluginHostStore = defineStore('pluginHost', () => {
     hasScanned,
     hasActiveSlots,
     extraDirs,
+    dismissedCount,
     currentScanningPath,
     timeoutPluginPath,
     disabledPluginPaths,
     // 扫描 & 禁用黑名单
     scan,
     disablePluginPath,
+    mergeScannedIntoRack,
+    restoreDismissed,
     // 自定义目录
     addExtraDir,
     removeExtraDir,
     // 机架
     setMasterEnabled,
-    isSlotInRack,
-    addSlot,
     syncRackNow,
     removeSlot,
     toggleSlot,

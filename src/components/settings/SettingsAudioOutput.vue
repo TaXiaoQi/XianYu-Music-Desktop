@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown, CircleHelp, FolderOpen, Library, Minus, Plus, Trash2 } from 'lucide-vue-next';
-import { open } from '@tauri-apps/plugin-dialog';
+import { Check, ChevronDown, CircleHelp, Minus, Plus } from 'lucide-vue-next';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSoundEffectStore } from '../../features/playback/soundEffectStore';
@@ -8,9 +7,6 @@ import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useI18n } from '../../features/i18n';
 import { useToast } from '../../composables/toast';
 import SettingsPluginHost from './SettingsPluginHost.vue';
-import PluginLibraryDialog from './PluginLibraryDialog.vue';
-import ConfirmModal from '../overlays/ConfirmModal.vue';
-import { storeToRefs } from 'pinia';
 import { ALL_QUALITY_KEYS, MV_QUALITY_KEYS, MV_QUALITY_META, QUALITY_META } from '../../types';
 import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -48,36 +44,6 @@ const toggleRackMaster = () => {
   // 与直出路径互斥：任一开启时禁用机架，避免互相冲突的竞态
   if (outputExclusivePathActive.value) return;
   pluginHostStore.setMasterEnabled(!pluginHostStore.rackConfig.masterEnabled);
-};
-
-const showLibrary = ref(false);
-const { scannedPlugins, extraDirs } = storeToRefs(pluginHostStore);
-
-// ===== 自定义扫描目录（并入音效播放机架展开面板）=====
-const handleAddExtraDir = async () => {
-  try {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === 'string' && selected.trim()) {
-      pluginHostStore.addExtraDir(selected);
-    }
-  } catch {
-    // 对话框取消
-  }
-};
-
-const showRemoveDirConfirm = ref(false);
-const dirToRemove = ref<string | null>(null);
-
-const requestRemoveDir = (dir: string) => {
-  dirToRemove.value = dir;
-  showRemoveDirConfirm.value = true;
-};
-
-const confirmRemoveDir = () => {
-  showRemoveDirConfirm.value = false;
-  if (!dirToRemove.value) return;
-  pluginHostStore.removeExtraDir(dirToRemove.value);
-  dirToRemove.value = null;
 };
 
 // --- 音效插件机架 说明（灰色感叹号 popover） ---
@@ -1290,74 +1256,6 @@ onScopeDispose(() => {
         >
           <p class="text-xs leading-relaxed">{{ t('pluginHost.rackDesc') }}</p>
         </div>
-        <transition name="settings-pop-panel">
-          <div v-if="rackMasterEnabled" class="pb-4">
-            <!-- 可用插件 -->
-            <div class="desktop-setting-row pl-8">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.availablePlugins') }}</span>
-                <span
-                  v-if="scannedPlugins.length > 0"
-                  class="shrink-0 text-xs text-gray-400 dark:text-white/35"
-                >{{ t('pluginHost.count', { count: scannedPlugins.length }) }}</span>
-              </div>
-              <button
-                type="button"
-                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
-                @click="showLibrary = true"
-              >
-                <Library class="h-3.5 w-3.5" />
-                {{ t('pluginHost.open') }}
-              </button>
-            </div>
-            <!-- 自定义扫描目录 -->
-            <div class="desktop-setting-row pl-8">
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('pluginHost.customScanDirs') }}</span>
-                  <span
-                    v-if="extraDirs.length > 0"
-                    class="shrink-0 text-xs text-gray-400 dark:text-white/35"
-                  >{{ t('pluginHost.count', { count: extraDirs.length }) }}</span>
-                </div>
-                <div class="text-xs text-gray-500 dark:text-white/45">{{ t('pluginHost.scanDirsHint') }}</div>
-              </div>
-              <button
-                type="button"
-                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#EC4141]/25 bg-[#EC4141]/10 px-3 py-1.5 text-xs font-medium text-[#EC4141] transition hover:bg-[#EC4141]/20 dark:text-[#ff8b8b]"
-                @click="handleAddExtraDir"
-              >
-                <FolderOpen class="h-3.5 w-3.5" />
-                {{ t('pluginHost.addDir') }}
-              </button>
-            </div>
-            <div class="px-10">
-              <p
-                v-if="extraDirs.length === 0"
-                class="py-2 text-center text-xs text-gray-400 dark:text-white/35"
-              >
-                {{ t('pluginHost.noDirsHint') }}
-              </p>
-              <div v-else class="custom-scrollbar max-h-40 space-y-px overflow-y-auto py-2">
-                <div
-                  v-for="dir in extraDirs"
-                  :key="dir"
-                  class="group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <div class="min-w-0 flex-1 truncate text-xs text-gray-800 dark:text-gray-200" :title="dir">{{ dir }}</div>
-                  <button
-                    type="button"
-                    class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 dark:text-white/40"
-                    :title="t('pluginHost.removeDirTooltip')"
-                    @click="requestRemoveDir(dir)"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </transition>
       </div>
     </section>
 
@@ -1403,19 +1301,6 @@ onScopeDispose(() => {
 
     <!-- 音频插件：并入播放设置，置于最下方 -->
     <SettingsPluginHost />
-
-    <ConfirmModal
-      :visible="showRemoveDirConfirm"
-      :title="t('pluginHost.removeDirTitle')"
-      :content="dirToRemove ? t('pluginHost.removeDirContent') : ''"
-      @confirm="confirmRemoveDir"
-      @cancel="showRemoveDirConfirm = false"
-    />
-
-    <PluginLibraryDialog
-      :visible="showLibrary"
-      @close="showLibrary = false"
-    />
   </div>
 </template>
 
