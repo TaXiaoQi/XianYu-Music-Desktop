@@ -132,6 +132,8 @@ use window_z_order::{
 pub fn graceful_shutdown(app: &tauri::AppHandle) {
     shutdown_topmost_guard();
     shutdown_taskbar_zorder_guard();
+    // 退出前清理 WebView2 缓存，避免卸载时 RmDir /r 逐个删除数百个小文件导致卡顿
+    crate::webview_settings::clear_webview_cache(app);
     app.exit(0);
 }
 

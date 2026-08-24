@@ -16,6 +16,7 @@ import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetai
 import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache';
 import { useSettingsStore } from '../settings/store';
 import { useLibraryStore } from './store';
+import { useStatisticsStore } from '../statistics/store';
 
 const LIBRARY_SCAN_VISIBILITY_PRIORITY: Record<LibraryScanVisibility, number> = {
   silent: 1,
@@ -193,6 +194,10 @@ export const createLibraryRuntime = ({
           fetchFolderTree(),
           loadLibraryCatalogsFromCache(),
         ]);
+
+        // 扫描完成后刷新库统计（总歌曲数/总时长/库大小等），
+        // 让首页统计页在添加本地数据后立即更新，无需重启
+        void useStatisticsStore().refreshStats();
 
         if (!libraryStore.libraryScanProgress?.done) {
           finalizeLibraryScanProgress(songs);

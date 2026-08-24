@@ -120,6 +120,7 @@ const { showOnboarding, completeOnboarding } = useOnboarding();
 const settingsStore = useSettingsStore();
 
 const handleOnboardingComplete = () => {
+  console.log('[Announcement][debug] handleOnboardingComplete 被调用');
   completeOnboarding();
   checkAnnouncement();
   checkFeedbackNotification();

@@ -21,6 +21,15 @@ const PROXY_COVER_DOMAINS = [
   // 必须走后端 proxy_image（带 Referer: https://music.163.com/）才能稳定显示
   'music.126.net',
   '163.com',
+  // 汽水音乐（抖音系）封面 CDN 有防盗链，release 下直连常被拦，
+  // 必须走后端 proxy_image（带 Referer: https://www.douyin.com/）才能稳定显示
+  'douyin.com',
+  'pglstatp-toutiao.com',
+  'pangolin-sdk-toutiao.com',
+  'bytescm.com',
+  'pstatp.com',
+  'bytecdn.cn',
+  'toutiao.com',
 ];
 
 /**

@@ -5,6 +5,7 @@ import type { createLibraryFolderImport } from './libraryFolderImport';
 import type { createLibraryFolderTree } from './libraryFolderTree';
 import type { createLibraryRuntime } from './libraryRuntime';
 import type { LibraryRefreshSummary } from './libraryRefreshSummary';
+import { useStatisticsStore } from '../statistics/store';
 
 interface CreateLibraryCoreActionsDeps {
   playerFileManager: ReturnType<typeof createPlayerFileManager>;
@@ -60,6 +61,8 @@ export const createLibraryCoreActions = ({
     }
     await libraryFolderTree.fetchFolderTree();
     await libraryFolderTree.expandFolderPath(folderPath);
+    // 文件夹内容有变化时同步刷新库统计
+    void useStatisticsStore().refreshStats();
     return summary;
   };
 

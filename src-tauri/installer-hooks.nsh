@@ -28,3 +28,24 @@
     WriteRegStr HKCU "${XY_LANG_REGKEY}" "${XY_LANG_REGVALUE}" "zh-CN"
   ${EndIf}
 !macroend
+
+; ============================================================================
+; 卸载前清理应用数据中的大目录，加快"删除应用数据"卸载。
+;
+; 背景：Tauri 卸载器在用户勾选"删除应用数据"时，会用
+;   RmDir /r "$APPDATA\${BUNDLEID}" 和 RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+;   递归删除整个数据目录。其中 WebView2 缓存（EBWebView）有数百个小文件、
+;   封面缓存（covers）有上百个图片文件，Windows 逐个删除小文件很慢，
+;   导致卸载卡顿。
+;
+; 方案：本钩子在卸载段开头（此时 $DeleteAppDataCheckboxState 已由确认页写入）
+;   提前删掉这两个大目录，让后续 RmDir /r 只剩少量文件，显著加快卸载。
+;   仅在用户勾选删除时才清理，未勾选时保留全部数据。
+; ============================================================================
+!macro NSIS_HOOK_PREUNINSTALL
+  ${If} $DeleteAppDataCheckboxState = 1
+    SetShellVarContext current
+    RmDir /r "$LOCALAPPDATA\${BUNDLEID}\EBWebView"
+    RmDir /r "$APPDATA\${BUNDLEID}\covers"
+  ${EndIf}
+!macroend
