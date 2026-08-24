@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 
 import { useSettingsThemeControls } from '../../composables/useSettingsThemeControls';
 import { useToast } from '../../composables/toast';
@@ -278,6 +279,11 @@ const handleCustomThemeClick = () => {
 // --- 账号步骤：登录/注册 UI（搬自 Auth.vue）---
 const authMode = ref<AuthMode>('login');
 const authForm = ref({ account: '', nickname: '', email: '', password: '', confirmPassword: '', code: '' });
+/** 密码输入框的明文可见状态（自定义"查看密码"按钮，替代不可靠的浏览器原生眼睛图标） */
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+/** 密码输入框的聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现） */
+const pwdFocused = reactive<Record<string, boolean>>({});
 const authLoading = ref(false);
 const codeLoading = ref(false);
 const codeCountdown = ref(0);
@@ -1378,15 +1384,28 @@ onUnmounted(() => {
                               class="text-black/70 dark:text-white/70 font-light tracking-wider"
                               style="font-size: clamp(13px, 1.1vw, 16px);"
                             >密码</span>
-                            <input
-                              v-model="authForm.password"
-                              type="password"
-                              placeholder="请输入密码"
-                              :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
-                              required
-                              class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                              style="font-size: clamp(15px, 1.3vw, 18px);"
-                            />
+                            <div class="relative" @focusin="pwdFocused.password = true" @focusout="pwdFocused.password = false; pwdVisible.password = false">
+                              <input
+                                v-model="authForm.password"
+                                :type="pwdVisible.password ? 'text' : 'password'"
+                                placeholder="请输入密码"
+                                :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
+                                required
+                                class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                                style="font-size: clamp(15px, 1.3vw, 18px);"
+                              />
+                              <button
+                                type="button"
+                                v-show="pwdFocused.password && authForm.password.length > 0"
+                                class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                                :aria-label="pwdVisible.password ? '隐藏密码' : '查看密码'"
+                                @mousedown.prevent
+                                @click="pwdVisible.password = !pwdVisible.password"
+                              >
+                                <EyeOff v-if="pwdVisible.password" class="h-5 w-5" />
+                                <Eye v-else class="h-5 w-5" />
+                              </button>
+                            </div>
                           </label>
 
                           <label v-if="authMode === 'register'" class="grid gap-3">
@@ -1394,15 +1413,28 @@ onUnmounted(() => {
                               class="text-black/70 dark:text-white/70 font-light tracking-wider"
                               style="font-size: clamp(13px, 1.1vw, 16px);"
                             >确认密码</span>
-                            <input
-                              v-model="authForm.confirmPassword"
-                              type="password"
-                              placeholder="再次输入密码"
-                              autocomplete="new-password"
-                              required
-                              class="h-[clamp(2.75rem,4vw,3.5rem)] bg-transparent border-b border-black/15 dark:border-white/15 px-1 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
-                              style="font-size: clamp(15px, 1.3vw, 18px);"
-                            />
+                            <div class="relative" @focusin="pwdFocused.confirmPassword = true" @focusout="pwdFocused.confirmPassword = false; pwdVisible.confirmPassword = false">
+                              <input
+                                v-model="authForm.confirmPassword"
+                                :type="pwdVisible.confirmPassword ? 'text' : 'password'"
+                                placeholder="再次输入密码"
+                                autocomplete="new-password"
+                                required
+                                class="h-[clamp(2.75rem,4vw,3.5rem)] w-full bg-transparent border-b border-black/15 dark:border-white/15 pl-1 pr-10 text-black dark:text-white outline-none transition-all focus:border-[#EC4141] placeholder:text-black/30 dark:placeholder:text-white/30"
+                                style="font-size: clamp(15px, 1.3vw, 18px);"
+                              />
+                              <button
+                                type="button"
+                                v-show="pwdFocused.confirmPassword && authForm.confirmPassword.length > 0"
+                                class="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                                :aria-label="pwdVisible.confirmPassword ? '隐藏密码' : '查看密码'"
+                                @mousedown.prevent
+                                @click="pwdVisible.confirmPassword = !pwdVisible.confirmPassword"
+                              >
+                                <EyeOff v-if="pwdVisible.confirmPassword" class="h-5 w-5" />
+                                <Eye v-else class="h-5 w-5" />
+                              </button>
+                            </div>
                           </label>
 
                           <!-- 用户协议勾选 -->

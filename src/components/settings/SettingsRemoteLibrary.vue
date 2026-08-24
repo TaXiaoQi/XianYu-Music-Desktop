@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onScopeDispose, reactive, ref } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
 import { remoteLibraryApi } from '../../services/tauri/remoteLibraryApi';
@@ -33,6 +34,12 @@ const form = reactive({
   password: '',
   rootPath: '/',
 });
+
+// 密码可见性状态
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
+const pwdFocused = reactive<Record<string, boolean>>({});
 
 const resetForm = () => {
   form.id = '';
@@ -380,7 +387,25 @@ onScopeDispose(() => {
             </label>
             <label class="remote-field">
               <span>密码</span>
-              <input v-model="form.password" type="password" class="remote-input" autocomplete="current-password" />
+              <div class="relative" @focusin="pwdFocused.password = true" @focusout="pwdFocused.password = false; pwdVisible.password = false">
+                <input
+                  v-model="form.password"
+                  :type="pwdVisible.password ? 'text' : 'password'"
+                  class="remote-input pr-9"
+                  autocomplete="current-password"
+                />
+                <button
+                  type="button"
+                  v-show="pwdFocused.password && form.password.length > 0"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                  :aria-label="pwdVisible.password ? '隐藏密码' : '查看密码'"
+                  @mousedown.prevent
+                  @click="pwdVisible.password = !pwdVisible.password"
+                >
+                  <EyeOff v-if="pwdVisible.password" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                </button>
+              </div>
             </label>
             <label class="remote-field">
               <span>根目录</span>

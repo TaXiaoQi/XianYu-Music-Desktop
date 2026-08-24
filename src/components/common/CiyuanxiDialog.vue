@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 import { useCiyuanxiDialog } from '../../composables/useCiyuanxiDialog';
 import { useAuthStore } from '../../features/auth/store';
 import { updateCiyuanxiId } from '../../services/auth/authService';
@@ -13,6 +14,12 @@ const { ciyuanxiDialogState, resolveCiyuanxiDialog } = useCiyuanxiDialog();
 const newId = ref('');
 const password = ref('');
 const loading = ref(false);
+
+// 密码可见性状态
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
+const pwdFocused = reactive<Record<string, boolean>>({});
 
 watch(
   () => ciyuanxiDialogState.value.visible,
@@ -108,13 +115,26 @@ async function submit() {
             </label>
             <label class="ciyuanxi-field">
               <span class="ciyuanxi-label">登录密码</span>
-              <input
-                v-model="password"
-                type="password"
-                placeholder="请输入当前登录密码"
-                autocomplete="current-password"
-                class="ciyuanxi-input"
-              />
+              <div class="relative" @focusin="pwdFocused.password = true" @focusout="pwdFocused.password = false; pwdVisible.password = false">
+                <input
+                  v-model="password"
+                  :type="pwdVisible.password ? 'text' : 'password'"
+                  placeholder="请输入当前登录密码"
+                  autocomplete="current-password"
+                  class="ciyuanxi-input pr-9"
+                />
+                <button
+                  type="button"
+                  v-show="pwdFocused.password && password.length > 0"
+                  class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                  :aria-label="pwdVisible.password ? '隐藏密码' : '查看密码'"
+                  @mousedown.prevent
+                  @click="pwdVisible.password = !pwdVisible.password"
+                >
+                  <EyeOff v-if="pwdVisible.password" class="h-4 w-4" />
+                  <Eye v-else class="h-4 w-4" />
+                </button>
+              </div>
             </label>
           </div>
 

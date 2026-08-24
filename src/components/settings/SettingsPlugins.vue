@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, provide, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound } from 'lucide-vue-next';
+import { computed, provide, reactive, ref, watch, onMounted, onUnmounted } from 'vue';
+import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound, Eye, EyeOff } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useToast } from '../../composables/toast';
@@ -27,6 +27,12 @@ if (overlayZMatch) {
 
 const { showToast, showProgressToast } = useToast();
 const { settings, patchSettings } = useSettings();
+
+// 密码可见性状态
+const pwdVisible = reactive<Record<string, boolean>>({});
+
+// 密码聚焦状态：小眼睛仅在"聚焦且有内容"时显示，失焦消失（可反复重现）
+const pwdFocused = reactive<Record<string, boolean>>({});
 
 // 插件设置快捷访问
 const pluginSettings = computed(() => settings.value.plugins);
@@ -1736,14 +1742,26 @@ async function saveUserVariables() {
                     <option v-for="opt in v.options" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
                   <!-- password 类型 -->
-                  <input
-                    v-else-if="v.type === 'password'"
-                    type="password"
-                    v-model="detailUserVarValues[v.name]"
-                    :placeholder="v.placeholder || ''"
-                    class="h-8 rounded-lg border border-black/10 bg-white/45 px-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
-                    autocomplete="off"
-                  />
+                  <div v-else-if="v.type === 'password'" class="relative" @focusin="pwdFocused[v.name] = true" @focusout="pwdFocused[v.name] = false; pwdVisible[v.name] = false">
+                    <input
+                      :type="pwdVisible[v.name] ? 'text' : 'password'"
+                      v-model="detailUserVarValues[v.name]"
+                      :placeholder="v.placeholder || ''"
+                      class="h-8 w-full rounded-lg border border-black/10 bg-white/45 px-3 pr-9 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
+                      autocomplete="off"
+                    />
+                    <button
+                      type="button"
+                      v-show="pwdFocused[v.name] && (detailUserVarValues[v.name] || '').length > 0"
+                      class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-black/40 dark:text-white/40 hover:text-[#EC4141] transition cursor-pointer"
+                      :aria-label="pwdVisible[v.name] ? '隐藏密码' : '查看密码'"
+                      @mousedown.prevent
+                      @click="pwdVisible[v.name] = !pwdVisible[v.name]"
+                    >
+                      <EyeOff v-if="pwdVisible[v.name]" class="h-4 w-4" />
+                      <Eye v-else class="h-4 w-4" />
+                    </button>
+                  </div>
                   <!-- text 类型（默认） -->
                   <input
                     v-else
