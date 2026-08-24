@@ -1548,10 +1548,13 @@ const authStore = useAuthStore();
       // 成功返回 true；失败返回 false 由调用方处理错误。
       const tryPlayOnlineViaRust = async (): Promise<boolean> => {
         // 在线直链可能带反引号/引号等脏字符（汽水等插件返回），先清洗再交给后端取流，
-        // 否则 Rust 侧 URL 解析失败导致起播失败。
-        const finalAudioPath = /^https?:\/\//i.test(audioFilePath)
-          ? (sanitizeMediaUrl(audioFilePath) || audioFilePath)
-          : audioFilePath;
+        // 否则 Rust 侧 URL 解析失败导致起播失败。先强制转成字符串（audioFilePath 可能是
+        // 响应式 Proxy，typeof 为 object，sanitizeMediaUrl 会直接返回空串）；
+        // sanitize 为空时再剥离首尾反引号/引号/空白兜底，避免退回带反引号的原文。
+        const audioPathStr = String(audioFilePath == null ? '' : audioFilePath);
+        const finalAudioPath = sanitizeMediaUrl(audioPathStr)
+          || audioPathStr.replace(/^[`'"\s]+|[`'"\s]+$/g, '')
+          || audioPathStr;
         console.log('[Audio] 在线直链走 Rust 起播:', {
           url: finalAudioPath.slice(0, 160),
           hasHeaders: !!pluginHeaders,

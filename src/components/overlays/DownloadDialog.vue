@@ -6,7 +6,11 @@ import { downloadToLocal } from '../../composables/useDownloadToLocal';
 import { useSettings } from '../../features/settings/useSettings';
 import { usePlaybackStore } from '../../features/playback/store';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
-import { probeDownloadableQualities } from '../../services/downloadService';
+import {
+  ensureSharedQualityProbe,
+  onSharedProbeUpdate,
+  sharedProbeAvailable,
+} from '../../services/qualitySharedProbe';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
@@ -56,8 +60,8 @@ const dialogTitle = computed(() => {
   return `${title}-${artist}`;
 });
 
-/** 当前探测任务的中止控制器（弹窗关闭或切歌时中止，防止旧结果覆盖新歌） */
-let probeController: AbortController | null = null;
+/** 当前探测任务的订阅句柄（弹窗关闭或切歌时解除，防止旧结果覆盖新歌） */
+let probeOff: (() => void) | null = null;
 
 /** 判断下载目标是否就是当前播放歌曲 */
 const isCurrentPlaybackSong = (song: Song) => {
@@ -141,22 +145,30 @@ const qualityExtraText = (key: QualityKey) => {
   return `${ext} · 未知体积`;
 };
 
-const probeQualitySizes = async (
+/** 解除共享探测订阅，并清理本弹窗的订阅状态 */
+const releaseDownloadProbe = () => {
+  probeOff?.();
+  probeOff = null;
+};
+
+/** 已在本弹窗探过体积的档位集合，避免增量更新时对同一档位重复请求 */
+const probedSizesSet = new Set<QualityKey>();
+
+/** 增量探测各直链的文件体积（仅对新增档位请求） */
+const probeQualitySizesIncremental = async (
   urls: Partial<Record<QualityKey, string>>,
-  signal: AbortSignal,
 ) => {
   const entries = Object.entries(urls) as Array<[QualityKey, string]>;
   await Promise.all(entries.map(async ([key, url]) => {
+    if (probedSizesSet.has(key)) return;
+    probedSizesSet.add(key);
     try {
       const info = await downloadApi.probeUrlSize(url);
-      if (signal.aborted) return;
       if (typeof info?.size === 'number' && info.size > 0) {
         qualitySizes.value = { ...qualitySizes.value, [key]: info.size };
       }
     } catch (e: any) {
-      if (!signal.aborted) {
-        console.warn(`[DownloadDialog] ${key} 体积探测失败:`, e?.message || e);
-      }
+      console.warn(`[DownloadDialog] ${key} 体积探测失败:`, e?.message || e);
     }
   }));
 };
@@ -218,8 +230,8 @@ const hasNoAvailableQuality = computed(() =>
 
 /** 中止进行中的探测 */
 const abortProbe = () => {
-  probeController?.abort();
-  probeController = null;
+  probeOff?.();
+  probeOff = null;
   isProbing.value = false;
 };
 
@@ -228,6 +240,8 @@ const abortProbe = () => {
  *
  * 分两步：先取插件声明列表（快，通常无网络请求，用于确定探测范围与展示骨架），
  * 再对声明的档位实际请求直链，只保留真正拿到有效 URL 的档位。
+ * 这里复用共享同歌探测（qualitySharedProbe）的一轮结果，与起播/底栏菜单
+ * 共用同一轮请求，避免重复；弹窗通过订阅增量结果后台补齐各档直链与体积。
  */
 const probeQualities = async (song: Song) => {
   const songPath = song.cue_source_path || song.path;
@@ -236,42 +250,41 @@ const probeQualities = async (song: Song) => {
   }
 
   abortProbe();
-  const controller = new AbortController();
-  probeController = controller;
   isProbing.value = true;
 
+  // 1. 插件声明列表：作为探测范围与展示骨架
   try {
-    // 1. 插件声明列表：作为探测上界与探测期间的展示骨架
-    try {
-      declaredQualities.value = await getOnlineAvailableQualities(songPath, song);
-    } catch {
-      declaredQualities.value = null;
-    }
-    if (controller.signal.aborted) return;
-
-    // 2. 实测探测
-    const result = await probeDownloadableQualities(song, declaredQualities.value, {
-      signal: controller.signal,
-    });
-    if (controller.signal.aborted) return;
-
-    availableQualities.value = result.available;
-    probedUrls.value = result.resolvedUrls;
-    void probeQualitySizes(result.resolvedUrls, controller.signal);
-
-    ensureSelectedQualityAvailable(result.available);
-  } catch (e: any) {
-    if (!controller.signal.aborted) {
-      console.warn('[DownloadDialog] 音质探测失败:', e?.message || e);
-      // 探测失败时不回退展示全部档位，避免出现不可用音质选项。
-      availableQualities.value = null;
-    }
-  } finally {
-    if (probeController === controller) {
-      probeController = null;
-      isProbing.value = false;
-    }
+    declaredQualities.value = await getOnlineAvailableQualities(songPath, song);
+  } catch {
+    declaredQualities.value = null;
   }
+  if (!props.visible) {
+    isProbing.value = false;
+    return;
+  }
+
+  // 2. 消费共享同歌探测：增量累积各档直链与体积，后台补齐
+  const probe = await ensureSharedQualityProbe(song, declaredQualities.value);
+  if (!probe) {
+    isProbing.value = false;
+    return;
+  }
+
+  const apply = () => {
+    availableQualities.value = probe.done ? sharedProbeAvailable(probe) : null;
+    probedUrls.value = { ...probe.resolvedUrls };
+    probeQualitySizesIncremental(probe.resolvedUrls);
+    if (probe.done) {
+      isProbing.value = false;
+      const avail = sharedProbeAvailable(probe);
+      availableQualities.value = avail;
+      ensureSelectedQualityAvailable(avail);
+      releaseDownloadProbe();
+    }
+  };
+
+  probeOff = onSharedProbeUpdate(probe, apply);
+  apply();
 };
 
 // 弹窗打开时初始化音质和目录，并探测真实可用音质
@@ -291,6 +304,7 @@ watch(
     declaredQualities.value = null;
     probedUrls.value = {};
     qualitySizes.value = {};
+    probedSizesSet.clear();
 
     if (song) {
       const playbackQualities = getPlaybackAvailableQualities(song);

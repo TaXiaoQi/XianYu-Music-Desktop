@@ -9,6 +9,10 @@ import {
   resolveLxCachedInfo,
 } from '../../services/lxUrlResolver';
 import { resolveOnlineQualityUrl } from '../../services/downloadService';
+import {
+  ensureSharedQualityProbe,
+  sharedProbeAwaitTop,
+} from '../../services/qualitySharedProbe';
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
 import { getPluginBilibiliCookies } from '../../services/pluginCookieStore';
 import { resolveActualQuality } from '../../services/audioQualityVerify';
@@ -120,6 +124,32 @@ export const resolveOnlineAudio = async ({
 }: ResolveOnlineAudioOptions): Promise<ResolveOnlineAudioResult> => {
   if (audioFilePath.startsWith('lx://') || audioFilePath.startsWith('plugin://')) {
     try {
+      // [共享同歌探测 · 起播先行] 起播复用同一轮音质探测已解析的直链，
+      // 避免与音质/下载菜单的探测重复请求。等待首选档位解析出来后，以该档位 +
+      // 共享探测结果调用 resolveOnlineQualityUrl，直接命中预解析 URL（含封面等播放附加信息）。
+      const probe = await ensureSharedQualityProbe(song, availableQualities);
+      if (probe) {
+        const startQuality = await sharedProbeAwaitTop(
+          probe,
+          requestedQuality,
+          fallbackBehavior,
+          availableQualities,
+        );
+        if (startQuality) {
+          const resolved = await resolveOnlineQualityUrl(
+            song,
+            startQuality,
+            fallbackBehavior,
+            availableQualities,
+            probe.resolvedUrls,
+            { includePlaybackExtras: true },
+          );
+          if (resolved?.url) {
+            return buildResolveResult(resolved);
+          }
+        }
+      }
+
       const preResolvedUrls: Partial<Record<QualityKey, string>> | undefined = song.remote_requested_quality === requestedQuality
         && song.remote_fallback_behavior === fallbackBehavior
         && preFetchedUrl
@@ -135,17 +165,7 @@ export const resolveOnlineAudio = async ({
       );
 
       if (resolved?.url) {
-        const resolvedHeaders = normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null);
-        return {
-          audioFilePath: resolved.url,
-          pluginHeaders: await withBilibiliStreamCookie(resolved.url, resolvedHeaders),
-          currentPlayingQuality: resolveActualQuality(resolved.quality, resolved.url),
-          currentPlayingAudioUrl: resolved.url,
-          lyricsRaw: resolved.lyricsRaw,
-          coverThumbPath: resolved.coverThumbPath,
-          ekey: resolved.ekey,
-          cek: resolved.cek,
-        };
+        return buildResolveResult(resolved);
       }
     } catch (error) {
       console.warn('[Audio] 使用下载链路解析在线 URL 失败:', error);
@@ -157,5 +177,22 @@ export const resolveOnlineAudio = async ({
     pluginHeaders: null,
     currentPlayingQuality: null,
     currentPlayingAudioUrl: null,
+  };
+};
+
+/** 将由在线解析得到的直链整理成起播所需的统一结果（含 B 站 Cookie 补全） */
+const buildResolveResult = async (
+  resolved: Awaited<ReturnType<typeof resolveOnlineQualityUrl>> & { url: string },
+): Promise<ResolveOnlineAudioResult> => {
+  const resolvedHeaders = normalizeMediaRequestHeaders(resolved.url, resolved.headers ?? null);
+  return {
+    audioFilePath: resolved.url,
+    pluginHeaders: await withBilibiliStreamCookie(resolved.url, resolvedHeaders),
+    currentPlayingQuality: resolveActualQuality(resolved.quality, resolved.url),
+    currentPlayingAudioUrl: resolved.url,
+    lyricsRaw: resolved.lyricsRaw,
+    coverThumbPath: resolved.coverThumbPath,
+    ekey: resolved.ekey,
+    cek: resolved.cek,
   };
 };

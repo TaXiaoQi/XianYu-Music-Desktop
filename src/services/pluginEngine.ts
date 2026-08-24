@@ -1603,7 +1603,66 @@ export async function pluginGetAlbumSongs(
  *   1. 先用 QualityKey 直接传入（Toskysun 插件原生支持 12 档键值）
  *   2. 若返回空/失败，回退到 standard/high/lossless（原版 MusicFree 插件）
  */
+// ==================== 同歌并发/连发探测去重 ====================
+// 同一首歌在极短时间内可能被"起播解析、音质菜单刷新、切音质"等多路并发发起
+// getMediaSource。MF/Baka 插件脚本常在一次调用内部对多档上游 API 逐个请求，
+// 每一路都会放大请求次数。这里对 (插件, 歌曲id, 目标音质, 回退方向) 做窗口内去重，
+// 让并发的多路共享同一份解析结果，避免重复探测。
+const GET_MEDIA_SOURCE_DEDUP_WINDOW_MS = 400;
+const _dedupGetMediaSource = new Map<
+  string,
+  { at: number; p: Promise<PluginMusicInfo | null> }
+>();
+
+function buildGetMediaSourceDedupKey(
+  source: PluginSource,
+  item: PluginSearchResult,
+  quality: string,
+  fallbackBehavior: string,
+): string {
+  const songId =
+    (item?.rawData as any)?.songmid ??
+    (item as any)?.songmid ??
+    item?.id ??
+    (item as any)?.hash ??
+    '';
+  return `${source.id}\u0001${songId}\u0001${quality}\u0001${fallbackBehavior}`;
+}
+
 export async function pluginGetMusicInfo(
+  source: PluginSource,
+  item: PluginSearchResult,
+  quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
+  fallbackBehavior: OnlineQualityFallbackBehavior = 'lower',
+  availableQualities: QualityKey[] | null = null,
+): Promise<PluginMusicInfo | null> {
+  // [同歌去重] 并发/连发的多路请求共享同一份解析结果
+  const dedupKey = buildGetMediaSourceDedupKey(source, item, String(quality), String(fallbackBehavior));
+  const now = Date.now();
+  const hit = _dedupGetMediaSource.get(dedupKey);
+  if (hit && now - hit.at <= GET_MEDIA_SOURCE_DEDUP_WINDOW_MS) {
+    log(`[getMediaSource] 同一首歌并发探测去重，复用解析结果: ${dedupKey}`);
+    return hit.p;
+  }
+  if (hit) _dedupGetMediaSource.delete(dedupKey);
+
+  const p = runPluginGetMusicInfo(source, item, quality, fallbackBehavior, availableQualities);
+  _dedupGetMediaSource.set(dedupKey, { at: now, p });
+  p.then(
+    () => {
+      // 完成后在窗口内保留，供紧接着的连发复用；窗口过后自动回收，避免内存残留
+      setTimeout(() => {
+        if (_dedupGetMediaSource.get(dedupKey)?.p === p) _dedupGetMediaSource.delete(dedupKey);
+      }, GET_MEDIA_SOURCE_DEDUP_WINDOW_MS);
+    },
+    () => {
+      _dedupGetMediaSource.delete(dedupKey);
+    },
+  );
+  return p;
+}
+
+async function runPluginGetMusicInfo(
   source: PluginSource,
   item: PluginSearchResult,
   quality: QualityKey | 'standard' | 'high' | 'lossless' = '320k',
@@ -1650,28 +1709,45 @@ export async function pluginGetMusicInfo(
   // 原版 MF 插件：多个 QualityKey 映射到同一四级键时去重
   const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
 
-  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
-    const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
-    const seen = new Set<string>();
-    for (const q of resolvedKeys) {
-      const mfQ = qualityKeyToMfQuality(q);
-      if (!seen.has(mfQ)) {
-        seen.add(mfQ);
-        tryPairs.push({ pluginQ: mfQ, qualityKey: q });
+  // [MF 音质顺序对齐 MusicFree 官方 getQualityOrder]
+  // 官方默认 order='asc'：qualityOrder = [首选, ...更高侧, ...更低侧]（先向更高扩展再降到更低），
+  // 而非旧的"唯一侧线性 lower/higher"。逐级调用 getMediaSource 直到拿到有效 URL 为止。
+  // pause 时仅尝试首选。
+  const mfAscOrder = (baseMf: string): string[] => {
+    const baseIdx = MF_QUALITY_ORDER.indexOf(baseMf as any);
+    const order: string[] = [baseMf];
+    for (let i = baseIdx + 1; i < MF_QUALITY_ORDER.length; i++) order.push(MF_QUALITY_ORDER[i]);
+    for (let i = baseIdx - 1; i >= 0; i--) order.push(MF_QUALITY_ORDER[i]);
+    return order;
+  };
+
+  if (isQualityKey(quality)) {
+    const baseMf = qualityKeyToMfQuality(quality);
+    const order = fallbackBehavior === 'pause' ? [baseMf] : mfAscOrder(baseMf);
+    const hasAvail = availableQualities && availableQualities.length > 0;
+    if (hasAvail) {
+      const used = new Set<string>();
+      for (const mf of order) {
+        if (used.has(mf)) continue;
+        // 代表内部档：首选档（映射到该四级键）优先；否则在可用列表里挑映射到该级的档。
+        let rep: QualityKey | null = null;
+        if (qualityKeyToMfQuality(quality) === mf) {
+          rep = quality;
+        } else {
+          rep = availableQualities.find(q => qualityKeyToMfQuality(q) === mf) ?? null;
+        }
+        if (!rep) continue;
+        used.add(mf);
+        tryPairs.push({ pluginQ: mf, qualityKey: rep });
       }
-    }
-  } else if (isQualityKey(quality)) {
-    const mfQ = qualityKeyToMfQuality(quality);
-    const mfIdx = MF_QUALITY_ORDER.indexOf(mfQ);
-    if (fallbackBehavior === 'pause') {
-      tryPairs.push({ pluginQ: mfQ, qualityKey: quality });
-    } else if (fallbackBehavior === 'higher') {
-      for (let i = mfIdx; i < MF_QUALITY_ORDER.length; i++) {
-        tryPairs.push({ pluginQ: MF_QUALITY_ORDER[i], qualityKey: quality });
+      // 保底：首选不在可用映射集时也尝试首选一次，交由插件自行回落。
+      if (tryPairs.length === 0) {
+        tryPairs.push({ pluginQ: baseMf, qualityKey: quality });
       }
     } else {
-      for (let i = mfIdx; i >= 0; i--) {
-        tryPairs.push({ pluginQ: MF_QUALITY_ORDER[i], qualityKey: quality });
+      // 无可用列表：按官方 asc 顺序遍历四级键，插件内部自行回落。
+      for (const mf of order) {
+        tryPairs.push({ pluginQ: mf, qualityKey: quality });
       }
     }
   } else {

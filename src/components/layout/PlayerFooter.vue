@@ -4,7 +4,13 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { isDownloadableOnlineSong, probeDownloadableQualities } from '../../services/downloadService';
+import { isDownloadableOnlineSong } from '../../services/downloadService';
+import {
+  ensureSharedQualityProbe,
+  onSharedProbeUpdate,
+  sharedProbeAvailable,
+  getSongKey,
+} from '../../services/qualitySharedProbe';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
@@ -108,11 +114,18 @@ const footerQualityUrls = ref<Partial<Record<QualityKey, string>>>({});
 const footerQualitySizes = ref<Partial<Record<QualityKey, number>>>({});
 const isFooterQualityInfoProbing = ref(false);
 const footerQualityInfoSongPath = ref('');
-let footerQualityInfoController: AbortController | null = null;
+/** 当前歌曲的共享探测订阅：切歌/卸载时解除，避免旧订阅污染新歌状态 */
+let footerSharedProbeOff: (() => void) | null = null;
+/** 已探过体积的档位集合，避免增量更新时对同一档位重复请求体积 */
+const footerQualitySizesProbed = new Set<QualityKey>();
+
+const releaseFooterSharedProbe = () => {
+  footerSharedProbeOff?.();
+  footerSharedProbeOff = null;
+};
 
 const abortFooterQualityInfoProbe = () => {
-  footerQualityInfoController?.abort();
-  footerQualityInfoController = null;
+  releaseFooterSharedProbe();
   isFooterQualityInfoProbing.value = false;
 };
 
@@ -141,6 +154,7 @@ watch(
     footerAvailableQualityKeys.value = null;
     footerQualityUrls.value = {};
     footerQualitySizes.value = {};
+    footerQualitySizesProbed.clear();
     void refreshDownloadedState();
   },
   { immediate: true },
@@ -162,7 +176,7 @@ const showDownloadQualityMenu = ref(false);
 const downloadQualityButtonRef = ref<HTMLElement | null>(null);
 const downloadQualityMenuRef = ref<HTMLElement | null>(null);
 
-/** 当前歌曲可用的下载音质选项（最终以下载链路 probeDownloadableQualities 的实测结果为准） */
+/** 当前歌曲可用的下载音质选项（最终以共享同歌探测的实测结果为准） */
 const DOWNLOAD_QUALITY_OPTIONS = computed(() => {
   if (footerAvailableQualityKeys.value !== null) {
     return ALL_QUALITY_OPTIONS.filter(opt => footerAvailableQualityKeys.value!.includes(opt.value));
@@ -489,20 +503,19 @@ const footerQualityExtraText = (key: string) => {
 
 const probeFooterQualitySizes = async (
   urls: Partial<Record<QualityKey, string>>,
-  signal: AbortSignal,
 ) => {
   const entries = Object.entries(urls) as Array<[QualityKey, string]>;
   await Promise.all(entries.map(async ([key, url]) => {
+    // 只对尚未探过体积的档位请求，避免增量更新时对同一档位重复请求
+    if (footerQualitySizesProbed.has(key)) return;
+    footerQualitySizesProbed.add(key);
     try {
       const info = await downloadApi.probeUrlSize(url);
-      if (signal.aborted) return;
       if (typeof info?.size === 'number' && info.size > 0) {
         footerQualitySizes.value = { ...footerQualitySizes.value, [key]: info.size };
       }
     } catch (e: any) {
-      if (!signal.aborted) {
-        console.warn(`[PlayerFooter] ${key} 体积探测失败:`, e?.message || e);
-      }
+      console.warn(`[PlayerFooter] ${key} 体积探测失败:`, e?.message || e);
     }
   }));
 };
@@ -511,49 +524,52 @@ const ensureFooterQualityInfo = async () => {
   const song = currentSong.value;
   const songPath = song?.cue_source_path || song?.path || '';
   if (!song || !isDownloadableOnlineSong(song) || !songPath) return;
+  const songKey = getSongKey(song);
   if (
-    footerQualityInfoSongPath.value === songPath
+    footerQualityInfoSongPath.value === songKey
     && (isFooterQualityInfoProbing.value || footerAvailableQualityKeys.value !== null)
   ) {
     return;
   }
 
-  abortFooterQualityInfoProbe();
-  const controller = new AbortController();
-  footerQualityInfoController = controller;
-  footerQualityInfoSongPath.value = songPath;
+  releaseFooterSharedProbe();
+  footerQualityInfoSongPath.value = songKey;
   footerAvailableQualityKeys.value = null;
   footerQualityUrls.value = {};
   footerQualitySizes.value = {};
+  footerQualitySizesProbed.clear();
   isFooterQualityInfoProbing.value = true;
 
+  /** 探测期间是否仍停留在同一首歌（用于丢弃切歌后的旧结果） */
+  const isCurrent = () => (currentSong.value ? getSongKey(currentSong.value) === songKey : false);
+
+  let declaredQualities: QualityKey[] | null = null;
   try {
-    let declaredQualities: QualityKey[] | null = null;
-    try {
-      declaredQualities = await getOnlineAvailableQualities(songPath, song);
-    } catch {
-      declaredQualities = null;
-    }
-    if (controller.signal.aborted) return;
-
-    const result = await probeDownloadableQualities(song, declaredQualities, {
-      signal: controller.signal,
-    });
-    if (controller.signal.aborted) return;
-
-    footerAvailableQualityKeys.value = result.available;
-    footerQualityUrls.value = result.resolvedUrls;
-    await probeFooterQualitySizes(result.resolvedUrls, controller.signal);
-  } catch (e: any) {
-    if (!controller.signal.aborted) {
-      console.warn('[PlayerFooter] 音质体积探测失败:', e?.message || e);
-    }
-  } finally {
-    if (footerQualityInfoController === controller) {
-      footerQualityInfoController = null;
-      isFooterQualityInfoProbing.value = false;
-    }
+    declaredQualities = await getOnlineAvailableQualities(songPath, song);
+  } catch {
+    declaredQualities = null;
   }
+  if (!isCurrent()) return;
+
+  // [共享同歌探测 · 菜单后台补齐] 复用起播/下载的同一轮探测，随增量结果更新菜单。
+  const probe = await ensureSharedQualityProbe(song, declaredQualities);
+  if (!probe || !isCurrent()) {
+    if (isCurrent()) isFooterQualityInfoProbing.value = false;
+    return;
+  }
+
+  const apply = () => {
+    footerAvailableQualityKeys.value = sharedProbeAvailable(probe);
+    footerQualityUrls.value = { ...probe.resolvedUrls };
+    void probeFooterQualitySizes(probe.resolvedUrls);
+    if (probe.done) {
+      isFooterQualityInfoProbing.value = false;
+      releaseFooterSharedProbe();
+    }
+  };
+
+  footerSharedProbeOff = onSharedProbeUpdate(probe, apply);
+  if (isCurrent()) apply();
 };
 
 // 当前播放歌曲变化时，提前在后台探测下载链路可用音质和文件体积。

@@ -18,7 +18,7 @@
 import type { QualityKey, Song } from '../types';
 import {
   normalizeQualityKey,
-  qualityKeyToBakaPluginQuality,
+  qualityKeyToLxQuality,
   resolveOnlinePlayQuality,
 } from '../types';
 import type { PluginSource } from '../types';
@@ -169,7 +169,7 @@ function normalizeLxTypes(
     const qualityKey = normalizeQualityKey(key);
     if (!qualityKey) continue;
     result[qualityKey] = value;
-    result[qualityKeyToBakaPluginQuality(qualityKey)] = value;
+    result[qualityKeyToLxQuality(qualityKey)] = value;
   }
   return result;
 }
@@ -242,7 +242,7 @@ export async function resolveLxUrlViaPlugin(
 
   for (const quality of qualities) {
     try {
-      const pluginQuality = qualityKeyToBakaPluginQuality(quality);
+      const pluginQuality = qualityKeyToLxQuality(quality);
       const urlResult = await lxPluginGetMusicUrl(
         plugin,
         lxSource,
@@ -295,7 +295,58 @@ export interface LxSingleQualityResolveResult {
  * @param quality 目标音质
  * @returns 解析结果，失败返回 null
  */
+// ==================== 同歌并发/连发探测去重 ====================
+// 同一首歌可能被"起播解析 + 音质菜单/下载探测"等多路并发发起 musicUrl 请求，
+// 每一档都会触发一次带网络往返的 lxPluginGetMusicUrl。这里对 (插件, 歌曲id, 音质)
+// 做窗口内去重，让并发的多路共享同一份解析结果，避免重复请求（与 pluginEngine 的
+// MF/Baka 去重策略保持一致）。
+const LX_URL_DEDUP_WINDOW_MS = 400;
+const _dedupLxUrl = new Map<
+  string,
+  { at: number; p: Promise<LxSingleQualityResolveResult | null> }
+>();
+
+function buildLxUrlDedupKey(
+  plugin: PluginSource,
+  songInfo: Record<string, unknown>,
+  quality: QualityKey,
+): string {
+  const songId = String(songInfo?.songmid ?? songInfo?.hash ?? '');
+  return `${plugin.id}\u0001${songId}\u0001${quality}`;
+}
+
 export async function resolveLxUrlForSingleQuality(
+  plugin: PluginSource,
+  lxSource: string,
+  songInfo: Record<string, unknown>,
+  quality: QualityKey,
+): Promise<LxSingleQualityResolveResult | null> {
+  // [同歌去重] 并发/连发的多路请求共享同一份解析结果
+  const dedupKey = buildLxUrlDedupKey(plugin, songInfo, quality);
+  const now = Date.now();
+  const hit = _dedupLxUrl.get(dedupKey);
+  if (hit && now - hit.at <= LX_URL_DEDUP_WINDOW_MS) {
+    console.log(`[lxUrl] 同一首歌并发探测去重，复用解析结果: ${dedupKey}`);
+    return hit.p;
+  }
+  if (hit) _dedupLxUrl.delete(dedupKey);
+
+  const p = runResolveLxUrlForSingleQuality(plugin, lxSource, songInfo, quality);
+  _dedupLxUrl.set(dedupKey, { at: now, p });
+  p.then(
+    () => {
+      setTimeout(() => {
+        if (_dedupLxUrl.get(dedupKey)?.p === p) _dedupLxUrl.delete(dedupKey);
+      }, LX_URL_DEDUP_WINDOW_MS);
+    },
+    () => {
+      _dedupLxUrl.delete(dedupKey);
+    },
+  );
+  return p;
+}
+
+async function runResolveLxUrlForSingleQuality(
   plugin: PluginSource,
   lxSource: string,
   songInfo: Record<string, unknown>,
@@ -305,7 +356,7 @@ export async function resolveLxUrlForSingleQuality(
     plugin,
     lxSource,
     songInfo,
-    qualityKeyToBakaPluginQuality(quality),
+    qualityKeyToLxQuality(quality),
   );
   const url = urlResult?.url;
   if (!url || !/^https?:/.test(url)) return null;

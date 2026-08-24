@@ -33,6 +33,32 @@ const BUFFER_STARVE_BEFORE_PAUSE: Duration = Duration::from_millis(300);
 /// 缓冲恢复后，额外等待该时长的续优后再自动恢复播放（累积一定余量缓冲，
 /// 避免网络抖动时立刻再次触发暂停，形成乒乓）。
 const BUFFER_RESUME_GRACE: Duration = Duration::from_millis(250);
+/// 输出设备不可用时的自愈重试间隔。设备被拔出/变更为暂无默认设备（output 为
+/// None）时，按该间隔周期性尝试重开默认设备；设备恢复可用即可无缝续播，不再需要
+/// 依赖"设备名变化"作为触发条件（设备同名或原先就无设备时不会被现有逻辑覆盖）。
+const OUTPUT_RECOVER_INTERVAL: Duration = Duration::from_millis(1000);
+
+/// 设备相关的音频操作（打开/重建输出流）在无可用设备时可能触发 cpal/rodio panic。
+/// 这些 panic 会直接杀死播放线程，导致前端 IPC 报"sending on a closed channel"，
+/// 播放永久卡死。用 catch_unwind 隔离，panic 仅告警不终止线程，通道始终存活。
+#[allow(clippy::type_complexity)]
+fn guard_device_ops<F>(ops: F) -> bool
+where
+    F: FnOnce(),
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(ops)) {
+        Ok(()) => true,
+        Err(payload) => {
+            let reason = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "未知 panic".to_string());
+            eprintln!("[Audio][rust] 音频设备相关操作 panic，已隔离（不终止播放线程）: {reason}");
+            false
+        }
+    }
+}
 
 fn progress_duration(progress: &Arc<SharedProgress>) -> Duration {
     let current_samples = progress.samples_played.load(Ordering::Relaxed);
@@ -950,6 +976,16 @@ fn handle_play(
     *is_playing_flag = true;
     reset_playback_progress(progress);
 
+    // [加固] 无可用输出设备时，立即给出明确失败原因，让前端起播探测快速失败，
+    // 而不是静默等 20 秒超时（被误判为"未就绪"）。设备恢复后后续 Play 可自动续播。
+    if output.is_none() {
+        if let Ok(mut reason) = progress.start_failed_reason.lock() {
+            *reason = Some("未检测到可用的音频输出设备，请检查扬声器/耳机是否已连接".to_string());
+        }
+        progress.start_failed.store(true, Ordering::Relaxed);
+        return;
+    }
+
     if let Some(sink) = current_sink {
         sink.stop();
     }
@@ -1333,6 +1369,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         let mut current_bit_perfect = false;
         // 上次发射 playback:progress 事件的时间，用于节流
         let mut last_progress_emit = std::time::Instant::now();
+        // [加固] 无输出设备时自愈重开的节流时间戳（避免每轮轮询都枚举设备）
+        let mut last_output_recover = std::time::Instant::now();
         // 当前播放的远程流（在线直链/WebDAV）。seek 失败重建解码链时需要它，
         // 因为远程流的 current_path 是 URL，不能用 File::open 打开。
         let mut current_remote_stream: Option<RemoteStreamSource> = None;
@@ -1382,30 +1420,33 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
 
             #[cfg(target_os = "windows")]
             {
-                recover_from_exclusive_failure(
-                    &mut exclusive_playback,
-                    &selected_device_name,
-                    &mut output,
-                    &host,
-                    &mut current_sink,
-                    &mut active_device_name,
-                    &mut requested_output_mode,
-                    &mut active_output_mode,
-                    &mut fallback_reason,
-                    &current_path,
-                    is_playing_flag,
-                    &thread_progress,
-                    thread_eq_handle.clone(),
-                    thread_se_handle.clone(),
-                    thread_user_volume.clone(),
-                    current_volume_balance_gain,
-                    &mut current_normalizer_handle,
-                    current_remote_stream.as_ref(),
-                    current_streaming_state.as_ref(),
-                    &thread_app_handle,
-                    &thread_output_status,
-                    &mut last_default_device_name,
-                );
+                // [加固] 设备断开时 cpal 恢复逻辑可能 panic；隔离之，避免杀死播放线程。
+                guard_device_ops(|| {
+                    recover_from_exclusive_failure(
+                        &mut exclusive_playback,
+                        &selected_device_name,
+                        &mut output,
+                        &host,
+                        &mut current_sink,
+                        &mut active_device_name,
+                        &mut requested_output_mode,
+                        &mut active_output_mode,
+                        &mut fallback_reason,
+                        &current_path,
+                        is_playing_flag,
+                        &thread_progress,
+                        thread_eq_handle.clone(),
+                        thread_se_handle.clone(),
+                        thread_user_volume.clone(),
+                        current_volume_balance_gain,
+                        &mut current_normalizer_handle,
+                        current_remote_stream.as_ref(),
+                        current_streaming_state.as_ref(),
+                        &thread_app_handle,
+                        &thread_output_status,
+                        &mut last_default_device_name,
+                    );
+                });
             }
 
             match rx.recv_timeout(PLAYER_POLL_INTERVAL) {
@@ -1908,6 +1949,67 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                 Err(RecvTimeoutError::Timeout) => {
                     if selected_device_name.is_none() {
                         let next_default_name = default_output_device_name(&host);
+
+                        // [加固] 输出设备不可用（output 为 None）时的自愈：设备重新可用即无缝续播。
+                        // 现有 should_restore_for_default_device_change 只在"枚举到有效设备名且
+                        // 与上次不同"时恢复；设备同名回归、或一开始就无设备时不会触发，播放将
+                        // 永久停摆（前端表现为"在线直链走 Rust 起播探测失败（未就绪）"）。
+                        // 此处按 OUTPUT_RECOVER_INTERVAL 节流重开默认设备并恢复当前播放，
+                        // 同时对外暴露明确的"无可用输出设备"状态。
+                        let missing_output = output.is_none()
+                            && active_output_mode == AudioOutputMode::Shared
+                            && last_output_recover.elapsed() >= OUTPUT_RECOVER_INTERVAL;
+                        if missing_output {
+                            last_output_recover = std::time::Instant::now();
+                            if let Some(sink) = &current_sink {
+                                sink.stop();
+                            }
+                            current_sink = None;
+                            guard_device_ops(|| {
+                                restore_shared_output(
+                                    &selected_device_name,
+                                    &mut output,
+                                    &host,
+                                    &mut current_sink,
+                                    &mut active_device_name,
+                                    &current_path,
+                                    is_playing_flag,
+                                    &thread_progress,
+                                    thread_eq_handle.clone(),
+                                    thread_se_handle.clone(),
+                                    thread_user_volume.clone(),
+                                    current_volume_balance_gain,
+                                    &mut current_normalizer_handle,
+                                    current_remote_stream.as_ref(),
+                                    current_streaming_state.as_ref(),
+                                );
+                            });
+                            if output.is_some() {
+                                // 设备已恢复：清空兜底原因/失败标记，并刷新默认设备名，避免随
+                                // 后被误判为"设备变化"而重复重建管线。
+                                fallback_reason = None;
+                                thread_progress.start_failed.store(false, Ordering::Relaxed);
+                                if let Ok(mut reason) = thread_progress.start_failed_reason.lock() {
+                                    *reason = None;
+                                }
+                                last_default_device_name = next_default_name.clone();
+                            } else {
+                                fallback_reason = Some(
+                                    "未检测到可用的音频输出设备，请检查扬声器/耳机是否已连接"
+                                        .to_string(),
+                                );
+                            }
+                            emit_output_status(
+                                &thread_app_handle,
+                                &thread_output_status,
+                                selected_device_name.clone(),
+                                active_device_name.clone(),
+                                requested_output_mode,
+                                active_output_mode,
+                                fallback_reason.clone(),
+                            );
+                        }
+
                         if should_restore_for_default_device_change(
                             &selected_device_name,
                             &last_default_device_name,
