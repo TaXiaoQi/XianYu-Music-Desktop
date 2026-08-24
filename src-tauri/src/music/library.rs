@@ -8,6 +8,7 @@ use super::utils::{
     normalize_path,
 };
 use crate::database::DbState;
+use crate::security::path_validator;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -380,7 +381,8 @@ pub async fn get_library_folders(
 #[tauri::command]
 pub async fn add_library_folder(path: String, db_state: State<'_, DbState>) -> Result<(), String> {
     let db_conn = db_state.conn.clone();
-    let normalized = normalize_path(&path);
+    let validated = path_validator::validate_path(&path, None)?;
+    let normalized = normalize_path(&validated.to_string_lossy());
 
     tauri::async_runtime::spawn_blocking(move || {
         let folder = PathBuf::from(&normalized);
@@ -419,7 +421,8 @@ pub async fn remove_library_folder(
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
     let db_conn = db_state.conn.clone();
-    let normalized = normalize_path(&path);
+    let validated = path_validator::validate_path(&path, None)?;
+    let normalized = normalize_path(&validated.to_string_lossy());
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut conn = db_conn.lock().map_err(|e| e.to_string())?;
@@ -820,7 +823,8 @@ pub async fn get_library_song_paths_for_folder_view(
     db_state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
     let db_conn = db_state.conn.clone();
-    let normalized_folder = normalize_path(&folder_path);
+    let validated = path_validator::validate_path(&folder_path, None)?;
+    let normalized_folder = normalize_path(&validated.to_string_lossy());
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let conn = db_conn.lock().map_err(|e| e.to_string())?;
@@ -1023,7 +1027,8 @@ pub async fn get_folder_children(
     db_state: State<'_, DbState>,
 ) -> Result<Vec<FolderNode>, String> {
     let db_conn = db_state.conn.clone();
-    let normalized_folder = normalize_path(&folder_path);
+    let validated = path_validator::validate_path(&folder_path, None)?;
+    let normalized_folder = normalize_path(&validated.to_string_lossy());
 
     let result = tauri::async_runtime::spawn_blocking(move || {
         let conn = db_conn.lock().map_err(|e| e.to_string())?;

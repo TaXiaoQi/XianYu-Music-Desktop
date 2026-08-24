@@ -2722,18 +2722,22 @@ export async function ensurePluginUserVariables(source: PluginSource): Promise<P
   if (cached.length > 0) return cached;
 
   const inst = pluginInstances.get(source.id);
-  if (inst?.instance?.userVariables) {
-    const normalized = normalizePluginUserVariables(inst.instance.userVariables);
-    userVarDefsCache.set(source.id, normalized);
-    return normalized;
+  const instVars = inst?.instance?.userVariables
+    ? normalizePluginUserVariables(inst.instance.userVariables)
+    : [];
+  if (instVars.length > 0) {
+    userVarDefsCache.set(source.id, instVars);
+    return instVars;
   }
 
   // 2. 缓存未命中，触发完整加载
   const loaded = await ensurePluginInstance(source);
-  if (loaded?.instance?.userVariables) {
-    const normalized = normalizePluginUserVariables(loaded.instance.userVariables);
-    userVarDefsCache.set(source.id, normalized);
-    return normalized;
+  const loadedVars = loaded?.instance?.userVariables
+    ? normalizePluginUserVariables(loaded.instance.userVariables)
+    : [];
+  if (loadedVars.length > 0) {
+    userVarDefsCache.set(source.id, loadedVars);
+    return loadedVars;
   }
 
   // 3. 实例加载失败或实例未暴露 userVariables 时，从源码静态提取。
@@ -2771,14 +2775,15 @@ export async function refreshUserVariableBadges(): Promise<Set<string>> {
       return;
     }
 
-    // 已在实例缓存中
+    // 已在实例缓存中。若沙箱代理只暴露了空数组（truthy 但无定义），
+    // 不提前返回，继续走 ensurePluginUserVariables 的静态提取兜底。
     const inst = pluginInstances.get(source.id);
-    if (inst?.instance?.userVariables) {
-      const normalized = normalizePluginUserVariables(inst.instance.userVariables);
-      if (normalized.length > 0) {
-        userVarDefsCache.set(source.id, normalized);
-        result.add(source.id);
-      }
+    const instVars = inst?.instance?.userVariables
+      ? normalizePluginUserVariables(inst.instance.userVariables)
+      : [];
+    if (instVars.length > 0) {
+      userVarDefsCache.set(source.id, instVars);
+      result.add(source.id);
       return;
     }
 

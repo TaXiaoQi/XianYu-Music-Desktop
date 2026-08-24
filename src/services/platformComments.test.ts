@@ -13,6 +13,7 @@ vi.mock('./tauri/hostCryptoApi', () => ({
   hostZzcSign: vi.fn(async () => 'zzcmocksignmocksignmocksign123'),
   hostMiguSign: vi.fn(async () => ({ sign: 'mockmigusign', deviceId: '963B7AA0D21511ED807EE5846EC87D20' })),
   hostKugouSign: vi.fn(async () => 'mockkugousign'),
+  hostKugouRequestKey: vi.fn(async () => 'mockkugourequestkey'),
   hostLinuxapiEncrypt: vi.fn(async () => 'MOCKLINUXAPI'),
   hostWeapiEncrypt: vi.fn(async () => ({ params: 'mockparams', encSecKey: 'mockencseckey' })),
   hostSha256Hex: vi.fn(async () => 'mocksha256'),

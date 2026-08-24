@@ -11,7 +11,7 @@
  */
 
 import { pluginApi } from './tauri/pluginApi';
-import { hostKugouSign, hostLinuxapiEncrypt, hostWeapiEncrypt } from './tauri/hostCryptoApi';
+import { hostKugouRequestKey, hostKugouSign, hostLinuxapiEncrypt, hostWeapiEncrypt } from './tauri/hostCryptoApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
 import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
@@ -1455,6 +1455,7 @@ async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {
 
   const results = await Promise.all(batches.map(async (batch) => {
     try {
+      const key = await hostKugouRequestKey();
       const dataObj = {
         area_code: '1',
         show_privilege: 1,
@@ -1465,7 +1466,7 @@ async function getKgMusicInfos(list: any[]): Promise<PluginSearchResult[]> {
         mid: '1',
         dfid: '-',
         clienttime: Date.now(),
-        key: 'OIlwieks28dk2k092lksi2UIkp',
+        key,
         fields: 'album_info,author_name,audio_info,ori_audio_name,base,songname',
         data: batch,
       };

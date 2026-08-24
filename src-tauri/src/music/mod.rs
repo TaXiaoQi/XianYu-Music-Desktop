@@ -8,7 +8,6 @@ pub mod lyric_fetcher;
 pub mod lyrics;
 pub mod palette;
 pub mod scanner;
-pub mod sidebar;
 pub mod tags;
 pub mod types;
 pub mod url_resolver;
@@ -46,8 +45,4 @@ pub use scanner::{
 pub use url_resolver::{
     clear_lx_url_cache, find_alternative_lx_source, get_lx_cover, resolve_lx_music_url,
     resolve_lx_with_quality_fallback,
-};
-// Deprecated compatibility exports for legacy data/tools only.
-pub use sidebar::{
-    add_sidebar_folder, get_sidebar_folders, get_sidebar_hierarchy, remove_sidebar_folder,
 };

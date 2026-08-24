@@ -406,8 +406,13 @@ pub async fn set_auth_api_secret(app_handle: AppHandle, api_secret: String) -> R
     Ok(())
 }
 
-/// 获取当前 API 签名密钥。
+/// 获取当前 API 签名密钥；未自定义（使用默认密钥）时返回空串，避免默认密钥暴露给前端。
 #[tauri::command]
 pub async fn get_auth_api_secret(app_handle: AppHandle) -> Result<String, String> {
-    Ok(read_api_secret(&app_handle))
+    let secret = read_api_secret(&app_handle);
+    Ok(if secret == DEFAULT_API_SECRET {
+        String::new()
+    } else {
+        secret
+    })
 }

@@ -6,7 +6,12 @@ use tauri::{AppHandle, Manager, State};
 pub async fn clear_all_app_data(
     app_handle: AppHandle,
     db_state: State<'_, DbState>,
+    confirm: bool,
 ) -> Result<(), String> {
+    // 破坏性操作：要求前端显式确认（UI 弹窗确认后传 true），防止被误调或注入绕过
+    if !confirm {
+        return Err("请先确认后再执行清空操作".to_string());
+    }
     let db_conn = db_state.conn.clone();
     let app_dir = app_handle
         .path()

@@ -34,7 +34,7 @@ use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
 use install_language::{get_install_language, set_install_language};
 use music::{
-    add_library_folder, add_sidebar_folder, authed_request, batch_move_music_files,
+    add_library_folder, authed_request, batch_move_music_files,
     clear_auth_credentials, clear_cover_cache, clear_lx_all_cache, clear_lx_url_cache,
     clear_song_background,
     create_folder, delete_folder, delete_music_file, extract_palette, fetch_lyric_from_source,
@@ -43,11 +43,11 @@ use music::{
     get_library_folders, get_library_hierarchy, get_library_song_paths_by_album,
     get_library_song_paths_by_artist, get_library_song_paths_for_all_view,
     get_library_song_paths_for_folder_view, get_library_songs_by_paths, get_library_songs_cached,
-    get_lx_cover, get_sidebar_folders, get_sidebar_hierarchy, get_song_background, get_song_cover,
+    get_lx_cover, get_song_background, get_song_cover,
     get_song_cover_thumbnail, get_song_detail, get_song_lyrics, get_song_lyrics_for_edit,
     get_song_lyrics_payload, is_directory, move_file_to_folder, move_music_file, parse_audio_files,
     parse_lyrics_text, parse_music_folder, read_lyrics_file, remove_library_folder,
-    remove_sidebar_folder, resolve_lx_music_url, resolve_lx_with_quality_fallback,
+    resolve_lx_music_url, resolve_lx_with_quality_fallback,
     save_artist_avatar, save_auth_credentials, save_song_background, save_song_info,
     save_song_lyrics, scan_folder_as_playlists, scan_library, scan_music_folder,
     search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder, signed_post_json,
@@ -74,8 +74,8 @@ use plugins::{
     remove_cached_background_video, save_plugin_script,
 };
 use host_crypto::{
-    host_kugou_sign, host_linuxapi_encrypt, host_migu_sign, host_sha256_hex, host_weapi_encrypt,
-    host_zzc_sign,
+    host_kugou_request_key, host_kugou_sign, host_linuxapi_encrypt, host_migu_sign,
+    host_sha256_hex, host_weapi_encrypt, host_zzc_sign,
 };
 use plugin_host::commands::{
     plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
@@ -286,11 +286,6 @@ pub fn run() {
             scan_library,
             get_library_hierarchy,
             get_folder_children,
-            // Deprecated compatibility commands for legacy sidebar_folders.
-            get_sidebar_folders,
-            add_sidebar_folder,
-            remove_sidebar_folder,
-            get_sidebar_hierarchy,
             create_folder,
             delete_folder,
             move_file_to_folder,
@@ -346,6 +341,7 @@ pub fn run() {
             plugin_engine_store_snapshot,
             host_zzc_sign,
             host_kugou_sign,
+            host_kugou_request_key,
             host_migu_sign,
             host_linuxapi_encrypt,
             host_weapi_encrypt,

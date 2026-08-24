@@ -189,6 +189,11 @@ pub fn host_kugou_sign(params: String, platform: String, body: Option<String>) -
 }
 
 #[tauri::command]
+pub fn host_kugou_request_key() -> String {
+    KG_SALT_ANDROID.to_string()
+}
+
+#[tauri::command]
 pub fn host_migu_sign(text: String, time: String) -> MiguSignResult {
     let (sign, device_id) = migu_sign(&text, &time);
     MiguSignResult { sign, device_id }

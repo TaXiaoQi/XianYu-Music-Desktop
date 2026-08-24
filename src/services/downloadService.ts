@@ -557,11 +557,18 @@ export async function probeDownloadableQualities(
       if (bakaTopKey) {
         const topResolved = await resolveUrl(bakaTopKey).catch(() => null);
         if (topResolved?.url) {
-          resolvedUrls[topResolved.quality] = topResolved.url;
-          options?.onProgress?.(topResolved.url, topResolved.quality);
-          return { available: targets, resolvedUrls };
+          // 最高档实际返回的档位与请求档一致（未降级）时才信任声明档位；
+          // 若最高档被降级（如咪咕把 hires/atmos/atmos_plus 全部降为 flac24bit），
+          // 直接信任声明会造成档位虚高，回退逐档实测让各档塌缩到真实档位。
+          if (topResolved.quality === bakaTopKey) {
+            resolvedUrls[topResolved.quality] = topResolved.url;
+            options?.onProgress?.(topResolved.url, topResolved.quality);
+            return { available: targets, resolvedUrls };
+          }
+          console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 实际返回 ${topResolved.quality}，回退逐档实测`);
+        } else {
+          console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 未解析到直链，回退逐档实测`);
         }
-        console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 未解析到直链，回退逐档实测`);
       } else {
         return { available: targets, resolvedUrls };
       }

@@ -88,7 +88,6 @@ export type ProfileChangeLimitStatus = {
 
 /** 默认后端地址：测试构建与正式构建统一指向弦予音乐 API */
 export const DEFAULT_AUTH_BASE_URL = 'https://back.xymusic.cc/api';
-export const DEFAULT_AUTH_API_SECRET = 'bf027fedb4d1b4f969c10495f12f17042bf0de02de128200';
 
 // ─── localStorage 兼容键（仅用于迁移） ──────────────────
 const LEGACY_STORAGE_TOKEN_KEY = 'xy.auth.token';
@@ -100,7 +99,8 @@ const LEGACY_STORAGE_API_SECRET_KEY = 'xy.auth.apiSecret';
 let cachedToken: string | null = null;
 let cachedUser: AuthUser | null = null;
 let cachedBaseUrl: string = DEFAULT_AUTH_BASE_URL;
-let cachedApiSecret: string = DEFAULT_AUTH_API_SECRET;
+// 空值表示使用 Rust 侧默认密钥（默认密钥不暴露给前端）
+let cachedApiSecret: string | null = null;
 let keyringInitialized = false;
 
 /** 后端统一响应：code 200 成功，其他为失败（HTTP 状态码同步设置） */
@@ -133,17 +133,17 @@ export async function setAuthBaseUrl(baseUrl: string): Promise<void> {
   }
 }
 
-export function getAuthApiSecret(): string {
+export function getAuthApiSecret(): string | null {
   return cachedApiSecret;
 }
 
 export async function setAuthApiSecret(apiSecret: string): Promise<void> {
   const trimmed = (apiSecret || '').trim();
-  cachedApiSecret = trimmed || DEFAULT_AUTH_API_SECRET;
-  await authApi.setAuthApiSecret(cachedApiSecret);
+  cachedApiSecret = trimmed || null;
+  await authApi.setAuthApiSecret(trimmed);
   if (typeof localStorage !== 'undefined') {
-    if (trimmed && trimmed !== DEFAULT_AUTH_API_SECRET) {
-      localStorage.setItem(LEGACY_STORAGE_API_SECRET_KEY, cachedApiSecret);
+    if (trimmed) {
+      localStorage.setItem(LEGACY_STORAGE_API_SECRET_KEY, trimmed);
     } else {
       localStorage.removeItem(LEGACY_STORAGE_API_SECRET_KEY);
     }
@@ -185,12 +185,13 @@ export async function initAuthFromKeyring(): Promise<void> {
     }
   }
 
-  // 加载 API 签名密钥
+  // 加载 API 签名密钥（Rust 返回空串表示使用默认密钥）
   try {
-    cachedApiSecret = await authApi.getAuthApiSecret();
+    const secret = await authApi.getAuthApiSecret();
+    cachedApiSecret = secret || null;
   } catch {
     if (typeof localStorage !== 'undefined') {
-      cachedApiSecret = localStorage.getItem(LEGACY_STORAGE_API_SECRET_KEY) || DEFAULT_AUTH_API_SECRET;
+      cachedApiSecret = localStorage.getItem(LEGACY_STORAGE_API_SECRET_KEY) || null;
     }
   }
 

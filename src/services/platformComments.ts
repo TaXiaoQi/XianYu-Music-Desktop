@@ -11,7 +11,7 @@
  * 网络失败等一律返回 { isEnd: true, data: [] }（展示"暂无评论"）。
  */
 import { pluginHttpRequest } from './tauri/pluginApi';
-import { hostKugouSign } from './tauri/hostCryptoApi';
+import { hostKugouRequestKey, hostKugouSign } from './tauri/hostCryptoApi';
 import type { PluginSearchResult, PluginSource } from '../types';
 
 export type CommentPlatform = 'wy' | 'tx' | 'kg' | 'kw' | 'mg' | 'qishui';
@@ -240,8 +240,6 @@ async function fetchTxComments(mediaItem: any, page: number): Promise<PlatformCo
 
 // ==================== 酷狗 ====================
 
-const KG_SIGN_KEY = 'OIlwieks28dk2k092lksi2UIkp';
-
 /** 酷狗评论接口签名：参数按字典序排序后加盐 MD5（与 Baka 插件 signatureParams 一致，Rust host_crypto 计算） */
 function kugouSignature(params: string): Promise<string> {
   return hostKugouSign(params, 'android');
@@ -259,7 +257,7 @@ async function resolveKgMixsongId(hash: string): Promise<string | null> {
     mid: '1',
     dfid: '-',
     clienttime: Date.now(),
-    key: KG_SIGN_KEY,
+    key: await hostKugouRequestKey(),
     fields: 'album_info,author_name,audio_info,ori_audio_name,base,songname,classification',
     data: [{ hash }],
   });
