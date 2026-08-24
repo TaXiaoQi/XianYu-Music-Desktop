@@ -80,6 +80,12 @@ export const useStatisticsStore = defineStore('statistics', () => {
     stats.value = await statisticsApi.getLibraryStats();
   };
 
+  const refreshStats = async () => {
+    stats.value = await statisticsApi.getLibraryStats();
+    lastUpdated.value = new Date();
+    hasLoaded.value = true;
+  };
+
   const fetchBehaviorStats = async (range: TimeRangeType) => {
     const timeRange: TimeRange = { type: range };
     behaviorStats.value = await statisticsApi.getBehaviorStats(timeRange);
@@ -202,6 +208,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     isFirstEnter,
     ensureLoaded,
     refreshAll,
+    refreshStats,
     refreshBehaviorOnly,
     fetchBehaviorStats,
     ensureQualityDistribution,

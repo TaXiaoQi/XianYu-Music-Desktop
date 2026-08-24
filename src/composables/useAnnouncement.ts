@@ -21,13 +21,21 @@ export function useAnnouncement() {
    * 已被用户忽略（dismissed）的公告不会再次弹出
    */
   const checkAnnouncement = async () => {
-    if (isFetchingAnnouncement.value) return;
+    if (isFetchingAnnouncement.value) {
+      console.warn('[Announcement][debug] checkAnnouncement 被 isFetchingAnnouncement 拦截');
+      return;
+    }
     isFetchingAnnouncement.value = true;
     try {
+      console.log('[Announcement][debug] checkAnnouncement 开始请求');
       const announcement = await fetchAnnouncement();
+      console.log('[Announcement][debug] fetchAnnouncement 返回:', announcement);
       if (announcement && !isAnnouncementDismissed(announcement)) {
         currentAnnouncement.value = announcement;
         announcementVisible.value = true;
+        console.log('[Announcement][debug] 公告已设置，announcementVisible =', announcementVisible.value);
+      } else {
+        console.log('[Announcement][debug] 公告未展示，announcement =', announcement, 'dismissed =', announcement ? isAnnouncementDismissed(announcement) : 'n/a');
       }
     } catch (error) {
       // 启动时静默失败，仅在控制台记录
