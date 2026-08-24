@@ -555,6 +555,25 @@ export function qualityKeyToBakaLegacyQuality(q: QualityKey): 'low' | 'standard'
   return BAKA_TO_LEGACY_QUALITY_MAP[q];
 }
 
+/**
+ * 将内部 QualityKey 转为落雪（lx）插件 musicUrl 入参的 qualitys 原值。
+ *
+ * 落雪插件在 init 里声明 sources.<source>.qualitys（如 ['128k','320k','flac']），
+ * musicUrl(songInfo, type) 的 type 入参必须是其中一个原值字符串，插件内部按它查
+ * type_map / hash 表。绝不能用 MF 四级键（low/standard/high/super），也别用 Baka 键
+ * （96k）——落雪体系里没有 96k，最低通常就是 128k。
+ *
+ * 映射规则：绝大多数档位与项目 QualityKey 同名（128k/320k/flac/flac24bit/hires/
+ * vinyl/dolby/atmos/master），仅需要特殊处理两处：
+ *   - mgg（96k 概念，lx 无）            → '128k'（取 lx 最低标准档）
+ *   - 其余未知名档位                   → '320k'（lx 插件通用兜底档）
+ */
+export function qualityKeyToLxQuality(q: QualityKey): string {
+  if (q === 'mgg') return '128k';
+  if (q in QUALITY_META) return q;
+  return '320k';
+}
+
 /** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
 /** 现在使用统一的 QualityKey */
 export type OnlineDefaultQuality = QualityKey;

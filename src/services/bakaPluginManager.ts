@@ -1087,25 +1087,19 @@ class BakaPluginManagerClass {
         tryPairs.push({ pluginQ: qualityKeyToPluginString(q), qualityKey: q });
       }
     } else if (isQualityKey(quality)) {
+      // 插件未声明 supportedQualities（Baka 等自回落插件）时不再全档展开逐级请求：
+      // 每档展开意味着一次起播要串行发 N 次 track_v2 网络请求，极其缓慢。改为只请求
+      // 目标档，并按回退方向补一个相邻档，具体回落交由插件内部 actualQuality 报告。
       if (fallbackBehavior === 'pause') {
         tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-      } else if (fallbackBehavior === 'higher') {
-        const startIdx = ALL_QUALITY_KEYS.indexOf(quality);
-        if (startIdx !== -1) {
-          for (let i = startIdx; i < ALL_QUALITY_KEYS.length; i++) {
-            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS[i]), qualityKey: ALL_QUALITY_KEYS[i] });
-          }
-        } else {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
-        }
       } else {
-        const startIdx = ALL_QUALITY_KEYS_DESC.indexOf(quality);
-        if (startIdx !== -1) {
-          for (let i = startIdx; i < ALL_QUALITY_KEYS_DESC.length; i++) {
-            tryPairs.push({ pluginQ: qualityKeyToPluginString(ALL_QUALITY_KEYS_DESC[i]), qualityKey: ALL_QUALITY_KEYS_DESC[i] });
-          }
-        } else {
-          tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
+        tryPairs.push({ pluginQ: qualityKeyToPluginString(quality), qualityKey: quality });
+        const baseIdx = ALL_QUALITY_KEYS.indexOf(quality);
+        if (baseIdx !== -1) {
+          const adjacentQ = fallbackBehavior === 'higher'
+            ? ALL_QUALITY_KEYS[baseIdx + 1]
+            : ALL_QUALITY_KEYS[baseIdx - 1];
+          if (adjacentQ) tryPairs.push({ pluginQ: qualityKeyToPluginString(adjacentQ), qualityKey: adjacentQ });
         }
       }
     } else {

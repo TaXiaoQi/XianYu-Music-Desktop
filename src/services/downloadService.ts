@@ -476,6 +476,8 @@ export interface ProbeQualityOptions {
   signal?: AbortSignal;
   /** 并发探测数（默认 4），避免 12 档全并发打爆音源 */
   concurrency?: number;
+  /** 每档实测完成的增量回调：起播与菜单可实时消费已解析直链，无需等待整轮探测结束 */
+  onProgress?: (url: string, quality: QualityKey) => void;
 }
 
 /**
@@ -542,6 +544,30 @@ export async function probeDownloadableQualities(
 
   const resolvedUrls: Partial<Record<QualityKey, string>> = {};
 
+  // [Baka 插件音质信任模式] 直接信任插件声明的档位（baka 行为），省去逐档 track_v2
+  // 网络请求：只实测其中最高档一次，供起播/下载预解析复用；其余档位按声明直接列为可用。
+  // 最高档实测失败时回退到逐档实测，避免音质菜单虚高档位。
+  if (isPlugin) {
+    const pluginCtx = ctx as PluginResolveContext;
+    if (await isBakaPlugin(pluginCtx.pluginSource)) {
+      const bakaTopKey = targets.reduce<QualityKey | null>(
+        (acc, k) => (acc === null || ALL_QUALITY_KEYS.indexOf(k) > ALL_QUALITY_KEYS.indexOf(acc) ? k : acc),
+        null,
+      );
+      if (bakaTopKey) {
+        const topResolved = await resolveUrl(bakaTopKey).catch(() => null);
+        if (topResolved?.url) {
+          resolvedUrls[topResolved.quality] = topResolved.url;
+          options?.onProgress?.(topResolved.url, topResolved.quality);
+          return { available: targets, resolvedUrls };
+        }
+        console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 未解析到直链，回退逐档实测`);
+      } else {
+        return { available: targets, resolvedUrls };
+      }
+    }
+  }
+
   // worker-pool 并发：多个 worker 从共享队列取档位，控制同时在飞的请求数
   const queue = [...targets];
   const concurrency = Math.max(1, Math.min(options?.concurrency ?? 4, queue.length));
@@ -560,7 +586,10 @@ export async function probeDownloadableQualities(
         // 以实际返回的档位登记，而非请求档 q：咪咕把 hires/atmos/atmos_plus 等高请求
         // 实际降级为同一档（如 flac24bit）时，多个请求档会塌缩到同一实际档，
         // 音质菜单只显示真实可得的档位，杜绝档位虚高与体积重复（多个档位共用同一 URL）。
-        if (resolved?.url) resolvedUrls[resolved.quality] = resolved.url;
+        if (resolved?.url) {
+          resolvedUrls[resolved.quality] = resolved.url;
+          options?.onProgress?.(resolved.url, resolved.quality);
+        }
       } catch (e: any) {
         // 单档位失败不影响其他档位
         console.warn(`[Probe] ${q} 探测失败:`, e?.message || e);
@@ -582,6 +611,7 @@ export async function probeDownloadableQualities(
       const rustResult = await resolveLxUrlViaRust(cachedInfo, targets);
       if (rustResult?.url) {
         resolvedUrls[rustResult.quality] = rustResult.url;
+        options?.onProgress?.(rustResult.url, rustResult.quality);
       }
     }
   }

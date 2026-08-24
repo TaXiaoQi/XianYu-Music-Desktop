@@ -6,7 +6,7 @@ import {
 import { decodeName, formatSingerName } from '../utils/musicFormat';
 import {
   normalizeQualityKey,
-  qualityKeyToBakaPluginQuality,
+  qualityKeyToLxQuality,
 } from '../types';
 import { pluginApi } from './tauri/pluginApi';
 import { hostMiguSign, hostZzcSign } from './tauri/hostCryptoApi';
@@ -42,7 +42,7 @@ function normalizeLxTypes(
     const qualityKey = normalizeQualityKey(key);
     if (!qualityKey) continue;
     result[qualityKey] = value;
-    result[qualityKeyToBakaPluginQuality(qualityKey)] = value;
+    result[qualityKeyToLxQuality(qualityKey)] = value;
   }
   return result;
 }
