@@ -1009,6 +1009,49 @@
 
   // ==================== axios 代理适配器（对齐 worker tauriAdapter）====================
 
+  // 部分插件（如汽水音乐）用 axios.post(url, Buffer, { transformRequest: [d => d] })
+  // 发送签名请求体（UTF-8 编码的 JSON 字节）。若直接 JSON.stringify,Buffer 会被序列化成
+  // {"type":"Buffer","data":[...]} 而损坏,导致服务端验签失败。这里按 UTF-8 还原成字符串,
+  // Rust 侧再以 UTF-8 重编码,字节保持一致。普通对象/数组仍走 JSON.stringify。
+  function toBodyUtf8String(data) {
+    if (typeof data === 'string') return data;
+    var u8 = data;
+    if (data instanceof ArrayBuffer) {
+      u8 = new Uint8Array(data);
+    } else if (typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(data)) {
+      u8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (!u8 || typeof u8.length !== 'number') {
+      try { return JSON.stringify(data); } catch (e) { return String(data); }
+    }
+    if (typeof TextDecoder !== 'undefined') {
+      try { return new TextDecoder('utf-8').decode(u8); } catch (e) { /* fallthrough */ }
+    }
+    // TextDecoder 不可用时的手动 UTF-8 解码
+    var out = '', i = 0;
+    while (i < u8.length) {
+      var c0 = u8[i++];
+      var cp;
+      if (c0 < 0x80) { out += String.fromCharCode(c0); continue; }
+      if (c0 >= 0xF0 && i + 3 <= u8.length) {
+        cp = ((c0 & 0x07) << 18) | ((u8[i++] & 0x3F) << 12) | ((u8[i++] & 0x3F) << 6) | (u8[i++] & 0x3F);
+        if (cp > 0xFFFF) {
+          cp -= 0x10000;
+          out += String.fromCharCode((cp >> 10) + 0xD800, (cp & 0x3FF) + 0xDC00);
+        } else { out += String.fromCharCode(cp); }
+      } else if (c0 >= 0xE0 && i + 2 <= u8.length) {
+        cp = ((c0 & 0x0F) << 12) | ((u8[i++] & 0x3F) << 6) | (u8[i++] & 0x3F);
+        out += String.fromCharCode(cp);
+      } else if (c0 >= 0xC0 && i + 1 <= u8.length) {
+        cp = ((c0 & 0x1F) << 6) | (u8[i++] & 0x3F);
+        out += String.fromCharCode(cp);
+      } else {
+        out += String.fromCharCode(c0);
+      }
+    }
+    return out;
+  }
+
   function xyAxiosAdapter(config) {
     return Promise.resolve().then(function () {
       var method = (config.method || 'GET').toUpperCase();
@@ -1088,7 +1131,7 @@
             }
           } catch (e) { /* ignore */ }
         }
-        body = typeof reqData === 'string' ? reqData : JSON.stringify(reqData);
+        body = toBodyUtf8String(reqData);
         if (body && body.length > 256 * 1024) {
           body = body.substring(0, 256 * 1024);
         }
@@ -1575,7 +1618,15 @@
             handleInit(data);
             resolve(undefined);
           } else if (eventName === EVENT_NAMES.updateAlert) {
-            G.console.log('updateAlert ignored');
+            // 参考 BakaMusic：LX 插件可自报更新（updateAlert），载荷通常是
+            // { updateUrl, log }。当前更新检查以"重取插件脚本 filePath + 订阅清单版本"
+            // 为准，这里不再静默丢弃，而是记录通告信息便于排查。
+            try {
+              G.console.log('[updateAlert] ' + (String(data && data.log || '').substring(0, 200)));
+              if (data && data.updateUrl) {
+                G.console.log('[updateAlert] updateUrl: ' + String(data.updateUrl).substring(0, 512));
+              }
+            } catch (e) { /* ignore */ }
             resolve(undefined);
           } else {
             reject(new Error('Unknown event name: ' + eventName));

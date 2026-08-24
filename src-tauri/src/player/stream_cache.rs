@@ -1083,6 +1083,26 @@ fn is_audio_content_type(content_type: &str) -> bool {
 /// IDM 等下载工具经 Winsock LSP 拦截系统级明文 HTTP 流量嗅探音频直链并弹窗接管，
 /// https 的 TLS 加密让嗅探失效；CDN 不支持 https（连接失败/非 2xx/返回非音频内容）
 /// 时回退原 URL。返回 (响应, 实际使用的 URL)，错误处理交由调用方。
+///
+/// 起播提速：https 探测的耗时只对「仅支持 http 的 CDN」是纯浪费。这里按注册域名记忆
+/// 该 CDN 家族是否支持 https——首次遇到某 CDN 探测一次，确认仅 http 后写入
+/// `http_only_audio_domains`，之后同域歌曲直接走直链、不再空耗 https 握手；
+/// 支持 https 的 CDN（网易/QQ/B站等）探测数百毫秒内成功，照常走 https 防 IDM 嗅探。
+fn registrable_audio_domain(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let host = rest.split('/').next()?.split(':').next()?;
+    let parts: Vec<&str> = host.split('.').filter(|s| !s.is_empty()).collect();
+    if parts.len() < 2 {
+        return Some(host.to_string());
+    }
+    Some(format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]))
+}
+
+fn http_only_audio_domains() -> &'static Mutex<std::collections::HashSet<String>> {
+    static CACHE: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+
 fn send_audio_request(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -1091,33 +1111,52 @@ fn send_audio_request(
 ) -> Result<(reqwest::blocking::Response, String), String> {
     if let Some(rest) = url.strip_prefix("http://") {
         let https_url = format!("https://{rest}");
-        // 起播提速：https 探测改用短线 connect 超时的独立 client。
-        // 共享 client 的 connect_timeout=10s 会让不支持 https 的 CDN 卡住起播数秒；
-        // 这里 2s 内（含 TLS 握手）不建连成功立即回退 http。body 的流式读取不受 connect_timeout 限制。
-        if let Ok(probe) = reqwest::blocking::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .gzip(true)
-            .brotli(true)
-            .deflate(true)
-            .build()
-        {
-            if let Ok(r) = apply_stream_request_headers(probe.get(&https_url), headers, user_agent)
-                .send()
+        // 该 CDN 家族已知只支持 http：直接走直链，跳过 https 探测
+        let skip_probe = registrable_audio_domain(url)
+            .map(|d| http_only_audio_domains().lock().unwrap().contains(&d))
+            .unwrap_or(false);
+        if !skip_probe {
+            // 探测超时收紧到 connect 800ms / 整体 1.2s：Kugou 这类 http-only 域名
+            // :443 能连上但证书与域名不符，握手白耗近秒级；合法 https CDN 握手+返回头
+            // 在数百毫秒内即可，照常走 https。
+            let probe_ok = if let Ok(probe) = reqwest::blocking::Client::builder()
+                .connect_timeout(Duration::from_millis(800))
+                .timeout(Duration::from_millis(1200))
+                .gzip(true)
+                .brotli(true)
+                .deflate(true)
+                .build()
             {
-                if r.status().is_success() {
-                    // https 返回 200 但内容非音频（CDN 错误页）时回退 http，
-                    // 避免把错误内容当作音频播放（落雪系 CDN 对 https 常返回 200 + JSON/HTML 错误）
-                    let ct = r
-                        .headers()
-                        .get(reqwest::header::CONTENT_TYPE)
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    if is_audio_content_type(&ct) {
-                        return Ok((r, https_url));
+                match apply_stream_request_headers(probe.get(&https_url), headers, user_agent)
+                    .send()
+                {
+                    Ok(r) => {
+                        if r.status().is_success() {
+                            // https 返回 2xx 但内容非音频（CDN 错误页）时回退 http，
+                            // 避免把错误内容当作音频播放（落雪系 CDN 对 https 常返回 200 + JSON/HTML 错误）
+                            let ct = r
+                                .headers()
+                                .get(reqwest::header::CONTENT_TYPE)
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("")
+                                .to_lowercase();
+                            if is_audio_content_type(&ct) {
+                                return Ok((r, https_url));
+                            }
+                        }
+                        // 非 2xx / 非音频：属 http-only，交下方标记后回退 http
+                        false
                     }
+                    // 连接 / TLS 失败（证书不符等）：属 http-only，交下方标记后回退 http
+                    Err(_) => false,
                 }
-                // 非 2xx / 非音频：丢弃探测连接，回退 http 原 URL
+            } else {
+                false
+            };
+            if !probe_ok {
+                if let Some(d) = registrable_audio_domain(url) {
+                    http_only_audio_domains().lock().unwrap().insert(d);
+                }
             }
         }
     }

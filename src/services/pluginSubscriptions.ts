@@ -187,30 +187,50 @@ export const createPluginSubscriptionService = ({
         const pluginList = Array.isArray(json) ? json : (json.plugins || json.plugin || null);
         if (Array.isArray(pluginList) && pluginList.length > 0 && pluginList[0]?.url) {
           const validList = pluginList.filter((item: any) => item?.url);
-          for (let idx = 0; idx < validList.length; idx++) {
-            const item = validList[idx];
-            options.onPluginProgress?.(idx, validList.length, item.name);
-            try {
-              const script = await fetchSubscriptionContent(item.url);
-              if (!script || !script.trim()) {
-                result.failCount++;
-                result.errors.push(`${item.name || item.url}: 获取脚本失败`);
-                continue;
+          const total = validList.length;
+
+          // 逐个串行下载脚本很慢（订阅常含几十个插件）。改为有限并发下载，
+          // 既显著提速，又避免一次性并发过多压垮沙箱/源站。
+          const CONCURRENCY = 5;
+          let done = 0;
+          const outcomes: Array<{ ok: boolean; name?: string; error?: string }> = new Array(total);
+          for (let startIdx = 0; startIdx < total; startIdx += CONCURRENCY) {
+            const batchIdx = validList
+              .slice(startIdx, startIdx + CONCURRENCY)
+              .map((item: any, inner: number) => ({ item, globalIdx: startIdx + inner }));
+            await Promise.all(batchIdx.map(async ({ item, globalIdx }) => {
+              try {
+                options.onPluginProgress?.(done, total, item.name);
+                const script = await fetchSubscriptionContent(item.url);
+                if (!script || !script.trim()) {
+                  outcomes[globalIdx] = { ok: false, error: `${item.name || item.url}: 获取脚本失败` };
+                  return;
+                }
+                const r = await installSinglePluginScript(script, item.url, skipVersionCheck);
+                outcomes[globalIdx] = r.ok
+                  ? { ok: true, name: r.name || item.name || '' }
+                  : { ok: false, error: `${item.name || item.url}: ${r.error}` };
+              } catch (e: any) {
+                outcomes[globalIdx] = { ok: false, error: `${item.name || item.url}: ${e?.message || e}` };
+              } finally {
+                done++;
+                options.onPluginProgress?.(done, total);
               }
-              const r = await installSinglePluginScript(script, item.url, skipVersionCheck);
-              if (r.ok) {
-                result.successCount++;
-                result.names.push(r.name || item.name || '');
-              } else {
-                result.failCount++;
-                result.errors.push(`${item.name || item.url}: ${r.error}`);
-              }
-            } catch (e: any) {
+            }));
+          }
+
+          let processed = 0;
+          for (const res of outcomes) {
+            processed++;
+            if (res.ok) {
+              result.successCount++;
+              result.names.push(res.name || '');
+            } else {
               result.failCount++;
-              result.errors.push(`${item.name || item.url}: ${e?.message || e}`);
+              result.errors.push(res.error || '安装失败');
             }
           }
-          options.onPluginProgress?.(validList.length, validList.length);
+          options.onPluginProgress?.(processed, total);
           return result;
         }
       } catch { /* 不是有效 JSON，当作单插件脚本处理 */ }
