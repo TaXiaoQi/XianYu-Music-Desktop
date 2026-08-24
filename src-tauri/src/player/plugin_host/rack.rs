@@ -429,8 +429,6 @@ impl SharedRack {
             return false;
         }
 
-        eprintln!("[rack] process_block 收到音频块: frames={}, channels={}, sample_rate={}, 链上插件数={}", frames, channels, sample_rate, state.chain.len());
-
         // 动态适配：如果当前音频流的采样率/声道数与插件激活参数不一致，
         // 自动按真实的 channels 和 sample_rate 重新激活全链，避免被误判旁路
         let needs_reactivate = match state.activation {

@@ -326,7 +326,6 @@ export async function resolveLxUrlForSingleQuality(
   const now = Date.now();
   const hit = _dedupLxUrl.get(dedupKey);
   if (hit && now - hit.at <= LX_URL_DEDUP_WINDOW_MS) {
-    console.log(`[lxUrl] 同一首歌并发探测去重，复用解析结果: ${dedupKey}`);
     return hit.p;
   }
   if (hit) _dedupLxUrl.delete(dedupKey);

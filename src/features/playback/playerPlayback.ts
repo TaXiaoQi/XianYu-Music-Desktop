@@ -1472,19 +1472,6 @@ const authStore = useAuthStore();
               m4sHeaders.Cookie = bilibiliCookies;
             }
           }
-          // [4秒预览探针] 打印下载URL域名与是否带上有效Cookie/Referer，用于定位B站取流是否仍匿名
-          try {
-            const host = new URL(audioFilePath).hostname;
-            const cookieNames = (m4sHeaders.Cookie || '')
-              .split(';')
-              .map((s: string) => s.split('=')[0].trim())
-              .filter(Boolean);
-            const effReferer = Object.entries(m4sHeaders).find(([k]) => k.toLowerCase() === 'referer')?.[1] || '(无)';
-            const effOrigin = Object.entries(m4sHeaders).find(([k]) => k.toLowerCase() === 'origin')?.[1] || '(无)';
-            console.log(
-              `[B站m4s] host=${host} Cookie=${cookieNames.length ? `${cookieNames.join(',')}` : '(无)'} Referer=${effReferer} Origin=${effOrigin}`,
-            );
-          } catch { /* ignore */ }
           const tempPath = await pluginApi.downloadAudioToTemp(audioFilePath, m4sHeaders);
           if (tempPath) {
             actualAudioPath = tempPath;
@@ -1555,12 +1542,6 @@ const authStore = useAuthStore();
         const finalAudioPath = sanitizeMediaUrl(audioPathStr)
           || audioPathStr.replace(/^[`'"\s]+|[`'"\s]+$/g, '')
           || audioPathStr;
-        console.log('[Audio] 在线直链走 Rust 起播:', {
-          url: finalAudioPath.slice(0, 160),
-          hasHeaders: !!pluginHeaders,
-          hasEkey: !!pluginEkey,
-          hasCek: !!pluginCek,
-        });
         try {
           await playbackApi.playAudio({
             path: finalAudioPath,

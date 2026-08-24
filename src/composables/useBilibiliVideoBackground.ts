@@ -458,9 +458,6 @@ async function runAutoSyncAnalysis(song: Song, isBili: boolean, requestId: numbe
     if (estimate) {
       syncOffsetSec.value = estimate.offsetSec;
       syncOffsetCache.set(song.path, estimate.offsetSec);
-      console.log(
-        `[MV自动对齐] ${song.name}: 偏移 ${estimate.offsetSec.toFixed(2)}s（置信度 ${estimate.confidence.toFixed(2)}）`,
-      );
     } else {
       syncOffsetSec.value = 0;
       syncOffsetCache.set(song.path, 0);

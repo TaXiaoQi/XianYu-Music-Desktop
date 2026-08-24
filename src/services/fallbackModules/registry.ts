@@ -183,7 +183,6 @@ export function applyServerFallbackModules(modules: ServerFallbackModule[]): {
     // 已加载实例立即失效：正在执行的调用持有旧引用不受影响，
     // 后续调用（下一首/下次进页面）重新从缓存加载新实现
     _loaded.clear();
-    console.log(`[FallbackModule] 已应用服务端兜底模块更新: 更新 ${added} 个，移除 ${removed} 个`);
   }
 
   return { added, removed };

@@ -71,9 +71,8 @@ function log(msg: string) {
   try { if (_logCallback) { _logCallback(msg); } } catch { /* ignore */ }
 }
 
-/** 加载日志：直接输出到浏览器 console，便于前端排查插件目录（歌单/歌手/专辑）间歇加载问题 */
+/** 目录加载日志（供日志系统记录，便于排查歌单/歌手/专辑间歇加载问题） */
 const catalogLog = (msg: string) => {
-  console.log(`[CatalogLoad] ${msg}`);
   log(msg);
 };
 
