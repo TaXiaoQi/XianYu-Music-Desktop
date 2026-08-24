@@ -18,9 +18,11 @@ import {
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useAddToPlaylistDialog } from '../features/collections/addToPlaylistDialog';
 import { useLibraryStore } from '../features/library/store';
+import { useAuthStore } from '../features/auth/store';
 import { useToast } from '../composables/toast';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
+import { showLoginRequiredDialog } from '../composables/useBanDialog';
 import { downloadFavorites as downloadUserFavorites } from '../services/favoritesSync';
 import {
   fetchWyTrackMetaByIds,
@@ -76,6 +78,7 @@ const { showToast } = useToast();
 const { playSong, clearQueue, addSongsToQueue } = usePlaybackController();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 const libraryStore = useLibraryStore();
+const authStore = useAuthStore();
 const onlineDetailStore = useOnlineDetailStore();
 const { openHomeArtist, openHomeAlbum } = useHomeNavigation(router);
 
@@ -301,11 +304,24 @@ async function loadUserModeData() {
     return;
   }
   if (userModeLoading.value) return;
+
+  // 未登录：查看他人数据需先登录（复用登录过期弹窗样式，点「登录」跳转登录页）
+  if (!authStore.isLoggedIn) {
+    hasInitialLoad.value = true;
+    void showLoginRequiredDialog().then((goLogin) => {
+      if (goLogin) router.push({ name: 'Auth' });
+    });
+    return;
+  }
+
   userModeLoading.value = true;
   try {
+    // 查看他人时跳过 token 注入：后端对 user_id 做属主校验，携带本人 token 会返回
+    // 「登录状态与账号不匹配」并被误判为登录过期触发自动登出
+    const isViewingSelf = userId === getCiyuanxiId();
     const [favorites, playlistsData] = await Promise.all([
-      downloadUserFavorites(userId),
-      downloadUserPlaylists(userId).catch(() => null),
+      downloadUserFavorites(userId, { skipToken: !isViewingSelf }),
+      downloadUserPlaylists(userId, { skipToken: !isViewingSelf }).catch(() => null),
     ]);
     viewedFavorites.value = favorites;
     viewedPlaylists.value = (playlistsData?.playlists ?? []).map(p => ({

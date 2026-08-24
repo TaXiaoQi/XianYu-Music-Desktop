@@ -63,9 +63,11 @@ export async function uploadFavorites(
 
 /**
  * 下载指定用户的收藏歌曲列表（当前用户恢复或排行榜"查看"用户详情）
+ * @param options.skipToken 查看他人公开数据时跳过 token 注入，避免属主校验误判为登录过期
  */
 export async function downloadFavorites(
   ciyuanxiId: string,
+  options?: { skipToken?: boolean },
 ): Promise<Song[]> {
   try {
     const data = await signedRequest<FavoritesDownloadData>('favorites_sync_download', {
@@ -73,6 +75,7 @@ export async function downloadFavorites(
     }, {
       fetchTimeoutMs: 12_000,
       timeoutMs: 15_000,
+      skipToken: options?.skipToken,
     });
     const favorites = data?.favorites ?? [];
     return favorites.map(syncPayloadToSong);

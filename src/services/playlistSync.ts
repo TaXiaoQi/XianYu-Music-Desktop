@@ -386,12 +386,18 @@ export async function fileSyncUpload(
 
 /**
  * 文件同步下载：一次请求获取完整歌单数据
+ * @param options.skipToken 查看他人公开数据时跳过 token 注入，避免属主校验误判为登录过期
  */
-export async function fileSyncDownload(ciyuanxiId: string): Promise<FileSyncDownloadData | null> {
+export async function fileSyncDownload(
+  ciyuanxiId: string,
+  options?: { skipToken?: boolean },
+): Promise<FileSyncDownloadData | null> {
   logSync(`fileSyncDownload → user_id=${ciyuanxiId}`);
   try {
     const data = await signedRequest<FileSyncDownloadData>('file_sync_download', {
       user_id: ciyuanxiId,
+    }, {
+      skipToken: options?.skipToken,
     });
     const playlistCount = data?.playlists?.length ?? 0;
     const songTotal = data?.stats?.song_total ?? 0;

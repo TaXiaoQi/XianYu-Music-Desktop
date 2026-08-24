@@ -270,6 +270,8 @@ export type SignedRequestOptions = {
   fetchTimeoutMs?: number;
   /** signedRequest 外层 Promise.race 超时时间（毫秒），默认 30s */
   timeoutMs?: number;
+  /** 跳过自动注入登录 token（查看他人公开数据等场景，避免属主校验误判为登录过期） */
+  skipToken?: boolean;
 };
 
 /** 默认外层超时（毫秒） */
@@ -307,9 +309,10 @@ async function requestEnvelope<T>(
   action: string,
   body: Record<string, unknown>,
   fetchTimeoutMs?: number,
+  skipToken = false,
 ): Promise<ApiEnvelope<T>> {
   const finalBody: Record<string, unknown> = { ...body };
-  if (cachedToken && !('token' in finalBody)) {
+  if (!skipToken && cachedToken && !('token' in finalBody)) {
     finalBody.token = cachedToken;
   }
   const payload = await authApi.authedRequest(action, finalBody, fetchTimeoutMs);
@@ -325,8 +328,9 @@ async function requestAction<T>(
   action: string,
   body: Record<string, unknown>,
   fetchTimeoutMs?: number,
+  skipToken = false,
 ): Promise<T> {
-  const payload = await requestEnvelope<T>(action, body, fetchTimeoutMs);
+  const payload = await requestEnvelope<T>(action, body, fetchTimeoutMs, skipToken);
   if (Number(payload.code) !== 200) {
     throw new Error(payload.msg || `请求失败（code ${payload.code}）`);
   }
@@ -345,6 +349,7 @@ export async function signedRequest<T>(
 ): Promise<T> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_OUTER_TIMEOUT_MS;
   const fetchTimeoutMs = options?.fetchTimeoutMs;
+  const skipToken = options?.skipToken === true;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
@@ -353,7 +358,7 @@ export async function signedRequest<T>(
   });
 
   return Promise.race([
-    requestAction<T>(action, body, fetchTimeoutMs),
+    requestAction<T>(action, body, fetchTimeoutMs, skipToken),
     timeoutPromise,
   ]);
 }

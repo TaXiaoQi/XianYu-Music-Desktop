@@ -28,12 +28,16 @@ watch(
 
 const title = computed(() => {
   if (banDialogState.value.mode === 'session') return '登录验证失败';
+  if (banDialogState.value.mode === 'login') return '请先登录';
   return banDialogState.value.banType === 'device' ? '设备已被封禁' : '账号已被封禁';
 });
 
 const reasonText = computed(() => {
   if (banDialogState.value.mode === 'session') {
     return banDialogState.value.reason || '登录状态已失效，请重新登录账号以继续使用。';
+  }
+  if (banDialogState.value.mode === 'login') {
+    return banDialogState.value.reason || '请先登录账号，登录后即可查看该用户的收藏与歌单。';
   }
   return banDialogState.value.reason || '你的账号已被管理员封禁，如有疑问请联系管理员。';
 });
@@ -104,7 +108,7 @@ async function submitAppealHandler() {
       <div
         v-if="banDialogState.visible"
         class="ban-overlay fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
-        @click.self="!appealing && (mode === 'session' ? confirmClose() : confirm())"
+        @click.self="!appealing && (mode === 'session' || mode === 'login' ? confirmClose() : confirm())"
       >
         <div class="ban-card">
           <div class="ban-icon">
@@ -118,6 +122,7 @@ async function submitAppealHandler() {
           </div>
           <h3 class="ban-title">{{ title }}</h3>
           <p v-if="mode === 'session'" class="ban-version">请重新登录账号以继续</p>
+          <p v-else-if="mode === 'login'" class="ban-version">登录后即可查看该用户的收藏与歌单</p>
           <p v-else-if="banDialogState.ciyuanxiId" class="ban-version">弦予号 {{ banDialogState.ciyuanxiId }}</p>
           <p v-else class="ban-version">当前设备已受限</p>
 
@@ -140,6 +145,14 @@ async function submitAppealHandler() {
             <template v-if="mode === 'session'">
               <button type="button" class="ban-btn ban-btn--ghost" @click="confirmClose">
                 确认
+              </button>
+              <button type="button" class="ban-btn ban-btn--primary" @click="goLogin">
+                登录
+              </button>
+            </template>
+            <template v-else-if="mode === 'login'">
+              <button type="button" class="ban-btn ban-btn--ghost" @click="confirmClose">
+                取消
               </button>
               <button type="button" class="ban-btn ban-btn--primary" @click="goLogin">
                 登录
