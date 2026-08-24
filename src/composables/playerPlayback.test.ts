@@ -79,6 +79,7 @@ vi.mock('../services/tauri/playbackApi', () => ({
     recordPlay: vi.fn().mockResolvedValue(undefined),
     getPlaybackReady: vi.fn().mockResolvedValue(true),
     getPlaybackStartFailed: vi.fn().mockResolvedValue(false),
+    getPlaybackStartFailedInfo: vi.fn().mockResolvedValue({ failed: false, reason: null }),
     getCurrentOutputDevice: vi.fn().mockResolvedValue({
       selected_device_id: null,
       active_device_name: 'Default Output',
@@ -122,6 +123,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import type { Song } from '../types';
 import { usePlaybackStore } from '../features/playback';
+import { useSettingsStore } from '../features/settings/store';
 import { playbackApi } from '../services/tauri/playbackApi';
 import { pluginApi } from '../services/tauri/pluginApi';
 import { reportUserBehavior } from '../services/usageStats';
@@ -154,6 +156,9 @@ describe('player playback domain', () => {
     // 提供无操作 stub，需要捕获帧回调的测试自行覆盖。
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    // 淡入淡出依赖 rAF 逐帧推进音量，测试环境 rAF 不触发回调会挂起。
+    // 这些测试不验证淡出行为，统一关闭避免 pauseSong/切歌卡死。
+    useSettingsStore().settings.audio.fadeInOutEnabled = false;
     loadCoverMock.mockResolvedValue('');
     loadCoverPathMock.mockResolvedValue('');
     loadFullCoverMock.mockResolvedValue('');
@@ -766,8 +771,11 @@ describe('player playback domain', () => {
 
   it('does not repeatedly auto-advance after the same online song fails quickly', async () => {
     vi.useFakeTimers();
+    // plugin://qishui 不在 mock 插件列表中，插件解析失败即触发在线失败处理路径（无需起播探测 mock）。
     const failingSong = makeSong({ path: 'plugin://qishui/failed', title: 'Failed' });
     const nextSong = makeSong({ path: '/music/next.flac', title: 'Next' });
+    // 本测试验证"同一首在线歌曲快速失败时不重复自动切歌"，需走 skip 分支
+    useSettingsStore().settings.audio.onlineFailureBehavior = 'skip';
     const handleAutoNext = vi.fn();
     const playerPlayback = createPlayerPlayback({
       getDisplaySongList: () => [failingSong, nextSong],

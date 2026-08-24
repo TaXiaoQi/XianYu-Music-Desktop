@@ -769,7 +769,7 @@ export interface TauriCommandMap {
   refresh_taskbar_window_topmost: { payload: undefined; response: boolean };
   start_topmost_guard: { payload: undefined; response: void };
   stop_topmost_guard: { payload: undefined; response: void };
-  clear_all_app_data: { payload: undefined; response: void };
+  clear_all_app_data: { payload: { confirm: boolean }; response: void };
   open_external_program: {
     payload: { path: string; args: string[] };
     response: void;
@@ -951,6 +951,10 @@ export interface TauriCommandMap {
   };
   host_kugou_sign: {
     payload: { params: string; platform: string; body?: string | null };
+    response: string;
+  };
+  host_kugou_request_key: {
+    payload: undefined;
     response: string;
   };
   host_migu_sign: {

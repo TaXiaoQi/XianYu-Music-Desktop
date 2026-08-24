@@ -9,7 +9,6 @@ import { showChangePasswordDialog } from '../../composables/useChangePasswordDia
 import { showDeleteAccountDialog } from '../../composables/useDeleteAccountDialog';
 import { logout } from '../../services/auth/authService';
 import {
-  DEFAULT_AUTH_API_SECRET,
   DEFAULT_AUTH_BASE_URL,
   getAuthApiSecret,
   getAuthBaseUrl,
@@ -27,10 +26,10 @@ const playlistSync = usePlaylistSync();
 const pad = (n: number) => n.toString().padStart(2, '0');
 
 const draftBaseUrl = ref(getAuthBaseUrl());
-const draftApiSecret = ref(getAuthApiSecret());
+const draftApiSecret = ref(getAuthApiSecret() ?? '');
 const isDirty = computed(() =>
   draftBaseUrl.value.trim() !== getAuthBaseUrl()
-  || draftApiSecret.value.trim() !== getAuthApiSecret()
+  || draftApiSecret.value.trim() !== (getAuthApiSecret() ?? '')
 );
 
 watch(
@@ -43,7 +42,7 @@ watch(
 watch(
   () => authStore.apiSecret,
   (value) => {
-    draftApiSecret.value = value;
+    draftApiSecret.value = value ?? '';
   },
 );
 
@@ -76,10 +75,10 @@ async function handleSaveBaseUrl() {
 
 async function handleResetBaseUrl() {
   draftBaseUrl.value = DEFAULT_AUTH_BASE_URL;
-  draftApiSecret.value = DEFAULT_AUTH_API_SECRET;
+  draftApiSecret.value = '';
   try {
     await setAuthBaseUrl(DEFAULT_AUTH_BASE_URL);
-    await setAuthApiSecret(DEFAULT_AUTH_API_SECRET);
+    await setAuthApiSecret('');
     showToast('已恢复默认后端连接配置', 'info');
   } catch {
     showToast('默认后端连接配置保存失败，请重试', 'error');

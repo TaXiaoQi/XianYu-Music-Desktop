@@ -1,7 +1,7 @@
 import { tauriInvoke } from './invoke';
 
 export const appApi = {
-  clearAllAppData: () => tauriInvoke('clear_all_app_data'),
+  clearAllAppData: (confirm = true) => tauriInvoke('clear_all_app_data', { confirm }),
   clearCoverCache: () => tauriInvoke('clear_cover_cache'),
   openExternalProgram: (path: string, args: string[] = []) =>
     tauriInvoke('open_external_program', { path, args }),

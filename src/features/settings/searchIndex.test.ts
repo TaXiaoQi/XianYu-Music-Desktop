@@ -10,7 +10,6 @@ describe('settings search index', () => {
       'theme',
       'desktopLyrics',
       'audioOutput',
-      'pluginHost',
       'download',
       'toolbox',
       'library',

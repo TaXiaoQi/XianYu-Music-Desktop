@@ -23,6 +23,50 @@ pub struct PluginHttpBinaryResponse {
     pub body_base64: String,
 }
 
+/// 校验插件 HTTP 请求 URL：仅允许 http/https，并阻止 SSRF 目标
+/// （环回 / 内网 / 链路本地 / 保留地址，以及 localhost 等内网域名）。
+/// 插件引擎本应访问公网音乐平台 API，此校验作为纵深防御，
+/// 防止被注入的前端脚本或恶意插件探测内网资源。
+fn validate_plugin_http_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 格式非法: {e}"))?;
+    let scheme = parsed.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("仅允许 http/https 协议，当前: {scheme}"));
+    }
+    let host = parsed.host_str().unwrap_or("").to_lowercase();
+    if host.is_empty() {
+        return Err("URL 缺少主机名".to_string());
+    }
+    if host == "localhost"
+        || host.ends_with(".localhost")
+        || host.ends_with(".local")
+        || host.ends_with(".internal")
+    {
+        return Err(format!("禁止访问内网地址: {host}"));
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let blocked = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_multicast()
+            }
+            std::net::IpAddr::V6(v6) => {
+                v6.is_loopback()
+                    || v6.is_unique_local()
+                    || v6.is_unspecified()
+                    || v6.is_multicast()
+            }
+        };
+        if blocked {
+            return Err(format!("禁止访问内网/保留地址: {host}"));
+        }
+    }
+    Ok(())
+}
+
 /// 异步 HTTP 请求 —— 使用 reqwest 异步客户端，不阻塞主线程
 #[tauri::command]
 pub async fn plugin_http_request(
@@ -33,6 +77,7 @@ pub async fn plugin_http_request(
     timeout: Option<u64>,
     follow: Option<u32>,
 ) -> Result<PluginHttpResponse, String> {
+    validate_plugin_http_url(&url)?;
     let method =
         reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
 
@@ -114,6 +159,7 @@ pub async fn plugin_http_request_binary(
 ) -> Result<PluginHttpBinaryResponse, String> {
     use base64::{engine::general_purpose, Engine as _};
 
+    validate_plugin_http_url(&url)?;
     let method =
         reqwest::Method::from_bytes(method.trim().as_bytes()).map_err(|error| error.to_string())?;
 

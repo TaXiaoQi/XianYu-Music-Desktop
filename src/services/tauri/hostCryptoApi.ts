@@ -19,6 +19,11 @@ export function hostKugouSign(params: string, platform: string, body = ''): Prom
   return tauriInvoke('host_kugou_sign', { params, platform, body });
 }
 
+/** 酷狗请求密钥（KG_SALT_ANDROID，由 Rust 侧持有，避免前端硬编码） */
+export function hostKugouRequestKey(): Promise<string> {
+  return tauriInvoke('host_kugou_request_key');
+}
+
 /** 咪咕搜索签名（返回 sign + deviceId） */
 export function hostMiguSign(text: string, time: string): Promise<{ sign: string; deviceId: string }> {
   return tauriInvoke('host_migu_sign', { text, time });
