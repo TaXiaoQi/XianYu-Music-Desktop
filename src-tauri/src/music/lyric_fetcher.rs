@@ -467,13 +467,6 @@ fn qrc_decrypt(encrypted_hex: &str) -> Result<String, String> {
         i += 8;
     }
 
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] qrc 3DES输出 head={:?} len={}",
-        &encrypted.iter().take(10).collect::<Vec<_>>(),
-        encrypted.len()
-    );
-
     for attempt in [
         decompress_zlib_sync_flush(&encrypted),
         decompress_zlib_to_bytes(&encrypted),
@@ -1260,15 +1253,6 @@ async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         return Ok(None);
     }
 
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] kw songmid={} lyric_len={} lxlyric_len={} word_markers={}",
-        song_info.songmid,
-        lrc_info.lyric.len(),
-        lrc_info.lxlyric.len(),
-        lrc_info.lxlyric.matches('<').count()
-    );
-
     Ok(Some(lrc_info))
 }
 
@@ -1563,32 +1547,12 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                #[cfg(debug_assertions)]
-                {
-                    let qrc_t = data.get("qrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let lrc_t = data.get("lrc_t").and_then(|v| v.as_i64()).unwrap_or(0);
-                    eprintln!(
-                        "[lyric_fetcher] tx musicu songmid={} lyric_len={} qrc_t={} lrc_t={} trans_len={} roma_len={}",
-                        songmid,
-                        lyric_field.len(),
-                        qrc_t,
-                        lrc_t,
-                        trans_field.len(),
-                        roma_field.len(),
-                    );
-                }
                 if !lyric_field.trim().is_empty() {
                     match qrc_decrypt(lyric_field.trim()) {
                         Ok(decrypted) => {
                             let parsed = tx_parse(&decrypted, "", "");
                             lyric = parsed.lyric;
                             lxlyric = parsed.lxlyric;
-                            #[cfg(debug_assertions)]
-                            eprintln!(
-                                "[lyric_fetcher] tx musicu lyric 解密成功 len={} head={}",
-                                decrypted.len(),
-                                decrypted.chars().take(120).collect::<String>()
-                            );
                         }
                         Err(e) => {
                             eprintln!("[lyric_fetcher] tx musicu lyric 解密失败 err={}", e);
@@ -1616,15 +1580,6 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
             resp.status
         );
     }
-
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] tx songmid={} musicu lxlyric_len={} lyric_len={} word_markers={}",
-        songmid,
-        lxlyric.len(),
-        lyric.len(),
-        lxlyric.matches('<').count()
-    );
 
     // Fallback to old API
     if lyric.is_empty() && lxlyric.is_empty() {
@@ -1669,15 +1624,6 @@ async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     if lyric.is_empty() && lxlyric.is_empty() {
         return Ok(None);
     }
-
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] tx songmid={} lyric_len={} lxlyric_len={} word_markers={}",
-        songmid,
-        lyric.len(),
-        lxlyric.len(),
-        lxlyric.matches('<').count()
-    );
 
     Ok(Some(LyricResult {
         lyric,
@@ -1988,21 +1934,10 @@ fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
     let cipher_bytes = match hex::decode(hex_str) {
         Ok(b) => b,
         Err(_) => {
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "[lyric_fetcher] wy eapi 响应 hex 解码失败 len={} head={:?}",
-                hex_str.len(),
-                &hex_str.as_bytes()[..hex_str.len().min(40)]
-            );
             return None;
         }
     };
     if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "[lyric_fetcher] wy eapi 响应长度非法 bytes_len={}",
-            cipher_bytes.len()
-        );
         return None;
     }
 
@@ -2023,15 +1958,7 @@ fn wy_eapi_decrypt_response(body: &str) -> Option<serde_json::Value> {
     dec.truncate(dec.len() - pad);
     match serde_json::from_slice(&dec) {
         Ok(v) => Some(v),
-        Err(_e) => {
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "[lyric_fetcher] wy eapi 响应解密后 JSON 解析失败 err={:?} pt_head={:?}",
-                _e,
-                &dec[..dec.len().min(80)]
-            );
-            None
-        }
+        Err(_e) => None,
     }
 }
 
@@ -2059,14 +1986,6 @@ async fn wy_eapi_post(
     headers.extend_from_slice(extra_headers);
 
     let resp = http_fetch_text(&api_url, "POST", &headers, Some(&body)).await?;
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] wy eapi_post {} status={} body_len={} body_head={}",
-        eapi_path,
-        resp.status,
-        resp.body.len(),
-        resp.body.chars().take(200).collect::<String>(),
-    );
     if resp.status != 200 {
         return Ok(None);
     }
@@ -2074,14 +1993,6 @@ async fn wy_eapi_post(
     // 回退到直接 JSON 解析，保证兼容性。
     if let Some(v) = wy_eapi_decrypt_response(&resp.body) {
         return Ok(Some(v));
-    }
-    #[cfg(debug_assertions)]
-    {
-        let is_json = serde_json::from_str::<serde_json::Value>(&resp.body).is_ok();
-        eprintln!(
-            "[lyric_fetcher] wy eapi_post {} 解密失败 is_json={}",
-            eapi_path, is_json
-        );
     }
     match serde_json::from_str::<serde_json::Value>(&resp.body) {
         Ok(v) => Ok(Some(v)),
@@ -2179,37 +2090,6 @@ async fn fetch_wy_legacy_lyric(song_id: &str) -> Result<Option<LyricResult>, Str
         Err(_) => return Ok(None),
     };
 
-    #[cfg(debug_assertions)]
-    {
-        let keys: Vec<String> = body
-            .as_object()
-            .map(|o| o.keys().cloned().collect())
-            .unwrap_or_default();
-        let code = body.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
-        let yrc_len = body
-            .get("yrc")
-            .and_then(|v| v.get("lyric"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        let klyric_len = body
-            .get("klyric")
-            .and_then(|v| v.get("lyric"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        let lrc_len = body
-            .get("lrc")
-            .and_then(|v| v.get("lyric"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        eprintln!(
-            "[lyric_fetcher] wy legacy song_id={} code={} keys={:?} lrc_len={} yrc_len={} klyric_len={}",
-            song_id, code, keys, lrc_len, yrc_len, klyric_len
-        );
-    }
-
     let final_lxlyric = {
         let yrc = try_extract_yrc(&body);
         if !yrc.is_empty() {
@@ -2297,30 +2177,6 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
         }
     };
 
-    #[cfg(debug_assertions)]
-    {
-        let keys: Vec<String> = body
-            .as_object()
-            .map(|o| o.keys().cloned().collect())
-            .unwrap_or_default();
-        let yrc_len = body
-            .get("yrc")
-            .and_then(|v| v.get("lyric"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        let klyric_len = body
-            .get("klyric")
-            .and_then(|v| v.get("lyric"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-        eprintln!(
-            "[lyric_fetcher] wy eapi song_id={} keys={:?} yrc_len={} klyric_len={}",
-            song_id, keys, yrc_len, klyric_len
-        );
-    }
-
     // Try YRC first, then KRC
     let lxlyric = try_extract_yrc(&body);
     let krc_lxlyric = if lxlyric.is_empty() {
@@ -2338,8 +2194,6 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
     if final_lxlyric.is_empty() {
         final_lxlyric = wyy_get_karaoke(song_id).await;
     }
-
-    eprintln!("[lyric_fetcher] wy song_id={} lxlyric_len={} word_markers={} lrc_len={}", song_id, final_lxlyric.len(), final_lxlyric.matches('<').count(), body.get("lrc").and_then(|v| v.get("lyric")).and_then(|v| v.as_str()).unwrap_or("").len());
 
     // Get plain lyrics
     let lrc = body
@@ -2373,15 +2227,6 @@ async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricResult>, Stri
             }
         }
     }
-
-    // [诊断] 确认 wy 直接 API 是否真的拿到了逐字歌词（normalizeLxLyricResponse 之后 lxlyric 会经前端转换）
-    #[cfg(debug_assertions)]
-    eprintln!(
-        "[lyric_fetcher] wy song_id={} lxlyric_len={} word_markers={}",
-        song_id,
-        final_lxlyric.len(),
-        final_lxlyric.matches('<').count()
-    );
 
     Ok(Some(LyricResult {
         lyric: fixed_lrc,

@@ -122,11 +122,6 @@ where
             return self.inner.next();
         }
 
-        static LOG_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !LOG_ONCE.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!("[source] PluginHostSource 正在处理音频数据流! sample_rate={}, channels={}", self.sample_rate, self.channels);
-        }
-
         // 4. 从 inner 拉取整块（流末尾可能不足 512 帧，按完整帧截断）
         let ch = self.channels as usize;
         let mut frames = 0usize;

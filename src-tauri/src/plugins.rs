@@ -414,7 +414,6 @@ pub async fn download_audio_to_temp(
     let mut current_url = url;
 
     let mut body: Option<Vec<u8>> = None;
-    let mut final_content_length: Option<u64> = None;
 
     for _hop in 0..12 {
         let mut req = client.get(&current_url);
@@ -451,7 +450,6 @@ pub async fn download_audio_to_temp(
         if !response.status().is_success() {
             return Err(format!("HTTP {}", response.status()));
         }
-        final_content_length = response.content_length();
         body = Some(response.bytes().await.map_err(|e| e.to_string())?.to_vec());
         break;
     }
@@ -460,12 +458,6 @@ pub async fn download_audio_to_temp(
     if bytes.is_empty() {
         return Err("Empty response".to_string());
     }
-    eprintln!(
-        "[B站m4s-dl] url={} content_length={:?} downloaded={}",
-        current_url,
-        final_content_length,
-        bytes.len()
-    );
 
     // 写入临时文件
     let temp_dir = std::env::temp_dir();

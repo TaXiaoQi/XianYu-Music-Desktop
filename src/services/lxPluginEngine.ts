@@ -490,7 +490,6 @@ export async function lxPluginRequest(
             } catch { /* 忽略 */ }
           }
           const musicUrl = normalizeLxMusicUrl(response);
-          console.warn(`[lxPluginRequest] ${source.name} musicUrl 清洗诊断: rawType=${typeof response} raw=${typeof response === 'string' ? response.substring(0, 150) : JSON.stringify(response)?.substring(0, 150)} → cleaned=${musicUrl}`);
           log(`[lxPluginRequest] 沙箱 ${source.name} musicUrl 原始返回: type=${typeof response} len=${typeof response === 'string' ? response.length : 'n/a'} preview=${musicUrl ?? (response === null ? 'null' : JSON.stringify(response)?.substring(0, 120))}`);
           if (!musicUrl) {
             throw new Error('Invalid musicUrl response');

@@ -236,7 +236,6 @@ async function httpFetch(
   );
 
   const text = response.body || '';
-  log(`[httpFetch] ← ${response.status} bodyLen=${text.length}`);
 
   // 错误时打印响应体前 500 字符，方便调试
   if (response.status >= 400) {

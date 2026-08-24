@@ -164,7 +164,6 @@ fn scan_dir_plugin_infos_recursive(
     // 避开 UAD 硬件框架与 Waves 虚拟壳（无需直连 LoadLibrary，防止 C++ 段错误杀死宿主）
     let name_lower = name.to_lowercase();
     if name.eq_ignore_ascii_case("Universal Audio.vst3") || name_lower.contains("waveshell") {
-        eprintln!("[scanner] 自动避开已知特异/壳依赖崩溃项: {path_str}");
         return Vec::new();
     }
 
