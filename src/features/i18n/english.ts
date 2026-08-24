@@ -1549,6 +1549,7 @@ const exactEnglishTranslations: Record<string, string> = {
   "未知音源": "Unknown source",
   "[AutoUpdate] 插件自动更新失败:": "[AutoUpdate] Plugin auto-update failed:",
   "登录验证失败": "Sign-in verification failed",
+  "登录后即可查看该用户的收藏与歌单": "Sign in to view this user's favorites and playlists",
   "你的账号已被管理员封禁，如有疑问请联系管理员。": "Your account has been banned by the admin. Contact the admin if you have questions.",
   "请填写申诉内容": "Enter your appeal content",
   "登录信息已失效，无法提交申诉，请重新登录账号": "Your session has expired and the appeal cannot be submitted. Please sign in again",

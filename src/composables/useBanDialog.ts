@@ -2,8 +2,8 @@ import { ref } from 'vue';
 
 export type BanType = 'account' | 'device';
 
-/** 弹窗用途：ban=账号/设备封禁申诉；session=登录验证失效提示（复用同一套弹窗样式） */
-export type BanDialogMode = 'ban' | 'session';
+/** 弹窗用途：ban=账号/设备封禁申诉；session=登录验证失效提示；login=未登录查看他人数据提醒（复用同一套弹窗样式） */
+export type BanDialogMode = 'ban' | 'session' | 'login';
 
 export interface BanDialogMeta {
   ciyuanxiId: string;
@@ -64,6 +64,24 @@ export function showSessionExpiredDialog(
       mode: 'session',
       banType: 'account',
       reason: reason || '登录状态已失效，请重新登录账号以继续使用。',
+      ciyuanxiId: '',
+      nickname: '',
+      debug: false,
+      resolver: resolve,
+    };
+  });
+}
+
+/** 打开「请先登录」提醒弹窗（未登录查看他人数据时），复用登录过期弹窗的视觉 */
+export function showLoginRequiredDialog(
+  reason = '请先登录账号，登录后即可查看该用户的收藏与歌单。',
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    banDialogState.value = {
+      visible: true,
+      mode: 'login',
+      banType: 'account',
+      reason: reason || '请先登录账号，登录后即可查看该用户的收藏与歌单。',
       ciyuanxiId: '',
       nickname: '',
       debug: false,
