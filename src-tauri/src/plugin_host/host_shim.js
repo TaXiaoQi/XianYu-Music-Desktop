@@ -61,6 +61,12 @@
     error: function () { __xyNativeLog('error', joinArgs(arguments)); },
     info: function () { __xyNativeLog('log', joinArgs(arguments)); },
     debug: function () { __xyNativeLog('log', joinArgs(arguments)); },
+    // [修复] 部分插件（如 ikun 音源）用 console.group/groupEnd 组织日志，
+    // 宿主缺失这些方法时调用会抛 "not a function"，导致整个 musicUrl 解析失败。
+    // 提供无害空实现以兜底所有依赖 console group API 的插件。
+    group: function () {},
+    groupCollapsed: function () {},
+    groupEnd: function () {},
   };
 
   // ==================== timers ====================
@@ -1532,6 +1538,9 @@
           try {
             var body = response.body;
             try { body = JSON.parse(response.body); } catch (e) { /* 保持原始字符串 */ }
+            var ct = '';
+            try { ct = (response.headers && (response.headers['content-type'] || response.headers['Content-Type'])) || ''; } catch (e) {}
+            G.console.log('HTTP 响应: ' + response.statusCode + ' ' + ct + ' ' + String(response.body).substring(0, 240));
             callback(null, {
               statusCode: response.statusCode,
               statusMessage: response.statusMessage,

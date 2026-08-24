@@ -82,10 +82,11 @@ fn decrypt_cenc_file(path: &std::path::Path, cek: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 最小缓冲字节数：下载够这个量后才开始播放，避免起播立即卡顿。
-/// 512KB ≈ 32s @ 128kbps / 12.8s @ 320kbps，平衡起播速度和播放流畅度。
-/// 配合 StreamingTempFileReader 的阻塞等待机制，即使播放追上下载进度也能平滑等待。
-pub const MIN_BUFFER_BYTES: u64 = 512 * 1024;
+/// 起播最小缓冲。解码器读到文件头即可就绪出声，剩余数据由后台流式缓存；
+/// reader 具备"缓冲不足即等待"的阻塞保护，不会读到空洞数据。512KB 偏保守，
+/// 会拉长起播等待（尤其慢速 CDN）。降至 256KB 使起播等待减半，同时保留足够
+/// 缓冲余量，避免起播后立即卡顿。
+pub const MIN_BUFFER_BYTES: u64 = 256 * 1024;
 
 /// 流式临时文件读取器：包装 File，实现 Read + Seek。
 /// 读取位置接近下载进度时阻塞等待，直到数据就绪。
@@ -1063,30 +1064,67 @@ fn apply_stream_request_headers(
     req
 }
 
+/// 判断 Content-Type 是否为音频类型。
+/// https 升级后 CDN 可能返回 200 + 错误页（text/html / application/json 等），
+/// 此时应回退 http 原 URL，避免把错误内容当作音频（落雪系 CDN 常见）。
+fn is_audio_content_type(content_type: &str) -> bool {
+    let ct = content_type.trim().to_lowercase();
+    if ct.is_empty() {
+        return true; // 无 Content-Type 时视为音频（部分 CDN 不返回）
+    }
+    ct.starts_with("audio/")
+        || ct.contains("octet-stream")
+        || ct.contains("mpegurl")
+        || ct.contains("x-mpegurl")
+}
+
 /// 发送音频流 GET 请求；http 直链优先升级 https。
 ///
 /// IDM 等下载工具经 Winsock LSP 拦截系统级明文 HTTP 流量嗅探音频直链并弹窗接管，
-/// https 的 TLS 加密让嗅探失效；CDN 不支持 https（连接失败/非 2xx）时回退原 URL。
-/// 返回原 URL 的响应（含非成功状态），错误处理交由调用方。
+/// https 的 TLS 加密让嗅探失效；CDN 不支持 https（连接失败/非 2xx/返回非音频内容）
+/// 时回退原 URL。返回 (响应, 实际使用的 URL)，错误处理交由调用方。
 fn send_audio_request(
     client: &reqwest::blocking::Client,
     url: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
-) -> Result<reqwest::blocking::Response, String> {
+) -> Result<(reqwest::blocking::Response, String), String> {
     if let Some(rest) = url.strip_prefix("http://") {
         let https_url = format!("https://{rest}");
-        if let Ok(r) = apply_stream_request_headers(client.get(&https_url), headers, user_agent)
-            .send()
+        // 起播提速：https 探测改用短线 connect 超时的独立 client。
+        // 共享 client 的 connect_timeout=10s 会让不支持 https 的 CDN 卡住起播数秒；
+        // 这里 2s 内（含 TLS 握手）不建连成功立即回退 http。body 的流式读取不受 connect_timeout 限制。
+        if let Ok(probe) = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .gzip(true)
+            .brotli(true)
+            .deflate(true)
+            .build()
         {
-            if r.status().is_success() {
-                return Ok(r);
+            if let Ok(r) = apply_stream_request_headers(probe.get(&https_url), headers, user_agent)
+                .send()
+            {
+                if r.status().is_success() {
+                    // https 返回 200 但内容非音频（CDN 错误页）时回退 http，
+                    // 避免把错误内容当作音频播放（落雪系 CDN 对 https 常返回 200 + JSON/HTML 错误）
+                    let ct = r
+                        .headers()
+                        .get(reqwest::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if is_audio_content_type(&ct) {
+                        return Ok((r, https_url));
+                    }
+                }
+                // 非 2xx / 非音频：丢弃探测连接，回退 http 原 URL
             }
         }
     }
-    apply_stream_request_headers(client.get(url), headers, user_agent)
+    let r = apply_stream_request_headers(client.get(url), headers, user_agent)
         .send()
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok((r, url.to_string()))
 }
 
 fn download_thread(
@@ -1106,6 +1144,7 @@ fn download_thread(
     cenc_streaming: Arc<AtomicBool>,
 ) {
     let fail_download = |reason: &str, bytes_written: u64| {
+        eprintln!("[stream_cache] 下载失败: {} (已下载 {} bytes)", reason, bytes_written);
         downloaded_bytes.store(bytes_written, Ordering::Relaxed);
         download_failed.store(true, Ordering::Relaxed);
         if let Ok(mut err) = download_error.lock() {
@@ -1139,7 +1178,7 @@ fn download_thread(
     };
 
     let mut response = match send_audio_request(&client, url, headers, user_agent) {
-        Ok(r) => r,
+        Ok((r, _)) => r,
         Err(e) => {
             fail_download(&format!("下载请求失败: {}", e), 0);
             return;
@@ -1179,7 +1218,7 @@ fn download_thread(
             }
             // 用提取到的 URL 重新请求
             match send_audio_request(&client, &real_url, headers, user_agent) {
-                Ok(retry_resp) if retry_resp.status().is_success() => {
+                Ok((retry_resp, _)) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
                         .headers()
                         .get(reqwest::header::CONTENT_TYPE)
@@ -1197,7 +1236,7 @@ fn download_thread(
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
                             // 用二次提取的 URL 再次请求
                             match send_audio_request(&client, &real_url2, headers, user_agent) {
-                                Ok(resp2) if resp2.status().is_success() => {
+                                Ok((resp2, _)) if resp2.status().is_success() => {
                                     let ct2 = resp2
                                         .headers()
                                         .get(reqwest::header::CONTENT_TYPE)
@@ -1219,7 +1258,7 @@ fn download_thread(
                                     }
                                     response = resp2;
                                 }
-                                Ok(resp2) => {
+                                Ok((resp2, _)) => {
                                     fail_download(
                                         &format!("二次提取的 URL 返回 HTTP {}", resp2.status()),
                                         0,
@@ -1249,7 +1288,7 @@ fn download_thread(
                         response = retry_resp;
                     }
                 }
-                Ok(retry_resp) => {
+                Ok((retry_resp, _)) => {
                     fail_download(
                         &format!("提取的 URL 返回 HTTP {}", retry_resp.status()),
                         0,
@@ -1485,5 +1524,35 @@ pub fn clear_all() {
             }
             mgr.current_size = 0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_audio_content_type;
+
+    #[test]
+    fn audio_content_type_detects_valid_audio() {
+        assert!(is_audio_content_type("audio/mpeg"));
+        assert!(is_audio_content_type("audio/flac"));
+        assert!(is_audio_content_type("audio/mp4"));
+        assert!(is_audio_content_type("application/octet-stream"));
+        assert!(is_audio_content_type("application/vnd.apple.mpegurl"));
+        assert!(is_audio_content_type("audio/x-mpegurl"));
+        // 无 Content-Type 时视为音频（部分 CDN 不返回）
+        assert!(is_audio_content_type(""));
+        assert!(is_audio_content_type("   "));
+    }
+
+    #[test]
+    fn audio_content_type_rejects_error_pages() {
+        // 落雪系 CDN 对 https 常返回 200 + 错误页，必须识别为非音频以回退 http
+        assert!(!is_audio_content_type("text/html"));
+        assert!(!is_audio_content_type("text/html; charset=utf-8"));
+        assert!(!is_audio_content_type("application/json"));
+        assert!(!is_audio_content_type("text/plain"));
+        assert!(!is_audio_content_type("application/xml"));
+        assert!(!is_audio_content_type("text/xml"));
+        assert!(!is_audio_content_type("image/png"));
     }
 }

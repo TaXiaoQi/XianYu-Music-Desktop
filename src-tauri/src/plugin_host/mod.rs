@@ -495,7 +495,16 @@ async fn promise_to_json<'js>(
         Ok(s) => Ok(s),
         Err(CaughtError::Exception(exc)) => {
             let msg = exc.message().unwrap_or_else(|| "未知异常".to_string());
-            Ok(json_error(&msg))
+            // 附带触发点堆栈：QuickJS 的 "xxx is not a function" 常不带函数名，
+            // 有 stack 才能定位到具体行与调用链。
+            let stack = (&exc as &rquickjs::Object)
+                .get::<_, String>("stack")
+                .ok()
+                .filter(|s| !s.is_empty());
+            match stack {
+                Some(st) => Ok(json_error(&format!("{}\n——stack——\n{}", msg, st))),
+                None => Ok(json_error(&msg)),
+            }
         }
         Err(CaughtError::Value(v)) => {
             if let Ok(s) = rquickjs::String::from_js(ctx, v) {

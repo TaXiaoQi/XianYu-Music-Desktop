@@ -1637,33 +1637,20 @@ export async function pluginGetMusicInfo(
   // Baka/Toskysun 系列插件请使用 pluginGetBakaMusicInfo
   const isQualityKey = (q: string): q is QualityKey => q in QUALITY_META;
 
-  // [MF 原生音质键适配] 时迁酱等新式 MF 插件在 supportedQualities 中直接声明
-  // 原生档位键（'128k'/'320k'/'flac'/'flac24bit'/'hires'），且其内部 QUALITY_MAPPING
-  // 与标准 MF 三档语义不同（standard→320k、high→flac、super→hires，无 lossless）。
-  // 对这类插件传旧三档键会导致音质错位（请求 320k 实得 flac）或直传未知键失败，
-  // 因此声明含原生键时直接传原生键，旧三档仅作为无声明插件的兼容路径。
-  const declaredQualities = inst.instance.supportedQualities;
-  const nativeDeclaredKeys: Set<string> = new Set();
-  if (Array.isArray(declaredQualities)) {
-    for (const dq of declaredQualities) {
-      if (typeof dq === 'string' && normalizeQualityKey(dq)) {
-        nativeDeclaredKeys.add(dq.toLowerCase());
-      }
-    }
-  }
-  const useNativeQualityKeys = nativeDeclaredKeys.size > 0 && isQualityKey(quality);
+  // [MF 四级音质适配] 原版 MusicFree 插件 getMediaSource 的入参是 MusicFree 固有的四级键
+  // low / standard / high / super（约相当于 128k / 320k / FLAC / 超高），而非插件在
+  // supportedQualities 里声明的字符串。时迁酱等新式 MF 插件同样如此：其内部 QUALITY_MAPPING
+  // 只认这 4 个键，声明 '128k'/'320k'/'flac'/'flac24bit' 仅用于展示。若按声明值直传原生键，
+  // 128k/flac 等在插件 QUALITY_MAPPING 里查不到映射，会全部回退到默认档（如 320k），
+  // 导致音质列表塌缩成只有一档。因此统一用 qualityKeyToMfQuality 把内部 12 档映射到四级键；
+  // 个别只认原生键的插件会在四级键报「不支持音质」后由下方兜底逻辑补试原生键。
+  const MF_QUALITY_ORDER = ['low', 'standard', 'high', 'super'] as const;
 
   // [音质解析] 当有可用音质列表时，使用 resolveOnlinePlayQuality 统一解析
-  // 原版 MF 插件：多 QualityKey 映射到同一三档，需去重
+  // 原版 MF 插件：多个 QualityKey 映射到同一四级键时去重
   const tryPairs: Array<{ pluginQ: string; qualityKey: QualityKey }> = [];
 
-  if (useNativeQualityKeys) {
-    // 原生键插件：按声明档位过滤原生键候选，并补充声明内未覆盖的降级档
-    const nativeCandidates = buildNativePluginQualityPairs(quality, fallbackBehavior, availableQualities);
-    const filtered = nativeCandidates.filter(pair => nativeDeclaredKeys.has(pair.pluginQ.toLowerCase()));
-    tryPairs.push(...(filtered.length > 0 ? filtered : nativeCandidates.slice(0, 1)));
-    log(`[getMediaSource] ${source.name} 声明原生音质键 ${JSON.stringify([...nativeDeclaredKeys])}，直传原生键: ${JSON.stringify(tryPairs.map(p => p.pluginQ))}`);
-  } else if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
+  if (isQualityKey(quality) && availableQualities && availableQualities.length > 0) {
     const resolvedKeys = resolveOnlinePlayQuality(quality, availableQualities, fallbackBehavior);
     const seen = new Set<string>();
     for (const q of resolvedKeys) {
@@ -1675,33 +1662,20 @@ export async function pluginGetMusicInfo(
     }
   } else if (isQualityKey(quality)) {
     const mfQ = qualityKeyToMfQuality(quality);
+    const mfIdx = MF_QUALITY_ORDER.indexOf(mfQ);
     if (fallbackBehavior === 'pause') {
       tryPairs.push({ pluginQ: mfQ, qualityKey: quality });
     } else if (fallbackBehavior === 'higher') {
-      if (mfQ === 'standard') {
-        tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
-        tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
-        tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
-      } else if (mfQ === 'high') {
-        tryPairs.push({ pluginQ: 'high', qualityKey: quality });
-        tryPairs.push({ pluginQ: 'lossless', qualityKey: 'flac' });
-      } else {
-        tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
+      for (let i = mfIdx; i < MF_QUALITY_ORDER.length; i++) {
+        tryPairs.push({ pluginQ: MF_QUALITY_ORDER[i], qualityKey: quality });
       }
     } else {
-      if (mfQ === 'lossless') {
-        tryPairs.push({ pluginQ: 'lossless', qualityKey: quality });
-        tryPairs.push({ pluginQ: 'high', qualityKey: '320k' });
-        tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
-      } else if (mfQ === 'high') {
-        tryPairs.push({ pluginQ: 'high', qualityKey: quality });
-        tryPairs.push({ pluginQ: 'standard', qualityKey: '128k' });
-      } else {
-        tryPairs.push({ pluginQ: 'standard', qualityKey: quality });
+      for (let i = mfIdx; i >= 0; i--) {
+        tryPairs.push({ pluginQ: MF_QUALITY_ORDER[i], qualityKey: quality });
       }
     }
   } else {
-    // 旧版 standard/high/lossless 直接使用
+    // 插件/调用方已直接给出 MF 键（'low'/'standard'/'high'/'super' 或旧 'lossless'）时原样使用
     tryPairs.push({ pluginQ: quality, qualityKey: '320k' });
   }
 

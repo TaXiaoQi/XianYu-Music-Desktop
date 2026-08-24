@@ -630,19 +630,27 @@ export function resolveOnlinePlayQuality(
 }
 
 /**
- * 将 QualityKey 映射到 MusicFree 插件的 standard / high / lossless
- * MusicFree 插件标准只有这 3 档，其他档位按比特率/无损性降级映射
+ * 将 QualityKey 映射到 MusicFree 插件 getMediaSource 入参的四级键。
+ *
+ * 原版 MusicFree 插件的质量标准就是这 4 档：low / standard / high / super
+ * （约相当于 128k / 320k / FLAC / 超高），插件内部的 QUALITY_MAPPING 也按
+ * 这 4 个键编写（如时迁酱网易云：low→128k、standard→320k、high→flac、super→flac24bit）。
+ * 因此必须映射到四级键，而不是按插件 supportedQualities 声明的字符串直传——
+ * 否则 128k/flac 等在插件 QUALITY_MAPPING 里查不到，会全部回退到默认档（如 320k），
+ * 导致音质列表塌缩成只有一档。
  *
  * 映射规则：
- *   mgg / 128k / 192k           → standard
- *   320k                         → high
- *   flac / flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master  → lossless
+ *   mgg / 128k / 192k                                  → low
+ *   320k                                               → standard
+ *   flac                                               → high
+ *   flac24bit / hires / vinyl / dolby / atmos / atmos_plus / master  → super
  */
-export function qualityKeyToMfQuality(q: QualityKey): 'standard' | 'high' | 'lossless' {
-  const meta = QUALITY_META[q];
-  if (meta.isLossless || meta.rank >= 5) return 'lossless';
-  if (meta.rank >= 4) return 'high';
-  return 'standard';
+export function qualityKeyToMfQuality(q: QualityKey): 'low' | 'standard' | 'high' | 'super' {
+  const rank = QUALITY_META[q]?.rank ?? 0;
+  if (rank >= 6) return 'super';
+  if (rank >= 5) return 'high';
+  if (rank >= 4) return 'standard';
+  return 'low';
 }
 
 export interface EqualizerPreset {
