@@ -255,6 +255,7 @@ export const defaultAppSettings: AppSettings = {
   showTaskbarPlayer: false,
   taskbarPlayerCanDrag: false,
   gpuAcceleration: true,
+  performanceMode: 'auto',
   checkUpdateOnStartup: true,
   writeArtistAvatarToTags: false,
   download: defaultDownloadSettings,

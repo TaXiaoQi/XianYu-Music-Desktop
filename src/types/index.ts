@@ -774,6 +774,8 @@ export interface PluginSettings {
 
 export type SongClickAction = 'double' | 'single';
 export type AppLanguage = 'system' | 'zh-CN' | 'zh-TW' | 'en-US';
+/** 性能模式：auto 自动检测 / full 满特效 / performance 性能优先（渲染降级）。 */
+export type PerformanceMode = 'auto' | 'full' | 'performance';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -810,6 +812,8 @@ export interface AppSettings {
   showTaskbarPlayer: boolean;
   taskbarPlayerCanDrag: boolean;
   gpuAcceleration: boolean;
+  /** 性能模式：auto 自动检测 / full 满特效 / performance 性能优先（渲染降级）。 */
+  performanceMode: PerformanceMode;
   checkUpdateOnStartup: boolean;
   writeArtistAvatarToTags: boolean;
   download: DownloadSettings;

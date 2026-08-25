@@ -11,7 +11,7 @@ import { playbackApi } from '../../services/tauri/playbackApi';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
 import { useI18n } from '../../features/i18n';
-import type { AppLanguage } from '../../types';
+import type { AppLanguage, PerformanceMode } from '../../types';
 
 const { settings, patchSettings } = useSettings();
 const {
@@ -63,10 +63,12 @@ const handleLanguageDropdownOutsideClick = (event: MouseEvent) => {
 
 onMounted(() => {
   window.addEventListener('mousedown', handleLanguageDropdownOutsideClick);
+  window.addEventListener('mousedown', handlePerformanceModeDropdownOutsideClick);
 });
 
 onUnmounted(() => {
   window.removeEventListener('mousedown', handleLanguageDropdownOutsideClick);
+  window.removeEventListener('mousedown', handlePerformanceModeDropdownOutsideClick);
 });
 
 const launchOnStartup = ref(false);
@@ -88,6 +90,42 @@ async function handleGpuAccelerationChange() {
 }
 const showClearAllDataConfirm = ref(false);
 const isClearingAllData = ref(false);
+
+// --- 性能模式：auto 自动检测 / full 满特效 / performance 性能优先 ---
+const performanceModeOptions = computed<{ value: PerformanceMode; label: string }[]>(() => [
+  { value: 'auto', label: t('general.pmAuto') },
+  { value: 'full', label: t('general.pmFull') },
+  { value: 'performance', label: t('general.pmPerformance') },
+]);
+
+const performanceMode = computed<PerformanceMode>(() =>
+  (settings.value as { performanceMode?: PerformanceMode })?.performanceMode ?? 'auto',
+);
+
+const isPerformanceModeDropdownOpen = ref(false);
+const performanceModeDropdownRef = ref<HTMLElement | null>(null);
+
+const currentPerformanceModeLabel = computed(() => {
+  const current = performanceModeOptions.value.find((opt) => opt.value === performanceMode.value);
+  return current?.label ?? t('general.pmAuto');
+});
+
+const selectPerformanceModeOption = (value: PerformanceMode) => {
+  if (performanceMode.value !== value) {
+    patchSettings({ performanceMode: value });
+  }
+  isPerformanceModeDropdownOpen.value = false;
+};
+
+const handlePerformanceModeDropdownOutsideClick = (event: MouseEvent) => {
+  if (
+    isPerformanceModeDropdownOpen.value
+    && performanceModeDropdownRef.value
+    && !performanceModeDropdownRef.value.contains(event.target as Node)
+  ) {
+    isPerformanceModeDropdownOpen.value = false;
+  }
+};
 
 const isLibraryScanActive = computed(
   () => !!libraryScanProgress.value && !libraryScanProgress.value.done
@@ -283,6 +321,53 @@ onMounted(() => {
           <button @click="handleGpuAccelerationChange" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.gpuAcceleration ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.gpuAcceleration ? 'translate-x-6' : 'translate-x-1'" />
           </button>
+        </div>
+
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div>
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.performanceMode') }}</div>
+            <div class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{{ t('general.performanceModeHint') }}</div>
+          </div>
+          <div ref="performanceModeDropdownRef" class="relative w-40 shrink-0 sm:w-44">
+            <button
+              type="button"
+              :aria-expanded="isPerformanceModeDropdownOpen"
+              :aria-label="t('general.performanceMode')"
+              @click="isPerformanceModeDropdownOpen = !isPerformanceModeDropdownOpen"
+              class="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white/55 px-3 text-xs font-medium text-gray-800 outline-none transition hover:bg-white/75 focus:border-[#EC4141]/50 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+            >
+              <span class="truncate">{{ currentPerformanceModeLabel }}</span>
+              <ChevronDown
+                class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 dark:text-gray-500"
+                :class="{ 'rotate-180': isPerformanceModeDropdownOpen }"
+                :stroke-width="2.2"
+              />
+            </button>
+
+            <Transition name="settings-dropdown">
+              <div
+                v-if="isPerformanceModeDropdownOpen"
+                class="absolute right-0 top-full z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 bg-white/90 p-1 text-xs shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#262626]/95"
+              >
+                <button
+                  v-for="opt in performanceModeOptions"
+                  :key="opt.value"
+                  type="button"
+                  @click="selectPerformanceModeOption(opt.value)"
+                  class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left font-medium transition-colors"
+                  :class="performanceMode === opt.value
+                    ? 'bg-[#EC4141]/10 text-[#EC4141] dark:bg-[#EC4141]/20 dark:text-[#ff8b8b]'
+                    : 'text-gray-700 hover:bg-black/5 dark:text-gray-200 dark:hover:bg-white/10'"
+                >
+                  <span class="truncate">{{ opt.label }}</span>
+                  <Check
+                    v-if="performanceMode === opt.value"
+                    class="h-3.5 w-3.5 shrink-0 text-[#EC4141] dark:text-[#ff8b8b]"
+                  />
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
 
         <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">

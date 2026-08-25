@@ -1,4 +1,6 @@
 import { computed, shallowRef } from 'vue';
+import { useSettingsStore } from '../features/settings/store';
+import type { PerformanceMode } from '../types';
 
 /**
  * 硬件能力检测结果（进程内单例缓存，避免重复探测）。
@@ -83,8 +85,28 @@ function getAutoDetectedMode(): 'low' | 'high' {
  * - hardwareCapability: 硬件能力详情（用于设置页展示）
  */
 export function usePerformanceMode() {
-  // 当前项目尚未接入手动性能模式设置及对应的 Rust IPC，使用真实可用的硬件自动检测。
-  const effectiveMode = computed<'low' | 'high'>(() => getAutoDetectedMode());
+  const settingsStore = useSettingsStore();
+
+  /** 手动选择的性能模式（auto 自动检测 / full 满特效 / performance 性能优先），默认 auto。 */
+  const selectedMode = computed<PerformanceMode>(() =>
+    (settingsStore.settings as { performanceMode?: PerformanceMode })?.performanceMode ?? 'auto',
+  );
+
+  /** 自动档下由硬件能力检测出的低/高性能。 */
+  const autoLow = computed<'low' | 'high'>(() => getAutoDetectedMode());
+
+  /** 综合手动选择与硬件检测后的实际生效模式（low/high）。 */
+  const effectiveMode = computed<'low' | 'high'>(() => {
+    switch (selectedMode.value) {
+      case 'full':
+        return 'high';
+      case 'performance':
+        return 'low';
+      case 'auto':
+      default:
+        return autoLow.value;
+    }
+  });
 
   const isLowPerformance = computed(() => effectiveMode.value === 'low');
   const isHighPerformance = computed(() => effectiveMode.value === 'high');
@@ -92,6 +114,8 @@ export function usePerformanceMode() {
   const hardwareCapability = computed<HardwareCapability>(() => detectHardwareCapability());
 
   return {
+    selectedMode,
+    isAutoLowPerformance: computed(() => autoLow.value === 'low'),
     effectiveMode,
     isLowPerformance,
     isHighPerformance,

@@ -260,8 +260,8 @@ onBeforeUnmount(() => {
 const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => [
   { id: 'account', name: t('settings.account') },
   { id: 'general', name: t('settings.general') },
-  { id: 'plugins', name: t('settings.plugins') },
   { id: 'theme', name: t('settings.theme') },
+  { id: 'plugins', name: t('settings.plugins') },
   { id: 'audioOutput', name: t('settings.playback') },
   { id: 'download', name: t('settings.download') },
   { id: 'library', name: t('settings.library') },

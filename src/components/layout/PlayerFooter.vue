@@ -1597,26 +1597,23 @@ onUnmounted(() => {
   transform: translateY(6px) scale(0.85);
 }
 
-/* 底栏工具收纳：向上展开/折叠，带模糊过渡 */
+/* 底栏工具收纳：向上展开/折叠，纯 transform/opacity（避免 filter 逐帧重算） */
 .footer-tools-enter-active,
 .footer-tools-leave-active {
   transition: opacity 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
-    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
-    filter 0.28s ease;
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .footer-tools-enter-from,
 .footer-tools-leave-to {
   opacity: 0;
   transform: translateY(12px) scale(0.9);
-  filter: blur(6px);
 }
 
 .footer-tools-enter-to,
 .footer-tools-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
-  filter: blur(0);
 }
 
 /* 歌名滚动（marquee）：文字超出容器时无缝滚动，时长由 --marquee-duration 动态控制 */
