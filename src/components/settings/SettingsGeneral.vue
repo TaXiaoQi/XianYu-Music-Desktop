@@ -11,6 +11,7 @@ import { playbackApi } from '../../services/tauri/playbackApi';
 import ConfirmModal from '../overlays/ConfirmModal.vue';
 import SettingHint from './SettingHint.vue';
 import { useI18n } from '../../features/i18n';
+import { usePerformanceMode } from '../../composables/usePerformanceMode';
 import type { AppLanguage, PerformanceMode } from '../../types';
 
 const { settings, patchSettings } = useSettings();
@@ -92,8 +93,14 @@ const showClearAllDataConfirm = ref(false);
 const isClearingAllData = ref(false);
 
 // --- 性能模式：auto 自动检测 / full 满特效 / performance 性能优先 ---
+const { effectiveMode } = usePerformanceMode();
+
+const autoEffectiveLabel = computed(() => {
+  return effectiveMode.value === 'high' ? t('general.pmFull') : t('general.pmPerformance');
+});
+
 const performanceModeOptions = computed<{ value: PerformanceMode; label: string }[]>(() => [
-  { value: 'auto', label: t('general.pmAuto') },
+  { value: 'auto', label: `${t('general.pmAuto')} (${autoEffectiveLabel.value})` },
   { value: 'full', label: t('general.pmFull') },
   { value: 'performance', label: t('general.pmPerformance') },
 ]);
@@ -328,7 +335,7 @@ onMounted(() => {
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.performanceMode') }}</div>
             <div class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{{ t('general.performanceModeHint') }}</div>
           </div>
-          <div ref="performanceModeDropdownRef" class="relative w-40 shrink-0 sm:w-44">
+          <div ref="performanceModeDropdownRef" class="relative w-44 shrink-0 sm:w-52">
             <button
               type="button"
               :aria-expanded="isPerformanceModeDropdownOpen"
