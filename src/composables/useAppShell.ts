@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import { usePlayer } from '../features/playback';
 import { useAppThemeSync } from './useAppThemeSync';
 import { useExternalPathBridge } from './useExternalPathBridge';
+import { useDeepLinkBridge } from './useDeepLinkBridge';
 import { useAppShellTheme } from './useAppShellTheme';
 import { useMiniPlayerWindowBridge } from './useMiniPlayerWindowBridge';
 import { useTaskbarPlayerBridge } from './useTaskbarPlayerBridge';
@@ -119,6 +120,7 @@ export function useAppShell() {
   useTaskbarPlayerBridge();
   useKeyboardShortcuts();
   useTrayMenuEvents(router);
+  useDeepLinkBridge();
 
   init();
 

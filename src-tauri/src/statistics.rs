@@ -2750,6 +2750,60 @@ pub fn get_listen_durations(db: State<DbState>) -> Result<ListenDurations, Strin
     })
 }
 
+/// 云端总时长合并到本地的结果
+#[derive(Serialize)]
+pub struct CloudMergeResult {
+    /// 合并后本地累计总听歌时长（秒）
+    pub total_duration: i64,
+    /// 是否因云端总时长更长而被抬高（本地被云端覆盖）
+    pub merged: bool,
+}
+
+/// 将云端累计总听歌时长合并进本地：取本地与云端较大值。
+/// 服务端 report_listen_stats 已用 GREATEST 做最大值合并并返回 server_total_duration，
+/// 这里把该值并回本地 global_stats，实现「云端长覆盖本地」；「本地长覆盖云端」由服务端 GREATEST 完成。
+fn apply_cloud_listen_duration(
+    conn: &rusqlite::Connection,
+    total_seconds: i64,
+) -> Result<CloudMergeResult, String> {
+    // 确保统计行存在，否则 UPDATE 落空、云端值会丢失
+    let _ = conn.execute(
+        "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
+         ON CONFLICT(id) DO NOTHING",
+        [],
+    );
+
+    let cur_ms: i64 = conn
+        .query_row(
+            "SELECT total_play_time_ms FROM global_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let target_ms = total_seconds.max(0) * 1000;
+    conn.execute(
+        "UPDATE global_stats SET total_play_time_ms = MAX(total_play_time_ms, ?) WHERE id = 1",
+        [target_ms],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(CloudMergeResult {
+        total_duration: target_ms.max(cur_ms) / 1000,
+        merged: target_ms > cur_ms,
+    })
+}
+
+/// 将云端累计总听歌时长合并进本地的 Tauri 命令
+#[tauri::command]
+pub fn merge_cloud_listen_duration(
+    db: State<DbState>,
+    total_seconds: i64,
+) -> Result<CloudMergeResult, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    apply_cloud_listen_duration(&conn, total_seconds)
+}
+
 #[cfg(test)]
 mod playback_count_tests {
     use super::*;
@@ -2795,5 +2849,31 @@ mod playback_count_tests {
             .query_row("SELECT COUNT(*) FROM recent_plays", [], |row| row.get(0))
             .expect("read recent plays");
         assert_eq!(recent_count, 1);
+    }
+
+    #[test]
+    fn merge_cloud_listen_duration_takes_max_of_local_and_cloud() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+        crate::database::ensure_base_schema(&conn).expect("create schema");
+
+        // 空表：云端值直接落地
+        let r1 = apply_cloud_listen_duration(&conn, 3600).expect("merge initial");
+        assert!(r1.merged);
+        assert_eq!(r1.total_duration, 3600);
+
+        // 云端更大：本地被覆盖（抬高）
+        let r2 = apply_cloud_listen_duration(&conn, 7200).expect("cloud longer");
+        assert!(r2.merged);
+        assert_eq!(r2.total_duration, 7200);
+
+        // 云端更小：保留本地较大值，不覆盖
+        let r3 = apply_cloud_listen_duration(&conn, 100).expect("cloud shorter");
+        assert!(!r3.merged);
+        assert_eq!(r3.total_duration, 7200);
+
+        // 负数按 0 处理，不降低本地
+        let r4 = apply_cloud_listen_duration(&conn, -5).expect("negative cloud");
+        assert!(!r4.merged);
+        assert_eq!(r4.total_duration, 7200);
     }
 }

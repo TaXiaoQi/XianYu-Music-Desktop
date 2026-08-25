@@ -70,35 +70,61 @@ export async function getLocalListenDurations(): Promise<ListenDurations> {
  *
  * 同时发送 daily/weekly/total 三个周期的时长，后端分别存储用于不同周期的排行榜。
  * `duration` 字段保持为 total 值以兼容旧后端（最大值覆盖策略）。
+ * 服务端用 GREATEST 对累计总时长做最大值合并，并在响应中返回合并后的
+ * server_total_duration；这里把它并回本地（取较大值），实现「云端长覆盖本地」，
+ * 「本地长覆盖云端」由服务端 GREATEST 完成，达成多端总播放时长双向对齐。
  * 如果服务端存在待处理的重置信号，会返回 reset_at 时间戳。
  *
  * @param durations 三个周期的听歌时长
  * @param uniqueSongsCount 本地累计聆听新歌数（可选）
- * @returns 服务端返回的 data，可能包含 reset_at 字段
+ * @returns 重置信号时间戳 + 本次上报是否把本地总时长抬高了（云端更长）
  */
 async function reportListenDuration(
   durations: ListenDurations,
   uniqueSongsCount = 0,
-): Promise<{ reset_at?: string } | null> {
+): Promise<{ reset_at?: string; cloudMerged: boolean } | null> {
   const ciyuanxiId = getCiyuanxiId();
   // 允许上报 0：即使本地时长为 0，也需要上报以获取服务端待处理的重置信号。
   if (!ciyuanxiId) return null;
 
   try {
-    const data = await signedRequest<{ reset_at?: string }>('report_listen_stats', {
-      ciyuanxi_id: ciyuanxiId,
-      // 兼容字段：旧后端使用 duration（总时长，最大值覆盖）
-      duration: Math.floor(durations.total),
-      // 新字段：分周期时长，后端分别存储
-      daily_duration: Math.floor(durations.daily),
-      weekly_duration: Math.floor(durations.weekly),
-      total_duration: Math.floor(durations.total),
-      unique_songs_count: uniqueSongsCount,
-    }, {
-      fetchTimeoutMs: 8_000,
-      timeoutMs: 10_000,
-    });
-    return data ?? null;
+    const data = await signedRequest<{ reset_at?: string; server_total_duration?: number }>(
+      'report_listen_stats',
+      {
+        ciyuanxi_id: ciyuanxiId,
+        // 兼容字段：旧后端使用 duration（总时长，最大值覆盖）
+        duration: Math.floor(durations.total),
+        // 新字段：分周期时长，后端分别存储
+        daily_duration: Math.floor(durations.daily),
+        weekly_duration: Math.floor(durations.weekly),
+        total_duration: Math.floor(durations.total),
+        unique_songs_count: uniqueSongsCount,
+      },
+      {
+        fetchTimeoutMs: 8_000,
+        timeoutMs: 10_000,
+      },
+    );
+
+    // 用服务端（GREATEST 合并后）的总时长抬高本地：云端更长则以云端覆盖本地
+    let cloudMerged = false;
+    const cloudTotal = data && typeof data.server_total_duration === 'number'
+      ? Math.floor(data.server_total_duration)
+      : 0;
+    if (cloudTotal > 0) {
+      try {
+        const merged = await statisticsApi.mergeCloudListenDuration(cloudTotal);
+        cloudMerged = merged.merged;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`${LOG} 合并云端总时长到本地失败（忽略）: ${msg}`);
+      }
+    }
+
+    return {
+      ...(data?.reset_at ? { reset_at: data.reset_at } : {}),
+      cloudMerged,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`${LOG} 上报听歌时长失败（不影响排行榜获取）: ${msg}`);
@@ -131,13 +157,18 @@ let lastReportAt = 0;
  * 短时间内重复上报对排名更新无意义，跳过可显著减少切换等待。
  *
  * @param durations 三个周期的听歌时长
- * @returns 是否实际触发了本地统计重置
+ * @returns 是否实际触发了本地统计重置 + 本次上报是否把本地总时长抬高（云端更长）
  */
-async function reportAndHandleReset(durations: ListenDurations): Promise<boolean> {
+async function reportAndHandleReset(
+  durations: ListenDurations,
+): Promise<{ resetApplied: boolean; cloudMerged: boolean }> {
   const now = Date.now();
-  if (now - lastReportAt < REPORT_THROTTLE_MS) return false;
+  if (now - lastReportAt < REPORT_THROTTLE_MS) {
+    return { resetApplied: false, cloudMerged: false };
+  }
   lastReportAt = now;
   const result = await reportListenDuration(durations);
+  let cloudMerged = result?.cloudMerged ?? false;
   // 检查是否有服务端下发的重置信号
   if (result?.reset_at) {
     const lastResetAt = localStorage.getItem(RESET_AT_KEY);
@@ -145,10 +176,10 @@ async function reportAndHandleReset(durations: ListenDurations): Promise<boolean
       await handleResetSignal(result.reset_at);
       // 重置后重新上报（此时本地数据已清零，上报 0 确保服务端同步）
       await reportListenDuration({ daily: 0, weekly: 0, total: 0 }, 0);
-      return true;
+      return { resetApplied: true, cloudMerged };
     }
   }
-  return false;
+  return { resetApplied: false, cloudMerged };
 }
 
 /**
@@ -163,7 +194,7 @@ export async function checkForResetSignal(localDuration: number): Promise<boolea
   if (!ciyuanxiId) return false;
   // 向后兼容：localDuration 作为 total，daily/weekly 由本地统计补全
   const durations = await getLocalListenDurations();
-  return reportAndHandleReset({ ...durations, total: localDuration || durations.total });
+  return (await reportAndHandleReset({ ...durations, total: localDuration || durations.total })).resetApplied;
 }
 
 /** 排行榜时间周期 */
@@ -243,13 +274,15 @@ export async function fetchAllLeaderboards(
   weekly: LeaderboardData;
   total: LeaderboardData;
   resetApplied?: boolean;
+  /** 本次上报是否把本地总时长抬高了（云端更长，需要刷新统计展示） */
+  cloudMerged?: boolean;
 }> {
   const ciyuanxiId = getCiyuanxiId();
   // 上报与拉榜并行：上报带 30s 节流、失败已在内部吞掉，串行等待只会把一次网络往返
   // （远程服务器 RTT 较高）叠加进排行榜首屏时间；服务端榜单本身也有 30s 缓存
-  const reportPromise: Promise<boolean> = ciyuanxiId
+  const reportPromise: Promise<{ resetApplied: boolean; cloudMerged: boolean }> = ciyuanxiId
     ? reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 })
-    : Promise.resolve(false);
+    : Promise.resolve({ resetApplied: false, cloudMerged: false });
 
   try {
     const data = await signedRequest<{
@@ -270,16 +303,17 @@ export async function fetchAllLeaderboards(
         fetchLeaderboard(limit, undefined, 'weekly'),
         fetchLeaderboard(limit, undefined, 'total'),
       ]);
-      const resetApplied = await reportPromise;
-      return { daily, weekly, total, resetApplied };
+      const { resetApplied, cloudMerged } = await reportPromise;
+      return { daily, weekly, total, resetApplied, cloudMerged };
     }
 
-    const resetApplied = await reportPromise;
+    const { resetApplied, cloudMerged } = await reportPromise;
     return {
       daily: mapLeaderboardPayload(data.leaderboards.daily, ciyuanxiId),
       weekly: mapLeaderboardPayload(data.leaderboards.weekly, ciyuanxiId),
       total: mapLeaderboardPayload(data.leaderboards.total, ciyuanxiId),
       resetApplied,
+      cloudMerged,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -302,14 +336,14 @@ export async function fetchLeaderboard(
   limit = 50,
   durations?: ListenDurations,
   period: LeaderboardPeriod = 'total',
-): Promise<LeaderboardData & { resetApplied?: boolean }> {
+): Promise<LeaderboardData & { resetApplied?: boolean; cloudMerged?: boolean }> {
   const ciyuanxiId = getCiyuanxiId();
 
   // 记录本次调用是否实际触发了本地统计重置（供调用方刷新本地统计展示）
   // 上报与拉榜并行：只有登录用户才上报，且上报带 30s 节流、失败已在内部吞掉
-  const reportPromise: Promise<boolean> = ciyuanxiId
+  const reportPromise: Promise<{ resetApplied: boolean; cloudMerged: boolean }> = ciyuanxiId
     ? reportAndHandleReset(durations ?? { daily: 0, weekly: 0, total: 0 })
-    : Promise.resolve(false);
+    : Promise.resolve({ resetApplied: false, cloudMerged: false });
 
   try {
     const data = await signedRequest<LeaderboardPeriodPayload>('get_leaderboard', {
@@ -321,10 +355,11 @@ export async function fetchLeaderboard(
       timeoutMs: 15_000,
     });
 
-    const resetApplied = await reportPromise;
+    const { resetApplied, cloudMerged } = await reportPromise;
     return {
       ...mapLeaderboardPayload(data, ciyuanxiId),
       resetApplied,
+      cloudMerged,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

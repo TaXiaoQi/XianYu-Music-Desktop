@@ -1,5 +1,6 @@
 import type {
   BehaviorStats,
+  CloudMergeResult,
   FormatDistribution,
   LibraryStats,
   ListenDurations,
@@ -40,6 +41,9 @@ export const statisticsApi = {
   /** 获取日/周/总三个周期的听歌时长（秒），用于排行榜分周期上报 */
   getListenDurations: (): Promise<ListenDurations> =>
     tauriInvoke('get_listen_durations'),
+  /** 将云端累计总听歌时长合并进本地（取较大值），返回合并后本地总时长与是否被抬高 */
+  mergeCloudListenDuration: (totalSeconds: number): Promise<CloudMergeResult> =>
+    tauriInvoke('merge_cloud_listen_duration', { totalSeconds }),
   getQualityDistribution: (): Promise<QualityDistribution> =>
     tauriInvoke('get_quality_distribution'),
   getFormatDistribution: (): Promise<FormatDistribution> =>

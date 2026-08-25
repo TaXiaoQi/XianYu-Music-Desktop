@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Clapperboard, Download, MessageCircle, SlidersHorizontal } from 'lucide-vue-next';
+import { CircleCheck, Clapperboard, Download, MessageCircle, Share2, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 import { useDownloadStore } from '../../features/download/store';
 
@@ -60,4 +60,5 @@ withDefaults(defineProps<{
   <svg v-else-if="itemKey === 'playlist'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
   <MessageCircle v-else-if="itemKey === 'comment'" v-bind="$attrs" :stroke-width="2.2" />
   <Clapperboard v-else-if="itemKey === 'mv'" v-bind="$attrs" :stroke-width="2.2" />
+  <Share2 v-else-if="itemKey === 'share'" v-bind="$attrs" :stroke-width="2.2" />
 </template>

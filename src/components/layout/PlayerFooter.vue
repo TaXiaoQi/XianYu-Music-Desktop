@@ -23,9 +23,11 @@ import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
+import { usePlaybackStore } from '../../features/playback/store';
+import { createShareUrl, getCachedShareUrl, preloadShareUrl } from '../../services/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
-import type { DownloadQuality, QualityKey, RemoteDownloadProgress } from '../../types';
+import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';
 import { QUALITY_META, MV_QUALITY_KEYS, MV_QUALITY_META } from '../../types';
 import {
   FOOTER_PROGRESS_HIDDEN_KEY,
@@ -382,6 +384,61 @@ const mvVideoActive = videoBackground.active;
 const mvSupport = supportsMusicVideo;
 const { showToast } = useToast();
 const isMvVideoDownloading = ref(false);
+
+// ─── 分享当前歌曲 ─────────────────────────────────────────
+const playbackStore = usePlaybackStore();
+const isShareLoading = ref(false);
+
+/** 尽可能取一张能被外部访问的封面 URL（在线歌曲封面通常是 http，本地封面无法落地页展示则留空） */
+function resolveShareCover(): string {
+  return playbackStore.currentCoverFull || '';
+}
+
+async function copyShareLink(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('分享链接已复制', 'success');
+  } catch {
+    showToast('复制失败，请手动选中链接复制', 'error');
+  }
+}
+
+async function handleShareSong(song: Song) {
+  if (!song) {
+    showToast('当前没有可分享的歌曲', 'error');
+    return;
+  }
+  // 点击后自动收纳折叠菜单（若分享按钮在折叠菜单中）
+  showFooterTools.value = false;
+  const cached = getCachedShareUrl(song);
+  if (cached) {
+    await copyShareLink(cached);
+    return;
+  }
+  if (isShareLoading.value) return;
+  isShareLoading.value = true;
+  try {
+    const url = await createShareUrl(song, resolveShareCover());
+    if (url) {
+      await copyShareLink(url);
+    } else {
+      showToast('生成分享链接失败', 'error');
+    }
+  } catch (e: any) {
+    showToast(e?.message || '生成分享链接失败', 'error');
+  } finally {
+    isShareLoading.value = false;
+  }
+}
+
+// 播放切换歌曲时预加载分享链接（去抖，避免快速切歌时重复请求）
+let sharePreloadTimer: ReturnType<typeof setTimeout> | null = null;
+watch(currentSong, song => {
+  if (sharePreloadTimer) clearTimeout(sharePreloadTimer);
+  sharePreloadTimer = null;
+  if (!song) return;
+  sharePreloadTimer = setTimeout(() => preloadShareUrl(song, resolveShareCover()), 600);
+});
 
 const toggleMv = async () => {
   if (!currentSong.value) return;
@@ -1158,6 +1215,9 @@ provide('footerContext', {
   mvLoading,
   toggleMv,
   isMvVideoDownloading,
+  // 分享
+  handleShareSong,
+  isShareLoading,
 });
 
 onMounted(async () => {

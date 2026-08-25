@@ -162,6 +162,15 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     const all = await fetchAllLeaderboards(15, durations);
     if (requestId !== leaderboardRequestId) return;
     const resetApplied = Boolean(all.resetApplied);
+    // 上报时若云端累计总时长更长，本地已被覆盖抬高，需刷新行为统计展示
+    // （"总听歌时长"读取本地 global_stats，合并后必须重取才能显示云端对齐值）
+    if (all.cloudMerged) {
+      try {
+        await statisticsStore.refreshBehaviorOnly('All');
+      } catch {
+        // 刷新失败静默，不影响排行榜展示
+      }
+    }
     const results: Record<LeaderboardPeriod, LeaderboardData> = {
       daily: all.daily,
       weekly: all.weekly,

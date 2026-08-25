@@ -21,7 +21,7 @@ export const DEFAULT_FOOTER_LAYOUT: FooterLayoutSettings = {
   middleLeft: 'playMode',
   middleRight: 'desktopLyrics',
   right: ['quality', 'comment', 'volume', 'equalizer', 'playlist'],
-  hidden: ['mv'],
+  hidden: ['mv', 'share'],
 };
 
 /** 容器显示信息 */
@@ -40,7 +40,7 @@ export interface FooterItemMeta {
   label: string;
   description: string;
   /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
-  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play';
+  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play' | 'share2';
 }
 
 /**
@@ -58,6 +58,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'playlist',       label: '播放队列',   description: '展开当前播放队列', icon: 'playlist' },
   { key: 'comment',        label: '评论区',     description: '打开当前歌曲评论（仅插件在线歌曲可用）', icon: 'message-circle' },
   { key: 'mv',             label: 'MV',         description: '播放当前歌曲的 MV 背景视频（仅插件歌曲可用，只在播放详情页底栏显示）', icon: 'play' },
+  { key: 'share',          label: '分享',       description: '生成当前歌曲分享链接并复制', icon: 'share2' },
 ];
 
 export const FOOTER_ITEM_KEYS: FooterItemKey[] = FOOTER_ITEMS.map(item => item.key);

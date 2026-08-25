@@ -453,6 +453,14 @@ export interface ListenDurations {
   total: number;
 }
 
+/** 云端总时长合并到本地的结果 */
+export interface CloudMergeResult {
+  /** 合并后本地累计总听歌时长（秒） */
+  total_duration: number;
+  /** 是否因云端总时长更长而被抬高（本地被云端覆盖） */
+  merged: boolean;
+}
+
 export interface TopSong {
   song_path: string;
   play_count: number;
@@ -775,6 +783,7 @@ export interface TauriCommandMap {
     response: void;
   };
   consume_pending_open_paths: { payload: undefined; response: string[] };
+  consume_pending_deep_links: { payload: undefined; response: string[] };
   save_download_lyrics: {
     payload: { content: string; destPath: string };
     response: string;
@@ -1088,6 +1097,10 @@ export interface TauriCommandMap {
   get_library_stats: { payload: undefined; response: LibraryStats };
   get_behavior_stats: { payload: { timeRange: TimeRange }; response: BehaviorStats };
   get_listen_durations: { payload: undefined; response: ListenDurations };
+  merge_cloud_listen_duration: {
+    payload: { totalSeconds: number };
+    response: CloudMergeResult;
+  };
   get_quality_distribution: { payload: undefined; response: QualityDistribution };
   get_format_distribution: { payload: undefined; response: FormatDistribution };
   reset_local_statistics: { payload: undefined; response: void };

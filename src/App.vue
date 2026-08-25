@@ -26,6 +26,8 @@ import { useI18n } from './features/i18n';
 import { useGlobalInterfaceLanguage } from './features/i18n/useGlobalInterfaceLanguage';
 import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n/installLanguage';
 import { playerStorage } from './services/storage/playerStorage';
+import { usePlaylistSync } from './composables/usePlaylistSync';
+import { useAuthStore } from './features/auth/store';
 
 const currentWindowLabel = (() => {
   try {
@@ -80,9 +82,18 @@ watch(isImmersiveFullscreen, (fs) => {
 if (currentWindowLabel === 'main') {
   const { showToast } = useToast();
   const { clearCoverCaches } = useCoverCache();
+  const playlistSync = usePlaylistSync();
+  const authStore = useAuthStore();
 
   // VST3/CLAP 插件宿主：实例化即恢复机架配置并推送 Rust 共享机架（起播前完成）。
   usePluginHostStore();
+
+  // 登录状态变化时启动/停止自动同步调度器（启动时初始化见 onMounted）
+  watch(() => authStore.isLoggedIn, (loggedIn) => {
+    if (loggedIn) {
+      playlistSync.checkAutoSync();
+    }
+  });
 
   // 主程序语言变化时同步到注册表，使卸载器语言跟随主程序当前语言。
   watch(language, (value) => {
@@ -152,6 +163,10 @@ if (currentWindowLabel === 'main') {
   onMounted(async () => {
     // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
     reportAppOpen();
+
+    // 启动时初始化自动同步调度器（已登录且开启自动同步则按间隔上传歌单/收藏/插件/设置，
+    // 不再依赖用户打开「设置 → 账号」页才初始化）
+    playlistSync.initAutoSync();
 
     // 消费安装器写入的语言：新安装/重新安装时使界面语言与安装选择一致。
     try {

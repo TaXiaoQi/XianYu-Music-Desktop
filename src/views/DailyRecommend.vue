@@ -169,7 +169,8 @@ import {
 } from '../services/dailyRecommend';
 import { getStoredPlugins, pluginsVersion } from '../services/pluginEngine';
 import { extractDurationMs } from '../services/pluginResultMappers';
-import type { PluginSearchResult, Song } from '../types';
+import { fetchWyTrackMetaByIds } from '../services/playlistImport';
+import type { PluginSearchResult, PluginSource, Song } from '../types';
 
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
@@ -259,6 +260,8 @@ async function load(refresh: boolean) {
       loadError.value = '推荐生成失败，请检查音源插件后重试';
       items.value = [];
     }
+    // 异步补齐网易云歌曲缺失的封面/时长（不阻塞列表渲染，完成后 pop 进图）
+    void backfillMissingCovers();
   } catch (e) {
     if (token !== loadToken) return;
     if (e instanceof DailyRecommendError && e.kind === 'not_logged_in') {
@@ -276,6 +279,59 @@ async function load(refresh: boolean) {
 
 function handleRefresh() {
   void load(true);
+}
+
+/** 判断音源是否为网易云（对齐在线搜索页 isNeteaseSource；决定是否走官方 weapi 批量补全封面） */
+const isNeteaseSource = (plugin: PluginSource): boolean => {
+  if (plugin.sources?.some(s => s === 'wy' || /网易云|netease/i.test(s))) return true;
+  return /网易云|netease/i.test(plugin.name || '');
+};
+
+/**
+ * 日推中网易云歌曲的封面/时长批量补全。
+ * 参考在线搜索页 backfillWyTrackMeta：部分第三方网易云 MusicFree 插件
+ * （如时迁酱）的歌曲结果既不返回可用 artwork（weapi 的 album 只有 picId，
+ * 没有 picUrl），也不返回 duration，导致日推列表里网易云歌曲无封面。
+ * 这里复用官方 weapi 的 song/detail 按 ID 批量补全，绕过插件实现差异。
+ */
+async function backfillMissingCovers() {
+  const token = loadToken;
+  const neteasePlugins = new Map<string, PluginSource>();
+  for (const p of getStoredPlugins()) {
+    if (p.enabled && p.format === 'musicfree' && isNeteaseSource(p)) {
+      neteasePlugins.set(p.name, p);
+    }
+  }
+  if (neteasePlugins.size === 0) return;
+
+  // 只补缺封面或缺时长、ID 是网易云纯数字、且确实来自网易云插件的条目
+  const pending = items.value.filter((item) => {
+    const song = item.song;
+    if (!song || (song.coverUrl && song.duration)) return false;
+    if (!/^\d+$/.test(String(song.id))) return false;
+    return neteasePlugins.has(item.pluginName);
+  });
+  if (pending.length === 0) return;
+
+  const patches = await fetchWyTrackMetaByIds(pending.map(item => String(item.song.id)));
+  if (token !== loadToken || patches.size === 0) return;
+
+  let changed = false;
+  for (const item of pending) {
+    const patch = patches.get(String(item.song.id));
+    if (!patch) continue;
+    if (!item.song.coverUrl && patch.coverUrl) {
+      item.song.coverUrl = patch.coverUrl;
+      changed = true;
+    }
+    if (!item.song.duration && patch.durationMs > 0) {
+      item.song.duration = patch.durationMs;
+      changed = true;
+    }
+  }
+  if (changed) {
+    items.value = [...items.value];
+  }
 }
 
 // 推荐结果变化时清空多选状态（换一批后 path 全新，旧选中集无效）
