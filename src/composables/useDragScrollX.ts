@@ -1,13 +1,14 @@
-import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 
 /**
- * 横向容器鼠标点击拖动滚动。
+ * 横向容器鼠标点击拖动滚动 & 鼠标滚轮横向滚动。
  *
  * - pointerdown 在容器任意位置（含按钮上）按下即开始跟踪
  * - 移动超过 DRAG_THRESHOLD 判定为拖拽：直接改 scrollLeft（临时关掉 scroll-smooth 保证跟手）
  * - pointermove/up 挂在 window 上：指针拖出容器仍能继续跟踪，不会中途失联
  * - 拖拽结束后在容器捕获阶段吞掉紧随的 click，避免松手位置的按钮被误触发；
  *   未超阈值的按下放行，正常点击不受影响
+ * - 鼠标悬浮并滚动滚轮时（wheel），将垂直/横向滚动统一转换为容器横向 scrollLeft 驱动，并阻止默认页面垂直滚动
  */
 const DRAG_THRESHOLD = 5;
 
@@ -74,12 +75,46 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
+  const handleWheel = (e: WheelEvent) => {
+    const el = containerRef.value;
+    if (!el) return;
+
+    // 若容器未产生横向可滚动溢出，不拦截默认行为
+    if (el.scrollWidth <= el.clientWidth) return;
+
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (delta !== 0) {
+      e.preventDefault();
+      el.scrollLeft += delta;
+    }
+  };
+
+  const bindEvents = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.addEventListener('pointerdown', handlePointerDown);
+    el.addEventListener('wheel', handleWheel, { passive: false });
+  };
+
+  const unbindEvents = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.removeEventListener('pointerdown', handlePointerDown);
+    el.removeEventListener('wheel', handleWheel);
+  };
+
+  watch(containerRef, (newEl, oldEl) => {
+    if (oldEl) unbindEvents(oldEl);
+    if (newEl) bindEvents(newEl);
+  }, { immediate: true });
+
   onMounted(() => {
-    containerRef.value?.addEventListener('pointerdown', handlePointerDown);
+    if (containerRef.value) {
+      unbindEvents(containerRef.value);
+      bindEvents(containerRef.value);
+    }
   });
 
   onBeforeUnmount(() => {
-    containerRef.value?.removeEventListener('pointerdown', handlePointerDown);
+    unbindEvents(containerRef.value);
     window.removeEventListener('pointermove', handlePointerMove);
     window.removeEventListener('pointerup', handlePointerUp);
     window.removeEventListener('pointercancel', handlePointerUp);
