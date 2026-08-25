@@ -297,17 +297,19 @@ watch(selectedSourceId, () => {
 // 窗口尺寸变化（容器宽度随窗口自适应）后重新校准选中项可见性：
 // 拖动窗口从最小尺寸恢复时，滚动偏移可能停在可视区外
 const sourceResizeObserver = new ResizeObserver(() => {
-  const container = sourceScrollRef.value;
-  if (!container) return;
-  const active = container.querySelector<HTMLElement>('[data-active="true"]');
-  if (!active) return;
-  const left = active.offsetLeft;
-  const right = left + active.offsetWidth;
-  const viewLeft = container.scrollLeft;
-  const viewRight = viewLeft + container.clientWidth;
-  if (left < viewLeft || right > viewRight) {
-    scrollSelectedSourceIntoView();
-  }
+  requestAnimationFrame(() => {
+    const container = sourceScrollRef.value;
+    if (!container) return;
+    const active = container.querySelector<HTMLElement>('[data-active="true"]');
+    if (!active) return;
+    const left = active.offsetLeft;
+    const right = left + active.offsetWidth;
+    const viewLeft = container.scrollLeft;
+    const viewRight = viewLeft + container.clientWidth;
+    if (left < viewLeft || right > viewRight) {
+      scrollSelectedSourceIntoView();
+    }
+  });
 });
 watch(sourceScrollRef, (el) => {
   sourceResizeObserver.disconnect();
@@ -436,7 +438,9 @@ const setupScrollResizeObserver = () => {
   const el = resultsScrollRef.value;
   if (!el) return;
   scrollResizeObserver = new ResizeObserver(() => {
-    syncGridScrollState();
+    requestAnimationFrame(() => {
+      syncGridScrollState();
+    });
   });
   scrollResizeObserver.observe(el);
 };

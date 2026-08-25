@@ -179,8 +179,20 @@ document.addEventListener('contextmenu', (e) => e.preventDefault())
 // 统一滚动条浮现：鼠标悬停在滚动条条带上或滚动期间显示，带淡入淡出动画
 installScrollbarController()
 
+const isBenignResizeObserverError = (error: unknown): boolean => {
+  const msg = typeof error === 'string'
+    ? error
+    : (error instanceof Error ? error.message : String(error ?? ''))
+  return msg.includes('ResizeObserver loop completed with undelivered notifications')
+    || msg.includes('ResizeObserver loop limit exceeded')
+}
+
 window.addEventListener('error', (event) => {
   const error = event.error ?? event.message
+  if (isBenignResizeObserverError(error)) {
+    event.preventDefault()
+    return
+  }
   // 上报到后台报错日志（fire-and-forget，失败静默）
   if (error instanceof Error) {
     reportError(error.name || 'Error', error.message, error.stack, `${event.filename}:${event.lineno}:${event.colno}`)

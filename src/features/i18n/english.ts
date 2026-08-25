@@ -203,6 +203,11 @@ const exactEnglishTranslations: Record<string, string> = {
   '选择歌曲封面': 'Choose song cover',
   '图片加载失败': 'Could not load image',
   '歌词组件加载失败，请刷新': 'Lyrics failed to load. Please refresh.',
+  '分享链接播放失败行为': 'Action on shared link playback failure',
+  '分享链接有效时长': 'Shared link expiration time',
+  '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）。': 'Shared links are discarded after expiration and cannot be opened (5 min - 24 hours).',
+  '选择分享链接播放失败行为': 'Choose action on shared link playback failure',
+  '通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌。': 'When a song played via a shared link fails to start: pause playback or search/switch sources via plugins for the same song.',
 
   // Settings sections
   '设置': 'Settings',
