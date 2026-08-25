@@ -385,12 +385,10 @@ onUnmounted(cancelDragging);
         </div>
       </div>
       <div class="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-        <button
+        <div
           v-for="item in FOOTER_ITEMS"
           :key="item.key"
-          type="button"
-          class="footer-visibility-row rounded-xl border border-gray-200/40 bg-white/20 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
-          @click="toggleItemVisibility(item.key)"
+          class="footer-visibility-row flex items-center justify-between rounded-xl border border-gray-200/40 bg-white/20 p-3 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
         >
           <span class="flex min-w-0 items-center gap-2.5">
             <span class="footer-visibility-icon" :class="isItemVisible(item.key) ? 'text-[#EC4141]' : 'text-gray-400 dark:text-white/35'">
@@ -398,10 +396,13 @@ onUnmounted(cancelDragging);
             </span>
             <span class="truncate text-sm font-medium text-gray-700 dark:text-gray-200">{{ item.label }}</span>
           </span>
-          <span class="footer-visibility-switch" :class="isItemVisible(item.key) ? 'footer-visibility-switch--on' : ''">
-            <span class="footer-visibility-switch-thumb"></span>
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch ml-2"
+            :class="{ 'is-checked': isItemVisible(item.key) }"
+            @click="toggleItemVisibility(item.key)"
+          ></button>
+        </div>
       </div>
     </div>
 

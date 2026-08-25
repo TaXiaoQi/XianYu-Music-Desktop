@@ -433,14 +433,10 @@ function updateAutoSyncMaxDelay(event: Event) {
             <SettingHint :text="item.desc" />
             <button
               type="button"
-              role="switch"
-              :aria-checked="settingsStore.settings.upload[item.key]"
-              class="upload-switch"
-              :class="{ 'is-on': settingsStore.settings.upload[item.key] }"
+              class="glass-switch"
+              :class="{ 'is-checked': settingsStore.settings.upload[item.key] }"
               @click="toggleUpload(item.key)"
-            >
-              <span class="upload-switch-thumb"></span>
-            </button>
+            ></button>
           </div>
         </div>
       </div>
@@ -654,14 +650,10 @@ function updateAutoSyncMaxDelay(event: Event) {
             <SettingHint text="开启后在指定时间自动执行同步" />
             <button
               type="button"
-              role="switch"
-              :aria-checked="settingsStore.settings.autoSync.enabled"
-              class="upload-switch"
-              :class="{ 'is-on': settingsStore.settings.autoSync.enabled }"
+              class="glass-switch"
+              :class="{ 'is-checked': settingsStore.settings.autoSync.enabled }"
               @click="toggleAutoSync()"
-            >
-              <span class="upload-switch-thumb"></span>
-            </button>
+            ></button>
           </div>
         </div>
 

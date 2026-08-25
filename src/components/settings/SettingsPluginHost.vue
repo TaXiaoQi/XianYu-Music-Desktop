@@ -359,16 +359,11 @@ onMounted(() => {
                 </button>
                 <button
                   type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-                  :class="slot.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+                  class="glass-switch"
+                  :class="{ 'is-checked': slot.enabled }"
                   :title="slot.enabled ? t('pluginHost.disableSlot') : t('pluginHost.enableSlot')"
                   @click="store.toggleSlot(slot.format, slot.uniqueId)"
-                >
-                  <span
-                    class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
-                    :class="slot.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'"
-                  />
-                </button>
+                ></button>
                 <button
                   type="button"
                   class="grid h-7 w-7 place-items-center rounded-lg text-gray-400 transition hover:bg-red-500/10 hover:text-red-500 dark:text-white/40"
