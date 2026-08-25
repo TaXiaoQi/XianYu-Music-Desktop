@@ -263,6 +263,8 @@ export const defaultAppSettings: AppSettings = {
   autoSync: defaultAutoSyncConfig,
   logging: defaultLogSettings,
   songClickAction: 'double',
+  shareLinkValidityMinutes: 120,
+  sharePlaybackFailureBehavior: 'pause',
 };
 
 export const createDefaultThemeSettings = (): ThemeSettings => ({

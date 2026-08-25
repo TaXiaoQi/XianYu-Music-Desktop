@@ -27,8 +27,7 @@ function songSourceMap(song: Song): { source: Record<string, any>; info: Record<
   return { source, info };
 }
 
-/**
- * 取歌曲音源定位标识（统一契约：与移动端 share_service.dart 同构）。
+/** 取歌曲音源定位标识（统一契约：与移动端 share_service.dart 同构）。
  * hash 是卡片拉起客户端的核心定位键 —— 优先顶层 hash，其次插件原始数据 hash，
  * 再回退 songmid/mid（QQ系歌曲）。保证两端同一首歌生成一致的深链。
  */
@@ -47,13 +46,40 @@ function getSongHash(song: Song): string {
   );
 }
 
+/**
+ * 取歌曲「来源信息」（统一契约：与移动端 share_service.dart 同构）。
+ * 在线歌曲取插件原始数据里的音源 key（kw/wy/kg/tx/mg）或插件 id；本地歌曲标记为 'local'。
+ * 服务端透传进深链，客户端据此判断用本地播放还是走对应插件播放。
+ */
+function getSongSource(song: Song): string {
+  const s = song as any;
+  const { source, info } = songSourceMap(song);
+  if (s?.source_type === 'local' || s?.sourceType === 'local') return 'local';
+  const candidate =
+    (s?.source as string) ||
+    (s?.plugin_id as string) ||
+    (source?.source as string) ||
+    (info?.source as string) ||
+    (source?.plugin_id as string) ||
+    (info?.plugin_id as string) ||
+    '';
+  return candidate || 'local';
+}
+
 /** 取歌曲稳定标识（统一契约：本地主键优先，否则回退来源 path）。 */
 function getSongId(song: Song): string {
   return song?.id != null ? String(song.id) : song?.path || '';
 }
 
 /** 构造 create_share 请求体 */
-function buildShareBody(song: Song, coverUrl?: string): Record<string, unknown> {
+function buildShareBody(
+  song: Song,
+  coverUrl?: string,
+  extra?: Partial<{ expireMinutes: number; source: string }>,
+): Record<string, unknown> {
+  // 分享链接有效时长：钳制到服务端允许的 5 分钟 ~ 24 小时，缺省 2 小时。
+  const raw = extra?.expireMinutes ?? 120;
+  const expireMinutes = Math.min(24 * 60, Math.max(5, Math.round(raw)));
   return {
     song_name: song?.title || song?.name || '',
     singer: song?.artist || '',
@@ -61,6 +87,8 @@ function buildShareBody(song: Song, coverUrl?: string): Record<string, unknown> 
     song_id: getSongId(song),
     hash: getSongHash(song),
     duration_ms: Math.round((song?.duration || 0) * 1000),
+    source: extra?.source || getSongSource(song),
+    expire_minutes: expireMinutes,
   };
 }
 
@@ -71,16 +99,24 @@ export function getCachedShareUrl(song: Song | null | undefined): string | null 
 }
 
 /** 获取（必要时创建）分享链接；已缓存直接返回，否则请求服务端并缓存 */
-export async function createShareUrl(song: Song, coverUrl?: string): Promise<string> {
+export async function createShareUrl(
+  song: Song,
+  coverUrl?: string,
+  extra?: ShareBodyExtra,
+): Promise<string> {
   if (!song) throw new Error('当前没有可分享的歌曲');
   const key = shareCacheKey(song);
   const existing = shareCache.get(key);
   if (existing?.url) return existing.url;
   if (existing?.pending) return existing.pending;
 
-  const pending = signedRequest<{ share_url: string }>('create_share', buildShareBody(song, coverUrl), {
-    timeoutMs: 15_000,
-  })
+  const pending = signedRequest<{ share_url: string }>(
+    'create_share',
+    buildShareBody(song, coverUrl, extra),
+    {
+      timeoutMs: 15_000,
+    },
+  )
     .then(data => {
       const url = String(data?.share_url || '');
       shareCache.set(key, { url });
@@ -95,11 +131,17 @@ export async function createShareUrl(song: Song, coverUrl?: string): Promise<str
   return pending;
 }
 
+type ShareBodyExtra = Partial<{ expireMinutes: number; source: string }>;
+
 /** 预加载当前歌曲分享链接（fire-and-forget，失败静默，勿阻塞播放） */
-export function preloadShareUrl(song: Song | null | undefined, coverUrl?: string): void {
+export function preloadShareUrl(
+  song: Song | null | undefined,
+  coverUrl?: string,
+  extra?: ShareBodyExtra,
+): void {
   if (!song) return;
   const key = shareCacheKey(song);
   if (shareCache.has(key)) return;
-  const pending = createShareUrl(song, coverUrl).catch(() => '');
+  const pending = createShareUrl(song, coverUrl, extra).catch(() => '');
   shareCache.set(key, { pending });
 }

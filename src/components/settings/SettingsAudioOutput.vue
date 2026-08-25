@@ -174,6 +174,7 @@ const showQualityModal = ref(false);
 const showFailureBehaviorModal = ref(false);
 const showFallbackBehaviorModal = ref(false);
 const showMvQualityModal = ref(false);
+const showShareFailureBehaviorModal = ref(false);
 
 const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
   { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
@@ -192,6 +193,31 @@ const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; 
   { label: '播放更低音质', description: '自动降级到可用的更低音质',         value: 'lower' },
   { label: '播放更高音质', description: '自动升级到可用的更高音质',         value: 'higher' },
 ]);
+
+type ShareFailureBehavior = 'pause' | 'replace';
+const SHARE_FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: ShareFailureBehavior }[]>(() => isEnglish.value ? [
+  { label: 'Pause Playback', description: 'Stop and show error when the shared song fails to start', value: 'pause' },
+  { label: 'Replace & Replay', description: 'Rebuild source via plugin index and replay the same song', value: 'replace' },
+] : [
+  { label: '暂停播放', description: '分享歌曲起播失败时停止并显示错误', value: 'pause' },
+  { label: '替换播放', description: '按来源信息走插件索引换源重播同一首歌', value: 'replace' },
+]);
+
+/** 分享链接有效时长（分钟），钳制到 5 ~ 1440，缺省 2 小时 */
+const shareValidityMinutes = computed(() =>
+  Math.max(5, Math.min(1440, settings.value.shareLinkValidityMinutes ?? 120)),
+);
+const shareValidityLabel = computed(() => {
+  const v = shareValidityMinutes.value;
+  if (v % 60 === 0) return `${v / 60} 小时`;
+  return `${v} 分钟`;
+});
+
+const handleValidityChange = (value: string) => {
+  const num = Math.round(Number(value));
+  if (Number.isNaN(num)) return;
+  patchSettings({ shareLinkValidityMinutes: Math.max(5, Math.min(1440, num)) });
+};
 
 const ENGLISH_QUALITY_LABELS: Partial<Record<OnlineDefaultQuality, string>> = {
   mgg: 'Low', '128k': 'Standard', '192k': 'Medium', '320k': 'HQ', flac: 'SQ',
@@ -245,6 +271,12 @@ const handleMvQualitySelect = (value: MvQualityKey) => {
 const handleFailureBehaviorSelect = (value: OnlineFailureBehavior) => {
   showFailureBehaviorModal.value = false;
   patchSettings({ audio: { ...settings.value.audio, onlineFailureBehavior: value } });
+};
+
+/** 弹窗中选择分享链接播放失败行为 */
+const handleShareFailureBehaviorSelect = (value: ShareFailureBehavior) => {
+  showShareFailureBehaviorModal.value = false;
+  patchSettings({ sharePlaybackFailureBehavior: value });
 };
 
 /** 弹窗中选择音质回退行为 */
@@ -799,6 +831,48 @@ onScopeDispose(() => {
           </button>
         </div>
 
+        <!-- 分享链接有效时长（滑动条） -->
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接有效时长</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）。
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-3">
+            <input
+              type="range"
+              min="5"
+              max="1440"
+              step="5"
+              class="w-52 h-1 rounded-lg bg-gray-200 dark:bg-gray-700 appearance-none cursor-pointer accent-[#EC4141]"
+              :value="shareValidityMinutes"
+              @input="handleValidityChange(($event.target as HTMLInputElement).value)"
+            />
+            <span class="w-20 shrink-0 text-right text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200">
+              {{ shareValidityLabel }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 分享链接播放失败行为 -->
+        <div class="desktop-setting-row">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">分享链接播放失败行为</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
+              通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌。
+            </div>
+          </div>
+          <button
+            type="button"
+            class="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200/40 bg-white/20 px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:text-gray-200 dark:hover:bg-white/10"
+            @click="showShareFailureBehaviorModal = true"
+          >
+            <span>{{ SHARE_FAILURE_BEHAVIOR_OPTIONS.find(o => o.value === settings.sharePlaybackFailureBehavior)?.label }}</span>
+            <ChevronDown class="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </button>
+        </div>
+
       </div>
     </section>
 
@@ -977,6 +1051,47 @@ onScopeDispose(() => {
                 </div>
                 <Check
                   v-if="settings.audio.onlineFailureBehavior === option.value"
+                  class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 分享链接播放失败行为选择弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal-pop">
+        <div
+          v-if="showShareFailureBehaviorModal"
+          class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          @click.self="showShareFailureBehaviorModal = false"
+        >
+          <div class="modal-content bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-80 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+              <h3 class="font-bold text-gray-800 dark:text-gray-200 text-sm">选择分享链接播放失败行为</h3>
+              <button
+                @click="showShareFailureBehaviorModal = false"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >✕</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto custom-scrollbar p-2">
+              <button
+                v-for="option in SHARE_FAILURE_BEHAVIOR_OPTIONS"
+                :key="option.value"
+                type="button"
+                class="w-full flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                :class="settings.sharePlaybackFailureBehavior === option.value ? 'bg-gray-50 dark:bg-white/5' : ''"
+                @click="handleShareFailureBehaviorSelect(option.value)"
+              >
+                <div class="flex-1 min-w-0 text-left">
+                  <div class="text-sm text-gray-800 dark:text-gray-200 truncate">{{ option.label }}</div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ option.description }}</div>
+                </div>
+                <Check
+                  v-if="settings.sharePlaybackFailureBehavior === option.value"
                   class="h-4 w-4 text-[#EC4141] shrink-0 ml-2"
                   aria-hidden="true"
                 />

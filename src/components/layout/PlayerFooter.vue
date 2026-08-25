@@ -24,6 +24,7 @@ import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
+import { useSettingsStore } from '../../features/settings/store';
 import { createShareUrl, getCachedShareUrl, preloadShareUrl } from '../../services/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
@@ -388,6 +389,15 @@ const isMvVideoDownloading = ref(false);
 // ─── 分享当前歌曲 ─────────────────────────────────────────
 const playbackStore = usePlaybackStore();
 const isShareLoading = ref(false);
+const settingsStore = useSettingsStore();
+
+/** 分享设置：有效时长（分钟）+ 播放失败行为（来源信息由分享服务按歌曲自动判定）。 */
+function shareBodyExtra() {
+  return {
+    expireMinutes: settingsStore.settings.shareLinkValidityMinutes,
+    source: '',
+  };
+}
 
 /** 尽可能取一张能被外部访问的封面 URL（在线歌曲封面通常是 http，本地封面无法落地页展示则留空） */
 function resolveShareCover(): string {
@@ -418,7 +428,7 @@ async function handleShareSong(song: Song) {
   if (isShareLoading.value) return;
   isShareLoading.value = true;
   try {
-    const url = await createShareUrl(song, resolveShareCover());
+    const url = await createShareUrl(song, resolveShareCover(), shareBodyExtra());
     if (url) {
       await copyShareLink(url);
     } else {
@@ -437,7 +447,7 @@ watch(currentSong, song => {
   if (sharePreloadTimer) clearTimeout(sharePreloadTimer);
   sharePreloadTimer = null;
   if (!song) return;
-  sharePreloadTimer = setTimeout(() => preloadShareUrl(song, resolveShareCover()), 600);
+  sharePreloadTimer = setTimeout(() => preloadShareUrl(song, resolveShareCover(), shareBodyExtra()), 600);
 });
 
 const toggleMv = async () => {
