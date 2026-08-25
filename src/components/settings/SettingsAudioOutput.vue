@@ -603,15 +603,10 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center px-1 rounded-full transition-colors focus:outline-none"
-            :class="settings.audio.fadeInOutEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.fadeInOutEnabled }"
             @click="settings.audio.fadeInOutEnabled = !settings.audio.fadeInOutEnabled"
-          >
-            <span
-              class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.audio.fadeInOutEnabled ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 渐入渐出时长设置子区域 -->
@@ -664,15 +659,10 @@ onScopeDispose(() => {
             </button>
             <button
               type="button"
-              class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none"
-              :class="settings.audio.volumeBalance.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+              class="glass-switch"
+              :class="{ 'is-checked': settings.audio.volumeBalance.enabled }"
               @click="settings.audio.volumeBalance.enabled = !settings.audio.volumeBalance.enabled"
-            >
-              <span
-                class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                :class="settings.audio.volumeBalance.enabled ? 'translate-x-5' : 'translate-x-0'"
-              />
-            </button>
+            ></button>
           </div>
         </div>
 
@@ -719,15 +709,10 @@ onScopeDispose(() => {
             <div class="flex items-center gap-3">
               <button
                 type="button"
-                class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none"
-                :class="settings.audio.volumeBalance.preventClipping ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+                class="glass-switch"
+                :class="{ 'is-checked': settings.audio.volumeBalance.preventClipping }"
                 @click="settings.audio.volumeBalance.preventClipping = !settings.audio.volumeBalance.preventClipping"
-              >
-                <span
-                  class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                  :class="settings.audio.volumeBalance.preventClipping ? 'translate-x-5' : 'translate-x-0'"
-                />
-              </button>
+              ></button>
             </div>
           </div>
         </div>
@@ -802,15 +787,10 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center px-1 rounded-full transition-colors focus:outline-none"
-            :class="settings.audio.autoSwitchSourceOnFailure ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.audio.autoSwitchSourceOnFailure }"
             @click="toggleAutoSwitchSource"
-          >
-            <span
-              class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.audio.autoSwitchSourceOnFailure ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 起播失败行为 -->

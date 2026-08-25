@@ -197,15 +197,11 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
           <div class="flex items-center gap-3">
             <SettingHint text="关闭后将不再响应当前窗口内的所有快捷键" />
             <button
+              type="button"
+              class="glass-switch"
+              :class="{ 'is-checked': settings.shortcuts.enabled }"
               @click="settings.shortcuts.enabled = !settings.shortcuts.enabled"
-              class="relative inline-flex h-6 w-11 shrink-0 items-center px-1 rounded-full transition-colors focus:outline-none"
-              :class="settings.shortcuts.enabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            >
-              <span
-                class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                :class="settings.shortcuts.enabled ? 'translate-x-5' : 'translate-x-0'"
-              />
-            </button>
+            ></button>
           </div>
         </div>
 
@@ -216,15 +212,11 @@ const handleShortcutCapture = (scope: ShortcutScope, actionId: ShortcutActionId,
           <div class="flex items-center gap-3">
             <SettingHint text="开启后在后台也可响应上方设置的全局快捷键，默认关闭" />
             <button
+              type="button"
+              class="glass-switch"
+              :class="{ 'is-checked': settings.shortcuts.globalEnabled }"
               @click="settings.shortcuts.globalEnabled = !settings.shortcuts.globalEnabled"
-              class="relative inline-flex h-6 w-11 shrink-0 items-center px-1 rounded-full transition-colors focus:outline-none"
-              :class="settings.shortcuts.globalEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
-            >
-              <span
-                class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                :class="settings.shortcuts.globalEnabled ? 'translate-x-5' : 'translate-x-0'"
-              />
-            </button>
+            ></button>
           </div>
         </div>
 
