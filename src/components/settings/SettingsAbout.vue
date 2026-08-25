@@ -33,7 +33,7 @@ const buttonText = computed(() => isEnglish.value ? {
   referenceProject: aboutConfig.value.referenceProjectText,
 });
 
-/** 兼容缺少协议头的链接（如 "xymusic.cc"），自动补全为 https://，确保能正常在外部浏览器打开 */
+/** 兼容缺少协议头的链接（如 "xianyumusic.cn"），自动补全为 https://，确保能正常在外部浏览器打开 */
 function normalizeExternalUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return '';

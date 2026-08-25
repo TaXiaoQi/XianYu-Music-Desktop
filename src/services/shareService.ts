@@ -94,32 +94,82 @@ function buildShareBody(
   };
 }
 
+/** 判断是否为可被外部访问的远程封面（排除 Tauri 本地 asset 协议与回环地址） */
+function isRemoteCoverUrl(url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host !== 'asset.localhost' && host !== 'localhost' && host !== '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+/** 把 Tauri convertFileSrc 产物（http://asset.localhost/<encoded path>）还原为本地文件路径 */
+function assetUrlToPath(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.toLowerCase() !== 'asset.localhost') return '';
+    return decodeURIComponent(u.pathname.replace(/^\//, ''));
+  } catch {
+    return '';
+  }
+}
+
+/** 把封面候选值归一化为本地文件路径：远程 URL 返回空，asset.localhost 还原路径，其余视为本地路径 */
+function toLocalCoverPath(candidate: string): string {
+  if (!candidate) return '';
+  if (isRemoteCoverUrl(candidate)) return '';
+  return assetUrlToPath(candidate) || candidate;
+}
+
 /**
  * 解析分享封面 URL：在线封面（http(s)）直接用；
  * 本地封面读取本地文件上传到服务端，返回可被落地页访问的 HTTPS URL。
  * 失败静默返回空串（分享链接仍可生成，仅无封面）。
  */
 async function resolveShareCover(song: Song, coverUrl?: string): Promise<string> {
-  if (coverUrl && /^https?:\/\//i.test(coverUrl)) return coverUrl;
+  const log = (...args: unknown[]) => console.warn('[shareCover]', ...args);
+  if (coverUrl && isRemoteCoverUrl(coverUrl)) return coverUrl;
   try {
     const s = song as any;
-    let rawPath = s?.cover_thumb_path || '';
+    // 封面已是 data: URL（代理产物）时直接上传，无需本地文件路径
+    if (coverUrl && /^data:image\//i.test(coverUrl)) {
+      return (await uploadCoverDataUrl(coverUrl)) || '';
+    }
+    // 本地封面路径：cover_thumb_path 可能是本地路径或 asset.localhost URL，统一还原为文件路径
+    let rawPath = toLocalCoverPath(s?.cover_thumb_path || '');
+    if (!rawPath) rawPath = toLocalCoverPath(coverUrl || '');
     if (!rawPath) {
       rawPath = await fileApi.getSongCover(song.path);
+      log('fallback getSongCover', song.path, '=>', rawPath);
     }
-    if (!rawPath) return '';
+    if (!rawPath) {
+      log('no cover path', { coverUrl, cover_thumb_path: s?.cover_thumb_path, songPath: song.path });
+      return '';
+    }
     const { mime, base64 } = await readImageBase64(rawPath);
-    if (!base64) return '';
+    if (!base64) {
+      log('readImageBase64 empty', rawPath);
+      return '';
+    }
     const dataUrl = `data:${mime || 'image/jpeg'};base64,${base64}`;
-    const res = await signedRequest<{ cover_url?: string }>(
-      'upload_cover',
-      { image_data: dataUrl },
-      { timeoutMs: 20_000, fetchTimeoutMs: 18_000 },
-    );
-    return res?.cover_url || '';
-  } catch {
+    const res = await uploadCoverDataUrl(dataUrl);
+    log('upload_cover ok', res, 'rawPath=', rawPath, 'dataUrlLen=', dataUrl.length);
+    return res || '';
+  } catch (e: any) {
+    log('resolveShareCover failed', e?.message || e);
     return '';
   }
+}
+
+async function uploadCoverDataUrl(dataUrl: string): Promise<string> {
+  const res = await signedRequest<{ cover_url?: string }>(
+    'upload_cover',
+    { image_data: dataUrl },
+    { timeoutMs: 20_000, fetchTimeoutMs: 18_000 },
+  );
+  return res?.cover_url || '';
 }
 
 /** 是否已有该歌曲的分享链接（缓存命中） */

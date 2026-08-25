@@ -104,7 +104,7 @@ export function useAnnouncement() {
       content: '此公告由调试模式模拟生成，用于测试公告弹窗的显示效果。\n\n您可以在此查看公告的排版、样式和交互行为，而无需连接服务器。\n\n点击下方按钮可测试动作链接的跳转效果。',
       type: 'info',
       date: new Date().toISOString().slice(0, 10),
-      actionUrl: 'https://xymusic.cc',
+      actionUrl: 'https://xianyumusic.cn',
       actionText: '访问官网',
       updatedAt: new Date().toISOString(),
     };
