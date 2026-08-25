@@ -99,7 +99,7 @@ const activeKey = computed<SidebarItemKey | null>(() => {
   }
 });
 
-const baseNavClasses = 'px-3 py-2 mx-2 rounded-md cursor-pointer flex items-center transition-all duration-100 text-sm font-medium active:scale-[0.97]';
+const baseNavClasses = 'px-3 py-2 mx-2 rounded-md cursor-pointer flex items-center transition-all duration-100 text-sm font-medium active:scale-[0.97] whitespace-nowrap min-w-0';
 /* 选中态不再 translate-x-1：高亮块基于 mx-2 左右对称，
    右移会破坏对称（左 12px / 右 4px），视觉上"左边更宽" */
 const activeNavClasses = 'bg-black/10 dark:bg-white/10 text-black dark:text-white font-semibold shadow-sm';
@@ -125,8 +125,8 @@ const itemClasses = (key: SidebarItemKey) => {
       @mouseleave="handleItemLeave()"
       :class="[baseNavClasses, isHomeActive ? activeNavClasses : idleClasses, hoveredItem === 'home' && !isHomeActive ? hoverClasses : '']"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-      <span>{{ t('sidebar.home') }}</span>
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+      <span class="truncate min-w-0">{{ t('sidebar.home') }}</span>
     </li>
 
     <!-- 其余项：按用户配置的顺序渲染 -->
@@ -141,7 +141,7 @@ const itemClasses = (key: SidebarItemKey) => {
       <svg
         v-if="item.iconKind === 'albums'"
         xmlns="http://www.w3.org/2000/svg"
-        class="h-4 w-4 mr-3"
+        class="h-4 w-4 mr-3 shrink-0"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -152,14 +152,14 @@ const itemClasses = (key: SidebarItemKey) => {
       <svg
         v-else
         xmlns="http://www.w3.org/2000/svg"
-        class="h-4 w-4 mr-3"
+        class="h-4 w-4 mr-3 shrink-0"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
       >
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.iconPath" />
       </svg>
-      <span>{{ t(sidebarLabelKeys[item.key]) }}</span>
+      <span class="truncate min-w-0">{{ t(sidebarLabelKeys[item.key]) }}</span>
     </li>
   </ul>
 </template>

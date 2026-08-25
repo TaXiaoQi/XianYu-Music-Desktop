@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, ref } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useI18n } from '../../features/i18n';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
@@ -401,9 +402,12 @@ const handleSidebarPlaylistClick = (event: MouseEvent, id: string) => {
 };
 
 // --- 一级侧边栏拖拽调整宽度逻辑 ---
+const { isEnglish } = useI18n();
 const STORAGE_KEY_MAIN_SIDEBAR_WIDTH = 'main_sidebar_width';
-const DEFAULT_SIDEBAR_WIDTH = 192;
-const MIN_SIDEBAR_WIDTH = 180;
+
+// 英文词条（如 Recently Played、Plugin Manager）较长，英文模式限制最小宽度为 210px，避免文字被压缩或折行
+const minSidebarWidth = computed(() => (isEnglish.value ? 210 : 180));
+const defaultSidebarWidth = computed(() => (isEnglish.value ? 210 : 192));
 const MAX_SIDEBAR_WIDTH = 360;
 
 const loadInitialSidebarWidth = (): number => {
@@ -412,14 +416,25 @@ const loadInitialSidebarWidth = (): number => {
     if (saved) {
       const parsed = Number.parseInt(saved, 10);
       if (!Number.isNaN(parsed)) {
-        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
+        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(minSidebarWidth.value, parsed));
       }
     }
   } catch {}
-  return DEFAULT_SIDEBAR_WIDTH;
+  return defaultSidebarWidth.value;
 };
 
 const sidebarWidth = ref(loadInitialSidebarWidth());
+
+// 监听语言切换：英文模式下侧边栏宽度至少为 210px
+watch(minSidebarWidth, (newMin) => {
+  if (sidebarWidth.value < newMin) {
+    sidebarWidth.value = newMin;
+    try {
+      localStorage.setItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH, newMin.toString());
+    } catch {}
+  }
+}, { immediate: true });
+
 const isResizingSidebar = ref(false);
 let dragStartX = 0;
 let dragStartWidth = 0;
@@ -438,7 +453,7 @@ const startSidebarResize = (e: PointerEvent) => {
 const handleSidebarResizeMove = (e: PointerEvent) => {
   if (!isResizingSidebar.value) return;
   const deltaX = e.clientX - dragStartX;
-  const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, dragStartWidth + deltaX));
+  const nextWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(minSidebarWidth.value, dragStartWidth + deltaX));
   sidebarWidth.value = nextWidth;
 };
 
@@ -454,9 +469,9 @@ const stopSidebarResize = () => {
 };
 
 const resetSidebarWidth = () => {
-  sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH;
+  sidebarWidth.value = defaultSidebarWidth.value;
   try {
-    localStorage.setItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH.toString());
+    localStorage.setItem(STORAGE_KEY_MAIN_SIDEBAR_WIDTH, defaultSidebarWidth.value.toString());
   } catch {}
 };
 
