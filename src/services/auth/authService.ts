@@ -316,7 +316,9 @@ async function requestEnvelope<T>(
     finalBody.token = cachedToken;
   }
   const payload = await authApi.authedRequest(action, finalBody, fetchTimeoutMs);
-  if (isSessionExpiredEnvelope(payload)) {
+  // skipToken 请求（查看他人公开数据）的 401 不代表当前用户登录过期，
+  // 硬模式下无 token 请求会被服务端拒绝，误判会触发自动登出
+  if (!skipToken && isSessionExpiredEnvelope(payload)) {
     // 登录态已失效：触发自动登出，UI 回到登录页让用户重新登录
     triggerAccountExpired();
   }

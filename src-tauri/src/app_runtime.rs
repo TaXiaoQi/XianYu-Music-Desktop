@@ -16,8 +16,11 @@ use tauri::{
 use tokio::sync::Semaphore;
 
 const APP_SHOW_MAIN_EVENT: &str = "app:show-main";
+const APP_DEEP_LINK_EVENT: &str = "app:deep-link";
 const APP_TRAY_MENU_EVENT: &str = "app:tray-menu";
 const APP_TRAY_MENU_OPEN_EVENT: &str = "app:tray-menu-open";
+/// 分享落地页深链 scheme 前缀
+const DEEP_LINK_SCHEME: &str = "xianyu://";
 const MAIN_WINDOW_LABEL: &str = "main";
 const MINI_PLAYER_WINDOW_LABEL: &str = "mini-player";
 const TRAY_ID: &str = "tray";
@@ -55,6 +58,10 @@ pub(crate) struct NativeTrayMenuState {
 
 #[derive(Default)]
 pub(crate) struct PendingOpenPaths(pub(crate) Mutex<Vec<String>>);
+
+/// 待前端消费的 xianyu:// 深链（分享落地页拉起后带入）。
+#[derive(Default)]
+pub(crate) struct PendingDeepLinks(pub(crate) Mutex<Vec<String>>);
 
 #[derive(Default)]
 pub(crate) struct TrayMenuRuntimeState {
@@ -122,6 +129,40 @@ fn queue_open_paths<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Str
     if let Some(state) = app.try_state::<PendingOpenPaths>() {
         if let Ok(mut pending_paths) = state.0.lock() {
             append_unique_paths(&mut pending_paths, paths);
+        }
+    }
+}
+
+/// 从启动参数中筛出 xianyu:// 深链（去重）。
+fn collect_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut links = Vec::new();
+    let mut seen = HashSet::new();
+    for arg in args {
+        let trimmed = arg.trim().to_string();
+        if trimmed.starts_with(DEEP_LINK_SCHEME) && seen.insert(trimmed.clone()) {
+            links.push(trimmed);
+        }
+    }
+    links
+}
+
+/// 入队深链并通知前端消费；有新增才发事件（避免空唤醒）。
+fn queue_deep_links<R: tauri::Runtime>(app: &tauri::AppHandle<R>, links: Vec<String>) {
+    if links.is_empty() {
+        return;
+    }
+    if let Some(state) = app.try_state::<PendingDeepLinks>() {
+        let has_new = state
+            .0
+            .lock()
+            .map(|mut pending| {
+                let before = pending.len();
+                append_unique_paths(&mut pending, links);
+                pending.len() > before
+            })
+            .unwrap_or(false);
+        if has_new {
+            let _ = app.emit(APP_DEEP_LINK_EVENT, ());
         }
     }
 }
@@ -421,7 +462,9 @@ pub(crate) fn handle_single_instance<R: tauri::Runtime>(
     argv: Vec<String>,
 ) {
     let current_exe = std::env::current_exe().ok();
+    let deep_links = collect_deep_links(argv.iter().cloned());
     let open_paths = collect_existing_open_paths(argv, current_exe.as_deref());
+    queue_deep_links(app, deep_links);
     queue_open_paths(app, open_paths);
     let _ = app.emit("app:open-paths", ());
     reveal_main_window(app);
@@ -431,6 +474,7 @@ pub(crate) fn setup_app(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(PendingOpenPaths::default());
+    app.manage(PendingDeepLinks::default());
     app.manage(TrayMenuRuntimeState::default());
 
     // 初次安装（无窗口状态存档）时，把主窗口默认大小对齐为配置的最小尺寸
@@ -488,9 +532,12 @@ pub(crate) fn setup_app(
     run_cache_cleanup(app.handle());
 
     let current_exe = std::env::current_exe().ok();
+    let startup_args: Vec<String> = std::env::args().skip(1).collect();
     let initial_open_paths =
-        collect_existing_open_paths(std::env::args().skip(1), current_exe.as_deref());
+        collect_existing_open_paths(startup_args.iter().cloned(), current_exe.as_deref());
     queue_open_paths(app.handle(), initial_open_paths);
+    let initial_deep_links = collect_deep_links(startup_args);
+    queue_deep_links(app.handle(), initial_deep_links);
 
     install_window_boundary(app);
     build_tray(app)?;
@@ -508,6 +555,14 @@ pub(crate) fn consume_pending_open_paths(
 ) -> Result<Vec<String>, String> {
     let mut pending_paths = state.0.lock().map_err(|error| error.to_string())?;
     Ok(std::mem::take(&mut *pending_paths))
+}
+
+#[tauri::command]
+pub(crate) fn consume_pending_deep_links(
+    state: tauri::State<PendingDeepLinks>,
+) -> Result<Vec<String>, String> {
+    let mut pending = state.0.lock().map_err(|error| error.to_string())?;
+    Ok(std::mem::take(&mut *pending))
 }
 
 #[tauri::command]

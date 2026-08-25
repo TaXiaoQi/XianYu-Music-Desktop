@@ -89,6 +89,9 @@ const ctx = inject<{
   toggleMv: () => Promise<void>;
   // MV 视频下载中（下载按钮 loading 态）
   isMvVideoDownloading: Ref<boolean>;
+  // 分享
+  handleShareSong: (song: Song) => Promise<void> | void;
+  isShareLoading: Ref<boolean>;
 }>('footerContext')!;
 
 // 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
@@ -143,6 +146,8 @@ const {
   mvLoading,
   toggleMv,
   isMvVideoDownloading,
+  handleShareSong,
+  isShareLoading,
 } = ctx;
 
 const downloadQualityListRef = ref<HTMLElement | null>(null);
@@ -579,6 +584,21 @@ watch(
       <FooterControlIcon item-key="mv" class="h-4 w-4" />
     </button>
   </div>
+
+  <!-- 分享歌曲 -->
+  <button
+    v-else-if="itemKey === 'share' && currentSong"
+    @mousedown.stop
+    @click.stop="handleShareSong(currentSong)"
+    :disabled="isShareLoading"
+    class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
+    :class="isShareLoading
+      ? 'opacity-60 cursor-wait'
+      : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+    :title="isShareLoading ? '生成分享链接中…' : '分享歌曲'"
+  >
+    <FooterControlIcon item-key="share" :class="isShareLoading ? 'h-5 w-5 animate-pulse' : 'h-5 w-5'" />
+  </button>
 </template>
 
 <style scoped>

@@ -27,6 +27,12 @@
   ${Else}
     WriteRegStr HKCU "${XY_LANG_REGKEY}" "${XY_LANG_REGVALUE}" "zh-CN"
   ${EndIf}
+  ; 注册 xianyu:// URL 协议：分享落地页点「在弦予音乐中打开」时由系统
+  ; 用 `"$INSTDIR\弦予音乐.exe" "%1"` 拉起本程序并带入深链参数。
+  WriteRegStr HKCR "xianyu" "" "URL:弦予音乐 Protocol"
+  WriteRegStr HKCR "xianyu" "URL Protocol" ""
+  WriteRegStr HKCR "xianyu\DefaultIcon" "" "$\"$INSTDIR\弦予音乐.exe$\",0"
+  WriteRegStr HKCR "xianyu\shell\open\command" "" "$\"$INSTDIR\弦予音乐.exe$\" $\"%1$\""
 !macroend
 
 ; ============================================================================

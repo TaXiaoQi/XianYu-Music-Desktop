@@ -26,8 +26,8 @@ mod window_theme;
 mod window_z_order;
 
 use app_runtime::{
-    consume_pending_open_paths, exit_app, handle_single_instance, open_devtools, setup_app,
-    update_native_tray_menu,
+    consume_pending_deep_links, consume_pending_open_paths, exit_app, handle_single_instance,
+    open_devtools, setup_app, update_native_tray_menu,
 };
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
 use database::clear_all_app_data;
@@ -95,8 +95,8 @@ use statistics::{
     get_format_distribution, get_library_stats, get_listen_durations, get_quality_distribution,
     get_recent_album_catalog, get_recent_history, get_recent_playlist_catalog,
     get_recent_song_paths_view, import_recent_history, import_statistics_file,
-    preview_statistics_import, record_play, remove_from_recent_history,
-    remove_songs_from_history_and_statistics, reset_local_statistics,
+    merge_cloud_listen_duration, preview_statistics_import, record_play,
+    remove_from_recent_history, remove_songs_from_history_and_statistics, reset_local_statistics,
 };
 use system_fonts::get_system_fonts;
 use taskbar::{
@@ -312,6 +312,7 @@ pub fn run() {
             reset_local_statistics,
             get_behavior_stats,
             get_listen_durations,
+            merge_cloud_listen_duration,
             get_quality_distribution,
             get_format_distribution,
             clear_all_app_data,
@@ -359,6 +360,7 @@ pub fn run() {
             cancel_recognize_system_audio,
             recognize_with_pcm,
             consume_pending_open_paths,
+            consume_pending_deep_links,
             get_system_fonts,
             import_lyrics_font,
             read_lyrics_font_data_url,

@@ -311,7 +311,8 @@ export type FooterItemKey =
   | 'equalizer'       // 均衡器
   | 'playlist'        // 播放队列
   | 'comment'         // 评论区
-  | 'mv';             // MV 背景视频（仅播放详情页显示）
+  | 'mv'              // MV 背景视频（仅播放详情页显示）
+  | 'share';          // 分享当前歌曲
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';

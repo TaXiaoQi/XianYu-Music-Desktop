@@ -6,6 +6,7 @@ export const appApi = {
   openExternalProgram: (path: string, args: string[] = []) =>
     tauriInvoke('open_external_program', { path, args }),
   consumePendingOpenPaths: () => tauriInvoke('consume_pending_open_paths'),
+  consumePendingDeepLinks: () => tauriInvoke('consume_pending_deep_links'),
   openDevtools: () => tauriInvoke('open_devtools'),
   exitApp: () => tauriInvoke('exit_app'),
   /** 读取安装时选择的应用语言码（zh-CN / zh-TW / en-US），读不到返回 null。 */

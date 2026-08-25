@@ -20,8 +20,8 @@ import { normalizePath, getParentFolderPath } from '../utils/path';
 const ROW_HEIGHT = 72;
 const INDEX_PROXIMITY_PX = 72;
 const INDEX_AUTO_HIDE_MS = 500;
-// 此集合限定哪些列表视图展示"回到顶部"；收藏/最近播放也复用 SongTable，需一并纳入
-const SCROLL_TO_TOP_VIEW_MODES = new Set(['all', 'playlist', 'artist', 'album', 'favorites', 'recent']);
+// 此集合限定哪些列表视图展示"回到顶部"；收藏/最近播放/每日推荐也复用 SongTable，需一并纳入
+const SCROLL_TO_TOP_VIEW_MODES = new Set(['all', 'playlist', 'artist', 'album', 'favorites', 'recent', 'dailyRecommend']);
 // "回到顶部/跳转播放"两个悬浮控件可用的路由白名单（本地音乐库 + 收藏 + 最近播放 + 在线搜索/详情）
 const SCROLL_NAV_ENABLED_ROUTES = new Set(['/', '/favorites', '/recent', '/search', '/online-detail']);
 
