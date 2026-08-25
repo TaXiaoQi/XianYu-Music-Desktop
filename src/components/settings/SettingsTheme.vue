@@ -929,8 +929,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="flex items-center justify-between pt-1 border-t border-black/5 dark:border-white/5">
-          <span class="text-xs text-gray-600 dark:text-gray-300 font-medium">{{ TEXT.useGlassSwitch }}</span>
+        <div class="flex items-center justify-between pt-3 mt-1 border-t border-black/5 dark:border-white/5">
+          <span class="text-xs font-medium text-gray-700 dark:text-gray-200">{{ TEXT.useGlassSwitch }}</span>
           <button
             type="button"
             class="glass-switch"
