@@ -75,6 +75,8 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     window.addEventListener('pointercancel', handlePointerUp);
   };
 
+  let wheelResetTimer: ReturnType<typeof setTimeout> | undefined;
+
   const handleWheel = (e: WheelEvent) => {
     const el = containerRef.value;
     if (!el) return;
@@ -82,10 +84,25 @@ export function useDragScrollX(containerRef: Ref<HTMLElement | null>) {
     // 若容器未产生横向可滚动溢出，不拦截默认行为
     if (el.scrollWidth <= el.clientWidth) return;
 
-    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    let delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (delta !== 0) {
       e.preventDefault();
+
+      // 行/页模式单位转换
+      if (e.deltaMode === 1) {
+        delta *= 40;
+      } else if (e.deltaMode === 2) {
+        delta *= el.clientWidth;
+      }
+
+      // 临时关掉 CSS scroll-smooth 导致的延迟缓冲，确保滚轮快速连续滚动时零延迟跟手
+      el.style.scrollBehavior = 'auto';
       el.scrollLeft += delta;
+
+      clearTimeout(wheelResetTimer);
+      wheelResetTimer = setTimeout(() => {
+        if (el) el.style.scrollBehavior = '';
+      }, 150);
     }
   };
 
