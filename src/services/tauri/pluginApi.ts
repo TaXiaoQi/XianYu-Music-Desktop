@@ -67,6 +67,14 @@ export async function readFileBytes(path: string): Promise<Uint8Array> {
 }
 
 /**
+ * 读取本地图片文件为 base64（分享本地歌曲封面上传用）
+ * 后端 command: read_image_base64
+ */
+export async function readImageBase64(path: string): Promise<{ mime: string; base64: string }> {
+  return tauriInvoke('read_image_base64', { path });
+}
+
+/**
  * 通过后端 HTTP 代理获取远程插件脚本
  * 用于 ensurePluginInstance 加载远程 URL 插件
  */

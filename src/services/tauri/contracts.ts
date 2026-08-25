@@ -990,6 +990,10 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: string;
   };
+  read_image_base64: {
+    payload: { path: string };
+    response: { mime: string; base64: string };
+  };
   proxy_image: {
     payload: { url: string; referer?: string | null };
     response: string;
