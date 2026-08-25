@@ -45,6 +45,12 @@ export function useSettingsThemeControls() {
       patchTheme({ useCustomTrayMenu: value });
     },
   });
+  const useGlassSwitch = computed({
+    get: () => theme.value.useGlassSwitch ?? true,
+    set: (value: boolean) => {
+      patchTheme({ useGlassSwitch: value });
+    },
+  });
   const showLeaderboard = computed({
     get: () => theme.value.showLeaderboard,
     set: (value: boolean) => {
@@ -219,6 +225,10 @@ export function useSettingsThemeControls() {
     void loadWindowMaterialCapabilities();
   });
 
+  const setUseGlassSwitch = (value: boolean) => {
+    useGlassSwitch.value = value;
+  };
+
   return {
     theme,
     showCustomModal,
@@ -226,6 +236,7 @@ export function useSettingsThemeControls() {
     materialMode,
     keepWindowMaterialOnBlur,
     useCustomTrayMenu,
+    useGlassSwitch,
     showLeaderboard,
     playerDetailCoverBehavior,
     isWindows11,
@@ -241,6 +252,7 @@ export function useSettingsThemeControls() {
     setAccentColor,
     resetAccentColor,
     setDynamicType,
+    setUseGlassSwitch,
     toggleWindowMaterial,
     openCustomModal,
     toggleFlowTuning,

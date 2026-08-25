@@ -7,7 +7,7 @@ import { useI18n } from '../../features/i18n';
 import SettingHint from './SettingHint.vue';
 import CustomColorPicker from './CustomColorPicker.vue';
 
-const { isEnglish } = useI18n();
+const { isEnglish, t } = useI18n();
 
 const SettingsSidebar = defineAsyncComponent(() => import('./SettingsSidebar.vue'));
 const SettingsFooterLayout = defineAsyncComponent(() => import('./SettingsFooterLayout.vue'));
@@ -55,48 +55,54 @@ const TEXT = computed(() => isEnglish.value ? {
   leaderboardTitle: 'Home Leaderboard',
   leaderboardEnable: 'Show the listening leaderboard on Home',
   leaderboardHint: 'Turn this off to hide the listening leaderboard from Home.',
+  switchStyleTitle: 'Switch Style',
+  useGlassSwitch: 'Liquid Glass Switches',
+  useGlassSwitchHint: 'Enable translucent glassmorphic refraction and sheen sweep for switches. Turn this off to use classic flat style.',
 } : {
-  paletteTitle: '\u914d\u8272\u65b9\u6848',
-  darkScheme: '\u6df1\u8272',
-  lightScheme: '\u6d45\u8272',
-  systemScheme: '\u8ddf\u968f\u7cfb\u7edf',
-  customEmoji: '\u{1F3A8}',
-  customTitle: '\u81ea\u5b9a\u4e49\u76ae\u80a4',
-  customHint: '\u4f7f\u7528\u56fe\u7247\u3001\u906e\u7f69\u548c\u524d\u666f\u6837\u5f0f',
-  customShort: '\u81ea\u5b9a\u4e49',
-  accentTitle: '\u4e3b\u9898\u8272',
-  accentHint: '\u7528\u4e8e\u6309\u94ae\u3001\u9009\u4e2d\u72b6\u6001\u548c\u754c\u9762\u5f3a\u8c03\u5143\u7d20',
-  accentCustom: '\u81ea\u5b9a\u4e49\u989c\u8272',
-  accentHex: 'HEX \u8272\u503c',
-  accentReset: '\u6062\u590d\u9ed8\u8ba4',
-  playerDetailCoverTitle: '\u6b4c\u8bcd\u9875\u5c01\u9762',
-  playerDetailCoverHint: '\u8bbe\u7f6e\u6bcf\u6b21\u6253\u5f00\u64ad\u653e\u8be6\u60c5\u9875\u65f6\u7684\u9ed8\u8ba4\u5c55\u793a\u65b9\u5f0f',
-  playerDetailCoverLabel: '\u6253\u5f00\u64ad\u653e\u8be6\u60c5\u9875\u65f6',
-  playerDetailCoverShow: '\u59cb\u7ec8\u5c55\u793a\u5c01\u9762',
-  playerDetailCoverHide: '\u59cb\u7ec8\u9690\u85cf\u5c01\u9762',
-  playerDetailCoverRemember: '\u8ddf\u968f\u4e0a\u6b21\u9009\u62e9',
-  dynamicTitle: '\u52a8\u6001\u80cc\u666f',
-  dynamicHint: '\u8ddf\u968f\u5c01\u9762\u53d8\u5316',
-  dynamicOff: '\u5173\u95ed',
-  dynamicFlow: '\u6d41\u5149',
-  dynamicBlur: '\u9759\u6001\u6a21\u7cca',
-  dynamicDisabledHint: '\u81ea\u5b9a\u4e49\u76ae\u80a4\u6216\u7a97\u53e3\u6750\u8d28\u542f\u7528\u65f6\uff0c\u52a8\u6001\u80cc\u666f\u4f1a\u81ea\u52a8\u505c\u7528\u3002',
-  windowMaterialTitle: '\u7a97\u53e3\u6750\u8d28',
-  windowMaterialBlur: '\u6bdb\u73bb\u7483',
-  windowMaterialUnsupportedHint: '\u4ec5 Windows 10 / 11 \u652f\u6301\u3002',
-  windowMaterialTransparencyHint: '\u9700\u5728\u7cfb\u7edf\u8bbe\u7f6e\u4e2d\u5f00\u542f\u900f\u660e\u6548\u679c\u540e\u624d\u53ef\u7528\u3002',
-  windowMaterialConflictHint: '\u5173\u95ed\u52a8\u6001\u80cc\u666f\u6216\u81ea\u5b9a\u4e49\u76ae\u80a4\u540e\u53ef\u7528\u3002',
-  windowMaterialWin11Only: '\u4ec5 Windows 11 \u652f\u6301',
-  keepWindowMaterialOnBlur: '\u5931\u7126\u4fdd\u6301\u6750\u8d28',
-  keepWindowMaterialOnBlurHint: '\u5f00\u542f\u540e\u7a97\u53e3\u5931\u7126\u65f6\u4ecd\u4f1a\u5c1d\u8bd5\u4fdd\u6301\u5f53\u524d\u6750\u8d28\u6548\u679c\u3002',
-  trayMenuTitle: '\u6258\u76d8\u83dc\u5355',
-  customTrayMenu: '\u542f\u52a8\u81ea\u5b9a\u4e49\u6258\u76d8',
-  customTrayMenuHint: '\u5f00\u542f\u540e\u9ed8\u8ba4\u4f7f\u7528 XY-Music \u7ed8\u5236\u7684\u6258\u76d8\u83dc\u5355\uff1b\u5173\u95ed\u540e\u4f7f\u7528\u7cfb\u7edf\u539f\u751f\u83dc\u5355\u3002',
-  customTrayMenuOn: '\u81ea\u5b9a\u4e49',
-  customTrayMenuOff: '\u7cfb\u7edf',
-  leaderboardTitle: '\u9996\u9875\u6392\u884c\u699c',
-  leaderboardEnable: '\u662f\u5426\u5728\u9996\u9875\u5c55\u793a\u542c\u6b4c\u6392\u884c\u699c',
-  leaderboardHint: '\u5173\u95ed\u540e\u9996\u9875\u5c06\u4e0d\u518d\u663e\u793a\u542c\u6b4c\u6392\u884c\u699c\u3002',
+  paletteTitle: '配色方案',
+  darkScheme: '深色',
+  lightScheme: '浅色',
+  systemScheme: '跟随系统',
+  customEmoji: '🎨',
+  customTitle: '自定义皮肤',
+  customHint: '使用图片、遮罩和前景样式',
+  customShort: '自定义',
+  accentTitle: '主题色',
+  accentHint: '用于按钮、选中状态和界面强调元素',
+  accentCustom: '自定义颜色',
+  accentHex: 'HEX 色值',
+  accentReset: '恢复默认',
+  playerDetailCoverTitle: '歌词页封面',
+  playerDetailCoverHint: '设置每次打开播放详情页时的默认展示方式',
+  playerDetailCoverLabel: '打开播放详情页时',
+  playerDetailCoverShow: '始终展示封面',
+  playerDetailCoverHide: '始终隐藏封面',
+  playerDetailCoverRemember: '跟随上次选择',
+  dynamicTitle: '动态背景',
+  dynamicHint: '跟随封面变化',
+  dynamicOff: '关闭',
+  dynamicFlow: '流光',
+  dynamicBlur: '静态模糊',
+  dynamicDisabledHint: '自定义皮肤或窗口材质启用时，动态背景会自动停用。',
+  windowMaterialTitle: '窗口材质',
+  windowMaterialBlur: '毛玻璃',
+  windowMaterialUnsupportedHint: '仅 Windows 10 / 11 支持。',
+  windowMaterialTransparencyHint: '需在系统设置中开启透明效果后才可用。',
+  windowMaterialConflictHint: '关闭动态背景或自定义皮肤后可用。',
+  windowMaterialWin11Only: '仅 Windows 11 支持',
+  keepWindowMaterialOnBlur: '失焦保持材质',
+  keepWindowMaterialOnBlurHint: '开启后窗口失焦时仍会尝试保持当前材质效果。',
+  trayMenuTitle: '托盘菜单',
+  customTrayMenu: '启动自定义托盘',
+  customTrayMenuHint: '开启后默认使用 XY-Music 绘制的托盘菜单；关闭后使用系统原生菜单。',
+  customTrayMenuOn: '自定义',
+  customTrayMenuOff: '系统',
+  leaderboardTitle: '首页排行榜',
+  leaderboardEnable: '是否在首页展示听歌排行榜',
+  leaderboardHint: '关闭后首页将不再显示听歌排行榜。',
+  switchStyleTitle: '开关样式',
+  useGlassSwitch: '液态玻璃按钮效果',
+  useGlassSwitchHint: '开启后全软件开关呈现晶莹透光玻璃折射与流光动画；关闭后切回经典极简风格。',
 });
 
 const FLOW_TEXT = computed(() => isEnglish.value ? {
@@ -195,6 +201,8 @@ const {
   setWindowBlurTint,
   setKeepWindowMaterialOnBlur,
   setUseCustomTrayMenu,
+  useGlassSwitch,
+  setUseGlassSwitch,
   setShowLeaderboard,
   setPlayerDetailCoverBehavior,
 } = useSettingsThemeControls();
@@ -875,6 +883,61 @@ onUnmounted(() => {
           :class="{ 'is-checked': showLeaderboard }"
           @click="setShowLeaderboard(!showLeaderboard)"
         ></button>
+      </div>
+    </section>
+
+    <!-- 开关样式设置 -->
+    <section class="space-y-3">
+      <h2 class="flex items-center justify-between gap-4 text-sm font-bold text-gray-800 dark:text-gray-200">
+        <span class="flex items-center gap-2">
+          <span class="h-4 w-1 rounded-full bg-[#EC4141]"></span>
+          {{ TEXT.switchStyleTitle }}
+        </span>
+        <SettingHint :text="TEXT.useGlassSwitchHint" />
+      </h2>
+
+      <div class="flex flex-col gap-3 rounded-2xl border border-gray-200/40 bg-white/20 p-4 dark:border-gray-800/40 dark:bg-black/10">
+        <div class="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            class="group flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all cursor-pointer"
+            :class="useGlassSwitch
+              ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]'
+              : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            @click="setUseGlassSwitch(true)"
+          >
+            <div class="flex items-center gap-2 text-sm font-semibold">
+              <span class="text-base">💧</span>
+              {{ t('theme.glassSwitch') }}
+            </div>
+            <div class="text-xs opacity-75 leading-relaxed">{{ t('theme.glassSwitchDesc') }}</div>
+          </button>
+
+          <button
+            type="button"
+            class="group flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all cursor-pointer"
+            :class="!useGlassSwitch
+              ? 'border-[#EC4141] bg-[#EC4141]/8 shadow-sm text-[#EC4141]'
+              : 'border-gray-200/40 bg-white/20 hover:border-[#EC4141]/40 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-gray-200'"
+            @click="setUseGlassSwitch(false)"
+          >
+            <div class="flex items-center gap-2 text-sm font-semibold">
+              <span class="text-base">🔳</span>
+              {{ t('theme.flatSwitch') }}
+            </div>
+            <div class="text-xs opacity-75 leading-relaxed">{{ t('theme.flatSwitchDesc') }}</div>
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between pt-1 border-t border-black/5 dark:border-white/5">
+          <span class="text-xs text-gray-600 dark:text-gray-300 font-medium">{{ TEXT.useGlassSwitch }}</span>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': useGlassSwitch }"
+            @click="setUseGlassSwitch(!useGlassSwitch)"
+          ></button>
+        </div>
       </div>
     </section>
 
