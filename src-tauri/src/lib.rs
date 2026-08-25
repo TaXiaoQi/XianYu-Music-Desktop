@@ -70,8 +70,8 @@ use player::{
 };
 use plugins::{
     download_audio_to_temp, download_video_to_cache, plugin_http_request,
-    plugin_http_request_binary, proxy_image, read_file_bytes, read_plugin_file,
-    remove_cached_background_video, save_plugin_script,
+    plugin_http_request_binary, proxy_image, read_file_bytes, read_image_base64,
+    read_plugin_file, remove_cached_background_video, save_plugin_script,
 };
 use host_crypto::{
     host_kugou_request_key, host_kugou_sign, host_linuxapi_encrypt, host_migu_sign,
@@ -352,6 +352,7 @@ pub fn run() {
             read_plugin_file,
             save_plugin_script,
             read_file_bytes,
+            read_image_base64,
             proxy_image,
             download_audio_to_temp,
             download_video_to_cache,

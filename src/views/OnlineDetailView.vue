@@ -322,7 +322,7 @@ async function loadUserModeData() {
       downloadUserFavorites(userId),
       downloadUserPlaylists(userId).catch(() => null),
     ]);
-    viewedFavorites.value = favorites;
+    viewedFavorites.value = [...favorites].reverse();
     viewedPlaylists.value = (playlistsData?.playlists ?? []).map(p => ({
       id: String(p.id ?? ''),
       name: p.name ?? '未知歌单',

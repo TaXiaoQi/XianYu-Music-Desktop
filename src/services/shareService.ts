@@ -6,6 +6,8 @@
  * - 播放时预加载分享链接：同一首歌只生成一次并缓存，避免用户点分享时才等网络。
  */
 import { signedRequest } from './auth/authService';
+import { fileApi } from './tauri/fileApi';
+import { readImageBase64 } from './tauri/pluginApi';
 import type { Song } from '../types';
 
 interface ShareCacheEntry {
@@ -92,6 +94,34 @@ function buildShareBody(
   };
 }
 
+/**
+ * 解析分享封面 URL：在线封面（http(s)）直接用；
+ * 本地封面读取本地文件上传到服务端，返回可被落地页访问的 HTTPS URL。
+ * 失败静默返回空串（分享链接仍可生成，仅无封面）。
+ */
+async function resolveShareCover(song: Song, coverUrl?: string): Promise<string> {
+  if (coverUrl && /^https?:\/\//i.test(coverUrl)) return coverUrl;
+  try {
+    const s = song as any;
+    let rawPath = s?.cover_thumb_path || '';
+    if (!rawPath) {
+      rawPath = await fileApi.getSongCover(song.path);
+    }
+    if (!rawPath) return '';
+    const { mime, base64 } = await readImageBase64(rawPath);
+    if (!base64) return '';
+    const dataUrl = `data:${mime || 'image/jpeg'};base64,${base64}`;
+    const res = await signedRequest<{ cover_url?: string }>(
+      'upload_cover',
+      { image_data: dataUrl },
+      { timeoutMs: 20_000, fetchTimeoutMs: 18_000 },
+    );
+    return res?.cover_url || '';
+  } catch {
+    return '';
+  }
+}
+
 /** 是否已有该歌曲的分享链接（缓存命中） */
 export function getCachedShareUrl(song: Song | null | undefined): string | null {
   if (!song) return null;
@@ -110,13 +140,16 @@ export async function createShareUrl(
   if (existing?.url) return existing.url;
   if (existing?.pending) return existing.pending;
 
-  const pending = signedRequest<{ share_url: string }>(
-    'create_share',
-    buildShareBody(song, coverUrl, extra),
-    {
-      timeoutMs: 15_000,
-    },
-  )
+  const pending = (async () => {
+    const resolvedCover = await resolveShareCover(song, coverUrl);
+    return signedRequest<{ share_url: string }>(
+      'create_share',
+      buildShareBody(song, resolvedCover, extra),
+      {
+        timeoutMs: 15_000,
+      },
+    );
+  })()
     .then(data => {
       const url = String(data?.share_url || '');
       shareCache.set(key, { url });

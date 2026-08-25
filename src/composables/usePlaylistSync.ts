@@ -55,6 +55,8 @@ import {
 import { playerStorage } from '../services/storage/playerStorage';
 import { localStore } from '../services/storage/localStore';
 import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
+import { signedRequest } from '../services/auth/authService';
+import { readImageBase64 } from '../services/tauri/pluginApi';
 import type { AutoSyncConfig, Playlist, Song } from '../types';
 
 export type SyncDirection = 'upload' | 'download' | 'sync';
@@ -212,6 +214,51 @@ export function usePlaylistSync() {
   }
 
   /**
+   * 解析歌单云端封面 URL：
+   * - 已有云端封面（http/https）直接用；
+   * - 本地自定义封面（coverPath 本地文件或 data:）读取上传到服务端，返回可跨设备访问的 HTTPS URL；
+   * - 否则回退用歌单内在线歌曲的远程封面。
+   * 失败静默返回空串（歌单仍可同步，仅无封面）。
+   */
+  async function resolvePlaylistCloudCover(
+    playlist: Playlist,
+    songs: Song[],
+  ): Promise<string> {
+    if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
+      return playlist.cloudCoverUrl;
+    }
+
+    const coverPath = playlist.coverPath;
+    if (coverPath) {
+      try {
+        let dataUrl = '';
+        if (/^https?:\/\//i.test(coverPath)) {
+          return coverPath;
+        } else if (coverPath.startsWith('data:')) {
+          dataUrl = coverPath;
+        } else if (!coverPath.startsWith('asset:')) {
+          const { mime, base64 } = await readImageBase64(coverPath);
+          if (base64) {
+            dataUrl = `data:${mime || 'image/jpeg'};base64,${base64}`;
+          }
+        }
+        if (dataUrl) {
+          const res = await signedRequest<{ cover_url?: string }>(
+            'upload_cover',
+            { image_data: dataUrl },
+            { timeoutMs: 20_000, fetchTimeoutMs: 18_000 },
+          );
+          if (res?.cover_url) return res.cover_url;
+        }
+      } catch {
+        // 封面上传失败静默降级到在线歌曲封面
+      }
+    }
+
+    return firstRemoteSongCover(songs);
+  }
+
+  /**
    * 上传所有本地歌单到云端（文件存储模式）
    * 一次性将所有歌单+歌曲打包分块上传到服务器文件存储，不经过数据库
    */
@@ -244,21 +291,26 @@ export function usePlaylistSync() {
     syncProgress.value = '正在上传歌单到云端...';
 
     try {
-      // 收集所有歌单数据
-      const playlistData: FileSyncPlaylistData[] = playlists.map(pl => {
+      // 收集所有歌单数据（本地自定义封面需先上传为云端 URL，供跨设备访问）
+      const playlistData: FileSyncPlaylistData[] = [];
+      for (const pl of playlists) {
         const songs = collectPlaylistSongs(pl);
-        return {
+        const cloudCoverUrl = await resolvePlaylistCloudCover(pl, songs);
+        // 新解析出的云端封面回写本地歌单，避免下次同步重复上传封面
+        if (cloudCoverUrl && cloudCoverUrl !== pl.cloudCoverUrl) {
+          collectionsStore.setPlaylistCloudCoverUrl(pl.id, cloudCoverUrl);
+        }
+        playlistData.push({
           id: pl.id,
           name: pl.name,
           type: classifySyncPlaylist(songs),
           cloudId: pl.cloudId,
-          // 本地歌单封面是本机文件路径无法跨设备访问，回退用歌单内在线歌曲的远程封面
-          cloudCoverUrl: pl.cloudCoverUrl || firstRemoteSongCover(songs),
+          cloudCoverUrl,
           isFavorite: pl.isFavorite,
           createdAt: pl.createdAt,
           songs: songs.map(songToSyncPayload),
-        };
-      });
+        });
+      }
 
       const totalSongs = playlistData.reduce((sum, pl) => sum + pl.songs.length, 0);
       logSync(`uploadPlaylists: 收集完成, 歌单=${playlistData.length}, 总歌曲=${totalSongs}`);
