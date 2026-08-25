@@ -63,7 +63,9 @@ async function getAmlModule() {
 }
 
 export function sanitizeLineText(text: string): string {
-  return text.replace(/\u200b/g, '').trim();
+  const cleaned = text.replace(/\u200b/g, '').trim();
+  // 剥离整行首尾仅作为无意义分割装饰的悬挂双斜杠，如 "// 汪苏泷:" -> "汪苏泷:"
+  return cleaned.replace(/^\s*[\/\\\s]{2,}\s*/, '').trim();
 }
 
 export function sanitizeWordText(text: string): string {
@@ -350,6 +352,10 @@ function prepareParsedLine(
   const endMs = Math.max(startMs, toSafeMs(line.endTime, lastWordEndMs));
 
   if (!detected.text && !translatedText && !romanText && words.length === 0) return null;
+
+  // 过滤纯斜杠/分割符无唱词占位行（如纯 "//"、"///"），避免生成空白孤立斜杠歌词行
+  const isPureDivider = /^\s*[\/\\_\-—–]+\s*$/.test(detected.text);
+  if (isPureDivider && !translatedText && !romanText) return null;
 
   return {
     startMs,

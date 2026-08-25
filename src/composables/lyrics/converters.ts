@@ -178,7 +178,15 @@ export function convertLyricsToAmlLines(
   showRomaji: boolean,
   enableWordEffect = true,
 ): CoreAmlLyricLine[] {
-  return lines.map((line, lineIndex) => {
+  const validLines = lines.filter((line) => {
+    const text = (line.text || '').trim();
+    if (/^\s*[\/\\_\-—–]+\s*$/.test(text) && !line.translation && !line.romaji) {
+      return false;
+    }
+    return true;
+  });
+
+  return validLines.map((line, lineIndex) => {
     // When word-by-word effect is disabled, treat each line as a single word
     // so the entire line highlights at once instead of word-by-word.
     const effectiveWords = enableWordEffect ? line.words : undefined;
@@ -204,7 +212,7 @@ export function convertLyricsToAmlLines(
 
     const startTime = renderLine.startMs;
     const parsedEndTime = renderLine.endMs;
-    const nextLine = lines[lineIndex + 1];
+    const nextLine = validLines[lineIndex + 1];
     const nextStartTime = toMs(nextLine?.time ?? line.time + 3);
     const adaptiveLeadIn = nextLine
       ? getAdaptiveAmlLineLeadInMs(startTime, nextStartTime)

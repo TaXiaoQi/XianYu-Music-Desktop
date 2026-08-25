@@ -241,6 +241,10 @@ export function convertLxLyricToEnhancedLrc(lxlyric: string): string {
     const line = rawLine.trim();
     if (!line || kuwoTagPattern.test(line)) continue;
 
+    // 过滤纯双斜杠/占位符号行（如 "[00:15.20]//" 或 "//"），避免构建出孤立的斜杠歌词
+    const bodyTextOnly = line.replace(LRC_LINE_TIMESTAMP_PATTERN, '$2').trim();
+    if (/^\s*[\/\\_\-—–]+\s*$/.test(bodyTextOnly)) continue;
+
     // 如果已经是 Enhanced LRC，直接保留。
     wordTimePattern.lastIndex = 0;
     if (ENHANCED_TIMESTAMP_PATTERN.test(line) && !wordTimePattern.test(line)) {
