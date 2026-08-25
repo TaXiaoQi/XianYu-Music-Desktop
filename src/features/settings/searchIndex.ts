@@ -85,6 +85,7 @@ const staticItems: SettingsSearchItem[] = [
     { label: '开机自动运行', keywords: '启动 自启动' },
     { label: '启动检测更新', keywords: '更新 检查 版本' },
     { label: 'GPU 加速', keywords: '硬件 图形 性能' },
+    { label: '性能模式', keywords: '高性能 低性能 自动 满特效 性能优先 流畅 卡顿' },
     { label: '关闭时最小化至托盘', keywords: '退出 后台 托盘' },
     { label: '显示音质标识', keywords: '无损 Hi-Res 标签' },
     { label: '显示歌曲注释', keywords: '备注 注释' },

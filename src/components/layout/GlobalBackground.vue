@@ -9,6 +9,7 @@ import { usePlaybackStore } from '../../features/playback/store';
 import { useWindowMaterial } from '../../composables/windowMaterial';
 import { getPreblurredBackgroundUrl } from '../../composables/preblurredBackgroundCache';
 import { useRenderingPower } from '../../composables/renderingPower';
+import { usePerformanceMode } from '../../composables/usePerformanceMode';
 import { calculateCoverGeometry } from '../../composables/useThemeBackgroundGeometry';
 
 const { currentCover, currentCoverFull, dominantColors, showPlayerDetail, isMiniMode } = usePlayer();
@@ -16,6 +17,7 @@ const { theme, isDarkTheme, patchTheme } = useThemeSettings();
 const { activeWindowMaterial } = useWindowMaterial();
 const { loadFullCover } = useCoverCache();
 const { isMainWindowLowPower } = useRenderingPower();
+const { isLowPerformance } = usePerformanceMode();
 const playbackStore = usePlaybackStore();
 const { currentSongPath } = storeToRefs(playbackStore);
 
@@ -116,7 +118,7 @@ watch(
 
 const hasWindowMaterial = computed(() => activeWindowMaterial.value !== 'none');
 const isMicaWindowMaterial = computed(() => activeWindowMaterial.value === 'mica');
-const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value);
+const reduceDynamicEffects = computed(() => showPlayerDetail.value || isMainWindowLowPower.value || isLowPerformance.value);
 const flowFallbackPalette = ['hsl(220, 28%, 34%)', 'hsl(196, 58%, 56%)', 'hsl(340, 52%, 58%)', 'hsl(42, 72%, 60%)'];
 const FLOW_SCENE_TRANSITION_MS = 1180;
 
@@ -744,29 +746,25 @@ const customBgTransform = computed(() => {
 }
 
 .flow-layer {
-  will-change: opacity, transform, filter;
+  will-change: opacity, transform;
   transition:
     opacity 920ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 920ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 920ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 920ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .flow-layer-current {
   opacity: 1;
   transform: scale(1);
-  filter: blur(0);
 }
 
 .flow-layer-entering {
   opacity: 0;
   transform: scale(1.028);
-  filter: blur(10px);
 }
 
 .flow-layer-previous {
   opacity: 0;
   transform: scale(1.048);
-  filter: blur(16px);
 }
 
 .bg-noise {

@@ -6,6 +6,7 @@ import { useAppThemeSync } from './useAppThemeSync';
 import { useExternalPathBridge } from './useExternalPathBridge';
 import { useDeepLinkBridge } from './useDeepLinkBridge';
 import { useAppShellTheme } from './useAppShellTheme';
+import { usePerformanceMode } from './usePerformanceMode';
 import { useMiniPlayerWindowBridge } from './useMiniPlayerWindowBridge';
 import { useTaskbarPlayerBridge } from './useTaskbarPlayerBridge';
 import { useKeyboardShortcuts } from './useKeyboardShortcuts';
@@ -47,6 +48,12 @@ export function useAppShell() {
     whenInitialThemeSynced,
     rebuildStartupMaterialBeforeShow,
   } = useAppThemeSync();
+  // 桌面端性能降级状态：硬件低性能 或 主窗口低功耗（不可见/最小化/迷你模式）。
+  const { isLowPerformance } = usePerformanceMode();
+  const { isMainWindowLowPower } = useMainWindowRenderingPower();
+  const lowPerformance = computed(
+    () => isLowPerformance.value || isMainWindowLowPower.value,
+  );
   const {
     mainBlurStyle,
     mainContainerClass,
@@ -56,6 +63,7 @@ export function useAppShell() {
     showPlayerDetail,
     hasWindowMaterial,
     isMicaWindowMaterial,
+    lowPerformance,
   });
 
   const route = useRoute();
@@ -65,8 +73,6 @@ export function useAppShell() {
   const { currentViewMode, filterCondition, currentFolderFilter, activeRootPath } = usePlayerViewState();
   const { folderTree, searchQuery } = usePlayerLibraryView();
   let startupCompositionMaskStartedAt = 0;
-
-  useMainWindowRenderingPower();
 
   const prepareStartupTransparentComposition = async () => {
     await whenInitialThemeSynced();
