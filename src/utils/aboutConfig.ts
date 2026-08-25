@@ -15,7 +15,7 @@ export interface AboutConfig {
 }
 
 export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
-  officialSiteUrl: 'https://xianyumusic.cn',
+  officialSiteUrl: 'https://xianyumusic.cn/',
   officialSiteText: '前往官网',
   updateEnabled: true,
   updateText: '检查更新',
@@ -43,7 +43,7 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
     );
 
     return {
-      officialSiteUrl: asText(data.officialSiteUrl, DEFAULT_ABOUT_CONFIG.officialSiteUrl),
+      officialSiteUrl: 'https://xianyumusic.cn/',
       officialSiteText: asText(data.officialSiteText, DEFAULT_ABOUT_CONFIG.officialSiteText),
       updateEnabled: typeof data.updateEnabled === 'boolean'
         ? data.updateEnabled

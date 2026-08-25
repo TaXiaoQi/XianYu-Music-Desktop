@@ -1245,11 +1245,11 @@ async function saveUserVariables() {
             <SettingHint severity="warning" text="软件启动时自动检查并安装插件更新" />
             <button
               type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0"
               :class="pluginSettings.autoUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
               @click="togglePluginSetting('autoUpdateOnStartup')"
             >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+              <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.autoUpdateOnStartup ? 'translate-x-5' : 'translate-x-0'" />
             </button>
           </div>
         </div>
@@ -1263,11 +1263,11 @@ async function saveUserVariables() {
             <SettingHint text="首次使用时才初始化插件，加快启动速度" />
             <button
               type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0"
               :class="pluginSettings.lazyLoad ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
               @click="togglePluginSetting('lazyLoad')"
             >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-6' : 'translate-x-1'" />
+              <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.lazyLoad ? 'translate-x-5' : 'translate-x-0'" />
             </button>
           </div>
         </div>
@@ -1281,11 +1281,11 @@ async function saveUserVariables() {
             <SettingHint severity="warning" text="允许安装相同或更低版本的插件" />
             <button
               type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0"
+              class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0"
               :class="pluginSettings.skipVersionCheck ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
               @click="togglePluginSetting('skipVersionCheck')"
             >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-6' : 'translate-x-1'" />
+              <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="pluginSettings.skipVersionCheck ? 'translate-x-5' : 'translate-x-0'" />
             </button>
           </div>
         </div>
@@ -1454,13 +1454,14 @@ async function saveUserVariables() {
               <Trash2 class="h-4 w-4" />
             </button>
             <button
-              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ml-1"
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none ml-1 shrink-0"
               :class="plugin.enabled ? pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).toggle : 'bg-gray-300 dark:bg-gray-700'"
               @click="handleTogglePlugin(plugin)"
             >
               <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                :class="plugin.enabled ? 'translate-x-6' : 'translate-x-1'"
+                class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="plugin.enabled ? 'translate-x-5' : 'translate-x-0'"
               />
             </button>
           </div>
