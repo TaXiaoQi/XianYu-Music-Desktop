@@ -34,6 +34,8 @@ interface PlaySongOptions {
   continueStatisticsSession?: boolean;
   /** [内部] 强制重播同一首歌，用于单曲循环自然结束后绕过重复播放去重 */
   forceReplay?: boolean;
+  /** [分享链接] 标记为分享链接深链触发的播放：失败行为走「分享链接播放失败行为」设置 */
+  shareLinkPlayback?: boolean;
   /** [内部] 自动换源上下文，递归 playSong 时传递已失败源集合防死循环 */
   _sourceSwitchCtx?: {
     originKey: string;
@@ -91,6 +93,8 @@ let lastHandledOnlineFailure: {
   handledAt: number;
 } | null = null;
 const recentOnlineFailurePaths = new Map<string, number>();
+// [分享链接] 当前播放是否由分享链接深链触发：失败时按「分享链接播放失败行为」处理
+let shareLinkPlaybackActive = false;
 let latestSeekRequestId = 0;
 let playbackAnchorTime = 0;
 let playbackStartOffset = 0;
@@ -851,9 +855,19 @@ const authStore = useAuthStore();
       return;
     }
 
-    // [自动换源] lx:// 歌曲起播失败时，尝试其他落雪音源播放同一首歌
+    // [自动换源] lx:// 歌曲起播失败时，尝试其他落雪音源播放同一首歌。
+    // 分享链接播放失败行为：pause（默认）→ 本次失败直接停止，不走换源/切歌；
+    // replace → 强制走插件换源重播同一首歌（绕过通用 autoSwitchSourceOnFailure 开关）。
+    const isSharePlayback = shareLinkPlaybackActive;
+    const shareFailureBehavior = settingsStore.settings.sharePlaybackFailureBehavior ?? 'pause';
+    if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
+      showToast('分享歌曲播放失败，已暂停', 'error');
+      return;
+    }
     const autoSwitchEnabled = settingsStore.settings.audio.autoSwitchSourceOnFailure ?? true;
-    if (autoSwitchEnabled && song.path.startsWith('lx://')) {
+    const allowAutoSwitch = song.path.startsWith('lx://')
+      && (autoSwitchEnabled || (isSharePlayback && shareFailureBehavior === 'replace'));
+    if (allowAutoSwitch) {
       const currentSource = song.path.slice('lx://'.length).split('/')[0];
       // 复用或初始化换源上下文：failedSources 单调增长，防止递归死循环
       const switchCtx = options._sourceSwitchCtx ?? {
@@ -894,6 +908,12 @@ const authStore = useAuthStore();
       // alternativeSong 为 null：所有源穷尽或均未匹配，继续走下方 onlineFailureBehavior
     }
 
+    // [分享链接] 替换播放模式下仍未换到可用音源 → 停止（不回退到通用 skip 切歌）
+    if (isSharePlayback) {
+      showToast('分享歌曲播放失败，未找到可替换音源', 'error');
+      return;
+    }
+
     const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
     if (failureBehavior === 'skip') {
       const hasAlternativeQueueSong = [
@@ -917,6 +937,10 @@ const authStore = useAuthStore();
   };
 
   const playSong = async (song: Song, options: PlaySongOptions = {}) => {
+    // [分享链接] 普通新播放按选项记录是否分享触达；换源递归（_sourceSwitchCtx）沿用原标记
+    if (!options._sourceSwitchCtx) {
+      shareLinkPlaybackActive = !!options.shareLinkPlayback;
+    }
     const previousSong = currentSong.value;
     const isSameCurrentlyPlayingSong = !!previousSong
       && previousSong.path === song.path

@@ -13,6 +13,8 @@ export interface PlaySongOptions {
   continueStatisticsSession?: boolean;
   /** 强制重播同一首歌（例如单曲循环自然结束），但不延续上一轮统计会话 */
   forceReplay?: boolean;
+  /** 标记为分享链接深链触发的播放：失败行为走「分享链接播放失败行为」设置 */
+  shareLinkPlayback?: boolean;
 }
 
 interface CreatePlaybackDomainDeps<

@@ -818,6 +818,10 @@ export interface AppSettings {
   autoSync: AutoSyncConfig;
   logging: LogSettings;
   songClickAction: SongClickAction;
+  /** 分享链接有效时长（分钟）：分享后 N 分钟过期（服务端丢弃），范围 5~1440，默认 120。 */
+  shareLinkValidityMinutes: number;
+  /** 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走插件索引换源重播）。 */
+  sharePlaybackFailureBehavior: 'pause' | 'replace';
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';
