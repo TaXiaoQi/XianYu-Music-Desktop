@@ -1381,29 +1381,29 @@ async function saveUserVariables() {
               <Puzzle class="h-5 w-5" />
             </div>
             <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate min-w-0">
                   {{ plugin.name }}
                 </div>
                 <span
-                  class="settings-plugin-tag"
+                  class="settings-plugin-tag shrink-0 whitespace-nowrap"
                   :class="pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).tagBg"
                 >
                   {{ pluginColorClasses(plugin.format, pluginsBakaIds.has(plugin.id)).label }}
                 </span>
                 <span
                   v-if="plugin.updateAvailable"
-                  class="settings-plugin-tag settings-plugin-tag--accent"
+                  class="settings-plugin-tag settings-plugin-tag--accent shrink-0 whitespace-nowrap"
                 >
                   可更新
                 </span>
                 <span
                   v-if="pluginsWithUserVars.has(plugin.id)"
-                  class="settings-plugin-tag settings-plugin-tag--vars"
+                  class="settings-plugin-tag settings-plugin-tag--vars shrink-0 whitespace-nowrap"
                   title="此插件支持用户变量配置"
                 >
-                  <KeyRound class="h-3 w-3" />
-                  变量
+                  <KeyRound class="h-3 w-3 shrink-0" />
+                  <span class="whitespace-nowrap">变量</span>
                 </span>
               </div>
               <div class="text-xs text-gray-500 dark:text-white/55 mt-0.5 truncate">
@@ -2107,6 +2107,9 @@ async function saveUserVariables() {
 .settings-plugin-tag {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  word-break: keep-all;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.06);
@@ -2124,6 +2127,9 @@ async function saveUserVariables() {
 .settings-plugin-tag--vars {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  word-break: keep-all;
   gap: 3px;
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
