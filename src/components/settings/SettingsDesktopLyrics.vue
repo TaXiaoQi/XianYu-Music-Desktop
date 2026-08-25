@@ -1199,12 +1199,10 @@ onUnmounted(() => {
             <div class="desktop-compact-label shrink-0">双行显示</div>
             <button
               type="button"
-              class="desktop-lyrics-toggle"
-              :class="desktopLyricsSettings.showDoubleLine ? 'desktop-lyrics-toggle--on' : ''"
+              class="glass-switch"
+              :class="{ 'is-checked': desktopLyricsSettings.showDoubleLine }"
               @click="desktopLyricsSettings.showDoubleLine = !desktopLyricsSettings.showDoubleLine"
-            >
-              <span class="desktop-lyrics-toggle-thumb"></span>
-            </button>
+            ></button>
           </div>
         </div>
 
@@ -1214,23 +1212,19 @@ onUnmounted(() => {
             <div class="desktop-compact-label shrink-0">显示翻译</div>
             <button
               type="button"
-              class="desktop-lyrics-toggle"
-              :class="lyricsSettings.showTranslation ? 'desktop-lyrics-toggle--on' : ''"
+              class="glass-switch"
+              :class="{ 'is-checked': lyricsSettings.showTranslation }"
               @click="lyricsSettings.showTranslation = !lyricsSettings.showTranslation"
-            >
-              <span class="desktop-lyrics-toggle-thumb"></span>
-            </button>
+            ></button>
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">显示罗马音</div>
             <button
               type="button"
-              class="desktop-lyrics-toggle"
-              :class="lyricsSettings.showRomaji ? 'desktop-lyrics-toggle--on' : ''"
+              class="glass-switch"
+              :class="{ 'is-checked': lyricsSettings.showRomaji }"
               @click="lyricsSettings.showRomaji = !lyricsSettings.showRomaji"
-            >
-              <span class="desktop-lyrics-toggle-thumb"></span>
-            </button>
+            ></button>
           </div>
         </div>
 
