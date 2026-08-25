@@ -797,101 +797,89 @@ onUnmounted(() => {
         显示与行为
       </h2>
       <div class="flex flex-col rounded-xl overflow-hidden bg-white/20 dark:bg-black/10 border border-gray-200/40 dark:border-gray-800/40">
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.isAlwaysOnTop = !desktopLyricsSettings.isAlwaysOnTop"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">窗口置顶</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.isAlwaysOnTop ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.isAlwaysOnTop }"
+            @click="desktopLyricsSettings.isAlwaysOnTop = !desktopLyricsSettings.isAlwaysOnTop"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.alwaysShowShadowBackground = !desktopLyricsSettings.alwaysShowShadowBackground"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">始终显示阴影背景</div>
           </div>
-          <span
-            class="desktop-switch"
-            :class="desktopLyricsSettings.alwaysShowShadowBackground ? 'desktop-switch--on' : ''"
-          >
-            <span
-              class="desktop-switch-thumb"
-            />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.alwaysShowShadowBackground }"
+            @click="desktopLyricsSettings.alwaysShowShadowBackground = !desktopLyricsSettings.alwaysShowShadowBackground"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.autoHideWhenFullscreen = !desktopLyricsSettings.autoHideWhenFullscreen"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">全屏时自动隐藏</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.autoHideWhenFullscreen ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.autoHideWhenFullscreen }"
+            @click="desktopLyricsSettings.autoHideWhenFullscreen = !desktopLyricsSettings.autoHideWhenFullscreen"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.autoHideWhenPaused = !desktopLyricsSettings.autoHideWhenPaused"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">暂停时自动隐藏</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.autoHideWhenPaused ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.autoHideWhenPaused }"
+            @click="desktopLyricsSettings.autoHideWhenPaused = !desktopLyricsSettings.autoHideWhenPaused"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.isLocked = !desktopLyricsSettings.isLocked"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">锁定位置并启用鼠标穿透</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.isLocked ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.isLocked }"
+            @click="desktopLyricsSettings.isLocked = !desktopLyricsSettings.isLocked"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.persistLock = !desktopLyricsSettings.persistLock"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">记住锁定状态</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.persistLock ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.persistLock }"
+            @click="desktopLyricsSettings.persistLock = !desktopLyricsSettings.persistLock"
+          ></button>
+        </div>
 
-        <button
-          type="button"
-          class="desktop-setting-row"
-          @click="desktopLyricsSettings.centerHorizontally = !desktopLyricsSettings.centerHorizontally"
-        >
+        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">桌面歌词自动居中</div>
           </div>
-          <span class="desktop-switch" :class="desktopLyricsSettings.centerHorizontally ? 'desktop-switch--on' : ''">
-            <span class="desktop-switch-thumb" />
-          </span>
-        </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': desktopLyricsSettings.centerHorizontally }"
+            @click="desktopLyricsSettings.centerHorizontally = !desktopLyricsSettings.centerHorizontally"
+          ></button>
+        </div>
 
 
 
