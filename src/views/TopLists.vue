@@ -87,8 +87,13 @@
                   :key="entry.key"
                   type="button"
                   class="toplist-card rounded-xl p-3 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 flex flex-col gap-2"
-                  :class="{ 'toplist-card-enter': gridEnterAnimating }"
+                  :class="[
+                    { 'toplist-card-enter': gridEnterAnimating },
+                    cardHopDirections[entry.key] === 'left' ? 'hop-left' : 'hop-right'
+                  ]"
                   :style="gridEnterAnimating ? { animationDelay: `${ROW_ENTER_BASE_DELAY + row.index * ROW_ENTER_STAGGER}ms` } : undefined"
+                  @mouseenter="handleMouseEnterCard($event, entry.key)"
+                  @mouseleave="handleMouseLeaveCard(entry.key)"
                   @click="handleTopListClick(entry)"
                 >
                   <div
@@ -252,6 +257,21 @@ function playGridEnterAnimation() {
 function stopGridEnterAnimation() {
   clearTimeout(gridEnterTimer);
   gridEnterAnimating.value = false;
+}
+
+// ==================== 卡片悬停跳跃方向 ====================
+const cardHopDirections = ref<Record<string, 'left' | 'right'>>({});
+
+function handleMouseEnterCard(e: MouseEvent, key: string) {
+  const target = e.currentTarget as HTMLElement;
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  cardHopDirections.value[key] = e.clientX >= centerX ? 'left' : 'right';
+}
+
+function handleMouseLeaveCard(key: string) {
+  delete cardHopDirections.value[key];
 }
 
 const handleSelectSource = (source: SourceItem) => {
@@ -545,17 +565,23 @@ onBeforeUnmount(() => {
   transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* 悬停跳跃：高亮的同时向右跳一步——抛物线主跳（上行减速/下行加速=重力感）
-   + 落地后两次衰减回弹（-16px → -6px → -2px），共 360ms。
-   动画结束停在右侧 12px，与 :hover 静态 transform 一致（无跳变）；
+/* 悬停跳跃：以中轴线左右为界，鼠标在右侧则往左跳（-12px），鼠标在左侧则往右跳（12px）
+   高亮的同时跳一步——抛物线主跳（上行减速/下行加速=重力感）
+   + 落地后两次衰减回弹，共 360ms。
+   动画结束停在 12px / -12px，与 :hover 静态 transform 一致（无跳变）；
    移开后由基础 transform 过渡滑回原位。
    入场动画期间不触发，避免两个 animation 互相顶掉导致入场重播 */
-.toplist-card:hover:not(.toplist-card-enter) {
+.toplist-card.hop-right:hover:not(.toplist-card-enter) {
   transform: translateX(12px);
-  animation: toplist-card-hop 0.36s;
+  animation: toplist-card-hop-right 0.36s;
 }
 
-@keyframes toplist-card-hop {
+.toplist-card.hop-left:hover:not(.toplist-card-enter) {
+  transform: translateX(-12px);
+  animation: toplist-card-hop-left 0.36s;
+}
+
+@keyframes toplist-card-hop-right {
   /* 主跳：腾空到落点 */
   0%   { transform: translate(0, 0);         animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
   22%  { transform: translate(3px, -16px);   animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
@@ -567,6 +593,20 @@ onBeforeUnmount(() => {
   79%  { transform: translate(10.5px, -2px); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
   90%  { transform: translate(12px, 0); }
   100% { transform: translate(12px, 0); }
+}
+
+@keyframes toplist-card-hop-left {
+  /* 主跳：腾空到落点 */
+  0%   { transform: translate(0, 0);          animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  22%  { transform: translate(-3px, -16px);   animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  45%  { transform: translate(-6px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  /* 回弹一：高度约 1/3 */
+  57%  { transform: translate(-7.5px, -6px);  animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  70%  { transform: translate(-9px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  /* 回弹二：再衰减 */
+  79%  { transform: translate(-10.5px, -2px); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  90%  { transform: translate(-12px, 0); }
+  100% { transform: translate(-12px, 0); }
 }
 
 /* 逐行入场：按行号错峰上浮淡入；backwards 保证 delay 期间保持隐藏。
