@@ -393,3 +393,43 @@ html.theme-transitioning * {
 .glass-switch:active:not(:disabled) {
   transform: scale(0.95) !important;
 }
+
+/* 禁用液态玻璃模式时的经典扁平退回样式 */
+html.no-glass-switch .glass-switch {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.no-glass-switch .glass-switch.is-checked {
+  background: var(--theme-accent, #EC4141) !important;
+  border: 1px solid transparent !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+}
+
+html.no-glass-switch .glass-switch:not(.is-checked) {
+  background: rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+
+.dark html.no-glass-switch .glass-switch:not(.is-checked) {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+
+html.no-glass-switch .glass-switch::before {
+  background: #ffffff !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+
+html.no-glass-switch .glass-switch.is-checked::before {
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+}
+
+html.no-glass-switch .glass-switch::after {
+  display: none !important;
+}

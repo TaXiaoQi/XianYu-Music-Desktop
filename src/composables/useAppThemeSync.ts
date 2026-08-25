@@ -33,7 +33,20 @@ export function useAppThemeSync() {
     resolveInitialThemeSync = null;
   };
 
+  const applyGlassSwitchClass = () => {
+    if (typeof document === 'undefined' || !document.documentElement?.classList) return;
+    const isNoGlass = theme.value.useGlassSwitch === false;
+    if (typeof document.documentElement.classList.toggle === 'function') {
+      document.documentElement.classList.toggle('no-glass-switch', isNoGlass);
+    } else if (isNoGlass) {
+      document.documentElement.classList.add?.('no-glass-switch');
+    } else {
+      document.documentElement.classList.remove?.('no-glass-switch');
+    }
+  };
+
   const applyTheme = async () => {
+    applyGlassSwitchClass();
     // 切换深浅色时附带渐变过渡；首帧启动与减少动效场景内部会自动跳过动画
     applyDarkClassWithTransition(isDarkTheme.value);
 
@@ -163,6 +176,7 @@ export function useAppThemeSync() {
       () => theme.value.keepWindowMaterialOnBlur,
       () => theme.value.windowBlurTint,
       () => theme.value.customBackground.foregroundStyle,
+      () => theme.value.useGlassSwitch,
       isDarkTheme,
     ],
     () => {

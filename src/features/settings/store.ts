@@ -104,6 +104,7 @@ export const defaultThemeSettings: ThemeSettings = {
   windowMaterial: 'none',
   keepWindowMaterialOnBlur: true,
   useCustomTrayMenu: true,
+  useGlassSwitch: true,
   showLeaderboard: true,
   flowColorBoost: 25,
   flowDepth: 30,
