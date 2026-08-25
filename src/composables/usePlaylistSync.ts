@@ -71,6 +71,72 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
+// ==================== 本地曲库匹配 ====================
+
+function normMeta(s: string): string {
+  return (s || '').trim().toLowerCase();
+}
+
+function isLocalFilePath(path: string): boolean {
+  return !!path
+    && !path.startsWith('lx://')
+    && !path.startsWith('plugin://')
+    && !path.startsWith('http://')
+    && !path.startsWith('https://');
+}
+
+/** 云端时长可能是秒或毫秒（移动端上传为毫秒），统一归一化为秒（>1000 视为毫秒） */
+function normalizeDurationSec(duration: number): number {
+  if (!duration || duration <= 0) return 0;
+  return duration > 1000 ? Math.round(duration / 1000) : Math.round(duration);
+}
+
+interface LibraryMatchIndex {
+  byPath: Map<string, Song>;
+  byMeta: Map<string, Song[]>;
+}
+
+function buildLibraryMatchIndex(songList: Song[]): LibraryMatchIndex {
+  const byPath = new Map<string, Song>();
+  const byMeta = new Map<string, Song[]>();
+  for (const song of songList) {
+    byPath.set(song.path, song);
+    const key = `${normMeta(song.title || song.name || '')}|${normMeta(song.artist || '')}`;
+    const arr = byMeta.get(key) ?? [];
+    arr.push(song);
+    byMeta.set(key, arr);
+  }
+  return { byPath, byMeta };
+}
+
+/**
+ * 将同步下载的本地歌曲路径解析到本地曲库：路径已存在则原样返回，
+ * 否则按「标题|歌手」（+时长容差）匹配本地曲库并返回本地路径。
+ * 跨设备同步时移动端路径（/storage/...、content://）在桌面端不存在，
+ * 通过元数据匹配回桌面本地曲库的真实路径。
+ */
+function resolveLocalPath(index: LibraryMatchIndex, song: Song): string {
+  const cloudPath = song.path || '';
+  if (!isLocalFilePath(cloudPath)) return cloudPath;
+  if (index.byPath.has(cloudPath)) return cloudPath;
+  const key = `${normMeta(song.title || song.name || '')}|${normMeta(song.artist || '')}`;
+  const candidates = index.byMeta.get(key) ?? [];
+  if (candidates.length === 0) return cloudPath;
+  if (candidates.length === 1) return candidates[0].path;
+  const durationSec = normalizeDurationSec(song.duration || 0);
+  if (durationSec <= 0) return candidates[0].path;
+  let best: Song | undefined;
+  let bestDiff = 5;
+  for (const c of candidates) {
+    const diff = Math.abs((c.duration || 0) - durationSec);
+    if (diff <= bestDiff) {
+      bestDiff = diff;
+      best = c;
+    }
+  }
+  return best?.path ?? cloudPath;
+}
+
 /**
  * 各类同步状态（上次同步时间 + 结果）持久化到本地，避免每次打开账号设置时
  * 因组件重建而重置为「未同步」。
@@ -360,13 +426,20 @@ export function usePlaylistSync() {
 
       logSync(`downloadPlaylists: 云端共 ${downloadData.playlists.length} 个歌单, ${downloadData.stats?.song_total ?? 0} 首歌曲`);
 
+      // 匹配本地曲库：跨设备失效路径替换为本地真实路径
+      const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
+
       for (let i = 0; i < downloadData.playlists.length; i++) {
         const cloudPl = downloadData.playlists[i];
         logSync(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
         syncProgress.value = `正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`;
 
         const cloudSongs = cloudPl.songs ?? [];
-        const localSongs = cloudSongs.map(syncPayloadToSong);
+        const localSongs = cloudSongs.map(song => {
+          const restored = syncPayloadToSong(song);
+          const resolved = resolveLocalPath(matchIndex, restored);
+          return resolved === restored.path ? restored : { ...restored, path: resolved };
+        });
 
         // 尝试匹配本地歌单（通过原 id）
         const existing = collectionsStore.playlists.find(p => p.id === cloudPl.id);
@@ -890,11 +963,18 @@ export function usePlaylistSync() {
       const offlineList = await downloadFavoritesFromCloud(ciyuanxiId);
       const count = offlineList.length;
 
+      // 匹配本地曲库：跨设备失效路径替换为本地真实路径
+      const matchIndex = buildLibraryMatchIndex(libraryStore.songList);
+      const matchedList = offlineList.map(song => {
+        const resolved = resolveLocalPath(matchIndex, song);
+        return resolved === song.path ? song : { ...song, path: resolved };
+      });
+
       // 写入本地收藏：本地库歌曲更新路径，在线或缺失歌曲写入元信息
       const lookup = libraryStore.songLookup;
       const savedPaths: string[] = [];
       const metaMap: Record<string, Song> = {};
-      for (const song of offlineList) {
+      for (const song of matchedList) {
         if (lookup.has(song.path)) {
           savedPaths.push(song.path);
         } else {
