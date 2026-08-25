@@ -572,15 +572,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.keepSourceFilename ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.keepSourceFilename }"
             @click="patchSettings({ download: { ...settings.download, keepSourceFilename: !settings.download.keepSourceFilename } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.keepSourceFilename ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 下载独立歌词 -->
@@ -591,15 +586,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.downloadLyrics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.downloadLyrics }"
             @click="patchSettings({ download: { ...settings.download, downloadLyrics: !settings.download.downloadLyrics } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.downloadLyrics ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 歌词格式 -->
@@ -641,15 +631,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.embedMetadata ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.embedMetadata }"
             @click="patchSettings({ download: { ...settings.download, embedMetadata: !settings.download.embedMetadata } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.embedMetadata ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 嵌入歌词 -->
@@ -660,15 +645,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.embedLyrics ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.embedLyrics }"
             @click="patchSettings({ download: { ...settings.download, embedLyrics: !settings.download.embedLyrics } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.embedLyrics ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
 
         <!-- 嵌入封面 -->
@@ -679,15 +659,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.embedCover ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.embedCover }"
             @click="patchSettings({ download: { ...settings.download, embedCover: !settings.download.embedCover } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.embedCover ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
       </div>
     </section>
@@ -705,15 +680,10 @@ const dirLabel = (path: string) => path || (isEnglish.value ? 'Not set. Click Ch
           </div>
           <button
             type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.download.overwriteExisting ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.download.overwriteExisting }"
             @click="patchSettings({ download: { ...settings.download, overwriteExisting: !settings.download.overwriteExisting } })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-              :class="settings.download.overwriteExisting ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
       </div>
     </section>

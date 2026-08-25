@@ -1093,9 +1093,12 @@ onScopeDispose(() => {
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">自动播放</div>
           </div>
-           <button @click="autoPlay = !autoPlay" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="autoPlay ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="autoPlay ? 'translate-x-6' : 'translate-x-1'" />
-          </button>
+          <button
+            type="button"
+            class="glass-switch"
+            :class="{ 'is-checked': autoPlay }"
+            @click="autoPlay = !autoPlay"
+          ></button>
         </div>
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
@@ -1104,18 +1107,10 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            role="switch"
-            :aria-label="t('general.songClickAction')"
-            :aria-checked="songClickActionEnabled"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-            :class="songClickActionEnabled ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': songClickActionEnabled }"
             @click="toggleSongClickAction"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
-              :class="songClickActionEnabled ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
         <div class="desktop-setting-row">
           <div>
@@ -1123,18 +1118,10 @@ onScopeDispose(() => {
           </div>
           <button
             type="button"
-            role="switch"
-            aria-label="播放时阻止电脑睡眠"
-            :aria-checked="settings.preventSleepWhilePlaying"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-            :class="settings.preventSleepWhilePlaying ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'"
+            class="glass-switch"
+            :class="{ 'is-checked': settings.preventSleepWhilePlaying }"
             @click="patchSettings({ preventSleepWhilePlaying: !settings.preventSleepWhilePlaying })"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out"
-              :class="settings.preventSleepWhilePlaying ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          ></button>
         </div>
         <div class="desktop-setting-row">
           <div>
@@ -1239,9 +1226,16 @@ onScopeDispose(() => {
           </div>
           <div class="flex items-center gap-3">
             <SettingHint severity="warning" :text="wasapiExclusiveSideEffectTip" />
-            <button :disabled="rackMasterEnabled" @click="toggleWasapiExclusive" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="isWasapiExclusiveEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')">
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="isWasapiExclusiveEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
+            <button
+              type="button"
+              class="glass-switch"
+              :class="[
+                isWasapiExclusiveEnabled ? 'is-checked' : '',
+                rackMasterEnabled ? 'opacity-50 cursor-not-allowed' : '',
+              ]"
+              :disabled="rackMasterEnabled"
+              @click="toggleWasapiExclusive"
+            ></button>
           </div>
         </div>
         <!-- 依赖独占的 原生 DSD 直通 与 Bit-perfect：WASAPI 独占开启时整体渐入 -->
@@ -1255,16 +1249,14 @@ onScopeDispose(() => {
                 <SettingHint :text="dsdNativePassthroughTip" />
                 <button
                   type="button"
-                  role="switch"
-                  aria-label="原生 DSD 直通"
-                  :aria-checked="isDsdNativePassthroughEnabled"
+                  class="glass-switch"
+                  :class="[
+                    isDsdNativePassthroughEnabled ? 'is-checked' : '',
+                    rackMasterEnabled ? 'opacity-50 cursor-not-allowed' : '',
+                  ]"
                   :disabled="rackMasterEnabled"
-                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-                  :class="isDsdNativePassthroughEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')"
                   @click="toggleDsdNativePassthrough"
-                >
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isDsdNativePassthroughEnabled ? 'translate-x-6' : 'translate-x-1'" />
-                </button>
+                ></button>
               </div>
             </div>
             <div class="desktop-setting-row pl-8">
@@ -1275,16 +1267,14 @@ onScopeDispose(() => {
                 <SettingHint :text="bitPerfectTip" />
                 <button
                   type="button"
-                  role="switch"
-                  aria-label="Bit-perfect 输出"
-                  :aria-checked="isBitPerfectEnabled"
+                  class="glass-switch"
+                  :class="[
+                    isBitPerfectEnabled ? 'is-checked' : '',
+                    rackMasterEnabled ? 'opacity-50 cursor-not-allowed' : '',
+                  ]"
                   :disabled="rackMasterEnabled"
-                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-                  :class="isBitPerfectEnabled ? 'bg-[#EC4141]' : (rackMasterEnabled ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800' : 'bg-gray-300 dark:bg-gray-700')"
                   @click="toggleBitPerfect"
-                >
-                  <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="isBitPerfectEnabled ? 'translate-x-6' : 'translate-x-1'" />
-                </button>
+                ></button>
               </div>
             </div>
             <transition name="settings-fade">
@@ -1325,20 +1315,14 @@ onScopeDispose(() => {
             </button>
             <button
               type="button"
-              role="switch"
-              :aria-label="t('pluginHost.enableRack')"
-              :aria-checked="rackMasterEnabled"
+              class="glass-switch"
+              :class="[
+                rackMasterEnabled ? 'is-checked' : '',
+                outputExclusivePathActive ? 'opacity-50 cursor-not-allowed' : '',
+              ]"
               :disabled="outputExclusivePathActive"
-              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-              :class="rackMasterEnabled
-                ? 'bg-[#EC4141]'
-                : outputExclusivePathActive
-                  ? 'bg-gray-200 cursor-not-allowed dark:bg-gray-800'
-                  : 'bg-gray-300 dark:bg-gray-700'"
               @click="toggleRackMaster"
-            >
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out" :class="rackMasterEnabled ? 'translate-x-6' : 'translate-x-1'" />
-            </button>
+            ></button>
           </div>
         </div>
         <div

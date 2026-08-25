@@ -646,31 +646,22 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <label
-          class="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all dark:border-gray-800/40 dark:bg-black/10"
-          :class="materialMode === 'none' ? 'cursor-not-allowed opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/30 dark:hover:bg-white/10'"
+        <div
+          class="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all dark:border-gray-800/40 dark:bg-black/10"
+          :class="materialMode === 'none' ? 'opacity-50' : 'hover:border-[#EC4141]/35 hover:bg-white/30 dark:hover:bg-white/10'"
         >
           <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.keepWindowMaterialOnBlur }}</span>
-          <input
-            type="checkbox"
-            class="sr-only"
-            :checked="keepWindowMaterialOnBlur"
-            :disabled="materialMode === 'none'"
-            @change="setKeepWindowMaterialOnBlur(($event.target as HTMLInputElement).checked)"
-          />
           <span class="flex items-center gap-3">
             <SettingHint :text="TEXT.keepWindowMaterialOnBlurHint" />
-            <span
-              class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
-              :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
-            >
-              <span
-                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
-                :class="keepWindowMaterialOnBlur && materialMode !== 'none' ? 'translate-x-5' : ''"
-              ></span>
-            </span>
+            <button
+              type="button"
+              class="glass-switch"
+              :class="{ 'is-checked': keepWindowMaterialOnBlur && materialMode !== 'none' }"
+              :disabled="materialMode === 'none'"
+              @click="setKeepWindowMaterialOnBlur(!keepWindowMaterialOnBlur)"
+            ></button>
           </span>
-        </label>
+        </div>
 
         <transition name="flow-panel">
           <div
@@ -851,29 +842,20 @@ onUnmounted(() => {
         <SettingHint :text="TEXT.customTrayMenuHint" />
       </h2>
 
-      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
         <span class="min-w-0">
           <span class="block text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.customTrayMenu }}</span>
           <span class="mt-1 block text-xs text-gray-500 dark:text-white/50">
             {{ useCustomTrayMenu ? TEXT.customTrayMenuOn : TEXT.customTrayMenuOff }}
           </span>
         </span>
-        <input
-          type="checkbox"
-          class="sr-only"
-          :checked="useCustomTrayMenu"
-          @change="setUseCustomTrayMenu(($event.target as HTMLInputElement).checked)"
-        />
-        <span
-          class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
-          :class="useCustomTrayMenu ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
-        >
-          <span
-            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
-            :class="useCustomTrayMenu ? 'translate-x-5' : ''"
-          ></span>
-        </span>
-      </label>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': useCustomTrayMenu }"
+          @click="setUseCustomTrayMenu(!useCustomTrayMenu)"
+        ></button>
+      </div>
     </section>
 
     <section class="space-y-3">
@@ -885,24 +867,15 @@ onUnmounted(() => {
         <SettingHint :text="TEXT.leaderboardHint" />
       </h2>
 
-      <label class="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
+      <div class="flex items-center justify-between gap-4 rounded-2xl border border-gray-200/40 bg-white/20 px-4 py-3 transition-all hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-gray-800/40 dark:bg-black/10 dark:hover:bg-white/10">
         <span class="min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ TEXT.leaderboardEnable }}</span>
-        <input
-          type="checkbox"
-          class="sr-only"
-          :checked="showLeaderboard"
-          @change="setShowLeaderboard(($event.target as HTMLInputElement).checked)"
-        />
-        <span
-          class="relative h-6 w-11 shrink-0 rounded-full transition-colors"
-          :class="showLeaderboard ? 'bg-[#EC4141]' : 'bg-gray-300/70 dark:bg-white/20'"
-        >
-          <span
-            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform"
-            :class="showLeaderboard ? 'translate-x-5' : ''"
-          ></span>
-        </span>
-      </label>
+        <button
+          type="button"
+          class="glass-switch"
+          :class="{ 'is-checked': showLeaderboard }"
+          @click="setShowLeaderboard(!showLeaderboard)"
+        ></button>
+      </div>
     </section>
 
     <!-- 侧边栏管理（并入外观） -->

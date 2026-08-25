@@ -15,6 +15,6 @@ describe('SettingsFooterLayout visual editor', () => {
   it('provides a display switch for every configurable button', () => {
     expect(source).toContain('v-for="item in FOOTER_ITEMS"');
     expect(source).toContain('@click="toggleItemVisibility(item.key)"');
-    expect(source).toContain("isItemVisible(item.key) ? 'footer-visibility-switch--on' : ''");
+    expect(source).toContain("is-checked': isItemVisible(item.key)");
   });
 });
