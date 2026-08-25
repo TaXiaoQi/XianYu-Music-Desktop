@@ -15,7 +15,7 @@ export interface AboutConfig {
 }
 
 export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
-  officialSiteUrl: 'https://xymusic.cc',
+  officialSiteUrl: 'https://xianyumusic.cn',
   officialSiteText: '前往官网',
   updateEnabled: true,
   updateText: '检查更新',

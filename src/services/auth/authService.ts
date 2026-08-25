@@ -180,8 +180,10 @@ export async function initAuthFromKeyring(): Promise<void> {
     // 回退到 localStorage
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem(LEGACY_STORAGE_BASE_URL_KEY) || DEFAULT_AUTH_BASE_URL;
-      // 迁移：将旧版 http://back.xymusic.cc 升级为 https
-      cachedBaseUrl = saved.replace('http://back.xymusic.cc', 'https://back.xymusic.cc');
+      // 迁移：将旧版 back.xymusic.cc 迁移到 api.xianyumusic.cn 并升级为 https
+      cachedBaseUrl = saved
+        .replace('http://back.xymusic.cc', 'https://api.xianyumusic.cn')
+        .replace('https://back.xymusic.cc', 'https://api.xianyumusic.cn');
     }
   }
 
