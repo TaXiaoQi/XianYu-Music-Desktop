@@ -307,8 +307,8 @@ onMounted(() => {
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.launchOnStartup') }}</div>
           </div>
-          <button @click="launchOnStartup = !launchOnStartup" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none" :class="launchOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="launchOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+          <button @click="launchOnStartup = !launchOnStartup" class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0" :class="launchOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+            <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="launchOnStartup ? 'translate-x-5' : 'translate-x-0'" />
           </button>
         </div>
 
@@ -316,8 +316,8 @@ onMounted(() => {
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.checkUpdates') }}</div>
           </div>
-          <button @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.checkUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.checkUpdateOnStartup ? 'translate-x-6' : 'translate-x-1'" />
+          <button @click="settings.checkUpdateOnStartup = !settings.checkUpdateOnStartup" class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0" :class="settings.checkUpdateOnStartup ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+            <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.checkUpdateOnStartup ? 'translate-x-5' : 'translate-x-0'" />
           </button>
         </div>
 
@@ -325,17 +325,17 @@ onMounted(() => {
           <div>
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.gpuAcceleration') }}</div>
           </div>
-          <button @click="handleGpuAccelerationChange" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0" :class="settings.gpuAcceleration ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.gpuAcceleration ? 'translate-x-6' : 'translate-x-1'" />
+          <button @click="handleGpuAccelerationChange" class="relative inline-flex h-6 w-11 items-center px-1 rounded-full transition-colors focus:outline-none shrink-0" :class="settings.gpuAcceleration ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700'">
+            <span class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm" :class="settings.gpuAcceleration ? 'translate-x-5' : 'translate-x-0'" />
           </button>
         </div>
 
-        <div class="p-4 flex items-center justify-between hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
-          <div>
+        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div class="min-w-0 flex-1 pr-2">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ t('general.performanceMode') }}</div>
-            <div class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{{ t('general.performanceModeHint') }}</div>
+            <div class="mt-0.5 text-xs text-gray-400 dark:text-gray-500 break-words leading-relaxed">{{ t('general.performanceModeHint') }}</div>
           </div>
-          <div ref="performanceModeDropdownRef" class="relative w-44 shrink-0 sm:w-52">
+          <div ref="performanceModeDropdownRef" class="relative w-40 shrink-0 sm:w-48">
             <button
               type="button"
               :aria-expanded="isPerformanceModeDropdownOpen"

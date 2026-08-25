@@ -171,8 +171,8 @@ onUnmounted(stopDragging);
           </div>
           <div class="flex items-center gap-3">
             <SettingHint text="核心功能（固定在顶部）" />
-            <div class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-[#EC4141] opacity-50">
-              <span class="inline-block h-4 w-4 transform rounded-full bg-white translate-x-6 shadow-sm" />
+            <div class="relative inline-flex h-6 w-11 px-1 shrink-0 items-center rounded-full bg-[#EC4141] opacity-50">
+              <span class="block h-4 w-4 transform rounded-full bg-white translate-x-5 shadow-sm" />
             </div>
           </div>
         </div>
@@ -251,7 +251,7 @@ onUnmounted(stopDragging);
 
               <button
               type="button"
-              class="relative ml-1.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
+              class="relative ml-1.5 inline-flex h-6 w-11 px-1 shrink-0 items-center rounded-full transition-colors focus:outline-none"
               :class="[
                 isVisible(item.key) ? 'bg-[#EC4141]' : 'bg-gray-300 dark:bg-gray-700',
                 item.lockedVisible ? 'opacity-50 cursor-not-allowed' : '',
@@ -261,8 +261,8 @@ onUnmounted(stopDragging);
               @click.stop="toggleVisible(item.key)"
             >
               <span
-                class="inline-block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
-                :class="isVisible(item.key) ? 'translate-x-6' : 'translate-x-1'"
+                class="block h-4 w-4 transform rounded-full bg-white transition duration-200 ease-in-out shadow-sm"
+                :class="isVisible(item.key) ? 'translate-x-5' : 'translate-x-0'"
               />
               </button>
             </div>
