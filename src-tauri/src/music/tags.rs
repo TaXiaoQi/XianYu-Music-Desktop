@@ -194,7 +194,11 @@ where
     let tags = ordered_tags(tagged_file);
 
     for tag in &tags {
-        if let Some(lyrics) = tag.get_string(&ItemKey::Lyrics).and_then(clean_text) {
+        if let Some(lyrics) = tag
+            .get_string(&ItemKey::Lyrics)
+            .and_then(clean_text)
+            .map(|text| fix_latin1_mojibake(&text))
+        {
             return Some(EmbeddedLyricsMatch {
                 tag_type: tag.tag_type(),
                 item_key: ItemKey::Lyrics,
@@ -221,7 +225,7 @@ where
                     tag_type: tag.tag_type(),
                     item_key: item.key().clone(),
                     description: item.description().to_string(),
-                    text,
+                    text: fix_latin1_mojibake(&text),
                 });
             }
         }
@@ -238,13 +242,60 @@ where
                     tag_type: tag.tag_type(),
                     item_key: item.key().clone(),
                     description: item.description().to_string(),
-                    text,
+                    text: fix_latin1_mojibake(&text),
                 });
             }
         }
     }
 
     None
+}
+
+/// 检测并修复被错误按 Latin-1 解码的 CJK 歌词。
+///
+/// 部分工具写入 ID3v2 USLT 帧时声明 ISO-8859-1，但内容实际为 GBK/Big5 等，
+/// lofty 会按 Latin-1 解码产生乱码。Latin-1 解码是可逆的（0x80-0xFF → U+0080-U+00FF），
+/// 还原字节后按 CJK 编码重解码，仅当重解码结果包含更多 CJK 字符时采用。
+fn fix_latin1_mojibake(text: &str) -> String {
+    let latin1_count = text
+        .chars()
+        .filter(|c| matches!(*c as u32, 0x80..=0xFF))
+        .count();
+    let non_ascii_count = text.chars().filter(|c| !c.is_ascii()).count();
+    // 真正的乱码：非 ASCII 内容几乎全部落在 Latin-1 区（CJK 字节被按 Latin-1 解码）。
+    // 若非 ASCII 内容中 Latin-1 占比不足一半（如合法法文 éàç 之外的 CJK），不视为乱码。
+    if latin1_count == 0 || non_ascii_count == 0 || latin1_count * 2 < non_ascii_count {
+        return text.to_string();
+    }
+
+    let bytes: Vec<u8> = text
+        .chars()
+        .map(|c| {
+            let cp = c as u32;
+            if cp <= 0xFF {
+                cp as u8
+            } else {
+                b'?'
+            }
+        })
+        .collect();
+
+    let redecoded = super::files::decode_lyrics_file_bytes(&bytes);
+    // 重解码出现替换字符说明字节并非源编码的合法序列（如合法法文 éàç 被误当 CJK 解码），
+    // 此时不应视为乱码修复。
+    if redecoded.contains('\u{FFFD}') {
+        return text.to_string();
+    }
+    let cjk_before = text.chars().filter(|c| super::files::is_cjk_char(*c)).count();
+    let cjk_after = redecoded
+        .chars()
+        .filter(|c| super::files::is_cjk_char(*c))
+        .count();
+    if cjk_after > cjk_before {
+        redecoded
+    } else {
+        text.to_string()
+    }
 }
 
 pub fn find_embedded_picture<'a, T>(tagged_file: &'a T) -> Option<&'a Picture>
@@ -1117,8 +1168,8 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
 mod tests {
     use super::{
         extract_detail_metadata, extract_embedded_lyrics, extract_text_metadata,
-        find_embedded_picture, read_tagged_file_from_path, read_tagged_file_from_path_for_scan,
-        EmbedMetadataRequest,
+        find_embedded_picture, fix_latin1_mojibake, read_tagged_file_from_path,
+        read_tagged_file_from_path_for_scan, EmbedMetadataRequest,
     };
     use id3::frame::{Frame, Picture as Id3Picture, PictureType as Id3PictureType};
     use id3::TagLike;
@@ -1286,6 +1337,25 @@ mod tests {
             lyrics.as_deref(),
             Some("[00:01.00]line one\n[00:02.00]line two")
         );
+    }
+
+    #[test]
+    fn fixes_latin1_mojibake_lyrics() {
+        // 模拟 GBK 字节被按 Latin-1 解码后的乱码文本（如 ID3v2 USLT 帧声明 ISO-8859-1）
+        let (gbk, _, _) = encoding_rs::GBK.encode("[00:01.00]中文歌词");
+        let mojibake: String = gbk
+            .iter()
+            .map(|byte| *byte as char)
+            .collect();
+
+        let fixed = fix_latin1_mojibake(&mojibake);
+        assert_eq!(fixed, "[00:01.00]中文歌词");
+    }
+
+    #[test]
+    fn keeps_legitimate_latin1_lyrics_unchanged() {
+        let french = "[00:01.00]C'est déjà ça";
+        assert_eq!(fix_latin1_mojibake(french), french);
     }
 
     #[test]

@@ -8,6 +8,7 @@
 // - wy (网易云): eapi AES-ECB 加密 → yrc/krc 逐字歌词
 
 use base64::Engine;
+use encoding_rs::{BIG5, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE};
 use serde::{Deserialize, Serialize};
 
 use regex::Regex;
@@ -73,14 +74,42 @@ pub struct LyricResult {
 
 // ==================== Utility ====================
 
-fn decode_html_entities(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#039;", "'")
-        .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
+pub(crate) fn decode_html_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'&' {
+            if let Some(end) = s[i..].find(';') {
+                let entity = &s[i + 1..i + end];
+                let decoded = if let Some(hex) = entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X")) {
+                    u32::from_str_radix(hex, 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                } else if let Some(dec) = entity.strip_prefix('#') {
+                    dec.parse::<u32>().ok().and_then(char::from_u32)
+                } else {
+                    match entity {
+                        "amp" => Some('&'),
+                        "lt" => Some('<'),
+                        "gt" => Some('>'),
+                        "quot" => Some('"'),
+                        "apos" => Some('\''),
+                        "nbsp" => Some(' '),
+                        _ => None,
+                    }
+                };
+                if let Some(ch) = decoded {
+                    out.push(ch);
+                    i += end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(s[i..].chars().next().unwrap_or('\u{FFFD}'));
+        i += s[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+    }
+    out
 }
 
 fn hex_to_bytes(hex: &str) -> Vec<u8> {
@@ -568,10 +597,7 @@ fn decompress_gzip_to_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn bytes_to_lossy_string(bytes: Vec<u8>) -> String {
-    String::from_utf8(bytes).unwrap_or_else(|e| {
-        let bytes = e.into_bytes();
-        String::from_utf8_lossy(&bytes).into_owned()
-    })
+    super::files::decode_lyrics_file_bytes(&bytes)
 }
 
 // ==================== KRC Decryption (Kugou) ====================
@@ -747,6 +773,63 @@ struct HttpResponse {
     body_bytes: Vec<u8>,
 }
 
+/// 从 Content-Type 头中提取 charset 参数，如 `text/plain; charset=gbk` → `gbk`。
+fn extract_charset(content_type: Option<&str>) -> Option<String> {
+    let header = content_type?;
+    let (_, params) = header.split_once(';')?;
+    for param in params.split(';') {
+        let param = param.trim();
+        if let Some(value) = param
+            .strip_prefix("charset=")
+            .or_else(|| param.strip_prefix("charset ="))
+        {
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                return Some(value.to_ascii_lowercase());
+            }
+        }
+    }
+    None
+}
+
+/// 按 HTTP charset 解码响应体；无 charset 或未知 charset 时回退到内容探测。
+fn decode_http_body(body_bytes: &[u8], content_type: Option<&str>) -> String {
+    if let Some(charset) = extract_charset(content_type) {
+        let decoded = match charset.as_str() {
+            "utf-8" | "utf8" => None,
+            "utf-16" | "utf-16le" => {
+                let (decoded, _, _) = UTF_16LE.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            "utf-16be" => {
+                let (decoded, _, _) = UTF_16BE.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            "gbk" | "gb2312" | "gb18030" | "cp936" => {
+                let (decoded, _, _) = GBK.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            "big5" | "big-5" | "cp950" => {
+                let (decoded, _, _) = BIG5.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            "shift_jis" | "shift-jis" | "sjis" | "cp932" => {
+                let (decoded, _, _) = SHIFT_JIS.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            "euc-kr" | "euckr" | "cp949" => {
+                let (decoded, _, _) = EUC_KR.decode(body_bytes);
+                Some(decoded.into_owned())
+            }
+            _ => None,
+        };
+        if let Some(text) = decoded {
+            return text;
+        }
+    }
+    super::files::decode_lyrics_file_bytes(body_bytes)
+}
+
 async fn http_fetch_text(
     url: &str,
     method: &str,
@@ -772,8 +855,13 @@ async fn http_fetch_text(
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let body_bytes = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
-    let body = String::from_utf8_lossy(&body_bytes).into_owned();
+    let body = decode_http_body(&body_bytes, content_type.as_deref());
 
     Ok(HttpResponse {
         status,
@@ -1023,7 +1111,7 @@ async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(&b64)
             .map_err(|e| e.to_string())?;
-        let lyric = String::from_utf8_lossy(&decoded).into_owned();
+        let lyric = super::files::decode_lyrics_file_bytes(&decoded);
         Ok(LyricResult {
             lyric: decode_html_entities(&lyric),
             ..Default::default()
@@ -1779,7 +1867,7 @@ fn wyy_parse_krc(raw: &[u8]) -> Vec<KrcLine> {
             if pos + str_len > data_len {
                 break;
             }
-            let text = String::from_utf8_lossy(&data[pos..pos + str_len]).into_owned();
+            let text = super::files::decode_lyrics_file_bytes(&data[pos..pos + str_len]);
             pos += str_len;
 
             let start = prev_end;

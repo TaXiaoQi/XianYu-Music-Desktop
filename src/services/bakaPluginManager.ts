@@ -55,6 +55,7 @@ import {
   stripHtmlTags,
   toPluginSearchResult,
   extractResultList,
+  extractIsEnd,
   extractArtistAvatarUrl,
   qualityKeyToPluginString,
   extractDurationMs,
@@ -1760,16 +1761,17 @@ class BakaPluginManagerClass {
     }
   }
 
-  /** 获取歌单详情 */
-  async getPlaylistDetail(source: PluginSource, sheetItem: any, page: number = 1): Promise<PluginSearchResult[]> {
+  /** 获取歌单详情（含分页结束标志，供导入等全量拉取场景判断是否还有下一页） */
+  async getPlaylistDetail(source: PluginSource, sheetItem: any, page: number = 1): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
     const inst = await this._ensureInstance(source);
-    if (!inst) return [];
+    if (!inst) return { list: [] };
 
     // 榜单条目走轻量的 getTopListDetail：
     // 1) 避免 getMusicSheetInfo 的音质检测/封面补全/重试开销（榜单打开慢的根因）
     // 2) getTopListDetail 返回的歌曲带完整 duration 字段（QQ/网易云/酷我等榜单时长缺失的根因）
     if (sheetItem?._isTopList) {
-      return this.getTopListDetail(source, sheetItem, page);
+      const list = await this.getTopListDetail(source, sheetItem, page);
+      return { list, isEnd: list.length === 0 };
     }
 
     const fetchDetail = async (): Promise<any> => {
@@ -1780,6 +1782,7 @@ class BakaPluginManagerClass {
     const sheetLabel = `[${source.name}] getMusicSheetInfo sheet="${sheetItem?.title || sheetItem?.name || ''}"`;
 
     let list: any[] = [];
+    let isEnd: boolean | undefined;
     try {
       const raw = await retryWithBackoff(
         sheetLabel,
@@ -1787,16 +1790,20 @@ class BakaPluginManagerClass {
         (r) => extractResultList(r).length === 0,
       );
       list = extractResultList(raw);
+      isEnd = extractIsEnd(raw);
     } catch (e: any) {
       log(`[getPlaylistDetail] ${source.name} getMusicSheetInfo 多次尝试仍空/异常: ${e?.message || e}`);
       list = [];
     }
 
     if (list.length > 0) {
-      return list.map((item: any) => {
-        resetMediaItem(item, source.name);
-        return toPluginSearchResult(item, source);
-      });
+      return {
+        list: list.map((item: any) => {
+          resetMediaItem(item, source.name);
+          return toPluginSearchResult(item, source);
+        }),
+        isEnd,
+      };
     }
 
     // 回退到搜索
@@ -1804,18 +1811,18 @@ class BakaPluginManagerClass {
       const sheetName = sheetItem.title || sheetItem.name || '';
       if (sheetName) {
         catalogLog(`${sheetLabel} 重试仍为空，回退搜索 "${sheetName}"`);
-        return this.searchMusic(source, sheetName, 1);
+        return { list: await this.searchMusic(source, sheetName, 1), isEnd: true };
       }
     }
-    return [];
+    return { list: [], isEnd: true };
   }
 
   /** B站专用：专辑与歌单详情统一走同一取数路径。
    *  不走 getPlaylistDetail/getAlbumSongs 的通用重试编排，B站歌单/收藏集多以 getAlbumInfo 取到歌曲，
    *  getAlbumInfo 空时回退 getMusicSheetInfo，再空才搜索兜底。 */
-  async getBilibiliDetail(source: PluginSource, item: any, page: number = 1): Promise<PluginSearchResult[]> {
+  async getBilibiliDetail(source: PluginSource, item: any, page: number = 1): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
     const inst = await this._ensureInstance(source);
-    if (!inst) return [];
+    if (!inst) return { list: [] };
 
     const label = `[${source.name}] BilibiliDetail item="${item?.title || item?.name || ''}"`;
 
@@ -1834,7 +1841,7 @@ class BakaPluginManagerClass {
           (r) => extractResultList(r).length === 0,
         );
         const list = extractResultList(result);
-        if (list.length > 0) return mapList(list);
+        if (list.length > 0) return { list: mapList(list), isEnd: extractIsEnd(result) };
       } catch (e: any) {
         log(`[BilibiliDetail] ${source.name} getAlbumInfo 失败: ${e?.message || e}`);
       }
@@ -1849,7 +1856,7 @@ class BakaPluginManagerClass {
           (r) => extractResultList(r).length === 0,
         );
         const list = extractResultList(result);
-        if (list.length > 0) return mapList(list);
+        if (list.length > 0) return { list: mapList(list), isEnd: extractIsEnd(result) };
       } catch (e: any) {
         log(`[BilibiliDetail] ${source.name} getMusicSheetInfo 失败: ${e?.message || e}`);
       }
@@ -1860,10 +1867,10 @@ class BakaPluginManagerClass {
       const name = item.title || item.name || item.album || '';
       if (name) {
         catalogLog(`${label} 按专辑/歌单均空，回退搜索 "${name}"`);
-        return this.searchMusic(source, name, 1);
+        return { list: await this.searchMusic(source, name, 1), isEnd: true };
       }
     }
-    return [];
+    return { list: [], isEnd: true };
   }
 
   /** B站专用：歌手作品（UP 主空间投稿列表）。

@@ -130,6 +130,9 @@ function synthesizeUniformPlainLyricLines(raw: string, durationSec: number): Lyr
     text,
     translation: '',
     romaji: '',
+    isBG: false,
+    isDuet: false,
+    isDuetPartner: false,
   }));
 }
 
@@ -182,6 +185,16 @@ export async function loadLyrics(overrideLyricsRaw?: string) {
         romaji: line.romaji || '',
         secondary: line.secondary ? [...line.secondary] : undefined,
       } as LyricLine));
+      // [纯文本匀速滚动]: 与文件路径流程一致，后端未产出同步行时按歌曲时长匀出伪时间轴。
+      if (parsedLyrics.value.length === 0) {
+        const synthesized = synthesizeUniformPlainLyricLines(
+          lyricsRaw,
+          playbackStore.currentSong?.duration ?? 0,
+        );
+        if (synthesized.length > 0) {
+          parsedLyrics.value = synthesized.map(localizeLyricLine);
+        }
+      }
       lyricsStatus.value = parsedLyrics.value.length > 0 ? 'ready' : 'empty';
       onlineLyricsRetryCount = 0; // 歌词加载成功，重置重试计数器
       unavailableOnlineLyricsPaths.delete(song.path);

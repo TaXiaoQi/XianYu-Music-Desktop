@@ -29,6 +29,10 @@ export interface LyricLine {
   words?: LyricWord[];
   romajiWords?: LyricWord[];
   secondary?: string[];
+  speaker?: string;
+  isBG: boolean;
+  isDuet: boolean;
+  isDuetPartner: boolean;
 }
 
 export interface LyricsPayload {
@@ -169,6 +173,10 @@ export interface SemanticLine {
   romanWords?: ParsedWord[];
   secondaryTexts?: string[];
   confidence: ClassificationConfidence;
+  speaker?: string;
+  isBG: boolean;
+  isDuet: boolean;
+  isDuetPartner: boolean;
 }
 
 export interface DisplayFragment {

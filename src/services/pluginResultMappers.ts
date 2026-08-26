@@ -224,6 +224,21 @@ export const extractArtistAvatarUrl = (item: any): string => {
   return extractCoverUrl(item);
 };
 
+/** 从插件返回结果中提取 isEnd（分页结束标志），兼容 isEnd/is_end 及嵌套一层 */
+export const extractIsEnd = (result: any): boolean | undefined => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
+  if (typeof result.isEnd === 'boolean') return result.isEnd;
+  if (typeof result.is_end === 'boolean') return result.is_end;
+  for (const key of Object.keys(result)) {
+    const v = result[key];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if (typeof v.isEnd === 'boolean') return v.isEnd;
+      if (typeof v.is_end === 'boolean') return v.is_end;
+    }
+  }
+  return undefined;
+};
+
 /** 从插件返回结果中提取歌曲列表，兼容 data/musicList/isEnd 等多种格式 */
 export const extractResultList = (result: any): any[] => {
   if (!result) return [];

@@ -13,7 +13,7 @@
 import { pluginApi } from './tauri/pluginApi';
 import { hostKugouRequestKey, hostKugouSign, hostLinuxapiEncrypt, hostWeapiEncrypt } from './tauri/hostCryptoApi';
 import { decodeName, formatSingerName } from '../utils/musicFormat';
-import { getStoredPlugins, pluginGetPlaylistDetail, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
+import { getStoredPlugins, pluginGetPlaylistDetailWithEnd, pluginPlaylistSearch, pluginImportMusicSheet } from './pluginEngine';
 import { LX_SOURCE_NAMES, type LxSourceId } from './lxMusicSdk';
 import type { PluginSearchResult, PluginSource } from '../types';
 
@@ -1580,15 +1580,31 @@ export async function importPlaylistFromMusicFreePlugin(
 
   // 2. 获取歌单详情（可能分页，循环获取全部歌曲）
   const allSongs: PluginSearchResult[] = [];
+  const seen = new Set<string>();
   let page = 1;
+  let maxPageSize = 0;
   const MAX_PAGES = 50; // 安全上限
+  const total = Number(sheetItem.trackCount) || 0;
 
   while (page <= MAX_PAGES) {
-    const songs = await pluginGetPlaylistDetail(pluginSource, sheetItem.rawData, page);
+    const { songs, isEnd } = await pluginGetPlaylistDetailWithEnd(pluginSource, sheetItem.rawData, page);
     if (songs.length === 0) break;
-    allSongs.push(...songs);
-    // 如果返回数量少于预期，说明已到最后一页
-    if (songs.length < 30) break;
+    // 去重：部分插件忽略 page 参数，每页返回同一批
+    const fresh = songs.filter(s => {
+      const key = `${s.platformId ?? s.id}|${s.title}|${s.artist}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (fresh.length === 0) break;
+    allSongs.push(...fresh);
+    // 插件明确返回 isEnd → 已到最后一页
+    if (isEnd === true) break;
+    // 已拉满歌单总数 → 结束
+    if (total > 0 && allSongs.length >= total) break;
+    maxPageSize = Math.max(maxPageSize, songs.length);
+    // 兜底：isEnd 缺失时，本页数量不足已见最大页大小 → 最后一页（部分页）
+    if (songs.length < maxPageSize) break;
     page++;
   }
 

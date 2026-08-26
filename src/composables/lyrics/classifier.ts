@@ -392,6 +392,10 @@ export function buildSemanticLines(lines: ParsedLine[]): SemanticLine[] {
         romanWords,
         secondaryTexts: secondaryTexts.length > 0 ? secondaryTexts : undefined,
         confidence,
+        speaker: undefined,
+        isBG: false,
+        isDuet: false,
+        isDuetPartner: false,
       } satisfies SemanticLine;
     })
     .filter((line) => line.mainText.length > 0 || line.translationText || line.romanText);
