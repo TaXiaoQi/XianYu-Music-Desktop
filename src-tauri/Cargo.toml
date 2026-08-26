@@ -77,6 +77,7 @@ url = "2"
 getrandom = "0.3"
 num-bigint = "0.4"
 rquickjs = { version = "0.12", features = ["futures", "parallel"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Storage_FileSystem", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading"] }

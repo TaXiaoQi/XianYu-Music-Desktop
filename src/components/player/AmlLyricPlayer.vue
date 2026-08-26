@@ -149,6 +149,11 @@ function attachPlayer(nextPlayer: PatchedLyricPlayer) {
   applyPlayerProps();
   player.setLyricLines(props.lyricLines, Math.trunc(props.currentTime));
   player.setCurrentTime(Math.trunc(props.currentTime));
+  // [修复防御]: 歌词行有横向 posX 弹簧，装载首帧 AMLL 自身会先把未收敛的
+  // translate(posX,posY) 写进 DOM，短暂出现「对唱式左右分开」，随后弹簧归 0 才恢复。
+  // 这里在挂载当帧同步落位（calcLayout(true)+update(0)+DOM writeback），
+  // 让首帧即带纯 translateY 的 transform，抑制开头的横向入场张开。
+  player.recoverLayout('attach-sync');
 }
 
 function detachPlayer() {
@@ -359,6 +364,8 @@ watch(() => props.lyricLines, (value) => {
   // 若当前播放进度恰好未变化，currentTime watcher 不会再次触发，导致歌词永远停在首行。
   // 这里在歌词重设后立即用真实进度强制重算热行/滚动位置，恢复正确的当前行。
   player.setCurrentTime(Math.trunc(props.currentTime), true);
+  // 与 attachPlayer 同理：换歌装载歌词时同步落位一次，抑制开头横向弹簧张开。
+  player.recoverLayout('lyrics-sync');
   queueRecovery('lyrics');
   // 暂停态下 animationLoop 已停止，calcLayout 设置的弹簧目标无法收敛。
   // 启动动画爆发让歌词行位移/缩放/模糊落位到正确位置，否则歌词加载后不可见。

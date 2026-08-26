@@ -651,6 +651,10 @@ export interface TauriCommandMap {
   get_auth_base_url: { payload: undefined; response: string };
   set_auth_api_secret: { payload: { apiSecret: string }; response: void };
   get_auth_api_secret: { payload: undefined; response: string };
+  verify_fallback_module_signature: {
+    payload: { moduleKey: string; version: number; code: string; signature: string };
+    response: boolean;
+  };
   clear_cover_cache: { payload: undefined; response: void };
   get_song_lyrics: { payload: { path: string }; response: string };
   read_lyrics_file: { payload: { path: string }; response: string };

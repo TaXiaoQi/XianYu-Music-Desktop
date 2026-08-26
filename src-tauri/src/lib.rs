@@ -2,6 +2,7 @@ mod app_runtime;
 mod custom_fonts;
 mod database;
 pub mod error;
+mod fallback_verify;
 mod foreground_window;
 mod host_crypto;
 mod install_language;
@@ -79,6 +80,7 @@ use host_crypto::{
     host_kugou_request_key, host_kugou_sign, host_linuxapi_encrypt, host_migu_sign,
     host_sha256_hex, host_weapi_encrypt, host_zzc_sign,
 };
+use fallback_verify::verify_fallback_module_signature;
 use plugin_host::commands::{
     plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
     plugin_engine_destroy_all, plugin_engine_load_lx, plugin_engine_load_musicfree,
@@ -351,6 +353,7 @@ pub fn run() {
             host_linuxapi_encrypt,
             host_weapi_encrypt,
             host_sha256_hex,
+            verify_fallback_module_signature,
             read_plugin_file,
             save_plugin_script,
             read_file_bytes,
