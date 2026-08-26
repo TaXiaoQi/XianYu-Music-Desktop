@@ -1751,6 +1751,8 @@ pub async fn download_wallpaper(
     } else {
         safe_name
     };
+    // 文件名组件清洗：拒绝空/./..，防止特殊名逃逸
+    let safe_name = crate::security::path_validator::sanitize_filename_component(&safe_name)?;
 
     let app_dir = app_handle
         .path()

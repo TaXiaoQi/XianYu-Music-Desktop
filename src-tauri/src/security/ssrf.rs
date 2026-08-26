@@ -116,6 +116,20 @@ pub fn validate_url_ip_literal(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 轻量重定向策略：每个跳转目标只做 IP 字面量校验（域名不查 DNS、不做端口白名单）。
+///
+/// 用于播放流、用户配置的 WebDAV/账号 API 等端口/IP 多样、不宜硬校验的目标，
+/// 只拦截跳转到"直写内网/保留地址"的重定向，对公网域名完全放行，误伤≈0。
+pub fn ip_literal_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if validate_url_ip_literal(attempt.url().as_str()).is_ok() {
+            attempt.follow()
+        } else {
+            attempt.error(std::io::Error::other("重定向目标被安全策略禁止"))
+        }
+    })
+}
+
 /// 校验并解析出站 URL（同步版，供重定向策略等无法 await 的场景使用）。
 ///
 /// 返回重组后的请求 URL 主体（scheme://host:port）供后续校验，并拒绝不可信目标。
