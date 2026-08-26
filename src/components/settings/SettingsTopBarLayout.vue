@@ -53,6 +53,8 @@ provide('topBarContext', {
 const getItemLabel = (key: TopBarItemKey | null) => key ? getTopBarItemMeta(key)?.label ?? key : '';
 const isItemVisible = (key: TopBarItemKey) => !layout.value.hidden.includes(key);
 const isItemFixed = (key: TopBarItemKey) => getTopBarItemMeta(key)?.fixed ?? false;
+// 控件显示列表仅展示可开关项；固定项（设置/搜索框）不可关闭，不在此展示。
+const displayItems = TOPBAR_ITEMS.filter(item => !item.fixed);
 
 interface TopBarDragState {
   key: TopBarItemKey;
@@ -148,9 +150,9 @@ onUnmounted(cancelDragging);
 
     <div class="topbar-layout-preview-container select-none overflow-hidden rounded-xl border border-gray-200/40 bg-white/20 dark:border-gray-800/40 dark:bg-black/10">
       <div class="topbar-layout-preview-header">
-        <div>
-          <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
-          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/40">按住按钮可拖到左右容器中的其他位置；少控件时搜索框会自动填充剩余空间</div>
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-xs font-semibold text-gray-500 dark:text-gray-400">效果实时预览</div>
+          <div class="mt-0.5 truncate text-[11px] text-gray-400 dark:text-white/40">按住按钮可拖到左右容器中的其他位置；少控件时搜索框会自动填充剩余空间</div>
         </div>
         <div class="flex items-center gap-2">
           <SettingHint text="搜索框固定居中，最多展示 5 个自定义控件；设置固定不可关闭，其余可自由开关与摆放。" />
@@ -230,7 +232,7 @@ onUnmounted(cancelDragging);
       <div class="flex items-center justify-between gap-3">
         <div>
           <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">控件显示</div>
-          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/35">关闭后不会隐藏功能，可随时重新开启；设置与搜索框为固定项。</div>
+          <div class="mt-0.5 text-[11px] text-gray-400 dark:text-white/35">关闭后不会隐藏功能，可随时重新开启；设置与搜索框为固定项，不在此处展示。</div>
         </div>
         <div v-if="collapsedPreviewItems.length > 0" class="shrink-0 rounded-full bg-[#EC4141]/10 px-2.5 py-1 text-[11px] font-semibold text-[#EC4141]">
           已隐藏 {{ collapsedPreviewItems.length }} 项
@@ -238,7 +240,7 @@ onUnmounted(cancelDragging);
       </div>
       <div class="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
         <div
-          v-for="item in TOPBAR_ITEMS"
+          v-for="item in displayItems"
           :key="item.key"
           class="topbar-visibility-row flex items-center justify-between rounded-xl border border-gray-200/40 bg-white/20 p-3 hover:border-[#EC4141]/35 hover:bg-white/30 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
           :class="{ 'topbar-visibility-row--fixed': isItemFixed(item.key) }"
@@ -295,6 +297,8 @@ onUnmounted(cancelDragging);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: 160ms ease;
 }
 

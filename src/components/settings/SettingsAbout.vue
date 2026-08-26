@@ -9,7 +9,8 @@ import { useI18n } from '../../features/i18n';
 import { aboutConfig, startAboutConfigPolling, stopAboutConfigPolling } from '../../utils/aboutConfig';
 
 const appVersion = APP_VERSION;
-const DEVELOPER_MODE_CLICK_COUNT = 5;
+const DEVELOPER_MODE_CLICK_COUNT = 10;
+const DEVELOPER_MODE_CLICK_HINT_START = 7;
 const DEVELOPER_MODE_CLICK_INTERVAL = 1500;
 const developerModeClickCount = ref(0);
 let lastDeveloperModeClickAt = 0;
@@ -68,6 +69,11 @@ function handleDeveloperModeClick() {
     developerModeClickCount.value = 0;
     enableDeveloperMode();
     showToast(isEnglish.value ? 'Developer mode enabled' : '已进入开发者模式', 'success');
+    return;
+  }
+  if (developerModeClickCount.value >= DEVELOPER_MODE_CLICK_HINT_START) {
+    const remaining = DEVELOPER_MODE_CLICK_COUNT - developerModeClickCount.value;
+    showToast(isEnglish.value ? `Tap ${remaining} more times to enable developer mode` : `再点击 ${remaining} 次即可进入开发者模式`);
   }
 }
 
@@ -98,13 +104,15 @@ onUnmounted(() => {
 
       <div class="space-y-1">
         <h1 class="text-2xl font-bold tracking-tight text-gray-800 dark:text-white">弦予音乐</h1>
-        <p class="text-sm font-medium text-gray-600 dark:text-white/60">v{{ appVersion }}</p>
+        <p
+          class="mx-auto w-fit cursor-pointer select-none rounded-full px-3 py-1 text-sm font-medium text-gray-600 transition-all duration-200 active:scale-90 active:bg-[#EC4141]/10 active:text-[#EC4141] dark:text-white/60 dark:active:bg-[#EC4141]/20 dark:active:text-[#EC4141]"
+          @click="handleDeveloperModeClick"
+        >
+          v{{ appVersion }}
+        </p>
       </div>
 
-      <p
-        class="max-w-sm select-none text-sm text-gray-600 dark:text-gray-300"
-        @click="handleDeveloperModeClick"
-      >
+      <p class="max-w-sm select-none text-sm text-gray-600 dark:text-gray-300">
         将音乐给予你
       </p>
     </div>
