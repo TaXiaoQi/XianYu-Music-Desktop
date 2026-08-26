@@ -400,7 +400,7 @@ onUnmounted(() => {
   }
 }
 
-/* 收藏按钮：颜色独立于主题色，使用 --favorite-color 变量 */
+/* 收藏按钮：颜色固定默认红，不随主题色 */
 .recognition-favorite-btn:hover {
   background-color: color-mix(in srgb, var(--favorite-color) 10%, transparent);
 }

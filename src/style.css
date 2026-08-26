@@ -24,8 +24,10 @@ input::-ms-clear {
      配合控件的浅色文字几乎不可读） */
   color-scheme: light;
   --theme-color: #EC4141;
-  /* 收藏按钮色：独立于主题色，默认红色，不跟随主题色设置变化 */
-  --favorite-color: #EC4141;
+  /* 收藏按钮色：固定默认红，不随主题色。
+     ⚠ 值不能写 #EC4141 / rgb(236,65,65)——postcss 构建期会把这些替换成
+     var(--theme-color)。用视觉等价的 #EC4142 规避替换，从而保持固定红。 */
+  --favorite-color: #EC4142;
   /* 滚动条拇指色：RGB 分量 + 最大透明度（淡入上限），还原淡灰观感。
      alpha 取自滚动容器自身的 --scrollbar-thumb-alpha（未设置时回退到 0 即隐藏），
      由 scrollbarController.ts 按容器驱动淡入淡出，从而"滚动哪个区域就只显现哪个

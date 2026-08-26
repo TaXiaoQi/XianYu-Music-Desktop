@@ -50,13 +50,21 @@ function getSongHash(song: Song): string {
 
 /**
  * 取歌曲「来源信息」（统一契约：与移动端 share_service.dart 同构）。
- * 在线歌曲取插件原始数据里的音源 key（kw/wy/kg/tx/mg）或插件 id；本地歌曲标记为 'local'。
- * 服务端透传进深链，客户端据此判断用本地播放还是走对应插件播放。
+ * 按播放协议提取：lx://<source>/<songmid> → 音源 key（kw/wy/kg/tx/mg）；
+ * plugin://<platform>/<id> → 插件标识（插件名或插件 id，如「酷我音乐」）；
+ * 本地歌曲标记为 'local'。服务端透传进深链，客户端据此显示来源并选择播放路径。
  */
 function getSongSource(song: Song): string {
   const s = song as any;
-  const { source, info } = songSourceMap(song);
+  const path = typeof s?.path === 'string' ? s.path : '';
+  if (path.startsWith('lx://')) {
+    return path.slice('lx://'.length).split('/')[0] || 'local';
+  }
+  if (path.startsWith('plugin://')) {
+    return path.slice('plugin://'.length).split('/')[0] || 'local';
+  }
   if (s?.source_type === 'local' || s?.sourceType === 'local') return 'local';
+  const { source, info } = songSourceMap(song);
   const candidate =
     (s?.source as string) ||
     (s?.plugin_id as string) ||
@@ -129,21 +137,42 @@ function toLocalCoverPath(candidate: string): string {
  * 失败静默返回空串（分享链接仍可生成，仅无封面）。
  */
 async function resolveShareCover(song: Song, coverUrl?: string): Promise<string> {
+  const s = song as any;
   const log = (...args: unknown[]) => console.warn('[shareCover]', ...args);
+  // 在线封面：http(s) 远程封面直通，无需本地上传
   if (coverUrl && isRemoteCoverUrl(coverUrl)) return coverUrl;
   try {
-    const s = song as any;
     // 封面已是 data: URL（代理产物）时直接上传，无需本地文件路径
     if (coverUrl && /^data:image\//i.test(coverUrl)) {
       return (await uploadCoverDataUrl(coverUrl)) || '';
     }
-    // 本地封面路径：cover_thumb_path 可能是本地路径或 asset.localhost URL，统一还原为文件路径
-    let rawPath = toLocalCoverPath(s?.cover_thumb_path || '');
-    if (!rawPath) rawPath = toLocalCoverPath(coverUrl || '');
-    if (!rawPath) {
-      rawPath = await fileApi.getSongCover(song.path);
-      log('fallback getSongCover', song.path, '=>', rawPath);
+    const isOnline =
+      s?.source_type === 'remote' ||
+      s?.source_type === 'plugin' ||
+      s?.sourceType === 'remote' ||
+      s?.sourceType === 'plugin';
+    // 与播放页/列表取封面同源：优先全尺寸封面保证清晰度，缩略图仅作兜底
+    const lookupPath = s?.cue_source_path || song.path;
+    let rawPath = '';
+    if (!isOnline) {
+      try {
+        rawPath = (await fileApi.getSongCover(lookupPath)) || '';
+      } catch (e: any) {
+        log('getSongCover failed', lookupPath, e?.message || e);
+        rawPath = '';
+      }
+      if (!rawPath) {
+        try {
+          rawPath = (await fileApi.getSongCoverThumbnail(lookupPath)) || '';
+        } catch (e: any) {
+          log('getSongCoverThumbnail failed', lookupPath, e?.message || e);
+          rawPath = '';
+        }
+      }
     }
+    // 兜底：coverUrl 还原路径 → DB 持久化缩略图路径
+    if (!rawPath) rawPath = toLocalCoverPath(coverUrl || '');
+    if (!rawPath) rawPath = toLocalCoverPath(s?.cover_thumb_path || '');
     if (!rawPath) {
       log('no cover path', { coverUrl, cover_thumb_path: s?.cover_thumb_path, songPath: song.path });
       return '';
@@ -192,19 +221,19 @@ export async function createShareUrl(
 
   const pending = (async () => {
     const resolvedCover = await resolveShareCover(song, coverUrl);
-    return signedRequest<{ share_url: string }>(
+    const data = await signedRequest<{ share_url: string }>(
       'create_share',
       buildShareBody(song, resolvedCover, extra),
       {
         timeoutMs: 15_000,
       },
     );
+    const url = String(data?.share_url || '');
+    // 仅缓存带封面的链接：无封面时清除缓存，下次分享会重试封面解析/上传
+    if (resolvedCover) shareCache.set(key, { url });
+    else shareCache.delete(key);
+    return url;
   })()
-    .then(data => {
-      const url = String(data?.share_url || '');
-      shareCache.set(key, { url });
-      return url;
-    })
     .catch(error => {
       shareCache.delete(key);
       throw error;

@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { ref } from 'vue';
 
 import { normalizeForegroundStyle } from '../features/settings/store';
+import { tauriInvoke } from '../services/tauri/invoke';
 import type { ThemeSettings } from '../types';
 import { useThemeSettings } from './useThemeSettings';
 
@@ -23,7 +24,15 @@ export function useCustomThemeModal() {
       });
 
       if (selected && typeof selected === 'string') {
-        preview.value.imagePath = selected;
+        // 直接把用户目录的原始路径写入会在 asset 协议 scope（仅 $APPDATA/$APPCACHE）外，
+        // 导致背景图破损且重启丢失。先复制到应用数据目录再使用返回的稳定路径。
+        try {
+          preview.value.imagePath = await tauriInvoke('import_skin_image', {
+            sourcePath: selected,
+          });
+        } catch {
+          preview.value.imagePath = selected;
+        }
       }
     } catch {
       // Ignore dialog cancellation.

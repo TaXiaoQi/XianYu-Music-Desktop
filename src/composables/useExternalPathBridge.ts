@@ -7,6 +7,10 @@ import { modalDragInterceptActive } from './dragState';
 
 type ExternalPathSource = 'drop' | 'open';
 
+/** 带 scheme 的 URL（如 xianyu:// 深链）绝不可能是本地文件路径：
+    过滤掉，避免深链被误当「外部打开的文件」，触发导入失败提示。 */
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 interface UseExternalPathBridgeOptions {
   handleExternalPaths: (paths: string[], options?: { source?: ExternalPathSource }) => Promise<void>;
   beforeWindowShow?: () => Promise<unknown>;
@@ -59,11 +63,13 @@ export function useExternalPathBridge({
   const consumePendingOpenPaths = async (options: { startup?: boolean } = {}) => {
     try {
       const paths = await appApi.consumePendingOpenPaths();
-      if (paths.length > 0) {
+      // 过滤带 scheme 的 URL：深链等协议参数不是本地文件，直接放行到深链通道消费
+      const localPaths = paths.filter((p) => !URL_SCHEME_RE.test((p || '').trim()));
+      if (localPaths.length > 0) {
         if (options.startup) {
           playbackStore.markExternalStartupFile();
         }
-        await enqueueExternalPaths(paths, 'open');
+        await enqueueExternalPaths(localPaths, 'open');
       }
     } catch (error) {
       console.error('Failed to consume pending open paths:', error);

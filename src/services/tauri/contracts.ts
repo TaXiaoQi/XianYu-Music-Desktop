@@ -994,6 +994,10 @@ export interface TauriCommandMap {
     payload: { path: string };
     response: { mime: string; base64: string };
   };
+  import_skin_image: {
+    payload: { sourcePath: string };
+    response: string;
+  };
   proxy_image: {
     payload: { url: string; referer?: string | null };
     response: string;
