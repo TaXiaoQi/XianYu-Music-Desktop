@@ -132,6 +132,10 @@ export function semanticLineToLyricLine(line: SemanticLine): LyricLine {
       end: word.endMs / 1000,
     })),
     secondary: line.secondaryTexts ? [...line.secondaryTexts] : undefined,
+    speaker: line.speaker,
+    isBG: line.isBG,
+    isDuet: line.isDuet,
+    isDuetPartner: line.isDuetPartner,
   };
 }
 
@@ -270,8 +274,8 @@ export function convertLyricsToAmlLines(
         : undefined,
       startTime,
       endTime,
-      isBG: false,
-      isDuet: false,
+      isBG: line.isBG,
+      isDuet: line.isDuet,
     };
   });
 }

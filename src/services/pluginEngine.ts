@@ -44,6 +44,7 @@ import {
   extractArtist,
   extractCoverUrl,
   extractResultList,
+  extractIsEnd,
   extractArtistAvatarUrl,
   qualityKeyToPluginString,
   resetMediaItem,
@@ -1180,7 +1181,7 @@ async function pluginGetPlaylistDetailInner(
   source: PluginSource,
   sheetItem: any,
   page: number = 1,
-): Promise<PluginSearchResult[]> {
+): Promise<{ list: PluginSearchResult[]; isEnd?: boolean }> {
   if (await BakaPluginManager.isBakaPlugin(source)) {
     await ensurePluginInstance(source);
     // B站专辑与歌单统一走专用取数路径
@@ -1190,7 +1191,7 @@ async function pluginGetPlaylistDetailInner(
     return BakaPluginManager.getPlaylistDetail(source, sheetItem, page);
   }
   const inst = await ensurePluginInstance(source);
-  if (!inst) return [];
+  if (!inst) return { list: [] };
 
   try {
     // 如果是 importMusicSheet 导入的歌单，直接返回已导入的曲目
@@ -1198,9 +1199,9 @@ async function pluginGetPlaylistDetailInner(
       if (page === 1) {
         const list = sheetItem._importedTracks;
         list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+        return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
       }
-      return [];
+      return { list: [], isEnd: true };
     }
 
     // 如果是专辑条目（歌单搜索中将专辑索引为歌单），用 getAlbumInfo 获取曲目
@@ -1216,13 +1217,13 @@ async function pluginGetPlaylistDetailInner(
           const list = extractResultList(result);
           if (list.length > 0) {
             list.forEach((_: any) => { resetMediaItem(_, source.name); });
-            return list.map((item: any) => toPluginSearchResult(item, source));
+            return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
           }
         } catch (e: any) {
           log(`[${source.name}] getAlbumInfo(album as playlist) 调用失败: ${e?.message}`);
         }
       }
-      return [];
+      return { list: [], isEnd: true };
     }
 
     // 如果是排行榜条目，用 getTopListDetail 获取曲目
@@ -1232,12 +1233,12 @@ async function pluginGetPlaylistDetailInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return list.map((item: any) => toPluginSearchResult(item, source));
+          return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
         }
       } catch (e: any) {
         log(`[${source.name}] getTopListDetail 调用失败: ${e?.message}`);
       }
-      return [];
+      return { list: [], isEnd: true };
     }
 
     // 优先用 getMusicSheetInfo 获取歌单曲目
@@ -1252,7 +1253,7 @@ async function pluginGetPlaylistDetailInner(
         const list = extractResultList(result);
         if (list.length > 0) {
           list.forEach((_: any) => { resetMediaItem(_, source.name); });
-          return list.map((item: any) => toPluginSearchResult(item, source));
+          return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: extractIsEnd(result) };
         }
       } catch (e: any) {
         log(`[${source.name}] getMusicSheetInfo 调用失败，尝试搜索回退: ${e?.message}`);
@@ -1267,14 +1268,14 @@ async function pluginGetPlaylistDetailInner(
         const result = (await inst.instance.search(sheetTitle, 1, 'music')) ?? {};
         const list = extractResultList(result);
         list.forEach((_: any) => { resetMediaItem(_, source.name); });
-        return list.map((item: any) => toPluginSearchResult(item, source));
+        return { list: list.map((item: any) => toPluginSearchResult(item, source)), isEnd: true };
       }
     }
 
-    return [];
+    return { list: [], isEnd: true };
   } catch (e: any) {
     log(`[${source.name}] 获取歌单详情失败: ${e?.message}`);
-    return [];
+    return { list: [], isEnd: true };
   }
 }
 
@@ -1478,7 +1479,8 @@ async function pluginGetAlbumSongsInner(
     await ensurePluginInstance(source);
     // B站专辑与歌单统一走专用取数路径
     if (isBilibiliSource(source)) {
-      return BakaPluginManager.getBilibiliDetail(source, albumItem, page);
+      const { list } = await BakaPluginManager.getBilibiliDetail(source, albumItem, page);
+      return list;
     }
     return BakaPluginManager.getAlbumSongs(source, albumItem, page);
   }
@@ -1568,7 +1570,21 @@ export async function pluginGetPlaylistDetail(
   sheetItem: any,
   page: number = 1,
 ): Promise<PluginSearchResult[]> {
-  return withQqDurations(source, await pluginGetPlaylistDetailInner(source, sheetItem, page));
+  const { list } = await pluginGetPlaylistDetailInner(source, sheetItem, page);
+  return withQqDurations(source, list);
+}
+
+/**
+ * 歌单详情（含分页结束标志）。供导入等需要全量拉取歌单的场景使用：
+ * 以插件返回的 isEnd 判断是否还有下一页，避免按返回数量猜页大小导致提前截断丢歌。
+ */
+export async function pluginGetPlaylistDetailWithEnd(
+  source: PluginSource,
+  sheetItem: any,
+  page: number = 1,
+): Promise<{ songs: PluginSearchResult[]; isEnd?: boolean }> {
+  const { list, isEnd } = await pluginGetPlaylistDetailInner(source, sheetItem, page);
+  return { songs: await withQqDurations(source, list), isEnd };
 }
 
 export async function pluginGetArtistWorks(
