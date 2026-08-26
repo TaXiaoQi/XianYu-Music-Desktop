@@ -217,6 +217,15 @@ commands.allow = [
   "get_playback_session",
   "update_playback_position",
   "flush_playback_session",
+  "get_song_lyrics",
+  "set_playback_speed",
+  "get_library_songs_by_paths",
+  "save_window_placement",
+  "set_taskbar_fullscreen_flag",
+  "recognize_with_pcm",
+  "resolve_lx_music_url",
+  "clear_lx_url_cache",
+  "clear_lx_all_cache",
 ]
 
 # 辅助窗口（桌面歌词、迷你播放器、托盘菜单、任务栏播控、音量弹窗）专用命令集。

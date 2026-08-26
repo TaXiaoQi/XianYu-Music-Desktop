@@ -68,8 +68,8 @@ use player::{
     plugin_host_set_parameter, plugin_host_set_rack, plugin_host_take_process_error,
     resume_audio, save_playback_session, seek_audio, set_audio_output_mode, set_equalizer_settings,
     set_output_device, set_playback_speed, set_sound_effect_settings, set_stream_cache_max_size,
-    set_volume, stop_audio, update_loudness_settings, update_playback_metadata,
-    update_playback_position, wait_stream_complete,
+    set_volume, stop_audio, update_loudness_settings,
+    update_playback_metadata, update_playback_position,
 };
 use plugins::{
     download_audio_to_temp, download_video_to_cache, plugin_http_request,
@@ -110,7 +110,7 @@ use taskbar::{
 use tauri::Manager;
 use toolbox::{
     apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
-    download_update_file, download_wallpaper, delete_wallpaper_file, embed_audio_metadata, fetch_announcement,
+    download_update_file, download_wallpaper, delete_wallpaper_file,
     fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
     preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
     resolve_download_full_path, resolve_download_path, run_installer, save_download_bytes,
@@ -263,7 +263,6 @@ pub fn run() {
             clear_stream_cache,
             is_stream_cached,
             copy_stream_cache,
-            wait_stream_complete,
             get_library_folders,
             is_directory,
             save_artist_avatar,
@@ -390,14 +389,12 @@ pub fn run() {
             save_download_bytes,
             save_download_lyrics,
             write_text_file,
-            embed_audio_metadata,
             fetch_image_bytes,
             resolve_download_path,
             resolve_download_full_path,
             build_download_basename,
             finalize_download_extras,
             run_installer,
-            fetch_announcement,
             write_state_json,
             read_state_json,
             open_devtools,

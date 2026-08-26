@@ -1526,38 +1526,6 @@ pub fn copy_cache_to(url: &str, dest_path: &str) -> Result<u64, String> {
     std::fs::copy(&src_path, dest_path).map_err(|e| format!("复制缓存文件失败: {}", e))
 }
 
-/// 等待指定 URL 缓存下载完成（轮询，供前端 'wait' 失败行为使用）。
-/// 返回最终是否完成且有效（未失败且字节数 > 0）。
-pub fn wait_url_complete(url: &str, timeout_secs: u64) -> bool {
-    let hash = url_hash(url);
-    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
-    loop {
-        let finished = {
-            let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(entry) = mgr.entries.get(&hash) {
-                entry.download_complete.load(Ordering::Relaxed)
-                    || entry.download_failed.load(Ordering::Relaxed)
-            } else {
-                // URL 不在缓存中（从未下载或已被淘汰），无法等待
-                return false;
-            }
-        };
-        if finished {
-            let mgr = cache().lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(entry) = mgr.entries.get(&hash) {
-                return entry.download_complete.load(Ordering::Relaxed)
-                    && !entry.download_failed.load(Ordering::Relaxed)
-                    && entry.size > 0;
-            }
-            return false;
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-}
-
 /// 清理所有缓存
 pub fn clear_all() {
     if let Some(mgr) = STREAM_CACHE.get() {

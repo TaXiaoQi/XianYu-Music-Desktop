@@ -256,16 +256,6 @@ pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> 
     crate::player::stream_cache::copy_cache_to(&url, &dest_path)
 }
 
-/// 等待指定 URL 缓存下载完成，返回是否成功（前端用于 'wait' 失败行为）
-#[tauri::command]
-pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
-    tokio::task::spawn_blocking(move || {
-        crate::player::stream_cache::wait_url_complete(&url, timeout_secs)
-    })
-    .await
-    .unwrap_or(false)
-}
-
 fn schedule_remote_cache_after_half(
     app: tauri::AppHandle,
     conn: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,

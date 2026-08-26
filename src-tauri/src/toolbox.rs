@@ -1247,18 +1247,6 @@ pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<Str
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// 将歌曲元数据（标题、艺术家、专辑、歌词、封面等）写入音频文件 tag。
-///
-/// 在 `spawn_blocking` 中执行，避免阻塞异步运行时。
-/// 写入失败仅返回错误字符串，不中断下载主流程（由前端控制是否继续）。
-#[tauri::command]
-pub async fn embed_audio_metadata(request: EmbedMetadataRequest) -> Result<(), String> {
-    let request = request.clone();
-    tokio::task::spawn_blocking(move || write_metadata_to_file(&request))
-        .await
-        .map_err(|e| format!("元数据嵌入任务失败: {e}"))?
-}
-
 /// [项4 下载编排] 下载后收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入，单次 IPC 完成。
 ///
 /// 替代前端 `downloadSong` 在音频下载完成后发起的 3-4 次独立 IPC 调用
@@ -1549,70 +1537,6 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
         size: 0,
         error: Some(format!("HTTP {status}")),
     })
-}
-
-#[tauri::command]
-pub async fn fetch_announcement() -> Result<String, String> {
-    // 公告数据源：自建服务器（xy.zh2026.cn），接口返回 {code, msg, data}
-    // data 为公告对象或 null（无启用公告）。这里解包 data 后返回纯公告 JSON，前端接口无需改动。
-    let url = "https://xy.zh2026.cn/chaoguan/public/api/app.php?action=app_announcement";
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .user_agent("XY-Music-Updater")
-        .http1_only() // 强制 HTTP/1.1，规避服务器 TLS 重协商下 HTTP/2 的兼容问题
-        .build()
-        .map_err(|e| format!("创建请求客户端失败: {e}"))?;
-
-    let resp = client
-        .get(url)
-        .header("Accept", "application/json")
-        .header("Cache-Control", "no-cache")
-        .send()
-        .await
-        .map_err(|e| {
-            // 打印完整错误链，便于诊断 TLS / DNS / 连接问题
-            let mut msg = format!("请求公告接口失败: {e}");
-            let mut src = std::error::Error::source(&e);
-            while let Some(s) = src {
-                msg.push_str(&format!(" | {s}"));
-                src = s.source();
-            }
-            msg
-        })?;
-
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| format!("读取公告数据失败: {e}"))?;
-
-    if !status.is_success() {
-        let snippet: String = text.chars().take(200).collect();
-        return Err(format!("公告接口返回错误状态: {status} | 响应: {snippet}"));
-    }
-
-    // 解包 {code, msg, data}：仅 code==200 时取 data
-    match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(v) => {
-            let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-            if code == 200 {
-                match v.get("data") {
-                    Some(d) if !d.is_null() => return Ok(d.to_string()),
-                    _ => return Ok("{}".to_string()), // 无启用公告
-                }
-            }
-            let msg = v
-                .get("msg")
-                .and_then(|m| m.as_str())
-                .unwrap_or("公告接口返回未知错误");
-            Err(format!("公告接口返回错误: {msg}"))
-        }
-        Err(_) => {
-            let snippet: String = text.chars().take(200).collect();
-            Err(format!("公告数据解析失败，原始响应: {snippet}"))
-        }
-    }
 }
 
 #[tauri::command]
