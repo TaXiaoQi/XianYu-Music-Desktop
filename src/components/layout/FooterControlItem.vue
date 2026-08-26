@@ -92,6 +92,15 @@ const ctx = inject<{
   // 分享
   handleShareSong: (song: Song) => Promise<void> | void;
   isShareLoading: Ref<boolean>;
+  // 歌词页工具（仅播放详情页可用）
+  isVisualizerEnabled: Ref<boolean>;
+  toggleVisualizer: () => void;
+  isProgressHidden: Ref<boolean>;
+  toggleProgressVisibility: () => void;
+  showLyricsPlayerSettingsPanel: Ref<boolean>;
+  toggleLyricsPlayerSettings: () => void;
+  isPinned: Ref<boolean>;
+  togglePin: () => void;
 }>('footerContext')!;
 
 // 解构上下文供模板使用（模板引用不解构，通过 ctx.xxx 访问以避免 Vue 自动解包导致 .value 不可用）
@@ -148,6 +157,14 @@ const {
   isMvVideoDownloading,
   handleShareSong,
   isShareLoading,
+  isVisualizerEnabled,
+  toggleVisualizer,
+  isProgressHidden,
+  toggleProgressVisibility,
+  showLyricsPlayerSettingsPanel,
+  toggleLyricsPlayerSettings,
+  isPinned,
+  togglePin,
 } = ctx;
 
 const downloadQualityListRef = ref<HTMLElement | null>(null);
@@ -380,7 +397,7 @@ watch(
       class="flex shrink-0 items-center justify-center whitespace-nowrap w-9 h-9 text-[12px] font-semibold rounded-full transition-colors select-none"
       :class="[
         isAudioControlLocked
-          ? 'opacity-40 cursor-not-allowed'
+          ? 'cursor-not-allowed text-gray-400 dark:text-white/40'
           : mvActive
             ? (showQualityMenu
                 ? 'text-[#EC4141] bg-[#EC4141]/10'
@@ -497,7 +514,7 @@ watch(
       class="transition-colors flex items-center justify-center shrink-0 w-8 h-8 rounded-full"
       :class="[
         isAudioControlLocked
-          ? 'opacity-40 cursor-not-allowed'
+          ? 'cursor-not-allowed text-gray-400 dark:text-white/40'
           : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')
       ]"
       :title="isAudioControlLocked ? audioLockTooltip : '音量'"
@@ -514,7 +531,7 @@ watch(
       :class="[
         'transition-colors w-8 h-8 flex items-center justify-center rounded-full',
         isEffectLocked
-          ? 'opacity-40 cursor-not-allowed'
+          ? 'cursor-not-allowed text-gray-400 dark:text-white/40'
           : showEqPanel
             ? 'text-[#EC4141] bg-[#EC4141]/10'
             : (showPlayerDetail
@@ -554,8 +571,8 @@ watch(
     </button>
     <button
       v-else
-      class="w-8 h-8 flex items-center justify-center rounded-full opacity-40 cursor-not-allowed"
-      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-600 dark:text-white/60'"
+      class="w-8 h-8 flex items-center justify-center rounded-full cursor-not-allowed"
+      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-400 dark:text-white/40'"
       title="当前歌曲不支持评论（仅插件在线歌曲可用）"
     >
       <FooterControlIcon item-key="comment" class="h-4 w-4" />
@@ -577,8 +594,8 @@ watch(
     </button>
     <button
       v-else
-      class="w-8 h-8 flex items-center justify-center rounded-full opacity-40 cursor-not-allowed"
-      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-600 dark:text-white/60'"
+      class="w-8 h-8 flex items-center justify-center rounded-full cursor-not-allowed"
+      :class="showPlayerDetail ? 'text-white/60' : 'text-gray-400 dark:text-white/40'"
       title="当前歌曲不支持 MV（仅插件在线歌曲可用）"
     >
       <FooterControlIcon item-key="mv" class="h-4 w-4" />
@@ -598,6 +615,51 @@ watch(
     :title="isShareLoading ? '生成分享链接中…' : '分享歌曲'"
   >
     <FooterControlIcon item-key="share" :class="isShareLoading ? 'h-5 w-5 animate-pulse' : 'h-5 w-5'" />
+  </button>
+
+  <!-- 可视化/频谱（歌词页专属，主页禁用不可开关） -->
+  <button
+    v-else-if="itemKey === 'visualizer'"
+    @click="showPlayerDetail && toggleVisualizer()"
+    :disabled="!showPlayerDetail"
+    :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', !showPlayerDetail ? 'cursor-not-allowed text-gray-400 dark:text-white/40' : (isVisualizerEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'))]"
+    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : (isVisualizerEnabled ? '关闭可视化' : '开启可视化')"
+  >
+    <FooterControlIcon item-key="visualizer" class="h-4 w-4" />
+  </button>
+
+  <!-- 进度条显示开关（歌词页专属，主页禁用不可开关） -->
+  <button
+    v-else-if="itemKey === 'progress'"
+    @click="showPlayerDetail && toggleProgressVisibility()"
+    :disabled="!showPlayerDetail"
+    :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', !showPlayerDetail ? 'cursor-not-allowed text-gray-400 dark:text-white/40' : (isProgressHidden ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'))]"
+    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : (isProgressHidden ? '显示进度条' : '隐藏进度条')"
+  >
+    <FooterControlIcon item-key="progress" :active="isProgressHidden" class="h-4 w-4" />
+  </button>
+
+  <!-- 页面样式（歌词页专属，主页禁用不可开关） -->
+  <button
+    v-else-if="itemKey === 'pageStyle'"
+    @click.stop="showPlayerDetail && toggleLyricsPlayerSettings()"
+    :disabled="!showPlayerDetail"
+    :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', !showPlayerDetail ? 'cursor-not-allowed text-gray-400 dark:text-white/40' : (showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'))]"
+    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : '页面样式'"
+  >
+    <FooterControlIcon item-key="pageStyle" class="h-4 w-4" />
+  </button>
+
+  <!-- 固定状态栏（歌词页专属，主页禁用不可开关） -->
+  <button
+    v-else-if="itemKey === 'pin'"
+    @click="showPlayerDetail && togglePin()"
+    :disabled="!showPlayerDetail"
+    class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
+    :class="!showPlayerDetail ? 'cursor-not-allowed text-gray-400 dark:text-white/40' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+    :title="!showPlayerDetail ? '歌词页设置（仅播放页可用）' : (isPinned ? '取消固定 (当前已常驻)' : '固定状态栏 (当前离开后消失)')"
+  >
+    <FooterControlIcon item-key="pin" :active="isPinned" class="h-4 w-4" />
   </button>
 </template>
 

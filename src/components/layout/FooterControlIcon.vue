@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Clapperboard, Download, MessageCircle, Share2, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 import { useDownloadStore } from '../../features/download/store';
 
@@ -61,4 +61,24 @@ withDefaults(defineProps<{
   <MessageCircle v-else-if="itemKey === 'comment'" v-bind="$attrs" :stroke-width="2.2" />
   <Clapperboard v-else-if="itemKey === 'mv'" v-bind="$attrs" :stroke-width="2.2" />
   <Share2 v-else-if="itemKey === 'share'" v-bind="$attrs" :stroke-width="2.2" />
+  <AudioLines v-else-if="itemKey === 'visualizer'" v-bind="$attrs" :stroke-width="2.2" />
+  <component
+    :is="active ? EyeOff : Eye"
+    v-else-if="itemKey === 'progress'"
+    v-bind="$attrs"
+    :stroke-width="2.2"
+  />
+  <Palette v-else-if="itemKey === 'pageStyle'" v-bind="$attrs" :stroke-width="2.2" />
+  <svg v-else-if="itemKey === 'pin'" v-bind="$attrs" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <template v-if="active">
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </template>
+    <template v-else>
+      <path d="m2 2 20 20" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82" />
+      <path d="M12 17v5" />
+      <path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </template>
+  </svg>
 </template>
