@@ -180,10 +180,10 @@ export function convertLyricsToAmlLines(
 ): CoreAmlLyricLine[] {
   const validLines = lines.filter((line) => {
     const text = (line.text || '').trim();
-    if (/^\s*[\/\\_\-—–]+\s*$/.test(text) && !line.translation && !line.romaji) {
+    if (/^\s*\/[\/\\\s]+\s*$/.test(text) && !line.translation && !line.romaji) {
       return false;
     }
-    return true;
+    return Boolean(text || line.translation || line.romaji);
   });
 
   return validLines.map((line, lineIndex) => {

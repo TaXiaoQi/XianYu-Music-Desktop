@@ -107,7 +107,7 @@ export const normalizeTopBarLayout = (value: unknown): TopBarLayoutSettings => {
     for (const item of raw) {
       if (typeof item !== 'string') continue;
       const key = item as TopBarItemKey;
-      if (!CONTROL_KEY_SET.has(key) || seen.has(key)) continue;
+      if (!CONTROL_KEY_SET.has(key) || seen.has(key) || hiddenSet.has(key)) continue;
       seen.add(key);
       result.push(key);
     }
@@ -271,31 +271,28 @@ export const setTopBarItemVisibility = (
 
   if (!visible) {
     if (FIXED_KEY_SET.has(key)) return layout;
-    return normalizeTopBarLayout({ ...layout, hidden: [...hidden, key] });
+    const left = layout.left.filter(k => k !== key);
+    const right = layout.right.filter(k => k !== key);
+    return normalizeTopBarLayout({ left, right, hidden: [...hidden, key] });
   }
 
   if (layout.left.includes(key) || layout.right.includes(key)) {
     return normalizeTopBarLayout({ ...layout, hidden });
   }
 
-  const slots = getTopBarPreviewSlotItems({ ...layout, hidden });
   // 优先放回默认位置
   const defaultLeftIndex = DEFAULT_TOPBAR_LAYOUT.left.indexOf(key);
-  if (defaultLeftIndex >= 0 && layout.left.length + layout.right.length < TOPBAR_MAX_VISIBLE_CONTROLS) {
+  if (defaultLeftIndex >= 0) {
     const left = [...layout.left];
     left.splice(Math.min(defaultLeftIndex, left.length), 0, key);
     return normalizeTopBarLayout({ ...layout, left, hidden });
   }
   const defaultRightIndex = DEFAULT_TOPBAR_LAYOUT.right.indexOf(key);
-  if (defaultRightIndex >= 0 && layout.left.length + layout.right.length < TOPBAR_MAX_VISIBLE_CONTROLS) {
+  if (defaultRightIndex >= 0) {
     const right = [...layout.right];
     right.splice(Math.min(defaultRightIndex, right.length), 0, key);
     return normalizeTopBarLayout({ ...layout, right, hidden });
   }
-  // 无默认位置时优先放入右侧空槽，其次左侧（如自定义配色方案默认靠右）
-  const targetSlot = TOPBAR_RIGHT_SLOTS.find(slot => slots[slot] === null)
-    ?? TOPBAR_LEFT_SLOTS.find(slot => slots[slot] === null);
-  if (!targetSlot) return layout;
-  slots[targetSlot] = key;
-  return layoutFromPreviewSlots(slots, hidden);
+  const right = [...layout.right, key];
+  return normalizeTopBarLayout({ ...layout, right, hidden });
 };
