@@ -632,55 +632,75 @@ export async function probeDownloadableQualities(
 }
 
 /** 获取歌词文本（lrc 或纯文本）用于一并下载 */
-async function fetchLyricText(
+export async function fetchLyricText(
   song: Song,
   format: 'lrc' | 'txt',
   lyricsStyle: DownloadLyricsStyle,
 ): Promise<string | null> {
   const path = song.cue_source_path || song.path;
-  if (!path) return null;
 
-  // plugin:// 协议：通过 MusicFree 插件引擎获取歌词
-  if (path.startsWith('plugin://')) {
-    return fetchPluginLyricText(song, format, lyricsStyle);
-  }
+  // 尝试从歌曲对象或当前播放器 state 中提取已有的歌词文本作为兜底
+  const playbackStore = usePlaybackStore();
+  const playingSong = playbackStore.currentSong;
+  const existingLyric = (song as any).lyrics
+    || (song as any).lyric
+    || (song as any).lyrics_raw
+    || (playingSong?.path === path ? ((playingSong as any).lyrics || (playingSong as any).lyrics_raw) : null)
+    || null;
 
-  // lx:// 协议：通过落雪插件引擎获取歌词
-  if (!path.startsWith('lx://')) return null;
-
-  const pathInfo = parseLxPath(path);
-  if (!pathInfo) return null;
-  const { source: lxSource, songmid } = pathInfo;
-
-  try {
-    const matchedPlugin = findLxPluginForSource(lxSource);
-    if (!matchedPlugin) return null;
-
-    await ensureLxPluginInstance(matchedPlugin);
-    const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
-    const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
-    const result = await lxPluginGetLyric(matchedPlugin, lxSource, songInfo as any);
-
-    // word-by-word：优先使用逐字歌词（lxlyric），无逐字时回退到逐行（lyric）
-    // line-by-line：仅使用逐行歌词（lyric）
-    const preferWordByWord = lyricsStyle === 'word-by-word';
-    const wordLyric = result?.lxlyric || result?.yrc || result?.qrc;
-    const lineLyric = result?.lyric;
-    const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
-    if (!lyric) return null;
-
+  const processFormat = (lyricText: string): string => {
     if (format === 'txt') {
-      // 去掉时间轴标签（含逐字歌词的 <offset,duration> 标签）
-      return lyric
+      return lyricText
         .replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?]/g, '')
         .replace(/<\d+,\d+>/g, '')
+        .replace(/\[\d+,\d+\]/g, '')
         .trim();
     }
-    return lyric;
-  } catch (e: any) {
-    console.warn('[Download] 获取歌词失败:', e?.message);
-    return null;
+    return lyricText.trim();
+  };
+
+  let fetched: string | null = null;
+
+  // plugin:// 协议：通过 MusicFree 插件引擎获取歌词
+  if (path?.startsWith('plugin://')) {
+    fetched = await fetchPluginLyricText(song, format, lyricsStyle);
+  } else if (path?.startsWith('lx://')) {
+    // lx:// 协议：通过落雪插件引擎获取歌词
+    const pathInfo = parseLxPath(path);
+    if (pathInfo) {
+      const { source: lxSource, songmid } = pathInfo;
+      try {
+        const matchedPlugin = findLxPluginForSource(lxSource);
+        if (matchedPlugin) {
+          await ensureLxPluginInstance(matchedPlugin);
+          const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
+          const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
+          const result = await lxPluginGetLyric(matchedPlugin, lxSource, songInfo as any);
+
+          const preferWordByWord = lyricsStyle === 'word-by-word';
+          const wordLyric = result?.lxlyric || result?.yrc || result?.qrc;
+          const lineLyric = result?.lyric;
+          const lyric = (preferWordByWord && wordLyric) ? wordLyric : (lineLyric || wordLyric || '');
+          if (lyric) {
+            fetched = processFormat(lyric);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Download] 获取歌词失败:', e?.message);
+      }
+    }
   }
+
+  if (fetched && fetched.trim().length > 0) {
+    return fetched;
+  }
+
+  // 兜底：若网络请求未获取到，但歌曲原本带有一份歌词文本，使用原歌词
+  if (existingLyric && typeof existingLyric === 'string' && existingLyric.trim().length > 0) {
+    return processFormat(existingLyric);
+  }
+
+  return null;
 }
 
 /** plugin:// 协议获取歌词：调用 MusicFree 插件的 getLyric 方法 */
@@ -689,12 +709,13 @@ async function fetchPluginLyricText(
   format: 'lrc' | 'txt',
   lyricsStyle: DownloadLyricsStyle,
 ): Promise<string | null> {
-  const pluginSearchResult = song.rawData;
-  if (!pluginSearchResult?.pluginId) return null;
+  const pluginId = song.plugin_id || song.rawData?.pluginId;
+  if (!pluginId) return null;
+  const pluginSearchResult = song.rawData || { ...song, pluginId };
 
   try {
     const plugins = getStoredPlugins();
-    const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+    const pluginSource = plugins.find(p => p.id === pluginId && p.enabled);
     if (!pluginSource) return null;
 
     const result = await pluginGetLyric(pluginSource, pluginSearchResult);

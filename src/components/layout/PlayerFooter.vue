@@ -38,6 +38,7 @@ import {
 
 const AudioVisualizer = defineAsyncComponent(() => import('../player/AudioVisualizer.vue'));
 const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterContextMenu.vue"));
+const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/LyricsReplacementModal.vue'));
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 
 const {
@@ -355,6 +356,7 @@ const redownloadContent = computed(() => {
 const showContextMenu = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
+const lyricsReplacementVisible = ref(false);
 
 // --- Comment State (复用全局 UI store，弹窗挂在 MainShell 上) ---
 // 播放链路构造的 Song 不写 plugin_id，回退 rawData.pluginId（与 CommentPanel/播放解析一致）
@@ -1446,7 +1448,8 @@ onUnmounted(() => {
         <transition name="footer-tools">
           <div
             v-if="showFooterTools"
-            class="absolute bottom-full right-0 pb-3 flex flex-col items-center gap-2 z-[75]"
+            class="absolute right-0 pb-1 flex flex-col items-center gap-2 z-[75]"
+            :class="showPlayerDetail ? 'bottom-[calc(100%+54px)]' : 'bottom-[calc(100%+28px)]'"
           >
             <!-- 折叠的控件（未分配到任何容器的可配置控件） -->
             <FooterControlItem v-for="key in collapsedItems" :key="'collapsed-' + key" :item-key="key" />
@@ -1454,11 +1457,10 @@ onUnmounted(() => {
             <!-- 分隔线：折叠项与固定特殊项之间 -->
             <div v-if="collapsedItems.length > 0" class="w-6 h-px bg-white/10 my-1"></div>
 
-            <!-- 固定特殊项（仅播放详情页可见） -->
+            <!-- 固定特殊项（均放置在进度条高度之上，防误触） -->
             <button
-              v-if="showPlayerDetail"
               @click="toggleProgressVisibility"
-              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isProgressHidden ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
+              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isProgressHidden ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
               :title="isProgressHidden ? '显示进度条' : '隐藏进度条'"
             >
               <EyeOff v-if="isProgressHidden" class="h-4 w-4" :stroke-width="2.2" />
@@ -1466,33 +1468,31 @@ onUnmounted(() => {
             </button>
 
             <button
-              v-if="showPlayerDetail"
               @click="toggleVisualizer"
-              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isVisualizerEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/60 hover:text-white hover:bg-white/10']"
+              :class="['transition-colors w-8 h-8 flex items-center justify-center rounded-full', isVisualizerEnabled ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/60 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
               :title="isVisualizerEnabled ? '关闭可视化' : '开启可视化'"
             >
               <AudioLines class="h-4 w-4" :stroke-width="2.2" />
             </button>
 
             <button
-              v-if="showPlayerDetail"
               @mousedown.stop
               @click.stop="toggleLyricsPlayerSettings"
-              :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : 'text-white/80 hover:text-white hover:bg-white/10']"
+              :class="['text-[14px] font-bold transition-colors w-8 h-8 flex items-center justify-center rounded-full', showLyricsPlayerSettingsPanel ? 'text-[#EC4141] bg-[#EC4141]/10' : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')]"
               title="页面样式"
             >
               <Palette class="h-4 w-4" :stroke-width="2.2" />
             </button>
 
-            <button @click="togglePin"
+            <button
+              @click="togglePin"
               class="transition-colors w-8 h-8 flex items-center justify-center rounded-full"
               :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
               :title="isPinned ? '取消固定 (当前已常驻)' : '固定状态栏 (当前离开后消失)'"
             >
               <svg v-if="isPinned" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0-1.16.37"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-.82"/><path d="M12 17v5"/><path d="M15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
             </button>
-
           </div>
         </transition>
 
@@ -1513,17 +1513,22 @@ onUnmounted(() => {
     </div>
         <FooterContextMenu
           v-if="showContextMenu"
-
           :visible="showContextMenu"
-
           :x="contextMenuX"
-
           :y="contextMenuY"
-
           :song="currentSong"
-
+          :video-background-requested="mvActive"
+          :video-background-loading="mvLoading"
           @close="showContextMenu = false"
+          @change-lyrics="lyricsReplacementVisible = true"
+          @toggle-video-background="toggleMv"
+        />
 
+        <LyricsReplacementModal
+          v-if="lyricsReplacementVisible"
+          :visible="lyricsReplacementVisible"
+          :song="currentSong"
+          @close="lyricsReplacementVisible = false"
         />
 
         <!-- 已下载确认：询问是否重新下载 -->

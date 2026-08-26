@@ -377,7 +377,17 @@ fn track_word_coverage(track: &LyricTrack) -> f64 {
 }
 
 fn sanitize_line_text(text: &str) -> String {
-    text.replace('\u{200b}', "").trim().to_string()
+    let cleaned = text.replace('\u{200b}', "").trim().to_string();
+    let head_trimmed = if cleaned.starts_with("//") {
+        cleaned.trim_start_matches('/').trim().to_string()
+    } else {
+        cleaned
+    };
+    if head_trimmed.ends_with("//") {
+        head_trimmed.trim_end_matches('/').trim().to_string()
+    } else {
+        head_trimmed
+    }
 }
 
 fn sanitize_word_text(text: &str) -> String {
@@ -1023,6 +1033,11 @@ fn prepare_amll_line(
     let roman_text = sanitize_line_text(line.roman_lyric.as_ref());
 
     if text.is_empty() && translated_text.is_empty() && roman_text.is_empty() && words.is_empty() {
+        return None;
+    }
+
+    let is_pure_divider = text.chars().all(|c| c == '/' || c == '\\' || c == '_' || c == '-' || c == '—' || c == '–' || c.is_whitespace());
+    if is_pure_divider && translated_text.is_empty() && roman_text.is_empty() {
         return None;
     }
 
