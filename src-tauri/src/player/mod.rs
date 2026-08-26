@@ -22,7 +22,7 @@ pub use commands::{
     get_track_loudness_info, is_stream_cached, pause_audio, play_audio, resume_audio, seek_audio,
     set_equalizer_settings, set_playback_speed, set_sound_effect_settings,
     set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
-    update_playback_metadata, wait_stream_complete,
+    update_playback_metadata,
 };
 pub use device::{
     get_audio_device_formats, get_current_output_device, get_output_devices, set_audio_output_mode,
