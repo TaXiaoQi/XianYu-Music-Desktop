@@ -1125,6 +1125,8 @@ fn send_audio_request(
                 .gzip(true)
                 .brotli(true)
                 .deflate(true)
+                // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+                .redirect(crate::security::ssrf::ip_literal_redirect_policy())
                 .build()
             {
                 match apply_stream_request_headers(probe.get(&https_url), headers, user_agent)
@@ -1207,6 +1209,8 @@ fn download_thread(
         .gzip(true)
         .brotli(true)
         .deflate(true)
+        // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+        .redirect(crate::security::ssrf::ip_literal_redirect_policy())
         .build()
     {
         Ok(c) => c,

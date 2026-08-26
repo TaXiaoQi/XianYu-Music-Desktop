@@ -693,19 +693,23 @@ pub async fn remove_cached_background_video(
         .app_cache_dir()
         .map_err(|error| error.to_string())?
         .join("video-background");
-    let candidate = std::path::PathBuf::from(path);
+    // canonicalize 解析符号链接，防目录名/链接逃逸
+    let canonical_cache = cache_dir.canonicalize().unwrap_or(cache_dir);
+    let candidate = match std::path::PathBuf::from(&path).canonicalize() {
+        Ok(c) => c,
+        // 不存在或无法解析，视为已删除
+        Err(_) => return Ok(()),
+    };
     let file_name = candidate
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
-    if candidate.parent() != Some(cache_dir.as_path()) || !file_name.starts_with("xy_music_video_")
+    if candidate.parent() != Some(canonical_cache.as_path())
+        || !file_name.starts_with("xy_music_video_")
     {
         return Err("Refusing to remove a non-background-video file".to_string());
     }
-    if !candidate.exists() {
-        return Ok(());
-    }
-    tokio::fs::remove_file(candidate)
+    tokio::fs::remove_file(&candidate)
         .await
         .map_err(|error| error.to_string())
 }

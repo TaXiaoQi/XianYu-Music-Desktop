@@ -402,6 +402,10 @@ async fn read_song_lyrics_raw_for_path(path: &str, db_state: &DbState) -> String
 
 #[tauri::command]
 pub async fn get_song_lyrics(path: String, db_state: State<'_, DbState>) -> Result<String, String> {
+    // 路径门禁：本地路径拒绝目录穿越；远程 URI 保持原样
+    if !is_remote_uri(&path) {
+        crate::security::path_validator::validate_path(&path, None)?;
+    }
     Ok(read_song_lyrics_raw_for_path(&path, &db_state).await)
 }
 
@@ -562,6 +566,9 @@ pub async fn get_song_lyrics_payload(
     path: String,
     db_state: State<'_, DbState>,
 ) -> Result<StructuredLyricsPayload, String> {
+    if !is_remote_uri(&path) {
+        crate::security::path_validator::validate_path(&path, None)?;
+    }
     Ok(build_structured_lyrics_payload(
         read_song_lyrics_raw_for_path(&path, &db_state).await,
     ))
@@ -569,6 +576,9 @@ pub async fn get_song_lyrics_payload(
 
 #[tauri::command]
 pub async fn get_song_lyrics_for_edit(path: String) -> Result<SongLyricsForEdit, String> {
+    if !is_remote_uri(&path) {
+        crate::security::path_validator::validate_path(&path, None)?;
+    }
     if let Ok(tagged_file) = read_tagged_file_from_path(Path::new(&path)) {
         if let Some(lyrics) = extract_embedded_lyrics(&tagged_file) {
             return Ok(SongLyricsForEdit {
@@ -602,14 +612,14 @@ pub async fn save_song_lyrics(
     source: LyricsStorageSource,
     source_path: Option<String>,
 ) -> Result<SongLyricsForEdit, String> {
-    let path_obj = Path::new(&path);
+    let path_obj = crate::security::path_validator::validate_path(&path, None)?;
     if !path_obj.exists() {
         return Err("Song file does not exist".to_string());
     }
 
     match source {
         LyricsStorageSource::Embedded => {
-            let saved_path = write_embedded_lyrics(path_obj, lyrics.clone())?;
+            let saved_path = write_embedded_lyrics(&path_obj, lyrics.clone())?;
             Ok(SongLyricsForEdit {
                 lyrics,
                 source: LyricsStorageSource::Embedded,
@@ -617,7 +627,8 @@ pub async fn save_song_lyrics(
             })
         }
         LyricsStorageSource::Sidecar | LyricsStorageSource::Empty => {
-            let saved_path = write_sidecar_lyrics(path_obj, source_path, lyrics.clone())?;
+            let saved_path =
+                write_sidecar_lyrics(&path_obj, source_path, lyrics.clone())?;
             Ok(SongLyricsForEdit {
                 lyrics,
                 source: LyricsStorageSource::Sidecar,
@@ -639,7 +650,7 @@ pub fn save_song_info(
     }
 
     let normalized_path = normalize_path(&path);
-    let path_obj = Path::new(&path);
+    let path_obj = crate::security::path_validator::validate_path(&path, None)?;
     if !path_obj.is_file() {
         return Err("歌曲文件不存在".to_string());
     }
@@ -649,14 +660,14 @@ pub fn save_song_info(
         load_song_id(&conn, &normalized_path)?
     };
 
-    write_song_info_tags(path_obj, &payload)?;
+    write_song_info_tags(&path_obj, &payload)?;
 
     let extension = path_obj
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_ascii_lowercase())
         .unwrap_or_default();
-    let mut song = parse_song_from_file(path_obj, &normalized_path, &extension)
+    let mut song = parse_song_from_file(&path_obj, &normalized_path, &extension)
         .ok_or_else(|| "保存后无法重新读取歌曲信息".to_string())?;
     song.id = existing_song_id;
 
@@ -670,7 +681,7 @@ pub fn save_song_info(
         }
     }
 
-    let mut detail = build_song_detail_from_file(path_obj, &normalized_path);
+    let mut detail = build_song_detail_from_file(&path_obj, &normalized_path);
     detail.container = song.container.clone().or(detail.container);
     detail.codec = song.codec.clone();
     detail.file_size = Some(song.file_size);
@@ -699,7 +710,7 @@ pub fn save_song_background(
 ) -> Result<String, String> {
     let normalized_song_path = normalize_path(&song_path);
 
-    let src_path = Path::new(&background_path);
+    let src_path = crate::security::path_validator::validate_path(&background_path, None)?;
     if !src_path.is_file() {
         return Err("背景图片文件不存在".to_string());
     }
@@ -715,7 +726,7 @@ pub fn save_song_background(
         ext
     );
     let dest_path = bg_dir.join(&dest_name);
-    fs::copy(src_path, &dest_path).map_err(|e| format!("复制背景图片失败: {}", e))?;
+    fs::copy(&src_path, &dest_path).map_err(|e| format!("复制背景图片失败: {}", e))?;
 
     let stored_path = dest_path.to_string_lossy().into_owned();
 
@@ -790,7 +801,7 @@ pub async fn get_song_detail(
     db_state: State<'_, DbState>,
 ) -> Result<SongDetail, String> {
     let normalized_path = normalize_path(&path);
-    let path_obj = Path::new(&path);
+    let path_obj = crate::security::path_validator::validate_path(&path, None)?;
     let mut detail = SongDetail {
         path: normalized_path.clone(),
         ..SongDetail::default()
@@ -819,11 +830,11 @@ pub async fn get_song_detail(
         }
     }
 
-    if let Ok(metadata) = fs::metadata(path_obj) {
+    if let Ok(metadata) = fs::metadata(&path_obj) {
         detail.file_size = Some(metadata.len());
     }
 
-    if let Ok(tagged_file) = read_tagged_file_from_path(path_obj) {
+    if let Ok(tagged_file) = read_tagged_file_from_path(&path_obj) {
         let tag_detail = extract_detail_metadata(&tagged_file);
         detail.genre = tag_detail.genre;
         detail.year = tag_detail.year;
@@ -1098,15 +1109,17 @@ pub fn move_file_to_folder(
     target_folder: String,
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let source = Path::new(&source_path);
+    let source = crate::security::path_validator::validate_path(&source_path, None)?;
     let filename = source.file_name().ok_or("Invalid source filename")?;
-    let target = Path::new(&target_folder).join(filename);
+    let target_folder =
+        crate::security::path_validator::validate_path(&target_folder, None)?;
+    let target = target_folder.join(filename);
 
     if target.exists() {
         return Err("Target file already exists".to_string());
     }
 
-    fs::rename(source, &target).map_err(|e| e.to_string())?;
+    fs::rename(&source, &target).map_err(|e| e.to_string())?;
     let normalized_source = normalize_path(&source_path);
     let normalized_target = normalize_path(&target.to_string_lossy());
     let mut conn = db_state.conn.lock().map_err(|e| e.to_string())?;
@@ -1137,12 +1150,12 @@ pub async fn save_artist_avatar(
     use sha2::{Digest, Sha256};
     use std::io::{Read, Seek};
 
-    let path = Path::new(&image_path);
+    let path = crate::security::path_validator::validate_path(&image_path, None)?;
     if !path.exists() {
         return Err("Image file does not exist".to_string());
     }
 
-    let mut file = fs::File::open(path).map_err(|e| format!("Failed to open image file: {}", e))?;
+    let mut file = fs::File::open(&path).map_err(|e| format!("Failed to open image file: {}", e))?;
     let mut header = [0u8; 12];
     let bytes_read = file
         .read(&mut header)
@@ -1186,7 +1199,7 @@ pub async fn save_artist_avatar(
     let target_path = covers_dir.join(target_filename);
 
     // Copy file to target path
-    fs::copy(path, &target_path)
+    fs::copy(&path, &target_path)
         .map_err(|e| format!("Failed to copy image to covers directory: {}", e))?;
 
     let target_path_str = normalize_path(&target_path.to_string_lossy());

@@ -456,6 +456,8 @@ impl RemoteRangeReader {
             .gzip(true)
             .brotli(true)
             .deflate(true)
+            // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
+            .redirect(crate::security::ssrf::ip_literal_redirect_policy())
             .build()
             .map_err(|error| error.to_string())?;
         // len 延迟填充：不再同步 HEAD/Range 探测文件长度（那会阻塞播放线程）。

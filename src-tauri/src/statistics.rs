@@ -1820,10 +1820,12 @@ pub fn export_statistics_file(
     };
 
     let content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
-    fs::write(&options.file_path, content).map_err(|e| e.to_string())?;
+    let file_path = crate::security::path_validator::validate_path(&options.file_path, None)
+        .map_err(|e| e.to_string())?;
+    fs::write(&file_path, content).map_err(|e| e.to_string())?;
 
     Ok(StatisticsExportResult {
-        file_path: options.file_path,
+        file_path: file_path.display().to_string(),
         export_id,
         exported_at,
     })
@@ -1834,6 +1836,7 @@ pub fn preview_statistics_import(
     db: State<DbState>,
     options: StatisticsImportPreviewOptions,
 ) -> Result<StatisticsImportPreview, String> {
+    crate::security::path_validator::validate_path(&options.file_path, None)?;
     let export = load_portable_export(&options.file_path)?;
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     ensure_statistics_aggregates(&conn)?;
@@ -1874,6 +1877,7 @@ pub fn import_statistics_file(
     db: State<DbState>,
     options: StatisticsImportOptions,
 ) -> Result<StatisticsImportResult, String> {
+    crate::security::path_validator::validate_path(&options.file_path, None)?;
     let export = load_portable_export(&options.file_path)?;
     let mut conn = db.conn.lock().map_err(|e| e.to_string())?;
     ensure_statistics_aggregates(&conn)?;
