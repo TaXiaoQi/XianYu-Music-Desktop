@@ -13,6 +13,7 @@ mod power;
 mod recognize;
 mod remote;
 mod security;
+mod skin_image;
 mod statistics;
 mod system_audio;
 mod system_fonts;
@@ -30,6 +31,7 @@ use app_runtime::{
     open_devtools, setup_app, update_native_tray_menu,
 };
 use custom_fonts::{import_lyrics_font, read_lyrics_font_data_url};
+use skin_image::import_skin_image;
 use database::clear_all_app_data;
 use foreground_window::get_foreground_fullscreen_state;
 use install_language::{get_install_language, set_install_language};
@@ -353,6 +355,7 @@ pub fn run() {
             save_plugin_script,
             read_file_bytes,
             read_image_base64,
+            import_skin_image,
             proxy_image,
             download_audio_to_temp,
             download_video_to_cache,

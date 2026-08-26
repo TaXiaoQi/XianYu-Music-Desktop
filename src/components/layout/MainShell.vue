@@ -29,6 +29,7 @@ const BanDialog = defineAsyncComponent(() => import('../common/BanDialog.vue'));
 const CiyuanxiDialog = defineAsyncComponent(() => import('../common/CiyuanxiDialog.vue'));
 const ChangePasswordDialog = defineAsyncComponent(() => import('../common/ChangePasswordDialog.vue'));
 const DeleteAccountDialog = defineAsyncComponent(() => import('../common/DeleteAccountDialog.vue'));
+const ShareLinkDialog = defineAsyncComponent(() => import('../common/ShareLinkDialog.vue'));
 const SongInfoModal = defineAsyncComponent(() => import('../overlays/SongInfoModal.vue'));
 const DownloadDialog = defineAsyncComponent(() => import('../overlays/DownloadDialog.vue'));
 const AnnouncementModal = defineAsyncComponent(() => import('../overlays/AnnouncementModal.vue'));
@@ -380,6 +381,7 @@ onMounted(() => {
     <CiyuanxiDialog />
     <ChangePasswordDialog />
     <DeleteAccountDialog />
+    <ShareLinkDialog />
     <CustomSkinModal v-if="uiStore.showCustomSkinModal" @close="uiStore.showCustomSkinModal = false" />
   </div>
 </template>

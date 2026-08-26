@@ -99,6 +99,12 @@ fn collect_existing_open_paths(
             continue;
         }
 
+        // 深链与其它带 scheme 的协议参数不是本地文件，走专门的深链通道；
+        // 严禁落入本地文件导入/打开流程（会导致「没有找到可导入的音乐文件」误报）。
+        if trimmed.starts_with(DEEP_LINK_SCHEME) || trimmed.contains("://") {
+            continue;
+        }
+
         let normalized = crate::music::utils::normalize_path(trimmed);
         if normalized.is_empty() {
             continue;
