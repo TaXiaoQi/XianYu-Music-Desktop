@@ -441,11 +441,26 @@ export function usePlaylistSync() {
           return resolved === restored.path ? restored : { ...restored, path: resolved };
         });
 
+        // 建立云端原始 path → 转换后 path 的映射（用于更新 songPaths 中的旧路径）
+        const pathRemapFromCloud = new Map<string, string>();
+        cloudSongs.forEach((raw, i) => {
+          const originalPath = (raw as any).path as string | undefined;
+          const newPath = localSongs[i]?.path;
+          if (originalPath && newPath && originalPath !== newPath) {
+            pathRemapFromCloud.set(originalPath, newPath);
+          }
+        });
+
         // 尝试匹配本地歌单（通过原 id）
         const existing = collectionsStore.playlists.find(p => p.id === cloudPl.id);
 
         if (existing) {
-          // 已有本地歌单：合并歌曲列表
+          // 已有本地歌单：先将 songPaths 里已被转换的旧路径（plugin:// → lx://）更新为新路径
+          if (pathRemapFromCloud.size > 0) {
+            existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
+          }
+
+          // 合并歌曲列表
           const localSongPaths = new Set(existing.songPaths);
           const newPaths: string[] = [];
 

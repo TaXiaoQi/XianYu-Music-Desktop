@@ -105,6 +105,17 @@ export function useSidebarPlaylistCovers({
           return applyCustomCover(playlist.id, playlist.coverPath);
         }
 
+        // 云端同步封面（cloudCoverUrl）：自定义封面不可用时优先使用
+        if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
+          const prev = playlistCustomCoverMap.get(playlist.id);
+          if (prev === playlist.cloudCoverUrl && sidebarPlaylistCoverCache.has(playlist.id)) {
+            return false;
+          }
+          playlistCustomCoverMap.set(playlist.id, playlist.cloudCoverUrl);
+          sidebarPlaylistCoverCache.set(playlist.id, playlist.cloudCoverUrl);
+          return true;
+        }
+
         // 没有自定义封面，但之前可能有自定义封面（现已移除）
         if (playlistCustomCoverMap.has(playlist.id)) {
           applyCustomCover(playlist.id, undefined);
@@ -160,6 +171,13 @@ export function useSidebarPlaylistCovers({
       return url;
     }
 
+    // 云端同步封面（cloudCoverUrl）：自定义封面不可用时优先使用
+    if (playlist?.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
+      sidebarPlaylistCoverCache.set(playlistId, playlist.cloudCoverUrl);
+      playlistCoverCacheVersion.value += 1;
+      return playlist.cloudCoverUrl;
+    }
+
     const firstSongPath = playlist?.songPaths[0];
     if (firstSongPath) {
       // 先尝试从 songs 缓存中快速获取
@@ -200,7 +218,7 @@ export function useSidebarPlaylistCovers({
   watch(
     () =>
       playlists.value
-        .map(playlist => `${playlist.id}:${playlist.coverPath ?? ''}:${playlist.songPaths[0] ?? ''}:${playlist.songPaths.length}`)
+        .map(playlist => `${playlist.id}:${playlist.coverPath ?? ''}:${playlist.cloudCoverUrl ?? ''}:${playlist.songPaths[0] ?? ''}:${playlist.songPaths.length}`)
         .join('|'),
     () => {
       schedulePlaylistCoverRefresh();
