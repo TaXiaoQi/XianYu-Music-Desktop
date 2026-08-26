@@ -16,6 +16,7 @@ use rodio::{Decoder, Sink, Source};
 use souvlaki::{MediaControlEvent, MediaControls, MediaPlayback, MediaPosition, PlatformConfig};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -958,6 +959,43 @@ fn append_decoded_source<R>(
     }
 }
 
+/// 本地音频读取器：普通文件直接转发，QMC 加密文件走解密读取器。
+/// 用枚举而非 `dyn Read + Seek`（Rust 不允许两个非 auto trait 组合成 trait object），
+/// 从而满足 append_decoded_source 的泛型 `R: Read + Seek + Send + Sync + 'static` 约束。
+enum LocalAudioReader {
+    Plain(File),
+    Encrypted(crate::player::qmc2::QmcDecryptReader<File>),
+}
+
+impl Read for LocalAudioReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            LocalAudioReader::Plain(file) => file.read(buf),
+            LocalAudioReader::Encrypted(reader) => reader.read(buf),
+        }
+    }
+}
+
+impl Seek for LocalAudioReader {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            LocalAudioReader::Plain(file) => file.seek(pos),
+            LocalAudioReader::Encrypted(reader) => reader.seek(pos),
+        }
+    }
+}
+
+/// 打开本地音频文件；若为 QMC 加密格式则自动套上 QMC 解密读取器。
+fn open_local_audio_reader(path: &Path) -> Option<LocalAudioReader> {
+    let file = File::open(path).ok()?;
+    match crate::player::qmc2::detect_qmc_crypto(path) {
+        Some(crypto) => Some(LocalAudioReader::Encrypted(
+            crate::player::qmc2::QmcDecryptReader::new(file, crypto),
+        )),
+        None => Some(LocalAudioReader::Plain(file)),
+    }
+}
+
 fn handle_play(
     source: AudioSource,
     output: &Option<SharedOutputBackend>,
@@ -994,9 +1032,9 @@ fn handle_play(
 
     match source {
         AudioSource::LocalFile(path) => {
-            if let Ok(file) = File::open(path) {
+            if let Some(reader) = open_local_audio_reader(Path::new(&path)) {
                 append_decoded_source(
-                    file,
+                    reader,
                     output,
                     current_sink,
                     progress,
@@ -1008,6 +1046,9 @@ fn handle_play(
                     user_volume,
                     None,
                 );
+            } else if let Ok(mut reason) = progress.start_failed_reason.lock() {
+                *reason = Some("本地音频文件打开失败".to_string());
+                progress.start_failed.store(true, Ordering::Relaxed);
             }
         }
         AudioSource::RemoteWebDav(stream) => {
@@ -1165,9 +1206,9 @@ fn handle_seek(
                         Err(_) => {}
                     }
                 } else if !current_path.is_empty() {
-                    match File::open(current_path) {
-                        Ok(file) => append_decoded_source(
-                            file,
+                    if let Some(reader) = open_local_audio_reader(Path::new(current_path)) {
+                        append_decoded_source(
+                            reader,
                             output,
                             current_sink,
                             progress,
@@ -1178,8 +1219,7 @@ fn handle_seek(
                             sound_effect_handle,
                             user_volume,
                             None,
-                        ),
-                        Err(_) => {}
+                        );
                     }
                 }
 

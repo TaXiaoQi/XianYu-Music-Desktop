@@ -9,7 +9,9 @@
 //! and ownlight6/qmc-decoder.
 
 use base64::Engine;
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 
 // ============================================================
 // TC-TEA (Tencent modified TEA, CBC mode, 16 rounds)
@@ -519,6 +521,56 @@ impl<R: Read + Seek> Seek for QmcDecryptReader<R> {
         self.pos = new_pos;
         Ok(new_pos)
     }
+}
+
+// ============================================================
+// Local-file QMC detection (for encrypted local library files)
+// ============================================================
+
+/// 本地加密文件的解密器探测。
+///
+/// 判定顺序：
+/// 1. 文件头已是有效音频 → 非加密，返回 `None`（直接播放）。
+/// 2. 尾部含 QTag / V1 footer 的 ekey → QMC2（Map/RC4）。
+/// 3. 头 16 字节经 QMC1 固定密钥解密后变回有效音频头 → QMC1。
+/// 4. 均不命中 → 无法确定密钥，返回 `None`（交给解码器自然失败）。
+pub fn detect_qmc_crypto(path: &Path) -> Option<QmcCrypto> {
+    let mut file = File::open(path).ok()?;
+
+    let mut header = [0u8; 16];
+    if file.read_exact(&mut header).is_err() {
+        return None;
+    }
+    if is_valid_audio_header(&header) {
+        return None;
+    }
+
+    // QMC2：尾部 footer 里可能内嵌 ekey（QTag / V1）
+    if let Some(ekey) = extract_ekey_from_file_tail(&mut file) {
+        if let Ok(crypto) = QmcCrypto::from_ekey(&ekey) {
+            return Some(crypto);
+        }
+    }
+
+    // QMC1：固定密钥无需 ekey，验证解密后头能还原为有效音频再做
+    let mut probe = header;
+    qmc1_decrypt(&mut probe);
+    if is_valid_audio_header(&probe) {
+        return Some(QmcCrypto::qmc1());
+    }
+
+    None
+}
+
+/// 读取文件尾部最多 4KB 并尝试从中提取 QMC2 footer ekey。
+fn extract_ekey_from_file_tail(file: &mut File) -> Option<String> {
+    use std::io::Seek;
+    let file_size = file.seek(SeekFrom::End(0)).ok()?;
+    let tail_size = file_size.min(4096) as usize;
+    file.seek(SeekFrom::Start(file_size - tail_size as u64)).ok()?;
+    let mut tail = vec![0u8; tail_size];
+    file.read_exact(&mut tail).ok()?;
+    extract_ekey_from_footer(&tail)
 }
 
 // ============================================================

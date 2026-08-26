@@ -313,7 +313,11 @@ export type FooterItemKey =
   | 'playlist'        // 播放队列
   | 'comment'         // 评论区
   | 'mv'              // MV 背景视频（仅播放详情页显示）
-  | 'share';          // 分享当前歌曲
+  | 'share'           // 分享当前歌曲
+  | 'visualizer'      // 可视化/频谱开关（仅播放详情页可用）
+  | 'progress'        // 歌词页进度条显示开关（仅播放详情页可用）
+  | 'pageStyle'       // 页面样式（仅播放详情页可用）
+  | 'pin';            // 固定状态栏（仅播放详情页可用）
 
 /** 底部栏容器标识 */
 export type FooterContainerKey = 'left' | 'middleLeft' | 'middleRight' | 'right';
@@ -332,6 +336,11 @@ export interface FooterLayoutSettings {
   right: FooterItemKey[];
   /** 用户明确关闭显示的控件，不进入底栏或更多工具菜单。 */
   hidden: FooterItemKey[];
+  /**
+   * 更多工具菜单中控件的有序排列（未分配到主栏容器的项）。
+   * 用于用户在设置预览的更多工具弹窗内经拖拽自定义排序。
+   */
+  collapsed?: FooterItemKey[];
 }
 
 /**

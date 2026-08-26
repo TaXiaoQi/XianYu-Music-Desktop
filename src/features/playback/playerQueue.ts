@@ -276,6 +276,21 @@ export const createPlayerQueue = ({
     tempQueue.value = tempQueue.value.filter(item => item.path !== song.path);
   };
 
+  /**
+   * 在合并视图（下一首播放在前、播放队列在后）上重排队列。
+   * 重排后按原「下一首播放」数量切回两个队列，保持「先播下一首、再播主队列」语义。
+   */
+  const reorderQueue = (oldIndex: number, newIndex: number) => {
+    const merged = [...tempQueue.value, ...playQueue.value];
+    if (oldIndex < 0 || oldIndex >= merged.length) return;
+    if (newIndex < 0 || newIndex >= merged.length) return;
+    const [item] = merged.splice(oldIndex, 1);
+    merged.splice(newIndex, 0, item);
+    const tempCount = tempQueue.value.length;
+    tempQueue.value = merged.slice(0, tempCount);
+    playQueue.value = merged.slice(tempCount);
+  };
+
   const addSongToQueue = (song: Song) => {
     playQueue.value = [...playQueue.value, song];
     showToast('已添加到播放队列', 'success');
@@ -304,6 +319,7 @@ export const createPlayerQueue = ({
     prevSong,
     clearQueue,
     removeSongFromQueue,
+    reorderQueue,
     addSongToQueue,
     addSongsToQueue,
     toggleMode,
