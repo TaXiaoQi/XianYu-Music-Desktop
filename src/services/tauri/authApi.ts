@@ -14,9 +14,4 @@ export const authApi = {
     body: Record<string, unknown>,
     fetchTimeoutMs?: number,
   ) => tauriInvoke('authed_request', { action, body, fetchTimeoutMs }),
-  signedPostJson: (
-    url: string,
-    body: Record<string, unknown>,
-    fetchTimeoutMs?: number,
-  ) => tauriInvoke('signed_post_json', { url, body, fetchTimeoutMs }),
 };

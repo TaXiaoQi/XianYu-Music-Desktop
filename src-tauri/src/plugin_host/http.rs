@@ -73,7 +73,8 @@ impl HttpBridge {
         let policy = if redirect_limit == 0 {
             reqwest::redirect::Policy::none()
         } else {
-            reqwest::redirect::Policy::limited(redirect_limit)
+            // 跟随重定向，但每个跳转目标都需通过 SSRF 校验
+            crate::security::ssrf::ssrf_redirect_policy()
         };
         let client = reqwest::Client::builder()
             .redirect(policy)
@@ -128,6 +129,11 @@ impl HttpBridge {
             follow as usize
         };
         let client = self.client_for(redirect_limit)?;
+
+        // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
+        crate::security::ssrf::validate_outbound_url(url)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut request = client.request(method, url);
         if timeout_ms > 0 {

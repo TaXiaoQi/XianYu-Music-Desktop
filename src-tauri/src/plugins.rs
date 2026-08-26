@@ -1,4 +1,4 @@
-use crate::security::path_validator;
+use crate::security::{path_validator, ssrf};
 use image::{GenericImageView, ImageEncoder};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -37,6 +37,9 @@ fn validate_plugin_http_url(url: &str) -> Result<(), String> {
     if host.is_empty() {
         return Err("URL 缺少主机名".to_string());
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL 不得包含用户凭据".to_string());
+    }
     if host == "localhost"
         || host.ends_with(".localhost")
         || host.ends_with(".local")
@@ -67,6 +70,21 @@ fn validate_plugin_http_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 插件 HTTP 重定向策略：每个跳转目标都复用 `validate_plugin_http_url` 做 host 级校验，
+/// 拒绝重定向到内网/回环/保留地址；`redirect_limit == 0` 时不跟随。
+fn plugin_ssrf_redirect_policy(redirect_limit: usize) -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() > redirect_limit {
+            return attempt.stop();
+        }
+        if validate_plugin_http_url(attempt.url().as_str()).is_ok() {
+            attempt.follow()
+        } else {
+            attempt.error(std::io::Error::other("重定向目标被安全策略禁止"))
+        }
+    })
+}
+
 /// 异步 HTTP 请求 —— 使用 reqwest 异步客户端，不阻塞主线程
 #[tauri::command]
 pub async fn plugin_http_request(
@@ -84,7 +102,7 @@ pub async fn plugin_http_request(
     let redirect_limit = follow.unwrap_or(10);
     let timeout_secs = timeout.unwrap_or(30);
     let client_builder = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
+        .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
         .gzip(true)
         .brotli(true)
         .deflate(true)
@@ -166,7 +184,7 @@ pub async fn plugin_http_request_binary(
     let redirect_limit = follow.unwrap_or(10);
     let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
     let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(redirect_limit as usize))
+        .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
         .timeout(request_timeout)
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
@@ -354,8 +372,15 @@ pub fn read_image_base64(path: String) -> Result<serde_json::Value, String> {
 /// 代理图片请求 —— 自动添加 Referer 头，解决 B站等 CDN 403 问题
 #[tauri::command]
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
+    // SSRF 防护：图片代理仅允许公网 http/https 目标
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("图片链接校验失败: {e}"))?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| e.to_string())?;
@@ -481,6 +506,11 @@ pub async fn download_audio_to_temp(
     url: String,
     headers: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
+    // SSRF 防护：音频源仅允许公网 http/https 目标
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
@@ -525,6 +555,10 @@ pub async fn download_audio_to_temp(
                     .map(|u| u.to_string())
                     .unwrap_or(next_url)
             };
+            // SSRF 防护：重定向后的跳转目标也需通过校验
+            ssrf::validate_outbound_url(&current_url)
+                .await
+                .map_err(|e| e.to_string())?;
             continue;
         }
 
@@ -568,8 +602,15 @@ pub async fn download_video_to_cache(
         return Err("Unsupported video URL".to_string());
     }
 
+    // SSRF 防护：视频源仅允许公网 http/https 目标
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|error| error.to_string())?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(ssrf::ssrf_redirect_policy())
         .gzip(true)
         .brotli(true)
         .deflate(true)

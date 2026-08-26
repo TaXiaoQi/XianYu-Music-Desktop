@@ -10,7 +10,7 @@
  *
  * 仅保留账号相关能力（登录/注册/验证码/找回密码/修改密码/资料/头像）。
  *
- * [迁移说明] 签名 + HTTP 请求已迁移到 Rust `authed_request` / `signed_post_json` 命令，
+ * [迁移说明] 签名 + HTTP 请求已迁移到 Rust `authed_request` 命令，
  * token 存储迁移到 OS keyring（由 Rust `save_auth_credentials` / `get_auth_credentials` 管理）。
  * 前端通过 `initAuthFromKeyring()` 在启动时从 keyring 加载凭证到内存缓存，
  * `getStoredAuth()` / `getAuthToken()` 同步读取内存缓存。
@@ -263,7 +263,7 @@ function isAuthPayload(value: unknown): value is AuthPayload {
 }
 
 // ═══════════════════════════════════════════════════════
-//  签名请求（Rust authed_request / signed_post_json）
+//  签名请求（Rust authed_request）
 // ═══════════════════════════════════════════════════════
 
 /** signedRequest 的可选参数 */
@@ -365,40 +365,6 @@ export async function signedRequest<T>(
     requestAction<T>(action, body, fetchTimeoutMs, skipToken),
     timeoutPromise,
   ]);
-}
-
-/**
- * 向「任意 URL」发起带签名的 JSON POST 请求。
- *
- * 与 signedRequest 的区别：signedRequest 只能调用账号 API（baseUrl/?action=xxx），
- * 本函数可指定完整 URL，用于壁纸上传等非账号 API 端点（如壁纸中心接口）。
- *
- * 签名在 Rust 侧完成，与账号 API 使用同一个 api_secret。
- *
- * 成功（code===200）返回 data，否则抛出包含 msg 的错误。
- */
-export async function signedPostJson<T>(
-  url: string,
-  body: Record<string, unknown>,
-  options?: SignedRequestOptions,
-): Promise<T> {
-  const fetchTimeoutMs = options?.fetchTimeoutMs ?? 60_000; // 默认 60s（图片上传较慢）
-  const timeoutMs = options?.timeoutMs ?? 65_000;
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`请求超时（${timeoutMs / 1000}s）`)), timeoutMs);
-  });
-
-  const doRequest = async (): Promise<T> => {
-    const payload = await authApi.signedPostJson(url, body, fetchTimeoutMs);
-    const envelope = payload as unknown as ApiEnvelope<T>;
-    if (Number(envelope.code) !== 200) {
-      throw new Error(envelope.msg || `请求失败（code ${envelope.code}）`);
-    }
-    return envelope.data ?? ({} as T);
-  };
-
-  return Promise.race([doRequest(), timeoutPromise]);
 }
 
 // ═══════════════════════════════════════════════════════

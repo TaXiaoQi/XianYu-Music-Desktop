@@ -1077,9 +1077,11 @@ pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), Stri
     use lofty::config::WriteOptions;
     use lofty::tag::TagExt;
 
-    let path = Path::new(&request.file_path);
+    // 防路径穿越/符号链接逃逸：目标必须是合法文件路径（拒绝 .. 与越权链）
+    let validated = crate::security::path_validator::validate_path(&request.file_path, None)?;
+    let path = validated.as_path();
     if !path.exists() {
-        return Err(format!("文件不存在: {}", request.file_path));
+        return Err(format!("文件不存在: {}", path.display()));
     }
 
     let mut tagged_file =

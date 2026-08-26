@@ -6,7 +6,6 @@
 //
 // 命令列表：
 // - authed_request:     向账号 API 发起带签名的 POST 请求（baseUrl/?action=xxx）
-// - signed_post_json:   向任意 URL 发起带签名的 POST 请求（壁纸等非账号端点）
 // - save_auth_credentials:  将 token 存入 keyring，user JSON 存入文件
 // - get_auth_credentials:   从 keyring 读取 token，从文件读取 user
 // - clear_auth_credentials: 清除 keyring 和 user 文件
@@ -221,21 +220,6 @@ pub async fn authed_request(
     let api_secret = read_api_secret(&app_handle);
 
     do_signed_post(&url, &action, body, fetch_timeout_ms, &api_secret).await
-}
-
-/// 向任意 URL 发起带签名的 POST 请求（壁纸等非账号 API 端点）。
-///
-/// 签名算法与 `authed_request` 完全一致：
-/// `sign = md5(timestamp + nonce + body + api_secret)`
-#[tauri::command]
-pub async fn signed_post_json(
-    app_handle: AppHandle,
-    url: String,
-    body: Value,
-    fetch_timeout_ms: Option<u64>,
-) -> Result<Value, String> {
-    let api_secret = read_api_secret(&app_handle);
-    do_signed_post(&url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
 }
 
 /// 内部：执行带签名的 POST 请求

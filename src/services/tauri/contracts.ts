@@ -634,10 +634,6 @@ export interface TauriCommandMap {
     payload: { action: string; body: Record<string, unknown>; fetchTimeoutMs?: number };
     response: { code: number; msg: string; data: unknown };
   };
-  signed_post_json: {
-    payload: { url: string; body: Record<string, unknown>; fetchTimeoutMs?: number };
-    response: { code: number; msg: string; data: unknown };
-  };
   save_auth_credentials: {
     payload: { token: string; user: unknown };
     response: void;

@@ -108,6 +108,11 @@ pub async fn play_audio(
     let is_http_stream = path.starts_with("http://") || path.starts_with("https://");
     let source = if is_http_stream {
 
+        // SSRF 纵深：直链为 IP 字面量且命中内网/回环/保留地址时拒绝。
+        // 不做 DNS/端口白名单，避免误伤音源 CDN 的多端口与共享 IP 段。
+        crate::security::ssrf::validate_url_ip_literal(&path)
+            .map_err(|e| format!("播放链接校验失败: {}", e))?;
+
         // [在线播放重构] 把在线音频流式下载到本地临时文件，再用本地引擎播放。
         // 这样所有音乐都走统一的 File::open + Decoder 路径，设备切换恢复天然支持，
         // 无需维护 RemoteRangeReader 的复杂重建逻辑。

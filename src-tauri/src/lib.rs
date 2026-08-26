@@ -53,7 +53,7 @@ use music::{
     resolve_lx_music_url, resolve_lx_with_quality_fallback,
     save_artist_avatar, save_auth_credentials, save_song_background, save_song_info,
     save_song_lyrics, scan_folder_as_playlists, scan_library, scan_music_folder,
-    search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder, signed_post_json,
+    search_library_songs, set_auth_api_secret, set_auth_base_url, show_in_folder,
 };
 use player::{
     clear_stream_cache, copy_stream_cache, flush_playback_session, get_audio_device_formats,
@@ -196,7 +196,6 @@ pub fn run() {
             get_song_cover,
             extract_palette,
             authed_request,
-            signed_post_json,
             save_auth_credentials,
             get_auth_credentials,
             clear_auth_credentials,
