@@ -93,6 +93,9 @@ let lastHandledOnlineFailure: {
   handledAt: number;
 } | null = null;
 const recentOnlineFailurePaths = new Map<string, number>();
+// [plugin:// 失败前缀] 记录已确认无法播放的 plugin:// 路径前缀（plugin://<pluginId>/），
+// 用于快速跳过同一无效来源的所有歌曲，而无需逐首尝试。每次用户手动切歌时清空。
+const knownFailedPluginPrefixes = new Set<string>();
 // [分享链接] 当前播放是否由分享链接深链触发：失败时按「分享链接播放失败行为」处理
 let shareLinkPlaybackActive = false;
 let latestSeekRequestId = 0;
@@ -916,17 +919,60 @@ const authStore = useAuthStore();
 
     const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
     if (failureBehavior === 'skip') {
-      const hasAlternativeQueueSong = [
-        ...playbackStore.tempQueue,
-        ...playbackStore.playQueue,
-      ].some(item => (
-        item.path !== song.path
-        && !recentOnlineFailurePaths.has(item.path)
-      ));
+      // [plugin:// 失败前缀标记] 当 plugin:// 歌曲播放失败时，提取其路径前缀
+      //（plugin://<pluginId>/），将其加入已知失败前缀集合，后续扫描队列时批量跳过
+      // 同一来源的所有歌曲——避免逐首尝试整个队列（如 622 首全部来自同一无效平台）。
+      // 注意：pluginId 在桌面端是 SHA256 哈希，移动端是平台名，两端不兼容，
+      // 所以不尝试匹配插件 ID，仅靠前缀来识别同一无效来源。
+      if (song.path.startsWith('plugin://')) {
+        const withoutScheme = song.path.slice('plugin://'.length);
+        const slashIdx = withoutScheme.indexOf('/');
+        if (slashIdx >= 0) {
+          const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
+          knownFailedPluginPrefixes.add(prefix);
+        }
+      }
+
+      // 判断一首歌是否可以尝试播放（未在失败集合里，且不属于已知失败前缀）
+      const isLikelyPlayable = (item: Song): boolean => {
+        if (recentOnlineFailurePaths.has(item.path)) return false;
+        if (item.path.startsWith('plugin://')) {
+          for (const prefix of knownFailedPluginPrefixes) {
+            if (item.path.startsWith(prefix)) return false;
+          }
+        }
+        return true;
+      };
+
+      const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
+      const hasAlternativeQueueSong = queueSongs.some(item =>
+        item.path !== song.path && isLikelyPlayable(item),
+      );
 
       if (!hasAlternativeQueueSong) {
+        // 如果所有歌曲都因同一 plugin 前缀失败，给出明确提示
+        if (knownFailedPluginPrefixes.size > 0 && queueSongs.every(item =>
+          !isLikelyPlayable(item) || item.path === song.path,
+        )) {
+          showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
+        }
         console.warn('[Audio] 在线音频播放失败，但队列中没有其它未失败歌曲，停止而不是循环请求');
         return;
+      }
+
+      // 批量标记同前缀的队列歌曲为失败，避免 handleAutoNext 逐首触发再次解析
+      if (knownFailedPluginPrefixes.size > 0) {
+        const now = Date.now();
+        for (const item of queueSongs) {
+          if (item.path === song.path) continue;
+          if (!item.path.startsWith('plugin://')) continue;
+          for (const prefix of knownFailedPluginPrefixes) {
+            if (item.path.startsWith(prefix)) {
+              recentOnlineFailurePaths.set(item.path, now);
+              break;
+            }
+          }
+        }
       }
 
       setManagedTimeout(() => {
@@ -954,6 +1000,37 @@ const authStore = useAuthStore();
     // 音质切换、自动换源、指定起播时间等内部重播请求仍继续执行。
     if (isSameCurrentlyPlayingSong) {
       return;
+    }
+
+    // [plugin:// 失败前缀快速跳过] 该歌曲的 plugin:// 来源前缀已被标记为无效
+    //（如移动端同步的 plugin://网易音乐/ 在桌面端没有对应插件），直接触发下一首，
+    // 避免再次走完整的插件解析流程。
+    if (song.path.startsWith('plugin://') && !options._sourceSwitchCtx) {
+      const withoutScheme = song.path.slice('plugin://'.length);
+      const slashIdx = withoutScheme.indexOf('/');
+      if (slashIdx >= 0) {
+        const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
+        if (knownFailedPluginPrefixes.has(prefix)) {
+          recentOnlineFailurePaths.set(song.path, Date.now());
+          // 检查队列中是否还有不属于已知失败前缀的歌曲
+          const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
+          const hasPlayable = queueSongs.some(item => {
+            if (recentOnlineFailurePaths.has(item.path)) return false;
+            if (!item.path.startsWith('plugin://')) return true;
+            const ws = item.path.slice('plugin://'.length);
+            const si = ws.indexOf('/');
+            if (si < 0) return true;
+            return !knownFailedPluginPrefixes.has('plugin://' + ws.slice(0, si + 1));
+          });
+          if (!hasPlayable) {
+            showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
+            console.warn('[Audio] 队列中无可播放歌曲（所有 plugin:// 均属于已知失败来源），停止');
+            return;
+          }
+          handleAutoNext();
+          return;
+        }
+      }
     }
 
     const requestId = ++playRequestId;
@@ -2072,6 +2149,7 @@ const authStore = useAuthStore();
     cancelledPlayRequestId = -1;
     lastHandledOnlineFailure = null;
     recentOnlineFailurePaths.clear();
+    knownFailedPluginPrefixes.clear();
     latestSeekRequestId += 1;
     playbackAnchorTime = 0;
     playbackStartOffset = 0;

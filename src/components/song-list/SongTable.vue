@@ -414,7 +414,7 @@ const syncVisibleCoverUrls = (songs: Song[]) => {
       return;
     }
 
-    const persistedCoverUrl = primeCoverPath(path, song.cover_thumb_path);
+    const persistedCoverUrl = primeCoverPath(path, song.cover_thumb_path || (song as any).coverUrl);
     if (persistedCoverUrl) {
       displayedCoverUrls.set(path, persistedCoverUrl);
       return;

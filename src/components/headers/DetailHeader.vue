@@ -144,13 +144,21 @@ const updateHeaderCover = async () => {
         headerCover.value = resolveCoverPath(pl.coverPath);
         return;
       }
+      // 云端同步封面（cloudCoverUrl）：服务端存储的 https URL，本地封面不可用时优先使用
+      if (pl && pl.cloudCoverUrl && /^https?:\/\//i.test(pl.cloudCoverUrl)) {
+        if (requestId !== coverRequestId) return;
+        headerCover.value = pl.cloudCoverUrl;
+        return;
+      }
       if (pl && pl.songPaths.length > 0) {
         const firstSongPath = pl.songPaths[0];
 
         // 优先从 playlist.songs 缓存中获取在线歌曲封面（网络 URL）
-        const cachedSong = pl.songs?.find(s => s.path === firstSongPath);
-        if (cachedSong?.cover_thumb_path) {
-          const primedUrl = primeCoverPath(cachedSong.path, cachedSong.cover_thumb_path);
+        // 先按 path 精确匹配，若不中（path 可能已被转换，如 plugin:// → lx://）则取首歌曲
+        const cachedSong = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
+        const cachedCoverPath = cachedSong?.cover_thumb_path || (cachedSong as any)?.coverUrl || '';
+        if (cachedCoverPath) {
+          const primedUrl = primeCoverPath(cachedSong!.path, cachedCoverPath);
           if (primedUrl) {
             if (requestId !== coverRequestId) return;
             headerCover.value = primedUrl;
@@ -171,9 +179,10 @@ const updateHeaderCover = async () => {
           if (thumbnailCover) {
             headerCover.value = thumbnailCover;
           } else {
-            // 后端无法获取封面（如 plugin 网络歌曲），回退到当前首歌的 cover_thumb_path
-            const firstSong = props.songs.find(song => song.path === firstSongPath);
-            const thumbPath = firstSong?.cover_thumb_path;
+            // 后端无法获取封面（如 lx:// 在线歌曲），回退到首歌曲的 cover_thumb_path 或 coverUrl
+            const firstSong = props.songs.find(song => song.path === firstSongPath)
+              ?? props.songs[0];
+            const thumbPath = firstSong?.cover_thumb_path || (firstSong as any)?.coverUrl || '';
             headerCover.value = thumbPath || '';
           }
         } catch {

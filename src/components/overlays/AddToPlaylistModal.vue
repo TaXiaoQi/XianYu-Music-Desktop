@@ -44,7 +44,7 @@ const scheduleClear = () => {
   }, 15000);
 };
 
-// 同步获取歌单封面：优先自定义封面 coverPath，其次首歌曲的 cover_thumb_path（网络歌曲）
+// 同步获取歌单封面：优先自定义封面 coverPath，其次云端同步封面 cloudCoverUrl，再取首歌曲的 cover_thumb_path（网络歌曲）
 const getPlaylistCover = (playlist: Playlist): string => {
   if (playlist.coverPath) {
     if (playlist.coverPath.startsWith('http') || playlist.coverPath.startsWith('asset:') || playlist.coverPath.startsWith('data:')) {
@@ -55,6 +55,10 @@ const getPlaylistCover = (playlist: Playlist): string => {
     } catch {
       return '';
     }
+  }
+  // 云端同步封面（服务端存储的 https URL）
+  if (playlist.cloudCoverUrl && /^https?:\/\//i.test(playlist.cloudCoverUrl)) {
+    return playlist.cloudCoverUrl;
   }
   // 网络歌曲（plugin/remote）：使用首歌曲的 cover_thumb_path
   if (playlist.songPaths.length > 0) {
