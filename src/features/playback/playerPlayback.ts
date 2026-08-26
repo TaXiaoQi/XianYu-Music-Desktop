@@ -24,6 +24,22 @@ import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
 import {getPluginBilibiliCookies} from '../../services/domain/pluginCookieStore';
 import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
+import {
+  fetchQishuiPreviewInfo,
+  hasQishuiPreviewCached,
+  isPluginPath,
+  isPreviewLikeStream,
+  isQishuiPluginPath,
+  extractPluginTrackId,
+  formatPreviewClock,
+  type PreviewClipInfo,
+} from './onlineFailover';
+import {
+  evaluateStallAutoNext,
+  LOW_POWER_PROGRESS_UPDATE_MS,
+  type PlaybackProgressPayload,
+} from './playbackTiming';
+import {likelyFullCoverPaths, likelyThumbnailPaths} from './coverState';
 
 interface PlaySongOptions {
   updateShuffleHistory?: boolean;
@@ -46,16 +62,6 @@ interface PlaySongOptions {
 interface SeekCompletedPayload {
   request_id: number;
   time: number;
-}
-
-/** Rust 后端发射的播放进度事件载荷 */
-interface PlaybackProgressPayload {
-  /** 当前播放位置（秒） */
-  position: number;
-  /** 音频总时长（秒），0 表示未知 */
-  duration: number;
-  /** 是否正在播放 */
-  is_playing: boolean;
 }
 
 interface CreatePlayerPlaybackDeps {
@@ -120,22 +126,15 @@ let volumeRestoreToken = 0;
 const shortTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
 const getSmtcTitle = (song: Song) => song.title?.trim() || song.name.replace(/\.[^/.]+$/, '');
-const LOW_POWER_PROGRESS_UPDATE_MS = 1000;
 const ONLINE_FAILURE_LOOP_GUARD_MS = 30_000;
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 // ==================== [试听片段] 在线音源试听流处理 ====================
+// 检测逻辑与映射读取已下沉至 onlineFailover.ts；此处仅保留当前播放歌曲的映射状态。
 // 部分插件（如汽水音乐）对 VIP 歌曲匿名只返回 30~60 秒试听片段，且片段截取自歌曲中段
 // （如 3:28 处的高潮部分），表现为"一上来就从高潮播放、歌词对不上"。
 // 这里通过实际音频时长与元数据时长的差异检测试听流，并将播放进度映射回完整歌曲时间轴，
 // 使进度条与歌词正确对齐片段在原曲中的位置。
-
-interface PreviewClipInfo {
-  /** 片段在完整歌曲中的起点（秒） */
-  start: number;
-  /** 片段实际时长（秒） */
-  duration: number;
-}
 
 /** 当前歌曲若为试听片段，保存其映射信息；非试听为 null */
 let activePreviewClip: PreviewClipInfo | null = null;
@@ -143,83 +142,6 @@ let activePreviewClip: PreviewClipInfo | null = null;
 let previewClipPath = '';
 /** 已完成试听检测的歌曲路径，防止同一首歌重复检测/重复弹提示 */
 let previewDetectedPath = '';
-/** 汽水歌曲试听元数据缓存：trackId → 片段信息（起点/时长来自 SEO 端点） */
-const qishuiPreviewCache = new Map<string, PreviewClipInfo>();
-/** 进行中的汽水试听元数据请求，避免播放预热与检测重复请求 */
-const qishuiPreviewInflight = new Map<string, Promise<PreviewClipInfo | null>>();
-
-const QISHUI_SEO_TRACK_URL = 'https://beta-luna.douyin.com/luna/h5/seo_track';
-
-function isPluginPath(path: string): boolean {
-  return path.startsWith('plugin://');
-}
-
-function isQishuiPluginPath(path: string): boolean {
-  return path.startsWith('plugin://汽水音乐');
-}
-
-/** 从 plugin://平台名/trackId 形式的路径中提取插件歌曲 ID */
-function extractPluginTrackId(path: string): string {
-  const rest = path.slice('plugin://'.length);
-  return rest.split('/').pop() || '';
-}
-
-/** 读取汽水歌曲的试听元数据（片段起点/时长），匿名可访问，带缓存与去重 */
-async function fetchQishuiPreviewInfo(trackId: string): Promise<PreviewClipInfo | null> {
-  const cached = qishuiPreviewCache.get(trackId);
-  if (cached) return cached;
-  const inflight = qishuiPreviewInflight.get(trackId);
-  if (inflight) return inflight;
-
-  const request = (async (): Promise<PreviewClipInfo | null> => {
-    try {
-      const resp = await pluginApi.pluginHttpRequest(
-        'GET',
-        `${QISHUI_SEO_TRACK_URL}?track_id=${encodeURIComponent(trackId)}&device_platform=web`,
-        undefined, undefined, 8000,
-      );
-      if (resp.status < 200 || resp.status >= 300) return null;
-      const data = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp.body;
-      const track = data?.seo_track?.track;
-      const preview = track?.preview;
-      const fullDurationMs = Number(track?.duration) || 0;
-      const previewDurationMs = Number(preview?.duration) || 0;
-      const startMs = Number(preview?.start);
-      // 仅当试听时长明显小于完整时长时才视为试听配置
-      if (
-        Number.isFinite(startMs) && startMs >= 0
-        && previewDurationMs > 0 && fullDurationMs > previewDurationMs
-      ) {
-        const info = { start: startMs / 1000, duration: previewDurationMs / 1000 };
-        qishuiPreviewCache.set(trackId, info);
-        return info;
-      }
-    } catch { /* 匿名访问失败或网络异常时按无偏移处理 */ }
-    return null;
-  })();
-
-  qishuiPreviewInflight.set(trackId, request);
-  try {
-    return await request;
-  } finally {
-    qishuiPreviewInflight.delete(trackId);
-  }
-}
-
-function formatPreviewClock(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-/** 试听检测条件：实际音频为短片段且远小于元数据时长（如 52s vs 261s） */
-function isPreviewLikeStream(actualDuration: number, songDuration: number): boolean {
-  return actualDuration > 0
-    && songDuration >= 100
-    && actualDuration <= 120
-    && actualDuration + 30 <= songDuration;
-}
 
 export const createPlayerPlayback = ({
   getDisplaySongList,
@@ -396,28 +318,6 @@ const authStore = useAuthStore();
     ];
   };
 
-  const getLikelyFullCoverPaths = (song: Song) => {
-    const retainedPaths: string[] = [song.path];
-    const pushUniquePath = (path: string | undefined) => {
-      if (!path || retainedPaths.includes(path)) {
-        return;
-      }
-
-      retainedPaths.push(path);
-    };
-
-    pushUniquePath(tempQueue.value[0]?.path);
-
-    const queue = playQueue.value;
-    const currentIndex = queue.findIndex(item => item.path === song.path);
-    if (currentIndex >= 0 && queue.length > 1) {
-      pushUniquePath(queue[(currentIndex - 1 + queue.length) % queue.length]?.path);
-      pushUniquePath(queue[(currentIndex + 1) % queue.length]?.path);
-    }
-
-    return retainedPaths.slice(0, 4);
-  };
-
   const scheduleLyricsPlayerPreload = (song: Song) => {
     const songPath = song.cue_source_path || song.path;
     if (!songPath.startsWith('lx://') && !songPath.startsWith('plugin://')) {
@@ -446,42 +346,19 @@ const authStore = useAuthStore();
       return [];
     }
 
-    const retainedPaths = getLikelyFullCoverPaths(song);
+    const retainedPaths = likelyFullCoverPaths({song, tempQueue: tempQueue.value, playQueue: playQueue.value});
     retainFullCoverPaths(retainedPaths);
     return retainedPaths;
   };
 
   const getLikelyThumbnailPaths = (song: Song) => {
-    const paths: string[] = [];
-    const pushUniquePath = (path: string | undefined) => {
-      if (!path || paths.includes(path)) {
-        return;
-      }
-      paths.push(path);
-    };
-
-    pushUniquePath(song.path);
-    pushUniquePath(tempQueuePaths.value[0]);
-
-    // [性能优化] 用 playQueuePaths（string[]）查找索引，避免 playQueue.value 物化所有歌曲对象
-    const queuePaths = playQueuePaths.value;
-    const currentIndex = queuePaths.indexOf(song.path);
-    if (currentIndex >= 0 && queuePaths.length > 1) {
-      pushUniquePath(queuePaths[(currentIndex - 1 + queuePaths.length) % queuePaths.length]);
-      pushUniquePath(queuePaths[(currentIndex + 1) % queuePaths.length]);
-    }
-
-    if (playMode.value === 2) {
-      const candidatePaths = queuePaths.length
-        ? queuePaths
-        : getDisplaySongList().map(s => s.path);
-      const randomPaths = candidatePaths
-        .filter(p => p !== song.path)
-        .slice(0, 5);
-      randomPaths.forEach(p => pushUniquePath(p));
-    }
-
-    return paths;
+    return likelyThumbnailPaths({
+      song,
+      tempQueuePaths: tempQueuePaths.value,
+      playQueuePaths: playQueuePaths.value,
+      playMode: playMode.value,
+      getDisplaySongList,
+    });
   };
 
   const stopPlaybackRuntime = () => {
@@ -689,31 +566,19 @@ const authStore = useAuthStore();
         void handlePreviewClipDetected(songForPreviewCheck, duration);
       }
 
-      // 播放结束兜底检测：后端进度连续多轮停滞且已播放过则视为结束
-      // - duration 未知：直接视为结束
-      // - duration 已知：仅当进度已接近 duration（相差 ≤3s）时视为结束，
-      //   避免中段缓冲（如远程流）造成误判；同时弥补 metadata 时长略大于实际
-      //   音频时长导致 currentTime 被 reanchor 拉回、永远到不了 duration 的问题
-      // [项3] 事件频率从 1s 提升到 ~500ms，阈值相应加倍以保持相同的实际时间窗口
+      // 播放结束兜底检测：后端进度连续多轮停滞且已播放过则视为结束。
+      // 试听流/在线流/未知时长的判定规则见 playbackTiming.evaluateStallAutoNext。
       const song = currentSong.value;
-      if (song && rawTime > 0 && Math.abs(rawTime - lastRawProgress) < 0.05) {
-        stalledProgressTicks += 1;
-        const unknownDuration = !song.duration || song.duration <= 0;
-        // [试听片段] 试听流的结束位置以片段时长为准（rawTime 是片段内进度）
-        const nearEnd = activePreviewClip
-          ? rawTime >= activePreviewClip.duration - 3
-          : song.duration > 0 && rawTime >= song.duration - 3;
-        // 在线歌（流式下载）拖动进度条或中途缓冲时，后端进度可能停滞数秒才恢复。
-        // 若沿用 4 轮阈值会被误判为播放结束而自动切下一首，故对在线歌放宽阈值。
-        const isOnlineStream = !!song.path
-          && (song.path.startsWith('http://')
-            || song.path.startsWith('https://')
-            || song.path.startsWith('lx://')
-            || song.path.startsWith('plugin://')
-            || song.path.startsWith('remote://'));
-        const requiredStalledTicks = isOnlineStream ? 12 : 4;
-        if (stalledProgressTicks >= requiredStalledTicks && (unknownDuration || nearEnd)) {
-          stalledProgressTicks = 0;
+      if (song) {
+        const {stalledProgressTicks: ticks, shouldAutoAdvance} = evaluateStallAutoNext({
+          song,
+          rawTime,
+          lastRawProgress,
+          stalledProgressTicks,
+          activePreviewClip,
+        });
+        stalledProgressTicks = ticks;
+        if (shouldAutoAdvance) {
           handleAutoNext();
           return;
         }
@@ -1300,7 +1165,7 @@ const authStore = useAuthStore();
       previewDetectedPath = '';
       if (isQishuiPluginPath(song.path)) {
         const prewarmTrackId = extractPluginTrackId(song.path);
-        if (prewarmTrackId && !qishuiPreviewCache.has(prewarmTrackId)) {
+        if (prewarmTrackId && !hasQishuiPreviewCached(prewarmTrackId)) {
           void fetchQishuiPreviewInfo(prewarmTrackId);
         }
       }
