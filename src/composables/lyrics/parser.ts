@@ -64,8 +64,11 @@ async function getAmlModule() {
 
 export function sanitizeLineText(text: string): string {
   const cleaned = text.replace(/\u200b/g, '').trim();
-  // 剥离整行首尾仅作为无意义分割装饰的悬挂双斜杠，如 "// 汪苏泷:" -> "汪苏泷:"
-  return cleaned.replace(/^\s*[\/\\\s]{2,}\s*/, '').trim();
+  // 仅剥离整行首尾独立悬挂的双斜杠 //，如 "// 汪苏泷:" -> "汪苏泷:"，"王皓@WONDERWALL //" -> "王皓@WONDERWALL"
+  return cleaned
+    .replace(/^\s*\/[\/\\\s]+\s*/, '')
+    .replace(/\s*\/[\/\\\s]+$/, '')
+    .trim();
 }
 
 export function sanitizeWordText(text: string): string {
@@ -336,7 +339,7 @@ function prepareParsedLine(
 
   const words = (line.words || [])
     .map((word) => normalizeParsedWord(word, fallbackStartMs, fallbackEndMs))
-    .filter((word) => word.text.length > 0)
+    .filter((word) => word.text.length > 0 && !/^\s*\/[\/\\\s]+\s*$/.test(word.text))
     .sort((left, right) => left.startMs - right.startMs);
 
   const wordsText = sanitizeLineText((line.words || []).map((word) => word.word || '').join(''));
@@ -353,8 +356,8 @@ function prepareParsedLine(
 
   if (!detected.text && !translatedText && !romanText && words.length === 0) return null;
 
-  // 过滤纯斜杠/分割符无唱词占位行（如纯 "//"、"///"），避免生成空白孤立斜杠歌词行
-  const isPureDivider = /^\s*[\/\\_\-—–]+\s*$/.test(detected.text);
+  // 过滤纯双斜杠无唱词占位行（如纯 "//"、"///"），避免生成空白孤立斜杠歌词行
+  const isPureDivider = /^\s*\/[\/\\\s]+\s*$/.test(detected.text);
   if (isPureDivider && !translatedText && !romanText) return null;
 
   return {

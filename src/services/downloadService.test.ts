@@ -7,7 +7,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { qualityToLxCandidates } from './downloadService';
+import { qualityToLxCandidates, fetchLyricText } from './downloadService';
+import { getStoredPlugins, pluginGetLyric } from './pluginEngine';
 
 vi.mock('./tauri/invoke', () => ({
   tauriInvoke: vi.fn(),
@@ -253,6 +254,23 @@ describe('downloadService: 网易云插件原生适配（无 LX 兜底）', () =
     expect(result).toBeNull();
     // 不再种入 LX wy 元信息缓存（无兜底语义）
     expect(cacheLxSong).not.toHaveBeenCalled();
+  });
+
+  it('fallback to existing song.lyrics when network lyrics fetch yields no result', async () => {
+    const song = {
+      path: 'plugin://test/song1',
+      plugin_id: 'p1',
+      title: '测试歌曲',
+      artist: '测试歌手',
+      lyrics: '[00:01.00]预置歌词文本',
+    } as unknown as Song;
+
+    // mock 插件环境
+    (getStoredPlugins as any).mockReturnValue([{ id: 'p1', enabled: true }]);
+    (pluginGetLyric as any).mockResolvedValue(null);
+
+    const lrc = await fetchLyricText(song, 'lrc', 'line-by-line');
+    expect(lrc).toBe('[00:01.00]预置歌词文本');
   });
 
   it('非网易云插件同样不走 LX 兜底', async () => {

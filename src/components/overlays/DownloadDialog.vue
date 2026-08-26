@@ -299,7 +299,7 @@ watch(
     selectedQuality.value = getInitialDownloadQuality(song);
     downloadDir.value = settings.value.download.downloadPath ?? '';
     selectedFileNameStyle.value = settings.value.download.fileNameStyle ?? 'artist-title';
-    downloadLyrics.value = false;
+    downloadLyrics.value = settings.value.download.downloadLyrics ?? false;
     availableQualities.value = null;
     declaredQualities.value = null;
     probedUrls.value = {};

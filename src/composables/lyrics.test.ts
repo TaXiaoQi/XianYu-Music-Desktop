@@ -288,6 +288,30 @@ describe('mergePreparedLines', async () => {
     expect(merged[0].translation).toBe('\u526f\u884c');
   });
 
+  it('filters pure slash lines and strips trailing or leading slashes', async () => {
+    const { sanitizeLineText, prepareParsedLyrics } = await import('./lyrics');
+
+    expect(sanitizeLineText('// 汪苏泷:')).toBe('汪苏泷:');
+    expect(sanitizeLineText('音乐设计：王皓@WONDERWALL //')).toBe('音乐设计：王皓@WONDERWALL');
+    // 保留合法的单斜杠如 6/8
+    expect(sanitizeLineText('6/8の')).toBe('6/8の');
+
+    const rawWithSlashes = `
+[00:01.00] //
+[00:02.00] // 独坐在茫茫人海中
+[00:04.00] 听着耳边的风吹过 //
+[00:06.00] //
+[00:08.00] 悄悄地下起了小雨
+`;
+    const lines = await prepareParsedLyrics(rawWithSlashes);
+
+    expect(lines.map((l) => l.text)).toEqual([
+      '独坐在茫茫人海中',
+      '听着耳边的风吹过',
+      '悄悄地下起了小雨',
+    ]);
+  });
+
   it('classifies japanese lyric groups by content instead of source order', () => {
     const merged = mergePreparedLines([
       {
