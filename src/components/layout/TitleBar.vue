@@ -15,7 +15,7 @@ import { useI18n } from '../../features/i18n';
 import { normalizeTopBarLayout } from '../../features/settings/topBarItems';
 import { useUiStore } from '../../shared/stores/ui';
 import { skinModalOriginalTheme } from '../../composables/useCustomThemeModal';
-import { fetchHotSearch, type HotSearchItem } from '../../services/usageStats';
+import { fetchHotSearch, type HotSearchItem } from '../../services/domain/usageStats';
 import SongRecognitionPanel from '../overlays/SongRecognitionPanel.vue';
 import TopBarControlItem from './TopBarControlItem.vue';
 import TopBarControlIcon from './TopBarControlIcon.vue';

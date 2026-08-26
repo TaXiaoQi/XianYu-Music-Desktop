@@ -11,7 +11,7 @@ import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylist
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
+import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/domain/pluginEngine';
 import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import type { Song } from '../../types';
 

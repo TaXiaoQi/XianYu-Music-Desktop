@@ -11,18 +11,18 @@ import {useLibraryStore} from '../library/store';
 import {useUiStore} from '../../shared/stores/ui';
 import {useCoverCache} from '../../composables/useCoverCache';
 import {useRenderingPower} from '../../composables/renderingPower';
-import {fetchLxSongLyricsRaw} from '../../services/lxLyricFetcher';
+import {fetchLxSongLyricsRaw} from '../../services/domain/lxLyricFetcher';
 import {useToast} from '../../composables/toast';
-import {reportUserBehavior} from '../../services/usageStats';
+import {reportUserBehavior} from '../../services/domain/usageStats';
 import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
-import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/pluginEngine';
-import {checkDownloadExists} from '../../services/downloadHistory';
+import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
+import {checkDownloadExists} from '../../services/domain/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
-import {getPluginBilibiliCookies} from '../../services/pluginCookieStore';
+import {getPluginBilibiliCookies} from '../../services/domain/pluginCookieStore';
 import {clearOnlineLyricsUnavailable, markOnlineLyricsUnavailable} from '../../composables/lyrics/state';
 
 interface PlaySongOptions {
@@ -881,7 +881,7 @@ const authStore = useAuthStore();
 
       let alternativeSong: Song | null = null;
       try {
-        const { findAlternativeLxSource } = await import('../../services/lxSourceFallback');
+        const { findAlternativeLxSource } = await import('../../services/domain/lxSourceFallback');
         alternativeSong = await findAlternativeLxSource(song, switchCtx.failedSources);
       } catch (error) {
         console.warn(`[Audio] 自动换源查找异常: ${getErrorMessage(error)}`);
@@ -893,7 +893,7 @@ const authStore = useAuthStore();
       }
 
       if (alternativeSong) {
-        const { getLxSourceDisplayName } = await import('../../services/lxSourceFallback');
+        const { getLxSourceDisplayName } = await import('../../services/domain/lxSourceFallback');
         const newSource = alternativeSong.path.slice('lx://'.length).split('/')[0];
         // [封面回退] 若新源搜索结果未返回封面 URL（部分平台不返回 img），
         // 复用原歌曲封面（同一首歌，封面图通常相同）
@@ -1011,6 +1011,9 @@ const authStore = useAuthStore();
       if (slashIdx >= 0) {
         const prefix = 'plugin://' + withoutScheme.slice(0, slashIdx + 1);
         if (knownFailedPluginPrefixes.has(prefix)) {
+          // [不重复自动切歌] 记录该歌是否已在失败集合中：若是，说明它在短时间内已失败过
+          // 并触发过一次自动切歌，不能再次 handleAutoNext，否则会反复跳歌形成死循环。
+          const alreadyFailedRecently = recentOnlineFailurePaths.has(song.path);
           recentOnlineFailurePaths.set(song.path, Date.now());
           // 检查队列中是否还有不属于已知失败前缀的歌曲
           const queueSongs = [...playbackStore.tempQueue, ...playbackStore.playQueue];
@@ -1025,6 +1028,14 @@ const authStore = useAuthStore();
           if (!hasPlayable) {
             showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
             console.warn('[Audio] 队列中无可播放歌曲（所有 plugin:// 均属于已知失败来源），停止');
+            // [停止而非跳过] 队列已无可播放歌曲，立即停止当前播放，而不是继续卡在加载态
+            try { await playbackApi.stopAudio(); } catch {}
+            isPlaying.value = false;
+            isSongLoaded.value = false;
+            stopPlaybackRuntime();
+            return;
+          }
+          if (alreadyFailedRecently) {
             return;
           }
           handleAutoNext();

@@ -9,7 +9,7 @@ import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylist
 import { getSongAlbumKey, hasSongAlbumMetadata, resolvePrimaryArtistName } from '../../features/library/playerLibraryViewShared';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/pluginEngine';
+import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../../services/domain/pluginEngine';
 import { supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import type { Song } from '../../types';
 

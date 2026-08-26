@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, PlugZap, X } from 'lucide-vue-next';
 import type {
   PluginBackupFailedSong,
   PreparedPluginBackupImport,
-} from '../../services/pluginBackupImport';
+} from '../../services/domain/pluginBackupImport';
 
 const props = defineProps<{
   visible: boolean;

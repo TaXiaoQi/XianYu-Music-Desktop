@@ -18,10 +18,10 @@ import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylis
 import { useLibraryStore } from '../../features/library/store';
 import { useToast } from '../../composables/toast';
 import type { Song, SidebarItemKey } from '../../types';
-import type { PlaylistImportResult } from '../../services/playlistImport';
-import { matchSongsToLocalLibrary, type ImportedPlaylist } from '../../services/backupImport';
-import type { PreparedPluginBackupImport } from '../../services/pluginBackupImport';
-import { cacheLxSong } from '../../services/lxSongCache';
+import type { PlaylistImportResult } from '../../services/domain/playlistImport';
+import { matchSongsToLocalLibrary, type ImportedPlaylist } from '../../services/domain/backupImport';
+import type { PreparedPluginBackupImport } from '../../services/domain/pluginBackupImport';
+import { cacheLxSong } from '../../services/domain/lxSongCache';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';

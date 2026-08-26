@@ -4,15 +4,15 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useLyrics } from '../../composables/lyrics';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
-import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import {
   ensureSharedQualityProbe,
   onSharedProbeUpdate,
   sharedProbeAvailable,
   getSongKey,
-} from '../../services/qualitySharedProbe';
+} from '../../services/domain/qualitySharedProbe';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
-import { checkDownloadExists, type DownloadRecord } from '../../services/downloadHistory';
+import { checkDownloadExists, type DownloadRecord } from '../../services/domain/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
 import { useSettings } from '../../features/settings/useSettings';
@@ -25,7 +25,7 @@ import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composable
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
-import { createShareUrl, getCachedShareUrl, preloadShareUrl } from '../../services/shareService';
+import { createShareUrl, getCachedShareUrl, preloadShareUrl } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';

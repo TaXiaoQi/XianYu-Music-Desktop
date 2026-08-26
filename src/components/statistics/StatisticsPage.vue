@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { fetchAllLeaderboards, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/leaderboardService';
+import { fetchAllLeaderboards, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/domain/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 import SongContextMenu from '../overlays/SongContextMenu.vue';

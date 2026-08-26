@@ -17,7 +17,7 @@ import {
   resolvePrimaryArtistName,
 } from '../../features/library/playerLibraryViewShared';
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
-import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
 import type { Song } from '../../types';
 

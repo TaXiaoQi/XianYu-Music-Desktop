@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { AlertTriangle, CheckCircle2, ListMusic, PlugZap, Settings2, X } from 'lucide-vue-next';
 
-import type { AppBackupImportResult } from '../../services/appBackup';
+import type { AppBackupImportResult } from '../../services/domain/appBackup';
 
 const props = defineProps<{
   visible: boolean;

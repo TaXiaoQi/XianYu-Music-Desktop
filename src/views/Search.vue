@@ -254,10 +254,10 @@ import {
   type LxPlaylistSearchResult,
   type LxSearchResultItem,
   type LxSourceId,
-} from '../services/lxMusicSdk';
+} from '../services/domain/lxMusicSdk';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
-import { extractDurationMs } from '../services/pluginResultMappers';
+import { extractDurationMs } from '../services/domain/pluginResultMappers';
 import { useDragScrollX } from '../composables/useDragScrollX';
 import {
   getStoredPlugins,
@@ -268,14 +268,14 @@ import {
   pluginAlbumSearch,
   pluginPlaylistSearch,
   pluginSupportsSearchType,
-} from '../services/pluginEngine';
-import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
-import type { PluginArtistResult, PluginAlbumResult } from '../services/pluginEngine';
+} from '../services/domain/pluginEngine';
+import { ensureLxPluginInstance, lxPluginGetPic } from '../services/domain/lxPluginEngine';
+import type { PluginArtistResult, PluginAlbumResult } from '../services/domain/pluginEngine';
 import type { PluginSource, PluginSearchResult, PluginPlaylistSearchResult } from '../types';
 import { useOnlineDetailStore, openOnlineDetail, type SearchResultsSnapshot } from '../features/onlineDetail/store';
-import { fetchWyTrackMetaByIds } from '../services/playlistImport';
-import { qqFillSongDurations } from '../services/qqHostSearchFallback';
-import { reportSearch, reportInputStats } from '../services/usageStats';
+import { fetchWyTrackMetaByIds } from '../services/domain/playlistImport';
+import { qqFillSongDurations } from '../services/domain/qqHostSearchFallback';
+import { reportSearch, reportInputStats } from '../services/domain/usageStats';
 
 import DragGhost from '../components/common/DragGhost.vue';
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));

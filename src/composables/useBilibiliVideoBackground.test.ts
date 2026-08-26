@@ -20,7 +20,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
-vi.mock('../services/pluginEngine', () => ({
+vi.mock('../services/domain/pluginEngine', () => ({
   getStoredPlugins: getStoredPluginsMock,
   pluginGetVideoSource: pluginGetVideoSourceMock,
 }));
@@ -33,7 +33,7 @@ vi.mock('../services/tauri/pluginApi', () => ({
   },
 }));
 
-vi.mock('../services/mvAutoSync', () => ({
+vi.mock('../services/domain/mvAutoSync', () => ({
   analyzeMvAudioSync: analyzeMvAudioSyncMock,
 }));
 

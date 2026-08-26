@@ -29,29 +29,29 @@ import {
   syncPayloadToSong,
   type FileSyncPlaylistData,
   type SyncResult,
-} from '../services/playlistSync';
+} from '../services/domain/playlistSync';
 import {
   uploadPlugins as uploadPluginsToCloud,
   downloadPlugins as downloadPluginsFromCloud,
   type PluginSyncResult,
-} from '../services/pluginSync';
+} from '../services/domain/pluginSync';
 import {
   uploadSettings as uploadSettingsToCloud,
   downloadSettings as downloadSettingsFromCloud,
   areSettingsEqual,
   type SettingsSyncResult,
-} from '../services/settingsSync';
+} from '../services/domain/settingsSync';
 import {
   uploadFavorites as uploadFavoritesToCloud,
   downloadFavorites as downloadFavoritesFromCloud,
-} from '../services/favoritesSync';
+} from '../services/domain/favoritesSync';
 import {
   showSettingsConflict,
   type SyncCategoryChoices,
 } from './useSettingsConflict';
 import {
   getAutoSyncScheduler,
-} from '../services/autoSync';
+} from '../services/domain/autoSync';
 import { playerStorage } from '../services/storage/playerStorage';
 import { localStore } from '../services/storage/localStore';
 import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';

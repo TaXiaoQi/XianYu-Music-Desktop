@@ -1,5 +1,5 @@
-import { LX_SOURCE_NAMES, type LxSourceId } from '../services/lxMusicSdk';
-import { getStoredPlugins, pluginsVersion } from '../services/pluginEngine';
+import { LX_SOURCE_NAMES, type LxSourceId } from '../services/domain/lxMusicSdk';
+import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
 
 export const isRemoteSong = (song: { path?: string; source_type?: string } | null | undefined) =>
   song?.source_type === 'remote' || song?.path?.startsWith('remote://') === true;

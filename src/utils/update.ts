@@ -1,6 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { updateApi } from '../services/tauri/updateApi';
 import { signedRequest } from '../services/auth/authService';
+import { assertSafeOutboundUrl } from './urlGuard';
 
 const VERSION_PATTERN = /\d+(?:\.\d+)+/;
 
@@ -52,7 +53,10 @@ export async function fetchLatestRelease(owner: string, repo: string): Promise<R
       throw new Error(`[Rust Backend] ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   } else {
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+    const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+    // 非 Tauri 环境（浏览器预览）直连 GitHub 前做出站校验（host 须为 api.github.com）
+    assertSafeOutboundUrl(githubUrl);
+    const response = await fetch(githubUrl, {
       headers: { Accept: 'application/vnd.github+json' }
     });
     if (!response.ok) {

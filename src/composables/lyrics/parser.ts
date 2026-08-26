@@ -10,7 +10,7 @@ import type {
   ParsedWord,
 } from './types';
 
-import { convertLxLyricToEnhancedLrc } from '../../services/lxLyricsBuilder';
+import { convertLxLyricToEnhancedLrc } from '../../services/domain/lxLyricsBuilder';
 
 const TIMESTAMP_BLOCK_PATTERN = /\[(\d+:\d{2}(?:\.\d+)?)]/g;
 const ADJACENT_TIMESTAMPS_BEFORE_TEXT_PATTERN = /(?:\[\d+:\d{2}(?:\.\d+)?])+(?=[^[\]\r\n])/g;

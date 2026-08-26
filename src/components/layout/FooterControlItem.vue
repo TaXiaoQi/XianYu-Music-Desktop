@@ -3,7 +3,7 @@ import { inject, nextTick, ref, watch, type Ref } from 'vue';
 import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
-import type { DownloadRecord } from '../../services/downloadHistory';
+import type { DownloadRecord } from '../../services/domain/downloadHistory';
 
 /**
  * 底部栏可配置控件渲染组件。

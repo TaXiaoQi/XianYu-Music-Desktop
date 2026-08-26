@@ -22,11 +22,11 @@ import { useSongTableLibraryState } from '../../features/library/useSongTableLib
 import { useLibraryStore } from '../../features/library/store';
 import { DEFAULT_SCROLLBAR_HOT_ZONE_PX, isPointerNearVerticalScrollbar } from '../../utils/scrollbarActivity';
 import { useSongDetailCache } from '../../composables/useSongDetailCache';
-import { getDownloadRecord, loadDownloadHistory } from '../../services/downloadHistory';
+import { getDownloadRecord, loadDownloadHistory } from '../../services/domain/downloadHistory';
 import { CircleCheck, Download } from 'lucide-vue-next';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
-import { isDownloadableOnlineSong } from '../../services/downloadService';
+import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import { getSongSourceLabel } from '../../utils/remoteSong';
 
 /** 在线歌曲：路径以 lx:// 或 plugin:// 开头 */
