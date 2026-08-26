@@ -399,8 +399,13 @@ fn load_image_bytes(source: &str) -> Result<Vec<u8>, String> {
             Ok(decoded)
         }
     } else if source.starts_with("http://") || source.starts_with("https://") {
+        // SSRF 防护：封面色提取仅允许公网 http/https 目标，拒绝内网/回环/元数据等
+        crate::security::ssrf::validate_outbound_url_sync(&source)
+            .map_err(|e| format!("图片源校验失败: {e}"))?;
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            // 每个跳转目标都需通过 SSRF 校验
+            .redirect(crate::security::ssrf::ssrf_redirect_policy())
             .build()
             .map_err(|e| e.to_string())?;
         let bytes = client

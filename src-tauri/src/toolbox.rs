@@ -2,7 +2,7 @@ use crate::music::tags::{
     extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file, EmbedMetadataRequest,
 };
 use crate::music::utils::is_supported_library_extension;
-use crate::security::path_validator;
+use crate::security::{path_validator, ssrf};
 use lofty::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -253,6 +253,13 @@ pub fn open_external_program(path: String, args: Vec<String>) -> Result<(), Stri
                 "仅允许启动 .exe 程序，当前扩展名: .{ext}"
             ));
         }
+    }
+
+    // 仅允许「打开单个目标文件/目录」语义：最多一个参数（现有调用方
+    // ToolboxStep2 / SongInfoModal 均只传 0~1 个参数），封顶防止被用来
+    // 向任意程序注入多条命令行参数。
+    if args.len() > 1 {
+        return Err("最多允许传递一个启动参数".to_string());
     }
 
     // 清理参数：拒绝包含空字节或其他控制字符的参数
@@ -675,6 +682,8 @@ pub async fn download_update_file(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
+        // 每次跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("XY-Music-Updater")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
@@ -683,6 +692,11 @@ pub async fn download_update_file(
     if download_url.contains("github.com") {
         download_url = format!("https://gh-proxy.com/{}", download_url);
     }
+
+    // SSRF 防护：更新包仅允许公网 http/https 直链
+    ssrf::validate_outbound_url(&download_url)
+        .await
+        .map_err(|e| format!("更新包下载链接校验失败: {e}"))?;
 
     let response = client
         .get(&download_url)
@@ -813,8 +827,15 @@ pub async fn download_online_song(
         return Err("无效的下载链接".to_string());
     }
 
+    // SSRF 防护：音源直链仅允许公网 http/https 目标，拒绝内网/回环/云元数据等
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("下载链接校验失败: {e}"))?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
+        // 每个跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
@@ -893,7 +914,9 @@ pub async fn download_online_song(
 
     let total_size = response.content_length().unwrap_or(0);
 
-    let dest = PathBuf::from(&dest_path);
+    // 复检写入路径：拒绝目录穿越/符号链接逃逸，规范化后再落盘
+    let dest = path_validator::validate_path(&dest_path, None)
+        .map_err(|e| format!("下载目标路径非法: {e}"))?;
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -1159,8 +1182,15 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         return Err("无效的图片链接".to_string());
     }
 
+    // SSRF 防护：图片直链仅允许公网 http/https 目标
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("图片链接校验失败: {e}"))?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建请求客户端失败: {e}"))?;
@@ -1427,9 +1457,15 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
         return Err("无效的探测链接".to_string());
     }
 
+    // SSRF 防护：探测目标仅允许公网 http/https 地址
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("探测链接校验失败: {e}"))?;
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::limited(10))
+        // 每次跳转目标都需通过 SSRF 校验
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建探测客户端失败: {e}"))?;
@@ -1698,6 +1734,11 @@ pub async fn download_wallpaper(
         return Err("无效的壁纸下载链接".to_string());
     }
 
+    // SSRF 防护：壁纸源仅允许公网 http/https 目标
+    ssrf::validate_outbound_url(&url)
+        .await
+        .map_err(|e| format!("壁纸链接校验失败: {e}"))?;
+
     // 防止路径穿越：仅保留文件名部分，去除任何路径分隔符
     let safe_name = std::path::Path::new(&filename)
         .file_name()
@@ -1723,6 +1764,8 @@ pub async fn download_wallpaper(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(ssrf::ssrf_redirect_policy())
         .user_agent("XY-Music-WallpaperDownloader")
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;

@@ -836,7 +836,14 @@ async fn http_fetch_text(
     headers: &[(&str, &str)],
     body: Option<&str>,
 ) -> Result<HttpResponse, String> {
+    // SSRF 防护：歌词取数仅允许公网 http/https 目标，拒绝内网/回环/元数据等
+    crate::security::ssrf::validate_outbound_url(url)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let client = reqwest::Client::builder()
+        // 每个跳转目标都需通过 SSRF 校验
+        .redirect(crate::security::ssrf::ssrf_redirect_policy())
         .build()
         .map_err(|e| e.to_string())?;
 

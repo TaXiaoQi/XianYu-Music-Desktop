@@ -529,7 +529,8 @@ pub(crate) fn decode_lyrics_file_bytes(bytes: &[u8]) -> String {
 #[tauri::command]
 pub fn read_lyrics_file(path: String) -> Result<String, String> {
     const MAX_LYRICS_FILE_SIZE: u64 = 2 * 1024 * 1024;
-    let path_obj = Path::new(&path);
+    // 防路径穿越/符号链接逃逸：规范化后读取
+    let path_obj = path_validator::validate_path(&path, None)?;
     let is_lrc = path_obj
         .extension()
         .and_then(|extension| extension.to_str())
@@ -538,7 +539,7 @@ pub fn read_lyrics_file(path: String) -> Result<String, String> {
         return Err("请选择 .lrc 歌词文件".to_string());
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| error.to_string())?;
+    let metadata = fs::metadata(&path_obj).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err("所选路径不是文件".to_string());
     }
