@@ -179,6 +179,8 @@ fn http_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             // SSRF 防护：每个跳转目标都需通过公网校验
             .redirect(crate::security::ssrf::ssrf_redirect_policy())
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .expect("failed to build url_resolver reqwest client")
     })

@@ -289,6 +289,7 @@ async fn recognize_with_pcm_internal(pcm: &[u8]) -> Result<RecognizeResponse, St
 
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;

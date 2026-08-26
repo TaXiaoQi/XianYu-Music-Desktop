@@ -78,6 +78,7 @@ impl HttpBridge {
         };
         let client = reqwest::Client::builder()
             .redirect(policy)
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .gzip(true)
             .brotli(true)
             .deflate(true)

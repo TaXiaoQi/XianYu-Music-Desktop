@@ -103,6 +103,7 @@ pub async fn plugin_http_request(
     let timeout_secs = timeout.unwrap_or(30);
     let client_builder = reqwest::Client::builder()
         .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
         .brotli(true)
         .deflate(true)
@@ -185,6 +186,7 @@ pub async fn plugin_http_request_binary(
     let request_timeout = Duration::from_secs(timeout.unwrap_or(30));
     let client = reqwest::Client::builder()
         .redirect(plugin_ssrf_redirect_policy(redirect_limit as usize))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .timeout(request_timeout)
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
@@ -381,6 +383,7 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .timeout(Duration::from_secs(15))
         // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| e.to_string())?;
@@ -514,6 +517,7 @@ pub async fn download_audio_to_temp(
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
         .brotli(true)
         .deflate(true)
@@ -611,6 +615,7 @@ pub async fn download_video_to_cache(
         .timeout(Duration::from_secs(180))
         // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .gzip(true)
         .brotli(true)
         .deflate(true)

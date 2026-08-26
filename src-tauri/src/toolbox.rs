@@ -645,6 +645,7 @@ pub async fn check_update_by_rust(owner: String, repo: String) -> Result<String,
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XY-Music-Updater")
         .build()
         .map_err(|e| format!("创建更新请求失败: {e}"))?;
@@ -684,6 +685,7 @@ pub async fn download_update_file(
         .timeout(Duration::from_secs(300))
         // 每次跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XY-Music-Updater")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
@@ -836,6 +838,7 @@ pub async fn download_online_song(
         .timeout(Duration::from_secs(600))
         // 每个跳转目标都需通过 SSRF 校验，防重定向到内网/元数据地址
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建下载请求客户端失败: {e}"))?;
@@ -1191,6 +1194,7 @@ pub async fn fetch_image_bytes(url: String) -> Result<FetchedImage, String> {
         .timeout(Duration::from_secs(30))
         // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建请求客户端失败: {e}"))?;
@@ -1454,6 +1458,7 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
         .timeout(Duration::from_secs(8))
         // 每次跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建探测客户端失败: {e}"))?;
@@ -1692,6 +1697,7 @@ pub async fn download_wallpaper(
         .timeout(Duration::from_secs(60))
         // 每个跳转目标都需通过 SSRF 校验
         .redirect(ssrf::ssrf_redirect_policy())
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent("XY-Music-WallpaperDownloader")
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {e}"))?;
