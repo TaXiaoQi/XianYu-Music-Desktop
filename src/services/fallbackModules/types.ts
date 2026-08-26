@@ -58,9 +58,12 @@ export type FallbackModuleFactory = (ctx: FallbackHostCtx) => FallbackModuleImpl
 /** 本地缓存的单个模块条目 */
 export interface CachedFallbackModule {
   version: number;
-  /** sha256 hex，用于校验下发代码完整性 */
+  /** sha256 hex，仅供参考，不具防篡改作用（与代码同源下发） */
   digest: string;
   code: string;
+  /** 服务端对该 (moduleKey|version|code) 的 ed25519 签名（hex）。落盘持久化，
+   *  启动时 sanitizeFallbackModuleCache 与懒加载门禁据此重新验签，防止本地缓存被篡改后执行。 */
+  signature?: string;
   name?: string;
   updatedAt?: string;
 }
@@ -79,6 +82,9 @@ export interface ServerFallbackModule {
   version: number;
   digest: string;
   code: string;
+  /** 服务端私钥对 (moduleKey|version|code) 的 ed25519 签名（hex，128 字符）。
+   *  客户端用内嵌公钥验签通过后才允许执行（见 sync.ts），digest 仅供参考不具防篡改作用。 */
+  signature: string;
   updatedAt?: string;
 }
 
