@@ -391,10 +391,42 @@ async function handleInstallFromFile() {
 
 // ==================== 从网络 URL 安装 ====================
 
+/** 校验插件安装 URL：仅允许公网 http/https 协议，拦截内网及环回地址 */
+function validatePluginUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function handleInstallFromUrl() {
   const url = installUrl.value.trim();
   if (!url) {
     showToast('请输入插件 URL', 'error');
+    return;
+  }
+
+  if (!validatePluginUrl(url)) {
+    showToast('禁止访问内网或非法协议，仅支持公网 http/https 链接', 'error');
     return;
   }
 
@@ -724,9 +756,9 @@ function confirmAddSubscription() {
     return;
   }
 
-  // URL 校验：必须 http(s) 且以 .js/.json 结尾（与 MusicFreeDesktop 一致）
-  if (!isValidSubscriptionUrl(url)) {
-    showToast('订阅链接需以 .js 或 .json 结尾', 'error');
+  // URL 校验：必须公网 http(s) 且以 .js/.json 结尾（禁止内网地址）
+  if (!validatePluginUrl(url) || !isValidSubscriptionUrl(url)) {
+    showToast('订阅链接需为公网 http/https 链接且以 .js 或 .json 结尾', 'error');
     return;
   }
 
@@ -989,8 +1021,11 @@ async function saveUserVariables() {
       <div class="flex flex-col gap-3 rounded-xl">
         <!-- 描述 -->
         <div class="flex items-center justify-between gap-4 p-4">
-          <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
-          <SettingHint severity="warning" text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容。" />
+          <div class="space-y-1 min-w-0">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">通过插件扩展音乐源</div>
+            <div class="text-xs text-amber-600 dark:text-amber-400">第三方插件由独立开发者编写，运行时将获取网络请求与音源检索能力。请仅从信任的来源安装或订阅。</div>
+          </div>
+          <SettingHint severity="warning" text="支持从本地文件或网络 URL 安装 JS 插件，安装后可通过插件拉取在线音乐、歌单、歌词等内容；请仅使用信任的来源。" />
         </div>
 
         <!-- 操作按钮组 -->
