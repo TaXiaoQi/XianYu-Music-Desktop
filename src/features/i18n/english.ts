@@ -2425,6 +2425,7 @@ const exactEnglishTranslations: Record<string, string> = {
   "[PluginSandbox] 插件存储迁移失败:": "[PluginSandbox] plugin storage migration failed:",
   "LX 插件初始化失败": "LX plugin init failed",
   "[PluginSandbox] 参数无法序列化，已置空:": "[PluginSandbox] args cannot be serialized, set to empty:",
+  "第三方插件由独立开发者编写，运行时将获取网络请求与音源检索能力。请仅从信任的来源安装或订阅。": "Third-party plugins are written by independent developers and have network request & search access. Only install/subscribe from trusted sources.",
   "方法调用失败": "Method call failed",
   "获取订阅内容失败，请检查 URL": "Failed to fetch subscription content, check the URL",
   "uploadPlugins: 未获取到弦予号": "uploadPlugins: no XianYu ID",
