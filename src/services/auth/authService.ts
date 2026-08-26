@@ -17,7 +17,7 @@
  */
 
 import { authApi } from '../tauri/authApi';
-import { getDeviceId } from '../usageStats';
+import { getDeviceId } from '../domain/usageStats';
 
 export type AuthUser = {
   id: string;

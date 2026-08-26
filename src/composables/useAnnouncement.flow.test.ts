@@ -6,7 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 // Mock usageStats getDeviceId
-vi.mock('../services/usageStats', () => ({
+vi.mock('../services/domain/usageStats', () => ({
   getDeviceId: () => 'test-device-001',
 }));
 

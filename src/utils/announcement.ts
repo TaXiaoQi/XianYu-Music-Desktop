@@ -1,5 +1,5 @@
 import { getStoredAuth, signedRequest } from '../services/auth/authService';
-import { getDeviceId } from '../services/usageStats';
+import { getDeviceId } from '../services/domain/usageStats';
 
 const DISMISSED_KEY = 'announcement_dismissed_id';
 

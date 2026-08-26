@@ -2,7 +2,7 @@
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { MessageCircle, Heart, X, Loader2, ChevronRight, ChevronDown, Flame, Clock } from 'lucide-vue-next';
-import { pluginGetMusicComments } from '../../services/pluginEngine';
+import { pluginGetMusicComments } from '../../services/domain/pluginEngine';
 import type { PluginSource, PluginSearchResult, Song } from '../../types';
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useUiStore } from '../../shared/stores/ui';

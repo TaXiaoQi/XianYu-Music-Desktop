@@ -4,19 +4,19 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { Loader2, FileJson, FolderOpen, FileUp } from 'lucide-vue-next';
 import type { Playlist, Song } from '../../types';
-import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/playlistImport';
-import type { PlaylistImportResult, PlaylistSource } from '../../services/playlistImport';
-import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/backupImport';
-import type { ImportedPlaylist } from '../../services/backupImport';
+import { getImportSourcesFromPlugins, importPlaylist, importPlaylistFromMusicFreePlugin, importPlaylistFromFavorites } from '../../services/domain/playlistImport';
+import type { PlaylistImportResult, PlaylistSource } from '../../services/domain/playlistImport';
+import { importBackupFile, SUPPORTED_IMPORT_EXTENSIONS } from '../../services/domain/backupImport';
+import type { ImportedPlaylist } from '../../services/domain/backupImport';
 import {
   describeBackupVersion,
   preparePluginBackupFileContent,
   type PreparedPluginBackupImport,
-} from '../../services/pluginBackupImport';
+} from '../../services/domain/pluginBackupImport';
 import { fileApi } from '../../services/tauri/fileApi';
 import { useToast } from '../../composables/toast';
 import { modalDragInterceptActive } from '../../composables/dragState';
-import { pluginsVersion, getStoredPlugins } from '../../services/pluginEngine';
+import { pluginsVersion, getStoredPlugins } from '../../services/domain/pluginEngine';
 
 type TabType = 'create' | 'networkImport' | 'localFolderImport' | 'backupImport';
 

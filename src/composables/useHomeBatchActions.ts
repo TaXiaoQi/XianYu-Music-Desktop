@@ -6,7 +6,7 @@ import type { Playlist, Song } from '../types';
 import { removeSongPathsFromPlaybackState } from '../features/playback/playbackCleanup';
 import { useSettings } from '../features/settings/useSettings';
 import { downloadToLocal } from './useDownloadToLocal';
-import { isDownloadableOnlineSong } from '../services/downloadService';
+import { isDownloadableOnlineSong } from '../services/domain/downloadService';
 
 interface ConfirmOptions {
   title: string;

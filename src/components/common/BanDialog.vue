@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useBanDialog } from '../../composables/useBanDialog';
-import { submitAppeal } from '../../services/usageStats';
+import { submitAppeal } from '../../services/domain/usageStats';
 import { useToast } from '../../composables/toast';
 
 const { showToast } = useToast();

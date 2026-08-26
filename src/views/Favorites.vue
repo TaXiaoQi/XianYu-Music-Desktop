@@ -106,7 +106,7 @@ import { launchFlyingCover } from '../composables/useFlyingCover';
 import { useSettings } from '../features/settings/useSettings';
 import { useToast } from '../composables/toast';
 import { downloadToLocal } from '../composables/useDownloadToLocal';
-import { isDownloadableOnlineSong } from '../services/downloadService';
+import { isDownloadableOnlineSong } from '../services/domain/downloadService';
 
 import { useSongDrag } from '../composables/useSongDrag';
 

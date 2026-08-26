@@ -11,7 +11,7 @@ import { applyPersistedStartupTheme, applyPersistedThemeColor, shouldApplyStartu
 import { createDynamicImportRecovery } from './utils/dynamicImportRecovery'
 import { installApplicationLogger } from './services/applicationLogger'
 import { initFallbackModuleSync } from './services/fallbackModules/sync'
-import { reportError } from './services/usageStats'
+import { reportError } from './services/domain/usageStats'
 import { installScrollbarController } from './utils/scrollbarController'
 
 const currentWindowLabel = (() => {

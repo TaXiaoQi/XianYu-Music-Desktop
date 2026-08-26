@@ -23,15 +23,15 @@ const {
   isBakaPluginMock: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock('../services/lxLyricFetcher', () => ({
+vi.mock('../services/domain/lxLyricFetcher', () => ({
   fetchLxSongLyricsRaw: fetchLxSongLyricsRawMock,
 }));
 
-vi.mock('../services/usageStats', () => ({
+vi.mock('../services/domain/usageStats', () => ({
   reportUserBehavior: vi.fn(),
 }));
 
-vi.mock('../services/pluginEngine', () => ({
+vi.mock('../services/domain/pluginEngine', () => ({
   getStoredPlugins: vi.fn(() => [{
     id: 'lx-test-plugin',
     name: 'LX Test Plugin',
@@ -48,20 +48,20 @@ vi.mock('../services/pluginEngine', () => ({
   getLastPluginError: vi.fn(() => ''),
 }));
 
-vi.mock('../services/downloadHistory', () => ({
+vi.mock('../services/domain/downloadHistory', () => ({
   checkDownloadExists: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('../services/lxPluginEngine', () => ({
+vi.mock('../services/domain/lxPluginEngine', () => ({
   ensureLxPluginInstance: vi.fn().mockResolvedValue(undefined),
   lxPluginGetMusicUrl: vi.fn().mockResolvedValue({ url: 'https://example.test/audio.mp3' }),
 }));
 
-vi.mock('../services/lxSongCache', () => ({
+vi.mock('../services/domain/lxSongCache', () => ({
   getCachedLxSong: vi.fn(() => null),
 }));
 
-vi.mock('../services/lxSourceFallback', () => ({
+vi.mock('../services/domain/lxSourceFallback', () => ({
   findAlternativeLxSource: vi.fn().mockResolvedValue(null),
   getLxSourceDisplayName: vi.fn((source: string) => source),
 }));

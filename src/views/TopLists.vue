@@ -133,7 +133,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router';
 
 import type { PluginPlaylistSearchResult, PluginSource } from '../types';
-import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion } from '../services/pluginEngine';
+import { getStoredPlugins, pluginGetTopLists, pluginSupportsTopLists, pluginsVersion } from '../services/domain/pluginEngine';
 import { getDisplayCoverUrl, tryProxyImage } from '../utils/coverProxy';
 import { useOnlineDetailStore, openOnlineDetail, type TopListsCache } from '../features/onlineDetail/store';
 import { useDragScrollX } from '../composables/useDragScrollX';

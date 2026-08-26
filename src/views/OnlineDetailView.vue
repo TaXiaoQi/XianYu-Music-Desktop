@@ -23,16 +23,16 @@ import { useToast } from '../composables/toast';
 import { launchFlyingCover } from '../composables/useFlyingCover';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { showLoginRequiredDialog } from '../composables/useBanDialog';
-import { downloadFavorites as downloadUserFavorites } from '../services/favoritesSync';
+import { downloadFavorites as downloadUserFavorites } from '../services/domain/favoritesSync';
 import {
   fetchWyTrackMetaByIds,
   fetchQqTrackMetaByIds,
   fetchKwTrackMetaByIds,
   fetchKgTrackMetaByIds,
   type WyTrackMetaPatch,
-} from '../services/playlistImport';
-import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong, firstRemoteSongCover } from '../services/playlistSync';
-import { getCiyuanxiId } from '../services/playlistSync';
+} from '../services/domain/playlistImport';
+import { fileSyncDownload as downloadUserPlaylists, syncPayloadToSong, firstRemoteSongCover } from '../services/domain/playlistSync';
+import { getCiyuanxiId } from '../services/domain/playlistSync';
 import { getSongAlbumKey } from '../features/library/playerLibraryViewShared';
 import { getDisplayCoverUrl } from '../utils/coverProxy';
 import {
@@ -45,7 +45,7 @@ import {
   pluginArtistSearch,
   pluginAlbumSearch,
   type PluginAlbumResult,
-} from '../services/pluginEngine';
+} from '../services/domain/pluginEngine';
 import {
   lxSearch,
   lxGetAlbumSongs,
@@ -56,12 +56,12 @@ import {
   type LxSearchResultItem,
   type LxAlbumSearchResult,
   type LxArtistSearchResult,
-} from '../services/lxMusicSdk';
-import { ensureLxPluginInstance, lxPluginGetPic } from '../services/lxPluginEngine';
-import { cacheLxSong } from '../services/lxSongCache';
-import { cacheLxSongInfo } from '../services/lxLyricFetcher';
+} from '../services/domain/lxMusicSdk';
+import { ensureLxPluginInstance, lxPluginGetPic } from '../services/domain/lxPluginEngine';
+import { cacheLxSong } from '../services/domain/lxSongCache';
+import { cacheLxSongInfo } from '../services/domain/lxLyricFetcher';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
-import { extractDurationMs } from '../services/pluginResultMappers';
+import { extractDurationMs } from '../services/domain/pluginResultMappers';
 
 import ArtistDetailHeader from '../components/headers/ArtistDetailHeader.vue';
 import AlbumDetailHeader from '../components/headers/AlbumDetailHeader.vue';

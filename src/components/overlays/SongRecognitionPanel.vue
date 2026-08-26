@@ -4,7 +4,7 @@ import { Mic, X, Music2, Play, Heart, ListPlus, RotateCcw, Loader2 } from 'lucid
 import { usePlaybackController } from '../../features/playback/usePlaybackController';
 import { useCollectionsStore } from '../../features/collections/store';
 import { useAddToPlaylistDialog } from '../../features/collections/addToPlaylistDialog';
-import { cacheLxSong } from '../../services/lxSongCache';
+import { cacheLxSong } from '../../services/domain/lxSongCache';
 import {
   recognizeSystemAudio,
   cancelRecognizeSystemAudio,
@@ -12,7 +12,7 @@ import {
   RECOGNIZE_MAX_SECONDS,
   RECOGNIZE_CANCELLED,
   type RecognizeMatch,
-} from '../../services/recognize';
+} from '../../services/domain/recognize';
 
 const emit = defineEmits<{ (e: 'close'): void }>();
 

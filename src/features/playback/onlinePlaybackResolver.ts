@@ -3,19 +3,19 @@ import { QUALITY_META, normalizeQualityKey } from '../../types';
 import {
   getStoredPlugins,
   pluginGetSupportedQualities,
-} from '../../services/pluginEngine';
+} from '../../services/domain/pluginEngine';
 import {
   parseLxPath,
   resolveLxCachedInfo,
-} from '../../services/lxUrlResolver';
-import { resolveOnlineQualityUrl } from '../../services/downloadService';
+} from '../../services/domain/lxUrlResolver';
+import { resolveOnlineQualityUrl } from '../../services/domain/downloadService';
 import {
   ensureSharedQualityProbe,
   sharedProbeAwaitTop,
-} from '../../services/qualitySharedProbe';
+} from '../../services/domain/qualitySharedProbe';
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
-import { getPluginBilibiliCookies } from '../../services/pluginCookieStore';
-import { resolveActualQuality } from '../../services/audioQualityVerify';
+import { getPluginBilibiliCookies } from '../../services/domain/pluginCookieStore';
+import { resolveActualQuality } from '../../services/domain/audioQualityVerify';
 
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;

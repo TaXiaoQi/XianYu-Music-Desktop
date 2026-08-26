@@ -14,7 +14,7 @@ import {
   type LyricsSearchCandidate,
   type LyricsPluginGroup,
   type LyricsSearchSourceStatus,
-} from '../../services/lyricsReplacement';
+} from '../../services/domain/lyricsReplacement';
 
 const props = defineProps<{
   visible: boolean;

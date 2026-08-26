@@ -1,8 +1,8 @@
 import { useToast } from './toast';
 import { useSettings } from '../features/settings/useSettings';
 import { useDownloadStore } from '../features/download/store';
-import { downloadSong, downloadSongExtras, isDownloadableOnlineSong } from '../services/downloadService';
-import { recordDownload, fileNameFromPath } from '../services/downloadHistory';
+import { downloadSong, downloadSongExtras, isDownloadableOnlineSong } from '../services/domain/downloadService';
+import { recordDownload, fileNameFromPath } from '../services/domain/downloadHistory';
 import { useLibraryRuntimeActions } from '../features/library/useLibraryRuntimeActions';
 import { QUALITY_META } from '../types';
 import type { Song, QualityKey, DownloadQuality, DownloadFileNameStyle } from '../types';

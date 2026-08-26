@@ -6,9 +6,9 @@ import {
   pluginGetVideoSource,
   type PluginVideoQuality,
   type PluginVideoSource,
-} from '../services/pluginEngine';
+} from '../services/domain/pluginEngine';
 import { pluginApi } from '../services/tauri/pluginApi';
-import { analyzeMvAudioSync } from '../services/mvAutoSync';
+import { analyzeMvAudioSync } from '../services/domain/mvAutoSync';
 import { usePlaybackStore } from '../features/playback/store';
 import { useSettings } from '../features/settings/useSettings';
 import type { PluginSearchResult, Song } from '../types';

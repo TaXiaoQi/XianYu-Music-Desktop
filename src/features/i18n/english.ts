@@ -208,6 +208,8 @@ const exactEnglishTranslations: Record<string, string> = {
   '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）。': 'Shared links are discarded after expiration and cannot be opened (5 min - 24 hours).',
   '选择分享链接播放失败行为': 'Choose action on shared link playback failure',
   '通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌。': 'When a song played via a shared link fails to start: pause playback or search/switch sources via plugins for the same song.',
+  '分享歌曲': 'Share Song',
+  '收到一首分享歌曲，点击播放开始收听': 'You received a shared song — press play to start listening',
 
   // Settings sections
   '设置': 'Settings',
@@ -1141,6 +1143,11 @@ const exactEnglishTranslations: Record<string, string> = {
   '按住按钮可拖到预览中的其他位置；关闭主栏显示后会进入更多菜单': 'Drag controls in the preview. Hidden controls move to the More menu.',
   '关闭后不会隐藏功能，会收入右侧“更多工具”菜单。': 'Disabled controls move to the More tools menu.',
   '关闭后不会隐藏功能，可随时重新开启；设置与搜索框为固定项。': 'Disabled controls can be restored anytime. Settings and search remain fixed.',
+  '关闭后不会隐藏功能，可随时重新开启；设置与搜索框为固定项，不在此处展示。': 'Disabling a control never removes the feature — re-enable it anytime. Settings and Search are fixed and are not listed here.',
+  '直接拖拽即可布局：底部栏控件可拖到其他槽位交换、拖到「更多」收纳；收纳里的控件可拖回底部栏或拖拽排序': 'Drag to arrange: swap bar controls across slots, drop them into the "More" drawer, or drag drawer items back and reorder them.',
+  '底部栏与「更多」收纳互通：拖到其它槽位交换、拖到「^」收入收纳，收纳内可拖拽排序。': 'Bar and "More" drawer work together: drag to swap slots, drag to " ^ " to tuck away, and reorder items inside the drawer.',
+  '所有控件均通过拖拽布局': 'All controls are arranged by dragging',
+  '暂无收纳的控件': 'No controls in the drawer',
   '底部栏布局与预览': 'Footer Layout & Preview',
   '顶部栏布局与预览': 'Top Bar Layout & Preview',
   '更多菜单': 'More menu',

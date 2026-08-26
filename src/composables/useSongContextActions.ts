@@ -2,8 +2,8 @@ import { ref, type Ref } from 'vue';
 
 import type { Song } from '../types';
 import { useToast } from './toast';
-import { checkDownloadExists, getDownloadRecord } from '../services/downloadHistory';
-import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../services/pluginEngine';
+import { checkDownloadExists, getDownloadRecord } from '../services/domain/downloadHistory';
+import { getStoredPlugins, pluginArtistSearch, pluginAlbumSearch } from '../services/domain/pluginEngine';
 import { openOnlineDetail } from '../features/onlineDetail/store';
 
 /**

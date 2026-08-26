@@ -166,10 +166,10 @@ import {
   getDailyRecommendation,
   type DailyRecommendAlgorithm,
   type DailyRecommendItem,
-} from '../services/dailyRecommend';
-import { getStoredPlugins, pluginsVersion } from '../services/pluginEngine';
-import { extractDurationMs } from '../services/pluginResultMappers';
-import { fetchWyTrackMetaByIds } from '../services/playlistImport';
+} from '../services/domain/dailyRecommend';
+import { getStoredPlugins, pluginsVersion } from '../services/domain/pluginEngine';
+import { extractDurationMs } from '../services/domain/pluginResultMappers';
+import { fetchWyTrackMetaByIds } from '../services/domain/playlistImport';
 import type { PluginSearchResult, PluginSource, Song } from '../types';
 
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));

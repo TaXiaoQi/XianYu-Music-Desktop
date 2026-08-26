@@ -10,7 +10,7 @@ import {
   ensureSharedQualityProbe,
   onSharedProbeUpdate,
   sharedProbeAvailable,
-} from '../../services/qualitySharedProbe';
+} from '../../services/domain/qualitySharedProbe';
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';

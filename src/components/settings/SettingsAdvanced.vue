@@ -14,19 +14,19 @@ import {
   useApplicationLogs,
 } from '../../services/applicationLogger';
 import { getStoredAuth } from '../../services/auth/authService';
-import { getStoredPlugins } from '../../services/pluginEngine';
-import { submitFeedback, getMyFeedback, type MyFeedbackItem } from '../../services/usageStats';
+import { getStoredPlugins } from '../../services/domain/pluginEngine';
+import { submitFeedback, getMyFeedback, type MyFeedbackItem } from '../../services/domain/usageStats';
 import {
   describeBackupVersion,
   preparePluginBackupImport,
   type PreparedPluginBackupImport,
-} from '../../services/pluginBackupImport';
+} from '../../services/domain/pluginBackupImport';
 import {
   exportAppBackup,
   parseAppBackup,
   importAppBackup,
   type AppBackupImportResult,
-} from '../../services/appBackup';
+} from '../../services/domain/appBackup';
 import { readPluginFile, readFileBytes } from '../../services/tauri/pluginApi';
 import { extractJsonFromZip } from '../../services/zipReader';
 import { gunzipSync } from '../../services/pureInflate';

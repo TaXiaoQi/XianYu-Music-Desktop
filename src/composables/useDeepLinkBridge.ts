@@ -1,8 +1,8 @@
 import { listen } from '@tauri-apps/api/event';
 import { onMounted, onUnmounted } from 'vue';
 import { appApi } from '../services/tauri/appApi';
-import { lxSearch, type LxSearchResultItem, type LxSourceId } from '../services/lxMusicSdk';
-import { getStoredPlugins, pluginMusicSearchWithDiagnostics } from '../services/pluginEngine';
+import { lxSearch, type LxSearchResultItem, type LxSourceId } from '../services/domain/lxMusicSdk';
+import { getStoredPlugins, pluginMusicSearchWithDiagnostics } from '../services/domain/pluginEngine';
 import { usePlaybackController } from '../features/playback/usePlaybackController';
 import { useLibraryStore } from '../features/library/store';
 import { parseIntervalToSeconds } from '../utils/remoteSong';
