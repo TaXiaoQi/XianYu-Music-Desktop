@@ -29,6 +29,7 @@ interface PlayerQueueApi {
   prevSong: () => void;
   clearQueue: () => Promise<unknown>;
   removeSongFromQueue: (song: Song) => void;
+  reorderQueue: (oldIndex: number, newIndex: number) => void;
   addSongToQueue: (song: Song) => void;
   addSongsToQueue: (songs: Song[]) => void;
 }
@@ -99,6 +100,7 @@ export function usePlaybackActions({
   const prevSong = () => getPlayerQueue().prevSong();
   const clearQueue = () => getPlayerQueue().clearQueue();
   const removeSongFromQueue = (song: Song) => getPlayerQueue().removeSongFromQueue(song);
+  const reorderQueue = (oldIndex: number, newIndex: number) => getPlayerQueue().reorderQueue(oldIndex, newIndex);
   const addSongToQueue = (song: Song) => getPlayerQueue().addSongToQueue(song);
   const addSongsToQueue = (songs: Song[]) => getPlayerQueue().addSongsToQueue(songs);
 
@@ -177,6 +179,7 @@ export function usePlaybackActions({
     prevSong,
     clearQueue,
     removeSongFromQueue,
+    reorderQueue,
     addSongToQueue,
     addSongsToQueue,
     addAlbumToQueueTail,

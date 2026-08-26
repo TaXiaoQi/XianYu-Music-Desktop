@@ -64,6 +64,7 @@ export const createPlaybackDomain = <
   addSongsToQueue: playbackActions.addSongsToQueue,
   addAlbumToQueueTail: playbackActions.addAlbumToQueueTail,
   removeSongFromQueue: playbackActions.removeSongFromQueue,
+  reorderQueue: playbackActions.reorderQueue,
   playNext: playbackActions.playNext,
   handleScan: playbackActions.handleScan,
   removeSongFromList: playbackActions.removeSongFromList,

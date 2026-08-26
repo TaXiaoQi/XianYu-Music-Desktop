@@ -16,11 +16,12 @@ describe('developer mode settings entry', () => {
     disableDeveloperMode();
   });
 
-  it('requires five consecutive clicks on the about-page phrase', () => {
-    expect(aboutSource).toContain('DEVELOPER_MODE_CLICK_COUNT = 5');
+  it('requires ten consecutive clicks on the about-page version number', () => {
+    expect(aboutSource).toContain('DEVELOPER_MODE_CLICK_COUNT = 10');
     expect(aboutSource).toContain('@click="handleDeveloperModeClick"');
     expect(aboutSource).toContain('将音乐给予你');
     expect(aboutSource).toContain("showToast(isEnglish.value ? 'Developer mode enabled' : '已进入开发者模式', 'success')");
+    expect(aboutSource).toContain('再点击 ${remaining} 次即可进入开发者模式');
   });
 
   it('shows Debug only in developer mode and allows exiting it', () => {

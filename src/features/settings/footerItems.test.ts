@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FOOTER_LAYOUT,
   computeCollapsedItems,
+  dropFooterItemToPalette,
+  dropFooterItemToSlot,
   getFooterPreviewSlotItems,
   moveFooterItemToPreviewSlot,
   normalizeFooterLayout,
@@ -20,7 +22,8 @@ describe('footer layout visual editor helpers', () => {
 
     expect(layout.hidden).toEqual([]);
     // 旧布局未包含 mv、share：不在任何容器，默认进入折叠收纳菜单
-    expect(computeCollapsedItems(layout)).toEqual(['mv', 'share']);
+    // 歌词页专属项（可视化/进度条/页面样式/固定）默认也留在折叠菜单
+    expect(computeCollapsedItems(layout)).toEqual(['mv', 'share', 'visualizer', 'progress', 'pageStyle', 'pin']);
   });
 
   it('moves a disabled main-bar button into more tools', () => {
@@ -79,5 +82,40 @@ describe('footer layout visual editor helpers', () => {
 
     expect(slots['right-0']).toBe('favorite');
     expect(slots['left-0']).toBe('quality');
+  });
+});
+
+describe('unified drag helpers (bar ⇄ more tools)', () => {
+  it('drops a palette item into a bar slot, pushing the occupant back to the palette', () => {
+    const next = dropFooterItemToSlot(DEFAULT_FOOTER_LAYOUT, 'visualizer', 'right-0');
+    const slots = getFooterPreviewSlotItems(next);
+
+    expect(slots['right-0']).toBe('visualizer');
+    // 原 right-0（quality）被推到收纳区
+    expect(computeCollapsedItems(next)).toContain('quality');
+    expect(next.hidden).not.toContain('visualizer');
+  });
+
+  it('clears an item from the bar when collapsed into the more tools', () => {
+    const next = dropFooterItemToPalette(DEFAULT_FOOTER_LAYOUT, 'volume', -1);
+    const slots = getFooterPreviewSlotItems(next);
+
+    expect(Object.values(slots)).not.toContain('volume');
+    expect(computeCollapsedItems(next)).toContain('volume');
+  });
+
+  it('drops a palette item at a specific collapsed position', () => {
+    const ordered = dropFooterItemToPalette(DEFAULT_FOOTER_LAYOUT, 'mv', 0);
+    const collapsed = computeCollapsedItems(ordered);
+
+    expect(collapsed[0]).toBe('mv');
+  });
+
+  it('reorders palette items by moving to a lower index', () => {
+    const base = dropFooterItemToPalette(DEFAULT_FOOTER_LAYOUT, 'share', 0);
+    const reordered = dropFooterItemToPalette(base, 'share', 2);
+    const collapsed = computeCollapsedItems(reordered);
+
+    expect(collapsed[2]).toBe('share');
   });
 });

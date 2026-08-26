@@ -56,6 +56,7 @@ export function usePlaybackController() {
     addSongToQueue: playbackDomain.addSongToQueue,
     addSongsToQueue: playbackDomain.addSongsToQueue,
     removeSongFromQueue: playbackDomain.removeSongFromQueue,
+    reorderQueue: playbackDomain.reorderQueue,
     playNext: playbackDomain.playNext,
     formatDuration: playbackDomain.formatDuration,
   };

@@ -487,6 +487,7 @@ export const mergeFooterLayoutSettings = (
   middleRight: patch.middleRight !== undefined ? patch.middleRight : base.middleRight,
   right: patch.right ?? base.right,
   hidden: patch.hidden ?? base.hidden,
+  collapsed: patch.collapsed ?? base.collapsed,
 });
 
 /**

@@ -919,6 +919,13 @@ export function usePlaylistSync() {
         showToast('未获取到弦予号', 'error');
         return;
       }
+      if (songs.length === 0) {
+        // 空列表保护：本地收藏为空时跳过上传，避免覆盖云端收藏
+        // （换包名/重装后本地为空，若直接上传会把云端收藏清空）。
+        logSync('uploadFavoritesOnly: 本地收藏为空，跳过上传');
+        showToast('本地收藏为空，跳过上传', 'info');
+        return;
+      }
       const result = await uploadFavoritesToCloud(ciyuanxiId, songs);
       lastFavoritesSyncTime.value = Date.now();
       lastFavoritesSyncResult.value = {
@@ -1001,6 +1008,33 @@ export function usePlaylistSync() {
       const msg = error instanceof Error ? error.message : String(error);
       logSyncError(`downloadFavoritesOnly 异常: ${msg}`, error);
       showToast(`收藏下载失败：${msg}`, 'error');
+    } finally {
+      favoritesSyncing.value = false;
+      favoritesSyncProgress.value = '';
+    }
+  }
+
+  /**
+   * 双向同步收藏：先下载云端收藏（恢复新设备数据），再上传本地收藏。
+   * 上传含空列表保护，避免换包名/重装后本地为空时覆盖云端收藏。
+   */
+  async function syncFavorites(): Promise<void> {
+    logSync('========== syncFavorites 开始 ==========');
+    if (!canSync()) {
+      logSyncError('syncFavorites: 未登录或无弦予号');
+      showToast('请先登录后再同步', 'error');
+      return;
+    }
+
+    favoritesSyncing.value = true;
+    favoritesSyncProgress.value = '正在从云端下载收藏...';
+
+    try {
+      // 第一步：下载（先恢复云端收藏，避免新设备空列表覆盖云端）
+      await downloadFavoritesOnly();
+      // 第二步：上传（含空列表保护）
+      favoritesSyncProgress.value = '正在上传收藏到云端...';
+      await uploadFavoritesOnly();
     } finally {
       favoritesSyncing.value = false;
       favoritesSyncProgress.value = '';
@@ -1276,7 +1310,7 @@ export function usePlaylistSync() {
       parallelTasks.push({ label: '同步插件', run: syncPlugins });
     }
     if (upload.favorites) {
-      parallelTasks.push({ label: '同步收藏', run: uploadFavoritesOnly });
+      parallelTasks.push({ label: '同步收藏', run: syncFavorites });
     }
 
     if (parallelTasks.length > 0) {
@@ -1405,6 +1439,7 @@ export function usePlaylistSync() {
     downloadSettingsOnly,
     uploadFavoritesOnly,
     downloadFavoritesOnly,
+    syncFavorites,
     uploadPlaylists,
     downloadPlaylists,
     deleteCloudPlaylistLocal,
