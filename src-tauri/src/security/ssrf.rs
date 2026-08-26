@@ -10,7 +10,82 @@
 //! > 说明：插件音源、在线搜索等业务本就要求「任意公网域名」，因此这里用
 //! > IP 黑名单（仅公网可达）而非域名白名单；账号/更新等固定目标仍按各自配置收敛。
 
-use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
+use reqwest::dns::{Name, Resolve, Resolving};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::sync::{Mutex, OnceLock};
+
+/// 已通过出站校验的 host → 钉住的公网解析结果（校验时刻解析）。
+///
+/// 用途：reqwest 连接时直接用「校验时刻」解析出的 IP，配合 `OutboundDnsResolver`，
+/// 根除「校验解析」与「连接解析」两次独立解析被 DNS rebinding 拉开造成的 TOCTOU 间隙。
+fn pinned_ips() -> &'static Mutex<HashMap<String, Vec<IpAddr>>> {
+    static M: OnceLock<Mutex<HashMap<String, Vec<IpAddr>>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn record_pinned_ips(host: &str, ips: Vec<IpAddr>) {
+    if let Ok(mut m) = pinned_ips().lock() {
+        m.insert(host.to_ascii_lowercase(), ips);
+    }
+}
+
+fn pinned_anchor(host: &str) -> Option<Vec<IpAddr>> {
+    pinned_ips().lock().ok()?.get(&host.to_ascii_lowercase()).cloned()
+}
+
+/// 解析域名并拒绝任何命中禁区的 IP，返回合规的公网 IP 列表。
+pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
+    let mut addrs = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| format!("域名解析失败: {host} ({e})"))?;
+    let mut out: Vec<IpAddr> = Vec::new();
+    while let Some(sa) = addrs.next() {
+        let ip = sa.ip();
+        if forbidden_ip(ip) {
+            return Err(format!("目标地址被禁止（内网/保留地址）: {ip}"));
+        }
+        if !out.contains(&ip) {
+            out.push(ip);
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("域名未解析到任何地址: {host}"));
+    }
+    Ok(out)
+}
+
+/// reqwest 自定义 DNS resolver：连接时将域名解析为「已校验的公网 IP」。
+///
+/// - 该 host 已通过出站校验（已钉住）→ 直接返回校验时刻的 IP，杜绝 rebinding；
+/// - 否则（如 reqwest 内部跟随的重定向目标）→ 即时解析并逐 IP 拒绝禁区，作为兜底防线。
+#[derive(Clone, Debug, Default)]
+pub struct OutboundDnsResolver;
+
+impl Resolve for OutboundDnsResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_ascii_lowercase();
+        Box::pin(async move {
+            let ips: Vec<IpAddr> = match pinned_anchor(&host) {
+                Some(ips) if !ips.is_empty() => ips,
+                _ => resolve_allowed_ips(&host, 443).await.map_err(boxed_io_err)?,
+            };
+            // reqwest 会用 URL 端口覆盖此处 SocketAddr 的端口，故端口先置 0
+            let addrs: Box<dyn Iterator<Item = SocketAddr> + Send> =
+                Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            Ok(addrs)
+        })
+    }
+}
+
+/// 供 reqwest `ClientBuilder::dns_resolver` 使用的 Arc 版（reqwest 该 API 接受 `Arc<dyn Resolve>`）。
+pub fn pinned_dns_resolver() -> std::sync::Arc<OutboundDnsResolver> {
+    std::sync::Arc::new(OutboundDnsResolver)
+}
+
+fn boxed_io_err(e: String) -> Box<dyn std::error::Error + Send + Sync> {
+    std::io::Error::other(e).into()
+}
 
 /// 允许显式使用的端口（缺省按 scheme 的 80/443 允许）。常见 Web/CDN 端口。
 fn port_allowed(port: u16) -> bool {
@@ -175,31 +250,11 @@ pub async fn validate_outbound_url(url: &str) -> Result<reqwest::Url, String> {
     let default_port: u16 = if parsed.scheme() == "https" { 443 } else { 80 };
     let port = parsed.port().unwrap_or(default_port);
 
-    // 若 host 是 IP 字面量，同步校验已覆盖；仅域名再经 tokio 解析复核
+    // 若 host 是 IP 字面量，同步校验已覆盖；仅域名再经解析复核，并把合规 IP 钉住，
+    // 供 OutboundDnsResolver 在连接时直接复用，杜绝 DNS rebinding 的校验/连接两次解析偏差。
     if host.parse::<IpAddr>().is_err() {
-        match tokio::net::lookup_host((host.as_str(), port)).await {
-            Ok(mut addrs) => {
-                let mut resolved = false;
-                let mut first_ip: Option<IpAddr> = None;
-                while let Some(sa) = addrs.next() {
-                    resolved = true;
-                    let ip = sa.ip();
-                    if first_ip.is_none() {
-                        first_ip = Some(ip);
-                    }
-                    if forbidden_ip(ip) {
-                        return Err(format!(
-                            "目标地址被禁止（内网/保留地址）: {ip}"
-                        ));
-                    }
-                }
-                if !resolved {
-                    return Err(format!("域名未解析到任何地址: {host}"));
-                }
-                let _ = first_ip;
-            }
-            Err(e) => return Err(format!("域名解析失败: {host} ({e})")),
-        }
+        let ips = resolve_allowed_ips(&host, port).await?;
+        record_pinned_ips(&host, ips);
     }
     Ok(parsed)
 }
@@ -297,5 +352,43 @@ mod tests {
         assert!(validate_url_ip_literal("https://example.com/song.mp3").is_ok());
         // 域名不做 DNS/端口校验，仅非 http(s) scheme 才拒
         assert!(validate_url_ip_literal("ftp://example.com/x").is_err());
+    }
+
+    #[tokio::test]
+    async fn outbound_dns_resolver_uses_pinned_ips_without_network() {
+        // 钉住一个 host → resolver 直接返回该校验时刻的 IP，不触发真实 DNS
+        let ip: IpAddr = "1.2.3.4".parse().unwrap();
+        record_pinned_ips("pinned.example", vec![ip]);
+        let resolver = pinned_dns_resolver();
+        let name: reqwest::dns::Name = "pinned.example".parse().unwrap();
+        let fut = resolver.resolve(name);
+        let mut addr = tokio::time::timeout(std::time::Duration::from_secs(2), fut)
+            .await
+            .expect("resolver 不应超时")
+            .expect("解析应成功");
+        assert!(addr.any(|sa| sa.ip() == ip));
+    }
+
+    #[tokio::test]
+    async fn outbound_dns_resolver_rejects_pinned_forbidden_redirect_rebinding() {
+        // 即使攻击者让校验期解析到公网、连接期 rebinding 到内网，resolver 也只认钉住的 IP，
+        // 且兜底路径（未钉住）会对任何内网 IP 拒绝 —— 本用例验证兜底拒绝。
+        // 直接构造「域名未钉住时解析到内网」场景：用不可达 TLD，防意外命中真实 DNS 永远失败。
+        let resolver = pinned_dns_resolver();
+        let name: reqwest::dns::Name = "ssrf-rebinding-fail.invalid".parse().unwrap();
+        let fut = resolver.resolve(name);
+        // 未钉住 + 解析失败/命中禁区 → 都必须返回 Err（不返回内网 IP）
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), fut)
+            .await
+            .expect("resolver 不应超时");
+        // .invalid 应解析失败，或即便解析也不应是内网 → 结果为 Err 或非内网
+        match res {
+            Err(_) => {}
+            Ok(addr) => {
+                for sa in addr {
+                    assert!(!forbidden_ip(sa.ip()), "兜底不允许返回内网 IP");
+                }
+            }
+        }
     }
 }

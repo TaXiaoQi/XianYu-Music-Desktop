@@ -458,6 +458,8 @@ impl RemoteRangeReader {
             .deflate(true)
             // SSRF 纵深：跳转目标做 IP 字面量校验，防重定向到内网
             .redirect(crate::security::ssrf::ip_literal_redirect_policy())
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .map_err(|error| error.to_string())?;
         // len 延迟填充：不再同步 HEAD/Range 探测文件长度（那会阻塞播放线程）。

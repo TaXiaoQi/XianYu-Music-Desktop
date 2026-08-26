@@ -844,6 +844,8 @@ async fn http_fetch_text(
     let client = reqwest::Client::builder()
         // 每个跳转目标都需通过 SSRF 校验
         .redirect(crate::security::ssrf::ssrf_redirect_policy())
+        // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+        .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .build()
         .map_err(|e| e.to_string())?;
 

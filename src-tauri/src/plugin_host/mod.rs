@@ -1325,6 +1325,8 @@ mod tests {
         let engine = engine();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))
+            // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
+            .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
             .build()
             .unwrap();
 
