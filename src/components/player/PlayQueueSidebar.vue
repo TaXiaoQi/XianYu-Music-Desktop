@@ -17,7 +17,6 @@ const {
   showPlaylist,
   togglePlaylist,
   playSong,
-  formatDuration,
   clearQueue,
   removeSongFromQueue,
 } = usePlayer();
@@ -155,51 +154,36 @@ watch(
               }"
             >
               <div
-                class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border"
-                :class="[
-                  currentSong?.path === vItem.song.path
-                    ? 'bg-[#fff1f1]/95 dark:bg-[#EC4141]/18 text-[#EC4141] border-[#EC4141]/18 shadow-[0_10px_26px_rgba(15,23,42,0.14)]'
-                    : 'bg-white/25 dark:bg-white/[0.03] text-[#172033] dark:text-white hover:bg-white/70 dark:hover:bg-white/10 border-transparent hover:border-white/80 dark:hover:border-white/12'
-                ]"
+                class="group relative p-2.5 rounded-xl flex justify-between items-center cursor-default select-none transition-all duration-200 border border-transparent hover:bg-white/70 dark:hover:bg-white/10 hover:border-white/80 dark:hover:border-white/12"
                 @click="songClickAction === 'single' && playSong(vItem.song)"
                 @dblclick="songClickAction !== 'single' && playSong(vItem.song)"
               >
                 <div class="w-8 flex justify-center items-center shrink-0">
-                  <div v-if="currentSong?.path === vItem.song.path" class="flex items-end gap-[2px] h-3">
-                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-1"></div>
-                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-2"></div>
-                    <div class="w-[3px] bg-[#EC4141] animate-music-bar-3"></div>
-                  </div>
-                  <template v-else>
-                    <span class="text-xs text-[#52647d] dark:text-white/75 group-hover:hidden font-mono">{{ vItem.index + 1 }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="hidden group-hover:block h-3 w-3 text-[#34445c] dark:text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" /></svg>
-                  </template>
+                  <svg v-if="currentSong?.path === vItem.song.path" class="h-[18px] w-[18px] text-[#EC4141]" viewBox="0 0 24 24" fill="currentColor"><path d="M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z"/></svg>
+                  <svg v-else class="h-[18px] w-[18px] text-[#52647d] dark:text-white/75" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
                 </div>
 
                 <div class="flex-1 min-w-0 pr-4 flex flex-col">
                   <div class="flex min-w-0 items-center gap-1.5">
-                    <span class="min-w-0 truncate text-sm font-medium leading-tight">{{ vItem.song.title || vItem.song.name.replace(/\.[^/.]+$/, "") }}</span>
+                    <span class="min-w-0 truncate text-sm leading-tight" :class="currentSong?.path === vItem.song.path ? 'font-bold text-[#EC4141]' : 'font-medium'">{{ vItem.song.title || vItem.song.name.replace(/\.[^/.]+$/, "") }}</span>
                     <span
                       v-if="vItem.song.path?.startsWith('lx://') || vItem.song.path?.startsWith('plugin://') || vItem.song.path?.startsWith('remote://')"
                       class="shrink-0 rounded-full border border-[#EC4141]/20 bg-[#EC4141]/10 px-1.5 py-[1px] text-[10px] font-bold text-[#EC4141]"
                     >{{ getSongSourceLabel(vItem.song) }}</span>
                   </div>
                   <span
-                    class="text-[11px] truncate mt-1 font-medium"
-                    :class="currentSong?.path === vItem.song.path ? 'text-[#EC4141]' : 'text-[#42526a] dark:text-white/80'"
+                    class="text-[11px] truncate mt-1 font-medium text-[#42526a] dark:text-white/80"
                   >{{ vItem.song.artist || 'Unknown Artist' }}</span>
                 </div>
 
-                <div class="flex items-center gap-3">
-                  <div class="text-xs font-mono shrink-0 group-hover:hidden" :class="currentSong?.path === vItem.song.path ? 'text-[#EC4141]' : 'text-[#34445c] dark:text-white/85'">
-                    {{ formatDuration(vItem.song.duration) }}
-                  </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <svg class="h-[18px] w-[18px] text-[#52647d] dark:text-white/75" viewBox="0 0 24 24" fill="currentColor"><path d="M20 9H4v2h16V9zM4 15h16v-2H4v2z"/></svg>
                   <button
                     @click="handleRemove(vItem.song, $event)"
-                    class="hidden group-hover:flex w-6 h-6 items-center justify-center text-[#42526a] dark:text-white/80 hover:text-red-500 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                    class="w-6 h-6 flex items-center justify-center text-[#52647d] dark:text-white/75 hover:text-red-500 transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
                     title="移出队列"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>
               </div>
@@ -241,13 +225,4 @@ watch(
 .fade-leave-to {
   opacity: 0;
 }
-
-@keyframes music-bar {
-  0%, 100% { height: 4px; }
-  50% { height: 12px; }
-}
-
-.animate-music-bar-1 { animation: music-bar 0.6s ease-in-out infinite; }
-.animate-music-bar-2 { animation: music-bar 0.8s ease-in-out infinite 0.1s; }
-.animate-music-bar-3 { animation: music-bar 0.7s ease-in-out infinite 0.2s; }
 </style>
