@@ -1956,7 +1956,8 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         // 永久停摆（前端表现为"在线直链走 Rust 起播探测失败（未就绪）"）。
                         // 此处按 OUTPUT_RECOVER_INTERVAL 节流重开默认设备并恢复当前播放，
                         // 同时对外暴露明确的"无可用输出设备"状态。
-                        let missing_output = output.is_none()
+                        let missing_output = is_playing_flag
+                            && output.is_none()
                             && active_output_mode == AudioOutputMode::Shared
                             && last_output_recover.elapsed() >= OUTPUT_RECOVER_INTERVAL;
                         if missing_output {
@@ -2010,12 +2011,13 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             );
                         }
 
-                        if should_restore_for_default_device_change(
-                            &selected_device_name,
-                            &last_default_device_name,
-                            &next_default_name,
-                            &active_device_name,
-                        ) {
+                        if is_playing_flag
+                            && should_restore_for_default_device_change(
+                                &selected_device_name,
+                                &last_default_device_name,
+                                &next_default_name,
+                                &active_device_name,
+                            ) {
                             last_default_device_name = next_default_name;
                             if let Some(sink) = &current_sink {
                                 sink.stop();
