@@ -1,7 +1,10 @@
 import { ref } from 'vue';
 
 /** 分享预览弹窗的用户动作 */
-export type ShareLinkDialogAction = 'play' | 'playNext' | 'cancel';
+export type ShareLinkDialogAction = 'play' | 'playNext' | 'cancel' | 'import';
+
+/** 分享预览弹窗形态：本地命中 / 本地无音源但可在线播放 / 需导入音源 */
+export type ShareLinkDialogMode = 'local' | 'online' | 'import';
 
 export interface ShareLinkDialogState {
   visible: boolean;
@@ -13,6 +16,10 @@ export interface ShareLinkDialogState {
   sourceLabel: string;
   /** 封面 https 地址（可为空，空时弹窗用占位图标） */
   cover: string;
+  /** 弹窗形态，决定按钮文案与布局 */
+  mode: ShareLinkDialogMode;
+  /** online 模式主按钮文案（缺省为「本地无音源，前往在线播放」） */
+  onlineActionLabel?: string;
   resolver: ((action: ShareLinkDialogAction) => void) | null;
 }
 
@@ -22,18 +29,24 @@ const shareLinkDialogState = ref<ShareLinkDialogState>({
   artist: '',
   sourceLabel: '',
   cover: '',
+  mode: 'local',
+  onlineActionLabel: '',
   resolver: null,
 });
 
 /**
  * 打开分享链接预览弹窗（复用调试页统一弹窗样式，仅内部按钮可关闭）。
- * 返回用户动作：'play' 立即播放 / 'playNext' 添加到下一首播放 / 'cancel' 取消。
+ * mode 控制按钮布局：local — 播放/下一首播放/取消；online — 主按钮/取消；
+ * import — 「前往导入音源」/取消。online 主按钮文案由 onlineActionLabel 指定（缺省
+ * 「本地无音源，前往在线播放」）。返回用户动作。
  */
 export function showShareLinkDialog(params: {
   name: string;
   artist: string;
   sourceLabel: string;
   cover?: string;
+  mode?: ShareLinkDialogMode;
+  onlineActionLabel?: string;
 }): Promise<ShareLinkDialogAction> {
   return new Promise<ShareLinkDialogAction>((resolve) => {
     shareLinkDialogState.value = {
@@ -42,6 +55,8 @@ export function showShareLinkDialog(params: {
       artist: params.artist || '未知歌手',
       sourceLabel: params.sourceLabel || '未知来源',
       cover: params.cover || '',
+      mode: params.mode || 'local',
+      onlineActionLabel: params.onlineActionLabel || '',
       resolver: resolve,
     };
   });
@@ -56,7 +71,7 @@ export function resolveShareLinkDialog(action: ShareLinkDialogAction): void {
     state.resolver?.(action);
     return;
   }
-  // 'playNext' 或 'cancel'：无需等待播放状态，直接关闭弹窗
+  // 'playNext' / 'cancel' / 'import'：无需等待播放状态，直接关闭弹窗
   state.resolver?.(action);
   shareLinkDialogState.value = {
     visible: false,
@@ -64,6 +79,8 @@ export function resolveShareLinkDialog(action: ShareLinkDialogAction): void {
     artist: '',
     sourceLabel: '',
     cover: '',
+    mode: 'local',
+    onlineActionLabel: '',
     resolver: null,
   };
 }
@@ -75,6 +92,8 @@ export function finishShareLinkDialog(): void {
     artist: '',
     sourceLabel: '',
     cover: '',
+    mode: 'local',
+    onlineActionLabel: '',
     resolver: null,
   };
 }
