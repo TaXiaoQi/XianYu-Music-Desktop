@@ -1,0 +1,340 @@
+/**
+ * 使用统计 · 上报行为实现。
+ *
+ * 将软件打开、搜索、输入、播放行为、错误、热搜、反馈/申诉等上报到后台统计接口
+ * （与账号 API 共用同一签名机制）。全部 fire-and-forget：失败静默吞掉，绝不阻塞 UI。
+ */
+
+import { APP_VERSION } from '../../../version';
+import { signedRequest, getStoredAuth } from '../auth/authService';
+import { getDeviceId, getDeviceInfo } from './usageStatsDevice';
+
+/**
+ * 上报软件打开事件（启动时调用一次，登录成功后也会重新上报以关联设备）。
+ * 后端写入 app_open_log，同时作为设备连接数的来源（按 device_id 去重）。
+ * 携带当前登录账号的弦予号，供后台设备管理页自动关联账号。
+ */
+export function reportAppOpen(): void {
+  const info = getDeviceInfo();
+  const auth = getStoredAuth();
+  const ciyuanxiId = auth?.user?.ciyuanxi_id ?? '';
+  void signedRequest('open', { ...info, ciyuanxi_id: ciyuanxiId })
+    .then(() => {
+      /* 上报成功，静默 */
+    })
+    .catch(() => {
+      /* 上报失败，静默 */
+    });
+}
+
+// 搜索上报防抖：相同关键词 + 来源在短时间内只上报一次，避免逐字搜索刷量
+let lastSearchKey = '';
+let lastSearchTime = 0;
+const SEARCH_MIN_INTERVAL_MS = 1500;
+
+/**
+ * 上报一次搜索行为。
+ * @param keyword 搜索关键词
+ * @param source  音源名称（如 kw/tx/wy/本地）
+ * @param resultCount 结果数量
+ */
+export function reportSearch(keyword: string, source: string, resultCount: number): void {
+  const trimmed = (keyword || '').trim();
+  if (!trimmed) return;
+  const key = `${source}::${trimmed}`;
+  const now = Date.now();
+  if (key === lastSearchKey && now - lastSearchTime < SEARCH_MIN_INTERVAL_MS) return;
+  lastSearchKey = key;
+  lastSearchTime = now;
+
+  const info = getDeviceInfo();
+  void signedRequest('search', {
+    device_id: info.device_id,
+    keyword: trimmed,
+    source,
+    result_count: resultCount,
+  })
+    .then(() => {
+      /* 上报成功，静默 */
+    })
+    .catch(() => {
+      /* 上报失败，静默 */
+    });
+}
+
+// ─── 输入统计 ───────────────────────────────────────────
+
+// 防抖：累积字符数，1.5 秒无新输入后批量上报，避免逐键请求
+let pendingCharCount = 0;
+let inputFlushTimer: ReturnType<typeof setTimeout> | null = null;
+const INPUT_FLUSH_DELAY_MS = 1500;
+
+/**
+ * 上报用户输入的字符数（防抖累积后批量上报）。
+ * @param charCount 本次新增的字符数
+ */
+export function reportInputStats(charCount: number): void {
+  if (charCount <= 0) return;
+  pendingCharCount += charCount;
+
+  if (inputFlushTimer) clearTimeout(inputFlushTimer);
+  inputFlushTimer = setTimeout(() => {
+    const count = pendingCharCount;
+    pendingCharCount = 0;
+    inputFlushTimer = null;
+    if (count <= 0) return;
+
+    const info = getDeviceInfo();
+    void signedRequest('input_stats', {
+      device_id: info.device_id,
+      char_count: count,
+    })
+      .then(() => {
+        /* 上报成功，静默 */
+      })
+      .catch(() => {
+        /* 上报失败，静默 */
+      });
+  }, INPUT_FLUSH_DELAY_MS);
+}
+
+// ─── 错误日志 ───────────────────────────────────────────
+
+// 防重复：相同错误 5 秒内只上报一次
+const recentErrors = new Map<string, number>();
+const ERROR_DEDUP_INTERVAL_MS = 5000;
+const MAX_RECENT_ERRORS = 20;
+
+/**
+ * 上报一条错误日志。
+ * @param errorType    错误类型（如 'TypeError'、'unhandledrejection'）
+ * @param errorMessage 错误信息
+ * @param errorStack   错误堆栈（可选）
+ * @param page         发生页面（可选，默认 location.hash）
+ */
+export function reportError(
+  errorType: string,
+  errorMessage: string,
+  errorStack?: string,
+  page?: string,
+): void {
+  const dedupKey = `${errorType}::${errorMessage}`;
+  const now = Date.now();
+  const lastTime = recentErrors.get(dedupKey);
+  if (lastTime && now - lastTime < ERROR_DEDUP_INTERVAL_MS) return;
+  recentErrors.set(dedupKey, now);
+  // 清理过期条目，防止 Map 无限增长
+  if (recentErrors.size > MAX_RECENT_ERRORS) {
+    for (const [key, time] of recentErrors) {
+      if (now - time > ERROR_DEDUP_INTERVAL_MS) recentErrors.delete(key);
+    }
+  }
+
+  const info = getDeviceInfo();
+  void signedRequest('error', {
+    device_id: info.device_id,
+    app_version: info.app_version,
+    os_version: info.os_version,
+    device_model: info.device_model,
+    platform: 'windows',
+    device_brand: '',
+    error_type: errorType,
+    error_message: errorMessage,
+    error_stack: errorStack || '',
+    page: page || (typeof location !== 'undefined' ? location.hash : ''),
+  })
+    .then(() => {
+      /* 上报成功，静默 */
+    })
+    .catch(() => {
+      /* 上报失败，静默 */
+    });
+}
+
+// ─── 大家都在搜（热搜） ───────────────────────────────────────────
+
+export interface HotSearchItem {
+  keyword: string;
+  count: number;
+}
+
+/**
+ * 获取大家都在搜（Top 10 热搜关键词）。
+ * 聚合所有用户累计的搜索数据，按搜索次数倒序返回。
+ * 失败时返回空数组，不抛错。
+ */
+export async function fetchHotSearch(limit = 10): Promise<HotSearchItem[]> {
+  try {
+    const data = await signedRequest<{ list: Array<{ keyword: string; count: number }> }>(
+      'get_hot_search',
+      { limit },
+      { fetchTimeoutMs: 8_000, timeoutMs: 10_000 },
+    );
+    return data?.list ?? [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[HotSearch] 获取热搜失败: ${msg}`);
+    return [];
+  }
+}
+
+// ─── 用户行为数据 ───────────────────────────────────────────
+
+export interface UserBehaviorReport {
+  song_id: string;
+  song_name: string;
+  singer: string;
+  song_hash: string;
+  source: string;
+  action: 'play' | 'switch' | 'complete' | 'next';
+  listen_duration: number;
+  play_count: number;
+  ciyuanxi_id?: string;
+  user_id?: number;
+}
+
+/**
+ * 上报用户播放行为（播放/切歌/播完/下一首）。
+ * @param report 行为数据
+ *
+ * [性能优化] 使用 requestIdleCallback 延迟到浏览器空闲时再发起 HTTP 请求。
+ * reportUserBehavior 在 playSong → flushPlaySession 中被调用，此时正准备播放。
+ * 如果立即通过 Tauri HTTP 插件发起 IPC 请求（fetchElapsed 可达 1.7s），
+ * 会与紧随其后的 playAudio IPC 调用产生通道竞争，导致播放起播延迟约 1 秒。
+ * 延迟到空闲期可确保 playAudio 先于 HTTP 请求被投递。
+ */
+export function reportUserBehavior(report: UserBehaviorReport): void {
+  const info = getDeviceInfo();
+  const send = () => {
+    void signedRequest('report_user_behavior', {
+      device_id: info.device_id,
+      app_version: info.app_version,
+      ...report,
+    })
+      .then(() => {
+        /* 上报成功，静默 */
+      })
+      .catch(() => {
+        /* 上报失败，静默 */
+      });
+  };
+
+  const requestIdle = typeof window !== 'undefined'
+    ? (window as any).requestIdleCallback as
+      | ((callback: () => void, options?: { timeout?: number }) => number)
+      | undefined
+    : undefined;
+
+  if (requestIdle) {
+    requestIdle(send, { timeout: 3000 });
+  } else {
+    setTimeout(send, 500);
+  }
+}
+
+// ─── 问题反馈 ───────────────────────────────────────────
+
+/**
+ * 提交反馈。反馈类型二选一：
+ *  - 'problem'（问题反馈）：可附带错误/全量日志，不支持图片
+ *  - 'suggestion'（功能建议）：支持上传图片（base64 data URL 数组），不附日志
+ *
+ * @param title        反馈标题（1-60 字）
+ * @param content      反馈内容（1-1000 字）
+ * @param options      可选参数
+ * @param options.feedbackType 反馈类型，默认 'problem'
+ * @param options.errorLogs    可选，问题反馈附带的错误日志文本
+ * @param options.allLogs      可选，问题反馈附带的全部日志文本
+ * @param options.images       可选，功能建议上传的图片（base64 data URL 数组）
+ * @returns 后端返回的新反馈 ID
+ * @throws 未登录时抛 Error('请先登录后再提交反馈')；后端校验失败抛 Error(msg)
+ */
+export async function submitFeedback(
+  title: string,
+  content: string,
+  options: {
+    feedbackType?: 'problem' | 'suggestion';
+    errorLogs?: string;
+    allLogs?: string;
+    images?: string[];
+  } = {},
+): Promise<number> {
+  const auth = getStoredAuth();
+  const user = auth?.user;
+  const ciyuanxiId = user?.ciyuanxi_id?.trim();
+  if (!ciyuanxiId) {
+    throw new Error('请先登录后再提交反馈');
+  }
+
+  const feedbackType = options.feedbackType ?? 'problem';
+  const payload: Record<string, unknown> = {
+    ciyuanxi_id: ciyuanxiId,
+    nickname: user?.nickname?.trim() || '',
+    title: title.trim(),
+    content: content.trim(),
+    feedback_type: feedbackType,
+    platform: 'desktop',
+    app_version: APP_VERSION,
+    device_id: getDeviceId(),
+  };
+  if (options.errorLogs) payload.error_logs = options.errorLogs;
+  if (options.allLogs) payload.all_logs = options.allLogs;
+  if (options.images && options.images.length > 0) payload.images = options.images;
+
+  const data = await signedRequest<{ id: string | number }>('submit_feedback', payload);
+  return Number(data.id);
+}
+
+export interface MyFeedbackItem {
+  id: number;
+  title: string;
+  content: string;
+  feedbackType: 'problem' | 'suggestion';
+  images: string[];
+  status: 'pending' | 'processing' | 'resolved' | 'rejected';
+  category: string;
+  assignee: string;
+  repliedBy: string;
+  resolveNote: string;
+  resolveImages: string[];
+  rejectReason: string;
+  hasErrorLogs: boolean;
+  hasAllLogs: boolean;
+  createdAt: string;
+  repliedAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 获取当前用户的反馈列表（含状态），用于客户端「我的反馈」查看。
+ */
+export async function getMyFeedback(): Promise<MyFeedbackItem[]> {
+  const auth = getStoredAuth();
+  const user = auth?.user;
+  const ciyuanxiId = user?.ciyuanxi_id?.trim();
+  if (!ciyuanxiId) {
+    throw new Error('请先登录后再查看反馈');
+  }
+  const data = await signedRequest<{ list: MyFeedbackItem[] }>('list_my_feedback', {
+    ciyuanxi_id: ciyuanxiId,
+  });
+  return data?.list ?? [];
+}
+
+/**
+ * 账号封禁申诉：调用 submit_appeal 接口，并入 user_feedback 表（category='appeal'）。
+ * 与普通反馈共享每日限额。
+ */
+export async function submitAppeal(
+  ciyuanxiId: string,
+  nickname: string,
+  content: string,
+): Promise<number> {
+  const payload: Record<string, unknown> = {
+    ciyuanxi_id: ciyuanxiId,
+    nickname: nickname.trim() || '',
+    content: content.trim(),
+  };
+  const data = await signedRequest<{ id: string | number }>('submit_appeal', payload);
+  return Number(data.id);
+}
