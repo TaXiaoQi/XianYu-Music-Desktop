@@ -71,6 +71,23 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
+/**
+ * 首次登录同步完成标记。
+ *
+ * 云端同步策略：初次登录时执行一次全量同步（本地有数据且与云端冲突时才弹冲突菜单），
+ * 之后两端一致；后续自动同步以客户端为主，只上传新增数据，不再每次不一致弹窗。
+ * 此标记持久化到本地，保证每个设备只在首次登录做过一次全量一致性同步。
+ */
+const LOGIN_SYNC_COMPLETED_KEY = 'player_login_sync_completed';
+
+function loadLoginSyncCompleted(): boolean {
+  return localStore.getJson<boolean>(LOGIN_SYNC_COMPLETED_KEY) ?? false;
+}
+
+function persistLoginSyncCompleted() {
+  localStore.setJson(LOGIN_SYNC_COMPLETED_KEY, true);
+}
+
 // ==================== 本地曲库匹配 ====================
 
 function normMeta(s: string): string {
@@ -207,6 +224,10 @@ export function usePlaylistSync() {
   const autoSyncDelayed = ref(false);
   let autoSyncInitialized = false;
   let autoSyncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // 首次登录同步标记（持久化到本地，仅首次登录全量一致性同步一次）
+  const loginSyncCompleted = ref(loadLoginSyncCompleted());
+  let loginSyncInProgress = false;
 
   /** 将某类同步状态刷入本地存储，保证再次打开账号设置时仍能显示「上次同步」 */
   function persistSyncStatus(category: keyof PersistedSyncState) {
@@ -1307,25 +1328,29 @@ export function usePlaylistSync() {
   }
 
   /**
-   * 根据上传设置执行自动同步
-   * 歌单/插件/收藏互不依赖，并行执行以压缩同步总耗时（远程服务器 RTT 较高，
-   * 串行会把各阶段的网络往返累加）；设置同步放最后，因其冲突弹窗内的
-   * 按类别选择可能再次触发歌单/插件同步，需等上述阶段完成后再执行。
+   * 根据上传设置执行自动同步（以客户端为主，仅上传，不下载、不弹冲突窗）。
+   *
+   * 首次登录时已通过 `syncOnLoginSuccess` 做了一次全量一致性同步，此后两端一致；
+   * 后续自动同步只把客户端数据上传到服务器，覆盖式同步保证服务器保存的就是
+   * 客户端当前状态（含新增内容），不再每次上下不一致就弹冲突菜单。
    */
   async function performAutoSync(): Promise<void> {
-    logSync('performAutoSync: 开始自动同步');
+    logSync('performAutoSync: 开始自动同步（客户端为主，只上传）');
     const upload = settingsStore.settings.upload;
     let hasError = false;
 
     const parallelTasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
     if (upload.playlists) {
-      parallelTasks.push({ label: '同步歌单', run: syncPlaylists });
+      parallelTasks.push({ label: '上传歌单', run: uploadPlaylists });
     }
     if (upload.plugins) {
-      parallelTasks.push({ label: '同步插件', run: syncPlugins });
+      parallelTasks.push({ label: '上传插件', run: uploadPluginsOnly });
     }
     if (upload.favorites) {
-      parallelTasks.push({ label: '同步收藏', run: syncFavorites });
+      parallelTasks.push({ label: '上传收藏', run: uploadFavoritesOnly });
+    }
+    if (upload.settings) {
+      parallelTasks.push({ label: '上传设置', run: uploadSettingsOnly });
     }
 
     if (parallelTasks.length > 0) {
@@ -1338,19 +1363,57 @@ export function usePlaylistSync() {
       });
     }
 
-    if (upload.settings) {
-      try {
-        logSync('performAutoSync: 同步设置');
-        await syncSettings();
-      } catch (e) {
-        logSyncError('performAutoSync: 同步设置失败', e);
-        hasError = true;
-      }
-    }
-
     logSync('performAutoSync: 自动同步完成');
     if (hasError) {
       throw new Error('部分同步项失败');
+    }
+  }
+
+  /**
+   * 首次登录全量一致性同步（每个设备仅执行一次，标记持久化）。
+   *
+   * - 歌单/插件/收藏做双向同步，让两端数据合并一致；
+   * - 设置放在最后执行：云端有数据且与本地不一致时才弹出冲突菜单，
+   *   用户按类别（设置/歌单/插件）选择保留本地或云端，选择后两端一致。
+   */
+  async function syncOnLoginSuccess(): Promise<void> {
+    if (loginSyncCompleted.value) {
+      logSync('syncOnLoginSuccess: 首次登录同步已完成，跳过');
+      return;
+    }
+    if (loginSyncInProgress) return;
+    loginSyncInProgress = true;
+    logSync('========== 首次登录全量同步开始 ==========');
+    const upload = settingsStore.settings.upload;
+    try {
+      const tasks: Array<{ label: string; run: () => Promise<unknown> }> = [];
+      if (upload.playlists) {
+        tasks.push({ label: '同步歌单', run: syncPlaylists });
+      }
+      if (upload.plugins) {
+        tasks.push({ label: '同步插件', run: syncPlugins });
+      }
+      if (upload.favorites) {
+        tasks.push({ label: '同步收藏', run: syncFavorites });
+      }
+      if (tasks.length > 0) {
+        await Promise.allSettled(tasks.map(task => task.run()));
+      }
+      // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
+      if (upload.settings) {
+        try {
+          await syncSettings();
+        } catch (e) {
+          logSyncError('syncOnLoginSuccess: 首次设置同步失败', e);
+        }
+      }
+    } catch (e) {
+      logSyncError('syncOnLoginSuccess: 首次全量同步异常', e);
+    } finally {
+      loginSyncCompleted.value = true;
+      persistLoginSyncCompleted();
+      loginSyncInProgress = false;
+      logSync('========== 首次登录全量同步结束 ==========');
     }
   }
 
@@ -1462,5 +1525,6 @@ export function usePlaylistSync() {
     checkAutoSync,
     patchAutoSyncConfig,
     performAutoSync,
+    syncOnLoginSuccess,
   };
 }

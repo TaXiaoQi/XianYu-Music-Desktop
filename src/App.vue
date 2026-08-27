@@ -88,9 +88,10 @@ if (currentWindowLabel === 'main') {
   // VST3/CLAP 插件宿主：实例化即恢复机架配置并推送 Rust 共享机架（起播前完成）。
   usePluginHostStore();
 
-  // 登录状态变化时启动/停止自动同步调度器（启动时初始化见 onMounted）
+  // 登录状态变化时：登录后触发首次全量同步（仅首次、冲突才弹窗），随后启动自动同步调度器
   watch(() => authStore.isLoggedIn, (loggedIn) => {
     if (loggedIn) {
+      void playlistSync.syncOnLoginSuccess();
       playlistSync.checkAutoSync();
     }
   });
