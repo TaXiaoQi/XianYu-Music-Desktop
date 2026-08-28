@@ -44,6 +44,20 @@ export const statisticsApi = {
   /** 将云端累计总听歌时长合并进本地（取较大值），返回合并后本地总时长与是否被抬高 */
   mergeCloudListenDuration: (totalSeconds: number): Promise<CloudMergeResult> =>
     tauriInvoke('merge_cloud_listen_duration', { totalSeconds }),
+  /** 导出本地听歌时长快照（累计听歌时长跨端同步用），返回 JSON 字符串 */
+  exportListenSnapshot: (): Promise<string> => tauriInvoke('export_listen_snapshot'),
+  /**
+   * 将云端听歌时长快照合并进本地。
+   * mode 为 'add'（累计相加）或 'max'（取较大值）。
+   * 返回合并后本地 total_play_time_ms / total_play_count。
+   */
+  mergeListenSnapshot: (
+    snapshotJson: string,
+    mode: 'add' | 'max',
+  ): Promise<{ total_play_time_ms: number; total_play_count: number }> =>
+    tauriInvoke('merge_listen_snapshot', { snapshotJson, mode }),
+  /** 清零本地听歌时长统计（管理端处分） */
+  clearListenStats: (): Promise<void> => tauriInvoke('clear_listen_stats'),
   getQualityDistribution: (): Promise<QualityDistribution> =>
     tauriInvoke('get_quality_distribution'),
   getFormatDistribution: (): Promise<FormatDistribution> =>

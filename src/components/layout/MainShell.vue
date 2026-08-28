@@ -9,6 +9,7 @@ import { useUiStore } from '../../shared/stores/ui';
 import { useAnnouncement } from '../../composables/useAnnouncement';
 import { useFeedbackNotification } from '../../composables/useFeedbackNotification';
 import { useNicknameChangeNotification } from '../../composables/useNicknameChangeNotification';
+import { useListenResetNotification } from '../../composables/useListenResetNotification';
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
@@ -104,6 +105,14 @@ const {
   closeNicknameChangeNotification,
 } = useNicknameChangeNotification();
 
+// Listen reset notification logic（后台管理员清理听歌时长后，通过公告弹窗告知用户及原因）
+const {
+  listenResetVisible,
+  currentListenResetNotification,
+  checkListenResetNotification,
+  closeListenResetNotification,
+} = useListenResetNotification();
+
 // Update check logic（启动时自动检查，由全局单例管理弹窗）
 const {
   updateVisible,
@@ -126,6 +135,7 @@ const handleOnboardingComplete = () => {
   checkAnnouncement();
   checkFeedbackNotification();
   checkNicknameChangeNotification();
+  checkListenResetNotification();
   if (settingsStore.settings.checkUpdateOnStartup) {
     checkUpdateOnStartup();
   }
@@ -137,6 +147,7 @@ onMounted(() => {
     checkAnnouncement();
     checkFeedbackNotification();
     checkNicknameChangeNotification();
+    checkListenResetNotification();
     if (settingsStore.settings.checkUpdateOnStartup) {
       checkUpdateOnStartup();
     }
@@ -145,6 +156,9 @@ onMounted(() => {
   const feedbackTimer = setInterval(() => {
     checkFeedbackNotification(announcementVisible.value);
     checkNicknameChangeNotification(announcementVisible.value || feedbackVisible.value);
+    checkListenResetNotification(
+      announcementVisible.value || feedbackVisible.value || nicknameVisible.value,
+    );
   }, 60_000);
   onUnmounted(() => clearInterval(feedbackTimer));
 });
@@ -360,6 +374,13 @@ onMounted(() => {
       :visible="nicknameVisible"
       :announcement="currentNicknameNotification"
       @close="closeNicknameChangeNotification"
+    />
+
+    <AnnouncementModal
+      v-if="!isMiniMode && listenResetVisible"
+      :visible="listenResetVisible"
+      :announcement="currentListenResetNotification"
+      @close="closeListenResetNotification"
     />
 
     <UpdateModal
