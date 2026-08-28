@@ -216,15 +216,15 @@ export async function lxGetPlaylistTracks(
   source: LxSourceId,
   playlistRawData: any,
   page = 1,
-  limit = 30,
-): Promise<LxSearchResultItem[]> {
+  limit = 100,
+): Promise<{ list: LxSearchResultItem[]; isEnd: boolean }> {
   const playlistId = String(
     firstValue(playlistRawData, ['id', 'ID', 'playlistId', 'playlistid', 'specialid', 'dissid', 'disstid', 'songListId', 'songlistId', 'musicListId', 'rid']) ?? ''
   );
 
   if (!playlistId) {
     console.warn(`[LxMusicSdk] lxGetPlaylistTracks: empty playlistId for source ${source}`);
-    return [];
+    return { list: [], isEnd: true };
   }
 
   try {
@@ -238,18 +238,20 @@ export async function lxGetPlaylistTracks(
         });
         const musicList: any[] = data?.data?.musicList || [];
         if (musicList.length === 0) console.warn(`[LxMusicSdk] KW playlist ${playlistId}: empty musicList`);
-        return musicList.map((m: any) => buildSimpleLxItem(
+        const list = musicList.map((m: any) => buildSimpleLxItem(
           'kw', String(m.rid || m.id), m.name || '', m.artist || '',
           m.album || '', m.albumid || '',
           formatPlayTime(parseInt(m.duration) || 0), m.pic || null,
         ));
+        return { list, isEnd: list.length < limit };
       }
       case 'kg': {
         const url = `http://mobilecdn.kugou.com/api/v3/song/special/getSongList?specialid=${playlistId}&page=${page}&pagesize=${limit}`;
         const data = await httpGetJson(url);
         const infoList: any[] = data?.data?.info || [];
         if (infoList.length === 0) console.warn(`[LxMusicSdk] KG playlist ${playlistId}: empty info list`);
-        return infoList.map((item: any) => kgFilterData(item));
+        const list = infoList.map((item: any) => kgFilterData(item));
+        return { list, isEnd: list.length < limit };
       }
       case 'tx': {
         const requestData = {
@@ -267,9 +269,10 @@ export async function lxGetPlaylistTracks(
         };
         // 该接口与 searchTx 同属新签名(Mobile)风控体系：被风控(reqCode 2001)或降级时返回空 songlist，
         // 无结果时走经典 Web 接口兜底（不依赖这套风控），否则用户在歌单页一直空白。
-        const fallback = (reason: string) => {
+        const fallback = async (reason: string) => {
           console.warn(`[LxMusicSdk] TX playlist ${playlistId}: ${reason}，尝试 Web 兜底`);
-          return txSheetTracksWebFallback(playlistId, page, limit);
+          const list = await txSheetTracksWebFallback(playlistId, page, limit);
+          return { list, isEnd: list.length < limit };
         };
         let resp: any;
         try {
@@ -284,7 +287,8 @@ export async function lxGetPlaylistTracks(
         }
         const songlist: any[] = resp?.req?.data?.songlist || [];
         if (songlist.length === 0) return fallback('empty songlist');
-        return txHandleResult(songlist);
+        const list = txHandleResult(songlist);
+        return { list, isEnd: list.length < limit };
       }
       case 'wy': {
         const offset = (page - 1) * limit;
@@ -295,7 +299,7 @@ export async function lxGetPlaylistTracks(
         });
         const tracks: any[] = data?.playlist?.tracks || [];
         if (tracks.length === 0) console.warn(`[LxMusicSdk] WY playlist ${playlistId}: empty tracks`);
-        return tracks.map((song: any) => {
+        const list = tracks.map((song: any) => {
           const al = song.album || song.al || {};
           const ar = song.artists || song.ar || [];
           return buildSimpleLxItem(
@@ -306,24 +310,26 @@ export async function lxGetPlaylistTracks(
             al.picUrl || null,
           );
         });
+        return { list, isEnd: list.length < limit };
       }
       case 'mg': {
         const url = `https://m.music.migu.cn/migu/remoting/playlist_callback?playlistId=${playlistId}&pageNo=${page}&pageSize=${limit}`;
         const data = await httpGetJson(url);
-        const list: any[] = data?.list || data?.resultList || [];
-        if (list.length === 0) console.warn(`[LxMusicSdk] MG playlist ${playlistId}: empty list`);
-        return list.map((item: any) => buildSimpleLxItem(
+        const rawList: any[] = data?.list || data?.resultList || [];
+        if (rawList.length === 0) console.warn(`[LxMusicSdk] MG playlist ${playlistId}: empty list`);
+        const list = rawList.map((item: any) => buildSimpleLxItem(
           'mg', String(item.songId || item.id), item.name || item.songName || '',
           formatSingerName(item.singerList || item.singers),
           item.album || item.albumName || '', item.albumId || '',
           formatPlayTime(item.duration || 0), item.img3 || item.img2 || item.img1 || null,
           { copyrightId: item.copyrightId },
         ));
+        return { list, isEnd: list.length < limit };
       }
     }
   } catch (e) {
     console.warn(`[LxMusicSdk] lxGetPlaylistTracks failed for source ${source}, playlistId ${playlistId}:`, e);
-    return [];
+    return { list: [], isEnd: true };
   }
-  return [];
+  return { list: [], isEnd: true };
 }
