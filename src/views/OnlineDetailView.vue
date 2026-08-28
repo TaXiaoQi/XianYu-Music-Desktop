@@ -41,6 +41,7 @@ import {
   pluginGetArtistInfo,
   pluginGetAlbumSongs,
   pluginGetPlaylistDetail,
+  pluginGetPlaylistDetailWithEnd,
   pluginGetCover,
   pluginArtistSearch,
   pluginAlbumSearch,
@@ -761,17 +762,32 @@ async function loadLxData(page: number, version: number) {
     if (page === 1) songs.value = results;
     else songs.value = [...songs.value, ...results];
   } else if (type === 'playlist') {
-    // 优先用歌单 ID 直接调 API 获取曲目
-    let results = await lxGetPlaylistTracks(source, rawData, page);
+    // 循环拉取所有分页直到 isEnd，避免只显示第一页
+    if (page === 1) {
+      let allTracks: LxSearchResultItem[] = [];
+      let currentPage = 1;
+      const MAX_PAGES = 50; // 防止极端情况死循环（上限 5000 首）
+      while (currentPage <= MAX_PAGES) {
+        const { list, isEnd } = await lxGetPlaylistTracks(source, rawData, currentPage);
+        if (version !== loadVersion) return;
+        allTracks = [...allTracks, ...list];
+        if (isEnd || list.length === 0) break;
+        currentPage++;
+      }
+      songs.value = allTracks;
+    } else {
+      // page > 1 时按原有逻辑追加（保留外部手动分页调用的兼容性）
+      const { list } = await lxGetPlaylistTracks(source, rawData, page);
+      if (version !== loadVersion) return;
+      songs.value = [...songs.value, ...list];
+    }
     // 回退：歌单 API 返回空，用歌单名搜索（无法精确过滤，直接展示搜索结果）
-    if (results.length === 0 && page === 1) {
+    if (songs.value.length === 0 && page === 1) {
       console.warn(`[OnlineDetail] LX playlist direct API empty, falling back to search for "${title.value}"`);
       const searchResult = await lxSearch(source, title.value, page);
-      results = searchResult.list;
+      if (version !== loadVersion) return;
+      songs.value = searchResult.list;
     }
-    if (version !== loadVersion) return;
-    if (page === 1) songs.value = results;
-    else songs.value = [...songs.value, ...results];
   }
 }
 
@@ -812,10 +828,24 @@ async function loadMfData(page: number, version: number) {
     if (page === 1) songs.value = results;
     else songs.value = [...songs.value, ...results];
   } else if (type === 'playlist') {
-    const results = await pluginGetPlaylistDetail(pluginSource, rawData, page);
-    if (version !== loadVersion) return;
-    if (page === 1) songs.value = results;
-    else songs.value = [...songs.value, ...results];
+    // 循环拉取所有分页，避免只显示第一页（如 174 首歌单只显示 30 首）
+    if (page === 1) {
+      let allSongs: PluginSearchResult[] = [];
+      let currentPage = 1;
+      const MAX_PAGES = 50;
+      while (currentPage <= MAX_PAGES) {
+        const { songs: pageSongs, isEnd } = await pluginGetPlaylistDetailWithEnd(pluginSource, rawData, currentPage);
+        if (version !== loadVersion) return;
+        allSongs = [...allSongs, ...pageSongs];
+        if (isEnd || pageSongs.length === 0) break;
+        currentPage++;
+      }
+      songs.value = allSongs;
+    } else {
+      const results = await pluginGetPlaylistDetail(pluginSource, rawData, page);
+      if (version !== loadVersion) return;
+      songs.value = [...songs.value, ...results];
+    }
   }
 }
 
