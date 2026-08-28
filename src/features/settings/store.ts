@@ -173,6 +173,7 @@ export const defaultAudioSettings: AudioSettings = {
   onlineFailureBehavior: 'stop',
   onlineQualityFallbackBehavior: 'lower',
   streamCacheSizeMB: 512,
+  streamCacheDir: '',
   fadeInOutEnabled: true,
   fadeInOutDurationMs: 500,
   autoSwitchSourceOnFailure: false,
@@ -578,6 +579,9 @@ export const mergeAudioSettings = (
     streamCacheSizeMB: Number.isFinite(patch.streamCacheSizeMB) && patch.streamCacheSizeMB! > 0
       ? Math.round(patch.streamCacheSizeMB!)
       : base.streamCacheSizeMB ?? 512,
+    streamCacheDir: typeof patch.streamCacheDir === 'string'
+      ? patch.streamCacheDir
+      : base.streamCacheDir ?? '',
     fadeInOutEnabled: typeof patch.fadeInOutEnabled === 'boolean'
       ? patch.fadeInOutEnabled
       : base.fadeInOutEnabled ?? false,

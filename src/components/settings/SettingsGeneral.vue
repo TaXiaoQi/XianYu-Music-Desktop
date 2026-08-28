@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { Check, ChevronDown } from 'lucide-vue-next';
+import { Check, ChevronDown, FolderOpen } from 'lucide-vue-next';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useSettings } from '../../features/settings/useSettings';
 import { playerStorage } from '../../services/storage/playerStorage';
 import { toolboxApi } from '../../services/tauri/toolboxApi';
@@ -168,6 +169,19 @@ const patchStreamCacheSize = (event: Event) => {
   void playbackApi.setStreamCacheMaxSize(mb * 1024 * 1024).then(refreshStreamCacheInfo);
 };
 
+const chooseStreamCacheDir = async () => {
+  const selected = await open({ directory: true, multiple: false, title: '选择缓存目录' });
+  if (selected && typeof selected === 'string') {
+    settings.value.audio.streamCacheDir = selected;
+    void playbackApi.setStreamCacheDir(selected);
+  }
+};
+
+const resetStreamCacheDir = () => {
+  settings.value.audio.streamCacheDir = '';
+  void playbackApi.setStreamCacheDir('');
+};
+
 const handleClearStreamCache = async () => {
   if (isClearingStreamCache.value) return;
   isClearingStreamCache.value = true;
@@ -216,6 +230,10 @@ onMounted(() => {
   // 同步在线播放缓存上限到后端并读取当前用量
   void playbackApi.setStreamCacheMaxSize(settings.value.audio.streamCacheSizeMB * 1024 * 1024)
     .then(refreshStreamCacheInfo);
+  // 同步自定义缓存目录到后端
+  if (settings.value.audio.streamCacheDir) {
+    void playbackApi.setStreamCacheDir(settings.value.audio.streamCacheDir);
+  }
 });
 </script>
 
@@ -446,8 +464,33 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 清理在线播放缓存 -->
+        <!-- 缓存目录 -->
         <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
+          <div class="min-w-0 flex-1 space-y-1 pr-3">
+            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">缓存目录</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 truncate" :title="settings.audio.streamCacheDir || '默认目录（%APPDATA%/com.xymusic.desktop/stream_cache）'">
+              {{ settings.audio.streamCacheDir || '默认目录（%APPDATA%/com.xymusic.desktop/stream_cache）' }}
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              v-if="settings.audio.streamCacheDir"
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20"
+              @click="resetStreamCacheDir"
+            >恢复默认</button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-[#EC4141] text-white hover:bg-[#d13b3b]"
+              @click="chooseStreamCacheDir"
+            >
+              <FolderOpen class="h-3.5 w-3.5" />
+              选择
+            </button>
+          </div>
+        </div>
+
+        <!-- 清理在线播放缓存 -->        <div class="p-4 flex items-center justify-between gap-4 hover:bg-white/40 dark:hover:bg-white/10 transition-colors">
           <div class="min-w-0">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
               {{ t('general.clearCache') }}

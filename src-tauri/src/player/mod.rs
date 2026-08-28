@@ -21,7 +21,8 @@ pub use commands::{
     get_playback_start_failed_reason, get_playback_start_failed_info, get_stream_cache_info,
     get_track_loudness_info, is_stream_cached, pause_audio, play_audio, resume_audio, seek_audio,
     set_equalizer_settings, set_playback_speed, set_sound_effect_settings,
-    set_stream_cache_max_size, set_volume, stop_audio, update_loudness_settings,
+    set_stream_cache_max_size, set_stream_cache_dir, get_stream_cache_dir,
+    set_volume, stop_audio, update_loudness_settings,
     update_playback_metadata,
 };
 pub use device::{

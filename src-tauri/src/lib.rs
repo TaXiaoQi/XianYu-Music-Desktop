@@ -68,6 +68,7 @@ use player::{
     plugin_host_set_parameter, plugin_host_set_rack, plugin_host_take_process_error,
     resume_audio, save_playback_session, seek_audio, set_audio_output_mode, set_equalizer_settings,
     set_output_device, set_playback_speed, set_sound_effect_settings, set_stream_cache_max_size,
+    set_stream_cache_dir, get_stream_cache_dir,
     set_volume, stop_audio, update_loudness_settings,
     update_playback_metadata, update_playback_position,
 };
@@ -260,6 +261,8 @@ pub fn run() {
             set_audio_output_mode,
             set_prevent_sleep,
             set_stream_cache_max_size,
+            set_stream_cache_dir,
+            get_stream_cache_dir,
             get_stream_cache_info,
             clear_stream_cache,
             is_stream_cached,
