@@ -120,6 +120,9 @@ export const defaultLyricsSettings: LyricsSettings = {
   playerOffsetY: DEFAULT_PLAYER_OFFSET_Y,
   playerAlignment: DEFAULT_PLAYER_ALIGNMENT,
   playerFontPreset: DEFAULT_PLAYER_FONT_PRESET,
+  playerFontSplitEnabled: false,
+  playerFontPresetCJK: DEFAULT_PLAYER_FONT_PRESET,
+  playerFontPresetLatin: DEFAULT_PLAYER_FONT_PRESET,
   backgroundBlur: DEFAULT_BACKGROUND_BLUR,
   customBackgroundImage: DEFAULT_CUSTOM_BACKGROUND_IMAGE,
 };
@@ -331,6 +334,11 @@ export function normalizeLyricsSettingsPatch(patch: Partial<LyricsSettings>): Ly
     playerOffsetY: clampPlayerOffsetY(patch.playerOffsetY ?? DEFAULT_PLAYER_OFFSET_Y),
     playerAlignment: normalizePlayerAlignment(patch.playerAlignment, DEFAULT_PLAYER_ALIGNMENT),
     playerFontPreset: normalizeLyricsFontPreset(patch.playerFontPreset),
+    playerFontSplitEnabled: typeof patch.playerFontSplitEnabled === 'boolean'
+      ? patch.playerFontSplitEnabled
+      : false,
+    playerFontPresetCJK: normalizeLyricsFontPreset(patch.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET),
+    playerFontPresetLatin: normalizeLyricsFontPreset(patch.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET),
     backgroundBlur: clampBackgroundBlur(patch.backgroundBlur ?? DEFAULT_BACKGROUND_BLUR),
     customBackgroundImage: typeof patch.customBackgroundImage === 'string'
       ? patch.customBackgroundImage
