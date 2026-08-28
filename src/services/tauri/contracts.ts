@@ -461,6 +461,35 @@ export interface CloudMergeResult {
   merged: boolean;
 }
 
+/** 听歌时长快照 · global 段（与移动端键名一致，snake_case） */
+export interface ListenSnapshotGlobal {
+  total_play_count: number;
+  total_play_time_ms: number;
+  first_played_at: string | null;
+  last_played_at: string | null;
+}
+
+/** 听歌时长快照 · daily 段 */
+export interface ListenSnapshotDaily {
+  date: string;
+  play_count: number;
+  play_time_ms: number;
+  unique_songs: number;
+  unique_artists: number;
+}
+
+/** 听歌时长快照（跨端同步用） */
+export interface ListenSnapshot {
+  global: ListenSnapshotGlobal;
+  daily: ListenSnapshotDaily[];
+}
+
+/** 快照合并到本地后的结果 */
+export interface ListenSnapshotMergeResult {
+  total_play_time_ms: number;
+  total_play_count: number;
+}
+
 export interface TopSong {
   song_path: string;
   play_count: number;
@@ -1109,6 +1138,15 @@ export interface TauriCommandMap {
     payload: { totalSeconds: number };
     response: CloudMergeResult;
   };
+  export_listen_snapshot: {
+    payload: undefined;
+    response: string;
+  };
+  merge_listen_snapshot: {
+    payload: { snapshotJson: string; mode: 'add' | 'max' };
+    response: ListenSnapshotMergeResult;
+  };
+  clear_listen_stats: { payload: undefined; response: void };
   get_quality_distribution: { payload: undefined; response: QualityDistribution };
   get_format_distribution: { payload: undefined; response: FormatDistribution };
   reset_local_statistics: { payload: undefined; response: void };

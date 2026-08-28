@@ -2808,6 +2808,260 @@ pub fn merge_cloud_listen_duration(
     apply_cloud_listen_duration(&conn, total_seconds)
 }
 
+// =====================================================
+// 听歌时长跨端快照同步
+// =====================================================
+
+/// 快照中 global 段（与移动端序列化键名一致，snake_case）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenSnapshotGlobal {
+    pub total_play_count: i64,
+    pub total_play_time_ms: i64,
+    #[serde(default)]
+    pub first_played_at: Option<String>,
+    #[serde(default)]
+    pub last_played_at: Option<String>,
+}
+
+/// 快照中 daily 段（与移动端序列化键名一致）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenSnapshotDaily {
+    pub date: String,
+    pub play_count: i64,
+    pub play_time_ms: i64,
+    pub unique_songs: i64,
+    pub unique_artists: i64,
+}
+
+/// 完整听歌时长快照
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenSnapshot {
+    pub global: ListenSnapshotGlobal,
+    #[serde(default)]
+    pub daily: Vec<ListenSnapshotDaily>,
+}
+
+/// 合并快照后的返回结果
+#[derive(Serialize)]
+pub struct ListenSnapshotMergeResult {
+    pub total_play_time_ms: i64,
+    pub total_play_count: i64,
+}
+
+/// 读取本地 global_stats 行（不存在时按 0 处理）
+fn read_local_global(conn: &rusqlite::Connection) -> Result<ListenSnapshotGlobal, String> {
+    let row = conn.query_row(
+        "SELECT total_play_count, total_play_time_ms, first_played_at, last_played_at
+         FROM global_stats WHERE id = 1",
+        [],
+        |row| {
+            Ok(ListenSnapshotGlobal {
+                total_play_count: row.get(0)?,
+                total_play_time_ms: row.get(1)?,
+                first_played_at: row.get(2)?,
+                last_played_at: row.get(3)?,
+            })
+        },
+    );
+    Ok(row.unwrap_or(ListenSnapshotGlobal {
+        total_play_count: 0,
+        total_play_time_ms: 0,
+        first_played_at: None,
+        last_played_at: None,
+    }))
+}
+
+/// 导出本地听歌时长快照为 JSON 字符串（结构/键名与移动端完全一致）
+#[tauri::command]
+pub fn export_listen_snapshot(db: State<DbState>) -> Result<String, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let global = read_local_global(&conn)?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT date, play_count, play_time_ms, unique_songs, unique_artists
+             FROM daily_stats ORDER BY date",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ListenSnapshotDaily {
+                date: row.get(0)?,
+                play_count: row.get(1)?,
+                play_time_ms: row.get(2)?,
+                unique_songs: row.get(3)?,
+                unique_artists: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut daily = Vec::new();
+    for row in rows.flatten() {
+        daily.push(row);
+    }
+
+    let snapshot = ListenSnapshot { global, daily };
+    serde_json::to_string(&snapshot).map_err(|e| e.to_string())
+}
+
+/// 将云端快照合并进本地。
+/// mode == "add"：global 取两值之和；每日期 play_count/play_time_ms 相加，unique_songs/unique_artists 取 MAX。
+/// mode == "max"：global 与 daily 各字段均取 MAX。
+/// 返回合并后本地 total_play_time_ms / total_play_count。
+#[tauri::command]
+pub fn merge_listen_snapshot(
+    db: State<DbState>,
+    snapshot_json: String,
+    mode: String,
+) -> Result<ListenSnapshotMergeResult, String> {
+    let snapshot: ListenSnapshot =
+        serde_json::from_str(&snapshot_json).map_err(|e| format!("快照解析失败: {e}"))?;
+
+    // 用事务保证合并原子性
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+
+    let result = (|| -> Result<ListenSnapshotMergeResult, String> {
+        // 确保统计行存在
+        conn.execute(
+            "INSERT INTO global_stats (id, total_play_count, total_play_time_ms) VALUES (1, 0, 0) \
+             ON CONFLICT(id) DO NOTHING",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let local_global = read_local_global(&conn)?;
+
+        let new_count;
+        let new_total_ms;
+        let new_first;
+        let new_last;
+        if mode == "add" {
+            new_count = local_global.total_play_count + snapshot.global.total_play_count;
+            new_total_ms = local_global.total_play_time_ms + snapshot.global.total_play_time_ms;
+        } else {
+            new_count = local_global.total_play_count.max(snapshot.global.total_play_count);
+            new_total_ms =
+                local_global.total_play_time_ms.max(snapshot.global.total_play_time_ms);
+        }
+
+        // first_played_at / last_played_at：取更早/更晚的时间
+        new_first = match (&local_global.first_played_at, &snapshot.global.first_played_at) {
+            (Some(a), Some(b)) => Some(if a <= b { a.clone() } else { b.clone() }),
+            (Some(a), None) => Some(a.clone()),
+            (None, Some(b)) => Some(b.clone()),
+            (None, None) => None,
+        };
+        new_last = match (&local_global.last_played_at, &snapshot.global.last_played_at) {
+            (Some(a), Some(b)) => Some(if a >= b { a.clone() } else { b.clone() }),
+            (Some(a), None) => Some(a.clone()),
+            (None, Some(b)) => Some(b.clone()),
+            (None, None) => None,
+        };
+
+        conn.execute(
+            "UPDATE global_stats
+             SET total_play_count = ?,
+                 total_play_time_ms = ?,
+                 first_played_at = ?,
+                 last_played_at = ?
+             WHERE id = 1",
+            rusqlite::params![new_count, new_total_ms, new_first, new_last],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // 逐日合并 daily_stats
+        for day in &snapshot.daily {
+            let existing = conn.query_row(
+                "SELECT play_count, play_time_ms, unique_songs, unique_artists
+                 FROM daily_stats WHERE date = ?1",
+                [&day.date],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            );
+
+            match existing {
+                Ok((ecount, etime, esongs, eartists)) => {
+                    let (nc, nt, ns, na) = if mode == "add" {
+                        (
+                            ecount + day.play_count,
+                            etime + day.play_time_ms,
+                            esongs.max(day.unique_songs),
+                            eartists.max(day.unique_artists),
+                        )
+                    } else {
+                        (
+                            ecount.max(day.play_count),
+                            etime.max(day.play_time_ms),
+                            esongs.max(day.unique_songs),
+                            eartists.max(day.unique_artists),
+                        )
+                    };
+                    conn.execute(
+                        "UPDATE daily_stats
+                         SET play_count = ?, play_time_ms = ?, unique_songs = ?, unique_artists = ?
+                         WHERE date = ?",
+                        rusqlite::params![nc, nt, ns, na, day.date],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    conn.execute(
+                        "INSERT INTO daily_stats
+                         (date, play_count, play_time_ms, unique_songs, unique_artists)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        rusqlite::params![
+                            day.date,
+                            day.play_count,
+                            day.play_time_ms,
+                            day.unique_songs,
+                            day.unique_artists
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+
+        let merged_global = read_local_global(&conn)?;
+        Ok(ListenSnapshotMergeResult {
+            total_play_time_ms: merged_global.total_play_time_ms,
+            total_play_count: merged_global.total_play_count,
+        })
+    })();
+
+    if result.is_ok() {
+        conn.execute("COMMIT", []).ok();
+    } else {
+        conn.execute("ROLLBACK", []).ok();
+    }
+    result
+}
+
+/// 清零本地听歌时长统计（管理端处分后由服务端指示调用）
+#[tauri::command]
+pub fn clear_listen_stats(db: State<DbState>) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE global_stats
+         SET total_play_count = 0, total_play_time_ms = 0, first_played_at = NULL, last_played_at = NULL
+         WHERE id = 1",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM daily_stats", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod playback_count_tests {
     use super::*;

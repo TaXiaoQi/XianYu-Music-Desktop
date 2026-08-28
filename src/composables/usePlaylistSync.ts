@@ -17,6 +17,7 @@ import { useCollectionsStore } from '../features/collections/store';
 import { useLibraryStore } from '../features/library/store';
 import { useAuthStore } from '../features/auth/store';
 import { useSettingsStore } from '../features/settings/store';
+import { useStatisticsStore } from '../features/statistics/store';
 import { useToast } from './toast';
 import {
   classifySyncPlaylist,
@@ -45,6 +46,9 @@ import {
   uploadFavorites as uploadFavoritesToCloud,
   downloadFavorites as downloadFavoritesFromCloud,
 } from '../services/domain/favoritesSync';
+import {
+  syncListenStats,
+} from '../services/domain/listenStatsSync';
 import {
   showSettingsConflict,
   type SyncCategoryChoices,
@@ -191,6 +195,7 @@ export function usePlaylistSync() {
   const libraryStore = useLibraryStore();
   const authStore = useAuthStore();
   const settingsStore = useSettingsStore();
+  const statisticsStore = useStatisticsStore();
   const { showToast } = useToast();
 
   const syncing = ref(false);
@@ -1363,6 +1368,17 @@ export function usePlaylistSync() {
       });
     }
 
+    logSync('performAutoSync: 上传完成，开始听歌时长快照同步');
+    // 同步累计听歌时长（跨端快照方案），失败仅标记错误，不影响其它同步项
+    try {
+      await syncListenStats();
+      await statisticsStore.refreshBehaviorOnly('All');
+    } catch (e) {
+      logSyncError('performAutoSync: 听歌时长快照同步失败', e);
+      hasError = true;
+      await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
+    }
+
     logSync('performAutoSync: 自动同步完成');
     if (hasError) {
       throw new Error('部分同步项失败');
@@ -1398,6 +1414,15 @@ export function usePlaylistSync() {
       }
       if (tasks.length > 0) {
         await Promise.allSettled(tasks.map(task => task.run()));
+      }
+      // 听歌时长快照同步：在设置冲突菜单之前执行，
+      // 新设备在此回填累计听歌时长（Rule 1/2/3），失败不打断首次登录同步
+      try {
+        await syncListenStats();
+        await statisticsStore.refreshBehaviorOnly('All');
+      } catch (e) {
+        logSyncError('syncOnLoginSuccess: 听歌时长快照同步失败', e);
+        await statisticsStore.refreshBehaviorOnly('All').catch(() => undefined);
       }
       // 设置在最后：云端有数据且与本地不一致时才弹冲突菜单
       if (upload.settings) {
