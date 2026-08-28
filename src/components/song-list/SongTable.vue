@@ -114,7 +114,12 @@ const props = defineProps<{
    * false（搜索/在线详情容器）时，下载完成显示与底栏一致的绿色对勾且来源列保留音源名。
    */
   downloadCompletedAsLocal?: boolean;
-}>();
+  /**
+   * 编号偏移量：用于分页场景，让第 N 页的第 1 首从 N*pageSize+1 开始编号。
+   * 默认 0。
+   */
+  indexOffset?: number;
+}>(); 
 
 const emit = defineEmits<{
   (e: 'play', song: Song): void;
@@ -522,7 +527,7 @@ const virtualData = computed(() => {
   return {
     items: songs.slice(renderStart, renderEnd).map((song, index) => ({
       ...song,
-      virtualIndex: renderStart + index,
+      virtualIndex: renderStart + index + (props.indexOffset ?? 0),
     })),
     paddingTop: renderStart * ROW_HEIGHT,
     paddingBottom: (total - renderEnd) * ROW_HEIGHT,
