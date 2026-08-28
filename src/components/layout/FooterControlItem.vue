@@ -307,7 +307,7 @@ watch(
       <div
         v-if="showDownloadQualityMenu"
         :ref="el => { if (el) ctx.downloadQualityMenuRef.value = el as HTMLElement; }"
-        class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+        class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[120]"
       >
         <div
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"
@@ -423,7 +423,7 @@ watch(
       <div
         v-if="!isAudioControlLocked && showQualityMenu"
         :ref="el => { if (el) ctx.qualityMenuRef.value = el as HTMLElement; }"
-        class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[80]"
+        class="absolute bottom-full left-1/2 -translate-x-1/2 pb-6 z-[120]"
       >
         <div
           class="min-w-[120px] backdrop-blur-xl shadow-2xl rounded-xl border py-1.5 px-1 transition-colors"

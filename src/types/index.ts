@@ -399,6 +399,12 @@ export interface LyricsSettings {
   playerOffsetY: number;
   playerAlignment: LyricsPlayerAlignment;
   playerFontPreset: LyricsFontPreset;
+  /** 是否分开设置中文和外文字体 */
+  playerFontSplitEnabled?: boolean;
+  /** 分开设置时的 CJK（中文/日文/韩文）字体 */
+  playerFontPresetCJK?: LyricsFontPreset;
+  /** 分开设置时的外文（拉丁字母等）字体 */
+  playerFontPresetLatin?: LyricsFontPreset;
   backgroundBlur: number;
   customBackgroundImage: string;
 }

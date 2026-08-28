@@ -90,6 +90,8 @@ interface AmlLyricPlayerInstance {
 const amlPlayerRef = ref<AmlLyricPlayerInstance | null>(null);
 const isFontPresetMenuOpen = ref(false);
 const fontPresetMenuStyle = ref<Record<string, string>>({});
+/** 字体菜单当前作用目标：unified=统一字体，cjk=中文字体，latin=外文字体 */
+const fontPresetMenuTarget = ref<'unified' | 'cjk' | 'latin'>('unified');
 
 /** 歌词样式面板动态定位样式：窄窗口下自动调整，防止溢出视口 */
 const fontPanelDynamicStyle = ref<Record<string, string>>({});
@@ -160,6 +162,18 @@ const selectedFontLabel = computed(() => {
     ?? normalizeLyricsFontPreset(lyricsSettings.playerFontPreset);
 });
 
+const selectedFontLabelCJK = computed(() => {
+  const preset = lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET;
+  return availableFontOptions.value.find((option) => option.value === preset)?.label
+    ?? normalizeLyricsFontPreset(preset);
+});
+
+const selectedFontLabelLatin = computed(() => {
+  const preset = lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET;
+  return availableFontOptions.value.find((option) => option.value === preset)?.label
+    ?? normalizeLyricsFontPreset(preset);
+});
+
 const fontScaleProgress = computed(() => {
   return ((lyricsSettings.playerFontScale - MIN_PLAYER_FONT_SCALE) / (MAX_PLAYER_FONT_SCALE - MIN_PLAYER_FONT_SCALE)) * 100;
 });
@@ -180,12 +194,26 @@ const lyricsAlignmentClass = computed(() => `lyrics-align-${lyricsSettings.playe
 
 const wordFadeWidth = computed(() => lyricsSettings.enableWordEffect ? 0.5 : 0);
 
-const lyricsPlayerStyle = computed(() => ({
-  '--lyrics-font-scale': lyricsSettings.playerFontScale.toString(),
-  '--lyrics-font-family': getLyricsFontFamily(lyricsSettings.playerFontPreset),
-  '--lyrics-offset-x': `${lyricsSettings.playerOffsetX}%`,
-  '--lyrics-offset-y': `${lyricsSettings.playerOffsetY}%`,
-}));
+const lyricsPlayerStyle = computed(() => {
+  let fontFamily: string;
+  if (lyricsSettings.playerFontSplitEnabled) {
+    // 分开设置：外文字体在前（拉丁字符优先用外文字体），中文字体在后作为 CJK fallback
+    const latinFamily = getLyricsFontFamily(lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET);
+    const cjkFamily = getLyricsFontFamily(lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET);
+    // 合并两个 font-family 字符串，去掉各自末尾的通用字体，最后统一加 system-ui, sans-serif
+    const latinPrimary = latinFamily.replace(/,\s*(system-ui|sans-serif|ui-sans-serif).*$/i, '').trim();
+    const cjkPrimary = cjkFamily.replace(/,\s*(system-ui|sans-serif|ui-sans-serif).*$/i, '').trim();
+    fontFamily = [latinPrimary, cjkPrimary, 'system-ui', 'sans-serif'].filter(Boolean).join(', ');
+  } else {
+    fontFamily = getLyricsFontFamily(lyricsSettings.playerFontPreset);
+  }
+  return {
+    '--lyrics-font-scale': lyricsSettings.playerFontScale.toString(),
+    '--lyrics-font-family': fontFamily,
+    '--lyrics-offset-x': `${lyricsSettings.playerOffsetX}%`,
+    '--lyrics-offset-y': `${lyricsSettings.playerOffsetY}%`,
+  };
+});
 
 function clampFontScale(value: number) {
   return Math.min(MAX_PLAYER_FONT_SCALE, Math.max(MIN_PLAYER_FONT_SCALE, value));
@@ -229,6 +257,22 @@ function setPlayerAlignment(value: LyricsPlayerAlignment) {
 
 function setPlayerFontPreset(value: LyricsFontPreset) {
   lyricsSettings.playerFontPreset = value;
+}
+
+function setPlayerFontPresetCJK(value: LyricsFontPreset) {
+  lyricsSettings.playerFontPresetCJK = value;
+}
+
+function setPlayerFontPresetLatin(value: LyricsFontPreset) {
+  lyricsSettings.playerFontPresetLatin = value;
+}
+
+function resetPlayerFontPresetCJK() {
+  lyricsSettings.playerFontPresetCJK = DEFAULT_PLAYER_FONT_PRESET;
+}
+
+function resetPlayerFontPresetLatin() {
+  lyricsSettings.playerFontPresetLatin = DEFAULT_PLAYER_FONT_PRESET;
 }
 
 function adjustPlayerFontScale(delta: number) {
@@ -374,8 +418,44 @@ function handleOffsetYInput(event: Event) {
 }
 
 function selectFontPreset(value: LyricsFontPreset) {
-  setPlayerFontPreset(normalizeLyricsFontPreset(value));
+  const normalized = normalizeLyricsFontPreset(value);
+  if (fontPresetMenuTarget.value === 'cjk') {
+    setPlayerFontPresetCJK(normalized);
+  } else if (fontPresetMenuTarget.value === 'latin') {
+    setPlayerFontPresetLatin(normalized);
+  } else {
+    setPlayerFontPreset(normalized);
+  }
 }
+
+function openFontMenu(target: 'unified' | 'cjk' | 'latin', triggerEl: HTMLElement) {
+  fontPresetMenuTarget.value = target;
+  fontPresetTriggerRef.value = triggerEl;
+  isFontPresetMenuOpen.value = true;
+  nextTick(() => {
+    updateFontPresetMenuPosition();
+    const menuEl = fontPresetMenuRef.value;
+    if (menuEl) {
+      const activeItem = menuEl.querySelector('.active-font-preset') as HTMLElement | null;
+      const scrollContainer = menuEl.querySelector('.custom-scrollbar') as HTMLElement | null;
+      if (activeItem && scrollContainer) {
+        scrollContainer.style.scrollBehavior = 'auto';
+        const itemTop = activeItem.offsetTop;
+        const itemHeight = activeItem.offsetHeight;
+        const containerHeight = scrollContainer.clientHeight;
+        scrollContainer.scrollTop = itemTop - (containerHeight / 2) + (itemHeight / 2);
+        scrollContainer.style.scrollBehavior = '';
+      }
+    }
+  });
+}
+
+/** 当前字体菜单中"激活"的字体 preset（用于菜单中高亮显示当前选中项） */
+const activeFontMenuPreset = computed(() => {
+  if (fontPresetMenuTarget.value === 'cjk') return lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET;
+  if (fontPresetMenuTarget.value === 'latin') return lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET;
+  return lyricsSettings.playerFontPreset;
+});
 
 function updateFontPresetMenuPosition() {
   const trigger = fontPresetTriggerRef.value;
@@ -406,29 +486,7 @@ function updateFontPresetMenuPosition() {
   };
 }
 
-async function toggleFontPresetMenu() {
-  isFontPresetMenuOpen.value = !isFontPresetMenuOpen.value;
-  if (isFontPresetMenuOpen.value) {
-    await nextTick();
-    updateFontPresetMenuPosition();
-
-    const menuEl = fontPresetMenuRef.value;
-    if (menuEl) {
-      const activeItem = menuEl.querySelector('.active-font-preset') as HTMLElement | null;
-      const scrollContainer = menuEl.querySelector('.custom-scrollbar') as HTMLElement | null;
-      if (activeItem && scrollContainer) {
-        // Disable smooth scrolling temporarily to jump instantly
-        scrollContainer.style.scrollBehavior = 'auto';
-        const itemTop = activeItem.offsetTop;
-        const itemHeight = activeItem.offsetHeight;
-        const containerHeight = scrollContainer.clientHeight;
-        scrollContainer.scrollTop = itemTop - (containerHeight / 2) + (itemHeight / 2);
-        // Restore smooth scrolling if needed
-        scrollContainer.style.scrollBehavior = '';
-      }
-    }
-  }
-}
+// openFontMenu 统一处理字体菜单的打开逻辑（已替代原 toggleFontPresetMenu）
 
 function handleClickOutside(event: MouseEvent) {
   const target = event.target as Node | null;
@@ -889,7 +947,26 @@ watch(() => props.coverHidden, async () => {
 
           <div class="mt-6 mb-3">
             <div class="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">Font</div>
-            <div class="mt-1.5 flex items-center justify-between gap-3">
+            <!-- 分开设置开关 -->
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <span class="text-[12px] text-white/55">分别设置中/外文字体</span>
+              <button
+                type="button"
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="lyricsSettings.playerFontSplitEnabled ? 'bg-[#EC4141]' : 'bg-white/15'"
+                @click="lyricsSettings.playerFontSplitEnabled = !lyricsSettings.playerFontSplitEnabled"
+              >
+                <span
+                  class="pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200"
+                  :class="lyricsSettings.playerFontSplitEnabled ? 'translate-x-4' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+          </div>
+
+          <!-- 统一字体（开关关闭时） -->
+          <template v-if="!lyricsSettings.playerFontSplitEnabled">
+            <div class="mb-2 flex items-center justify-between gap-3">
               <span class="text-[13px] font-medium text-white/85">歌词字体</span>
               <button
                 v-if="lyricsSettings.playerFontPreset !== DEFAULT_PLAYER_FONT_PRESET"
@@ -901,62 +978,71 @@ watch(() => props.coverHidden, async () => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
               </button>
             </div>
-          </div>
-
-          <div class="relative overflow-visible">
-            <button
-              ref="fontPresetTriggerRef"
-              type="button"
-              class="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/[0.06]"
-              :class="isFontPresetMenuOpen ? 'border-white/25 bg-white/[0.08] shadow-[0_18px_36px_rgba(0,0,0,0.16)]' : ''"
-              @click="toggleFontPresetMenu"
-            >
-              <span class="truncate">{{ selectedFontLabel }}</span>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="shrink-0 text-white/45 transition-transform duration-200"
-                :class="isFontPresetMenuOpen ? 'rotate-180 text-white/70' : ''"
+            <div class="relative overflow-visible">
+              <button
+                ref="fontPresetTriggerRef"
+                type="button"
+                class="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/[0.06]"
+                :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'unified' ? 'border-white/25 bg-white/[0.08] shadow-[0_18px_36px_rgba(0,0,0,0.16)]' : ''"
+                @click="($event.currentTarget as HTMLElement) && openFontMenu('unified', $event.currentTarget as HTMLElement)"
               >
-                <path d="m6 9 6 6 6-6"/>
-              </svg>
-            </button>
+                <span class="truncate">{{ selectedFontLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-white/45 transition-transform duration-200" :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'unified' ? 'rotate-180 text-white/70' : ''"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+          </template>
 
-            <transition name="font-preset-menu">
-              <div
-                v-if="false"
-                class="lyrics-settings-glass absolute left-[calc(100%+14px)] top-1/2 z-20 w-[280px] -translate-y-1/2 flex flex-col overflow-hidden rounded-3xl border border-white/15 p-2 text-white shadow-[0_28px_70px_rgba(0,0,0,0.48)]"
+          <!-- 分开设置（开关开启时） -->
+          <template v-else>
+            <!-- 中文字体 -->
+            <div class="mb-1.5 flex items-center justify-between gap-3">
+              <span class="text-[13px] font-medium text-white/85">中文字体</span>
+              <button
+                v-if="(lyricsSettings.playerFontPresetCJK ?? DEFAULT_PLAYER_FONT_PRESET) !== DEFAULT_PLAYER_FONT_PRESET"
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white"
+                @click="resetPlayerFontPresetCJK"
+                title="Reset"
               >
-                <div class="min-h-0 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-                  <button
-                    v-for="option in availableFontOptions"
-                    :key="option.value"
-                    type="button"
-                    class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition"
-                    :class="lyricsSettings.playerFontPreset === option.value
-                      ? 'bg-white/[0.14] text-white'
-                      : 'text-white/72 hover:bg-white/[0.07] hover:text-white'"
-                    @click="selectFontPreset(option.value)"
-                  >
-                    <span>{{ option.label }}</span>
-                    <span
-                      v-if="lyricsSettings.playerFontPreset === option.value"
-                      class="text-[11px] font-medium text-white/50"
-                    >
-                      当前
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </transition>
-          </div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+            </div>
+            <div class="relative overflow-visible mb-3">
+              <button
+                type="button"
+                class="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/[0.06]"
+                :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'cjk' ? 'border-white/25 bg-white/[0.08] shadow-[0_18px_36px_rgba(0,0,0,0.16)]' : ''"
+                @click="openFontMenu('cjk', $event.currentTarget as HTMLElement)"
+              >
+                <span class="truncate">{{ selectedFontLabelCJK }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-white/45 transition-transform duration-200" :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'cjk' ? 'rotate-180 text-white/70' : ''"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <!-- 外文字体 -->
+            <div class="mb-1.5 flex items-center justify-between gap-3">
+              <span class="text-[13px] font-medium text-white/85">外文字体</span>
+              <button
+                v-if="(lyricsSettings.playerFontPresetLatin ?? DEFAULT_PLAYER_FONT_PRESET) !== DEFAULT_PLAYER_FONT_PRESET"
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded-full text-white/40 transition hover:bg-white/10 hover:text-white"
+                @click="resetPlayerFontPresetLatin"
+                title="Reset"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+            </div>
+            <div class="relative overflow-visible">
+              <button
+                type="button"
+                class="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-white transition hover:border-white/20 hover:bg-white/[0.06]"
+                :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'latin' ? 'border-white/25 bg-white/[0.08] shadow-[0_18px_36px_rgba(0,0,0,0.16)]' : ''"
+                @click="openFontMenu('latin', $event.currentTarget as HTMLElement)"
+              >
+                <span class="truncate">{{ selectedFontLabelLatin }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-white/45 transition-transform duration-200" :class="isFontPresetMenuOpen && fontPresetMenuTarget === 'latin' ? 'rotate-180 text-white/70' : ''"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+          </template>
           </div>
         </Transition>
       </div>
@@ -1024,14 +1110,14 @@ watch(() => props.coverHidden, async () => {
               :key="option.value"
               type="button"
               class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition"
-              :class="lyricsSettings.playerFontPreset === option.value
+              :class="activeFontMenuPreset === option.value
                 ? 'bg-white/[0.14] text-white active-font-preset'
                 : 'text-white/72 hover:bg-white/[0.07] hover:text-white'"
               @click="selectFontPreset(option.value)"
             >
               <span>{{ option.label }}</span>
               <span
-                v-if="lyricsSettings.playerFontPreset === option.value"
+                v-if="activeFontMenuPreset === option.value"
                 class="text-[11px] font-medium text-white/50"
               >
                 当前
