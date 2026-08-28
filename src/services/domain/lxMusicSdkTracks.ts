@@ -8,6 +8,7 @@
 import {
   firstValue,
   formatPlayTime,
+  httpFetch,
   httpGetJson,
   httpPostJson,
   zzcSign,
@@ -230,20 +231,30 @@ export async function lxGetPlaylistTracks(
   try {
     switch (source) {
       case 'kw': {
-        const url = `http://www.kuwo.cn/api/www/playlist/playListInfo?pid=${playlistId}&pn=${page}&rn=${limit}`;
-        const data = await httpGetJson(url, {
-          csrf: 'ABCDEF',
-          Cookie: 'kw_token=ABCDEF',
-          Referer: 'http://www.kuwo.cn/',
+        // www.kuwo.cn/api/www/playlist/playListInfo 已被风控（The request is illegal!）
+        // 改用 nplserver.kuwo.cn/pl.svc 无风控接口，一次 rn=1000 拉全部曲目
+        const kwResp = await httpFetch(
+          `http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${playlistId}&pn=0&rn=1000` +
+          `&encode=utf8&keyset=pl2012&vipver=MUSIC_9.1.1.2_BCS2&newver=1`,
+          { method: 'GET', headers: { Referer: 'https://www.kuwo.cn/' } },
+        );
+        const kwBody = typeof kwResp.body === 'string' ? JSON.parse(kwResp.body) : kwResp.body;
+        if (!kwBody || kwBody.result !== 'ok') {
+          console.warn(`[LxMusicSdk] KW playlist ${playlistId}: nplserver returned ${kwBody?.result}`);
+          return { list: [], isEnd: true };
+        }
+        const musiclist: any[] = kwBody.musiclist || [];
+        if (musiclist.length === 0) console.warn(`[LxMusicSdk] KW playlist ${playlistId}: empty musicList`);
+        const list = musiclist.map((m: any) => {
+          const rid = String(m.id ?? '').replace(/^MUSIC_/i, '');
+          return buildSimpleLxItem(
+            'kw', rid, m.name || '', m.artist || '',
+            m.album || m.albummName || '', m.albumid || '',
+            formatPlayTime(parseInt(m.duration) || 0), m.albumpic || m.pic || null,
+          );
         });
-        const musicList: any[] = data?.data?.musicList || [];
-        if (musicList.length === 0) console.warn(`[LxMusicSdk] KW playlist ${playlistId}: empty musicList`);
-        const list = musicList.map((m: any) => buildSimpleLxItem(
-          'kw', String(m.rid || m.id), m.name || '', m.artist || '',
-          m.album || '', m.albumid || '',
-          formatPlayTime(parseInt(m.duration) || 0), m.pic || null,
-        ));
-        return { list, isEnd: list.length < limit };
+        // nplserver 一次返回全部，isEnd 始终为 true
+        return { list, isEnd: true };
       }
       case 'kg': {
         const url = `http://mobilecdn.kugou.com/api/v3/song/special/getSongList?specialid=${playlistId}&page=${page}&pagesize=${limit}`;
