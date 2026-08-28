@@ -69,6 +69,8 @@ commands.allow = [
   "set_audio_output_mode",
   "set_prevent_sleep",
   "set_stream_cache_max_size",
+  "set_stream_cache_dir",
+  "get_stream_cache_dir",
   "get_stream_cache_info",
   "clear_stream_cache",
   "is_stream_cached",

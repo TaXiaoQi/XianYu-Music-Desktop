@@ -83,6 +83,10 @@ export const playbackApi = {
   getStreamCacheInfo: (): Promise<{ current: number; max: number }> =>
     tauriInvoke('get_stream_cache_info'),
   clearStreamCache: (): Promise<void> => tauriInvoke('clear_stream_cache'),
+  setStreamCacheDir: (path: string): Promise<void> =>
+    tauriInvoke('set_stream_cache_dir', { path }),
+  getStreamCacheDir: (): Promise<string> =>
+    tauriInvoke('get_stream_cache_dir'),
 
   // 获取最后一次成功同步给底层的签名参数
   getLastSyncedParams: () => lastSyncedParams,

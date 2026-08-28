@@ -229,6 +229,18 @@ pub fn set_stream_cache_max_size(bytes: u64) {
     crate::player::stream_cache::set_max_cache_size(bytes);
 }
 
+/// 设置在线音频流式缓存目录，空串表示恢复默认
+#[tauri::command]
+pub fn set_stream_cache_dir(path: String) {
+    crate::player::stream_cache::set_cache_dir(&path);
+}
+
+/// 获取当前生效的缓存目录路径
+#[tauri::command]
+pub fn get_stream_cache_dir() -> String {
+    crate::player::stream_cache::get_cache_dir_str()
+}
+
 /// 获取在线音频流式缓存信息：当前使用大小和上限（字节）
 #[tauri::command]
 pub fn get_stream_cache_info() -> std::collections::HashMap<&'static str, u64> {

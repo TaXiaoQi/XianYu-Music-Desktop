@@ -18,8 +18,43 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
+
+/// 用户自定义缓存目录（None 表示使用默认目录）
+static CUSTOM_CACHE_DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+
+fn custom_cache_dir_lock() -> &'static RwLock<Option<PathBuf>> {
+    CUSTOM_CACHE_DIR.get_or_init(|| RwLock::new(None))
+}
+
+/// 设置用户自定义缓存目录，传空串表示恢复默认。
+pub fn set_cache_dir(path: &str) {
+    let new_dir = if path.trim().is_empty() {
+        None
+    } else {
+        let p = PathBuf::from(path);
+        if let Err(e) = std::fs::create_dir_all(&p) {
+            eprintln!("[StreamCache] 创建自定义缓存目录失败: {e}");
+            return;
+        }
+        Some(p)
+    };
+    if let Ok(mut guard) = custom_cache_dir_lock().write() {
+        *guard = new_dir;
+    }
+}
+
+/// 获取当前生效的缓存目录路径（供前端查询）
+pub fn get_cache_dir_str() -> String {
+    if let Ok(guard) = custom_cache_dir_lock().read() {
+        if let Some(ref p) = *guard {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    // 返回默认目录路径
+    cache_dir().to_string_lossy().into_owned()
+}
 
 /// 清洗插件传入的 URL：移除首尾的反引号、引号、逗号等脏字符。
 ///
@@ -455,9 +490,18 @@ pub fn max_cache_size() -> u64 {
 }
 
 /// 持久化缓存目录：
-/// Windows: %APPDATA%\com.xymusic.desktop\stream_cache\
-/// 其他平台: ~/com.xymusic.desktop/stream_cache/（回退 temp_dir）
+/// 优先使用用户自定义目录（通过 set_cache_dir 设置）；
+/// Windows 默认: %APPDATA%\com.xymusic.desktop\stream_cache\
+/// 其他平台默认: ~/com.xymusic.desktop/stream_cache/（回退 temp_dir）
 fn cache_dir() -> PathBuf {
+    // 优先用用户自定义目录
+    if let Ok(guard) = custom_cache_dir_lock().read() {
+        if let Some(ref custom) = *guard {
+            let _ = std::fs::create_dir_all(custom);
+            return custom.clone();
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {

@@ -837,6 +837,14 @@ export interface TauriCommandMap {
     payload: { bytes: number };
     response: void;
   };
+  set_stream_cache_dir: {
+    payload: { path: string };
+    response: void;
+  };
+  get_stream_cache_dir: {
+    payload: undefined;
+    response: string;
+  };
   get_stream_cache_info: {
     payload: undefined;
     response: { current: number; max: number };

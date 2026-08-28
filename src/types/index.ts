@@ -721,6 +721,8 @@ export interface AudioSettings {
   onlineQualityFallbackBehavior: OnlineQualityFallbackBehavior;
   /** 在线流式播放缓存上限（MB），默认 512MB */
   streamCacheSizeMB: number;
+  /** 在线流式播放缓存目录，空串表示使用默认目录（%APPDATA%/com.xymusic.desktop/stream_cache） */
+  streamCacheDir?: string;
   /** 播放/暂停渐入渐出（淡入淡出）开关，默认关闭 */
   fadeInOutEnabled: boolean;
   /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
