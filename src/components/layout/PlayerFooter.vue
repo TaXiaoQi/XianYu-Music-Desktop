@@ -26,7 +26,7 @@ import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composable
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
 import { useSettingsStore } from '../../features/settings/store';
-import { createShareUrl, getCachedShareUrl, preloadShareUrl } from '../../services/domain/shareService';
+import { createShareUrl, getCachedShareUrl, preloadShareUrl, reportShareAction } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import FooterControlItem from './FooterControlItem.vue';
 import type { DownloadQuality, QualityKey, RemoteDownloadProgress, Song } from '../../types';
@@ -437,6 +437,7 @@ async function handleShareSong(song: Song) {
   showFooterTools.value = false;
   const cached = getCachedShareUrl(song);
   if (cached) {
+    reportShareAction();
     await copyShareLink(buildShareText(song, cached));
     return;
   }
@@ -445,6 +446,7 @@ async function handleShareSong(song: Song) {
   try {
     const url = await createShareUrl(song, resolveShareCover(), shareBodyExtra());
     if (url) {
+      reportShareAction();
       await copyShareLink(buildShareText(song, url));
     } else {
       showToast('生成分享链接失败', 'error');
