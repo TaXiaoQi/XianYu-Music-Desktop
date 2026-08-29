@@ -1604,9 +1604,16 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         }
 
                         if active_output_mode == AudioOutputMode::Shared {
-                            output =
-                                SharedOutputBackend::open(&host, selected_device_name.as_deref())
-                                    .ok();
+                            // [加固] 打开共享输出流可能触发 cpal/rodio panic（设备枚举异常）。
+                            // 隔离之，panic 时 output 保持/置为 None，由后续自愈逻辑重建，
+                            // 避免杀死播放线程导致前端 IPC 报"sending on a closed channel"。
+                            guard_device_ops(|| {
+                                output = SharedOutputBackend::open(
+                                    &host,
+                                    selected_device_name.as_deref(),
+                                )
+                                .ok();
+                            });
                             if selected_device_name.is_none() {
                                 last_default_device_name = default_output_device_name(&host);
                             }
@@ -1754,8 +1761,13 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         }
 
                         // 共享模式：重建输出后端并沿用 restore 机制恢复播放链续播
-                        output = SharedOutputBackend::open(&host, selected_device_name.as_deref())
+                        guard_device_ops(|| {
+                            output = SharedOutputBackend::open(
+                                &host,
+                                selected_device_name.as_deref(),
+                            )
                             .ok();
+                        });
                         if selected_device_name.is_none() {
                             last_default_device_name = default_output_device_name(&host);
                         }
@@ -1858,31 +1870,35 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         #[cfg(target_os = "windows")]
                         stop_exclusive_playback(&mut exclusive_playback);
 
-                        restore_preferred_output(
-                            &selected_device_name,
-                            &mut output,
-                            &host,
-                            &mut current_sink,
-                            #[cfg(target_os = "windows")]
-                            &mut exclusive_playback,
-                            &mut active_device_name,
-                            &mut active_output_mode,
-                            &mut fallback_reason,
-                            requested_output_mode,
-                            &current_path,
-                            current_volume,
-                            is_playing_flag,
-                            &thread_progress,
-                            current_volume_balance_gain,
-                            thread_eq_handle.clone(),
-                            thread_se_handle.clone(),
-                            thread_user_volume.clone(),
-                            &mut current_normalizer_handle,
-                            current_remote_stream.as_ref(),
-                            current_streaming_state.as_ref(),
-                            current_dsd_native_passthrough,
-                            current_bit_perfect,
-                        );
+                        // [加固] 设备/输出模式切换会重建输出流，可能触发 cpal/rodio panic。
+                        // 隔离之，panic 后 output 保持 None，由自愈/续播逻辑重建，不杀死播放线程。
+                        guard_device_ops(|| {
+                            restore_preferred_output(
+                                &selected_device_name,
+                                &mut output,
+                                &host,
+                                &mut current_sink,
+                                #[cfg(target_os = "windows")]
+                                &mut exclusive_playback,
+                                &mut active_device_name,
+                                &mut active_output_mode,
+                                &mut fallback_reason,
+                                requested_output_mode,
+                                &current_path,
+                                current_volume,
+                                is_playing_flag,
+                                &thread_progress,
+                                current_volume_balance_gain,
+                                thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
+                                thread_user_volume.clone(),
+                                &mut current_normalizer_handle,
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
+                                current_dsd_native_passthrough,
+                                current_bit_perfect,
+                            );
+                        });
                         // 设备切换后重新应用播放倍速
                         if current_speed != 1.0 {
                             if let Some(sink) = &current_sink {
@@ -1913,31 +1929,35 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                         #[cfg(target_os = "windows")]
                         stop_exclusive_playback(&mut exclusive_playback);
 
-                        restore_preferred_output(
-                            &selected_device_name,
-                            &mut output,
-                            &host,
-                            &mut current_sink,
-                            #[cfg(target_os = "windows")]
-                            &mut exclusive_playback,
-                            &mut active_device_name,
-                            &mut active_output_mode,
-                            &mut fallback_reason,
-                            requested_output_mode,
-                            &current_path,
-                            current_volume,
-                            is_playing_flag,
-                            &thread_progress,
-                            current_volume_balance_gain,
-                            thread_eq_handle.clone(),
-                            thread_se_handle.clone(),
-                            thread_user_volume.clone(),
-                            &mut current_normalizer_handle,
-                            current_remote_stream.as_ref(),
-                            current_streaming_state.as_ref(),
-                            current_dsd_native_passthrough,
-                            current_bit_perfect,
-                        );
+                        // [加固] 设备/输出模式切换会重建输出流，可能触发 cpal/rodio panic。
+                        // 隔离之，panic 后 output 保持 None，由自愈/续播逻辑重建，不杀死播放线程。
+                        guard_device_ops(|| {
+                            restore_preferred_output(
+                                &selected_device_name,
+                                &mut output,
+                                &host,
+                                &mut current_sink,
+                                #[cfg(target_os = "windows")]
+                                &mut exclusive_playback,
+                                &mut active_device_name,
+                                &mut active_output_mode,
+                                &mut fallback_reason,
+                                requested_output_mode,
+                                &current_path,
+                                current_volume,
+                                is_playing_flag,
+                                &thread_progress,
+                                current_volume_balance_gain,
+                                thread_eq_handle.clone(),
+                                thread_se_handle.clone(),
+                                thread_user_volume.clone(),
+                                &mut current_normalizer_handle,
+                                current_remote_stream.as_ref(),
+                                current_streaming_state.as_ref(),
+                                current_dsd_native_passthrough,
+                                current_bit_perfect,
+                            );
+                        });
                         // 输出模式切换后重新应用播放倍速
                         if current_speed != 1.0 {
                             if let Some(sink) = &current_sink {
