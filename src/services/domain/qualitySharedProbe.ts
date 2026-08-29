@@ -29,6 +29,8 @@ export interface SharedQualityProbe {
   done: boolean;
   /** 探测开始时间，用于过期清理 */
   startAt: number;
+  /** 全档探测失败的时刻（resolvedUrls 为空时在 finally 中打点），用于失败冷却 */
+  failAt: number | null;
   /** 内部：订阅者（增量通知） */
   _subscribers: Set<() => void>;
   /** 内部：本轮探测的中止控制 */
@@ -37,6 +39,9 @@ export interface SharedQualityProbe {
 
 /** 探测缓存过期时间：过期的已完成探测在 TTL 内复用，过期后清理避免无限增长 */
 const PROBE_TTL_MS = 60_000;
+/** 全档探测失败的冷却期：失败后在该窗口内复用"已失败"探针（不再重复请求插件）；
+ *  冷却结束后允许重建探测，给短暂网络/服务恢复留出重试机会 */
+const PROBE_FAIL_TTL_MS = 3_000;
 
 const _sharedProbes = new Map<string, SharedQualityProbe>();
 
@@ -55,7 +60,10 @@ function notifyProbeListeners(probe: SharedQualityProbe): void {
 function pruneDoneProbes(): void {
   const now = Date.now();
   for (const [key, probe] of _sharedProbes) {
-    if (probe.done && now - probe.startAt > PROBE_TTL_MS) {
+    // 失败探针走更短的冷却窗口；其余探针走通用 TTL
+    const failExpired = probe.failAt != null && now - probe.failAt > PROBE_FAIL_TTL_MS;
+    const generalExpired = now - probe.startAt > PROBE_TTL_MS;
+    if (probe.done && (failExpired || generalExpired)) {
       _sharedProbes.delete(key);
     }
   }
@@ -81,10 +89,16 @@ export async function ensureSharedQualityProbe(
 
   const existing = _sharedProbes.get(songKey);
   if (existing) {
-    // 已存在探测时复用其结果，仅当本轮确定结束时才需重启；运行中的直接复用
+    // 已存在探测时复用其结果，仅当本轮确定结束且失败探针已出冷却时才允许重建；
+    // 运行中的直接复用，成功探针直接复用其既成结果。
     if (!existing.done) return existing;
-    // 已完成的探测也可复用（避免再次请求），直接返回既成结果
-    return existing;
+    // 失败探针仍在冷却窗口内 → 复用其"已失败"结果，避免反复请求插件
+    if (existing.failAt != null && Date.now() - existing.failAt <= PROBE_FAIL_TTL_MS) {
+      return existing;
+    }
+    if (Object.keys(existing.resolvedUrls).length > 0) return existing;
+    // 失败探针冷却已结束 → 移除并由下方新建一轮探测
+    _sharedProbes.delete(songKey);
   }
 
   // 开始新一轮探测前，中止其它仍在跑的旧歌探测，避免多首歌同时在探测
@@ -101,6 +115,7 @@ export async function ensureSharedQualityProbe(
     resolvedUrls: {},
     done: false,
     startAt: Date.now(),
+    failAt: null,
     _subscribers: new Set(),
     _controller: new AbortController(),
   };
@@ -120,6 +135,10 @@ export async function ensureSharedQualityProbe(
       console.warn('[SharedProbe] 音质探测失败:', e?.message || e);
     } finally {
       probe.done = true;
+      // 全档均未解析出直链 → 视为探测失败，打点进入失败冷却窗口
+      if (Object.keys(probe.resolvedUrls).length === 0) {
+        probe.failAt = Date.now();
+      }
       notifyProbeListeners(probe);
     }
   })();
