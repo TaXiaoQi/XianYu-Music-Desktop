@@ -133,6 +133,30 @@ export async function login(
 }
 
 /**
+ * 邮箱验证码登录（无需密码，通过发送到注册邮箱的验证码登录）。
+ * POST /api/?action=login_by_code
+ */
+export async function loginByEmail(
+  email: string,
+  verifyCode: string,
+  captcha: HumanCaptchaPayload,
+): Promise<AuthPayload> {
+  try {
+    const data = await requestAction<Record<string, unknown>>('login_by_code', withCaptcha({
+      email,
+      verify_code: verifyCode,
+      device_id: getDeviceId(),
+    }, captcha));
+    if (!data.token) throw new Error('登录响应无效');
+    const payload: AuthPayload = { token: String(data.token), user: mapUser(data) };
+    saveAuth(payload);
+    return payload;
+  } catch (error) {
+    throw new Error(getAuthErrorMessage(error, '登录失败'), { cause: error });
+  }
+}
+
+/**
  * 用户注册（弦予号必填，昵称可选留空则服务端默认"弦予+号"；注册成功后自动登录获取会话）。
  * POST /api/?action=register
  */

@@ -59,6 +59,7 @@ export {
   getHumanCaptcha,
   verifyHumanCaptcha,
   login,
+  loginByEmail,
   register,
   updateCiyuanxiId,
   bindEmail,
@@ -68,6 +69,13 @@ export {
   deleteAccount,
   changePassword,
 } from './authAccount';
+
+// 扫码登录
+export {
+  createQrLoginCode,
+  pollQrLoginStatus,
+} from './authQr';
+export type { QrPollResult } from './authQr';
 
 // 资料管理
 export {
