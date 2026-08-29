@@ -1599,6 +1599,7 @@
             }
           }
         }, function (err) {
+          try { G.console.error('HTTP 请求失败: ' + ((err && err.message) || String(err))); } catch (e2) { /* ignore */ }
           try { callback(err, null, null); } catch (e) { /* ignore */ }
         });
         return function () { /* cancel noop */ };
@@ -1766,6 +1767,13 @@
       G.console.log('LX request(action=' + (data && data.action) + ') 返回: type=' + typeof result +
         ' len=' + (typeof result === 'string' ? result.length : 'n/a') + ' preview=' + preview);
       return result;
+    }, function (e) {
+      // 诊断：输出堆栈（含插件脚本行号），定位插件内部 "not a function" 等错误
+      try {
+        G.console.error('LX request(action=' + (data && data.action) + ') 堆栈: ' +
+          ((e && e.stack) ? String(e.stack) : String((e && e.message) || e)));
+      } catch (e2) { /* ignore */ }
+      throw e;
     });
   };
 })();
