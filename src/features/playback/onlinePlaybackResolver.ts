@@ -148,6 +148,18 @@ export const resolveOnlineAudio = async ({
             return buildResolveResult(resolved);
           }
         }
+        // [失败冷却 · 请求收敛] 共享探测已结束且未解析出任何直链（整首全档失败）。
+        // 直接按失败返回，不再走下方 fallback 重新逐档请求插件——否则一首不可播的歌
+        // 会绕过探针池每轮重复向插件发起 musicUrl 请求（请求风暴）。配合
+        // qualitySharedProbe 的失败冷却，失败后在冷却期内一律复用失败结果。
+        if (probe.done && Object.keys(probe.resolvedUrls).length === 0) {
+          return {
+            audioFilePath,
+            pluginHeaders: null,
+            currentPlayingQuality: null,
+            currentPlayingAudioUrl: null,
+          };
+        }
       }
 
       const preResolvedUrls: Partial<Record<QualityKey, string>> | undefined = song.remote_requested_quality === requestedQuality
