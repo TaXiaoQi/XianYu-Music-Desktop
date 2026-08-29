@@ -202,7 +202,7 @@ const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scroll
 </script>
 
 <template>
-  <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-10 w-full bg-transparent">
+  <div class="px-8 shrink-0 select-none flex flex-col pt-6 pb-0 h-auto justify-start border-b border-black/5 dark:border-white/5 relative z-20 w-full bg-transparent">
     <div v-if="isBatchMode" class="flex items-center justify-between mb-4 animate-in fade-in slide-in-from-top-1 duration-200">
       <div class="flex items-center gap-3">
         <button @click="emit('selectAll')" class="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 px-4 py-1.5 rounded text-sm transition flex items-center gap-1 active:scale-95">
@@ -230,7 +230,7 @@ const artistMaxHeight = computed(() => `${Math.round(24 * Math.max(0, 1 - scroll
         </div>
       </div>
 
-      <div :style="{ height: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0">
+      <div :style="{ minHeight: columnHeight }" class="flex flex-col justify-start pt-2 pb-1 flex-1 min-w-0 relative z-20">
         <div :style="{ marginBottom: titleMarginBottom }">
           <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-900 dark:text-white truncate max-w-[600px] leading-tight flex items-center gap-2">
             <span class="bg-[#EC4141] text-white text-[12px] px-1.5 py-0.5 rounded border border-[#EC4141] font-normal leading-none -mt-1 relative top-[1px]">专辑</span>
