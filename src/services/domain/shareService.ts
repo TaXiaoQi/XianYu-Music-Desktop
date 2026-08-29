@@ -257,3 +257,11 @@ export function preloadShareUrl(
   const pending = createShareUrl(song, coverUrl, extra).catch(() => '');
   shareCache.set(key, { pending });
 }
+
+/**
+ * 上报一次真实「点分享」动作（fire-and-forget，失败静默）。
+ * 仅在用户真正点击分享/复制时调用，切歌预加载不触发，供仪表台分享统计去虚高。
+ */
+export function reportShareAction(): void {
+  signedRequest<any>('report_share_action', {}).catch(() => {});
+}
