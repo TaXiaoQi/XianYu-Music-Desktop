@@ -632,9 +632,13 @@ fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
         songmid: raw
             .get("Audioid")
             .and_then(|v| v.as_str())
-            .or_else(|| raw.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-            .unwrap_or("")
-            .to_string(),
+            .map(|s| s.to_string())
+            .or_else(|| {
+                raw.get("Audioid")
+                    .and_then(|v| v.as_i64())
+                    .map(|n| n.to_string())
+            })
+            .unwrap_or_default(),
         source: "kg".into(),
         interval: format_play_time(duration),
         img,
@@ -657,8 +661,13 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
             let audioid = item
                 .get("Audioid")
                 .and_then(|v| v.as_str())
-                .or_else(|| item.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-                .unwrap_or("");
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    item.get("Audioid")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n.to_string())
+                })
+                .unwrap_or_default();
             let file_hash = item.get("FileHash").and_then(|v| v.as_str()).unwrap_or("");
             let key = format!("{}{}", audioid, file_hash);
             if ids.contains(&key) {
@@ -673,8 +682,14 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
                     let child_audioid = child
                         .get("Audioid")
                         .and_then(|v| v.as_str())
-                        .or_else(|| child.get("Audioid").and_then(|v| v.as_i64()).map(|_| ""))
-                        .unwrap_or("");
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            child
+                                .get("Audioid")
+                                .and_then(|v| v.as_i64())
+                                .map(|n| n.to_string())
+                        })
+                        .unwrap_or_default();
                     let child_hash = child.get("FileHash").and_then(|v| v.as_str()).unwrap_or("");
                     let child_key = format!("{}{}", child_audioid, child_hash);
                     if ids.contains(&child_key) {
