@@ -140,6 +140,7 @@ const viewInstanceKey = computed(() => {
          CSS 动画只改合成属性，不参与 Vue 的 DOM 重排，天然不会把 el 置 null。 -->
       <div :key="viewInstanceKey" class="home-view-switch-host flex flex-1 flex-col min-h-0 min-w-0">
       <HomeHeaderPanel
+        class="relative z-20"
         :localViewMode="localViewMode"
         :isBatchMode="isBatchMode"
         :isManagementMode="isManagementMode"

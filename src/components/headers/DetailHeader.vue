@@ -6,6 +6,7 @@ import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useLibraryCollections } from '../../features/collections/useLibraryCollections';
 import { useCoverCache } from '../../composables/useCoverCache';
 import { getDisplayCoverUrl } from '../../utils/coverProxy';
+import { useLibraryStore } from '../../features/library/store';
 import { useScrollShrinkHeader } from '../../composables/useScrollShrinkHeader';
 import type { FavoriteCollectionEntry } from '../../features/collections/store';
 import SortModeIcon from '../common/SortModeIcon.vue';
@@ -13,6 +14,7 @@ import CollectionFavoriteButton from '../favorites/CollectionFavoriteButton.vue'
 
 const { playlistSortMode, setPlaylistSortMode, currentViewMode, filterCondition } = usePlayerViewState();
 const { playlists } = useLibraryCollections();
+const libraryStore = useLibraryStore();
 
 const showSortMenu = ref(false);
 const sortMenuX = ref(0);
@@ -153,42 +155,51 @@ const updateHeaderCover = async () => {
       if (pl && pl.songPaths.length > 0) {
         const firstSongPath = pl.songPaths[0];
 
-        // 优先从 playlist.songs 缓存中获取在线歌曲封面（网络 URL）
-        // 先按 path 精确匹配，若不中（path 可能已被转换，如 plugin:// → lx://）则取首歌曲
-        const cachedSong = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
-        const cachedCoverPath = cachedSong?.cover_thumb_path || (cachedSong as any)?.coverUrl || '';
-        if (cachedCoverPath) {
-          const primedUrl = primeCoverPath(cachedSong!.path, cachedCoverPath);
-          if (primedUrl) {
+        // 1. 尝试多渠道查找首曲元信息（pl.songs -> songLookup -> props.songs）
+        const songFromPl = pl.songs?.find(s => s.path === firstSongPath) ?? pl.songs?.[0];
+        const songFromLookup = libraryStore.songLookup.get(firstSongPath);
+        const songFromProps = props.songs.find(s => s.path === firstSongPath) ?? props.songs[0];
+        
+        const candidateSong = songFromPl ?? songFromLookup ?? songFromProps;
+        const onlineCoverPath = candidateSong?.cover_thumb_path || (candidateSong as any)?.coverUrl || '';
+        
+        if (onlineCoverPath) {
+          const primedUrl = primeCoverPath(candidateSong?.path || firstSongPath, onlineCoverPath);
+          if (primedUrl || isDirectUrl(onlineCoverPath)) {
             if (requestId !== coverRequestId) return;
-            headerCover.value = primedUrl;
+            headerCover.value = primedUrl || onlineCoverPath;
             return;
           }
         }
 
-        try {
-          const fullCover = await loadFullCover(firstSongPath);
-          if (requestId !== coverRequestId) return;
-          if (fullCover) {
-            headerCover.value = fullCover;
-            return;
-          }
+        // 2. 在线歌曲协议（lx://, plugin://, http://, https://）跳过后端本地文件解包，避免 invoke 失败清空封面
+        const isOnlinePath = firstSongPath.startsWith('lx://') ||
+          firstSongPath.startsWith('plugin://') ||
+          firstSongPath.startsWith('http://') ||
+          firstSongPath.startsWith('https://');
 
-          const thumbnailCover = await loadCover(firstSongPath);
-          if (requestId !== coverRequestId) return;
-          if (thumbnailCover) {
-            headerCover.value = thumbnailCover;
-          } else {
-            // 后端无法获取封面（如 lx:// 在线歌曲），回退到首歌曲的 cover_thumb_path 或 coverUrl
-            const firstSong = props.songs.find(song => song.path === firstSongPath)
-              ?? props.songs[0];
-            const thumbPath = firstSong?.cover_thumb_path || (firstSong as any)?.coverUrl || '';
-            headerCover.value = thumbPath || '';
+        if (!isOnlinePath) {
+          try {
+            const fullCover = await loadFullCover(firstSongPath);
+            if (requestId !== coverRequestId) return;
+            if (fullCover) {
+              headerCover.value = fullCover;
+              return;
+            }
+
+            const thumbnailCover = await loadCover(firstSongPath);
+            if (requestId !== coverRequestId) return;
+            if (thumbnailCover) {
+              headerCover.value = thumbnailCover;
+              return;
+            }
+          } catch {
+            // 本地提取失败不重置 headerCover（上方可能已从网络/元数据拿到了封面）
           }
-        } catch {
-          if (requestId !== coverRequestId) return;
-          headerCover.value = '';
         }
+
+        if (requestId !== coverRequestId) return;
+        headerCover.value = onlineCoverPath || '';
       } else {
         if (requestId !== coverRequestId) return;
         headerCover.value = '';
@@ -196,32 +207,44 @@ const updateHeaderCover = async () => {
   } else if (props.songs.length > 0) {
     const firstSong = props.songs[0];
     const firstSongPath = firstSong.path;
+    const onlineCoverPath = firstSong.cover_thumb_path || (firstSong as any)?.coverUrl || '';
 
-    // 在线歌曲封面优先从 cover_thumb_path 获取（网络 URL）
-    if (firstSong.cover_thumb_path) {
-      const primedUrl = primeCoverPath(firstSongPath, firstSong.cover_thumb_path);
-      if (primedUrl) {
+    if (onlineCoverPath) {
+      const primedUrl = primeCoverPath(firstSongPath, onlineCoverPath);
+      if (primedUrl || isDirectUrl(onlineCoverPath)) {
         if (requestId !== coverRequestId) return;
-        headerCover.value = primedUrl;
+        headerCover.value = primedUrl || onlineCoverPath;
         return;
       }
     }
 
-    try {
-      const fullCover = await loadFullCover(firstSongPath);
-      if (requestId !== coverRequestId) return;
-      if (fullCover) {
-        headerCover.value = fullCover;
-        return;
-      }
+    const isOnlinePath = firstSongPath.startsWith('lx://') ||
+      firstSongPath.startsWith('plugin://') ||
+      firstSongPath.startsWith('http://') ||
+      firstSongPath.startsWith('https://');
 
-      const thumbnailCover = await loadCover(firstSongPath);
-      if (requestId !== coverRequestId) return;
-      headerCover.value = thumbnailCover || '';
-    } catch {
-      if (requestId !== coverRequestId) return;
-      headerCover.value = '';
+    if (!isOnlinePath) {
+      try {
+        const fullCover = await loadFullCover(firstSongPath);
+        if (requestId !== coverRequestId) return;
+        if (fullCover) {
+          headerCover.value = fullCover;
+          return;
+        }
+
+        const thumbnailCover = await loadCover(firstSongPath);
+        if (requestId !== coverRequestId) return;
+        if (thumbnailCover) {
+          headerCover.value = thumbnailCover;
+          return;
+        }
+      } catch {
+        // 本地解包失败忽略
+      }
     }
+
+    if (requestId !== coverRequestId) return;
+    headerCover.value = onlineCoverPath || '';
   } else {
     if (requestId !== coverRequestId) return;
     headerCover.value = '';
@@ -263,7 +286,7 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
 </script>
 
 <template>
-  <div class="px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
+  <div class="relative z-20 w-full px-6 shrink-0 select-none flex flex-col pt-[clamp(0px,0.3vh,4px)] pb-[clamp(8px,1.4vh,16px)] h-auto justify-start">
     
     <!-- 批量操作模式 -->
     <div v-if="isBatchMode" class="flex items-center justify-between animate-in fade-in slide-in-from-top-1 duration-200">
@@ -303,7 +326,7 @@ const subtitleMaxHeight = computed(() => `${Math.round(18 * Math.max(0, 1 - scro
       </div>
       
       <!-- 文本信息与操作 -->
-      <div :style="{ height: columnHeight }" class="flex flex-col justify-between py-1 flex-1 min-w-0">
+      <div :style="{ minHeight: columnHeight }" class="flex flex-col justify-between gap-2 py-1 flex-1 min-w-0 relative z-20">
         <div>
           <div class="flex items-center gap-2 mb-1">
             <h1 :style="{ fontSize: titleSize, lineHeight: titleLineHeight }" class="font-bold text-gray-800 dark:text-white truncate max-w-[500px]">{{ title }}</h1>

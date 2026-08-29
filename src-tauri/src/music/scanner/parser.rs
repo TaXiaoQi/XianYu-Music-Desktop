@@ -328,9 +328,25 @@ fn detect_audio_identity(path: &Path, ext: &str) -> AudioIdentity {
         }
     };
 
-    let media_source = MediaSourceStream::new(Box::new(file), Default::default());
+    // QMC 加密文件：先套解密读取器，再推断实际扩展名给 Symphonia 提示
+    let qmc_inner = qmc_inner_audio_ext(ext);
+    let actual_ext = qmc_inner.unwrap_or(ext);
+
+    let media_source: Box<dyn symphonia::core::io::MediaSource> = if qmc_inner.is_some() {
+        match crate::player::qmc2::detect_qmc_crypto(path) {
+            Some(crypto) => {
+                let reader = crate::player::qmc2::QmcDecryptReader::new(file, crypto);
+                Box::new(QmcMediaSourceWrapper(reader))
+            }
+            None => Box::new(file),
+        }
+    } else {
+        Box::new(file)
+    };
+
+    let media_source = MediaSourceStream::new(media_source, Default::default());
     let mut hint = Hint::new();
-    hint.with_extension(ext);
+    hint.with_extension(actual_ext);
 
     let probed = match symphonia::default::get_probe().format(
         &hint,
@@ -387,6 +403,40 @@ fn detect_audio_identity(path: &Path, ext: &str) -> AudioIdentity {
         duration_seconds,
         sample_rate,
         bit_depth,
+    }
+}
+
+/// QMC 扩展名 → 解密后实际音频扩展名（供 Symphonia/lofty 识别格式用）。
+fn qmc_inner_audio_ext(ext: &str) -> Option<&'static str> {
+    Some(match ext.to_ascii_lowercase().as_str() {
+        "qmcflac" | "mflac" | "mflac0" => "flac",
+        "qmc0" | "qmc3" => "mp3",
+        "qmc2" | "qmcogg" | "mgg" | "mgg0" | "mggl" => "ogg",
+        _ => return None,
+    })
+}
+
+/// 将 QmcDecryptReader 包装为 Symphonia MediaSource。
+struct QmcMediaSourceWrapper(crate::player::qmc2::QmcDecryptReader<File>);
+
+impl std::io::Read for QmcMediaSourceWrapper {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl std::io::Seek for QmcMediaSourceWrapper {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.0.seek(pos)
+    }
+}
+
+impl symphonia::core::io::MediaSource for QmcMediaSourceWrapper {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        None
     }
 }
 

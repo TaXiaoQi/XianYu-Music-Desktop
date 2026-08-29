@@ -1389,7 +1389,7 @@ watch(
              key 含平台 ID + 导航令牌 d：d 每帧唯一（弹栈返回旧 d 时也必异于当前帧），
              任意两帧 key 必不相同 —— 转场动画与 @enter 滚动应用（归零/恢复）必定触发，
              杜绝 platformId 缺失或相同时同类型容器间静默继承滚动位置 -->
-        <div v-if="detailType === 'artist' || detailType === 'user'" :key="`artist-${ctx?.platformId ?? ''}-d${navToken}`">
+        <div v-if="detailType === 'artist' || detailType === 'user'" :key="`artist-${ctx?.platformId ?? ''}-d${navToken}`" class="relative z-20">
           <ArtistDetailHeader
             v-model:isBatchMode="isBatchMode"
             v-model:activeTab="artistActiveTab"
@@ -1507,7 +1507,7 @@ watch(
         </div>
 
         <!-- 专辑详情（key 含平台 ID + 导航令牌 d，见歌手分支注释） -->
-        <div v-else-if="detailType === 'album'" :key="`album-${ctx?.platformId ?? ''}-d${navToken}`">
+        <div v-else-if="detailType === 'album'" :key="`album-${ctx?.platformId ?? ''}-d${navToken}`" class="relative z-20">
           <AlbumDetailHeader
             v-model:isBatchMode="isBatchMode"
             :albumName="title"
@@ -1566,7 +1566,7 @@ watch(
         </div>
 
         <!-- 歌单详情（key 含平台 ID + 导航令牌 d，见歌手分支注释） -->
-        <div v-else-if="detailType === 'playlist'" :key="`playlist-${ctx?.platformId ?? ''}-d${navToken}`">
+        <div v-else-if="detailType === 'playlist'" :key="`playlist-${ctx?.platformId ?? ''}-d${navToken}`" class="relative z-20">
           <DetailHeader
             :title="title"
             :subtitle="subtitle"
