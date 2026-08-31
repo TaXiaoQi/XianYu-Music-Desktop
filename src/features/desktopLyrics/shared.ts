@@ -71,6 +71,7 @@ export interface DesktopLyricsStatePayload {
   playbackTime: number;
   syncedAt: number;
   isPlaying: boolean;
+  isFavorite: boolean;
   audioDelay: number;
   settings: DesktopLyricsWindowSettings;
   customLyricsFonts: ImportedLyricsFont[];
@@ -90,6 +91,8 @@ export type DesktopLyricsAction =
   | { type: 'toggle-play' }
   | { type: 'prev-song' }
   | { type: 'next-song' }
+  | { type: 'toggle-favorite' }
+  | { type: 'open-settings' }
   | { type: 'adjust-offset'; delta: number }
   | { type: 'close' }
   | { type: 'update-settings'; patch: DesktopLyricsSettingsPatch };

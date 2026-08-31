@@ -1,37 +1,58 @@
 import { ref } from 'vue';
 import { signedRequest } from '../services/auth/authService';
 
+export interface AcknowledgementsItem {
+  name: string;
+  url: string;
+}
+
 export interface AboutConfig {
   officialSiteUrl: string;
-  officialSiteText: string;
   updateEnabled: boolean;
-  updateText: string;
   projectUrl: string;
-  projectText: string;
   referenceProjectUrl: string;
-  referenceProjectText: string;
   joinGroupUrl: string;
-  joinGroupText: string;
+  acknowledgements: AcknowledgementsItem[];
 }
 
 export const DEFAULT_ABOUT_CONFIG: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn/',
-  officialSiteText: '前往官网',
   updateEnabled: true,
-  updateText: '检查更新',
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-  projectText: '开源地址',
   referenceProjectUrl: 'https://github.com/Billy636/LyciaMusic',
-  referenceProjectText: '参考项目',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
-  joinGroupText: '加入群组',
+  acknowledgements: [
+    { name: '@Billy636', url: 'https://github.com/Billy636' },
+    { name: '@Zencok', url: 'https://github.com/Zencok' },
+    { name: '@kiomosu', url: 'https://github.com/kiomosu' },
+  ],
 };
 
 /** 模块级响应式关于页配置，供关于页等组件共享，服务器下发后即时更新 */
 export const aboutConfig = ref<AboutConfig>({ ...DEFAULT_ABOUT_CONFIG });
 
-function asText(value: unknown, fallback: string): string {
+function asUrl(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function asAcknowledgements(value: unknown): AcknowledgementsItem[] {
+  if (!Array.isArray(value)) return [...DEFAULT_ABOUT_CONFIG.acknowledgements];
+  const items: AcknowledgementsItem[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const name =
+      typeof record.name === 'string' && record.name.trim()
+        ? record.name.trim()
+        : '';
+    if (!name) continue;
+    const url =
+      typeof record.url === 'string' && record.url.trim()
+        ? record.url.trim()
+        : '';
+    items.push({ name, url });
+  }
+  return items;
 }
 
 export async function fetchAboutConfig(): Promise<AboutConfig> {
@@ -43,18 +64,14 @@ export async function fetchAboutConfig(): Promise<AboutConfig> {
     );
 
     return {
-      officialSiteUrl: 'https://xianyumusic.cn/',
-      officialSiteText: asText(data.officialSiteText, DEFAULT_ABOUT_CONFIG.officialSiteText),
+      officialSiteUrl: asUrl(data.officialSiteUrl, DEFAULT_ABOUT_CONFIG.officialSiteUrl),
       updateEnabled: typeof data.updateEnabled === 'boolean'
         ? data.updateEnabled
         : DEFAULT_ABOUT_CONFIG.updateEnabled,
-      updateText: asText(data.updateText, DEFAULT_ABOUT_CONFIG.updateText),
-      projectUrl: asText(data.projectUrl, DEFAULT_ABOUT_CONFIG.projectUrl),
-      projectText: asText(data.projectText, DEFAULT_ABOUT_CONFIG.projectText),
-      referenceProjectUrl: asText(data.referenceProjectUrl, DEFAULT_ABOUT_CONFIG.referenceProjectUrl),
-      referenceProjectText: asText(data.referenceProjectText, DEFAULT_ABOUT_CONFIG.referenceProjectText),
-      joinGroupUrl: asText(data.joinGroupUrl, DEFAULT_ABOUT_CONFIG.joinGroupUrl),
-      joinGroupText: asText(data.joinGroupText, DEFAULT_ABOUT_CONFIG.joinGroupText),
+      projectUrl: asUrl(data.projectUrl, DEFAULT_ABOUT_CONFIG.projectUrl),
+      referenceProjectUrl: asUrl(data.referenceProjectUrl, DEFAULT_ABOUT_CONFIG.referenceProjectUrl),
+      joinGroupUrl: asUrl(data.joinGroupUrl, DEFAULT_ABOUT_CONFIG.joinGroupUrl),
+      acknowledgements: asAcknowledgements(data.acknowledgements),
     };
   } catch (error) {
     console.warn('[AboutConfig] 获取关于页配置失败，使用默认配置', error);

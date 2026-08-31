@@ -10,4 +10,4 @@
  *
  * 前端代码可直接 import { APP_VERSION } from '../version' 使用。
  */
-export const APP_VERSION = '2.0.0-beta2';
+export const APP_VERSION = '2.0.0-beta3';

@@ -102,6 +102,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
   const themeColors = ref<string[]>([]);
   const customLyricsFonts = ref<ImportedLyricsFont[]>([]);
   const songDuration = ref<number | null>(null);
+  const isFavorite = ref(false);
   const settings = ref<DesktopLyricsWindowSettings>({
     showTranslation: true,
     showRomaji: false,
@@ -268,6 +269,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     lyricsStatus.value = payload.lyricsStatus;
     fallbackText.value = payload.fallbackText;
     audioDelay.value = payload.audioDelay;
+    isFavorite.value = payload.isFavorite;
     themeColors.value = [...payload.themeColors];
     songDuration.value = typeof nextSongDuration === 'number' && Number.isFinite(nextSongDuration)
       ? nextSongDuration
@@ -705,6 +707,7 @@ export function useDesktopLyricsDisplay(showDragShadow: Ref<boolean>) {
     lyricsPlayerStyle,
     widgetStyle,
     activeLyricLine,
+    isFavorite,
     blockTransitionKey,
     visibleLyricLines,
     blockStyle,
