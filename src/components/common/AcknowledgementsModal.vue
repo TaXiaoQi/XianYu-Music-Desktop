@@ -89,7 +89,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         <!-- 名单区 -->
         <div class="px-6 pb-6">
           <p class="mb-4 text-center text-xs leading-relaxed text-gray-400 dark:text-white/40">
-            感谢以下贡献者与项目，点击名字可跳转对应主页
+            感谢以下项目创意或功能的贡献者，排名不分先后
           </p>
 
           <div v-if="items.length" class="flex flex-wrap justify-center gap-2">
