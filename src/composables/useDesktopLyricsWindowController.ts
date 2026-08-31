@@ -147,8 +147,9 @@ export function useDesktopLyricsWindowController(options: {
     }
   }
   const isSystemHidden = ref(false);
-  const isHoverDimmed = ref(false);
-  const isToolbarVisible = ref(false);
+  // 面板表面（背景 + 控件）的自动隐藏：鼠标在窗口内时可见，移出后隐藏，
+  // 仅剩歌词文字。拖动/调整大小期间与「常驻背景」开启时常显。
+  const isPointerInside = ref(false);
   const isResizeInteractionActive = ref(false);
   const isCursorOverLockButton = ref(false);
   let lockPollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -161,7 +162,14 @@ export function useDesktopLyricsWindowController(options: {
     isResizeInteractionActive: isResizeInteractionActive.value,
   }));
 
-  let hoverDimTimer: ReturnType<typeof setTimeout> | null = null;
+  const isSurfaceVisible = computed(() => {
+    if (settings.value.isLocked) return false;
+    return isPointerInside.value
+      || showDragShadow.value
+      || isResizeInteractionActive.value
+      || settings.value.alwaysShowShadowBackground;
+  });
+
   let toolbarHideTimer: ReturnType<typeof setTimeout> | null = null;
   let autoHideTimer: ReturnType<typeof setInterval> | null = null;
   let resizeVisibilityTimer: ReturnType<typeof setTimeout> | null = null;
@@ -252,10 +260,6 @@ export function useDesktopLyricsWindowController(options: {
       const centerX = W / 2;
       const isOver = y >= 0 && y <= toleranceY && x >= centerX - toleranceX && x <= centerX + toleranceX;
 
-      if (settings.value.isLocked) {
-        isToolbarVisible.value = isOver;
-      }
-
       if (isOver !== isCursorOverLockButton.value) {
         isCursorOverLockButton.value = isOver;
         await applyTransientWindowFlags();
@@ -298,13 +302,6 @@ export function useDesktopLyricsWindowController(options: {
     await windowApi.stopTopmostGuard();
   }
 
-  function clearHoverDimTimer() {
-    if (hoverDimTimer) {
-      clearTimeout(hoverDimTimer);
-      hoverDimTimer = null;
-    }
-  }
-
   function clearToolbarHideTimer() {
     if (toolbarHideTimer) {
       clearTimeout(toolbarHideTimer);
@@ -321,13 +318,10 @@ export function useDesktopLyricsWindowController(options: {
 
   function holdVisibleForResize() {
     clearResizeVisibilityTimer();
-    clearHoverDimTimer();
     clearToolbarHideTimer();
 
     isResizeInteractionActive.value = true;
     isSystemHidden.value = false;
-    isHoverDimmed.value = false;
-    revealToolbar();
     revealDragShadow();
 
     resizeVisibilityTimer = setTimeout(() => {
@@ -336,22 +330,12 @@ export function useDesktopLyricsWindowController(options: {
     }, RESIZE_VISIBILITY_HOLD_MS);
   }
 
-  function revealToolbar() {
-    clearToolbarHideTimer();
-
-    if (settings.value.isLocked || isAutoHidden.value) {
-      isToolbarVisible.value = false;
-      return;
-    }
-
-    isToolbarVisible.value = true;
-  }
-
-  function hideToolbar(delay = 140) {
+  /** 鼠标移出后延迟把面板表面收起（自动隐藏），短暂滑出不闪烁。 */
+  function hideSurfaceAfterLeave(delay = 180) {
     clearToolbarHideTimer();
 
     toolbarHideTimer = setTimeout(() => {
-      isToolbarVisible.value = false;
+      isPointerInside.value = false;
       toolbarHideTimer = null;
     }, delay);
   }
@@ -369,25 +353,12 @@ export function useDesktopLyricsWindowController(options: {
     }, 1500);
   }
 
-  function queueHoverDim() {
-    clearHoverDimTimer();
-
-    if (settings.value.isLocked || isAutoHidden.value || isResizeInteractionActive.value) {
-      return;
-    }
-
-    hoverDimTimer = setTimeout(() => {
-      isHoverDimmed.value = true;
-    }, 850);
-  }
-
   function handlePointerEnter() {
     if (settings.value.isLocked) {
       return;
     }
-    revealToolbar();
-    isHoverDimmed.value = false;
-    queueHoverDim();
+    clearToolbarHideTimer();
+    isPointerInside.value = true;
   }
 
   function handlePointerMove() {
@@ -395,23 +366,21 @@ export function useDesktopLyricsWindowController(options: {
       return;
     }
 
-    revealToolbar();
-    isHoverDimmed.value = false;
-    queueHoverDim();
+    clearToolbarHideTimer();
+    isPointerInside.value = true;
   }
 
   function handlePointerLeave() {
     if (settings.value.isLocked) {
       return;
     }
-    clearHoverDimTimer();
-    isHoverDimmed.value = false;
 
     if (isResizeInteractionActive.value) {
       return;
     }
 
-    hideToolbar();
+    // 自动隐藏：移出后稍作延迟收起面板（背景 + 控件），只留歌词文字。
+    hideSurfaceAfterLeave();
   }
 
   async function startWindowDrag(event: MouseEvent) {
@@ -427,7 +396,7 @@ export function useDesktopLyricsWindowController(options: {
   }
 
   const widgetShellStyle = computed<CSSProperties>(() => ({
-    opacity: isAutoHidden.value ? '0' : (isHoverDimmed.value ? '0.34' : '1'),
+    opacity: isAutoHidden.value ? '0' : '1',
     transform: isAutoHidden.value ? 'scale(0.96)' : 'scale(1)',
     pointerEvents: isAutoHidden.value ? 'none' : 'auto',
   }));
@@ -578,7 +547,6 @@ export function useDesktopLyricsWindowController(options: {
     stopLockPolling();
     stopPlaybackClock();
     stopAutoHideLoop();
-    clearHoverDimTimer();
     clearToolbarHideTimer();
     clearResizeVisibilityTimer();
     unlistenState?.();
@@ -611,9 +579,7 @@ export function useDesktopLyricsWindowController(options: {
     () => {
       if (settings.value.isLocked) {
         clearToolbarHideTimer();
-        clearHoverDimTimer();
-        isHoverDimmed.value = false;
-        isToolbarVisible.value = false;
+        isPointerInside.value = false;
         if (!isAutoHidden.value) {
           startLockPolling();
         } else {
@@ -656,7 +622,7 @@ export function useDesktopLyricsWindowController(options: {
   return {
     showDragShadow,
     isSystemHidden,
-    isToolbarVisible,
+    isSurfaceVisible,
     isCursorOverLockButton,
     widgetShellStyle,
     handlePointerEnter,

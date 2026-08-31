@@ -16,6 +16,7 @@ const {
   lyricsPlayerStyle,
   widgetStyle,
   activeLyricLine,
+  isFavorite,
   blockTransitionKey,
   visibleLyricLines,
   blockStyle,
@@ -29,7 +30,7 @@ const {
 
 const {
   isSystemHidden,
-  isToolbarVisible,
+  isSurfaceVisible,
   isCursorOverLockButton,
   widgetShellStyle,
   handlePointerEnter,
@@ -59,12 +60,12 @@ const {
         <DesktopLyricsToolbar
           class="desktop-widget-toolbar"
           :class="{
-            'desktop-widget-toolbar--visible': isToolbarVisible,
-            'desktop-widget-toolbar--locked': settings.isLocked,
+            'desktop-widget-toolbar--visible': isSurfaceVisible || (settings.isLocked && isCursorOverLockButton),
           }"
           :is-playing="isPlaying"
           :is-locked="settings.isLocked"
           :is-hovering-lock="isCursorOverLockButton"
+          :is-favorite="isFavorite"
           @action="emitAction"
         />
 
@@ -74,7 +75,7 @@ const {
             lyricsAlignmentClass,
             {
               'desktop-widget--dragging': showDragShadow,
-              'desktop-widget--surface-visible': showDragShadow || settings.alwaysShowShadowBackground,
+              'desktop-widget--surface-visible': isSurfaceVisible,
             },
           ]"
           :style="widgetStyle"
@@ -191,31 +192,17 @@ const {
 
 .desktop-widget-toolbar {
   position: absolute;
-  top: 8px;
-  left: 50%;
+  inset: 0;
   z-index: 20;
   opacity: 0;
+  /* 始终穿透：空白区域拖拽由底层 desktop-widget 处理，
+     内部按钮行各自 pointer-events:auto（见 DesktopLyricsToolbar）。 */
   pointer-events: none;
-  transform: translate(-50%, -10px) scale(0.96);
-  transition: opacity 180ms ease, transform 220ms ease;
+  transition: opacity 200ms ease;
 }
 
 .desktop-widget-toolbar--visible {
   opacity: 1;
-  pointer-events: auto;
-  transform: translate(-50%, 0) scale(1);
-}
-
-.desktop-widget-toolbar--locked {
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -10px) scale(0.96);
-}
-
-.desktop-widget-toolbar--locked.desktop-widget-toolbar--visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translate(-50%, 0) scale(1);
 }
 
 .desktop-widget {
@@ -227,25 +214,24 @@ const {
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  overflow: visible;
+  overflow: hidden;
   transition:
     background 220ms ease,
     box-shadow 220ms ease,
     border-color 220ms ease,
+    border-radius 220ms ease,
     outline-color 220ms ease;
 }
 
+/* 面板表面：QQ 音乐风格的中性深色圆角底板（自动隐藏时只剩歌词文字） */
 .desktop-widget--surface-visible {
-  border-color: color-mix(in srgb, var(--desktop-accent-b) 22%, transparent);
-  background:
-    radial-gradient(circle at top center, color-mix(in srgb, var(--desktop-accent-a) 24%, transparent), transparent 42%),
-    radial-gradient(circle at bottom right, color-mix(in srgb, var(--desktop-accent-c) 16%, transparent), transparent 38%),
-    linear-gradient(180deg, rgba(38, 38, 38, 0.68), rgba(31, 31, 31, 0.54));
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(45, 46, 50, 0.88), rgba(28, 29, 32, 0.88));
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--desktop-accent-d) 18%, transparent),
-    0 22px 56px rgba(0, 0, 0, 0.18),
-    0 6px 18px rgba(0, 0, 0, 0.08),
-    0 0 0 1px color-mix(in srgb, var(--desktop-accent-a) 8%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 48px rgba(0, 0, 0, 0.32),
+    0 6px 18px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 
 .desktop-widget::before {
@@ -266,6 +252,12 @@ const {
   justify-content: center;
   padding: 20px 24px;
   box-sizing: border-box;
+  transition: padding 220ms ease;
+}
+
+/* 面板可见时给顶行/底行控件让位 */
+.desktop-widget--surface-visible .desktop-lyrics-body {
+  padding: 56px 28px 68px;
 }
 
 .desktop-lyrics-host {

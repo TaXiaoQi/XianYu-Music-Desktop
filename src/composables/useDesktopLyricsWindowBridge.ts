@@ -2,8 +2,9 @@ import { emitTo, listen } from '@tauri-apps/api/event';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
-import { onMounted, onUnmounted, watch, toRaw } from 'vue';
+import { nextTick, onMounted, onUnmounted, watch, toRaw } from 'vue';
 import { storeToRefs } from 'pinia';
+import { useRouter } from 'vue-router';
 
 import { useLyrics } from './lyrics';
 import { usePlayer } from '../features/playback';
@@ -290,6 +291,7 @@ async function ensureDesktopLyricsWindow(alwaysOnTop: boolean, centerHorizontall
 
 export function useDesktopLyricsWindowBridge() {
   const mainWindow = getCurrentWindow();
+  const router = useRouter();
   const {
     showDesktopLyrics,
     parsedLyrics,
@@ -298,7 +300,7 @@ export function useDesktopLyricsWindowBridge() {
     lyricsSettings,
     desktopLyricsSettings,
   } = useLyrics();
-  const { togglePlay, prevSong, nextSong } = usePlayer();
+  const { togglePlay, prevSong, nextSong, isFavorite, toggleFavorite } = usePlayer();
   const playbackStore = usePlaybackStore();
   const uiStore = useUiStore();
   const settingsStore = useSettingsStore();
@@ -320,6 +322,7 @@ export function useDesktopLyricsWindowBridge() {
     playbackTime: currentTime.value,
     syncedAt: playbackClockTracker.resolveSyncedAt(currentTime.value),
     isPlaying: isPlaying.value,
+    isFavorite: currentSong.value ? isFavorite(currentSong.value) : false,
     audioDelay: audioDelay.value,
     settings: {
       showTranslation: lyricsSettings.showTranslation,
@@ -479,6 +482,21 @@ export function useDesktopLyricsWindowBridge() {
       case 'next-song':
         nextSong();
         break;
+      case 'toggle-favorite':
+        if (currentSong.value) toggleFavorite(currentSong.value);
+        // 收藏状态不在 watch 同步列表里（isFavorite 是按歌曲查询的函数），
+        // 切换后主动回推一次状态，让桌面歌词面板的红心立即点亮/熄灭。
+        await nextTick();
+        await emitStateToDesktopLyrics(true);
+        break;
+      case 'open-settings': {
+        // 桌面歌词面板的设置按钮：唤起主窗口并直达「桌面歌词」设置页。
+        uiStore.mainWindowUiSleepRequested = false;
+        await router.push('/settings?tab=desktopLyrics');
+        await mainWindow.show();
+        await mainWindow.setFocus();
+        break;
+      }
       case 'adjust-offset': {
         const currentOffset = settingsStore.settings.lyricsSyncOffset;
         settingsStore.settings.lyricsSyncOffset = normalizeLyricsSyncOffsetSeconds(
