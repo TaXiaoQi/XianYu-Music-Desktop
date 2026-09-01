@@ -1494,7 +1494,14 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
             }
 
             match rx.recv_timeout(PLAYER_POLL_INTERVAL) {
-                Ok(cmd) => match cmd {
+                Ok(cmd) => {
+                    // [加固] 命令处理逐条 panic 隔离：任何未预料的 panic（设备枚举/解码/
+                    // 系统库异常等）都不再杀死播放线程。线程一旦死亡，rx 被 drop，此后
+                    // 前端所有播放 IPC 都会报"sending on a closed channel"且播放永久卡死。
+                    // 此处整体兜底，panic 仅告警，线程与命令通道始终存活。
+                    // 闭包内原 continue（独占起播/空路径/独占 seek 分支）语义等价改为 return。
+                    let cmd_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                        || match cmd {
                     AudioCommand::Play {
                         source,
                         output_mode,
@@ -1579,7 +1586,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                         active_output_mode,
                                         fallback_reason.clone(),
                                     );
-                                    continue;
+                                    return;
                                 }
                                 Err(error) => {
                                     active_output_mode = AudioOutputMode::Shared;
@@ -1703,7 +1710,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                     AudioCommand::Resume => {
                         is_playing_flag = true;
                         if current_path.is_empty() {
-                            continue;
+                            return;
                         }
                         // 暂停/停止时已释放音频设备，此处按需重建（共享 OutputStream 或独占 IAudioClient）。
                         #[cfg(target_os = "windows")]
@@ -1752,7 +1759,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                         active_output_mode,
                                         fallback_reason.clone(),
                                     );
-                                    continue;
+                                    return;
                                 }
                                 Err(error) => {
                                     fallback_reason = Some(error);
@@ -1822,7 +1829,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                                     time: clamped_time,
                                 },
                             );
-                            continue;
+                            return;
                         }
 
                         // [缓冲降级] seek 会重建解码链与缓冲，复位看门狗状态避免旧态残留。
@@ -2009,7 +2016,14 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             playback.set_sound_effect_settings(settings);
                         }
                     }
-                },
+                }),
+                );
+                    if cmd_result.is_err() {
+                        eprintln!(
+                            "[Audio][rust] 播放命令处理 panic，已隔离（不终止播放线程，命令通道保持存活）"
+                        );
+                    }
+                }
                 Err(RecvTimeoutError::Timeout) => {
                     if selected_device_name.is_none() {
                         let next_default_name = default_output_device_name(&host);
@@ -2096,55 +2110,63 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
                             // 设备变化后尝试恢复用户请求的输出模式：
                             // 若 requested_output_mode 仍为 WasapiExclusive，restore_preferred_output
                             // 会尝试重建独占链；若设备尚未就绪则自动降级共享，等下一轮重试。
+                            // [加固] restore_preferred_output 内部会打开设备/独占流，可能触发
+                            // cpal/wasapi panic（设备插拔瞬间的枚举异常）。与 SetDevice/SetOutputMode
+                            // 分支同口径隔离，panic 时 output 保持 None 交由后续自愈重试，
+                            // 不杀死播放线程（线程死亡会导致前端 IPC 报"sending on a closed channel"）。
                             #[cfg(target_os = "windows")]
-                            restore_preferred_output(
-                                &selected_device_name,
-                                &mut output,
-                                &host,
-                                &mut current_sink,
-                                &mut exclusive_playback,
-                                &mut active_device_name,
-                                &mut active_output_mode,
-                                &mut fallback_reason,
-                                requested_output_mode,
-                                &current_path,
-                                current_volume,
-                                is_playing_flag,
-                                &thread_progress,
-                                current_volume_balance_gain,
-                                thread_eq_handle.clone(),
-                                thread_se_handle.clone(),
-                                thread_user_volume.clone(),
-                                &mut current_normalizer_handle,
-                                current_remote_stream.as_ref(),
-                                current_streaming_state.as_ref(),
-                                current_dsd_native_passthrough,
-                                current_bit_perfect,
-                            );
+                            guard_device_ops(|| {
+                                restore_preferred_output(
+                                    &selected_device_name,
+                                    &mut output,
+                                    &host,
+                                    &mut current_sink,
+                                    &mut exclusive_playback,
+                                    &mut active_device_name,
+                                    &mut active_output_mode,
+                                    &mut fallback_reason,
+                                    requested_output_mode,
+                                    &current_path,
+                                    current_volume,
+                                    is_playing_flag,
+                                    &thread_progress,
+                                    current_volume_balance_gain,
+                                    thread_eq_handle.clone(),
+                                    thread_se_handle.clone(),
+                                    thread_user_volume.clone(),
+                                    &mut current_normalizer_handle,
+                                    current_remote_stream.as_ref(),
+                                    current_streaming_state.as_ref(),
+                                    current_dsd_native_passthrough,
+                                    current_bit_perfect,
+                                );
+                            });
                             #[cfg(not(target_os = "windows"))]
-                            restore_preferred_output(
-                                &selected_device_name,
-                                &mut output,
-                                &host,
-                                &mut current_sink,
-                                &mut active_device_name,
-                                &mut active_output_mode,
-                                &mut fallback_reason,
-                                requested_output_mode,
-                                &current_path,
-                                current_volume,
-                                is_playing_flag,
-                                &thread_progress,
-                                current_volume_balance_gain,
-                                thread_eq_handle.clone(),
-                                thread_se_handle.clone(),
-                                thread_user_volume.clone(),
-                                &mut current_normalizer_handle,
-                                current_remote_stream.as_ref(),
-                                current_streaming_state.as_ref(),
-                                current_dsd_native_passthrough,
-                                current_bit_perfect,
-                            );
+                            guard_device_ops(|| {
+                                restore_preferred_output(
+                                    &selected_device_name,
+                                    &mut output,
+                                    &host,
+                                    &mut current_sink,
+                                    &mut active_device_name,
+                                    &mut active_output_mode,
+                                    &mut fallback_reason,
+                                    requested_output_mode,
+                                    &current_path,
+                                    current_volume,
+                                    is_playing_flag,
+                                    &thread_progress,
+                                    current_volume_balance_gain,
+                                    thread_eq_handle.clone(),
+                                    thread_se_handle.clone(),
+                                    thread_user_volume.clone(),
+                                    &mut current_normalizer_handle,
+                                    current_remote_stream.as_ref(),
+                                    current_streaming_state.as_ref(),
+                                    current_dsd_native_passthrough,
+                                    current_bit_perfect,
+                                );
+                            });
 
                             emit_output_status(
                                 &thread_app_handle,
