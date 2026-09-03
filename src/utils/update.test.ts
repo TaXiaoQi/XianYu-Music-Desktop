@@ -34,6 +34,13 @@ describe("compareVersions", () => {
   it("treats missing trailing parts as zero", () => {
     expect(compareVersions("1.2", "1.2.0")).toBe(0);
   });
+
+  it("distinguishes pre-release suffixes (beta7 > beta6)", () => {
+    expect(compareVersions("2.0.0-beta5", "2.0.0-beta4")).toBe(1);
+    expect(compareVersions("2.0.0-beta4", "2.0.0-beta5")).toBe(-1);
+    expect(compareVersions("2.0.0", "2.0.0-beta5")).toBe(1);
+    expect(compareVersions("2.0.0-beta9", "2.0.0-beta10")).toBe(-1);
+  });
 });
 
 describe("fetchLatestRelease", () => {
