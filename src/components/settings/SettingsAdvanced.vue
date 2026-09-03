@@ -72,8 +72,8 @@ const createdPlaylistCount = ref(0);
 const showBackupImportResult = ref(false);
 
 // ─── 问题反馈 ───
-// 反馈类型二选一：problem（问题反馈）/ suggestion（功能建议）
-const feedbackType = ref<'problem' | 'suggestion'>('problem');
+// 反馈类型三选一：problem（问题反馈）/ suggestion（功能建议）/ beta（内测申请）
+const feedbackType = ref<'problem' | 'suggestion' | 'beta'>('problem');
 const feedbackContent = ref('');
 const submittingFeedback = ref(false);
 const feedbackAuth = ref(getStoredAuth());
@@ -231,7 +231,7 @@ const submitUserFeedback = async () => {
       allLogs: allLogsText,
       images: feedbackType.value === 'suggestion' ? [...feedbackImages.value] : undefined,
     });
-    showToast('反馈已提交，感谢您的支持', 'success');
+    showToast(feedbackType.value === 'beta' ? '申请已提交，请留意审核结果' : '反馈已提交，感谢您的支持', 'success');
     feedbackContent.value = '';
     feedbackImages.value = [];
     attachErrorLogs.value = false;
@@ -310,7 +310,7 @@ const myFeedbackStatusLabel = (status: string): { text: string; cls: string } =>
 };
 
 const myFeedbackTypeLabel = (type: string): string => {
-  return type === 'suggestion' ? '功能建议' : '问题反馈';
+  return type === 'suggestion' ? '功能建议' : type === 'beta' ? '内测申请' : '问题反馈';
 };
 
 // ==================== 应用备份导出 ====================
