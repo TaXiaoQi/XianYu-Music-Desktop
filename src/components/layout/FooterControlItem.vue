@@ -92,6 +92,10 @@ const ctx = inject<{
   // 分享
   handleShareSong: (song: Song) => Promise<void> | void;
   isShareLoading: Ref<boolean>;
+  // DLNA 投屏
+  isDlnaCasting: Ref<boolean>;
+  dlnaCastDeviceName: Ref<string>;
+  openDlnaCastDialog: () => void;
   // 歌词页工具（仅播放详情页可用）
   isVisualizerEnabled: Ref<boolean>;
   toggleVisualizer: () => void;
@@ -157,6 +161,9 @@ const {
   isMvVideoDownloading,
   handleShareSong,
   isShareLoading,
+  isDlnaCasting,
+  dlnaCastDeviceName,
+  openDlnaCastDialog,
   isVisualizerEnabled,
   toggleVisualizer,
   isProgressHidden,
@@ -615,6 +622,19 @@ watch(
     :title="isShareLoading ? '生成分享链接中…' : '分享歌曲'"
   >
     <FooterControlIcon item-key="share" :class="isShareLoading ? 'h-5 w-5 animate-pulse' : 'h-5 w-5'" />
+  </button>
+
+  <!-- DLNA 投屏：连接局域网设备（电视/音箱），投屏中高亮 -->
+  <button
+    v-else-if="itemKey === 'cast'"
+    @click.stop="openDlnaCastDialog"
+    class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
+    :class="isDlnaCasting
+      ? 'text-[#EC4141] bg-[#EC4141]/10'
+      : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
+    :title="isDlnaCasting ? `正在投屏到「${dlnaCastDeviceName}」` : 'DLNA 投屏'"
+  >
+    <FooterControlIcon item-key="cast" class="h-5 w-5" />
   </button>
 
   <!-- 可视化/频谱（歌词页专属，主页禁用不可开关） -->

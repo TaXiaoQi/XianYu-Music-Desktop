@@ -260,6 +260,8 @@ export const defaultAppSettings: AppSettings = {
   performanceMode: 'auto',
   checkUpdateOnStartup: true,
   writeArtistAvatarToTags: false,
+  dlnaRendererEnabled: false,
+  dlnaRendererName: '',
   download: defaultDownloadSettings,
   upload: defaultUploadSettings,
   plugins: defaultPluginSettings,

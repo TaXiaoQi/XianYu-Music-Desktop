@@ -314,6 +314,7 @@ export type FooterItemKey =
   | 'comment'         // 评论区
   | 'mv'              // MV 背景视频（仅播放详情页显示）
   | 'share'           // 分享当前歌曲
+  | 'cast'            // DLNA 投屏（连接电视/音箱或断开）
   | 'visualizer'      // 可视化/频谱开关（仅播放详情页可用）
   | 'progress'        // 歌词页进度条显示开关（仅播放详情页可用）
   | 'pageStyle'       // 页面样式（仅播放详情页可用）
@@ -844,6 +845,10 @@ export interface AppSettings {
   shareLinkValidityMinutes: number;
   /** 分享链接播放失败行为：pause 暂停播放（默认）/ replace 替换播放（走插件索引换源重播）。 */
   sharePlaybackFailureBehavior: 'pause' | 'replace';
+  /** DLNA 渲染器（接收端）：开启后局域网其它 App 可投歌到本端播放。 */
+  dlnaRendererEnabled: boolean;
+  /** DLNA 渲染器对外展示的设备名（空则使用默认名「弦予音乐」）。 */
+  dlnaRendererName: string;
 }
 
 export type DownloadFormat = 'flac' | 'mp3' | 'wav' | 'aac';

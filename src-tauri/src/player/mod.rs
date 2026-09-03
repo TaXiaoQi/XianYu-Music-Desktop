@@ -13,7 +13,7 @@ mod session;
 pub mod sound_effect;
 mod spectrum;
 mod stream_cache;
-mod types;
+pub(crate) mod types;
 
 pub use commands::{
     clear_stream_cache, copy_stream_cache, get_audio_visualizer_samples, get_playback_duration,

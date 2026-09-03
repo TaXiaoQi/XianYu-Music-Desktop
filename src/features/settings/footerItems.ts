@@ -49,7 +49,7 @@ export interface FooterItemMeta {
   label: string;
   description: string;
   /** lucide 图标名（用于设置面板展示，运行时由 PlayerFooter 内联渲染） */
-  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play' | 'share2' | 'audio-lines' | 'eye' | 'palette' | 'pin';
+  icon: 'download' | 'heart' | 'repeat' | 'lyrics' | 'gauge' | 'volume' | 'equalizer' | 'playlist' | 'message-circle' | 'play' | 'share2' | 'cast' | 'audio-lines' | 'eye' | 'palette' | 'pin';
 }
 
 /**
@@ -68,6 +68,7 @@ export const FOOTER_ITEMS: FooterItemMeta[] = [
   { key: 'comment',        label: '评论区',     description: '打开当前歌曲评论（仅插件在线歌曲可用）', icon: 'message-circle' },
   { key: 'mv',             label: 'MV',         description: '播放当前歌曲的 MV 背景视频（仅插件歌曲可用，只在播放详情页底栏显示）', icon: 'play' },
   { key: 'share',          label: '分享',       description: '生成当前歌曲分享链接并复制', icon: 'share2' },
+  { key: 'cast',           label: '投屏',       description: '把正在播放的歌曲投到局域网 DLNA 设备（电视/音箱）', icon: 'cast' },
   { key: 'visualizer',     label: '可视化',     description: '歌词页背景频谱动画开关（仅播放页可用）', icon: 'audio-lines' },
   { key: 'progress',       label: '进度条',     description: '歌词页进度条显示开关（仅播放页可用）', icon: 'eye' },
   { key: 'pageStyle',      label: '页面样式',   description: '歌词页样式面板（仅播放页可用）', icon: 'palette' },
