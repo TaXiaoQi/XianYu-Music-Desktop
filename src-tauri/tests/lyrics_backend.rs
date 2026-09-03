@@ -1,6 +1,49 @@
 #[path = "../src/music/lyrics.rs"]
 mod lyrics;
 
+// 独立编译的 lyrics.rs 依赖 `super::lyric_fetcher::decode_html_entities`。
+// 完整的 lyric_fetcher 模块依赖 files/ssrf 等重依赖，无法拖进测试 harness，
+// 这里内联同款实现（与 src/music/lyric_fetcher.rs 保持一致，改动需同步）。
+pub mod lyric_fetcher {
+    pub(crate) fn decode_html_entities(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'&' {
+                if let Some(end) = s[i..].find(';') {
+                    let entity = &s[i + 1..i + end];
+                    let decoded = if let Some(hex) =
+                        entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X"))
+                    {
+                        u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+                    } else if let Some(dec) = entity.strip_prefix('#') {
+                        dec.parse::<u32>().ok().and_then(char::from_u32)
+                    } else {
+                        match entity {
+                            "amp" => Some('&'),
+                            "lt" => Some('<'),
+                            "gt" => Some('>'),
+                            "quot" => Some('"'),
+                            "apos" => Some('\''),
+                            "nbsp" => Some(' '),
+                            _ => None,
+                        }
+                    };
+                    if let Some(ch) = decoded {
+                        out.push(ch);
+                        i += end + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(s[i..].chars().next().unwrap_or('\u{FFFD}'));
+            i += s[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        }
+        out
+    }
+}
+
 use lyrics::build_structured_lyrics_payload;
 
 fn find_display_line_by_time(
