@@ -180,6 +180,8 @@ pub struct SharedProgress {
     /// 使用 AtomicU64 存储 f64 的位模式（f64::to_bits / from_bits），
     /// 因为 AtomicF64 在当前工具链不可用。
     pub total_duration_secs: Arc<AtomicU64>,
+    /// 是否正在播放（DLNA DMR 状态快照用）。播放线程每轮循环同步。
+    pub is_playing: Arc<AtomicBool>,
 }
 
 pub enum AudioCommand {
@@ -259,6 +261,8 @@ pub struct PlayerState {
     pub playback_id: Arc<AtomicU64>,
     pub controls: Arc<Mutex<Option<MediaControls>>>,
     pub output_status: Arc<Mutex<AudioOutputStatus>>,
+    /// 用户主音量（f32 位模式 0..1，与播放线程共享同一原子），DLNA DMR 音量快照用。
+    pub user_volume: Arc<AtomicU32>,
 }
 
 #[derive(Serialize, Clone)]

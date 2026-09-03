@@ -25,6 +25,7 @@ import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
+import { useDlnaCastStore } from '../../features/playback/castStore';
 import { useSettingsStore } from '../../features/settings/store';
 import { createShareUrl, getCachedShareUrl, preloadShareUrl, reportShareAction } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
@@ -41,6 +42,7 @@ const AudioVisualizer = defineAsyncComponent(() => import('../player/AudioVisual
 const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterContextMenu.vue"));
 const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/LyricsReplacementModal.vue'));
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
+const DlnaCastDialog = defineAsyncComponent(() => import('../overlays/DlnaCastDialog.vue'));
 
 const {
   currentSong,
@@ -394,6 +396,15 @@ const isMvVideoDownloading = ref(false);
 const playbackStore = usePlaybackStore();
 const isShareLoading = ref(false);
 const settingsStore = useSettingsStore();
+
+// ─── DLNA 投屏 ─────────────────────────────────────────
+const dlnaCast = useDlnaCastStore();
+const showDlnaCastDialog = ref(false);
+const isDlnaCasting = computed(() => dlnaCast.isCasting);
+const dlnaCastDeviceName = computed(() => dlnaCast.device?.friendly_name ?? '');
+const openDlnaCastDialog = () => {
+  showDlnaCastDialog.value = true;
+};
 
 /** 分享设置：有效时长（分钟）+ 播放失败行为（来源信息由分享服务按歌曲自动判定）。 */
 function shareBodyExtra() {
@@ -1245,6 +1256,10 @@ provide('footerContext', {
   // 分享
   handleShareSong,
   isShareLoading,
+  // DLNA 投屏
+  isDlnaCasting,
+  dlnaCastDeviceName,
+  openDlnaCastDialog,
   // 歌词页工具（歌词页专属，主页禁用不可开关）
   isVisualizerEnabled,
   toggleVisualizer,
@@ -1526,6 +1541,9 @@ onUnmounted(() => {
           type="info"
           @confirm="handleConfirmRedownload"
         />
+
+        <!-- DLNA 投屏设备弹窗 -->
+        <DlnaCastDialog v-model:visible="showDlnaCastDialog" />
 
         <!-- MV 下载画质选择弹窗 -->
         <Teleport to="body">

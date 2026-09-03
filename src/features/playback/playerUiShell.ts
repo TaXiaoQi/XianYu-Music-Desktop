@@ -7,6 +7,7 @@ import { useCollectionsStore } from '../collections/store';
 import { useLibraryStore } from '../library/store';
 import { useNavigationStore } from '../../shared/stores/navigation';
 import { usePlaybackStore } from './store';
+import { useDlnaCastStore } from './castStore';
 import { useUiStore } from '../../shared/stores/ui';
 
 interface CreatePlayerUiShellDeps {
@@ -32,15 +33,25 @@ export const createPlayerUiShell = ({
   const libraryStore = useLibraryStore();
   const navigationStore = useNavigationStore();
   const playbackStore = usePlaybackStore();
+  const dlnaCast = useDlnaCastStore();
   const uiStore = useUiStore();
   const { currentViewMode } = storeToRefs(navigationStore);
   const { canonicalSongs, sourceSongs } = storeToRefs(libraryStore);
   const { favoritePaths } = storeToRefs(collectionsStore);
 
+  // [DLNA 投屏] 投屏中音量控制电视端，否则控制本地引擎
+  const applyVolume = async (volume: number) => {
+    if (dlnaCast.isCasting) {
+      await dlnaCast.castSetVolume(volume);
+    } else {
+      await playbackApi.setVolume(volume / 100);
+    }
+  };
+
   const handleVolume = async (event: Event) => {
     const volume = clampVolumePercent(parseInt((event.target as HTMLInputElement).value, 10));
     playbackStore.volume = volume;
-    await playbackApi.setVolume(volume / 100);
+    await applyVolume(volume);
   };
 
   const handleVolumeWheel = async (event: WheelEvent) => {
@@ -50,18 +61,18 @@ export const createPlayerUiShell = ({
     }
 
     playbackStore.volume = volume;
-    await playbackApi.setVolume(volume / 100);
+    await applyVolume(volume);
   };
 
   const toggleMute = async () => {
     if (playbackStore.volume > 0) {
       playbackStore.volume = 0;
-      await playbackApi.setVolume(0);
+      await applyVolume(0);
       return;
     }
 
     playbackStore.volume = 100;
-    await playbackApi.setVolume(1);
+    await applyVolume(100);
   };
 
   const togglePlaylist = () => {

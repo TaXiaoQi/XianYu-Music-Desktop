@@ -1,6 +1,7 @@
 mod app_runtime;
 mod custom_fonts;
 mod database;
+pub(crate) mod dlna;
 pub mod error;
 mod fallback_verify;
 mod foreground_window;
@@ -83,6 +84,11 @@ use host_crypto::{
     host_sha256_hex, host_weapi_encrypt, host_zzc_sign,
 };
 use fallback_verify::verify_fallback_module_signature;
+use dlna::commands::{
+    dlna_cast_get_state, dlna_cast_pause, dlna_cast_play, dlna_cast_seek, dlna_cast_set_uri,
+    dlna_cast_set_volume, dlna_cast_stop, dlna_disable_renderer, dlna_enable_renderer,
+    dlna_renderer_status, dlna_search_devices, dlna_update_media_token,
+};
 use plugin_host::commands::{
     plugin_engine_call, plugin_engine_cookie_header_for_domain, plugin_engine_destroy,
     plugin_engine_destroy_all, plugin_engine_load_lx, plugin_engine_load_musicfree,
@@ -225,6 +231,18 @@ pub fn run() {
             delete_music_file,
             play_audio,
             update_playback_metadata,
+            dlna_search_devices,
+            dlna_cast_set_uri,
+            dlna_cast_play,
+            dlna_cast_pause,
+            dlna_cast_stop,
+            dlna_cast_seek,
+            dlna_cast_set_volume,
+            dlna_cast_get_state,
+            dlna_update_media_token,
+            dlna_enable_renderer,
+            dlna_disable_renderer,
+            dlna_renderer_status,
             pause_audio,
             stop_audio,
             resume_audio,

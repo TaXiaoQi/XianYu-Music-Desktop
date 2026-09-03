@@ -1368,6 +1368,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
         buffered: Arc::new(BufferedMonitor::new()),
         total_duration_secs: Arc::new(AtomicU64::new(0u64)),
+        is_playing: Arc::new(AtomicBool::new(false)),
     });
     let thread_progress = shared_progress.clone();
     let thread_app_handle = app.clone();
@@ -1385,7 +1386,9 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
     let thread_se_handle = Arc::new(crate::player::sound_effect::SoundEffectHandle::new(
         crate::player::sound_effect::SoundEffectSettings::default(),
     ));
-    let thread_user_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+    // 用户主音量原子：PlayerState 与播放线程共享（DLNA DMR 音量快照读取同一份）
+    let user_volume = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
+    let thread_user_volume = user_volume.clone();
 
     thread::spawn(move || {
         let host = cpal::default_host();
@@ -1449,6 +1452,11 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         );
 
         loop {
+            // 同步播放状态快照（DLNA DMR / 调试用）：is_playing_flag 在命令处理中变化，
+            // 每轮循环开头统一落盘到共享原子，供其他线程无锁读取。
+            thread_progress
+                .is_playing
+                .store(is_playing_flag, Ordering::Relaxed);
             // [缓冲降级] 看门狗：网络/磁盘流缓冲不足时自动暂停 → 缓冲 → 自动恢复。
             poll_buffering_watchdog(
                 &thread_progress,
@@ -2221,6 +2229,7 @@ pub fn init_player(app: &AppHandle) -> PlayerState {
         playback_id: Arc::new(AtomicU64::new(0)),
         controls,
         output_status,
+        user_volume,
     }
 }
 
@@ -2568,6 +2577,7 @@ mod tests {
             start_failed_reason: Arc::new(std::sync::Mutex::new(None)),
             buffered: Arc::new(BufferedMonitor::new()),
             total_duration_secs: Arc::new(AtomicU64::new(0u64)),
+            is_playing: Arc::new(AtomicBool::new(false)),
         })
     }
 

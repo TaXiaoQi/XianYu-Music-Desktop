@@ -5,6 +5,7 @@ import type {QualityKey, Song} from '../../types';
 import type {AudioOutputStatus} from '../../services/tauri/contracts';
 import {playbackApi} from '../../services/tauri/playbackApi';
 import {pluginApi} from '../../services/tauri/pluginApi';
+import {useDlnaCastStore} from './castStore';
 import {usePlaybackStore} from './store';
 import {useSettingsStore} from '../settings/store';
 import {useLibraryStore} from '../library/store';
@@ -155,6 +156,7 @@ const settingsStore = useSettingsStore();
 const libraryStore = useLibraryStore();
 const uiStore = useUiStore();
 const authStore = useAuthStore();
+const dlnaCast = useDlnaCastStore();
   const { showToast } = useToast();
   const { isMainWindowLowPower } = useRenderingPower();
   const {
@@ -501,9 +503,23 @@ const authStore = useAuthStore();
     const update = () => {
       if (!currentSong.value || !isPlaying.value) return;
 
-      const now = performance.now();
-      const delta = (now - playbackAnchorTime) / 1000.0;
-      currentTime.value = playbackStartOffset + delta;
+      if (dlnaCast.isCasting) {
+        // [DLNA 投屏] 本地播放器静默，进度来自电视轮询位置 + 插值，rAF 锚点不适用
+        currentTime.value = dlnaCast.interpolatedPosition();
+        // 电视端实测时长回填（插件歌曲 duration 可能未知/为 0）
+        const tvDur = dlnaCast.tvDuration;
+        const songForDur = currentSong.value;
+        if (tvDur > 0.5 && songForDur && (!songForDur.duration || songForDur.duration <= 0)) {
+          const newDuration = Math.floor(tvDur);
+          currentSong.value = {...songForDur, duration: newDuration};
+          libraryStore.patchSongMeta(songForDur.path, {duration: newDuration} as Partial<Song>);
+          playbackStore.patchQueueSongMeta(songForDur.path, {duration: newDuration});
+        }
+      } else {
+        const now = performance.now();
+        const delta = (now - playbackAnchorTime) / 1000.0;
+        currentTime.value = playbackStartOffset + delta;
+      }
 
       // [试听片段] 试听流的自然结束位置以片段终点为准
       const endTime = activePreviewClip
@@ -533,7 +549,7 @@ const authStore = useAuthStore();
     // 事件约每 500ms 发射一次，携带 position / duration / is_playing。
     progressListeningActive = true;
     listen<PlaybackProgressPayload>('playback:progress', (event) => {
-      if (!progressListeningActive || !isPlaying.value || isSeeking) return;
+      if (!progressListeningActive || !isPlaying.value || isSeeking || dlnaCast.isCasting) return;
 
       const {position: rawTime, duration} = event.payload;
       // [试听片段] 同一首歌重播后若实际时长与片段时长不符（如已配置登录态拿到完整流），
@@ -1519,6 +1535,27 @@ const authStore = useAuthStore();
         const finalAudioPath = sanitizeMediaUrl(audioPathStr)
           || audioPathStr.replace(/^[`'"\s]+|[`'"\s]+$/g, '')
           || audioPathStr;
+
+        // [DLNA 投屏] 投屏中：把在线直链直接投给电视（本端做遥控器），不走本地起播探测。
+        if (dlnaCast.isCasting) {
+          try {
+            await dlnaCast.castFromPlayAudio({
+              path: finalAudioPath,
+              title: getSmtcTitle(song),
+              artist: song.artist || 'Unknown Artist',
+              album: song.album || 'Unknown Album',
+              cover: peekCoverUrl(song.path) || '',
+              duration: Math.floor(song.duration),
+              headers: pluginHeaders,
+              startOffsetMs: startOffsetMs || undefined,
+            });
+            return true;
+          } catch (error) {
+            console.warn('[Audio] 投屏 castSetUri 失败:', getErrorMessage(error));
+            return false;
+          }
+        }
+
         try {
           await playbackApi.playAudio({
             path: finalAudioPath,
@@ -1683,7 +1720,20 @@ const authStore = useAuthStore();
         if (playBeforeFlyCover) {
           // fade-out 已将 currentBackendVolume 置为 0（渐入渐出场景），playAudio 加载但不发声
           // 非渐入渐出场景 currentBackendVolume 为用户音量，playAudio 加载并直接播放
-          await playbackApi.playAudio(localPlayAudioParams);
+          // [DLNA 投屏] 投屏中：本地文件经媒体代理 token 投给电视，不起播本地引擎
+          if (dlnaCast.isCasting) {
+            await dlnaCast.castFromPlayAudio({
+              path: localPlayAudioParams.path,
+              title: localPlayAudioParams.title,
+              artist: localPlayAudioParams.artist,
+              album: localPlayAudioParams.album,
+              cover: localPlayAudioParams.cover,
+              duration: localPlayAudioParams.duration,
+              startOffsetMs: localPlayAudioParams.startOffsetMs,
+            });
+          } else {
+            await playbackApi.playAudio(localPlayAudioParams);
+          }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
           // 用户在加载期间按了暂停：立刻暂停后端，保持暂停态
@@ -1723,7 +1773,20 @@ const authStore = useAuthStore();
 
         if (!playBeforeFlyCover) {
           // 标准流程：无飞封面时直接 playAudio
-          await playbackApi.playAudio(localPlayAudioParams);
+          // [DLNA 投屏] 投屏中：本地文件经媒体代理 token 投给电视，不起播本地引擎
+          if (dlnaCast.isCasting) {
+            await dlnaCast.castFromPlayAudio({
+              path: localPlayAudioParams.path,
+              title: localPlayAudioParams.title,
+              artist: localPlayAudioParams.artist,
+              album: localPlayAudioParams.album,
+              cover: localPlayAudioParams.cover,
+              duration: localPlayAudioParams.duration,
+              startOffsetMs: localPlayAudioParams.startOffsetMs,
+            });
+          } else {
+            await playbackApi.playAudio(localPlayAudioParams);
+          }
           if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
 
           // 用户在起播期间按了暂停：立刻暂停后端，保持暂停态
@@ -1826,7 +1889,12 @@ const authStore = useAuthStore();
     }
 
     isPlaying.value = false;
-    await playbackApi.pauseAudio();
+    // [DLNA 投屏] 投屏中：暂停电视而非本地引擎
+    if (dlnaCast.isCasting) {
+      await dlnaCast.castPause();
+    } else {
+      await playbackApi.pauseAudio();
+    }
     stopPlaybackRuntime();
 
     // [渐入渐出] 淡出完成后延迟恢复后端音量：
@@ -1873,7 +1941,7 @@ const authStore = useAuthStore();
         if (myToken !== togglePlayToken) return;
       }
 
-      await playbackApi.pauseAudio();
+      await (dlnaCast.isCasting ? dlnaCast.castPause() : playbackApi.pauseAudio());
       if (myToken !== togglePlayToken) return;
       stopPlaybackRuntime();
 
@@ -1915,12 +1983,12 @@ const authStore = useAuthStore();
         try { await playbackApi.setVolume(0); } catch {}
       }
       if (myToken !== togglePlayToken) return;
-      await playbackApi.resumeAudio();
+      await (dlnaCast.isCasting ? dlnaCast.castPlay() : playbackApi.resumeAudio());
       startStatisticsSession();
       startPlaybackRuntime();
       void fadeVolumeTo(targetVol, fadeDuration, startVol);
     } else {
-      await playbackApi.resumeAudio();
+      await (dlnaCast.isCasting ? dlnaCast.castPlay() : playbackApi.resumeAudio());
       startStatisticsSession();
       startPlaybackRuntime();
     }
@@ -1955,11 +2023,17 @@ const authStore = useAuthStore();
     try {
       const offsetSec = (currentSong.value.cue_start_offset || 0) / 1000;
       const seekClipTime = targetTime + offsetSec - (activePreviewClip?.start ?? 0);
-      await playbackApi.seekAudio({
-        time: Math.max(0, seekClipTime),
-        isPlaying: isPlaying.value,
-        requestId,
-      });
+      // [DLNA 投屏] 投屏中：seek 电视端；无 seek 完成回执事件，需手动复位 isSeeking
+      if (dlnaCast.isCasting) {
+        await dlnaCast.castSeek(Math.max(0, seekClipTime));
+        isSeeking = false;
+      } else {
+        await playbackApi.seekAudio({
+          time: Math.max(0, seekClipTime),
+          isPlaying: isPlaying.value,
+          requestId,
+        });
+      }
       reanchorPlaybackClock(targetTime);
       if (isPlaying.value) {
         startPlaybackRuntime();

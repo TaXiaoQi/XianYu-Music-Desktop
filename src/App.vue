@@ -28,6 +28,7 @@ import { consumeInstallLanguage, syncLanguageToInstaller } from './features/i18n
 import { playerStorage } from './services/storage/playerStorage';
 import { usePlaylistSync } from './composables/usePlaylistSync';
 import { useAuthStore } from './features/auth/store';
+import { useDlnaCastStore } from './features/playback/castStore';
 
 const currentWindowLabel = (() => {
   try {
@@ -164,6 +165,11 @@ if (currentWindowLabel === 'main') {
   onMounted(async () => {
     // 上报软件打开事件（fire-and-forget，失败静默），用于后台"软件打开次数/设备连接数"统计
     reportAppOpen();
+
+    // DLNA 双向投屏初始化：注册 DMR 指令监听 + 按设置恢复接收端渲染器（仅主窗口）
+    if (currentWindowLabel === 'main') {
+      void useDlnaCastStore().init();
+    }
 
     // 启动时初始化自动同步调度器（已登录且开启自动同步则按间隔上传歌单/收藏/插件/设置，
     // 不再依赖用户打开「设置 → 账号」页才初始化）

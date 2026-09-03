@@ -197,6 +197,41 @@ export interface SeekAudioOptions {
   requestId: number;
 }
 
+// ===== DLNA 双向投屏（字段与 Rust dlna/types.rs serde 默认命名一致）=====
+export interface DlnaDevicePayload {
+  udn: string;
+  friendly_name: string;
+  model_name: string;
+  location: string;
+  base_url: string;
+  avt_control_url: string | null;
+  rcs_control_url: string | null;
+}
+
+export type DlnaMediaPayload =
+  | { kind: 'local'; path: string }
+  | { kind: 'remote'; url: string; headers?: Record<string, string>; resolved_at_ms?: number }
+  | { kind: 'cover'; url: string; headers?: Record<string, string> };
+
+export interface DlnaCastMediaInfo {
+  media_token: string;
+  media_url: string;
+  cover_token?: string;
+  cover_url?: string;
+}
+
+export interface DlnaCastTransportState {
+  position_secs: number;
+  duration_secs: number;
+  state: string;
+}
+
+export interface DlnaRendererStatus {
+  running: boolean;
+  friendly_name: string;
+  port: number;
+}
+
 // ===== 音效参数（与 Rust src-tauri/src/player/sound_effect.rs 的 SoundEffectSettings 一一对应）=====
 // 字段单位与 UI 滑块一致（百分比 / dB / Hz / ms），Rust DSP 在各 Source 内部做单位换算。
 // 所有字段均可省略（Rust 侧 #[serde(default)]），便于跨版本前向兼容与增量更新。
@@ -711,6 +746,30 @@ export interface TauriCommandMap {
   get_song_detail: { payload: { path: string }; response: SongDetail };
   play_audio: { payload: PlayAudioOptions; response: void };
   update_playback_metadata: { payload: UpdatePlaybackMetadataOptions; response: void };
+  // ===== DLNA 双向投屏 =====
+  dlna_search_devices: { payload: { timeoutMs: number }; response: DlnaDevicePayload[] };
+  dlna_cast_set_uri: {
+    payload: {
+      device: DlnaDevicePayload;
+      media: DlnaMediaPayload;
+      cover: DlnaMediaPayload | null;
+      title: string;
+      artist: string;
+      album: string;
+      durationMs: number;
+    };
+    response: DlnaCastMediaInfo;
+  };
+  dlna_cast_play: { payload: { device: DlnaDevicePayload }; response: void };
+  dlna_cast_pause: { payload: { device: DlnaDevicePayload }; response: void };
+  dlna_cast_stop: { payload: { device: DlnaDevicePayload }; response: void };
+  dlna_cast_seek: { payload: { device: DlnaDevicePayload; secs: number }; response: void };
+  dlna_cast_set_volume: { payload: { device: DlnaDevicePayload; percent: number }; response: void };
+  dlna_cast_get_state: { payload: { device: DlnaDevicePayload }; response: DlnaCastTransportState };
+  dlna_update_media_token: { payload: { token: string; payload: DlnaMediaPayload }; response: boolean };
+  dlna_enable_renderer: { payload: { friendlyName: string; udn: string }; response: number };
+  dlna_disable_renderer: { payload: undefined; response: void };
+  dlna_renderer_status: { payload: undefined; response: DlnaRendererStatus };
   pause_audio: { payload: undefined; response: void };
   stop_audio: { payload: undefined; response: void };
   resume_audio: { payload: undefined; response: void };
