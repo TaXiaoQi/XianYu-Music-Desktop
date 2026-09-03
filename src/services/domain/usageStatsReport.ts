@@ -262,7 +262,7 @@ export async function submitFeedback(
   title: string,
   content: string,
   options: {
-    feedbackType?: 'problem' | 'suggestion';
+    feedbackType?: 'problem' | 'suggestion' | 'beta';
     errorLogs?: string;
     allLogs?: string;
     images?: string[];
