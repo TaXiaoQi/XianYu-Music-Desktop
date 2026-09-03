@@ -12,6 +12,7 @@ use super::store::PluginStore;
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,6 +20,18 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REDIRECT_LIMIT: usize = 10;
+
+/// 把 reqwest 错误链展开成可读字符串，便于前端定位 timeout/dns/connection/proxy 等问题。
+fn format_request_error(err: reqwest::Error) -> String {
+    let mut parts = Vec::new();
+    parts.push(err.to_string());
+    let mut source = err.source();
+    while let Some(s) = source {
+        parts.push(s.to_string());
+        source = s.source();
+    }
+    parts.join(" -> ")
+}
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -165,7 +178,7 @@ impl HttpBridge {
             }
         }
 
-        let mut response = request.send().await.map_err(|e| e.to_string())?;
+        let mut response = request.send().await.map_err(format_request_error)?;
         let status = response.status().as_u16();
         let final_url = response.url().to_string();
 
@@ -192,7 +205,7 @@ impl HttpBridge {
                     buf.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(format_request_error(e)),
             }
         }
 

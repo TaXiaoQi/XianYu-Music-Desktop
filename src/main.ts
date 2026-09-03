@@ -171,6 +171,13 @@ app.config.errorHandler = (error, _instance, info) => {
     reportError('VueError', String(error), '', info)
   }
   if (recoverDynamicImportError(error)) return
+
+  // Tauri 事件/通道的偶发内部错误，通常不影响主流程；记录即可，避免弹致命错误页。
+  if (isBenignTauriChannelError(error)) {
+    console.error(`[BenignTauriError ${info}]`, error)
+    return
+  }
+
   showFatalError(`前端运行错误: ${info}`, error)
 }
 
@@ -187,9 +194,18 @@ const isBenignResizeObserverError = (error: unknown): boolean => {
     || msg.includes('ResizeObserver loop limit exceeded')
 }
 
+const isBenignTauriChannelError = (error: unknown): boolean => {
+  const msg = typeof error === 'string'
+    ? error
+    : (error instanceof Error ? error.message : String(error ?? ''))
+  return msg.includes('sending on a closed channel')
+    || msg.includes('channel closed')
+    || msg.includes('Failed to send message to channel')
+}
+
 window.addEventListener('error', (event) => {
   const error = event.error ?? event.message
-  if (isBenignResizeObserverError(error)) {
+  if (isBenignResizeObserverError(error) || isBenignTauriChannelError(error)) {
     event.preventDefault()
     return
   }
@@ -214,7 +230,7 @@ window.addEventListener('unhandledrejection', (event) => {
   } else {
     reportError('unhandledrejection', String(reason))
   }
-  if (recoverDynamicImportError(event.reason)) {
+  if (recoverDynamicImportError(event.reason) || isBenignTauriChannelError(reason)) {
     event.preventDefault()
     return
   }

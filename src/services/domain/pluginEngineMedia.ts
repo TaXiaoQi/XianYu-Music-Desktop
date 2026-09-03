@@ -281,7 +281,7 @@ async function runPluginGetMusicInfo(
     const errMsg = lastError ? `异常: ${lastErrorText}` : (result === null ? '返回null' : `非对象(${typeof result})`);
     log(`[getMediaSource] ${source.name} 失败: ${errMsg}`);
     (globalThis as any).__lastPluginError = `[${source.name}] ${errMsg}`;
-    return null;
+    throw new Error(`[${source.name}] getMediaSource ${errMsg}`);
   }
 
   const rawUrl = typeof result.url === 'string' ? result.url : '';
@@ -315,9 +315,10 @@ async function runPluginGetMusicInfo(
   const eslrc = result.eslrc || '';
   const coverUrl = result.coverUrl || result.artwork || '';
   if (!url) {
-    log(`[getMediaSource] ${source.name} 返回空URL, result=${JSON.stringify(result)?.substring(0, 200)}`);
-    (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL`;
-    return null;
+    const resultPreview = JSON.stringify(result)?.substring(0, 200);
+    log(`[getMediaSource] ${source.name} 返回空URL, result=${resultPreview}`);
+    (globalThis as any).__lastPluginError = `[${source.name}] 返回空URL: ${resultPreview}`;
+    throw new Error(`[${source.name}] getMediaSource 返回空URL: ${resultPreview}`);
   }
   if (rawUrl && rawUrl !== url) {
     log(`[getMediaSource] 已清洗异常URL: ${rawUrl.substring(0, 120)} -> ${url.substring(0, 120)}`);

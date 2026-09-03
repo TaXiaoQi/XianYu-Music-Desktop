@@ -1063,6 +1063,10 @@ watch(isEffectLocked, (locked) => {
   if (locked) showEqPanel.value = false;
 });
 
+const isAnyFooterPopOverOpen = computed(() =>
+  showVolumeSlider.value || isDraggingVolume.value || showQualityMenu.value || showEqPanel.value
+);
+
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
   // 折叠工具面板：点击外部区域即关闭（类似页面样式面板的点击关闭）
@@ -1311,7 +1315,10 @@ onUnmounted(() => {
     <div
       ref="progressBarRef"
       class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
-      :class="isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0'"
+      :class="[
+        isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0',
+        isAnyFooterPopOverOpen ? 'pointer-events-none' : ''
+      ]"
       @pointerdown="startProgressDrag"
     >
       <div class="absolute inset-y-0 left-0 right-0 flex items-center">

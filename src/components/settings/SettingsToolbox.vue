@@ -8,6 +8,7 @@ import ToolboxStep1 from './ToolboxStep1.vue';
 import ToolboxStep2 from './ToolboxStep2.vue';
 import ToolboxStep3 from './ToolboxStep3.vue';
 import ToolboxStep4 from './ToolboxStep4.vue';
+import SettingsAudioConvert from './SettingsAudioConvert.vue';
 import SettingHint from './SettingHint.vue';
 
 type ToolboxView = 'setup' | 'preprocess' | 'tagging' | 'rename' | 'refresh';
@@ -16,6 +17,56 @@ interface ProgressStep {
   key: ToolboxView;
   label: string;
 }
+
+/** 工具箱功能卡片：后续新增功能只需向对应分区的 tools 数组追加一项 */
+interface ToolboxTool {
+  id: string;
+  name: string;
+  desc: string;
+  icon: 'tag' | 'convert';
+  /** 是否已实现；未实现时点击给出"即将上线"提示，作为占位展示 */
+  available: boolean;
+}
+
+/** 工具箱分区卡片 */
+interface ToolboxCategory {
+  id: string;
+  title: string;
+  subtitle: string;
+  tools: ToolboxTool[];
+}
+
+/** 分区数据（数据驱动，后续扩展只需改这里） */
+const toolboxCategories: ToolboxCategory[] = [
+  {
+    id: 'organize',
+    title: '音乐整理',
+    subtitle: '批量处理本地歌曲的标签、文件名与音乐库刷新',
+    tools: [
+      {
+        id: 'music-tag-flow',
+        name: '批处理整理',
+        desc: '标签编辑 · 重命名 · 刷新音乐库',
+        icon: 'tag',
+        available: true,
+      },
+    ],
+  },
+  {
+    id: 'convert',
+    title: '文件转换',
+    subtitle: '音频格式转换等工具',
+    tools: [
+      {
+        id: 'format-convert',
+        name: '格式转换',
+        desc: '音频编码格式转换 · mp3 / flac / wav / ogg 等',
+        icon: 'convert',
+        available: true,
+      },
+    ],
+  },
+];
 
 interface PreviewListItem {
   originalName: string;
@@ -35,6 +86,31 @@ const MUSICTAG_PATH_KEY = 'toolbox_musictag_path';
 const currentView = ref<ToolboxView>('setup');
 const targetPath = ref('');
 const musicTagPath = ref('');
+
+/** 选中的功能 id；null 表示停留在"分区网格"主页，非 null 进入对应功能界面 */
+const activeToolId = ref<string | null>(null);
+
+/** 当前选中的分区（顶部按钮切换） */
+const activeCategoryId = ref<string>(toolboxCategories[0]?.id ?? '');
+/** 当前分区对象（tab 切换后用于渲染其下功能列表） */
+const currentCategory = computed(
+  () => toolboxCategories.find((c) => c.id === activeCategoryId.value) ?? toolboxCategories[0],
+);
+
+const openTool = (tool: ToolboxTool) => {
+  if (!tool.available) {
+    toast.showToast(`${tool.name} 即将上线，敬请期待`, 'info');
+    return;
+  }
+  if (tool.id === 'music-tag-flow' || tool.id === 'format-convert') {
+    activeToolId.value = tool.id;
+  }
+};
+
+const backToGrid = () => {
+  activeToolId.value = null;
+  restart();
+};
 
 const progressSteps: ProgressStep[] = [
   { key: 'setup', label: '预设' },
@@ -264,7 +340,101 @@ const restart = () => {
 </script>
 
 <template>
-  <div class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300">
+  <!-- ===== 工具箱主页（分区 Tab 切换） ===== -->
+  <div
+    v-if="activeToolId === null"
+    class="w-full animate-in fade-in slide-in-from-bottom-2 duration-300"
+  >
+    <div class="mb-6 space-y-1">
+      <h1 class="text-xl font-bold text-gray-900 dark:text-white">工具箱</h1>
+      <p class="text-sm text-gray-500 dark:text-white/50">按类别整理的音乐实用工具，功能会持续扩充。</p>
+    </div>
+
+    <!-- 分区切换按钮 -->
+    <div class="mb-6 flex flex-wrap gap-1 border-b border-black/5 pb-px dark:border-white/10">
+      <button
+        v-for="category in toolboxCategories"
+        :key="category.id"
+        type="button"
+        class="rounded-t-lg px-4 py-2 text-sm font-medium transition-colors"
+        :class="
+          category.id === activeCategoryId
+            ? 'border-b-2 border-[#EC4141] text-[#EC4141]'
+            : 'text-gray-500 hover:text-gray-800 dark:text-white/50 dark:hover:text-white'
+        "
+        @click="activeCategoryId = category.id"
+      >
+        {{ category.title }}
+      </button>
+    </div>
+
+    <!-- 当前分区下的功能列表 -->
+    <div v-if="currentCategory" class="space-y-2">
+      <div class="px-5 text-[13px] text-gray-500 dark:text-white/50">{{ currentCategory.subtitle }}</div>
+
+      <button
+        v-for="tool in currentCategory.tools"
+        :key="tool.id"
+        type="button"
+        class="toolbox-item group flex w-full items-center gap-4 text-left"
+        @click="openTool(tool)"
+      >
+        <div
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors"
+          :class="tool.available
+            ? 'bg-[#EC4141]/10 text-[#EC4141] group-hover:bg-[#EC4141] group-hover:text-white'
+            : 'bg-white/10 text-gray-400 dark:text-white/30'"
+        >
+          <!-- 标签图标 -->
+          <svg v-if="tool.icon === 'tag'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
+          </svg>
+          <!-- 转换(循环箭头)图标 -->
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6 5l3 3.5M6.5 6C6.5 10.5 9 14 13 14" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 15.5 18 19l-3-3.5M17.5 18c0-4.5-2.5-8-6.5-8" />
+          </svg>
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <div class="text-[15px] font-semibold text-gray-900 dark:text-white">{{ tool.name }}</div>
+          <div class="mt-0.5 truncate text-[13px] text-gray-500 dark:text-white/45">{{ tool.desc }}</div>
+        </div>
+
+        <span
+          v-if="!tool.available"
+          class="shrink-0 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-gray-400 dark:text-white/35"
+        >
+          即将上线
+        </span>
+        <svg
+          v-else
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-4 w-4 shrink-0 text-gray-300 transition-colors group-hover:text-[#EC4141] dark:text-white/25"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== 功能界面：音乐整理批处理流程 ===== -->
+  <div
+    v-else-if="activeToolId === 'music-tag-flow'"
+    class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300"
+  >
+    <div class="flex items-center gap-2 px-5">
+      <button
+        type="button"
+        class="toolbox-ghost-btn"
+        @click="backToGrid"
+      >
+        ← 返回工具箱
+      </button>
+      <span class="text-sm text-gray-500 dark:text-white/50">音乐整理 · 批处理流程</span>
+    </div>
     <section class="w-full px-5 py-5">
       <div class="grid items-start gap-y-3 [grid-template-columns:repeat(4,minmax(0,1fr)_88px)_minmax(0,1fr)]">
         <template v-for="(step, index) in progressSteps" :key="step.key">
@@ -652,6 +822,25 @@ const restart = () => {
         </section>
       </aside>
     </div>
+  </div>
+
+  <!-- ===== 功能界面：文件转换（ffmpeg） ===== -->
+  <div
+    v-else
+    class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300"
+  >
+    <div class="flex items-center gap-2 px-5">
+      <button
+        type="button"
+        class="toolbox-ghost-btn"
+        @click="backToGrid"
+      >
+        ← 返回工具箱
+      </button>
+      <span class="text-sm text-gray-500 dark:text-white/50">文件转换 · 格式转换</span>
+    </div>
+
+    <SettingsAudioConvert />
   </div>
 </template>
 

@@ -125,8 +125,13 @@
                 v-for="entry in row.items"
                 :key="entry.key"
                 type="button"
-                class="rounded-xl p-3 transition-colors cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5"
-                :class="entry.type === 'artist' ? 'flex flex-col items-center gap-2' : 'flex flex-col gap-2'"
+                class="search-card rounded-xl p-3 transition-colors cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5"
+                :class="[
+                  entry.type === 'artist' ? 'flex flex-col items-center gap-2' : 'flex flex-col gap-2',
+                  cardHopDirections[entry.key] === 'left' ? 'hop-left' : cardHopDirections[entry.key] === 'right' ? 'hop-right' : ''
+                ]"
+                @mouseenter="handleMouseEnterCard($event, entry.key)"
+                @mouseleave="handleMouseLeaveCard(entry.key)"
                 @click="handleCatalogEntryClick(entry)"
               >
                 <!-- 歌手：保持圆形头像 -->
@@ -1573,6 +1578,34 @@ const handleCatalogEntryClick = (entry: CatalogGridEntry) => {
   else handlePluginPlaylistClick(entry.item);
 };
 
+// ==================== 搜索卡片悬停跳跃防抖与方向锁定 ====================
+const cardHopDirections = ref<Record<string, 'left' | 'right'>>({});
+const cardHopLockTimestamps = new Map<string, number>();
+const HOP_ANIMATION_LOCK_MS = 500;
+
+function handleMouseEnterCard(e: MouseEvent, key: string) {
+  if (cardHopDirections.value[key]) return;
+
+  const now = Date.now();
+  const lastTime = cardHopLockTimestamps.get(key) ?? 0;
+  if (now - lastTime < HOP_ANIMATION_LOCK_MS) {
+    return;
+  }
+
+  const target = e.currentTarget as HTMLElement;
+  if (!target) return;
+
+  const rect = target.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  
+  cardHopLockTimestamps.set(key, now);
+  cardHopDirections.value[key] = e.clientX >= centerX ? 'left' : 'right';
+}
+
+function handleMouseLeaveCard(key: string) {
+  delete cardHopDirections.value[key];
+}
+
 // ==================== 本地歌手/专辑/歌单导航 ====================
 
 const handleArtistClick = (artist: ArtistCatalogItem) => {
@@ -1922,5 +1955,42 @@ onBeforeUnmount(() => {
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ==================== 搜索网格卡片悬停跳跃动画 ==================== */
+.search-card {
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.search-card.hop-right:hover {
+  transform: translateX(12px);
+  animation: search-card-hop-right 0.36s;
+}
+
+.search-card.hop-left:hover {
+  transform: translateX(-12px);
+  animation: search-card-hop-left 0.36s;
+}
+
+@keyframes search-card-hop-right {
+  0%   { transform: translate(0, 0);         animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  22%  { transform: translate(3px, -16px);   animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  45%  { transform: translate(6px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  57%  { transform: translate(7.5px, -6px);  animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  70%  { transform: translate(9px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  79%  { transform: translate(10.5px, -2px); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  90%  { transform: translate(12px, 0); }
+  100% { transform: translate(12px, 0); }
+}
+
+@keyframes search-card-hop-left {
+  0%   { transform: translate(0, 0);          animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  22%  { transform: translate(-3px, -16px);   animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  45%  { transform: translate(-6px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  57%  { transform: translate(-7.5px, -6px);  animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  70%  { transform: translate(-9px, 0);       animation-timing-function: cubic-bezier(0.3, 0.7, 0.5, 1); }
+  79%  { transform: translate(-10.5px, -2px); animation-timing-function: cubic-bezier(0.5, 0, 0.7, 0.3); }
+  90%  { transform: translate(-12px, 0); }
+  100% { transform: translate(-12px, 0); }
 }
 </style>
