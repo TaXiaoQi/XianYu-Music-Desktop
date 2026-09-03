@@ -5,7 +5,6 @@ import { APP_VERSION } from '../../version';
 import {
   fetchServerUpdate,
   compareVersions,
-  extractVersion,
   type ServerUpdateInfo,
 } from '../utils/update';
 import { useToast } from './toast';
@@ -38,14 +37,17 @@ export function useUpdateCheck() {
    * 启动时自动检查（应用启动调用）
    * 只要后台版本高于本地版本就弹出，每次启动都检查、每次都弹
    * 无数据/请求失败时静默，不打扰用户
+   * 开发构建（vite dev / tauri dev）跳过更新检测，避免本地 beta 版本被
+   * 稳定版迭代误判成「有新版本」而反复打扰
    */
   const checkUpdateOnStartup = async () => {
+    if (import.meta.env.DEV) return;
     if (isCheckingUpdate.value) return;
     isCheckingUpdate.value = true;
     try {
       const server = await fetchServerUpdate();
       if (!server) return; // 未启用/请求失败，静默
-      const cmp = compareVersions(extractVersion(server.version), extractVersion(APP_VERSION));
+      const cmp = compareVersions(server.version, APP_VERSION);
       if (cmp > 0) {
         latestUpdate.value = server;
         updateVisible.value = true;
@@ -60,6 +62,10 @@ export function useUpdateCheck() {
    * 强制比对；无更新时 toast「已是最新版本」
    */
   const checkUpdateManual = async () => {
+    if (import.meta.env.DEV) {
+      showToast('开发环境不检查更新', 'info');
+      return;
+    }
     if (isCheckingUpdate.value) return;
     isCheckingUpdate.value = true;
     try {
@@ -68,7 +74,7 @@ export function useUpdateCheck() {
         showToast('已是最新版本', 'success');
         return;
       }
-      const cmp = compareVersions(extractVersion(server.version), extractVersion(APP_VERSION));
+      const cmp = compareVersions(server.version, APP_VERSION);
       if (cmp > 0) {
         latestUpdate.value = server;
         updateVisible.value = true;
