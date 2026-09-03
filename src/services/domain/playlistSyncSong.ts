@@ -63,13 +63,86 @@ function generateSongHash(song: Song): string {
   return md5(`${name}|${artist}|local`);
 }
 
+/**
+ * 建立移动端可直接消费的在线歌曲信息（musicInfo / coverUrl / source）。
+ *
+ * 桌面端 Song 的在线歌曲（lx://）依赖本地 lx 插件运行期解析直链，字段是
+ * '_hash'/'_types'/rawData 等私有自定义属性；移动端通过 Rust lxResolveUrl 按
+ * 'source/songmid/hash' 等 camelCase 字段解析。这里把桌面端 lx 字段归一化为
+ * 移动端 lx 歌曲信息（与 mobile _createLxSong 的 musicInfo 同构），并补上
+ * 可跨设备访问的远程封面，使收藏/歌单同步到移动端后仍可解析播放、显示封面。
+ *
+ * 仅对 lx:// 在线歌曲生效；本地歌、plugin:// 按原样透传。
+ */
+function buildOnlineSyncExtra(song: Song): {
+  musicInfo?: Record<string, unknown>;
+  coverUrl?: string;
+  source?: string;
+} {
+  const path = song.path || '';
+  if (!path.startsWith('lx://')) return {};
+  const parts = path.replace('lx://', '').split('/');
+  const source = parts[0];
+  const songmid = parts.slice(1).join('/');
+  if (!source || !songmid) return {};
+
+  const anySong = song as any;
+  const rawData = (anySong.rawData as any) || undefined;
+
+  // 可跨设备访问的远程封面：优先 cover_thumb_path（在线歌曲常直接存远程 URL），
+  // 其次取 rawData.img / img，本地缓存路径跨设备不可用，跳过。
+  const coverThumb =
+    typeof song.cover_thumb_path === 'string' ? song.cover_thumb_path : '';
+  const img = (anySong.img as string) || (rawData && (rawData.img as string)) || '';
+  const coverUrl =
+    /^https?:/.test(coverThumb) ? coverThumb
+    : /^https?:/.test(img) ? img
+    : '';
+
+  const rawTypes = anySong._types ?? rawData?._types;
+  const hash = anySong._hash ?? anySong.hash ?? rawData?.hash ?? (source === 'kg' ? songmid : undefined);
+
+  const musicInfo: Record<string, unknown> = {
+    songId: songmid,
+    name: song.name || song.title || songmid,
+    singer: song.artist || '',
+    albumName: song.album || '',
+    source,
+    songmid,
+    ...(hash != null ? { hash } : {}),
+    copyrightId: anySong._copyrightId ?? anySong.copyrightId ?? rawData?.copyrightId,
+    strMediaMid: anySong._strMediaMid ?? anySong.strMediaMid ?? rawData?.strMediaMid,
+    albumId: anySong._albumId ?? anySong.albumId ?? rawData?.albumId,
+    albumMid: anySong._albumMid ?? anySong.albumMid ?? rawData?.albumMid,
+    interval: anySong.interval ?? rawData?.interval ?? '',
+    img: coverUrl,
+    ...(rawTypes ? { _types: rawTypes } : {}),
+    types: rawData?.types,
+  };
+
+  return {
+    musicInfo,
+    ...(coverUrl ? { coverUrl } : {}),
+    source,
+  };
+}
+
 /** 将本地 Song 转换为备份同款同步歌曲，保留完整元数据并加来源标记 */
 export function songToSyncPayload(song: Song): SyncSongPayload {
-  return {
+  const payload: any = {
     ...JSON.parse(JSON.stringify(song)),
     syncType: classifySyncSong(song),
     song_hash: generateSongHash(song),
   };
+  // 在线歌曲补充移动端可消费的 lx 信息（musicInfo/coverUrl/source），
+  // 让收藏/歌单跨端同步后仍能解析播放并显示封面。
+  if (classifySyncSong(song) === 'online') {
+    const extra = buildOnlineSyncExtra(song);
+    if (extra.musicInfo) payload.musicInfo = extra.musicInfo;
+    if (extra.coverUrl) payload.coverUrl = extra.coverUrl;
+    if (extra.source) payload.source = extra.source;
+  }
+  return payload as SyncSongPayload;
 }
 
 /**
