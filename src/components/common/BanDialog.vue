@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useBanDialog } from '../../composables/useBanDialog';
 import { submitAppeal } from '../../services/domain/usageStats';
+import { submitFeedback } from '../../services/domain/usageStatsReport';
 import { useToast } from '../../composables/toast';
 
 const { showToast } = useToast();
@@ -10,10 +11,15 @@ const { banDialogState, resolveBanDialog } = useBanDialog();
 
 const mode = computed(() => banDialogState.value.mode);
 
+/** 内测锁两种形态：beta=未申请（可填理由申请）；betaPending=审核中（仅退出） */
+const isBetaMode = computed(() => mode.value === 'beta' || mode.value === 'betaPending');
+
 const APPEAL_MAX = 1000;
 const appealing = ref(false);
 const appealText = ref('');
 const submitting = ref(false);
+// beta 模式：内测申请是否已提交（提交后「申请资格」按钮置灰，弹窗保持拦截）
+const betaSubmitted = ref(false);
 
 watch(
   () => banDialogState.value.visible,
@@ -22,6 +28,7 @@ watch(
       appealing.value = false;
       appealText.value = '';
       submitting.value = false;
+      betaSubmitted.value = false;
     }
   },
 );
@@ -29,6 +36,8 @@ watch(
 const title = computed(() => {
   if (banDialogState.value.mode === 'session') return '登录验证失败';
   if (banDialogState.value.mode === 'login') return '请先登录';
+  if (banDialogState.value.mode === 'beta') return '未获得内测资格';
+  if (banDialogState.value.mode === 'betaPending') return '内测申请审核中';
   return banDialogState.value.banType === 'device' ? '设备已被封禁' : '账号已被封禁';
 });
 
@@ -38,6 +47,12 @@ const reasonText = computed(() => {
   }
   if (banDialogState.value.mode === 'login') {
     return banDialogState.value.reason || '请先登录账号，登录后即可查看该用户的收藏与歌单。';
+  }
+  if (banDialogState.value.mode === 'beta') {
+    return '当前设备未申请内测资格，无法使用内测版本。\n点击「申请资格」填写申请理由，管理员同意后即可继续使用。';
+  }
+  if (banDialogState.value.mode === 'betaPending') {
+    return '该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。';
   }
   return banDialogState.value.reason || '你的账号已被管理员封禁，如有疑问请联系管理员。';
 });
@@ -100,6 +115,41 @@ async function submitAppealHandler() {
     submitting.value = false;
   }
 }
+
+/** beta 模式：退出软件（弹窗唯一关闭路径，由调用方执行真正的退出） */
+function exitApp() {
+  resolveBanDialog(true);
+}
+
+/** beta 模式：进入内测申请理由填写（复用申诉表单的视觉） */
+function startBetaApply() {
+  appealText.value = '';
+  appealing.value = true;
+}
+
+/** beta 模式：提交内测申请（feedback_type=beta，复用反馈通道） */
+async function submitBetaApply() {
+  const content = appealText.value.trim();
+  if (!content) {
+    showToast('请填写内测申请理由', 'error');
+    return;
+  }
+  if (content.length > APPEAL_MAX) {
+    showToast(`申请理由不能超过 ${APPEAL_MAX} 字`, 'error');
+    return;
+  }
+  submitting.value = true;
+  try {
+    await submitFeedback('内测申请', content, { feedbackType: 'beta' });
+    showToast('申请已提交，请耐心等待审核', 'success');
+    betaSubmitted.value = true;
+    appealing.value = false;
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '申请提交失败', 'error');
+  } finally {
+    submitting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -108,7 +158,7 @@ async function submitAppealHandler() {
       <div
         v-if="banDialogState.visible"
         class="ban-overlay fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
-        @click.self="!appealing && (mode === 'session' || mode === 'login' ? confirmClose() : confirm())"
+        @click.self="!appealing && !isBetaMode && (mode === 'session' || mode === 'login' ? confirmClose() : confirm())"
       >
         <div class="ban-card">
           <div class="ban-icon">
@@ -123,6 +173,8 @@ async function submitAppealHandler() {
           <h3 class="ban-title">{{ title }}</h3>
           <p v-if="mode === 'session'" class="ban-version">请重新登录账号以继续</p>
           <p v-else-if="mode === 'login'" class="ban-version">登录后即可查看该用户的收藏与歌单</p>
+          <p v-else-if="mode === 'beta'" class="ban-version">当前设备未申请内测资格</p>
+          <p v-else-if="mode === 'betaPending'" class="ban-version">内测申请正在审核中</p>
           <p v-else-if="banDialogState.ciyuanxiId" class="ban-version">弦予号 {{ banDialogState.ciyuanxiId }}</p>
           <p v-else class="ban-version">当前设备已受限</p>
 
@@ -136,7 +188,7 @@ async function submitAppealHandler() {
               class="ban-textarea"
               :maxlength="APPEAL_MAX"
               rows="4"
-              placeholder="请填写申诉理由，我们会尽快审核处理…"
+              :placeholder="mode === 'beta' ? '请填写内测申请理由，我们会尽快审核处理…' : '请填写申诉理由，我们会尽快审核处理…'"
             ></textarea>
             <div class="ban-counter">{{ appealText.length }} / {{ APPEAL_MAX }}</div>
           </div>
@@ -158,6 +210,24 @@ async function submitAppealHandler() {
                 登录
               </button>
             </template>
+            <template v-else-if="mode === 'beta'">
+              <button type="button" class="ban-btn ban-btn--ghost" @click="exitApp">
+                退出软件
+              </button>
+              <button
+                type="button"
+                class="ban-btn ban-btn--primary"
+                :disabled="betaSubmitted"
+                @click="startBetaApply"
+              >
+                {{ betaSubmitted ? '已申请' : '申请资格' }}
+              </button>
+            </template>
+            <template v-else-if="mode === 'betaPending'">
+              <button type="button" class="ban-btn ban-btn--ghost" @click="exitApp">
+                退出软件
+              </button>
+            </template>
             <template v-else>
               <button type="button" class="ban-btn ban-btn--ghost" @click="startAppeal">
                 申诉
@@ -172,8 +242,13 @@ async function submitAppealHandler() {
             <button type="button" class="ban-btn ban-btn--ghost" :disabled="submitting" @click="cancelAppeal">
               取消
             </button>
-            <button type="button" class="ban-btn ban-btn--primary" :disabled="submitting" @click="submitAppealHandler">
-              {{ submitting ? '提交中…' : '提交申诉' }}
+            <button
+              type="button"
+              class="ban-btn ban-btn--primary"
+              :disabled="submitting"
+              @click="mode === 'beta' ? submitBetaApply() : submitAppealHandler()"
+            >
+              {{ submitting ? '提交中…' : (mode === 'beta' ? '提交申请' : '提交申诉') }}
             </button>
           </div>
         </div>

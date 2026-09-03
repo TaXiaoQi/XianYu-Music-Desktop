@@ -304,7 +304,7 @@ export interface MyFeedbackItem {
   id: number;
   title: string;
   content: string;
-  feedbackType: 'problem' | 'suggestion';
+  feedbackType: 'problem' | 'suggestion' | 'beta';
   images: string[];
   status: 'pending' | 'processing' | 'resolved' | 'rejected';
   category: string;

@@ -13,6 +13,10 @@ import { useListenResetNotification } from '../../composables/useListenResetNoti
 import { useUpdateCheck } from '../../composables/useUpdateCheck';
 import { useOnboarding } from '../../composables/useOnboarding';
 import { useSettingsStore } from '../../features/settings/store';
+import { showBetaGateDialog } from '../../composables/useBanDialog';
+import { fetchBetaAccess } from '../../utils/update';
+import { appApi } from '../../services/tauri/appApi';
+import { APP_VERSION } from '../../../version';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerFooter from './PlayerFooter.vue';
@@ -129,21 +133,30 @@ const { showOnboarding, completeOnboarding } = useOnboarding();
 
 const settingsStore = useSettingsStore();
 
+// --- 内测资格门槛（最高优先级，开屏即检查）---
+// 本地版本号含 beta 预发布段即为内测构建；设备不在内测名单 → 弹全局不可退出弹窗。
+// 先查资格，不在名单时再看有无待审核的内测申请：有 → 审核中弹窗（仅退出软件）；
+// 无 → 申请弹窗（退出/申请两个出口）。网络失败 fail-open，避免误伤正常用户。
+let betaGateShown = false;
+const runBetaGate = async () => {
+  if (import.meta.env.DEV || betaGateShown) return;
+  if (!/-beta/i.test(APP_VERSION)) return;
+  let access: { allowed: boolean; pending: boolean } = { allowed: true, pending: false };
+  try {
+    access = await fetchBetaAccess();
+  } catch {
+    return;
+  }
+  if (access.allowed) return;
+  betaGateShown = true;
+  const exit = await showBetaGateDialog(access.pending);
+  if (exit) await appApi.exitApp();
+};
+
 const handleOnboardingComplete = () => {
   console.log('[Announcement][debug] handleOnboardingComplete 被调用');
   completeOnboarding();
-  checkAnnouncement();
-  checkFeedbackNotification();
-  checkNicknameChangeNotification();
-  checkListenResetNotification();
-  if (settingsStore.settings.checkUpdateOnStartup) {
-    checkUpdateOnStartup();
-  }
-};
-
-onMounted(() => {
-  if (!showOnboarding.value) {
-    // 初始化流程拥有首次启动的最高展示优先级，完成后再检查其他启动弹窗。
+  void runBetaGate().then(() => {
     checkAnnouncement();
     checkFeedbackNotification();
     checkNicknameChangeNotification();
@@ -151,6 +164,21 @@ onMounted(() => {
     if (settingsStore.settings.checkUpdateOnStartup) {
       checkUpdateOnStartup();
     }
+  });
+};
+
+onMounted(() => {
+  if (!showOnboarding.value) {
+    // 内测门槛拥有开屏最高优先级；其余启动弹窗在其之后依次检查。
+    void runBetaGate().then(() => {
+      checkAnnouncement();
+      checkFeedbackNotification();
+      checkNicknameChangeNotification();
+      checkListenResetNotification();
+      if (settingsStore.settings.checkUpdateOnStartup) {
+        checkUpdateOnStartup();
+      }
+    });
   }
   // 定时轮询反馈完成通知与昵称变更通知（后台操作后，客户端约在一分钟内收到）
   const feedbackTimer = setInterval(() => {

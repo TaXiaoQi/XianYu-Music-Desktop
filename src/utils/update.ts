@@ -142,6 +142,22 @@ export async function fetchServerUpdate(): Promise<ServerUpdateInfo | null> {
 }
 
 /**
+ * 内测资格检查：当前设备是否在内测名单中。
+ * 仅在本地版本号为 beta 构建时调用；调用方需 try/catch（旧服务器无此接口时 fail-open）。
+ */
+export async function fetchBetaAccess(): Promise<{ allowed: boolean; pending: boolean }> {
+  const data = await signedRequest<{ allowed?: boolean; pending?: boolean }>(
+    'check_beta_access',
+    { platform: 'desktop', device_id: getDeviceId() },
+    { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
+  );
+  return {
+    allowed: data?.allowed === true,
+    pending: data?.pending === true,
+  };
+}
+
+/**
  * 把服务端返回的相对下载链接（如 `/uploads/packages/...`）拼成可打开的绝对地址。
  * 默认 server 的 API 前缀为 /api，而静态文件 /uploads 挂在站点根下，需去掉前缀。
  */

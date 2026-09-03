@@ -503,6 +503,22 @@ const exactEnglishTranslations: Record<string, string> = {
   '账号已被封禁': 'Account suspended',
   '设备已被封禁': 'Device blocked',
   '提交申诉': 'Submit appeal',
+  '未获得内测资格': 'No beta access',
+  '内测申请审核中': 'Beta application under review',
+  '内测申请正在审核中': 'Beta application is under review',
+  '该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。':
+      'The beta application for this device is under review. Please wait patiently for the admin to process it; the result will be sent as a feedback reply.',
+  '当前设备未申请内测资格': 'This device has not applied for beta access',
+  '当前设备未申请内测资格，无法使用内测版本。\n点击「申请资格」填写申请理由，管理员同意后即可继续使用。':
+      'This device has not been granted beta access and cannot use the beta build.\nClick "Apply for access" to submit your reason. Once approved by an admin, you can continue using the app.',
+  '退出软件': 'Exit app',
+  '申请资格': 'Apply for access',
+  '已申请': 'Applied',
+  '请填写内测申请理由，我们会尽快审核处理…': 'Describe your beta application. We will review it as soon as possible…',
+  '请填写内测申请理由': 'Enter your beta application reason',
+  '申请已提交，请耐心等待审核': 'Application submitted, please wait for review',
+  '申请提交失败': 'Failed to submit application',
+  '提交申请': 'Submit application',
   '我知道了': 'Got it',
 
   // Import, dialogs, tools and misc
@@ -2852,6 +2868,10 @@ const dynamicEnglishTranslations: Array<{
   {
     pattern: new RegExp("^申诉内容不能超过 (.+) 字$"),
     replace: (_m, g0) => `Appeal content cannot exceed ${g0} characters`,
+  },
+  {
+    pattern: new RegExp("^申请理由不能超过 (.+) 字$"),
+    replace: (_m, g0) => `Application reason cannot exceed ${g0} characters`,
   },
   {
     pattern: new RegExp("^等 (.+) 首歌曲$"),
