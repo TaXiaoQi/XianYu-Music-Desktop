@@ -16,8 +16,6 @@ import type { DailyRecommendAlgorithm, DailyRecommendItem, DailyRecommendStrateg
 const MAX_CANDIDATES = 90;
 /** 每个查询词取的搜索结果数 */
 const SEARCH_LIMIT = 20;
-/** 参与搜索的插件数上限（按排序取前 N，控制调用量） */
-const MAX_SEARCH_PLUGINS = 3;
 /** 并发搜索数上限 */
 const SEARCH_CONCURRENCY = 4;
 /** 低于该时长（毫秒）的结果视为试听/铃声，过滤 */
@@ -102,15 +100,14 @@ type SearchTask = {
   plugin: PluginSource;
 };
 
-/** 组装搜索任务：策略查询词在参与插件间轮询分配 */
+/** 组装搜索任务：策略查询词在全部可播放插件间轮询分配（与移动端对齐） */
 function buildSearchTasks(algorithm: DailyRecommendAlgorithm, plugins: PluginSource[]): SearchTask[] {
-  const activePlugins = plugins.slice(0, MAX_SEARCH_PLUGINS);
   const tasks: SearchTask[] = [];
   let slot = 0;
   for (const strategy of algorithm.strategies) {
     const queries = strategy.queries || [];
     for (let qi = 0; qi < queries.length; qi++) {
-      const plugin = activePlugins[(slot + qi) % activePlugins.length];
+      const plugin = plugins[(slot + qi) % plugins.length];
       tasks.push({ strategy, query: queries[qi], plugin });
     }
     slot += queries.length;
