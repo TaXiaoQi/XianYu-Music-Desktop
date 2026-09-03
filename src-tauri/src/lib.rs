@@ -18,6 +18,7 @@ mod skin_image;
 mod statistics;
 mod system_audio;
 mod system_fonts;
+mod system_info;
 mod taskbar;
 mod toolbox;
 mod webview_settings;
@@ -105,6 +106,7 @@ use statistics::{
     remove_songs_from_history_and_statistics, reset_local_statistics,
 };
 use system_fonts::get_system_fonts;
+use system_info::get_system_info;
 use taskbar::{
     get_taskbar_tray_geometry, install_taskbar_zorder_guard, refresh_taskbar_window_topmost,
     setup_taskbar_window, shutdown_taskbar_zorder_guard, uninstall_taskbar_zorder_guard,
@@ -374,6 +376,7 @@ pub fn run() {
             consume_pending_open_paths,
             consume_pending_deep_links,
             get_system_fonts,
+            get_system_info,
             import_lyrics_font,
             read_lyrics_font_data_url,
             setup_taskbar_window,

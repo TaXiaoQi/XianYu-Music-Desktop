@@ -3,6 +3,7 @@
  */
 
 import { APP_VERSION } from '../../../version';
+import { tauriInvoke } from '../tauri/invoke';
 
 const DEVICE_ID_KEY = 'xy.device.id';
 
@@ -58,6 +59,12 @@ export interface DeviceInfo {
   app_version: string;
   os_version: string;
   device_model: string;
+  /** 厂商，如 Dell Inc.；Rust 读 BIOS 失败时回退 'Windows' */
+  device_brand: string;
+  /** 系统架构，如 x64 */
+  architecture: string;
+  /** 计算机名，便于在多台机器间定位具体设备 */
+  machine_name: string;
 }
 
 let cachedDeviceInfo: DeviceInfo | null = null;
@@ -69,7 +76,38 @@ export function getDeviceInfo(): DeviceInfo {
       app_version: APP_VERSION,
       os_version: parseOsVersion(),
       device_model: getDeviceModel(),
+      device_brand: 'Windows',
+      architecture: getArch(),
+      machine_name: '',
     };
   }
   return cachedDeviceInfo;
+}
+
+function getArch(): string {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /WOW64|Win64|aarch64|arm64/.test(ua) ? 'x64' : 'x86';
+}
+
+/**
+ * 异步向 Rust 采集真实厂商/型号/OS 版本/计算机名，合并进设备信息缓存。
+ * fire-and-forget：在任何纯前端/非 Tauri 环境失败时静默忽略，不阻塞启动。
+ */
+export async function enrichSystemInfo(): Promise<void> {
+  try {
+    const info = await tauriInvoke('get_system_info');
+    if (!cachedDeviceInfo) getDeviceInfo(); // 确保缓存存在
+    if (cachedDeviceInfo) {
+      cachedDeviceInfo = {
+        ...cachedDeviceInfo,
+        device_brand: info.device_brand || cachedDeviceInfo.device_brand,
+        device_model: info.device_model || cachedDeviceInfo.device_model,
+        os_version: info.os_version || cachedDeviceInfo.os_version,
+        architecture: info.architecture || cachedDeviceInfo.architecture,
+        machine_name: info.machine_name || '',
+      };
+    }
+  } catch {
+    // 原生命令不可用（如纯浏览器预览）时静默
+  }
 }

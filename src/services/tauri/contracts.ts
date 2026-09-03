@@ -26,6 +26,14 @@ export interface AudioDevice {
   name: string;
 }
 
+export interface SystemInfoPayload {
+  device_brand: string;
+  device_model: string;
+  os_version: string;
+  architecture: string;
+  machine_name: string;
+}
+
 export interface AudioDeviceFormat {
   sample_format: string;
   min_sample_rate: number;
@@ -1128,6 +1136,7 @@ export interface TauriCommandMap {
   read_lyrics_font_data_url: { payload: { fontPath: string }; response: string };
   import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };
   get_system_fonts: { payload: undefined; response: string[] };
+  get_system_info: { payload: undefined; response: SystemInfoPayload };
   // ============ 歌词解析 ============
   parse_lyrics_text: { payload: { text: string }; response: LyricsPayload };
   get_song_lyrics_payload: { payload: { path: string }; response: LyricsPayload };

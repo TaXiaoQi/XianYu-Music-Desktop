@@ -7,18 +7,25 @@
 
 import { APP_VERSION } from '../../../version';
 import { signedRequest, getStoredAuth } from '../auth/authService';
-import { getDeviceId, getDeviceInfo } from './usageStatsDevice';
+import {
+  getDeviceId,
+  getDeviceInfo,
+  enrichSystemInfo,
+} from './usageStatsDevice';
 
 /**
  * 上报软件打开事件（启动时调用一次，登录成功后也会重新上报以关联设备）。
  * 后端写入 app_open_log，同时作为设备连接数的来源（按 device_id 去重）。
  * 携带当前登录账号的弦予号，供后台设备管理页自动关联账号。
+ * 同时异步向 Rust 采集真实厂商/型号/系统版本并写入设备信息缓存，
+ * 使后续错误/反馈上报携带详细设备信息。
  */
 export function reportAppOpen(): void {
+  void enrichSystemInfo();
   const info = getDeviceInfo();
   const auth = getStoredAuth();
   const ciyuanxiId = auth?.user?.ciyuanxi_id ?? '';
-  void signedRequest('open', { ...info, ciyuanxi_id: ciyuanxiId })
+  void signedRequest('open', { ...info, platform: 'desktop', ciyuanxi_id: ciyuanxiId })
     .then(() => {
       /* 上报成功，静默 */
     })
@@ -136,8 +143,10 @@ export function reportError(
     app_version: info.app_version,
     os_version: info.os_version,
     device_model: info.device_model,
+    device_brand: info.device_brand,
+    architecture: info.architecture,
+    machine_name: info.machine_name,
     platform: 'windows',
-    device_brand: '',
     error_type: errorType,
     error_message: errorMessage,
     error_stack: errorStack || '',
@@ -267,6 +276,7 @@ export async function submitFeedback(
   }
 
   const feedbackType = options.feedbackType ?? 'problem';
+  const info = getDeviceInfo();
   const payload: Record<string, unknown> = {
     ciyuanxi_id: ciyuanxiId,
     nickname: user?.nickname?.trim() || '',
@@ -276,6 +286,11 @@ export async function submitFeedback(
     platform: 'desktop',
     app_version: APP_VERSION,
     device_id: getDeviceId(),
+    os_version: info.os_version,
+    device_model: info.device_model,
+    device_brand: info.device_brand,
+    architecture: info.architecture,
+    machine_name: info.machine_name,
   };
   if (options.errorLogs) payload.error_logs = options.errorLogs;
   if (options.allLogs) payload.all_logs = options.allLogs;
