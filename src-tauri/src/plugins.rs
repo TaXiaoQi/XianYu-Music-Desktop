@@ -2,10 +2,23 @@ use crate::security::{path_validator, ssrf};
 use image::{GenericImageView, ImageEncoder};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs;
 use std::time::Duration;
 use tauri::Manager;
 use tokio::io::AsyncWriteExt;
+
+/// 展开 reqwest 错误链，便于前端区分 timeout / DNS / connection / proxy 等原因。
+fn format_reqwest_error(err: reqwest::Error) -> String {
+    let mut parts = Vec::new();
+    parts.push(err.to_string());
+    let mut source = err.source();
+    while let Some(s) = source {
+        parts.push(s.to_string());
+        source = s.source();
+    }
+    parts.join(" -> ")
+}
 
 #[derive(Serialize)]
 pub struct PluginHttpResponse {
@@ -130,7 +143,7 @@ pub async fn plugin_http_request(
         request = request.body(body);
     }
 
-    let mut response = request.send().await.map_err(|error| error.to_string())?;
+    let mut response = request.send().await.map_err(format_reqwest_error)?;
     let status = response.status().as_u16();
     let final_url = response.url().to_string();
     let mut response_headers = HashMap::new();
@@ -152,7 +165,7 @@ pub async fn plugin_http_request(
                     buf.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(format_reqwest_error(e)),
             }
         }
         String::from_utf8(buf).unwrap_or_else(|_| "[INVALID_UTF8]".to_string())
@@ -205,7 +218,7 @@ pub async fn plugin_http_request_binary(
         request = request.body(body);
     }
 
-    let mut response = request.send().await.map_err(|error| error.to_string())?;
+    let mut response = request.send().await.map_err(format_reqwest_error)?;
     let status = response.status().as_u16();
     let final_url = response.url().to_string();
     let mut response_headers = HashMap::new();
@@ -226,7 +239,7 @@ pub async fn plugin_http_request_binary(
                     buf.extend_from_slice(&chunk);
                 }
                 Ok(None) => break,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(format_reqwest_error(e)),
             }
         }
         general_purpose::STANDARD.encode(&buf)
@@ -632,7 +645,7 @@ pub async fn download_video_to_cache(
         }
     }
 
-    let mut response = request.send().await.map_err(|error| error.to_string())?;
+    let mut response = request.send().await.map_err(format_reqwest_error)?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status()));
     }

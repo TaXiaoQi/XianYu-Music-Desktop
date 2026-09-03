@@ -16,7 +16,6 @@ import {
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
 import { getPluginBilibiliCookies } from '../../services/domain/pluginCookieStore';
 import { resolveActualQuality } from '../../services/domain/audioQualityVerify';
-
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
   song: Song;
@@ -37,6 +36,8 @@ export interface ResolveOnlineAudioResult {
   ekey?: string;
   /** CENC 内容密钥 */
   cek?: string;
+  /** 解析失败时的可读原因（供 UI toast 使用） */
+  errorMessage?: string;
 }
 
 const sortQualities = (qualities: QualityKey[]) => (
@@ -114,6 +115,9 @@ export const getOnlineAvailableQualities = async (
   return null;
 };
 
+const resolveErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 export const resolveOnlineAudio = async ({
   audioFilePath,
   song,
@@ -179,8 +183,24 @@ export const resolveOnlineAudio = async ({
       if (resolved?.url) {
         return buildResolveResult(resolved);
       }
+
+      // 解析流程完成但未拿到有效直链：把真实原因带出去，避免 UI 只能显示泛化提示
+      return {
+        audioFilePath,
+        pluginHeaders: null,
+        currentPlayingQuality: null,
+        currentPlayingAudioUrl: null,
+        errorMessage: '未能从音源解析到有效的播放链接',
+      };
     } catch (error) {
       console.warn('[Audio] 使用下载链路解析在线 URL 失败:', error);
+      return {
+        audioFilePath,
+        pluginHeaders: null,
+        currentPlayingQuality: null,
+        currentPlayingAudioUrl: null,
+        errorMessage: resolveErrorMessage(error),
+      };
     }
   }
 

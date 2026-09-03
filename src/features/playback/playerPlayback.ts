@@ -699,6 +699,7 @@ const dlnaCast = useDlnaCastStore();
     options: PlaySongOptions,
     requestId: number,
     shouldFade: boolean | null,
+    failureReason?: string,
   ): Promise<void> => {
     const now = Date.now();
     const isDuplicateFailure = !!(
@@ -835,7 +836,8 @@ const dlnaCast = useDlnaCastStore();
         if (knownFailedPluginPrefixes.size > 0 && queueSongs.every(item =>
           !isLikelyPlayable(item) || item.path === song.path,
         )) {
-          showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
+          const reason = failureReason || '当前音源无法解析播放链接';
+          showToast(`${reason}，请检查插件或网络后重试`, 'error');
         }
         console.warn('[Audio] 在线音频播放失败，但队列中没有其它未失败歌曲，停止而不是循环请求');
         return;
@@ -907,7 +909,7 @@ const dlnaCast = useDlnaCastStore();
             return !knownFailedPluginPrefixes.has('plugin://' + ws.slice(0, si + 1));
           });
           if (!hasPlayable) {
-            showToast('同步的在线歌曲在此设备上无法播放，请通过插件重新搜索添加', 'error');
+            showToast('队列中的在线歌曲均来自同一失效音源，请检查插件或网络后重试', 'error');
             console.warn('[Audio] 队列中无可播放歌曲（所有 plugin:// 均属于已知失败来源），停止');
             // [停止而非跳过] 队列已无可播放歌曲，立即停止当前播放，而不是继续卡在加载态
             try { await playbackApi.stopAudio(); } catch {}
@@ -1232,6 +1234,7 @@ const dlnaCast = useDlnaCastStore();
       audioFilePath = preparedOnlineAudio.audioFilePath;
       usingDownloadedAudioFile = preparedOnlineAudio.usingDownloadedAudioFile;
       currentAvailableQualities.value = preparedOnlineAudio.availableQualities;
+      const onlineResolveError = preparedOnlineAudio.resolvedOnlineAudio?.errorMessage;
 
       if (!usingDownloadedAudioFile && preparedOnlineAudio.resolvedOnlineAudio) {
         const resolvedOnlineAudio = preparedOnlineAudio.resolvedOnlineAudio;
@@ -1404,7 +1407,7 @@ const dlnaCast = useDlnaCastStore();
           hasRawData: !!song.rawData,
           hasTypes: !!(song as any)._types || !!(song as any).rawData?._types,
         });
-        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch, onlineResolveError);
         return;
       }
 
@@ -1424,7 +1427,7 @@ const dlnaCast = useDlnaCastStore();
         } else if (pluginError.includes('该音源无法提供此歌曲')) {
           showToast(`${pluginError}，已跳过`, 'error');
         }
-        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+        await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch, onlineResolveError);
         return;
       }
 
@@ -1683,7 +1686,7 @@ const dlnaCast = useDlnaCastStore();
             path: song.path,
             audioFilePath: audioFilePath.slice(0, 150),
           });
-          await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch);
+          await handleOnlinePlaybackFailure(song, options, requestId, shouldFadeOnSwitch, '在线音频起播失败（可能被拒绝/不支持 Range/解码失败/超时）');
           return;
         }
       } else {

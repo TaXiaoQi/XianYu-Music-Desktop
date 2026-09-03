@@ -500,11 +500,22 @@ watch(
   >
     <div
       v-if="!isAudioControlLocked && (showVolumeSlider || isDraggingVolume)"
-      class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
+      class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[120]"
+      @click.prevent.stop
+      @pointerdown.prevent.stop
+      @mousedown.prevent.stop
     >
-      <div class="absolute top-full left-0 w-full h-4"></div>
+      <div
+        class="absolute top-full left-0 w-full h-4"
+        @click.prevent.stop
+        @pointerdown.prevent.stop
+        @mousedown.prevent.stop
+      ></div>
       <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
         :class="showPlayerDetail ? 'bg-[#262626]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
+        @click.prevent.stop
+        @pointerdown.prevent.stop
+        @mousedown.prevent.stop
       >
         <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
           :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
