@@ -89,7 +89,8 @@ fn boxed_io_err(e: String) -> Box<dyn std::error::Error + Send + Sync> {
 
 /// 允许显式使用的端口（缺省按 scheme 的 80/443 允许）。常见 Web/CDN 端口。
 fn port_allowed(port: u16) -> bool {
-    matches!(port, 80 | 443 | 3000 | 8000 | 8080 | 8443 | 8888)
+    // 8082 被部分 bilibili 三方音源使用（m4s 直链）
+    matches!(port, 80 | 443 | 3000 | 8000 | 8080 | 8082 | 8443 | 8888)
 }
 
 /// 判断 IP 是否为不可信目标（内网/回环/保留等）。
@@ -227,7 +228,7 @@ pub fn validate_outbound_url_sync(url: &str) -> Result<reqwest::Url, String> {
     let default_port: u16 = if scheme == "https" { 443 } else { 80 };
     if let Some(p) = parsed.port() {
         if !port_allowed(p) {
-            return Err(format!("端口不在允许范围（80/443/3000/8000/8080/8443/8888）: {p}"));
+            return Err(format!("端口不在允许范围（80/443/3000/8000/8080/8082/8443/8888）: {p}"));
         }
     }
     check_host(&host, parsed.port().unwrap_or(default_port))?;

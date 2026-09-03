@@ -139,7 +139,8 @@ export async function probeDownloadableQualities(
 
   // worker-pool 并发：多个 worker 从共享队列取档位，控制同时在飞的请求数
   const queue = [...targets];
-  const concurrency = Math.max(1, Math.min(options?.concurrency ?? 4, queue.length));
+  // 默认并发度降为 2：在线音源普遍有频率限制，4 并发容易触发风控（如酷狗"请求过于频繁"）。
+  const concurrency = Math.max(1, Math.min(options?.concurrency ?? 2, queue.length));
 
   const worker = async () => {
     for (;;) {
@@ -160,8 +161,15 @@ export async function probeDownloadableQualities(
           options?.onProgress?.(resolved.url, resolved.quality);
         }
       } catch (e: any) {
+        const msg = e?.message || String(e);
         // 单档位失败不影响其他档位
-        console.warn(`[Probe] ${q} 探测失败:`, e?.message || e);
+        console.warn(`[Probe] ${q} 探测失败:`, msg);
+        // 若触发全局风控（请求过于频繁），停止后续档位探测，避免进一步封禁
+        if (/请求过于频繁|rate.?limit|too many requests|频繁|frequent/i.test(msg)) {
+          console.warn(`[Probe] 检测到风控，停止剩余 ${queue.length} 个档位的探测`);
+          queue.length = 0;
+          throw new Error(msg);
+        }
       }
     }
   };

@@ -1,4 +1,5 @@
 mod app_runtime;
+mod audio_convert;
 mod custom_fonts;
 mod database;
 pub mod error;
@@ -110,6 +111,7 @@ use taskbar::{
     setup_taskbar_window, shutdown_taskbar_zorder_guard, uninstall_taskbar_zorder_guard,
 };
 use tauri::Manager;
+use audio_convert::{convert_audio, detect_ffmpeg};
 use toolbox::{
     apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
     download_update_file, download_wallpaper, delete_wallpaper_file,
@@ -190,6 +192,8 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .setup(|app| setup_app(app))
         .invoke_handler(tauri::generate_handler![
+            convert_audio,
+            detect_ffmpeg,
             scan_music_folder,
             parse_audio_files,
             parse_music_folder,

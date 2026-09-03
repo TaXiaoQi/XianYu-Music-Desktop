@@ -259,14 +259,29 @@ function stopGridEnterAnimation() {
   gridEnterAnimating.value = false;
 }
 
-// ==================== 卡片悬停跳跃方向 ====================
+// ==================== 卡片悬停跳跃防抖与方向锁定 ====================
 const cardHopDirections = ref<Record<string, 'left' | 'right'>>({});
+/** 记录卡片上次触发跳跃动画的时间戳，防止动画播放途中因卡片平移触发边缘重播 */
+const cardHopLockTimestamps = new Map<string, number>();
+const HOP_ANIMATION_LOCK_MS = 500; // 动画时长 360ms + 余量
 
 function handleMouseEnterCard(e: MouseEvent, key: string) {
+  // 当前 hover 会话已确定方向，锁定方向不改变，杜绝内部移动导致重新触发 animation
+  if (cardHopDirections.value[key]) return;
+
+  const now = Date.now();
+  const lastTime = cardHopLockTimestamps.get(key) ?? 0;
+  if (now - lastTime < HOP_ANIMATION_LOCK_MS) {
+    return;
+  }
+
   const target = e.currentTarget as HTMLElement;
   if (!target) return;
+
   const rect = target.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
+  
+  cardHopLockTimestamps.set(key, now);
   cardHopDirections.value[key] = e.clientX >= centerX ? 'left' : 'right';
 }
 
