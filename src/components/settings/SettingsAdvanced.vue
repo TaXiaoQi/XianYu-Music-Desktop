@@ -662,7 +662,7 @@ onUnmounted(() => {
             v-model="feedbackContent"
             rows="5"
             maxlength="1000"
-            :placeholder="feedbackType === 'suggestion' ? '请描述你希望新增或改进的功能' : '请详细描述问题现象、复现步骤'"
+            :placeholder="feedbackType === 'suggestion' ? '请描述你希望新增或改进的功能' : feedbackType === 'beta' ? '请填写内测申请理由' : '请详细描述问题现象、复现步骤'"
             class="mt-2 w-full resize-y rounded-lg border border-black/10 bg-white/45 px-3 py-2 text-sm leading-6 text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-[#EC4141]/50 focus:bg-white/70 focus:ring-2 focus:ring-[#EC4141]/10 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:placeholder:text-white/35 dark:focus:bg-white/10"
           />
           <span class="mt-1 block text-right text-[11px] text-gray-400 dark:text-white/35">
