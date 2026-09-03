@@ -25,6 +25,7 @@ export async function fetchAnnouncement(): Promise<Announcement | null> {
     {
       ciyuanxi_id: auth?.user?.ciyuanxi_id ?? auth?.user?.id ?? '',
       device_id: getDeviceId(),
+      platform: 'desktop',
     },
     { fetchTimeoutMs: 15_000, timeoutMs: 18_000 },
   );
