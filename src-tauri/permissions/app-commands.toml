@@ -4,6 +4,8 @@ description = "Allows XY-Music application commands used by the frontend."
 commands.allow = [
   "scan_music_folder",
   "parse_audio_files",
+  "convert_audio",
+  "detect_ffmpeg",
   "parse_music_folder",
   "scan_folder_as_playlists",
   "get_song_cover_thumbnail",

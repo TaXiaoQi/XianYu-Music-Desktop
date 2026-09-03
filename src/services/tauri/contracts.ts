@@ -595,6 +595,22 @@ export interface RenameOperation {
   new_name: string;
 }
 
+/** 工具箱 · 文件转换 ffmpeg 检测结果 */
+export interface FfmpegDetection {
+  available: boolean;
+  path: string | null;
+  version: string | null;
+  error: string | null;
+}
+
+/** 工具箱 · 文件转换单个文件结果 */
+export interface ConvertAudioResult {
+  input_path: string;
+  output_path: string;
+  success: boolean;
+  error: string | null;
+}
+
 export interface TauriCommandMap {
   add_library_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
@@ -1239,6 +1255,12 @@ export interface TauriCommandMap {
   // ============ 重命名工具 ============
   preview_rename: { payload: { rootPath: string; config: RenameConfig }; response: RenamePreview[] };
   apply_rename: { payload: { operations: RenameOperation[] }; response: number };
+  // ============ 文件转换（工具箱 · ffmpeg） ============
+  detect_ffmpeg: { payload: { ffmpegPath?: string }; response: FfmpegDetection };
+  convert_audio: {
+    payload: { inputPaths: string[]; outDir: string; targetFormat: string; ffmpegPath?: string; outName?: string; sampleRate?: number };
+    response: ConvertAudioResult[];
+  };
   // ============ GPU 加速 ============
   set_gpu_acceleration: { payload: { enabled: boolean }; response: void };
   // ============ 壁纸下载 ============
