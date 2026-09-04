@@ -71,7 +71,7 @@ const songName = () => props.song?.title || props.song?.name || '';
             <div class="min-w-0 flex-1">
               <div class="text-[13px] font-medium text-gray-800 dark:text-white/85">复制分享链接</div>
               <div class="text-[10px] text-gray-400 dark:text-white/35 truncate">
-                生成歌曲分享链接并复制分享文案
+                生成歌曲分享链接并复制链接
               </div>
             </div>
           </button>

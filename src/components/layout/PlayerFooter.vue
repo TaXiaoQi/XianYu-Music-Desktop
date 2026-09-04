@@ -16,7 +16,7 @@ import { checkDownloadExists, type DownloadRecord } from '../../services/domain/
 import { downloadApi } from '../../services/tauri/downloadApi';
 import { formatFileSize } from '../../utils/format';
 import { useSettings } from '../../features/settings/useSettings';
-import { useAuthStore } from '../../features/auth/store';
+
 import { usePluginHostStore } from '../../features/pluginHost/store';
 import { useDownloadStore } from '../../features/download/store';
 import { downloadToLocal } from '../../composables/useDownloadToLocal';
@@ -62,7 +62,6 @@ const handleOpenDetail = () => {
 
 const { showDesktopLyrics, showLyricsPlayerSettingsPanel } = useLyrics();
 const { settings, footerLayout } = useSettings();
-const authStore = useAuthStore();
 const { isMainWindowLowPower } = useRenderingPower();
 const downloadStore = useDownloadStore();
 
@@ -435,21 +434,11 @@ function resolveShareCover(): string {
   return playbackStore.currentCoverFull || '';
 }
 
-/** 分享文案：第一行「用户名邀请你去弦予音乐听《歌名》」，第二行分享链接 */
-function buildShareText(song: Song, url: string): string {
-  const songName = song?.title || song?.name || '';
-  const user = authStore.user;
-  const userName = user?.nickname.trim() || user?.username.trim() || '';
-  const firstLine = userName
-    ? `${userName}邀请你去弦予音乐听《${songName}》`
-    : `邀请你去弦予音乐听《${songName}》`;
-  return `${firstLine}\n${url}`;
-}
-
-async function copyShareLink(text: string): Promise<void> {
+/** 复制仅含裸链接的分享地址：混入邀请文案会导致浏览器/聊天把整段文本当搜索词，无法直达分享页 */
+async function copyShareLink(url: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(text);
-    showToast('分享文案已复制', 'success');
+    await navigator.clipboard.writeText(url);
+    showToast('分享链接已复制', 'success');
   } catch {
     showToast('复制失败，请手动选中链接复制', 'error');
   }
@@ -465,7 +454,7 @@ async function handleShareSong(song: Song) {
   const cached = getCachedShareUrl(song);
   if (cached) {
     reportShareAction();
-    await copyShareLink(buildShareText(song, cached));
+    await copyShareLink(cached);
     return;
   }
   if (isShareLoading.value) return;
@@ -474,7 +463,7 @@ async function handleShareSong(song: Song) {
     const url = await createShareUrl(song, resolveShareCover(), shareBodyExtra());
     if (url) {
       reportShareAction();
-      await copyShareLink(buildShareText(song, url));
+      await copyShareLink(url);
     } else {
       showToast('生成分享链接失败', 'error');
     }
