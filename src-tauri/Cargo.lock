@@ -7206,7 +7206,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xianyu_music"
-version = "2.0.0-beta4"
+version = "2.0.1"
 dependencies = [
  "aes",
  "amll-lyric",
