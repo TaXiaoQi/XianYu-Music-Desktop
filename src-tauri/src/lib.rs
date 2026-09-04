@@ -123,7 +123,7 @@ use tauri::Manager;
 use audio_convert::{convert_audio, detect_ffmpeg};
 use toolbox::{
     apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
-    download_update_file, download_wallpaper, delete_wallpaper_file,
+    download_update_file, download_wallpaper, delete_wallpaper_file, is_store_build,
     fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
     preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
     resolve_download_full_path, resolve_download_path, run_installer, save_download_bytes,
@@ -429,6 +429,7 @@ pub fn run() {
             build_download_basename,
             finalize_download_extras,
             run_installer,
+            is_store_build,
             write_state_json,
             read_state_json,
             open_devtools,

@@ -39,9 +39,11 @@ export function useUpdateCheck() {
    * 无数据/请求失败时静默，不打扰用户
    * 开发构建（vite dev / tauri dev）跳过更新检测，避免本地 beta 版本被
    * 稳定版迭代误判成「有新版本」而反复打扰
+   * Microsoft Store 版（带 MSIX 包身份）同样跳过：商店政策禁止绕过商店自更新
    */
   const checkUpdateOnStartup = async () => {
     if (import.meta.env.DEV) return;
+    if (await updateApi.isStoreBuild()) return;
     if (isCheckingUpdate.value) return;
     isCheckingUpdate.value = true;
     try {
@@ -64,6 +66,11 @@ export function useUpdateCheck() {
   const checkUpdateManual = async () => {
     if (import.meta.env.DEV) {
       showToast('开发环境不检查更新', 'info');
+      return;
+    }
+    // 商店版不提供应用内自更新，明示用户走商店渠道
+    if (await updateApi.isStoreBuild()) {
+      showToast('商店版请通过 Microsoft Store 更新', 'info');
       return;
     }
     if (isCheckingUpdate.value) return;
