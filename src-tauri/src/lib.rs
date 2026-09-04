@@ -1,5 +1,6 @@
 mod app_runtime;
 mod audio_convert;
+mod audio_trim;
 mod custom_fonts;
 mod database;
 pub(crate) mod dlna;
@@ -121,6 +122,7 @@ use taskbar::{
 };
 use tauri::Manager;
 use audio_convert::{convert_audio, detect_ffmpeg};
+use audio_trim::{probe_audio_duration, trim_audio};
 use toolbox::{
     apply_rename, build_download_basename, check_update_by_rust, decrypt_qmc_file, download_online_song,
     download_update_file, download_wallpaper, delete_wallpaper_file, is_store_build,
@@ -203,6 +205,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             convert_audio,
             detect_ffmpeg,
+            probe_audio_duration,
+            trim_audio,
             scan_music_folder,
             parse_audio_files,
             parse_music_folder,
