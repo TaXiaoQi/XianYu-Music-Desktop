@@ -313,8 +313,7 @@ export type FooterItemKey =
   | 'playlist'        // 播放队列
   | 'comment'         // 评论区
   | 'mv'              // MV 背景视频（仅播放详情页显示）
-  | 'share'           // 分享当前歌曲
-  | 'cast'            // DLNA 投屏（连接电视/音箱或断开）
+  | 'share'           // 分享当前歌曲（复制链接 / DLNA 投屏弹窗）
   | 'visualizer'      // 可视化/频谱开关（仅播放详情页可用）
   | 'progress'        // 歌词页进度条显示开关（仅播放详情页可用）
   | 'pageStyle'       // 页面样式（仅播放详情页可用）

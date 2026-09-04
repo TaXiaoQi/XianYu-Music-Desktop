@@ -123,9 +123,8 @@ provide('footerContext', {
   mvLoading: ref(false),
   toggleMv: async () => {},
   isMvVideoDownloading: ref(false),
-  // 分享（预览为动作 no-op，仅展示外观）
-  handleShareSong: async () => {},
-  isShareLoading: ref(false),
+  // 分享弹窗（预览为动作 no-op，仅展示外观）
+  openShareDialog: () => {},
   // 歌词页工具（歌词页专属，预览主页态下始终禁用仅展示外观）
   isVisualizerEnabled: ref(false),
   toggleVisualizer: () => {},
