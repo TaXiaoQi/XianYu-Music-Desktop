@@ -46,7 +46,7 @@ export function useSettingsThemeControls() {
     },
   });
   const useGlassSwitch = computed({
-    get: () => theme.value.useGlassSwitch ?? true,
+    get: () => theme.value.useGlassSwitch ?? false,
     set: (value: boolean) => {
       patchTheme({ useGlassSwitch: value });
     },
