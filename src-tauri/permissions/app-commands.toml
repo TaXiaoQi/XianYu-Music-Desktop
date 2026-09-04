@@ -167,6 +167,7 @@ commands.allow = [
   "set_gpu_acceleration",
   "check_update_by_rust",
   "download_update_file",
+  "is_store_build",
   "download_online_song",
   "download_wallpaper",
   "probe_url_size",
@@ -233,6 +234,20 @@ commands.allow = [
   "resolve_lx_music_url",
   "clear_lx_url_cache",
   "clear_lx_all_cache",
+  "dlna_search_devices",
+  "dlna_cast_set_uri",
+  "dlna_cast_play",
+  "dlna_cast_pause",
+  "dlna_cast_stop",
+  "dlna_cast_seek",
+  "dlna_cast_set_volume",
+  "dlna_cast_get_state",
+  "dlna_update_media_token",
+  "dlna_enable_renderer",
+  "dlna_disable_renderer",
+  "dlna_renderer_status",
+  "prefetch_audio_head",
+  "get_system_info",
 ]
 
 # 辅助窗口（桌面歌词、迷你播放器、托盘菜单、任务栏播控、音量弹窗）专用命令集。
