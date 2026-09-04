@@ -102,7 +102,7 @@ async function togglePreview() {
     audio.src = previewSrc.value;
     await audio.play();
     previewPlaying.value = true;
-  } catch (e) {
+  } catch (e: any) {
     previewPlaying.value = false;
     toast.showToast(`试听失败: ${e?.message || e}`, 'error');
   }

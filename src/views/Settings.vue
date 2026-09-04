@@ -1,22 +1,55 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
 import { Search, X } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 
-// 懒加载设置子组件：用户通常只访问 1-2 个设置页，按需加载可显著减少首屏 JS 体积和解析时间
-const SettingsAbout = defineAsyncComponent(() => import("../components/settings/SettingsAbout.vue"));
-const SettingsAccount = defineAsyncComponent(() => import("../components/settings/SettingsAccount.vue"));
-const SettingsDesktopLyrics = defineAsyncComponent(() => import("../components/settings/SettingsDesktopLyrics.vue"));
-const SettingsGeneral = defineAsyncComponent(() => import("../components/settings/SettingsGeneral.vue"));
-const SettingsLibrary = defineAsyncComponent(() => import("../components/settings/SettingsLibrary.vue"));
-const SettingsPlugins = defineAsyncComponent(() => import("../components/settings/SettingsPlugins.vue"));
-const SettingsShortcuts = defineAsyncComponent(() => import("../components/settings/SettingsShortcuts.vue"));
-const SettingsTheme = defineAsyncComponent(() => import("../components/settings/SettingsTheme.vue"));
-const SettingsToolbox = defineAsyncComponent(() => import("../components/settings/SettingsToolbox.vue"));
-const SettingsAudioOutput = defineAsyncComponent(() => import("../components/settings/SettingsAudioOutput.vue"));
-const SettingsDownload = defineAsyncComponent(() => import("../components/settings/SettingsDownload.vue"));
-const SettingsDebug = defineAsyncComponent(() => import("../components/settings/SettingsDebug.vue"));
-const SettingsAdvanced = defineAsyncComponent(() => import("../components/settings/SettingsAdvanced.vue"));
+// 懒加载设置子组件：用户通常只访问 1-2 个设置页，按需加载可显著减少首屏 JS 体积和解析时间。
+// 注意：defineAsyncComponent 自带 loading 失败无重试的问题（开发时 Vite HMR 使模块失效最常见），
+// 失败后右侧会永久空白且再点同一项不会重试，故此处统一包一层自动重试；
+// 并在挂载后利用空闲时间后台预热全部分片，预热完成后切换 tab 全部为已解析组件，
+// 消除「未加载完成的异步组件 + out-in 过渡」竞态导致的切换空白。
+const settingsLoaders = {
+  about: () => import("../components/settings/SettingsAbout.vue").then(m => m.default),
+  account: () => import("../components/settings/SettingsAccount.vue").then(m => m.default),
+  desktopLyrics: () => import("../components/settings/SettingsDesktopLyrics.vue").then(m => m.default),
+  general: () => import("../components/settings/SettingsGeneral.vue").then(m => m.default),
+  library: () => import("../components/settings/SettingsLibrary.vue").then(m => m.default),
+  plugins: () => import("../components/settings/SettingsPlugins.vue").then(m => m.default),
+  shortcuts: () => import("../components/settings/SettingsShortcuts.vue").then(m => m.default),
+  theme: () => import("../components/settings/SettingsTheme.vue").then(m => m.default),
+  toolbox: () => import("../components/settings/SettingsToolbox.vue").then(m => m.default),
+  audioOutput: () => import("../components/settings/SettingsAudioOutput.vue").then(m => m.default),
+  download: () => import("../components/settings/SettingsDownload.vue").then(m => m.default),
+  debug: () => import("../components/settings/SettingsDebug.vue").then(m => m.default),
+  advanced: () => import("../components/settings/SettingsAdvanced.vue").then(m => m.default),
+  feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
+};
+
+const lazySettings = (loader: () => Promise<Component>) => defineAsyncComponent({
+  loader,
+  onError: (_error, retry, fail, attempts) => {
+    if (attempts <= 2) {
+      retry();
+    } else {
+      fail();
+    }
+  },
+});
+
+const SettingsAbout = lazySettings(settingsLoaders.about);
+const SettingsAccount = lazySettings(settingsLoaders.account);
+const SettingsDesktopLyrics = lazySettings(settingsLoaders.desktopLyrics);
+const SettingsGeneral = lazySettings(settingsLoaders.general);
+const SettingsLibrary = lazySettings(settingsLoaders.library);
+const SettingsPlugins = lazySettings(settingsLoaders.plugins);
+const SettingsShortcuts = lazySettings(settingsLoaders.shortcuts);
+const SettingsTheme = lazySettings(settingsLoaders.theme);
+const SettingsToolbox = lazySettings(settingsLoaders.toolbox);
+const SettingsAudioOutput = lazySettings(settingsLoaders.audioOutput);
+const SettingsDownload = lazySettings(settingsLoaders.download);
+const SettingsDebug = lazySettings(settingsLoaders.debug);
+const SettingsAdvanced = lazySettings(settingsLoaders.advanced);
+const SettingsFeedback = lazySettings(settingsLoaders.feedback);
 import { useDeveloperMode } from '../features/settings/developerMode';
 import {
   searchSettings,
@@ -28,7 +61,7 @@ import { useI18n } from '../features/i18n';
 
 type SettingsViewTabId = SettingsTabId | 'debug';
 
-const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'debug', 'about'];
+const VALID_TABS: SettingsViewTabId[] = ['general', 'theme', 'desktopLyrics', 'audioOutput', 'download', 'toolbox', 'library', 'plugins', 'shortcuts', 'account', 'advanced', 'feedback', 'debug', 'about'];
 
 const route = useRoute();
 const router = useRouter();
@@ -112,17 +145,23 @@ const resetSidebarWidth = () => {
   } catch {}
 };
 
-// 支持外部通过 ?tab=xxx 跳转到指定标签
+// 支持外部通过 ?tab=xxx 跳转到指定标签。
+// pushedTab 记录「已知的最新目标」，用于过滤自身 replace 的回声：
+// 快速连续切换时，上一条在途的 router.replace 迟迟确认，其 query 变化若直接写回
+// activeTab 会把 tab 弹回旧值（表现为点击后有概率不加载详情页）。
+let pushedTab: SettingsViewTabId = initialTab;
 watch(() => route.query.tab, (q) => {
   const next = (q as string | undefined) ?? '';
-  if (next && canOpenTab(next) && next !== activeTab.value) {
+  if (next && canOpenTab(next) && next !== pushedTab) {
+    pushedTab = next;
     activeTab.value = next;
   }
 });
 
 // 切换 tab 时同步 URL query，便于分享/刷新保持
 watch(activeTab, (t) => {
-  if (route.query.tab !== t) {
+  if (pushedTab !== t) {
+    pushedTab = t;
     void router.replace({ query: { ...route.query, tab: t } });
   }
 });
@@ -252,7 +291,29 @@ const handleSearchKeydown = (event: KeyboardEvent) => {
   }
 };
 
+// 挂载后利用空闲时间后台预热全部设置分片（不影响应用首屏，分片仍按需拆分）：
+// 预热完成后切换 tab 全部命中已加载模块，异步组件即时解析，
+// 彻底避开「未加载完成的异步组件 + out-in 过渡」竞态导致的空白。
+let cancelWarmup: (() => void) | null = null;
+
+onMounted(() => {
+  const warm = () => {
+    cancelWarmup = null;
+    for (const loader of Object.values(settingsLoaders)) {
+      void loader().catch(() => {});
+    }
+  };
+  if (typeof requestIdleCallback === 'function') {
+    const id = requestIdleCallback(warm, { timeout: 2000 });
+    cancelWarmup = () => cancelIdleCallback(id);
+  } else {
+    const id = setTimeout(warm, 200);
+    cancelWarmup = () => clearTimeout(id);
+  }
+});
+
 onBeforeUnmount(() => {
+  cancelWarmup?.();
   if (highlightTimer) clearTimeout(highlightTimer);
   stopSidebarResize();
 });
@@ -269,6 +330,7 @@ const baseTabs = computed<Array<{ id: SettingsViewTabId; name: string }>>(() => 
   { id: 'desktopLyrics', name: t('settings.desktopLyrics') },
   { id: 'shortcuts', name: t('settings.shortcuts') },
   { id: 'advanced', name: t('settings.advanced') },
+  { id: 'feedback', name: t('settings.feedback') },
   { id: 'about', name: t('settings.about') },
 ]);
 
@@ -387,6 +449,7 @@ const tabs = computed(() => {
           <SettingsLibrary v-else-if="activeTab === 'library'" key="library" />
           <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" key="shortcuts" />
           <SettingsAdvanced v-else-if="activeTab === 'advanced'" key="advanced" />
+          <SettingsFeedback v-else-if="activeTab === 'feedback'" key="feedback" />
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
           <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">

@@ -14,6 +14,7 @@ export type SettingsTabId =
   | 'shortcuts'
   | 'account'
   | 'advanced'
+  | 'feedback'
   | 'about';
 
 export interface SettingsSearchItem {
@@ -45,6 +46,7 @@ const TAB_NAMES: Record<SettingsTabId, string> = {
   desktopLyrics: '桌面歌词',
   shortcuts: '快捷按键',
   advanced: '高级设置',
+  feedback: '问题反馈',
   about: '关于',
 };
 
@@ -295,6 +297,14 @@ const staticItems: SettingsSearchItem[] = [
     { label: '导出全部日志', keywords: '日志 调试 反馈 全部' },
     { label: '导出错误日志', keywords: '日志 错误 故障 排查' },
     { label: '删除全部日志', keywords: '日志 清空 删除' },
+  ]),
+
+  ...makeItems('feedback', '问题反馈', [
+    { label: '问题反馈', keywords: '反馈 建议 提交 意见 bug 故障' },
+    { label: '申请内测', keywords: '内测 beta 资格 申请' },
+    { label: '查看我的反馈', keywords: '反馈 记录 进度 状态 处理' },
+    { label: '上传图片', target: '上传图片', keywords: '反馈 截图 图片 建议' },
+    { label: '附上错误日志', target: '附上错误日志', keywords: '反馈 日志 诊断 排查' },
   ]),
 
   ...makeItems('about', '关于', [
