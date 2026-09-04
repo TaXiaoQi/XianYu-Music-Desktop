@@ -333,6 +333,7 @@ const exactEnglishTranslations: Record<string, string> = {
   '备份文件': 'Backup file',
   '问题反馈': 'Bug Report',
   '功能建议': 'Feature Request',
+  '申请内测': 'Apply for Beta',
   '提交反馈': 'Submit feedback',
   '添加图片': 'Add images',
   '日志': 'Logs',

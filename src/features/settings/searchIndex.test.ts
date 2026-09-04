@@ -17,6 +17,7 @@ describe('settings search index', () => {
       'shortcuts',
       'account',
       'advanced',
+      'feedback',
       'about',
     ]));
   });
