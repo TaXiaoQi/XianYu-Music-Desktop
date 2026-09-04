@@ -1544,6 +1544,37 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
     })
 }
 
+/// 是否运行在带 MSIX 包身份的进程中（Microsoft Store / winget MSIX 安装、
+/// winapp CLI 带身份调试均视为商店环境）。
+/// 用途：微软商店政策禁止应用绕过商店自行更新，前端更新检查据此跳过。
+/// 实现：Win32 `GetCurrentPackageFullName`——普通 Win32 进程返回
+/// APPMODEL_ERROR_NO_PACKAGE(15700)，带包身份时走两次调用返回完整包名。
+/// 直接声明 kernel32 导入，不新增依赖。
+#[tauri::command]
+pub fn is_store_build() -> bool {
+    #[cfg(target_os = "windows")]
+    let store = {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentPackageFullName(len: *mut u32, buf: *mut u16) -> i32;
+        }
+        const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+        let mut len: u32 = 0;
+        // 第一次调用传空缓冲取包名长度；无包身份时返回 NO_PACKAGE 等非 122 值
+        let rc = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
+        if rc == ERROR_INSUFFICIENT_BUFFER && len > 0 {
+            let mut buf = vec![0u16; len as usize];
+            let rc2 = unsafe { GetCurrentPackageFullName(&mut len, buf.as_mut_ptr()) };
+            rc2 == 0
+        } else {
+            false
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let store = false;
+    store
+}
+
 #[tauri::command]
 pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
     use std::process::Command;

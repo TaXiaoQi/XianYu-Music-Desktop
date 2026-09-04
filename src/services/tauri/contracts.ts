@@ -1211,6 +1211,8 @@ export interface TauriCommandMap {
   check_update_by_rust: { payload: { owner: string; repo: string }; response: string };
   download_update_file: { payload: { url: string }; response: string };
   run_installer: { payload: { path: string }; response: void };
+  // 商店版判定：进程带 MSIX 包身份即为 Microsoft Store / winget MSIX 安装
+  is_store_build: { payload: undefined; response: boolean };
   // ============ 应用生命周期 ============
   exit_app: { payload: undefined; response: void };
   // ============ 安装语言 ============

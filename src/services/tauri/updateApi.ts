@@ -7,4 +7,5 @@ export const updateApi = {
     tauriInvoke('download_update_file', { url }) as Promise<string>,
   runInstaller: (path: string) =>
     tauriInvoke('run_installer', { path }),
+  isStoreBuild: () => tauriInvoke('is_store_build'),
 };
