@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue';
+import { computed, defineAsyncComponent, h, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch, type Component } from 'vue';
 import { Search, X } from 'lucide-vue-next';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -25,8 +25,22 @@ const settingsLoaders = {
   feedback: () => import("../components/settings/SettingsFeedback.vue").then(m => m.default),
 };
 
+/** 异步设置分片加载期间的同步骨架占位（必须是同步对象，避免加载占位自身进入异步循环） */
+const SettingsPageLoading = {
+  name: 'SettingsPageLoading',
+  render: () =>
+    h(
+      'div',
+      { class: 'flex h-[45vh] items-center justify-center text-gray-400 dark:text-white/40' },
+      h('div', { class: 'h-7 w-7 animate-spin rounded-full border-2 border-current border-t-transparent' }),
+    ),
+};
+
 const lazySettings = (loader: () => Promise<Component>) => defineAsyncComponent({
   loader,
+  // 加载占位：异步分片解析完成前立即显示轻量骨架，避免 out-in 过渡期间内容区空白。
+  loadingComponent: SettingsPageLoading,
+  delay: 0,
   onError: (_error, retry, fail, attempts) => {
     if (attempts <= 2) {
       retry();
@@ -78,6 +92,13 @@ const initialTab = (() => {
 })();
 
 const activeTab = ref<SettingsViewTabId>(initialTab);
+
+/** 局部错误边界：某个设置分片渲染/挂载抛错时在此隔离展示，避免内容区整体空白并传染到其它 tab。 */
+const tabRenderError = ref<Error | null>(null);
+onErrorCaptured((error) => {
+  tabRenderError.value = error instanceof Error ? error : new Error(String(error));
+  return false; // 阻断向上冒泡，防止 main.ts 的 errorHandler 把单页错误升级成全局致命错误页
+});
 const mainRef = ref<HTMLElement | null>(null);
 const contentRef = ref<HTMLElement | null>(null);
 const settingsQuery = ref('');
@@ -160,6 +181,8 @@ watch(() => route.query.tab, (q) => {
 
 // 切换 tab 时同步 URL query，便于分享/刷新保持
 watch(activeTab, (t) => {
+  // 切换目标后清空上个页面可能残留的渲染错误，让新页面能正常渲染
+  tabRenderError.value = null;
   if (pushedTab !== t) {
     pushedTab = t;
     void router.replace({ query: { ...route.query, tab: t } });
@@ -437,8 +460,24 @@ const tabs = computed(() => {
 
     <main ref="mainRef" class="custom-scrollbar relative h-full min-w-0 flex-1 overflow-y-auto py-6">
       <div ref="contentRef" class="w-full px-4 pb-16 sm:px-6 md:px-8 xl:px-12">
-        <transition name="settings-fade" mode="out-in" @after-enter="onSettingsAfterEnter">
-          <SettingsGeneral v-if="activeTab === 'general'" key="general" />
+        <!-- 局部错误兜底：单个设置分片出错时展示可读错误并允许重试，而非整区空白 -->
+        <div
+          v-if="tabRenderError"
+          class="flex min-h-[40vh] flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+          <div class="text-base font-medium text-gray-700 dark:text-gray-200">该设置页加载出错</div>
+          <div class="max-w-md break-words text-xs leading-5 text-red-500 dark:text-red-400">
+            {{ tabRenderError.message }}
+          </div>
+          <button
+            type="button"
+            class="rounded-lg bg-[#EC4141] px-4 py-1.5 text-xs font-medium text-white transition hover:bg-[#d13b3b]"
+            @click="tabRenderError = null"
+          >重试</button>
+        </div>
+        <transition v-else name="settings-fade" @after-enter="onSettingsAfterEnter">
+          <div :key="activeTab" class="w-full">
+            <SettingsGeneral v-if="activeTab === 'general'" />
           <SettingsPlugins v-else-if="activeTab === 'plugins'" key="plugins" />
           <SettingsAccount v-else-if="activeTab === 'account'" key="account" />
           <SettingsTheme v-else-if="activeTab === 'theme'" key="theme" />
@@ -452,9 +491,10 @@ const tabs = computed(() => {
           <SettingsFeedback v-else-if="activeTab === 'feedback'" key="feedback" />
           <SettingsDebug v-else-if="activeTab === 'debug'" key="debug" />
           <SettingsAbout v-else-if="activeTab === 'about'" key="about" />
-          <div v-else key="fallback" class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
+          <div v-else class="flex h-[50vh] flex-col items-center justify-center space-y-4 text-gray-400">
             <div class="text-4xl opacity-50">{{ t('settings.building') }}</div>
             <div>{{ t('settings.buildingHint') }}</div>
+          </div>
           </div>
         </transition>
       </div>
