@@ -8,6 +8,7 @@
 import { signedRequest } from '../auth/authService';
 import { fileApi } from '../tauri/fileApi';
 import { readImageBase64 } from '../tauri/pluginApi';
+import { getStoredPlugins } from './pluginEngine';
 import type { Song } from '../../types';
 
 interface ShareCacheEntry {
@@ -51,8 +52,10 @@ function getSongHash(song: Song): string {
 /**
  * 取歌曲「来源信息」（统一契约：与移动端 share_service.dart 同构）。
  * 按播放协议提取：lx://<source>/<songmid> → 音源 key（kw/wy/kg/tx/mg）；
- * plugin://<platform>/<id> → 插件标识（插件名或插件 id，如「酷我音乐」）；
+ * plugin://<pluginId>/<songmid> → 插件声明的平台 key（sources 首项，如 kw）；
  * 本地歌曲标记为 'local'。服务端透传进深链，客户端据此显示来源并选择播放路径。
+ * 注意：插件 path 首段是 sha256（与安装实例绑定，跨端必不同），深链必须携带
+ * 语义化平台 key，接收端才能按平台跨设备匹配插件并正确展示来源。
  */
 function getSongSource(song: Song): string {
   const s = song as any;
@@ -61,7 +64,13 @@ function getSongSource(song: Song): string {
     return path.slice('lx://'.length).split('/')[0] || 'local';
   }
   if (path.startsWith('plugin://')) {
-    return path.slice('plugin://'.length).split('/')[0] || 'local';
+    const pid = path.slice('plugin://'.length).split('/')[0] || '';
+    const plugin = pid ? getStoredPlugins().find((p) => p.id === pid) : null;
+    const platform =
+      Array.isArray(plugin?.sources) && plugin.sources.length
+        ? plugin.sources[0]
+        : '';
+    return platform || plugin?.name || pid || 'local';
   }
   if (s?.source_type === 'local' || s?.sourceType === 'local') return 'local';
   const { source, info } = songSourceMap(song);

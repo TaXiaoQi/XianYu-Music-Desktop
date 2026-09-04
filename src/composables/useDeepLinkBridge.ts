@@ -145,7 +145,16 @@ function bestMatchIndex(
 function findPluginSource(source: string): PluginSource | null {
   if (!source) return null;
   const plugins = getStoredPlugins();
-  return plugins.find((p) => p.name === source || p.id === source) ?? null;
+  // 插件 id/名/声明平台（sources，如 kw）均可命中：新格式深链携带平台 key
+  // （跨设备稳定），旧链接可能携带插件 sha256 id。
+  return (
+    plugins.find(
+      (p) =>
+        p.name === source ||
+        p.id === source ||
+        (Array.isArray(p.sources) && p.sources.includes(source)),
+    ) ?? null
+  );
 }
 
 /**
@@ -192,8 +201,9 @@ async function resolveShareSong(
   if (localSong) return localSong;
   const keyword = artist.trim() ? `${name} ${artist}`.trim() : name.trim();
 
-  // 插件来源：优先用分享音源对应的本地插件搜索
-  if (source && !VALID_LX_SOURCES.has(source) && source !== 'local') {
+  // 插件优先：分享来源命中本地插件（id/名/平台）→ 直接用该插件搜索，命中率
+  // 最高（歌曲本就来自该插件平台）；插件无结果/未安装再走 lx 音源兜底。
+  if (source && source !== 'local') {
     const plugin = findPluginSource(source);
     if (plugin) {
       try {
@@ -394,7 +404,12 @@ async function handleSongLink(raw: string) {
 
   // 在线音源/插件来源分享：按 source 标签判断本地是否能播该音源，三态展示
   const ability = resolveShareSourceAbility(source);
-  const sourceName = (source && LX_SOURCE_NAMES[source]) || source || '在线搜索';
+  // 来源展示名：lx 平台 key → 平台名；插件 sha256（旧链接）→ 已装插件名。
+  const sourceName =
+    (source && LX_SOURCE_NAMES[source]) ||
+    findPluginSource(source)?.name ||
+    source ||
+    '在线搜索';
 
   // A：本地有能播该 source 的插件 → 原样「播放 / 下一首播放 / 取消」
   if (ability.specified) {
