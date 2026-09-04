@@ -21,6 +21,7 @@ import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
 import {checkDownloadExists} from '../../services/domain/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
+import {scheduleOnlinePrecache} from './onlinePrecache';
 import {sanitizeMediaUrl} from '../../utils/mediaUrl';
 import {getDisplayCoverUrl} from '../../utils/coverProxy';
 import {getPluginBilibiliCookies} from '../../services/domain/pluginCookieStore';
@@ -1677,6 +1678,12 @@ const dlnaCast = useDlnaCastStore();
             try { await playbackApi.setVolume(currentBackendVolume); } catch {}
             finishRustPlaybackStart();
           }
+          // [在线歌曲预缓存] 本首开播成功：预取队列后续 5 首在线歌的
+          // 音质/直链/封面/歌词/15 秒片头，切歌秒开（顺序与临时队列模式）
+          scheduleOnlinePrecache(
+            settingsStore.settings.audio.onlineDefaultQuality || '320k',
+            settingsStore.settings.audio.onlineQualityFallbackBehavior ?? 'lower',
+          );
         } else {
           // [在线播放起播失败] Rust 后端探测确认起播失败（403/不支持Range/解码失败/超时）
           console.warn('[Audio] Rust 起播失败（tryPlayOnlineViaRust=false）:', {

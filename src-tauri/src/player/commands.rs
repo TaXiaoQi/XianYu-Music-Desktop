@@ -25,7 +25,7 @@ use tauri::Emitter;
 const REMOTE_LYRICS_CACHE_READY_EVENT: &str = "remote-lyrics-cache-ready";
 
 // 在线直链播放的默认 User-Agent（部分音源防盗链需要浏览器 UA）
-const DEFAULT_STREAM_USER_AGENT: &str =
+pub(crate) const DEFAULT_STREAM_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[derive(serde::Serialize, Clone)]
@@ -266,6 +266,27 @@ pub fn is_stream_cached(url: String) -> bool {
 #[tauri::command]
 pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> {
     crate::player::stream_cache::copy_cache_to(&url, &dest_path)
+}
+
+/// 预取在线音频「15 秒片头」到内存缓存（在线歌曲预缓存）。
+///
+/// 后台线程执行 Range 请求拉取头部字节；命中后 start_streaming_download
+/// 起播时直接注入片头并从断点续传，切歌秒开。仅缓存头部约 15 秒数据，
+/// 内存有界（12 条 / 24MB / 15 分钟 TTL）。返回是否实际发起了请求。
+#[tauri::command]
+pub fn prefetch_audio_head(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+    max_bytes: Option<u64>,
+) -> Result<bool, String> {
+    // SSRF 纵深：与 play_audio 同样的 IP 字面量校验
+    crate::security::ssrf::validate_url_ip_literal(&url)
+        .map_err(|e| format!("预取链接校验失败: {e}"))?;
+    Ok(crate::player::audio_head_cache::prefetch(
+        &url,
+        headers,
+        max_bytes.unwrap_or(0),
+    ))
 }
 
 fn schedule_remote_cache_after_half(

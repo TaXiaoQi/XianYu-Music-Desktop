@@ -174,6 +174,14 @@ export interface PlayAudioOptions {
   outputBitPerfect?: boolean;
 }
 
+export interface PrefetchAudioHeadOptions {
+  url: string;
+  /** 插件返回的自定义请求头（防盗链 Cookie/Referer 等），与播放时一致 */
+  headers?: Record<string, string> | null;
+  /** 片头字节数（按音质估算的约 15 秒音频大小） */
+  maxBytes?: number;
+}
+
 export interface UpdateLoudnessSettingsOptions {
   enabled: boolean;
   songId?: number | null;
@@ -761,6 +769,7 @@ export interface TauriCommandMap {
   };
   get_song_detail: { payload: { path: string }; response: SongDetail };
   play_audio: { payload: PlayAudioOptions; response: void };
+  prefetch_audio_head: { payload: PrefetchAudioHeadOptions; response: boolean };
   update_playback_metadata: { payload: UpdatePlaybackMetadataOptions; response: void };
   // ===== DLNA 双向投屏 =====
   dlna_search_devices: { payload: { timeoutMs: number }; response: DlnaDevicePayload[] };
