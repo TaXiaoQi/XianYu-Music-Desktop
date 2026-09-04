@@ -622,6 +622,21 @@ pub fn start_streaming_download(
     let cenc_metadata = Arc::new(std::sync::Mutex::new(None));
     let cenc_streaming = Arc::new(AtomicBool::new(false));
 
+    // [片头预取注入] 在线歌曲预缓存命中时，把预取的约 15 秒片头字节直接写入
+    // 缓存文件并从断点续传剩余数据：起播即有 ≥片头长度的缓冲，切歌秒开。
+    let mut resume_from: u64 = 0;
+    if let Some(head) = crate::player::audio_head_cache::lookup_for_inject(url) {
+        let write_ok = OpenOptions::new()
+            .write(true)
+            .open(&temp_path)
+            .and_then(|mut f| f.write_all(&head.bytes))
+            .is_ok();
+        if write_ok {
+            resume_from = head.bytes.len() as u64;
+            downloaded_bytes.store(resume_from, Ordering::Relaxed);
+        }
+    }
+
     // 启动后台下载线程
     let url_clone = url.to_string();
     let hash_clone = hash.clone();
@@ -644,6 +659,7 @@ pub fn start_streaming_download(
             &hash_clone,
             headers_clone.as_ref(),
             ua_clone.as_deref(),
+            resume_from,
             path_clone,
             dl_bytes,
             dl_complete,
@@ -1152,7 +1168,19 @@ fn send_audio_request(
     url: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
+    range_start: Option<u64>,
 ) -> Result<(reqwest::blocking::Response, String), String> {
+    // Range 起始（片头续传）：叠加到本次请求；提取重试路径传 None
+    let with_range = |builder: reqwest::blocking::RequestBuilder| {
+        if let Some(start) = range_start {
+            builder.header(
+                reqwest::header::RANGE,
+                format!("bytes={start}-"),
+            )
+        } else {
+            builder
+        }
+    };
     if let Some(rest) = url.strip_prefix("http://") {
         let https_url = format!("https://{rest}");
         // 该 CDN 家族已知只支持 http：直接走直链，跳过 https 探测
@@ -1175,8 +1203,12 @@ fn send_audio_request(
                 .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
                 .build()
             {
-                match apply_stream_request_headers(probe.get(&https_url), headers, user_agent)
-                    .send()
+                match with_range(apply_stream_request_headers(
+                    probe.get(&https_url),
+                    headers,
+                    user_agent,
+                ))
+                .send()
                 {
                     Ok(r) => {
                         if r.status().is_success() {
@@ -1208,7 +1240,7 @@ fn send_audio_request(
             }
         }
     }
-    let r = apply_stream_request_headers(client.get(url), headers, user_agent)
+    let r = with_range(apply_stream_request_headers(client.get(url), headers, user_agent))
         .send()
         .map_err(|e| e.to_string())?;
     Ok((r, url.to_string()))
@@ -1219,6 +1251,7 @@ fn download_thread(
     hash: &str,
     headers: Option<&std::collections::HashMap<String, String>>,
     user_agent: Option<&str>,
+    resume_from: u64,
     path: PathBuf,
     downloaded_bytes: Arc<AtomicU64>,
     download_complete: Arc<AtomicBool>,
@@ -1268,7 +1301,13 @@ fn download_thread(
         }
     };
 
-    let mut response = match send_audio_request(&client, url, headers, user_agent) {
+    let mut response = match send_audio_request(
+        &client,
+        url,
+        headers,
+        user_agent,
+        (resume_from > 0).then_some(resume_from),
+    ) {
         Ok((r, _)) => r,
         Err(e) => {
             fail_download(&format!("下载请求失败: {}", e), 0);
@@ -1280,6 +1319,9 @@ fn download_thread(
         fail_download(&format!("HTTP {}", response.status()), 0);
         return;
     }
+
+    // 片头续传是否仍有效：提取重试会切换 URL，片头字节不再适用
+    let mut head_valid = resume_from > 0;
 
     // 检查 Content-Type
     let content_type = response
@@ -1294,6 +1336,8 @@ fn download_thread(
         || content_type.contains("application/xml")
         || content_type.contains("text/xml");
     if is_non_audio {
+        // 提取重试会更换 URL，预取片头不再适用
+        head_valid = false;
         // 部分 Baka 插件的 getMediaSource 返回的是 API 端点 URL（如酷狗 PHP 接口），
         // 响应可能是 JSON、text/plain 直链、甚至 HTML 页面。
         // 对所有非音频内容类型统一尝试解析正文提取 URL 并重试下载。
@@ -1308,7 +1352,7 @@ fn download_thread(
                 }
             }
             // 用提取到的 URL 重新请求
-            match send_audio_request(&client, &real_url, headers, user_agent) {
+            match send_audio_request(&client, &real_url, headers, user_agent, None) {
                 Ok((retry_resp, _)) if retry_resp.status().is_success() => {
                     let retry_ct = retry_resp
                         .headers()
@@ -1326,7 +1370,7 @@ fn download_thread(
                         let retry_body: String = retry_resp.text().unwrap_or_default();
                         if let Some((real_url2, _)) = extract_audio_info_from_text(&retry_body) {
                             // 用二次提取的 URL 再次请求
-                            match send_audio_request(&client, &real_url2, headers, user_agent) {
+                            match send_audio_request(&client, &real_url2, headers, user_agent, None) {
                                 Ok((resp2, _)) if resp2.status().is_success() => {
                                     let ct2 = resp2
                                         .headers()
@@ -1400,7 +1444,7 @@ fn download_thread(
         }
     }
 
-    let total_bytes = response
+    let mut total_bytes = response
         .headers()
         .get(reqwest::header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
@@ -1414,8 +1458,37 @@ fn download_thread(
         }
     };
 
+    // [片头续传] 预取的头部字节已写入文件。若本次响应不是 206（服务器不支持
+    // Range / 提取重试换了 URL），丢弃片头从 0 重写；是 206 时以 Content-Range
+    // 总长为准继续追加。
+    let mut bytes_written: u64 = if head_valid
+        && response.status() == reqwest::StatusCode::PARTIAL_CONTENT
+    {
+        if let Some(cr) = response
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+        {
+            if let Some(t) = cr.rsplit('/').next().and_then(|s| s.parse::<u64>().ok()) {
+                total_bytes = Some(t);
+            }
+        }
+        if file.seek(SeekFrom::Start(resume_from)).is_err() {
+            fail_download("片头续传定位失败", 0);
+            return;
+        }
+        resume_from
+    } else {
+        if head_valid {
+            // 服务器不支持 Range：丢弃片头，从 0 重写
+            let _ = file.set_len(0);
+            downloaded_bytes.store(0, Ordering::Relaxed);
+        }
+        let _ = file.seek(SeekFrom::Start(0));
+        0
+    };
+
     let mut buf = [0u8; 64 * 1024];
-    let mut bytes_written = 0u64;
     let mut error: Option<String> = None;
     let mut cenc_probe_done = false;
 

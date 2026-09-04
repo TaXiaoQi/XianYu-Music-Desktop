@@ -44,9 +44,12 @@ const sortQualities = (qualities: QualityKey[]) => (
   qualities.sort((a, b) => QUALITY_META[a].rank - QUALITY_META[b].rank)
 );
 
-/** 为 B 站 CDN 取流请求合并会话 Cookie（buvid3/4 · SESSDATA），
- *  避免匿名分流只返回几秒预览流（插件 headers 通常不含 Cookie，需从这里补上） */
-const withBilibiliStreamCookie = async (
+/**
+ * 为 B 站 CDN 取流请求合并会话 Cookie（buvid3/4 · SESSDATA），
+ * 避免匿名分流只返回几秒预览流（插件 headers 通常不含 Cookie，需从这里补上）。
+ * 供播放与预缓存链路共用。
+ */
+export const withBilibiliStreamCookie = async (
   url: string,
   headers: Record<string, string> | null,
 ): Promise<Record<string, string> | null> => {

@@ -4,6 +4,7 @@ import type {
   AudioDeviceFormats,
   AudioOutputStatus,
   PlayAudioOptions,
+  PrefetchAudioHeadOptions,
   SeekAudioOptions,
   SoundEffectSettings,
   UpdateLoudnessSettingsOptions,
@@ -87,6 +88,10 @@ export const playbackApi = {
     tauriInvoke('set_stream_cache_dir', { path }),
   getStreamCacheDir: (): Promise<string> =>
     tauriInvoke('get_stream_cache_dir'),
+
+  // 在线歌曲预缓存：预取直链头部约 15 秒音频到内存片头缓存（切歌秒开）
+  prefetchAudioHead: (options: PrefetchAudioHeadOptions): Promise<boolean> =>
+    tauriInvoke('prefetch_audio_head', options),
 
   // 获取最后一次成功同步给底层的签名参数
   getLastSyncedParams: () => lastSyncedParams,

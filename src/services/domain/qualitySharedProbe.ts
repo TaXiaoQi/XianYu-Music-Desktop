@@ -27,6 +27,8 @@ export interface SharedQualityProbe {
   resolvedUrls: Partial<Record<QualityKey, string>>;
   /** 本轮探测是否已结束（无论成功与否） */
   done: boolean;
+  /** 是否为「预缓存播种」的探测：仅含预取的单档直链，未跑过完整探测 */
+  seeded?: boolean;
   /** 探测开始时间，用于过期清理 */
   startAt: number;
   /** 全档探测失败的时刻（resolvedUrls 为空时在 finally 中打点），用于失败冷却 */
@@ -69,6 +71,35 @@ function pruneDoneProbes(): void {
   }
 }
 
+/** 后台启动一轮完整探测：onProgress 驱动增量累积 + 通知，最终置 done */
+function launchProbeRound(
+  probe: SharedQualityProbe,
+  song: Song,
+  declaredQualities: QualityKey[] | null,
+): void {
+  void (async () => {
+    try {
+      await probeDownloadableQualities(song, declaredQualities, {
+        signal: probe._controller.signal,
+        onProgress: (url, quality) => {
+          probe.resolvedUrls[quality] = url;
+          notifyProbeListeners(probe);
+        },
+      });
+    } catch (e: any) {
+      console.warn('[SharedProbe] 音质探测失败:', e?.message || e);
+    } finally {
+      probe.done = true;
+      probe.seeded = false;
+      // 全档均未解析出直链 → 视为探测失败，打点进入失败冷却窗口
+      if (Object.keys(probe.resolvedUrls).length === 0) {
+        probe.failAt = Date.now();
+      }
+      notifyProbeListeners(probe);
+    }
+  })();
+}
+
 /**
  * 确保同一首歌的共享探测在跑（未跑则后台启动），返回共享探测状态。
  * 并发调用（起播 + 菜单 + 下载）会命中同一轮探测，避免重复请求。
@@ -96,7 +127,17 @@ export async function ensureSharedQualityProbe(
     if (existing.failAt != null && Date.now() - existing.failAt <= PROBE_FAIL_TTL_MS) {
       return existing;
     }
-    if (Object.keys(existing.resolvedUrls).length > 0) return existing;
+    if (Object.keys(existing.resolvedUrls).length > 0 && !existing.seeded) return existing;
+    // [预缓存播种] seeded 探测仅含预取的单档直链：保留已解析结果，
+    // 就地重建完整探测轮（起播可先命中播种直链，菜单/体积随后补齐其它档位）。
+    if (existing.seeded && Object.keys(existing.resolvedUrls).length > 0) {
+      existing.seeded = false;
+      existing.done = false;
+      existing.startAt = Date.now();
+      existing.failAt = null;
+      launchProbeRound(existing, song, declaredQualities);
+      return existing;
+    }
     // 失败探针冷却已结束 → 移除并由下方新建一轮探测
     _sharedProbes.delete(songKey);
   }
@@ -121,29 +162,45 @@ export async function ensureSharedQualityProbe(
   };
   _sharedProbes.set(songKey, probe);
 
-  // 后台启动探测：onProgress 驱动增量累积 + 通知，最终置 done
-  void (async () => {
-    try {
-      await probeDownloadableQualities(song, declaredQualities, {
-        signal: probe._controller.signal,
-        onProgress: (url, quality) => {
-          probe.resolvedUrls[quality] = url;
-          notifyProbeListeners(probe);
-        },
-      });
-    } catch (e: any) {
-      console.warn('[SharedProbe] 音质探测失败:', e?.message || e);
-    } finally {
-      probe.done = true;
-      // 全档均未解析出直链 → 视为探测失败，打点进入失败冷却窗口
-      if (Object.keys(probe.resolvedUrls).length === 0) {
-        probe.failAt = Date.now();
-      }
-      notifyProbeListeners(probe);
-    }
-  })();
+  launchProbeRound(probe, song, declaredQualities);
 
   return probe;
+}
+
+/**
+ * [预缓存播种] 把预取链路已解析出的直链注入共享探测：
+ * 起播时 ensureSharedQualityProbe 命中已存在（done）探测即可直接采用该直链，
+ * 跳过起播时的插件解析网络等待。仅当该歌当前没有真实探测时播种。
+ */
+export function seedSharedProbeUrl(
+  song: Song,
+  quality: QualityKey,
+  url: string,
+): void {
+  const songKey = getSongKey(song);
+  if (!songKey || !url) return;
+  pruneDoneProbes();
+  const existing = _sharedProbes.get(songKey);
+  if (existing) {
+    // 运行中 / 真实探测结果更可信，不覆盖
+    if (!existing.done || !existing.seeded) return;
+    if (!existing.resolvedUrls[quality]) {
+      existing.resolvedUrls[quality] = url;
+      notifyProbeListeners(existing);
+    }
+    return;
+  }
+  _sharedProbes.set(songKey, {
+    songKey,
+    declaredQualities: null,
+    resolvedUrls: { [quality]: url },
+    done: true,
+    seeded: true,
+    startAt: Date.now(),
+    failAt: null,
+    _subscribers: new Set(),
+    _controller: new AbortController(),
+  });
 }
 
 /** 订阅探测增量更新；返回取消订阅函数 */
