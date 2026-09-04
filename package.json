@@ -11,6 +11,7 @@
     "pretauri": "node scripts/sync-version.js",
     "tauri": "tauri",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:build:store": "node scripts/sync-version.js && tauri build --config src-tauri/tauri.microsoftstore.conf.json --features store-build && node scripts/move-bundles.js",
     "posttauri": "node scripts/move-bundles.js",
     "lint": "eslint .",
     "typecheck": "vue-tsc --noEmit",

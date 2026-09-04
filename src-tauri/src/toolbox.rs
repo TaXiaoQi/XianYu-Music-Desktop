@@ -1544,15 +1544,20 @@ pub async fn probe_url_size(url: String) -> Result<ProbeUrlInfo, String> {
     })
 }
 
-/// 是否运行在带 MSIX 包身份的进程中（Microsoft Store / winget MSIX 安装、
-/// winapp CLI 带身份调试均视为商店环境）。
-/// 用途：微软商店政策禁止应用绕过商店自行更新，前端更新检查据此跳过。
-/// 实现：Win32 `GetCurrentPackageFullName`——普通 Win32 进程返回
+/// 是否为微软商店环境（用于禁用应用内自更新：商店政策禁止绕过商店自行更新）。
+/// 优先级 1——构建期开关：`store-build` feature（npm run tauri:build:store）。
+/// MSI 直传商店安装后是普通 Win32 程序、无 MSIX 包身份，运行时检测会误判为
+/// 官网版，因此商店专用产物必须在构建期直接判定为 true。
+/// 优先级 2——运行时包身份检测：对 MSIX 路径生效（Microsoft Store / winget
+/// MSIX 安装、winapp CLI 带身份调试）。实现为 Win32
+/// `GetCurrentPackageFullName`——普通 Win32 进程返回
 /// APPMODEL_ERROR_NO_PACKAGE(15700)，带包身份时走两次调用返回完整包名。
 /// 直接声明 kernel32 导入，不新增依赖。
 #[tauri::command]
 pub fn is_store_build() -> bool {
-    #[cfg(target_os = "windows")]
+    #[cfg(feature = "store-build")]
+    let store = true;
+    #[cfg(all(not(feature = "store-build"), target_os = "windows"))]
     let store = {
         #[link(name = "kernel32")]
         extern "system" {
@@ -1570,7 +1575,7 @@ pub fn is_store_build() -> bool {
             false
         }
     };
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(not(feature = "store-build"), not(target_os = "windows")))]
     let store = false;
     store
 }
