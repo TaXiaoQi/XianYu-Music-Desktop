@@ -25,7 +25,6 @@ import { useRenderingPower } from '../../composables/renderingPower';
 import { useBilibiliVideoBackground, supportsMusicVideo } from '../../composables/useBilibiliVideoBackground';
 import { useToast } from '../../composables/toast';
 import { usePlaybackStore } from '../../features/playback/store';
-import { useDlnaCastStore } from '../../features/playback/castStore';
 import { useSettingsStore } from '../../features/settings/store';
 import { createShareUrl, getCachedShareUrl, preloadShareUrl, reportShareAction } from '../../services/domain/shareService';
 import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
@@ -43,6 +42,7 @@ const FooterContextMenu = defineAsyncComponent(() => import("../overlays/FooterC
 const LyricsReplacementModal = defineAsyncComponent(() => import('../overlays/LyricsReplacementModal.vue'));
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 const DlnaCastDialog = defineAsyncComponent(() => import('../overlays/DlnaCastDialog.vue'));
+const ShareSongDialog = defineAsyncComponent(() => import('../overlays/ShareSongDialog.vue'));
 
 const {
   currentSong,
@@ -398,11 +398,27 @@ const isShareLoading = ref(false);
 const settingsStore = useSettingsStore();
 
 // ─── DLNA 投屏 ─────────────────────────────────────────
-const dlnaCast = useDlnaCastStore();
+// 独立投屏入口已并入分享弹窗（对齐移动端），此处仅保留弹窗开关供分享弹窗拉起。
 const showDlnaCastDialog = ref(false);
-const isDlnaCasting = computed(() => dlnaCast.isCasting);
-const dlnaCastDeviceName = computed(() => dlnaCast.device?.friendly_name ?? '');
 const openDlnaCastDialog = () => {
+  showDlnaCastDialog.value = true;
+};
+
+// ─── 分享弹窗（复制链接 / DLNA 投屏） ─────────────────────────
+const showShareDialog = ref(false);
+const openShareDialog = () => {
+  showFooterTools.value = false;
+  showShareDialog.value = true;
+};
+/** 分享弹窗：复制分享链接（复用原分享链路） */
+const handleShareCopy = () => {
+  showShareDialog.value = false;
+  const song = currentSong.value;
+  if (song) void handleShareSong(song);
+};
+/** 分享弹窗：转投 DLNA 设备弹窗 */
+const handleShareCast = () => {
+  showShareDialog.value = false;
   showDlnaCastDialog.value = true;
 };
 
@@ -1074,10 +1090,6 @@ watch(isEffectLocked, (locked) => {
   if (locked) showEqPanel.value = false;
 });
 
-const isAnyFooterPopOverOpen = computed(() =>
-  showVolumeSlider.value || isDraggingVolume.value || showQualityMenu.value || showEqPanel.value
-);
-
 const handleWindowClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
   // 折叠工具面板：点击外部区域即关闭（类似页面样式面板的点击关闭）
@@ -1257,12 +1269,9 @@ provide('footerContext', {
   mvLoading,
   toggleMv,
   isMvVideoDownloading,
-  // 分享
-  handleShareSong,
-  isShareLoading,
-  // DLNA 投屏
-  isDlnaCasting,
-  dlnaCastDeviceName,
+  // 分享弹窗（复制链接 / DLNA 投屏统一入口）
+  openShareDialog,
+  // DLNA 投屏弹窗（由分享弹窗拉起）
   openDlnaCastDialog,
   // 歌词页工具（歌词页专属，主页禁用不可开关）
   isVisualizerEnabled,
@@ -1330,10 +1339,7 @@ onUnmounted(() => {
     <div
       ref="progressBarRef"
       class="absolute top-[-10px] left-0 w-full h-[22px] cursor-pointer group/progress z-50 [touch-action:none] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
-      :class="[
-        isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0',
-        isAnyFooterPopOverOpen ? 'pointer-events-none' : ''
-      ]"
+      :class="isMvCollapsed ? 'translate-y-[78px]' : 'translate-y-0'"
       @pointerdown="startProgressDrag"
     >
       <div class="absolute inset-y-0 left-0 right-0 flex items-center">
@@ -1551,6 +1557,14 @@ onUnmounted(() => {
 
         <!-- DLNA 投屏设备弹窗 -->
         <DlnaCastDialog v-model:visible="showDlnaCastDialog" />
+
+        <!-- 歌曲分享弹窗（复制链接 / 投屏到 DLNA 设备） -->
+        <ShareSongDialog
+          v-model:visible="showShareDialog"
+          :song="currentSong"
+          @copy="handleShareCopy"
+          @cast="handleShareCast"
+        />
 
         <!-- MV 下载画质选择弹窗 -->
         <Teleport to="body">

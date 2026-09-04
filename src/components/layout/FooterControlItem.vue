@@ -89,12 +89,9 @@ const ctx = inject<{
   toggleMv: () => Promise<void>;
   // MV 视频下载中（下载按钮 loading 态）
   isMvVideoDownloading: Ref<boolean>;
-  // 分享
-  handleShareSong: (song: Song) => Promise<void> | void;
-  isShareLoading: Ref<boolean>;
-  // DLNA 投屏
-  isDlnaCasting: Ref<boolean>;
-  dlnaCastDeviceName: Ref<string>;
+  // 分享弹窗（复制链接 / DLNA 投屏统一入口）
+  openShareDialog: () => void;
+  // DLNA 投屏弹窗（由分享弹窗拉起）
   openDlnaCastDialog: () => void;
   // 歌词页工具（仅播放详情页可用）
   isVisualizerEnabled: Ref<boolean>;
@@ -159,11 +156,7 @@ const {
   mvLoading,
   toggleMv,
   isMvVideoDownloading,
-  handleShareSong,
-  isShareLoading,
-  isDlnaCasting,
-  dlnaCastDeviceName,
-  openDlnaCastDialog,
+  openShareDialog,
   isVisualizerEnabled,
   toggleVisualizer,
   isProgressHidden,
@@ -500,22 +493,11 @@ watch(
   >
     <div
       v-if="!isAudioControlLocked && (showVolumeSlider || isDraggingVolume)"
-      class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[120]"
-      @click.prevent.stop
-      @pointerdown.prevent.stop
-      @mousedown.prevent.stop
+      class="absolute bottom-full left-1/2 -translate-x-1/2 pb-3 z-[70]"
     >
-      <div
-        class="absolute top-full left-0 w-full h-4"
-        @click.prevent.stop
-        @pointerdown.prevent.stop
-        @mousedown.prevent.stop
-      ></div>
+      <div class="absolute top-full left-0 w-full h-4"></div>
       <div class="w-9 h-32 backdrop-blur-md shadow-2xl rounded-2xl border flex flex-col items-center justify-between py-3 transition-colors"
         :class="showPlayerDetail ? 'bg-[#262626]/80 border-white/10' : 'bg-white/90 dark:bg-zinc-900/85 border-gray-100 dark:border-white/10'"
-        @click.prevent.stop
-        @pointerdown.prevent.stop
-        @mousedown.prevent.stop
       >
         <div class="text-[10px] font-bold select-none transition-colors -translate-y-[3px]"
           :class="showPlayerDetail ? 'text-white/60' : 'text-gray-500 dark:text-white/60'"
@@ -620,32 +602,16 @@ watch(
     </button>
   </div>
 
-  <!-- 分享歌曲 -->
+  <!-- 分享歌曲：打开分享弹窗（复制链接 / 投屏到 DLNA 设备） -->
   <button
     v-else-if="itemKey === 'share' && currentSong"
     @mousedown.stop
-    @click.stop="handleShareSong(currentSong)"
-    :disabled="isShareLoading"
+    @click.stop="openShareDialog"
     class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
-    :class="isShareLoading
-      ? 'opacity-60 cursor-wait'
-      : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-    :title="isShareLoading ? '生成分享链接中…' : '分享歌曲'"
+    :class="showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+    title="分享歌曲"
   >
-    <FooterControlIcon item-key="share" :class="isShareLoading ? 'h-5 w-5 animate-pulse' : 'h-5 w-5'" />
-  </button>
-
-  <!-- DLNA 投屏：连接局域网设备（电视/音箱），投屏中高亮 -->
-  <button
-    v-else-if="itemKey === 'cast'"
-    @click.stop="openDlnaCastDialog"
-    class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
-    :class="isDlnaCasting
-      ? 'text-[#EC4141] bg-[#EC4141]/10'
-      : (showPlayerDetail ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10')"
-    :title="isDlnaCasting ? `正在投屏到「${dlnaCastDeviceName}」` : 'DLNA 投屏'"
-  >
-    <FooterControlIcon item-key="cast" class="h-5 w-5" />
+    <FooterControlIcon item-key="share" class="h-5 w-5" />
   </button>
 
   <!-- 可视化/频谱（歌词页专属，主页禁用不可开关） -->

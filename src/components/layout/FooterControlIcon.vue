@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AudioLines, Cast, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
+import { AudioLines, CircleCheck, Clapperboard, Download, Eye, EyeOff, MessageCircle, Palette, Share2, SlidersHorizontal } from 'lucide-vue-next';
 import type { FooterItemKey } from '../../types';
 import { useDownloadStore } from '../../features/download/store';
 
@@ -61,7 +61,6 @@ withDefaults(defineProps<{
   <MessageCircle v-else-if="itemKey === 'comment'" v-bind="$attrs" :stroke-width="2.2" />
   <Clapperboard v-else-if="itemKey === 'mv'" v-bind="$attrs" :stroke-width="2.2" />
   <Share2 v-else-if="itemKey === 'share'" v-bind="$attrs" :stroke-width="2.2" />
-  <Cast v-else-if="itemKey === 'cast'" v-bind="$attrs" :stroke-width="2.2" />
   <AudioLines v-else-if="itemKey === 'visualizer'" v-bind="$attrs" :stroke-width="2.2" />
   <component
     :is="active ? EyeOff : Eye"
