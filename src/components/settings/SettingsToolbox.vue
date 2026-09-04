@@ -9,6 +9,7 @@ import ToolboxStep2 from './ToolboxStep2.vue';
 import ToolboxStep3 from './ToolboxStep3.vue';
 import ToolboxStep4 from './ToolboxStep4.vue';
 import SettingsAudioConvert from './SettingsAudioConvert.vue';
+import SettingsAudioTrim from './SettingsAudioTrim.vue';
 import SettingHint from './SettingHint.vue';
 
 type ToolboxView = 'setup' | 'preprocess' | 'tagging' | 'rename' | 'refresh';
@@ -23,7 +24,7 @@ interface ToolboxTool {
   id: string;
   name: string;
   desc: string;
-  icon: 'tag' | 'convert';
+  icon: 'tag' | 'convert' | 'trim';
   /** 是否已实现；未实现时点击给出"即将上线"提示，作为占位展示 */
   available: boolean;
 }
@@ -64,6 +65,13 @@ const toolboxCategories: ToolboxCategory[] = [
         icon: 'convert',
         available: true,
       },
+      {
+        id: 'audio-trim',
+        name: '音频剪辑',
+        desc: '拖动进度条裁剪音频区间 · 保持原格式无损输出',
+        icon: 'trim',
+        available: true,
+      },
     ],
   },
 ];
@@ -102,7 +110,11 @@ const openTool = (tool: ToolboxTool) => {
     toast.showToast(`${tool.name} 即将上线，敬请期待`, 'info');
     return;
   }
-  if (tool.id === 'music-tag-flow' || tool.id === 'format-convert') {
+  if (
+    tool.id === 'music-tag-flow' ||
+    tool.id === 'format-convert' ||
+    tool.id === 'audio-trim'
+  ) {
     activeToolId.value = tool.id;
   }
 };
@@ -391,9 +403,14 @@ const restart = () => {
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
           </svg>
           <!-- 转换(循环箭头)图标 -->
-          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <svg v-else-if="tool.icon === 'convert'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6 5l3 3.5M6.5 6C6.5 10.5 9 14 13 14" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 15.5 18 19l-3-3.5M17.5 18c0-4.5-2.5-8-6.5-8" />
+          </svg>
+          <!-- 音频剪辑(剪刀)图标 -->
+          <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m6 6 8 8M6 18l8-8" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 6a2 2 0 1 1-1.414.586A2 2 0 0 1 7 6Zm10 12a2 2 0 1 0 1.414-.586A2 2 0 0 0 17 18Z" />
           </svg>
         </div>
 
@@ -826,7 +843,7 @@ const restart = () => {
 
   <!-- ===== 功能界面：文件转换（ffmpeg） ===== -->
   <div
-    v-else
+    v-else-if="activeToolId === 'format-convert'"
     class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300"
   >
     <div class="flex items-center gap-2 px-5">
@@ -841,6 +858,25 @@ const restart = () => {
     </div>
 
     <SettingsAudioConvert />
+  </div>
+
+  <!-- ===== 功能界面：音频剪辑（ffmpeg） ===== -->
+  <div
+    v-else-if="activeToolId === 'audio-trim'"
+    class="w-full space-y-6 pb-10 animate-in fade-in slide-in-from-bottom-2 duration-300"
+  >
+    <div class="flex items-center gap-2 px-5">
+      <button
+        type="button"
+        class="toolbox-ghost-btn"
+        @click="backToGrid"
+      >
+        ← 返回工具箱
+      </button>
+      <span class="text-sm text-gray-500 dark:text-white/50">文件转换 · 音频剪辑</span>
+    </div>
+
+    <SettingsAudioTrim />
   </div>
 </template>
 
