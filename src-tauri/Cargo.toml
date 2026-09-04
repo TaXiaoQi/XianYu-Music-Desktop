@@ -100,6 +100,10 @@ wavicle = { version = "0.1", default-features = false, features = ["decode", "en
 # 开发模式下启用 Tauri devtools，生产构建不包含此 feature。
 # 使用方式：cargo tauri dev -- --features devtools
 devtools = ["tauri/devtools"]
+# 微软商店专用构建（npm run tauri:build:store）。MSI 直传商店安装后是普通
+# Win32 程序、无 MSIX 包身份，运行时包身份检测会误判为官网版；此 feature
+# 让 is_store_build 在构建期直接返回 true，保证商店版禁用应用内自更新。
+store-build = []
 
 [profile.dev]
 # 本地 crate 优化：DSP 热路径（biquad/comb/allpass/OLA）在 opt-level=0 下较慢，
