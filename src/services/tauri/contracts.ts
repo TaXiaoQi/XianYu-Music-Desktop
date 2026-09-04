@@ -619,6 +619,14 @@ export interface ConvertAudioResult {
   error: string | null;
 }
 
+/** 工具箱 · 音频剪辑单个文件结果 */
+export interface TrimAudioResult {
+  input_path: string;
+  output_path: string;
+  success: boolean;
+  error: string | null;
+}
+
 export interface TauriCommandMap {
   add_library_folder: { payload: { path: string }; response: void };
   remove_library_folder: { payload: { path: string }; response: void };
@@ -1271,6 +1279,15 @@ export interface TauriCommandMap {
   convert_audio: {
     payload: { inputPaths: string[]; outDir: string; targetFormat: string; ffmpegPath?: string; outName?: string; sampleRate?: number };
     response: ConvertAudioResult[];
+  };
+  // ============ 音频剪辑（工具箱 · ffmpeg） ============
+  probe_audio_duration: {
+    payload: { inputPath: string; ffmpegPath?: string };
+    response: number;
+  };
+  trim_audio: {
+    payload: { inputPath: string; startSecs: number; endSecs: number; outputDir?: string; ffmpegPath?: string };
+    response: TrimAudioResult;
   };
   // ============ GPU 加速 ============
   set_gpu_acceleration: { payload: { enabled: boolean }; response: void };

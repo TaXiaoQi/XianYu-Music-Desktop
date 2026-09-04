@@ -6,6 +6,8 @@ commands.allow = [
   "parse_audio_files",
   "convert_audio",
   "detect_ffmpeg",
+  "probe_audio_duration",
+  "trim_audio",
   "parse_music_folder",
   "scan_folder_as_playlists",
   "get_song_cover_thumbnail",
