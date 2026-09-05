@@ -9,6 +9,7 @@ import { useCoverCache } from '../composables/useCoverCache';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { useListScrollMemory } from '../composables/useListScrollMemory';
 import SortModeIcon from '../components/common/SortModeIcon.vue';
+import DragGhost from '../components/common/DragGhost.vue';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
 import type { AlbumListItem } from '../features/library/playerLibraryViewShared';
 import { getAlphabetIndexKey } from '../utils/alphabetIndex';
@@ -491,7 +492,14 @@ const handlePointerDown = (event: PointerEvent, index: number, album: AlbumListI
 };
 
 const handleGlobalPointerMove = (event: PointerEvent) => {
-  if (!pointerDownInfo || dragSession.active) {
+  // 拖拽激活后持续更新鼠标位置，让 DragGhost 跟随光标
+  if (dragSession.active) {
+    dragSession.mouseX = event.clientX;
+    dragSession.mouseY = event.clientY;
+    return;
+  }
+
+  if (!pointerDownInfo) {
     return;
   }
 
@@ -507,12 +515,16 @@ const handleGlobalPointerMove = (event: PointerEvent) => {
   dragSession.active = true;
   dragSession.type = 'album';
   dragSession.data = { index: pointerDownInfo.index, key: pointerDownInfo.album.key };
+  dragSession.showGhost = true;
+  dragSession.mouseX = event.clientX;
+  dragSession.mouseY = event.clientY;
 };
 
 const resetAlbumDrag = () => {
   pointerDownInfo = null;
   if (dragSession.type === 'album') {
     dragSession.active = false;
+    dragSession.showGhost = false;
     dragSession.type = 'song';
     dragSession.data = null;
     dragOverKey.value = null;
@@ -699,7 +711,7 @@ onUnmounted(() => {
               data-album-card
               class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]"
               :class="[
-                dragSession.active && dragSession.type === 'album' && dragSession.data?.key === item.album.key ? 'opacity-50' : '',
+                dragSession.active && dragSession.type === 'album' && dragSession.data?.key === item.album.key ? 'opacity-50 scale-[0.97]' : '',
                 { 'ring-2 ring-[#EC4141] bg-red-50 dark:bg-red-900/20': dragSession.active && dragSession.type === 'album' && dragOverKey === item.album.key && dragSession.data?.key !== item.album.key },
               ]"
               @pointerdown="handlePointerDown($event, item.index, item.album)"
@@ -760,7 +772,7 @@ onUnmounted(() => {
           data-album-card
           class="group cursor-pointer rounded-xl p-2 md:p-3 transition-all duration-300 flex flex-col relative select-none hover:bg-white/40 dark:hover:bg-white/5 [touch-action:none]"
           :class="[
-            dragSession.active && dragSession.type === 'album' && dragSession.data?.key === item.album.key ? 'opacity-50' : '',
+            dragSession.active && dragSession.type === 'album' && dragSession.data?.key === item.album.key ? 'opacity-50 scale-[0.97]' : '',
             { 'ring-2 ring-[#EC4141] bg-red-50 dark:bg-red-900/20': dragSession.active && dragSession.type === 'album' && dragOverKey === item.album.key && dragSession.data?.key !== item.album.key },
           ]"
           @pointerdown="handlePointerDown($event, item.index, item.album)"
@@ -808,6 +820,7 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+  <DragGhost />
   </div>
 </template>
 
