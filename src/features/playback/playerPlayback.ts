@@ -1039,7 +1039,10 @@ const dlnaCast = useDlnaCastStore();
     });
 
     if (shouldFadeOnSwitch) {
-      await fadeVolumeTo(0, effectiveFadeDuration);
+      // [渐入渐出] 不 await 淡出完成——让 fade-out 与后续切歌流程并行执行。
+      // 旧歌音量会在后台平滑降低，待新歌 ready 后旧音频会被 stopAudio/playAudio 终止，
+      // fade-out 自然结束。避免切歌被 fade duration 阻塞导致体感延迟。
+      fadeVolumeTo(0, effectiveFadeDuration).catch(() => {});
     } else {
       cancelFade();
     }
