@@ -55,8 +55,8 @@ const toolboxCategories: ToolboxCategory[] = [
   },
   {
     id: 'convert',
-    title: '文件转换',
-    subtitle: '音频格式转换等工具',
+    title: '文件编辑',
+    subtitle: '音频格式转换与音频剪辑工具',
     tools: [
       {
         id: 'format-convert',
@@ -355,6 +355,7 @@ const restart = () => {
   <!-- ===== 工具箱主页（分区 Tab 切换） ===== -->
   <div
     v-if="activeToolId === null"
+    data-no-translate
     class="w-full animate-in fade-in slide-in-from-bottom-2 duration-300"
   >
     <div class="mb-6 space-y-1">
