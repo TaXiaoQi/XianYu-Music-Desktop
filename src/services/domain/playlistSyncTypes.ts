@@ -64,5 +64,7 @@ export interface FileSyncDownloadData {
     isFavorite?: boolean;
     createdAt?: string;
     songs: SyncSongPayload[];
+    /** 服务端已记录删除的歌曲 path（其他端据此移除本地对应歌曲） */
+    deletedSongPaths?: string[];
   }>;
 }

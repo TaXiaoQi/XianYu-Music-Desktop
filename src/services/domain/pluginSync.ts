@@ -7,6 +7,7 @@
  * 后端接口一览（action=xxx）：
  * - plugin_sync_upload_one：逐个上传插件（含脚本内容）到服务器文件存储
  * - plugin_sync_download：下载云端插件数据
+ * - plugin_sync_delete：按 id 从云端删除插件（删除范围三选一）
  * - plugin_sync_status：查询同步状态
  */
 
@@ -23,6 +24,14 @@ import {
   getPluginUserVariableValues,
   setPluginUserVariableValues,
 } from './pluginEngine';
+import {
+  setSyncedPluginIds,
+  addSyncedPluginIds,
+  removeSyncedPluginIds,
+  getDownloadSkipIds,
+  removeDownloadSkipIds,
+  getUploadSkipIds,
+} from './pluginSyncState';
 
 /** 日志前缀 */
 const LOG = '[PluginSync]';
@@ -217,12 +226,20 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
   const plugins = getStoredPlugins();
   // 过滤掉内置插件
   const userPlugins = plugins.filter(p => !p.isBuiltin);
+  // 「仅保留本地」墓碑过滤：已从云端删除、保留本机的插件不再上传，防止复活
+  const uploadSkip = getUploadSkipIds();
+  const toUpload = userPlugins.filter(p => !uploadSkip.has(p.id));
+  for (const skipped of userPlugins) {
+    if (uploadSkip.has(skipped.id)) {
+      logSync(`uploadPlugins: 跳过 "${skipped.name}" - 处于仅保留本地墓碑中`);
+    }
+  }
   // 订阅链接列表随插件一起上传
   const subscriptions = getSubscriptions();
 
   logSync(`uploadPlugins: 本地用户插件 ${userPlugins.length} 个, 订阅 ${subscriptions.length} 个`);
 
-  if (userPlugins.length === 0) {
+  if (toUpload.length === 0) {
     if (subscriptions.length > 0) {
       // 本地无插件但有订阅：用空 plugin 做载体单独上传订阅
       try {
@@ -244,13 +261,16 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
     } else {
       logSync('uploadPlugins: 无用户插件需要上传');
     }
+    // 云端副本为空（is_first 重建）：已同步标记清空
+    setSyncedPluginIds([]);
     return result;
   }
 
   // 逐个上传插件，避免大请求体触发 WAF
-  for (let i = 0; i < userPlugins.length; i++) {
-    const plugin = userPlugins[i];
-    logSync(`uploadPlugins: [${i + 1}/${userPlugins.length}] 上传插件 "${plugin.name}"`);
+  const uploadedIds: string[] = [];
+  for (let i = 0; i < toUpload.length; i++) {
+    const plugin = toUpload[i];
+    logSync(`uploadPlugins: [${i + 1}/${toUpload.length}] 上传插件 "${plugin.name}"`);
 
     try {
       const script = await getPluginScript(plugin.id);
@@ -290,7 +310,8 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
       });
 
       result.uploadedPlugins++;
-      logSync(`uploadPlugins: [${i + 1}/${userPlugins.length}] "${plugin.name}" 上传成功 (云端共 ${data.plugin_count ?? '?'} 个)`);
+      uploadedIds.push(plugin.id);
+      logSync(`uploadPlugins: [${i + 1}/${toUpload.length}] "${plugin.name}" 上传成功 (云端共 ${data.plugin_count ?? '?'} 个)`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       logSyncError(`uploadPlugins: 上传插件 "${plugin.name}" 失败:`, msg);
@@ -298,7 +319,9 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
     }
   }
 
-  logSync(`uploadPlugins ← 完成: 成功 ${result.uploadedPlugins}/${userPlugins.length} 个, ${result.errors.length} 个错误`);
+  // 上传成功的插件即云端权威副本：整集替换「已同步」标记
+  setSyncedPluginIds(uploadedIds);
+  logSync(`uploadPlugins ← 完成: 成功 ${result.uploadedPlugins}/${toUpload.length} 个, ${result.errors.length} 个错误`);
   return result;
 }
 
@@ -349,8 +372,15 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
     // 确保本地插件已加载
     await loadPlugins();
 
+    // 「仅删本地」墓碑：用户已从本机删除但云端保留的插件，跳过恢复防止回流
+    const downloadSkip = getDownloadSkipIds();
+    const restoredIds: string[] = [];
     for (let i = 0; i < downloadData.plugins.length; i++) {
       const item = downloadData.plugins[i];
+      if (downloadSkip.has(item.id)) {
+        logSync(`downloadPlugins: [${i + 1}/${downloadData.plugins.length}] 跳过 "${item.name}" - 处于仅删本地墓碑中`);
+        continue;
+      }
       logSync(`downloadPlugins: [${i + 1}/${downloadData.plugins.length}] 恢复插件 "${item.name}" (${item.format})`);
 
       try {
@@ -368,6 +398,7 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
             }
           }
           result.downloadedPlugins++;
+          restoredIds.push(item.id);
         } else {
           result.errors.push(`插件 "${item.name}" 恢复失败`);
         }
@@ -378,6 +409,8 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
       }
     }
 
+    // 恢复成功说明云端确有副本：并集追加「已同步」标记
+    addSyncedPluginIds(restoredIds);
     logSync(`downloadPlugins ← 完成: 恢复 ${result.downloadedPlugins} 个插件, ${result.errors.length} 个错误`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -386,4 +419,37 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
   }
 
   return result;
+}
+
+// ==================== 云端删除 ====================
+
+/**
+ * 从云端删除指定 id 的插件（「删除全部 / 仅保留本地」的云端落盘操作）。
+ * 成功后同步移除本地「已同步」标记与「仅删本地」墓碑（云端已无副本）。
+ * 失败返回 false，由调用方决定后续处理。
+ */
+export async function deleteCloudPlugins(pluginIds: string[]): Promise<boolean> {
+  if (pluginIds.length === 0) return true;
+  const ciyuanxiId = getCiyuanxiId();
+  if (!ciyuanxiId) {
+    logSyncError('deleteCloudPlugins: 未获取到弦予号');
+    return false;
+  }
+  try {
+    await signedRequest<{ deleted: number; plugin_count: number }>('plugin_sync_delete', {
+      user_id: ciyuanxiId,
+      plugin_ids: pluginIds,
+    }, {
+      fetchTimeoutMs: 55_000,
+      timeoutMs: 60_000,
+    });
+    logSync(`deleteCloudPlugins: 云端删除 ${pluginIds.length} 个插件成功`);
+    removeSyncedPluginIds(pluginIds);
+    removeDownloadSkipIds(pluginIds);
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logSyncError(`deleteCloudPlugins: 云端删除失败:`, msg);
+    return false;
+  }
 }

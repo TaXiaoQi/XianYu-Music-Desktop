@@ -392,6 +392,8 @@ const memoryScopeKey = computed(
 
 /** 播放单首：插入当前歌曲之后 */
 const handlePlaySong = (song: Song) => {
+  // 标记日推来源：底栏显示「不喜欢」按钮（跳过并上报负反馈）。
+  markDailyRecommendPaths([song.path]);
   void playSong(song, { insertAfterCurrent: true });
 };
 
@@ -401,6 +403,8 @@ async function handlePlayAll() {
   try {
     const songs = songList.value;
     const firstSong = songs[0];
+    // 标记日推来源：底栏显示「不喜欢」按钮（跳过并上报负反馈）。
+    markDailyRecommendPaths(songs.map(s => s.path));
     launchFlyingCover(firstSong.path, firstSong.cover_thumb_path || '');
     await clearQueue();
     addSongsToQueue(songs);

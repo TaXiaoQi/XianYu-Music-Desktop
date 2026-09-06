@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { inject, nextTick, ref, watch, type Ref } from 'vue';
+import { computed, inject, nextTick, ref, watch, type Ref } from 'vue';
+import { usePlaybackController } from '../../features/playback';
+import { useToast } from '../../composables/toast';
+import { reportDailyDislikeSignal } from '../../services/domain/dailyRecommendFeedback';
 import EqualizerPanel from '../common/SoundEffectBtn/EqualizerPanel.vue';
 import FooterControlIcon from './FooterControlIcon.vue';
 import type { FooterItemKey, QualityKey, DownloadQuality, Song } from '../../types';
@@ -167,6 +170,23 @@ const {
   togglePin,
 } = ctx;
 
+// ==================== 日推「不喜欢」====================
+// 当前歌曲来自每日推荐时，收藏按钮左侧显示「不喜欢」（爱心+贯穿斜线）：
+// 上报负反馈到服务器（调整日推算法）并自动跳过本曲。
+const playbackCtl = usePlaybackController();
+const { showToast } = useToast();
+const isDailyRecommendSong = computed(() => {
+  const s = currentSong.value;
+  return Boolean(s && playbackCtl.dailyRecommendPaths.has(s.path));
+});
+const handleDailyDislike = () => {
+  const s = currentSong.value;
+  if (!s) return;
+  void reportDailyDislikeSignal({ songName: s.title ?? '', singer: s.artist ?? '' });
+  showToast('已减少此类推荐', 'success');
+  playbackCtl.nextSong();
+};
+
 const downloadQualityListRef = ref<HTMLElement | null>(null);
 const qualityListRef = ref<HTMLElement | null>(null);
 const downloadQualityScrollProgress = ref({ show: false, top: 0, height: 100 });
@@ -254,6 +274,23 @@ watch(
 </script>
 
 <template>
+  <!-- 不喜欢按钮：仅日推歌曲显示（收藏左侧，跳过并上报负反馈） -->
+  <button
+    v-if="itemKey === 'favorite' && currentSong && isDailyRecommendSong"
+    @mousedown.stop
+    @click.stop="handleDailyDislike"
+    class="shrink-0 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none transition-colors active:scale-95"
+    :class="showPlayerDetail
+      ? 'text-white/80 hover:text-white hover:bg-white/10'
+      : 'text-gray-700 dark:text-white/80 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10'"
+    title="不喜欢（跳过并减少此类推荐）"
+  >
+    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+      <line x1="4" y1="4" x2="20" y2="20" stroke-width="2" />
+    </svg>
+  </button>
+
   <!-- 收藏按钮 -->
   <button
     v-if="itemKey === 'favorite' && currentSong"

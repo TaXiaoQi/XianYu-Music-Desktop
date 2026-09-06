@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, reactive, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, defineAsyncComponent, provide, reactive, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Puzzle, Trash2, RefreshCw, Search, PackageOpen, Globe, Link2, Download, GripVertical, UploadCloud, FileCode2, Info, X, Copy, KeyRound, Eye, EyeOff } from 'lucide-vue-next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -10,6 +10,12 @@ import { pluginApi } from '../../services/tauri/pluginApi';
 import { useSettings } from '../../features/settings/useSettings';
 import { findVerticalScrollContainer, getEdgeAutoScrollSpeed, resolveDragTargetIndex } from '../../utils/dragSort';
 import SettingHint, { SETTING_HINT_Z_INDEX } from './SettingHint.vue';
+import { getCiyuanxiId } from '../../services/domain/playlistSync';
+import { deleteCloudPlugins } from '../../services/domain/pluginSync';
+import { getSyncedPluginIds, isPluginSynced, addDownloadSkipIds, addUploadSkipIds } from '../../services/domain/pluginSyncState';
+import type { SyncDeleteScope } from '../overlays/SyncDeleteScopeModal.vue';
+
+const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
 const props = withDefaults(defineProps<{
   overlayZClass?: string;
@@ -598,8 +604,21 @@ async function installPluginFromScript(script: string, filePath: string) {
 
 const showUninstallAllConfirm = ref(false);
 
+// 已同步插件的删除范围三选一（仅删本地 / 删除全部 / 仅保留本地）
+const showPluginDeleteScope = ref(false);
+const pluginDeleteScopeIds = ref<string[]>([]);
+const pluginScopeCanDeleteCloud = computed(() =>
+  pluginDeleteScopeIds.value.some(id => getSyncedPluginIds().has(id)),
+);
+
 function handleUninstallAll() {
   if (plugins.value.length === 0) return;
+  // 已登录且存在云端副本的插件：弹删除范围三选一
+  if (getCiyuanxiId() && plugins.value.some(p => isPluginSynced(p.id))) {
+    pluginDeleteScopeIds.value = plugins.value.map(p => p.id);
+    showPluginDeleteScope.value = true;
+    return;
+  }
   showUninstallAllConfirm.value = true;
 }
 
@@ -617,6 +636,12 @@ const showUninstallPluginConfirm = ref(false);
 const pendingUninstallPlugin = ref<PluginSource | null>(null);
 
 function handleUninstallPlugin(plugin: PluginSource) {
+  // 已登录且该插件存在云端副本：弹删除范围三选一
+  if (getCiyuanxiId() && isPluginSynced(plugin.id)) {
+    pluginDeleteScopeIds.value = [plugin.id];
+    showPluginDeleteScope.value = true;
+    return;
+  }
   pendingUninstallPlugin.value = plugin;
   showUninstallPluginConfirm.value = true;
 }
@@ -629,6 +654,51 @@ function confirmUninstallPlugin() {
   showUninstallPluginConfirm.value = false;
   pendingUninstallPlugin.value = null;
   showToast(`已卸载 ${plugin.name}`, 'success');
+}
+
+async function confirmPluginDeleteScope(scope: SyncDeleteScope) {
+  const ids = [...pluginDeleteScopeIds.value];
+  showPluginDeleteScope.value = false;
+  pluginDeleteScopeIds.value = [];
+  if (ids.length === 0) return;
+  // 仅「已同步」的插件有云端副本，云端操作只针对这一部分
+  const syncedIds = ids.filter(id => getSyncedPluginIds().has(id));
+
+  if (scope === 'cloud') {
+    // 仅保留本地：删云端 + 上传墓碑防复活，本机不动
+    if (syncedIds.length > 0) {
+      const ok = await deleteCloudPlugins(syncedIds);
+      if (!ok) {
+        showToast('云端删除失败，请检查网络后重试', 'error');
+        return;
+      }
+      addUploadSkipIds(syncedIds);
+      showToast(`已从云端移除 ${syncedIds.length} 个插件，本机保留`, 'success');
+    }
+    return;
+  }
+
+  if (scope === 'all') {
+    // 删除全部：先删云端（失败仅提示，不中断本地删除），再删本地
+    if (syncedIds.length > 0) {
+      const ok = await deleteCloudPlugins(syncedIds);
+      if (!ok) showToast('云端删除失败，其他设备可能仍会同步到该插件', 'error');
+    }
+    for (const id of ids) {
+      removePluginSource(id);
+    }
+    refreshPluginList();
+    showToast(`已删除 ${ids.length} 个插件`, 'success');
+    return;
+  }
+
+  // local：仅删本地，写入下载墓碑防止同步回流（云端保留）
+  for (const id of ids) {
+    removePluginSource(id);
+  }
+  addDownloadSkipIds(ids);
+  refreshPluginList();
+  showToast(`已从本机删除 ${ids.length} 个插件（云端保留）`, 'success');
 }
 
 async function handleTogglePlugin(plugin: PluginSource) {
@@ -1605,6 +1675,17 @@ async function saveUserVariables() {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 已同步插件删除范围选择弹窗 -->
+    <SyncDeleteScopeModal
+      v-model:visible="showPluginDeleteScope"
+      title="该插件已同步到云端"
+      description="请选择删除范围"
+      :can-delete-cloud="pluginScopeCanDeleteCloud"
+      disabled-hint="该插件暂无云端副本，此选项不可用"
+      @cancel="showPluginDeleteScope = false"
+      @scope="confirmPluginDeleteScope"
+    />
 
     <!-- 移除订阅确认弹窗 -->
     <Teleport to="body">

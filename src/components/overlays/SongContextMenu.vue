@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties, type ComponentPublicInstance } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch, type CSSProperties, type ComponentPublicInstance } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { usePlayer } from '../../features/playback';
@@ -19,6 +19,14 @@ import {
 import { useSongInfoDialog } from '../../composables/useSongInfoDialog';
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import { useDownloadDialog } from '../../composables/useDownloadDialog';
+import { useCollectionsStore } from '../../features/collections/store';
+import { songToSyncPayload } from '../../services/domain/playlistSync';
+import {
+  addCloudKeepSongs,
+  addLocalOnlySongs,
+  addPendingDeletedSongs,
+} from '../../services/domain/playlistSongSyncState';
+import type { SyncDeleteScope } from './SyncDeleteScopeModal.vue';
 import type { Song } from '../../types';
 
 type SongMenuAction =
@@ -455,6 +463,22 @@ const handleRemoveFromList = () => {
   }
 
   if (props.isPlaylistView) {
+    // 已同步歌单（持有 cloudId）：弹「删除范围三选一」，未同步走原直接移除
+    const collectionsStore = useCollectionsStore();
+    const playlist = collectionsStore.getPlaylistById(filterCondition.value);
+    const cloudId = playlist?.cloudId || '';
+    if (playlist && cloudId) {
+      // 菜单关闭后 song prop 可能被父级置空：打开弹窗前先固化本次数据
+      const payloadJson = JSON.stringify(songToSyncPayload(props.song));
+      pendingRemove.value = {
+        playlistId: filterCondition.value,
+        path: props.song.path,
+        cloudId,
+        payloadJson,
+      };
+      showDeleteScopeModal.value = true;
+      return;
+    }
     removeFromPlaylist(filterCondition.value, props.song.path);
     return;
   }
@@ -465,6 +489,49 @@ const handleRemoveFromList = () => {
   }
 
   showToast('当前页面暂不支持从列表移除', 'info');
+};
+
+// ==================== 已同步歌单移除单曲：删除范围三选一 ====================
+
+const SyncDeleteScopeModal = defineAsyncComponent(() => import('./SyncDeleteScopeModal.vue'));
+
+const showDeleteScopeModal = ref(false);
+const pendingRemove = ref<{ playlistId: string; path: string; cloudId: string; payloadJson: string } | null>(null);
+
+const handleRemoveScope = (scope: SyncDeleteScope) => {
+  const target = pendingRemove.value;
+  showDeleteScopeModal.value = false;
+  pendingRemove.value = null;
+  if (!target) return;
+
+  const collectionsStore = useCollectionsStore();
+  const playlist = collectionsStore.getPlaylistById(target.playlistId);
+  if (!playlist) return;
+
+  // 顺带清理 songs 元信息缓存（在线歌曲缓存于 playlist.songs，仅清 songPaths 会残留）
+  const pruneMeta = () => {
+    if (playlist.songs?.length) {
+      const kept = playlist.songs.filter(s => s.path !== target.path);
+      if (kept.length !== playlist.songs.length) {
+        playlist.songs = kept.length > 0 ? kept : undefined;
+      }
+    }
+  };
+
+  if (scope === 'local') {
+    // 仅本机移除：缓存上传载荷供下次上传回填（云端保留）
+    addCloudKeepSongs(target.cloudId, [{ path: target.path, payloadJson: target.payloadJson }]);
+    removeFromPlaylist(target.playlistId, target.path);
+    pruneMeta();
+  } else if (scope === 'all') {
+    // 删除全部：本机移除 + 上报删除，服务端墓碑传播到其他端
+    addPendingDeletedSongs(target.cloudId, [target.path]);
+    removeFromPlaylist(target.playlistId, target.path);
+    pruneMeta();
+  } else {
+    // 仅保留本地：本机不动，墓碑使下次上传剔除并上报云端删除
+    addLocalOnlySongs(target.cloudId, [target.path]);
+  }
 };
 
 const handleEntryMouseEnter = (action: SongMenuAction) => {
@@ -673,6 +740,16 @@ const setViewArtistTriggerRef = (element: Element | ComponentPublicInstance | nu
         </div>
       </div>
     </Transition>
+
+    <!-- 已同步歌单移除单曲：删除范围三选一 -->
+    <SyncDeleteScopeModal
+      :visible="showDeleteScopeModal"
+      title="歌曲已同步到云端"
+      description="请选择删除范围"
+      can-delete-cloud
+      @scope="handleRemoveScope"
+      @cancel="showDeleteScopeModal = false"
+    />
   </Teleport>
 </template>
 
