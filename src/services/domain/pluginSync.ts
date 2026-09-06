@@ -20,6 +20,8 @@ import {
   loadPlugins,
   getSubscriptions,
   mergeSubscriptionsFromCloud,
+  getPluginUserVariableValues,
+  setPluginUserVariableValues,
 } from './pluginEngine';
 
 /** 日志前缀 */
@@ -64,6 +66,85 @@ function decodeBase64(b64: string): string {
   }
 }
 
+// ==================== 用户变量 AES 加密 ====================
+// 插件用户变量（API key / Cookie / Token）为敏感信息，上传前用 AES-256-CBC
+// 加密，密钥由弦予号经 SHA-256 派生，任意端登录同一账号即可解密。
+// 服务端仅作为密文存储载体，不参与加解密。
+
+/** AES 加密后的用户变量块（iv 与 data 均为标准 Base64） */
+export interface EncryptedUserVars {
+  iv: string;
+  data: string;
+}
+
+function b64FromBytes(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function bytesFromB64(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/** 由弦予号派生 AES-256 密钥（SHA-256 → 32 字节原始密钥） */
+async function userVarKeyFor(ciyuanxiId: string): Promise<CryptoKey> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(ciyuanxiId),
+  );
+  return globalThis.crypto.subtle.importKey(
+    'raw',
+    digest,
+    { name: 'AES-CBC' },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+/** AES-CBC 加密插件用户变量 */
+async function encryptUserVars(
+  ciyuanxiId: string,
+  values: Record<string, string>,
+): Promise<EncryptedUserVars> {
+  const key = await userVarKeyFor(ciyuanxiId);
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const ct = new Uint8Array(
+    await globalThis.crypto.subtle.encrypt(
+      { name: 'AES-CBC', iv },
+      key,
+      new TextEncoder().encode(JSON.stringify(values)),
+    ),
+  );
+  return { iv: b64FromBytes(iv), data: b64FromBytes(ct) };
+}
+
+/** AES-CBC 解密插件用户变量（失败返回 undefined，由调用方决定跳过） */
+async function decryptUserVars(
+  ciyuanxiId: string,
+  enc: EncryptedUserVars,
+): Promise<Record<string, string> | undefined> {
+  try {
+    const key = await userVarKeyFor(ciyuanxiId);
+    const pt = await globalThis.crypto.subtle.decrypt(
+      { name: 'AES-CBC', iv: bytesFromB64(enc.iv) },
+      key,
+      bytesFromB64(enc.data),
+    );
+    const parsed = JSON.parse(new TextDecoder().decode(pt));
+    return typeof parsed === 'object' && parsed ? parsed as Record<string, string> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ==================== 类型定义 ====================
 
 /** 上传用的插件数据（包含脚本内容） */
@@ -72,6 +153,8 @@ export interface PluginSyncItem extends PluginSource {
   script: string;
   /** 标记脚本是否已 Base64 编码 */
   scriptEncoded?: boolean;
+  /** AES 加密后的用户变量值（API key / Cookie / Token），服务端密文存储 */
+  userVariablesEncrypted?: EncryptedUserVars;
 }
 
 /** 云端下载的完整数据 */
@@ -184,6 +267,18 @@ export async function uploadPlugins(): Promise<PluginSyncResult> {
         scriptEncoded: true,
       };
 
+      // 附加 AES 加密的用户变量值（失败仅跳过变量同步，不影响插件本身上传）
+      const userVars = getPluginUserVariableValues(plugin.id);
+      if (Object.keys(userVars).length > 0) {
+        try {
+          syncItem.userVariablesEncrypted = await encryptUserVars(ciyuanxiId, userVars);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          logSyncError(`uploadPlugins: 插件 "${plugin.name}" 用户变量加密失败:`, msg);
+          result.errors.push(`插件 "${plugin.name}" 用户变量加密失败，变量未同步`);
+        }
+      }
+
       const data = await signedRequest<{ plugin_count: number }>('plugin_sync_upload_one', {
         user_id: ciyuanxiId,
         plugin: syncItem,
@@ -263,6 +358,15 @@ export async function downloadPlugins(): Promise<PluginSyncResult> {
         const script = item.scriptEncoded ? decodeBase64(item.script) : item.script;
         const ok = await restorePluginFromSync(item, script);
         if (ok) {
+          // 还原 AES 加密的用户变量值（用云端 plugin id 作为键，与上传端一致）
+          if (item.userVariablesEncrypted) {
+            const values = await decryptUserVars(ciyuanxiId, item.userVariablesEncrypted);
+            if (values && Object.keys(values).length > 0) {
+              setPluginUserVariableValues(item.id, values);
+            } else {
+              result.errors.push(`插件 "${item.name}" 用户变量解密失败`);
+            }
+          }
           result.downloadedPlugins++;
         } else {
           result.errors.push(`插件 "${item.name}" 恢复失败`);

@@ -10,6 +10,7 @@
  * - kw (酷我): 加密歌词，包含逐字时间
  * - tx (QQ音乐): QRC 加密歌词，包含逐字时间
  * - wy (网易云): eapi 加密，yrc 逐字歌词
+ * - mg (咪咕): resourceinfo.do 解 lrcUrl/trcUrl → LRC + 翻译歌词
  */
 
 import type { Song } from '../../types';
@@ -110,7 +111,7 @@ export function getCachedLxSongInfo(source: string, songmid: string | number): L
  * 注意：返回的 lxlyric 统一使用相对偏移格式 <offsetMs,durationMs>（相对于行首）。
  */
 export async function fetchLxLyric(
-  source: 'kw' | 'kg' | 'tx' | 'wy',
+  source: LxDirectSource,
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
   return dispatchFallbackModule('lx_lyric', 'fetchLyric', { source, songInfo },
@@ -118,7 +119,7 @@ export async function fetchLxLyric(
 }
 
 async function fetchLxLyricBuiltin(
-  source: 'kw' | 'kg' | 'tx' | 'wy',
+  source: LxDirectSource,
   songInfo: LxSongInfo,
 ): Promise<LxLyricResult | null> {
   try {
@@ -131,7 +132,10 @@ async function fetchLxLyricBuiltin(
   }
 }
 
-const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy']);
+// 后端 (lyric_fetcher.rs) 直连取词的音源
+const LX_SOURCES = new Set(['kw', 'kg', 'tx', 'wy', 'mg']);
+
+type LxDirectSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg';
 
 /** 获取 LX 在线歌曲歌词并转换为播放器支持的原始歌词文本。 */
 export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
@@ -193,7 +197,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
           if (hasWordLevelContent(result) || !LX_SOURCES.has(source)) {
             return result;
           }
-          const directLyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+          const directLyrics = await fetchLxLyric(source as LxDirectSource, songInfo);
           if (directLyrics) {
             const directResult = buildLxLyricsRaw(directLyrics);
             if (directResult && directResult.trim() && hasWordLevelContent(directResult)) {
@@ -211,7 +215,7 @@ export async function fetchLxSongLyricsRaw(song: Song): Promise<string> {
   }
 
   if (LX_SOURCES.has(source)) {
-    const lyrics = await fetchLxLyric(source as 'kw' | 'kg' | 'tx' | 'wy', songInfo);
+    const lyrics = await fetchLxLyric(source as LxDirectSource, songInfo);
     if (lyrics) {
       const result = buildLxLyricsRaw(lyrics);
       return result;

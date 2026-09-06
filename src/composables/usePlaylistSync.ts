@@ -92,6 +92,19 @@ function persistLoginSyncCompleted() {
   localStore.setJson(LOGIN_SYNC_COMPLETED_KEY, true);
 }
 
+// ==================== 收藏按键合并：上次已同步路径跟踪 ====================
+// 上传时计算 deletePaths = 上次已同步 − 当前本地收藏，通知服务端删除对应云端收藏，
+// 从而在"收藏按键合并"（跨设备各新增互不抹掉）下仍能可靠地传播本机删除。
+const SYNCED_FAVORITES_PATHS_KEY = 'xianyu_synced_favorites_paths';
+
+function loadSyncedFavoritePaths(): string[] {
+  return localStore.getJson<string[]>(SYNCED_FAVORITES_PATHS_KEY) ?? [];
+}
+
+function persistSyncedFavoritePaths(paths: string[]) {
+  localStore.setJson(SYNCED_FAVORITES_PATHS_KEY, paths);
+}
+
 // ==================== 本地曲库匹配 ====================
 
 function normMeta(s: string): string {
@@ -412,6 +425,18 @@ export function usePlaylistSync() {
       result.uploadedPlaylists = uploadResult.playlist_count;
       result.uploadedSongs = uploadResult.song_total;
       logSync(`uploadPlaylists 完成: uploadedPlaylists=${result.uploadedPlaylists}, uploadedSongs=${result.uploadedSongs}`);
+
+      // 服务端回传 id_map：把本地 id 绑定到云端字符串 cloudId，保证同歌单再上传可定位、
+      // 跨设备稳定识别为"已同步"（覆盖本地历史数字 cloudId / 缺失 cloudId）
+      if (uploadResult.id_map?.length) {
+        let written = 0;
+        for (const { id, cloudId } of uploadResult.id_map) {
+          if (id && cloudId && collectionsStore.setPlaylistCloudId(id, cloudId)) {
+            written++;
+          }
+        }
+        logSync(`uploadPlaylists: 已写回 ${written}/${uploadResult.id_map.length} 个歌单的云端 id`);
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logSyncError(`uploadPlaylists 异常: ${msg}`, error);
@@ -511,6 +536,10 @@ export function usePlaylistSync() {
             libraryStore.setExtraSong(song);
           }
           if (cloudPl.cloudCoverUrl) existing.cloudCoverUrl = cloudPl.cloudCoverUrl;
+          // 从云端下载合并的歌单标记为云端来源（cloudId 可能因历史数据缺失，用于"是否云端"检测）
+          existing.isCloud = true;
+          // 合并进已有本地歌单时也写入 cloudId，确保"是否已同步"判定与后续删除范围可用
+          if (cloudPl.cloudId) existing.cloudId = cloudPl.cloudId;
 
           result.downloadedPlaylists++;
           result.downloadedSongs += localSongs.length;
@@ -525,6 +554,7 @@ export function usePlaylistSync() {
             songPaths: allPaths,
             songs: localSongs.length > 0 ? localSongs : undefined,
             cloudId: cloudPl.cloudId,
+            isCloud: true,
             cloudCoverUrl: cloudPl.cloudCoverUrl || '',
             isFavorite: cloudPl.isFavorite,
             createdAt: cloudPl.createdAt,
@@ -819,8 +849,8 @@ export function usePlaylistSync() {
     }
 
     try {
-      await deleteCloudPlaylist(ciyuanxiId, playlist.cloudId);
-      collectionsStore.setPlaylistCloudId(playlistId, 0);
+      await deleteCloudPlaylist(ciyuanxiId, [playlist.cloudId]);
+      collectionsStore.setPlaylistCloudId(playlistId, '');
       showToast('已从云端删除歌单', 'success');
       return true;
     } catch (error) {
@@ -967,7 +997,12 @@ export function usePlaylistSync() {
         showToast('本地收藏为空，跳过上传', 'info');
         return;
       }
-      const result = await uploadFavoritesToCloud(ciyuanxiId, songs);
+      const result = await uploadFavoritesToCloud(ciyuanxiId, songs, {
+        // 本机删除 = 上次已同步 − 当前收藏，交由服务端合并模式删除对应云端收藏
+        deletePaths: loadSyncedFavoritePaths().filter(p => !songs.some(s => s.path === p)),
+      });
+      // 上传成功后，把当前收藏路径记为"上次已同步"，作为下次删除跟踪基准
+      persistSyncedFavoritePaths(songs.map(s => s.path));
       lastFavoritesSyncTime.value = Date.now();
       lastFavoritesSyncResult.value = {
         uploadedPlaylists: 0,
@@ -1018,19 +1053,22 @@ export function usePlaylistSync() {
         return resolved === song.path ? song : { ...song, path: resolved };
       });
 
-      // 写入本地收藏：本地库歌曲更新路径，在线或缺失歌曲写入元信息
+      // 写入本地收藏（按键合并）：保留本机已有收藏，仅追加云端新增。
+      // 本地库歌曲更新路径，在线或缺失歌曲写入元信息；不做整包替换，
+      // 避免抹掉本机新收藏（本机删除由本机下次上传的 deletePaths 传播）。
       const lookup = libraryStore.songLookup;
-      const savedPaths: string[] = [];
+      const existingPaths = new Set(collectionsStore.favoritePaths);
+      const mergedPaths = [...collectionsStore.favoritePaths];
       const metaMap: Record<string, Song> = {};
       for (const song of matchedList) {
-        if (lookup.has(song.path)) {
-          savedPaths.push(song.path);
-        } else {
-          savedPaths.push(song.path);
+        if (existingPaths.has(song.path)) continue;
+        existingPaths.add(song.path);
+        mergedPaths.push(song.path);
+        if (!lookup.has(song.path)) {
           metaMap[song.path] = song;
         }
       }
-      collectionsStore.setFavoritePaths(savedPaths);
+      collectionsStore.setFavoritePaths(mergedPaths);
       if (Object.keys(metaMap).length > 0) {
         collectionsStore.setFavoriteSongMetaMap(metaMap);
       }
