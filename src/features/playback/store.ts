@@ -50,6 +50,18 @@ export const usePlaybackStore = defineStore('playback', () => {
     sessionQualityOverride.value = q;
   };
 
+  /**
+   * 日推队列标记（会话级）：这些 path 来自每日推荐，
+   * 底栏据此显示「不喜欢」按钮（跳过并上报负反馈）。重启后失效。
+   */
+  const dailyRecommendPaths = ref<Set<string>>(new Set());
+  const markDailyRecommendPaths = (paths: string[]) => {
+    if (paths.length === 0) return;
+    const next = new Set(dailyRecommendPaths.value);
+    for (const p of paths) if (p) next.add(p);
+    dailyRecommendPaths.value = next;
+  };
+
   const pruneFallbackSongs = () => {
     const queuedPaths = new Set<string>([
       ...playQueuePaths.value,

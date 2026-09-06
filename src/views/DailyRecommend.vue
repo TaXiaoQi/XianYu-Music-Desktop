@@ -179,7 +179,7 @@ const SongContextMenu = defineAsyncComponent(() => import('../components/overlay
 const router = useRouter();
 const authStore = useAuthStore();
 const { showToast } = useToast();
-const { playSong, clearQueue, addSongsToQueue } = usePlaybackController();
+const { playSong, clearQueue, addSongsToQueue, markDailyRecommendPaths } = usePlaybackController();
 const libraryStore = useLibraryStore();
 const { openAddToPlaylistDialog } = useAddToPlaylistDialog();
 
