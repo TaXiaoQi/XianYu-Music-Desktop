@@ -1372,23 +1372,19 @@ onUnmounted(() => {
             <div class="desktop-compact-label shrink-0">逐字效果</div>
             <button
               type="button"
-              class="desktop-lyrics-toggle"
-              :class="desktopLyricsSettings.enableWordEffect ? 'desktop-lyrics-toggle--on' : ''"
+              class="glass-switch"
+              :class="{ 'is-checked': desktopLyricsSettings.enableWordEffect }"
               @click="desktopLyricsSettings.enableWordEffect = !desktopLyricsSettings.enableWordEffect"
-            >
-              <span class="desktop-lyrics-toggle-thumb"></span>
-            </button>
+            ></button>
           </div>
           <div class="desktop-compact-cell flex items-center justify-between">
             <div class="desktop-compact-label shrink-0">歌词描边</div>
             <button
               type="button"
-              class="desktop-lyrics-toggle"
-              :class="desktopLyricsSettings.enableTextOutline ? 'desktop-lyrics-toggle--on' : ''"
+              class="glass-switch"
+              :class="{ 'is-checked': desktopLyricsSettings.enableTextOutline }"
               @click="desktopLyricsSettings.enableTextOutline = !desktopLyricsSettings.enableTextOutline"
-            >
-              <span class="desktop-lyrics-toggle-thumb"></span>
-            </button>
+            ></button>
           </div>
         </div>
 
