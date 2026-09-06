@@ -13,6 +13,7 @@ import { usePlayerViewState } from '../../composables/usePlayerViewState';
 import { useSettings } from '../../features/settings/useSettings';
 import { useSidebarPlaylistContextMenu } from '../../composables/useSidebarPlaylistContextMenu';
 import { useSidebarPlaylistCovers } from '../../composables/useSidebarPlaylistCovers';
+import { usePlaylistSync } from '../../composables/usePlaylistSync';
 import { useSidebarPlaylistDragDrop } from '../../composables/useSidebarPlaylistDragDrop';
 import { useSidebarPlaylistSelection } from '../../composables/useSidebarPlaylistSelection';
 import { useLibraryStore } from '../../features/library/store';
@@ -29,10 +30,12 @@ import SidebarPlaylists from './SidebarPlaylists.vue';
 const ModernModal = defineAsyncComponent(() => import('../common/ModernModal.vue'));
 const PlaylistContextMenu = defineAsyncComponent(() => import('../overlays/PlaylistContextMenu.vue'));
 const PlaylistModal = defineAsyncComponent(() => import('../overlays/PlaylistModal.vue'));
+const SyncDeleteScopeModal = defineAsyncComponent(() => import('../overlays/SyncDeleteScopeModal.vue'));
 
 const { artistList, albumList } = usePlayerLibraryView();
 const { playSong, addSongsToQueue, clearQueue } = usePlaybackController();
 const { settings } = useSettings();
+const { deleteCloudPlaylistLocal } = usePlaylistSync();
 
 const {
   currentViewMode,
@@ -104,6 +107,9 @@ const {
   targetPlaylist,
   showDeleteModal,
   deleteModalContent,
+  showDeleteScopeModal,
+  canDeleteCloud,
+  confirmDeleteScope,
   handleDeletePlaylist,
   confirmDeletePlaylist,
   handlePlaylistContextMenu,
@@ -119,6 +125,9 @@ const {
   playSong,
   openHomePlaylist,
   deletePlaylist,
+  isCloudOrigin: id => Boolean(playlists.value?.some?.(p => p.id === id && (p.cloudId != null || p.isCloud === true))),
+  hasCloudId: id => Boolean(playlists.value?.some?.(p => p.id === id && p.cloudId != null)),
+  deleteCloudPlaylist: async id => deleteCloudPlaylistLocal(id),
   clearSelection: clearPlaylistSelection,
 });
 
@@ -541,6 +550,15 @@ onBeforeUnmount(() => {
       type="danger"
       confirm-text="删除"
       @confirm="confirmDeletePlaylist"
+    />
+
+    <SyncDeleteScopeModal
+      v-model:visible="showDeleteScopeModal"
+      title="该歌单已同步到云端"
+      description="请选择删除范围"
+      :can-delete-cloud="canDeleteCloud"
+      @cancel="showDeleteScopeModal = false"
+      @scope="confirmDeleteScope"
     />
 
     <PlaylistModal

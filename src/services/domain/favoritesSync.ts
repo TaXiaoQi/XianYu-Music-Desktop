@@ -38,18 +38,29 @@ export interface FavoritesDownloadData {
 }
 
 /**
- * 上传当前用户的收藏歌曲列表到云端
+ * 上传当前用户的收藏歌曲列表到云端。
+ *
+ * 合并模式：携带 `merge: true` 与 `delete_paths`，服务端逐条按 path upsert +
+ * 删除 delete_paths，保留云端未被本次涉及的其他收藏（跨设备按键合并）。
+ * 不传 delete_paths 时等价于旧行为（merge 模式下仅 upsert 本条集合、不删其他）。
  */
 export async function uploadFavorites(
   ciyuanxiId: string,
   songs: Song[],
+  options?: { deletePaths?: string[] },
 ): Promise<FavoritesUploadResult> {
   const payload: SyncSongPayload[] = songs.map(songToSyncPayload);
   try {
-    const data = await signedRequest<FavoritesUploadResult>('favorites_sync_upload', {
+    const body: Record<string, unknown> = {
       user_id: ciyuanxiId,
       favorites: payload,
-    }, {
+      merge: true,
+    };
+    const del = options?.deletePaths ?? [];
+    if (del.length > 0) {
+      body.delete_paths = del;
+    }
+    const data = await signedRequest<FavoritesUploadResult>('favorites_sync_upload', body, {
       fetchTimeoutMs: 12_000,
       timeoutMs: 15_000,
     });

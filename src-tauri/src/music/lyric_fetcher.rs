@@ -1,4 +1,4 @@
-// lyric_fetcher.rs - 四音源歌词抓取与解密
+// lyric_fetcher.rs - 多音源歌词抓取与解密
 //
 // 将前端 lxLyricFetcher.ts 中的请求构造+解密逻辑迁移到 Rust。
 // 支持的音源：
@@ -6,6 +6,7 @@
 // - kw (酷我): XOR 加密请求 → zlib 解压 → 逐字歌词解析
 // - tx (QQ音乐): QRC 3DES 解密 → 逐字歌词解析
 // - wy (网易云): eapi AES-ECB 加密 → yrc/krc 逐字歌词
+// - mg (咪咕): resourceinfo.do 解 lrcUrl/trcUrl → LRC + 翻译歌词
 
 use base64::Engine;
 use encoding_rs::{BIG5, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE};
@@ -2355,6 +2356,114 @@ async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>
     Ok(None)
 }
 
+// ==================== MG (Migu) Lyric Fetching ====================
+
+const MG_CLIENT_HEADERS: [(&str, &str); 3] = [
+    ("Referer", "https://app.c.nf.migu.cn/"),
+    (
+        "User-Agent",
+        "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 6 Build/LYZ28E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Mobile Safari/537.36",
+    ),
+    ("channel", "0146921"),
+];
+
+/// 从 resourceinfo.do 响应中取出歌词 URL。咪咕个别版本把字段包在
+/// `content` 节点下，此处做兼容提取。
+fn mg_extract_lyric_urls(json: &serde_json::Value) -> (Option<String>, Option<String>, Option<String>) {
+    let node = json.get("content").unwrap_or(json);
+    let pick = |key: &str| -> Option<String> {
+        node.get(key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    (pick("lrcUrl"), pick("mrcUrl"), pick("trcUrl"))
+}
+
+/// 咪咕歌词获取：两步。
+/// 1. 由 copyrightId 调 resourceinfo.do 解出 lrcUrl / trcUrl；
+/// 2. 抓取 LRC 正文与翻译歌词。lrcUrl 缺失时回退到咪咕 Web 公开 get_lyric 接口。
+async fn fetch_mg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+    let copyright_id = match song_info.copyright_id.as_deref() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => return Ok(None),
+    };
+
+    let mut result = LyricResult::default();
+    let mut lyric_fetched = false;
+
+    // 第一步：解析歌词 URL
+    let resource_url =
+        "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2";
+    let payload = format!(
+        r#"{{"resourceId":"{}","copyrightId":"{}"}}"#,
+        copyright_id, copyright_id
+    );
+    let headers: [(&str, &str); 2] = [
+        ("Content-Type", "application/json;charset=UTF-8"),
+        ("channel", "0146921"),
+    ];
+    if let Ok(resp) = http_fetch_text(resource_url, "POST", &headers, Some(&payload)).await {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp.body) {
+            let (lrc_url, _mrc_url, trc_url) = mg_extract_lyric_urls(&json);
+
+            // 第二步：抓取 LRC 正文
+            if let Some(url) = lrc_url {
+                if let Ok(r) = http_fetch_text(&url, "GET", &MG_CLIENT_HEADERS, None).await {
+                    let text = r.body.trim().to_string();
+                    if !text.is_empty() {
+                        result.lyric = text;
+                        lyric_fetched = true;
+                    }
+                }
+            }
+
+            // 翻译歌词（可选，失败不影响主歌词）
+            if let Some(url) = trc_url {
+                if let Ok(r) = http_fetch_text(&url, "GET", &MG_CLIENT_HEADERS, None).await {
+                    let text = r.body.trim().to_string();
+                    if !text.is_empty() {
+                        result.tlyric = text;
+                    }
+                }
+            }
+        }
+    }
+
+    // 回退：咪咕 Web 公开 get_lyric（直接返回普通 LRC 文本）
+    if !lyric_fetched {
+        for endpoint in [
+            format!(
+                "https://music.migu.cn/v3/api/music/audio-player/get_lyric?copyrightId={}&isPlay=1&responseType=json",
+                copyright_id
+            ),
+            format!(
+                "https://music.migu.cn/v3/api/music/audioPlayer/getLyric?copyrightId={}",
+                copyright_id
+            ),
+        ] {
+            if let Ok(r) = http_fetch_text(&endpoint, "GET", &MG_CLIENT_HEADERS, None).await {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&r.body) {
+                    if let Some(lyric) = json["lyric"].as_str() {
+                        let lyric = lyric.trim().to_string();
+                        if !lyric.is_empty() {
+                            result.lyric = lyric;
+                            lyric_fetched = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !lyric_fetched {
+        return Ok(None);
+    }
+
+    Ok(Some(result))
+}
+
 // ==================== Tauri Command ====================
 
 #[tauri::command]
@@ -2367,6 +2476,7 @@ pub async fn fetch_lyric_from_source(
         "kw" => fetch_kw_lyric(&song_info).await?,
         "tx" => fetch_tx_lyric(&song_info).await?,
         "wy" => fetch_wy_lyric(&song_info).await?,
+        "mg" => fetch_mg_lyric(&song_info).await?,
         _ => return Ok(None),
     };
     Ok(result)

@@ -1,4 +1,5 @@
 import { Converter } from 'opencc-js/cn2t';
+import { Converter as T2CNConverter } from 'opencc-js/t2cn';
 
 import type { AppLanguage } from '../../types';
 
@@ -64,4 +65,43 @@ export function toTraditional(text: string): string {
 /** 当前语言是否为繁体中文。 */
 export function isTraditionalLanguage(language: AppLanguage): boolean {
   return language === 'zh-TW';
+}
+
+/**
+ * 将台湾正体文本转换回简体中文。
+ *
+ * 正常切回简本路径下 Vue 会按 zh-CN 词表重渲染，无需反向转换；但全局 DOM 翻译层在
+ * 繁体期间会把 t() 输出或已翻译的繁体文本误当成"原始文本"重新捕获，污染 originalText，
+ * 导致切回简体时读到的源是繁体而永远停在繁体。此函数用于在 DOM 层兜底反向还原。
+ * 与 toTraditional 一样单向可逆性受限，仅作为还原兜底，不进业务词法判断。
+ */
+let reverseConverter: ConverterFn | null = null;
+const reverseConversionCache = new Map<string, string>();
+
+function getReverseConverter(): ConverterFn {
+  if (!reverseConverter) {
+    reverseConverter = T2CNConverter({ from: 'twp', to: 'cn' });
+  }
+  return reverseConverter;
+}
+
+export function toSimplified(text: string): string {
+  if (!text || !containsHan(text)) return text;
+
+  const cacheable = text.length <= MAX_CACHEABLE_LENGTH;
+  if (cacheable) {
+    const cached = reverseConversionCache.get(text);
+    if (cached !== undefined) return cached;
+  }
+
+  const converted = getReverseConverter()(text);
+
+  if (cacheable) {
+    if (reverseConversionCache.size >= MAX_CACHE_ENTRIES) {
+      reverseConversionCache.clear();
+    }
+    reverseConversionCache.set(text, converted);
+  }
+
+  return converted;
 }

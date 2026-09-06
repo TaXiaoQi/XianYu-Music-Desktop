@@ -113,8 +113,10 @@ export interface Playlist {
   coverPath?: string;
   /** 完整歌曲对象（插件导入等非本地来源，用于跨设备同步） */
   songs?: Song[];
-  /** 云端歌单 ID（同步后绑定，用于增量同步定位云端歌单） */
-  cloudId?: number;
+  /** 云端歌单 ID（同步后绑定，用于增量同步定位云端歌单），统一为字符串稳定 ID */
+  cloudId?: string;
+  /** 是否从云端同步而来（下载合并时标记；cloudId 可能因历史数据缺失，用此标记判定"是否云端"） */
+  isCloud?: boolean;
   /** 云端歌单封面 URL */
   cloudCoverUrl?: string;
   /** 是否为收藏歌单（"我喜欢的音乐"） */

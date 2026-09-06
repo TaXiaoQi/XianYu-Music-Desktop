@@ -2,7 +2,7 @@ import { watch } from 'vue';
 
 import { useI18n } from './index';
 import { toEnglish } from './english';
-import { toTraditional } from './traditional';
+import { toSimplified, toTraditional } from './traditional';
 import type { AppLanguage } from '../../types';
 
 const SKIP_TAGS = new Set([
@@ -44,7 +44,9 @@ function isInsideSkippedSubtree(node: Node): boolean {
 function translateSource(source: string, language: AppLanguage): string {
   if (language === 'zh-TW') return toTraditional(source);
   if (language === 'en-US') return toEnglish(source);
-  return source;
+  // 简体：对 originalText 兜底反向简体化——繁体期间 t() 输出/已翻译文本会污染 originalText
+  // 为繁体，若直接原样返回会让界面无法从繁体切回简体。
+  return toSimplified(source);
 }
 
 function translateTextNode(node: Text, language: AppLanguage, force = false): void {

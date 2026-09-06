@@ -21,12 +21,25 @@ export interface SyncResult {
   errors: string[];
 }
 
+/** 上传完成后服务端回传的本地 id → 云端字符串 cloudId 映射 */
+export interface SyncIdMapEntry {
+  id: string;
+  cloudId?: string;
+}
+
+/** 文件同步上传的完成响应 */
+export interface FileSyncUploadResult {
+  playlist_count: number;
+  song_total: number;
+  id_map?: SyncIdMapEntry[];
+}
+
 /** 文件同步上传的歌单数据格式 */
 export interface FileSyncPlaylistData {
   id: string;
   name: string;
   type?: PlaylistType;
-  cloudId?: number;
+  cloudId?: string;
   cloudCoverUrl?: string;
   isFavorite?: boolean;
   createdAt?: string;
@@ -46,7 +59,7 @@ export interface FileSyncDownloadData {
     id: string;
     name: string;
     type?: PlaylistType;
-    cloudId?: number;
+    cloudId?: string;
     cloudCoverUrl?: string;
     isFavorite?: boolean;
     createdAt?: string;

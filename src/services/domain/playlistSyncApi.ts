@@ -8,7 +8,7 @@
 
 import { signedRequest } from '../auth/authService';
 import type { SignedRequestOptions } from '../auth/authService';
-import type { FileSyncPlaylistData, FileSyncDownloadData } from './playlistSyncTypes';
+import type { FileSyncPlaylistData, FileSyncDownloadData, FileSyncUploadResult } from './playlistSyncTypes';
 
 /** 日志前缀，方便在控制台筛选歌单同步相关日志 */
 const LOG = '[PlaylistSync]';
@@ -20,14 +20,14 @@ function logSyncError(msg: string, ...args: unknown[]) {
   console.error(`${LOG} ${msg}`, ...args);
 }
 
-/** 删除云端歌单 */
+/** 删除云端歌单（按云端字符串 cloudId 从文件存储快照删除，支持批量） */
 export async function deleteCloudPlaylist(
   ciyuanxiId: string,
-  playlistId: number,
+  cloudIds: string[],
 ): Promise<void> {
-  await signedRequest('delete_playlist', {
+  await signedRequest('file_sync_delete_playlist', {
     user_id: ciyuanxiId,
-    playlist_id: playlistId,
+    cloud_ids: cloudIds,
   });
 }
 
@@ -133,7 +133,7 @@ async function signedRequestWithRetry<T>(
 export async function fileSyncUpload(
   ciyuanxiId: string,
   playlists: FileSyncPlaylistData[],
-): Promise<{ playlist_count: number; song_total: number }> {
+): Promise<FileSyncUploadResult> {
   logSync(`fileSyncUpload → user_id=${ciyuanxiId}, playlists=${playlists.length}`);
   const totalSongs = playlists.reduce((sum, pl) => sum + pl.songs.length, 0);
   logSync(`fileSyncUpload: 总歌曲数=${totalSongs}`);
@@ -201,7 +201,7 @@ export async function fileSyncUpload(
   logSync(`fileSyncUpload: 所有分块上传完成, 发送 upload_finish`);
   const finishData = await signedRequestWithRetry<{ playlist_count: number; song_total: number }>(
     'file_sync_upload_finish',
-    { user_id: ciyuanxiId },
+    { user_id: ciyuanxiId, merge: true },
     startFinishTimeoutOptions,
     FILE_SYNC_MAX_RETRIES,
     'upload_finish',

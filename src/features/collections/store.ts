@@ -154,10 +154,10 @@ export const useCollectionsStore = defineStore('collections', () => {
   };
 
   /** 绑定云端歌单 ID（同步后调用） */
-  const setPlaylistCloudId = (id: string, cloudId: number) => {
+  const setPlaylistCloudId = (id: string, cloudId?: string) => {
     const playlist = getPlaylistById(id);
     if (playlist) {
-      playlist.cloudId = cloudId;
+      playlist.cloudId = cloudId && cloudId.length > 0 ? cloudId : undefined;
       return true;
     }
     return false;
@@ -174,8 +174,8 @@ export const useCollectionsStore = defineStore('collections', () => {
   };
 
   /** 根据云端歌单 ID 查找本地歌单 */
-  const getPlaylistByCloudId = (cloudId: number) =>
-    playlists.value.find(item => item.cloudId === cloudId);
+  const getPlaylistByCloudId = (cloudId?: string) =>
+    cloudId ? playlists.value.find(item => item.cloudId === cloudId) : undefined;
 
   const getPlaylistById = (playlistId: string) =>
     playlists.value.find(item => item.id === playlistId);
