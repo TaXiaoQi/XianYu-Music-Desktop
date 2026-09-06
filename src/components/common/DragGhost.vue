@@ -7,6 +7,12 @@ const ghostCover = ref('');
 const { loadCover } = useCoverCache();
 let ghostRequestId = 0;
 
+const ghostVisible = ref(false);
+
+watch(() => dragSession.showGhost, (show) => {
+  ghostVisible.value = show;
+});
+
 watch([() => dragSession.active, () => dragSession.type], async ([active, type]) => {
   const requestId = ++ghostRequestId;
   if (active) {
@@ -59,20 +65,20 @@ const badgeCount = computed(() => {
 
 <template>
   <teleport to="body">
-    <transition name="fade">
-      <div 
-        v-if="dragSession.showGhost"
-        class="fixed z-[9999] pointer-events-none p-3 bg-white/90 dark:bg-[#262626]/90 backdrop-blur-md rounded-lg shadow-2xl border border-white/20 dark:border-white/10 flex items-center gap-3 select-none transition-transform"
+    <transition name="ghost">
+      <div
+        v-if="ghostVisible"
+        class="fixed z-[9999] pointer-events-none p-3 bg-white/90 dark:bg-[#262626]/90 backdrop-blur-md rounded-lg shadow-2xl border border-white/20 dark:border-white/10 flex items-center gap-3 select-none"
         :style="ghostStyle"
       >
         <!-- Icon / Cover Area -->
-        <div 
+        <div
           class="w-12 h-12 bg-gray-200/50 dark:bg-white/10 flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative"
           :class="dragSession.type === 'artist' ? 'rounded-full' : 'rounded'"
         >
           <!-- Song Cover -->
           <img v-if="dragSession.type === 'song' && ghostCover" :src="ghostCover" class="w-full h-full object-cover" />
-          
+
           <!-- Default Icons based on Type -->
           <template v-else>
              <!-- Song Default -->
@@ -81,7 +87,7 @@ const badgeCount = computed(() => {
              </svg>
              <!-- Playlist Default -->
              <svg v-else-if="dragSession.type === 'playlist'" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
              </svg>
              <!-- Folder Default -->
              <svg v-else-if="dragSession.type === 'folder'" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 dark:text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -100,7 +106,7 @@ const badgeCount = computed(() => {
           <span class="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[200px] drop-shadow-sm">{{ title }}</span>
           <span class="text-xs text-gray-500 dark:text-white/60 truncate max-w-[200px]">{{ subtitle }}</span>
         </div>
-        
+
         <div v-if="badgeCount > 1" class="absolute -top-2 -right-2 w-6 h-6 bg-[#EC4141] text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md border-2 border-white dark:border-white/10">
            {{ badgeCount }}
         </div>
@@ -110,14 +116,18 @@ const badgeCount = computed(() => {
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+.ghost-enter-active {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
-.fade-enter-from,
-.fade-leave-to {
+.ghost-enter-from {
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.85) translateY(-8px);
+}
+.ghost-leave-active {
+  transition: all 0.15s ease;
+}
+.ghost-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
 }
 </style>
