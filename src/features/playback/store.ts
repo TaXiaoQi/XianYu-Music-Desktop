@@ -238,6 +238,8 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentCoverFull,
     currentAvailableQualities,
     currentPlayingQuality,
+    dailyRecommendPaths,
+    markDailyRecommendPaths,
     currentPlayingAudioUrl,
     sessionQualityOverride,
     setSessionQualityOverride,

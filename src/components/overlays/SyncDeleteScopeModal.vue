@@ -6,6 +6,8 @@ defineProps<{
   title: string;
   description?: string;
   canDeleteCloud?: boolean;
+  /** 云端选项禁用时的提示文案（默认为歌单场景） */
+  disabledHint?: string;
 }>();
 const emit = defineEmits([
   'update:visible',
@@ -44,7 +46,7 @@ const options: Array<{ value: SyncDeleteScope; label: string; subtitle: string }
             >
               <div class="text-sm font-medium text-gray-800 dark:text-white">{{ opt.label }}</div>
               <div class="text-xs text-gray-500 dark:text-gray-300 mt-0.5">{{ opt.subtitle }}</div>
-              <div v-if="opt.value !== 'local' && !canDeleteCloud" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">该歌单暂无云端副本，此选项不可用</div>
+              <div v-if="opt.value !== 'local' && !canDeleteCloud" class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{{ disabledHint ?? '该歌单暂无云端副本，此选项不可用' }}</div>
             </button>
           </div>
 

@@ -24,6 +24,8 @@ export function usePlaybackController() {
     currentPlayingQuality: playbackRefs.currentPlayingQuality,
     sessionQualityOverride: playbackRefs.sessionQualityOverride,
     setSessionQualityOverride: playbackStore.setSessionQualityOverride,
+    dailyRecommendPaths: playbackStore.dailyRecommendPaths,
+    markDailyRecommendPaths: playbackStore.markDailyRecommendPaths,
     isPlaying: playbackRefs.isPlaying,
     volume: playbackRefs.volume,
     currentTime: playbackRefs.currentTime,

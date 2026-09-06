@@ -58,6 +58,23 @@ import {
 } from '../services/domain/autoSync';
 import { playerStorage } from '../services/storage/playerStorage';
 import { localStore } from '../services/storage/localStore';
+import {
+  loadSyncedFavoritePaths,
+  persistSyncedFavoritePaths,
+  getCloudKeepPaths,
+  removeCloudKeepPaths,
+  getLocalOnlyPaths,
+  removeLocalOnlyPaths,
+} from '../services/domain/favoritesSyncState';
+import {
+  getCloudKeepSongs,
+  pruneCloudKeepSongs,
+  getLocalOnlySongs,
+  pruneLocalOnlySongs,
+  getPendingDeletedSongs,
+  prunePendingDeletedSongs,
+  clearPlaylistSongTombstones,
+} from '../services/domain/playlistSongSyncState';
 import { mergeAppSettings, createDefaultAppSettings } from '../features/settings/store';
 import { signedRequest } from '../services/auth/authService';
 import { readImageBase64 } from '../services/tauri/pluginApi';
@@ -95,15 +112,7 @@ function persistLoginSyncCompleted() {
 // ==================== 收藏按键合并：上次已同步路径跟踪 ====================
 // 上传时计算 deletePaths = 上次已同步 − 当前本地收藏，通知服务端删除对应云端收藏，
 // 从而在"收藏按键合并"（跨设备各新增互不抹掉）下仍能可靠地传播本机删除。
-const SYNCED_FAVORITES_PATHS_KEY = 'xianyu_synced_favorites_paths';
-
-function loadSyncedFavoritePaths(): string[] {
-  return localStore.getJson<string[]>(SYNCED_FAVORITES_PATHS_KEY) ?? [];
-}
-
-function persistSyncedFavoritePaths(paths: string[]) {
-  localStore.setJson(SYNCED_FAVORITES_PATHS_KEY, paths);
-}
+// 同步状态与「仅删本地/仅保留本地」墓碑见 favoritesSyncState.ts。
 
 // ==================== 本地曲库匹配 ====================
 
@@ -405,6 +414,40 @@ export function usePlaylistSync() {
         if (cloudCoverUrl && cloudCoverUrl !== pl.cloudCoverUrl) {
           collectionsStore.setPlaylistCloudCoverUrl(pl.id, cloudCoverUrl);
         }
+        let payloadSongs = songs.map(songToSyncPayload);
+        // 歌单内单曲删除墓碑处理（仅已同步歌单）：回填云端保留 / 剔除仅保留本地 / 上报删除
+        let deletedSongPaths: string[] | undefined;
+        if (pl.cloudId) {
+          const cloudId = pl.cloudId;
+          const localPaths = new Set(songs.map(s => s.path));
+          // 「仅删本地」墓碑回填：本地已移除但云端保留的歌曲，用缓存载荷补回上传列表
+          const keepMap = getCloudKeepSongs(cloudId);
+          for (const [path, payloadJson] of Object.entries(keepMap)) {
+            if (!payloadSongs.some(s => s.path === path)) {
+              try {
+                payloadSongs.push(JSON.parse(payloadJson) as typeof payloadSongs[number]);
+              } catch {
+                // 缓存载荷损坏时忽略，云端将由下次有效上传覆盖
+              }
+            }
+          }
+          // 重新添加回本机的 path 清除「仅删本地」墓碑（恢复正常同步）
+          pruneCloudKeepSongs(cloudId, localPaths);
+          // 「仅保留本地」墓碑：本机保留、云端已删的歌曲剔除出上传列表（防复活）；
+          // 已从本机移除的 path 自然失效（清除墓碑）
+          const localOnly = getLocalOnlySongs(cloudId);
+          if (localOnly.size > 0) {
+            payloadSongs = payloadSongs.filter(s => !localOnly.has(s.path));
+            pruneLocalOnlySongs(cloudId, localPaths);
+          }
+          // 「待上报删除」墓碑（删除全部）：重新添加回本机的 path 清除，其余随本次上传上报
+          const pending = getPendingDeletedSongs(cloudId);
+          if (pending.size > 0) {
+            prunePendingDeletedSongs(cloudId, Array.from(pending).filter(p => localPaths.has(p)));
+          }
+          const report = new Set<string>([...getLocalOnlySongs(cloudId), ...getPendingDeletedSongs(cloudId)]);
+          if (report.size > 0) deletedSongPaths = Array.from(report);
+        }
         playlistData.push({
           id: pl.id,
           name: pl.name,
@@ -413,7 +456,8 @@ export function usePlaylistSync() {
           cloudCoverUrl,
           isFavorite: pl.isFavorite,
           createdAt: pl.createdAt,
-          songs: songs.map(songToSyncPayload),
+          songs: payloadSongs,
+          ...(deletedSongPaths ? { deletedSongPaths } : {}),
         });
       }
 
@@ -485,8 +529,35 @@ export function usePlaylistSync() {
         logSync(`downloadPlaylists: [${i + 1}/${downloadData.playlists.length}] 处理歌单 "${cloudPl.name}" (songs=${cloudPl.songs?.length ?? 0})`);
         syncProgress.value = `正在下载歌单 (${i + 1}/${downloadData.playlists.length})：${cloudPl.name}`;
 
+        // 服务端已记录删除的歌曲 path（其他端「删除全部/仅保留本地」传播）+ 本机歌曲墓碑
+        const deletedPaths = new Set(cloudPl.deletedSongPaths ?? []);
+        const songCloudId = cloudPl.cloudId || '';
+        const songKeepMap = songCloudId ? getCloudKeepSongs(songCloudId) : {};
+        const songPendingSet = songCloudId ? getPendingDeletedSongs(songCloudId) : new Set<string>();
+
         const cloudSongs = cloudPl.songs ?? [];
-        const localSongs = cloudSongs.map(song => {
+
+        // 删除集合展开：云端原始 path 经本地曲库重映射后的 path 一并纳入
+        // （跨端 plugin:// → lx:// / 本地路径重映射场景），保证删除能命中本机歌曲
+        const expandedDeleted = new Set(deletedPaths);
+        if (deletedPaths.size > 0) {
+          for (const raw of cloudSongs) {
+            const p = (raw as any).path as string | undefined;
+            if (p && deletedPaths.has(p)) {
+              const restored = syncPayloadToSong(raw);
+              expandedDeleted.add(resolveLocalPath(matchIndex, restored));
+            }
+          }
+        }
+
+        // 过滤云端歌曲：服务端已删除(D) / 本机待上报删除 / 仅删本地墓碑（云端保留但本机已移除）
+        const visibleCloudSongs = cloudSongs.filter(raw => {
+          const p = (raw as any).path as string | undefined;
+          if (!p) return true;
+          if (expandedDeleted.has(p) || songPendingSet.has(p)) return false;
+          return songKeepMap[p] === undefined;
+        });
+        const localSongs = visibleCloudSongs.map(song => {
           const restored = syncPayloadToSong(song);
           const resolved = resolveLocalPath(matchIndex, restored);
           return resolved === restored.path ? restored : { ...restored, path: resolved };
@@ -494,7 +565,7 @@ export function usePlaylistSync() {
 
         // 建立云端原始 path → 转换后 path 的映射（用于更新 songPaths 中的旧路径）
         const pathRemapFromCloud = new Map<string, string>();
-        cloudSongs.forEach((raw, i) => {
+        visibleCloudSongs.forEach((raw, i) => {
           const originalPath = (raw as any).path as string | undefined;
           const newPath = localSongs[i]?.path;
           if (originalPath && newPath && originalPath !== newPath) {
@@ -509,6 +580,15 @@ export function usePlaylistSync() {
           // 已有本地歌单：先将 songPaths 里已被转换的旧路径（plugin:// → lx://）更新为新路径
           if (pathRemapFromCloud.size > 0) {
             existing.songPaths = existing.songPaths.map(p => pathRemapFromCloud.get(p) ?? p);
+          }
+
+          // 其他端传播的歌曲级删除：从本地歌单移除 D 中 path
+          if (expandedDeleted.size > 0) {
+            existing.songPaths = existing.songPaths.filter(p => !expandedDeleted.has(p));
+            if (existing.songs?.length) {
+              const kept = existing.songs.filter(s => !expandedDeleted.has(s.path));
+              existing.songs = kept.length > 0 ? kept : undefined;
+            }
           }
 
           // 合并歌曲列表
@@ -850,6 +930,8 @@ export function usePlaylistSync() {
 
     try {
       await deleteCloudPlaylist(ciyuanxiId, [playlist.cloudId]);
+      // 整个歌单已从云端删除：清空该歌单的全部歌曲墓碑（songKeep/localOnly/pendingDeleted）
+      clearPlaylistSongTombstones(playlist.cloudId);
       collectionsStore.setPlaylistCloudId(playlistId, '');
       showToast('已从云端删除歌单', 'success');
       return true;
@@ -997,9 +1079,19 @@ export function usePlaylistSync() {
         showToast('本地收藏为空，跳过上传', 'info');
         return;
       }
-      const result = await uploadFavoritesToCloud(ciyuanxiId, songs, {
-        // 本机删除 = 上次已同步 − 当前收藏，交由服务端合并模式删除对应云端收藏
-        deletePaths: loadSyncedFavoritePaths().filter(p => !songs.some(s => s.path === p)),
+      // 「仅保留本地」墓碑：已从云端删除、保留本机的收藏不再上传，防止复活
+      const localOnly = getLocalOnlyPaths();
+      const payload = songs.filter(s => !localOnly.has(s.path));
+      const currentPaths = new Set(songs.map(s => s.path));
+      // 墓碑清理：不再收藏的 path 清除「仅保留本地」墓碑（取消收藏自然失效）
+      removeLocalOnlyPaths(Array.from(localOnly).filter(p => !currentPaths.has(p)));
+      // 「仅删本地」墓碑：重新收藏的 path 清除（恢复正常同步行为）
+      const cloudKeep = getCloudKeepPaths();
+      removeCloudKeepPaths(Array.from(cloudKeep).filter(p => currentPaths.has(p)));
+      const result = await uploadFavoritesToCloud(ciyuanxiId, payload, {
+        // 本机删除 = 上次已同步 − 当前收藏，交由服务端合并模式删除对应云端收藏；
+        // 「仅删本地」墓碑的 path 云端保留，从删除跟踪中排除。
+        deletePaths: loadSyncedFavoritePaths().filter(p => !currentPaths.has(p) && !cloudKeep.has(p)),
       });
       // 上传成功后，把当前收藏路径记为"上次已同步"，作为下次删除跟踪基准
       persistSyncedFavoritePaths(songs.map(s => s.path));
@@ -1056,11 +1148,14 @@ export function usePlaylistSync() {
       // 写入本地收藏（按键合并）：保留本机已有收藏，仅追加云端新增。
       // 本地库歌曲更新路径，在线或缺失歌曲写入元信息；不做整包替换，
       // 避免抹掉本机新收藏（本机删除由本机下次上传的 deletePaths 传播）。
+      // 「仅删本地」墓碑：已从本机删除但云端保留的收藏，跳过回灌防止删除回流。
+      const cloudKeep = getCloudKeepPaths();
       const lookup = libraryStore.songLookup;
       const existingPaths = new Set(collectionsStore.favoritePaths);
       const mergedPaths = [...collectionsStore.favoritePaths];
       const metaMap: Record<string, Song> = {};
       for (const song of matchedList) {
+        if (cloudKeep.has(song.path)) continue;
         if (existingPaths.has(song.path)) continue;
         existingPaths.add(song.path);
         mergedPaths.push(song.path);

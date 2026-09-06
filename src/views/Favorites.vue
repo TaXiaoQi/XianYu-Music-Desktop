@@ -72,15 +72,25 @@
       @view-online-album="handleOnlineViewAlbum"
     />
     
-    <ModernModal 
+    <ModernModal
       v-if="showConfirm"
-      :visible="showConfirm" 
-      title="移除歌曲" 
-      :content="confirmMessage" 
-      type="danger" 
-      confirm-text="移除" 
-      @confirm="executeConfirmAction" 
-      @cancel="showConfirm = false" 
+      :visible="showConfirm"
+      title="移除歌曲"
+      :content="confirmMessage"
+      type="danger"
+      confirm-text="移除"
+      @confirm="executeConfirmAction"
+      @cancel="showConfirm = false"
+    />
+
+    <SyncDeleteScopeModal
+      v-model:visible="showDeleteScope"
+      title="收藏已同步到云端"
+      description="请选择删除范围"
+      :can-delete-cloud="deleteScopeCanDeleteCloud"
+      disabled-hint="选中收藏暂无云端副本，此选项不可用"
+      @cancel="showDeleteScope = false"
+      @scope="confirmDeleteScope"
     />
   </div>
 </template>
@@ -109,6 +119,14 @@ import { downloadToLocal } from '../composables/useDownloadToLocal';
 import { isDownloadableOnlineSong } from '../services/domain/downloadService';
 
 import { useSongDrag } from '../composables/useSongDrag';
+import { getCiyuanxiId } from '../services/domain/playlistSync';
+import { uploadFavorites } from '../services/domain/favoritesSync';
+import {
+  loadSyncedFavoritePaths,
+  addCloudKeepPaths,
+  addLocalOnlyPaths,
+} from '../services/domain/favoritesSyncState';
+import type { SyncDeleteScope } from '../components/overlays/SyncDeleteScopeModal.vue';
 
 const FavoritesHeader = defineAsyncComponent(() => import('../components/headers/FavoritesHeader.vue'));
 const SongTable = defineAsyncComponent(() => import('../components/song-list/SongTable.vue'));
@@ -116,6 +134,7 @@ const FavoriteCollectionsGrid = defineAsyncComponent(() => import('../components
 const DragGhost = defineAsyncComponent(() => import('../components/common/DragGhost.vue'));
 const SongContextMenu = defineAsyncComponent(() => import('../components/overlays/SongContextMenu.vue'));
 const ModernModal = defineAsyncComponent(() => import('../components/common/ModernModal.vue'));
+const SyncDeleteScopeModal = defineAsyncComponent(() => import('../components/overlays/SyncDeleteScopeModal.vue'));
 
 const router = useRouter();
 const navigationStore = useNavigationStore();
@@ -317,7 +336,15 @@ const executeBatchDelete = () => {
 
 const requestBatchDelete = () => {
   if (selectedPaths.value.size === 0) return;
-  confirmMessage.value = `确定要从收藏中移除选中的 ${selectedPaths.value.size} 首歌曲吗？`;
+  const paths = Array.from(selectedPaths.value);
+  // 已登录且存在云端副本：弹删除范围三选一
+  if (getCiyuanxiId() && paths.some(p => loadSyncedFavoritePaths().includes(p))) {
+    deleteScopePaths.value = paths;
+    deleteScopeIsClearAll.value = false;
+    showDeleteScope.value = true;
+    return;
+  }
+  confirmMessage.value = `确定要从收藏中移除选中的 ${paths.length} 首歌曲吗？`;
   confirmAction.value = executeBatchDelete;
   showConfirm.value = true;
 };
@@ -327,8 +354,78 @@ const executeConfirmAction = async () => {
   showConfirm.value = false;
 };
 
+// ========== 收藏删除范围三选一（仅删本地 / 删除全部 / 仅保留本地） ==========
+const showDeleteScope = ref(false);
+const deleteScopePaths = ref<string[]>([]);
+const deleteScopeIsClearAll = ref(false);
+const deleteScopeCanDeleteCloud = computed(() =>
+  deleteScopePaths.value.some(p => loadSyncedFavoritePaths().includes(p)),
+);
+
+/** 从云端删除指定收藏（merge 模式空集合 + delete_paths）；失败返回 false */
+async function deleteCloudFavoritePaths(paths: string[]): Promise<boolean> {
+  const ciyuanxiId = getCiyuanxiId();
+  if (!ciyuanxiId || paths.length === 0) return false;
+  try {
+    await uploadFavorites(ciyuanxiId, [], { deletePaths: paths });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 清空歌单/专辑收藏（本地数据，与云端无关） */
+const removeFavoriteCollections = () => {
+  favoriteCollections.value.forEach(entry => collectionsStore.removeFavoriteCollection(entry.key));
+};
+
+async function confirmDeleteScope(scope: SyncDeleteScope) {
+  const paths = [...deleteScopePaths.value];
+  const isClearAll = deleteScopeIsClearAll.value;
+  showDeleteScope.value = false;
+  deleteScopePaths.value = [];
+  deleteScopeIsClearAll.value = false;
+  if (paths.length === 0) return;
+  const pathSet = new Set(paths);
+
+  if (scope === 'cloud') {
+    // 仅保留本地：本机收藏不动，立即删除云端副本并写墓碑防止上传复活
+    const ok = await deleteCloudFavoritePaths(paths);
+    if (!ok) {
+      showToast('云端删除失败，请检查网络后重试', 'error');
+      return;
+    }
+    addLocalOnlyPaths(paths);
+    if (isClearAll) removeFavoriteCollections();
+    showToast(`已从云端移除 ${paths.length} 首收藏，本机保留`, 'success');
+    return;
+  }
+
+  // 仅删本地：云端保留，写墓碑排除 delete_paths 与下载回灌
+  if (scope === 'local') {
+    addCloudKeepPaths(paths);
+  }
+  favoritePaths.value = favoritePaths.value.filter(p => !pathSet.has(p));
+  // 清空时连同歌单/专辑收藏与元信息一并清理（本地数据）
+  if (isClearAll) clearFavorites();
+  showToast(
+    scope === 'local'
+      ? `已从本机移除 ${paths.length} 首收藏（云端保留）`
+      : `已移除 ${paths.length} 首收藏`,
+    'success',
+  );
+}
+
 // 清空收藏
 const handleClearAll = () => {
+  const paths = [...favoritePaths.value];
+  // 已登录且存在云端副本：弹删除范围三选一
+  if (paths.length > 0 && getCiyuanxiId() && paths.some(p => loadSyncedFavoritePaths().includes(p))) {
+    deleteScopePaths.value = paths;
+    deleteScopeIsClearAll.value = true;
+    showDeleteScope.value = true;
+    return;
+  }
   confirmMessage.value = "确定要清空收藏列表吗？";
   confirmAction.value = clearFavorites;
   showConfirm.value = true;

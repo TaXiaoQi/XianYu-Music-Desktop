@@ -6,6 +6,7 @@ import { useCollectionsStore } from './store';
 import { useLibraryStore } from '../library/store';
 import { isPluginSong } from '../../utils/pluginSong';
 import { isRemoteSong } from '../../utils/remoteSong';
+import { reportDailyLikeSignals } from '../../services/domain/dailyRecommendFeedback';
 import router from '../../router';
 import { useHomeNavigation } from '../../composables/useHomeNavigation';
 import { useAddToPlaylistDialog } from './addToPlaylistDialog';
@@ -89,6 +90,14 @@ export function useLibraryCollections() {
 
     const isFavoriteNow = collectionsStore.toggleFavoritePath(path);
     const song = typeof target === 'string' ? null : target;
+
+    // 正反馈：新增收藏 = 「喜欢这类歌」，上报日推画像（失败静默）。
+    if (isFavoriteNow && song) {
+      void reportDailyLikeSignals(
+        [{ songName: song.title ?? '', singer: song.artist ?? '' }],
+        'favorite',
+      );
+    }
 
     // 在线歌曲（lx://、remote://、plugin://）不在本地音乐库/数据库中，
     // 仅存 path 无法在收藏列表里还原歌曲信息，因此额外保存/清理其元信息。

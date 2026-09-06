@@ -31,6 +31,7 @@ import { pluginApi } from '../tauri/pluginApi';
 import { fetchWithTimeout } from './pluginFetch';
 import { compareVersions, createPluginUpdateService } from './pluginUpdates';
 import { createPluginSubscriptionService } from './pluginSubscriptions';
+import { clearPluginSyncTombstones } from './pluginSyncState';
 
 // ==================== 插件存储 CRUD ====================
 
@@ -45,6 +46,8 @@ export function addPluginSource(source: PluginSource) {
     plugins.push(source);
   }
   setStoredPlugins(plugins);
+  // 重新安装/更新同 id 插件：清除双向同步墓碑，恢复正常同步行为
+  clearPluginSyncTombstones([source.id]);
   bumpPluginsVersion();
 }
 
