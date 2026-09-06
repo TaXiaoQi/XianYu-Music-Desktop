@@ -10,6 +10,7 @@ import { useCoverCache } from '../composables/useCoverCache';
 import { useHomeNavigation } from '../composables/useHomeNavigation';
 import { useListScrollMemory } from '../composables/useListScrollMemory';
 import SortModeIcon from '../components/common/SortModeIcon.vue';
+import DragGhost from '../components/common/DragGhost.vue';
 import { useLibraryBrowse } from '../features/library/useLibraryBrowse';
 import type { ArtistListItem } from '../features/library/playerLibraryViewShared';
 import { getAlphabetIndexKey } from '../utils/alphabetIndex';
@@ -477,7 +478,14 @@ const handlePointerDown = (event: PointerEvent, index: number, artist: ArtistLis
 };
 
 const handleGlobalPointerMove = (event: PointerEvent) => {
-  if (!pointerDownInfo || dragSession.active) {
+  // 拖拽激活后持续更新鼠标位置，让 DragGhost 跟随光标
+  if (dragSession.active) {
+    dragSession.mouseX = event.clientX;
+    dragSession.mouseY = event.clientY;
+    return;
+  }
+
+  if (!pointerDownInfo) {
     return;
   }
 
@@ -493,12 +501,16 @@ const handleGlobalPointerMove = (event: PointerEvent) => {
   dragSession.active = true;
   dragSession.type = 'artist';
   dragSession.data = { index: pointerDownInfo.index, name: pointerDownInfo.artist.name };
+  dragSession.showGhost = true;
+  dragSession.mouseX = event.clientX;
+  dragSession.mouseY = event.clientY;
 };
 
 const resetArtistDrag = () => {
   pointerDownInfo = null;
   if (dragSession.type === 'artist') {
     dragSession.active = false;
+    dragSession.showGhost = false;
     dragSession.type = 'song';
     dragSession.data = null;
     dragOverName.value = null;
@@ -668,16 +680,16 @@ onUnmounted(() => {
             <div
               v-for="item in row.items"
               :key="item.artist.name"
-              class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-colors relative select-none [touch-action:none]"
+              class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]"
               :class="[
-                dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50' : '',
+                dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50 scale-[0.97]' : '',
               ]"
               @pointerdown="handlePointerDown($event, item.index, item.artist)"
               @pointermove="handleItemPointerMove($event, item.artist.name)"
               @click="handleArtistClick(item.artist)"
             >
               <div
-                class="relative w-12 h-12 md:w-14 md:h-14 shrink-0"
+                class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200"
                 :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
                 :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
               >
@@ -708,16 +720,16 @@ onUnmounted(() => {
         <div
           v-for="item in flatArtistVirtualState.items"
           :key="item.artist.name"
-          class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-colors relative select-none [touch-action:none]"
+          class="group cursor-pointer flex items-center gap-4 hover:bg-black/5 dark:hover:bg-white/5 p-2 rounded-lg transition-all duration-200 relative select-none [touch-action:none]"
           :class="[
-            dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50' : '',
+            dragSession.active && dragSession.type === 'artist' && dragSession.data?.name === item.artist.name ? 'opacity-50 scale-[0.97]' : '',
           ]"
           @pointerdown="handlePointerDown($event, item.index, item.artist)"
           @pointermove="handleItemPointerMove($event, item.artist.name)"
           @click="handleArtistClick(item.artist)"
         >
           <div
-            class="relative w-12 h-12 md:w-14 md:h-14 shrink-0"
+            class="relative w-12 h-12 md:w-14 md:h-14 shrink-0 transition-shadow duration-200"
             :data-cover-path="item.artist.avatarPath ? undefined : item.artist.firstSongPath"
             :class="{ 'ring-2 ring-[#EC4141] ring-offset-2 ring-offset-gray-50 dark:ring-offset-[#262626] rounded-full': dragSession.active && dragSession.type === 'artist' && dragOverName === item.artist.name && dragSession.data?.name !== item.artist.name }"
           >
@@ -738,6 +750,7 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+  <DragGhost />
   </div>
 </template>
 
