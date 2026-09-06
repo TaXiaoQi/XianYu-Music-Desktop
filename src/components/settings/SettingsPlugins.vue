@@ -269,6 +269,34 @@ const pluginStatsLabel = computed(() => {
   return `共 ${total} 个插件，已启用 ${enabled} 个`;
 });
 
+/** 是否所有插件都已启用（用于决定"全部启用/全部禁用"按钮文案） */
+const allPluginsEnabled = computed(() => {
+  return plugins.value.length > 0 && plugins.value.every((p) => p.enabled);
+});
+
+async function handleToggleAllPlugins() {
+  const targetEnabled = !allPluginsEnabled.value;
+  isPluginBusy.value = true;
+  let successCount = 0;
+  let failCount = 0;
+  for (const plugin of plugins.value) {
+    if (plugin.enabled === targetEnabled) continue;
+    const result = await togglePlugin(plugin.id);
+    if (result.success) {
+      successCount++;
+    } else {
+      failCount++;
+    }
+  }
+  refreshPluginList();
+  isPluginBusy.value = false;
+  if (failCount === 0) {
+    showToast(`已${targetEnabled ? '启用' : '禁用'} ${successCount} 个插件`, 'success');
+  } else {
+    showToast(`已${targetEnabled ? '启用' : '禁用'} ${successCount} 个，${failCount} 个失败`, 'error');
+  }
+}
+
 /** 根据插件格式返回对应颜色类名（Baka 系列插件用独立蓝色配色） */
 function pluginColorClasses(format: PluginSource['format'], isBaka = false) {
   if (format === 'lx') {
@@ -1402,6 +1430,15 @@ async function saveUserVariables() {
           <div class="text-xs text-gray-500 dark:text-white/55">
             {{ pluginStatsLabel }}
           </div>
+          <button
+            type="button"
+            class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
+            :disabled="plugins.length === 0 || isPluginBusy"
+            :class="{ 'settings-plugin-button--disabled': plugins.length === 0 || isPluginBusy }"
+            @click="handleToggleAllPlugins"
+          >
+            {{ allPluginsEnabled ? '全部禁用' : '全部启用' }}
+          </button>
           <button
             type="button"
             class="settings-plugin-button settings-plugin-button--secondary settings-plugin-button--sm"
