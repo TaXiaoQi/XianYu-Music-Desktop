@@ -1,4 +1,4 @@
-import type { QualityKey, Song } from '../../types';
+import type { QualityKey, Song, PluginSource } from '../../types';
 import { QUALITY_META, normalizeQualityKey } from '../../types';
 import {
   getStoredPlugins,
@@ -16,6 +16,7 @@ import {
 import { normalizeMediaRequestHeaders } from '../../utils/mediaUrl';
 import { getPluginBilibiliCookies } from '../../services/domain/pluginCookieStore';
 import { resolveActualQuality } from '../../services/domain/audioQualityVerify';
+import { healDanglingPluginId } from '../../services/domain/pluginIdHeal';
 export interface ResolveOnlineAudioOptions {
   audioFilePath: string;
   song: Song;
@@ -104,7 +105,11 @@ export const getOnlineAvailableQualities = async (
     }
 
     const plugins = getStoredPlugins();
-    const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+    let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
+    if (!pluginSource) {
+      // 悬空 pluginId（插件更新/重装后 id 必变）：运行时按平台重匹配并回写记录
+      pluginSource = healDanglingPluginId(song, plugins);
+    }
     if (!pluginSource) {
       return null;
     }

@@ -14,6 +14,7 @@ import type {
   OnlineQualityFallbackBehavior,
   Song,
   QualityKey,
+  PluginSource,
 } from '../../types';
 import {
   qualityKeyToBakaPluginQuality,
@@ -42,6 +43,7 @@ import {
   resolveLxUrlViaRust,
 } from './lxUrlResolver';
 import { sanitizeMediaUrl } from '../../utils/mediaUrl';
+import { healDanglingPluginId } from './pluginIdHeal';
 import {
   type LxQuality,
   qualityToDownloadCandidates,
@@ -157,9 +159,24 @@ export async function preparePluginResolveContext(
   if (!pluginSearchResult?.pluginId) return null;
 
   const plugins = getStoredPlugins();
-  const pluginSource = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled);
+  let pluginSource: PluginSource | null = plugins.find(p => p.id === pluginSearchResult.pluginId && p.enabled) ?? null;
   if (!pluginSource) {
-    throw new Error('该歌曲对应的插件未启用或已被移除');
+    // 悬空 pluginId（插件 id = 文件内容 sha256，插件更新/重装后 id 必变）：
+    // 按平台在已装同格式插件中重匹配并回写歌单/收藏记录，
+    // 避免「插件一更新，备份导入的歌单全部失效，只能删除重导」。
+    pluginSource = healDanglingPluginId(song, plugins);
+    if (!pluginSource) {
+      throw new Error('该歌曲对应的插件未启用或已被移除');
+    }
+  }
+
+  // 存量导入的 musicItem 可能仍携带来源 App 的临时代理直链（如 BakaMusic 备份
+  // 的 share.*.cn/url/...）：该链接会过期/被限流，且 BakaMusic 自身播放从不复用
+  // musicItem.url，总是经 getMediaSource 按歌曲 id 重新解析。解析入口剥离该字段，
+  // 强制插件重新解析，保护存量导入（对齐 BakaMusic 播放语义，移动端同此修复）。
+  const musicItem = pluginSearchResult.rawData;
+  if (musicItem && typeof musicItem.url === 'string' && musicItem.url.startsWith('http')) {
+    delete musicItem.url;
   }
 
   // 部分插件在搜索阶段已填充 qualities 字段。
