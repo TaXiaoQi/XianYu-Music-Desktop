@@ -346,6 +346,14 @@ export function createMusicFreeSong(
     album,
     platform: rawSong.platform || platform.displayName || plugin.name,
   };
+  // 剥离来源 App 写入的临时代理直链（如 BakaMusic 备份的 share.*.cn/url/...）：
+  // 该链接会过期/被限流，且 BakaMusic 自身播放从不复用 musicItem.url，而是每次
+  // 经插件 getMediaSource 按歌曲 id 重新解析。保留它会让个别插件直接回传陈旧
+  // 链接导致「导入能播、过段时间失效」，必须剥离强制重新解析。
+  const staleUrl = (musicItem as Record<string, unknown>).url;
+  if (typeof staleUrl === 'string' && staleUrl.startsWith('http')) {
+    delete (musicItem as Record<string, unknown>).url;
+  }
   const pluginResult: PluginSearchResult = {
     id,
     title,
