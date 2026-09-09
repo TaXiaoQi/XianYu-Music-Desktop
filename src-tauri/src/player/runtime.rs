@@ -353,55 +353,84 @@ fn recover_from_exclusive_failure(
     true
 }
 
+/// 把播放控制事件（播放/暂停/上一首/下一首/跳转/停止）桥接到前端事件。
+/// Windows SMTC 与 Linux MPRIS 共用同一套映射。
+fn attach_media_controls(controls: &mut MediaControls, app: &AppHandle) {
+    let app_clone = app.clone();
+    let _ = controls.attach(move |event| match event {
+        MediaControlEvent::Play => {
+            let _ = app_clone.emit("player:play", ());
+        }
+        MediaControlEvent::Pause => {
+            let _ = app_clone.emit("player:pause", ());
+        }
+        MediaControlEvent::Next => {
+            let _ = app_clone.emit("player:next", ());
+        }
+        MediaControlEvent::Previous => {
+            let _ = app_clone.emit("player:prev", ());
+        }
+        // Win11 SMTC / MPRIS 进度条拖动：跳转到指定位置
+        MediaControlEvent::SetPosition(pos) => {
+            let secs = pos.0.as_secs_f64();
+            let _ = app_clone.emit("player:seek-to", secs);
+        }
+        // 停止播放
+        MediaControlEvent::Stop => {
+            let _ = app_clone.emit("player:stop", ());
+        }
+        _ => {}
+    });
+}
+
+/// 锁定 controls 并写入 Some(mc)（lock 中毒时恢复内部值，与既有约定一致）。
+fn store_media_controls(
+    controls: &Arc<Mutex<Option<MediaControls>>>,
+    mc: MediaControls,
+) {
+    *controls.lock().unwrap_or_else(|e| e.into_inner()) = Some(mc);
+}
+
 fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>>> {
     let controls = Arc::new(Mutex::new(None));
 
+    // Linux：MPRIS（D-Bus）不需要窗口句柄，直接在会话总线上注册。
+    #[cfg(target_os = "linux")]
+    {
+        let config = PlatformConfig {
+            dbus_name: "xy_music",
+            display_name: "XY-Music",
+            hwnd: None,
+        };
+
+        match MediaControls::new(config) {
+            Ok(mut mc) => {
+                attach_media_controls(&mut mc, app);
+                store_media_controls(&controls, mc);
+            }
+            Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
+        }
+    }
+
+    // Windows：SMTC 需要 hwnd；其余平台（Linux 已在上方处理）无需窗口分支。
+    #[cfg(target_os = "windows")]
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(handle) = window.window_handle() {
-            let raw_handle = handle.as_raw();
+            if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
 
-            #[cfg(target_os = "windows")]
-            {
-                if let RawWindowHandle::Win32(h) = raw_handle {
-                    let hwnd = h.hwnd.get() as *mut std::ffi::c_void;
+                let config = PlatformConfig {
+                    dbus_name: "xy_music",
+                    display_name: "XY-Music",
+                    hwnd: Some(hwnd),
+                };
 
-                    let config = PlatformConfig {
-                        dbus_name: "xy_music",
-                        display_name: "XY-Music",
-                        hwnd: Some(hwnd),
-                    };
-
-                    match MediaControls::new(config) {
-                        Ok(mut mc) => {
-                            let app_clone = app.clone();
-                            let _ = mc.attach(move |event| match event {
-                                MediaControlEvent::Play => {
-                                    let _ = app_clone.emit("player:play", ());
-                                }
-                                MediaControlEvent::Pause => {
-                                    let _ = app_clone.emit("player:pause", ());
-                                }
-                                MediaControlEvent::Next => {
-                                    let _ = app_clone.emit("player:next", ());
-                                }
-                                MediaControlEvent::Previous => {
-                                    let _ = app_clone.emit("player:prev", ());
-                                }
-                                // Win11 SMTC 进度条拖动：跳转到指定位置
-                                MediaControlEvent::SetPosition(pos) => {
-                                    let secs = pos.0.as_secs_f64();
-                                    let _ = app_clone.emit("player:seek-to", secs);
-                                }
-                                // 停止播放
-                                MediaControlEvent::Stop => {
-                                    let _ = app_clone.emit("player:stop", ());
-                                }
-                                _ => {}
-                            });
-                            *controls.lock().unwrap_or_else(|e| e.into_inner()) = Some(mc);
-                        }
-                        Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
+                match MediaControls::new(config) {
+                    Ok(mut mc) => {
+                        attach_media_controls(&mut mc, app);
+                        store_media_controls(&controls, mc);
                     }
+                    Err(error) => eprintln!("Error initializing MediaControls: {:?}", error),
                 }
             }
         }

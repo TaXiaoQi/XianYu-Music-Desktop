@@ -28,6 +28,8 @@ pub struct SystemInfo {
 /// 重装系统不变、仅更换主板才变，规避重装系统解封；刻意不绑定硬盘
 /// （换盘属常见升级不应变 ID）。全部取不到（个别虚拟机/异常 OEM）时
 /// 回退 MachineGuid（重装系统会变），再失败返回空串（前端回退本地缓存 ID）。
+/// Linux：优先 DMI（多数发行版序列号字段仅 root 可读，读不到即跳过），
+/// 全空回退 /etc/machine-id（系统安装时生成，重装系统才会变）。
 #[tauri::command]
 pub fn get_machine_id() -> String {
     #[cfg(windows)]
@@ -39,7 +41,12 @@ pub fn get_machine_id() -> String {
     }
     #[cfg(not(windows))]
     {
-        String::new()
+        if let Some(id) = hardware_id() {
+            return id;
+        }
+        read_machine_id_file("/etc/machine-id")
+            .or_else(|| read_machine_id_file("/var/lib/dbus/machine-id"))
+            .unwrap_or_default()
     }
 }
 
@@ -87,12 +94,49 @@ pub fn get_system_info() -> SystemInfo {
     }
     #[cfg(not(windows))]
     {
+        let manufacturer = read_first_line("/sys/class/dmi/id/sys_vendor");
+        let product_name = read_first_line("/sys/class/dmi/id/product_name");
+        let machine_name = read_first_line("/proc/sys/kernel/hostname");
+        let architecture = std::env::consts::ARCH.to_string();
+
+        // ODM 未填写的占位透传为空白，与 Windows 分支同一套噪音词
+        let empty_words = [
+            "system manufacturer",
+            "to be filled by o.e.m.",
+            "no enclosure",
+            "-1",
+            "none",
+            "default string",
+            "specified",
+        ];
+        let clean = |v: &str| {
+            let t = v.trim().to_lowercase();
+            if v.trim().is_empty() || empty_words.iter().any(|w| t == *w) {
+                String::new()
+            } else {
+                v.trim().to_string()
+            }
+        };
+
+        let brand = clean(&manufacturer);
+        let brand = if brand.is_empty() { "Linux".to_string() } else { brand };
+        let model = {
+            let m = clean(&product_name);
+            if !m.is_empty() {
+                m
+            } else if !machine_name.is_empty() {
+                machine_name.clone()
+            } else {
+                "Linux PC".to_string()
+            }
+        };
+
         SystemInfo {
-            device_brand: std::env::consts::OS.to_string(),
-            device_model: std::env::consts::OS.to_string(),
-            os_version: std::env::consts::OS.to_string(),
-            architecture: std::env::consts::ARCH.to_string(),
-            machine_name: String::new(),
+            device_brand: brand,
+            device_model: model,
+            os_version: get_os_version(),
+            architecture,
+            machine_name,
         }
     }
 }
@@ -325,7 +369,6 @@ fn smbios_string(idx: u8, strings: &[String]) -> String {
 }
 
 /// 过滤 OEM 占位/无意义序列号（"To be filled by O.E.M."/"Default string"/全 0 等）。
-#[cfg(windows)]
 fn plausible_serial(v: &str) -> bool {
     let t = v.trim();
     if t.chars().count() < 3 {
@@ -357,6 +400,62 @@ fn plausible_serial(v: &str) -> bool {
         return false;
     }
     true
+}
+
+// ============ Linux 实现 ============
+
+/// Linux 硬件指纹：读取 DMI 序列号字段（与 Windows 分支同一 payload 格式，
+/// 保证双端 ID 算法一致）。多数发行版这些文件仅 root 可读（0400），
+/// 普通用户运行时读取失败得到空串 → 全空返回 None（由调用方回退 machine-id）。
+#[cfg(not(windows))]
+fn hardware_id() -> Option<String> {
+    let field = |path: &str| -> String {
+        let v = read_first_line(path);
+        if plausible_serial(&v) { v } else { String::new() }
+    };
+    let sys_uuid = field("/sys/class/dmi/id/product_uuid");
+    let system = field("/sys/class/dmi/id/product_serial");
+    let board = field("/sys/class/dmi/id/board_serial");
+    let chassis = field("/sys/class/dmi/id/chassis_serial");
+
+    if sys_uuid.is_empty() && system.is_empty() && board.is_empty() && chassis.is_empty() {
+        return None;
+    }
+    let payload =
+        format!("xyhw1|sys={sys_uuid}|sn={system}|board={board}|chassis={chassis}");
+    use sha2::{Digest, Sha256};
+    Some(hex::encode(Sha256::digest(payload.as_bytes())))
+}
+
+/// 读取文本文件首行并 trim；文件不存在/不可读时返回空串。
+#[cfg(not(windows))]
+fn read_first_line(path: &str) -> String {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|content| content.lines().next().map(|line| line.trim().to_string()))
+        .unwrap_or_default()
+}
+
+/// 读取 machine-id 文件（32 位十六进制小写）；空内容视为不存在。
+#[cfg(not(windows))]
+fn read_machine_id_file(path: &str) -> Option<String> {
+    let raw = read_first_line(path);
+    if raw.is_empty() { None } else { Some(raw) }
+}
+
+/// Linux OS 版本：/etc/os-release 的 PRETTY_NAME（如 "Ubuntu 24.04.1 LTS"）。
+#[cfg(not(windows))]
+fn get_os_version() -> String {
+    let content = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+    for line in content.lines() {
+        if let Some(value) = line.strip_prefix("PRETTY_NAME=") {
+            let value = value.trim().trim_matches('"');
+            if !value.is_empty() {
+                return value.to_string();
+            }
+        }
+    }
+    "Linux".to_string()
 }
 
 #[cfg(all(test, windows))]

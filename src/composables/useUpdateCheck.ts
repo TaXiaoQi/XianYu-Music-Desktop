@@ -10,11 +10,25 @@ import {
 import { useToast } from './toast';
 import { updateApi } from '../services/tauri/updateApi';
 import { appApi } from '../services/tauri/appApi';
+import { aboutConfig } from '../utils/aboutConfig';
 
 // 模块级单例状态，保证全局共享同一份更新检查状态
 const updateVisible = ref(false);
 const latestUpdate = ref<ServerUpdateInfo | null>(null);
 const isCheckingUpdate = ref(false);
+
+/**
+ * 下载地址是否匹配当前桌面平台的安装包格式。
+ * 服务端 desktop 渠道目前只配置 Windows 安装包（.msi/.exe），
+ * Linux 端（WebKitGTK UA 含 "Linux"）只在出现 .deb/.rpm/.AppImage 包时才允许应用内更新。
+ */
+function installerMatchesPlatform(url: string): boolean {
+  const isLinux = typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent);
+  if (isLinux) {
+    return /\.(deb|rpm|appimage)(?:[?#]|$)/i.test(url);
+  }
+  return /\.(msi|exe)(?:[?#]|$)/i.test(url);
+}
 
 // 下载安装状态
 export interface DownloadProgressData {
@@ -196,6 +210,17 @@ export function useUpdateCheck() {
 
     if (!latestUpdate.value?.downloadUrl) {
       showToast('下载地址不可用', 'error');
+      return;
+    }
+    // 服务端该渠道没有当前平台的安装包（如 Linux 端拿到 .msi）：
+    // 不做应用内下载安装，引导用户前往官网下载页获取对应平台的包
+    if (!installerMatchesPlatform(latestUpdate.value.downloadUrl)) {
+      showToast('当前平台安装包暂未发布，请前往官网下载', 'info');
+      const site = aboutConfig.value.officialSiteUrl;
+      if (site) {
+        await openUrl(site);
+      }
+      updateVisible.value = false;
       return;
     }
     if (isDownloading.value) return;
