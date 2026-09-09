@@ -11,6 +11,7 @@ import {
   getDeviceId,
   getDeviceInfo,
   enrichSystemInfo,
+  syncStableDeviceId,
 } from './usageStatsDevice';
 
 /**
@@ -21,17 +22,20 @@ import {
  * 使后续错误/反馈上报携带详细设备信息。
  */
 export function reportAppOpen(): void {
-  void enrichSystemInfo();
-  const info = getDeviceInfo();
-  const auth = getStoredAuth();
-  const ciyuanxiId = auth?.user?.ciyuanxi_id ?? '';
-  void signedRequest('open', { ...info, platform: 'desktop', ciyuanxi_id: ciyuanxiId })
-    .then(() => {
-      /* 上报成功，静默 */
-    })
-    .catch(() => {
-      /* 上报失败，静默 */
-    });
+  void (async () => {
+    // 先把本地缓存的随机设备 ID 覆盖为系统级机器标识（卸载重装不变），
+    // 后续所有 getDeviceId() 调用（更新检查/公告/登录签名等）均取稳定值
+    await syncStableDeviceId();
+    void enrichSystemInfo();
+    const info = getDeviceInfo();
+    const auth = getStoredAuth();
+    const ciyuanxiId = auth?.user?.ciyuanxi_id ?? '';
+    await signedRequest('open', { ...info, platform: 'desktop', ciyuanxi_id: ciyuanxiId }).catch(
+      () => {
+        /* 上报失败，静默 */
+      },
+    );
+  })();
 }
 
 // 搜索上报防抖：相同关键词 + 来源在短时间内只上报一次，避免逐字搜索刷量
