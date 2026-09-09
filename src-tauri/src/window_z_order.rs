@@ -7,7 +7,9 @@ pub fn refresh_current_window_topmost(window: tauri::Window, enabled: bool) {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (window, enabled);
+        // Linux：直接用窗口管理器的 always-on-top；无 WinEvent 守护，
+        // 焦点切换后由前端在需要时重新调用本命令维持。
+        let _ = window.set_always_on_top(enabled);
     }
 }
 

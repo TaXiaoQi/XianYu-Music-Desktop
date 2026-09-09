@@ -728,6 +728,12 @@ pub async fn download_update_file(
         } else {
             "XianYu.Player_Setup_Standard.exe"
         }
+    } else if url_lower.contains(".deb") {
+        "XianYu.Player_Setup.deb"
+    } else if url_lower.contains(".rpm") {
+        "XianYu.Player_Setup.rpm"
+    } else if url_lower.contains(".appimage") {
+        "XianYu.Player_Setup.AppImage"
     } else {
         "XianYu.Player_Setup.msi"
     };
@@ -1584,7 +1590,7 @@ pub fn is_store_build() -> bool {
 pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
     use std::process::Command;
 
-    // 安全限制：仅允许执行系统下载目录中的 .msi / .exe 安装包
+    // 安全限制：仅允许执行系统下载目录中的安装包
     let download_dir = app_handle
         .path()
         .download_dir()
@@ -1592,16 +1598,23 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     let validated = path_validator::validate_path_in_dir(&path, &download_dir)?;
 
-    // 扩展名白名单：仅允许 .msi 和 .exe
+    // 扩展名白名单（按平台）：Windows 仅 .msi/.exe；Linux 仅 .deb/.rpm/.AppImage
     let ext = validated
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
 
-    if ext != "msi" && ext != "exe" {
+    #[cfg(target_os = "windows")]
+    let ext_allowed = ext == "msi" || ext == "exe";
+    #[cfg(target_os = "linux")]
+    let ext_allowed = ext == "deb" || ext == "rpm" || ext == "appimage";
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    let ext_allowed = false;
+
+    if !ext_allowed {
         return Err(format!(
-            "仅允许运行 .msi 或 .exe 安装程序，当前扩展名: .{ext}"
+            "仅允许运行当前平台支持的安装包（Windows: .msi/.exe；Linux: .deb/.rpm/.AppImage），当前扩展名: .{ext}"
         ));
     }
 
@@ -1627,12 +1640,40 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
-        let _ = &ext; // 非 Windows 平台不检查扩展名
-        Command::new(&path_str)
-            .spawn()
-            .map_err(|e| format!("启动安装程序失败: {e}"))?;
+        let _ = &ext;
+        if ext == "appimage" {
+            // AppImage 不会经包管理器，确保可执行位后直接启动
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&validated)
+                    .map_err(|e| format!("读取安装包信息失败: {e}"))?
+                    .permissions();
+                if perms.mode() & 0o111 == 0 {
+                    perms.set_mode(perms.mode() | 0o111);
+                    std::fs::set_permissions(&validated, perms)
+                        .map_err(|e| format!("设置执行权限失败: {e}"))?;
+                }
+            }
+            Command::new(&path_str)
+                .spawn()
+                .map_err(|e| format!("启动 AppImage 失败: {e}"))?;
+        } else {
+            // .deb/.rpm 交给系统安装器（软件中心）处理
+            Command::new("xdg-open")
+                .arg(&path_str)
+                .spawn()
+                .map_err(|e| format!("启动系统安装器失败: {e}"))?;
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = &ext;
+        let _ = &path_str;
+        return Err("当前平台不支持应用内安装更新".to_string());
     }
 
     Ok(())

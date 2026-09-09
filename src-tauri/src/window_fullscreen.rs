@@ -128,8 +128,10 @@ pub fn save_window_placement(window: tauri::Window) -> Result<bool, String> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Linux 无需预存 placement：set_fullscreen 由窗口管理器自行记忆/恢复几何，
+        // 且 window-state 插件已持久化常规窗口状态。
         let _ = window;
-        Err("当前平台不支持".to_string())
+        Ok(true)
     }
 }
 
@@ -152,8 +154,9 @@ pub fn refresh_immersive_fullscreen(window: tauri::Window) -> Result<bool, Strin
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Linux：任务栏由窗口管理器管理，set_fullscreen 无需重标记，no-op 即可
         let _ = window;
-        Err("当前平台不支持".to_string())
+        Ok(true)
     }
 }
 
@@ -175,8 +178,9 @@ pub fn set_taskbar_fullscreen_flag(window: tauri::Window, enter: bool) -> Result
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Linux：任务栏显隐由窗口管理器根据全屏状态自动处理
         let _ = (window, enter);
-        Err("当前平台不支持".to_string())
+        Ok(enter)
     }
 }
 
@@ -361,9 +365,10 @@ pub fn set_immersive_fullscreen(window: tauri::Window, enter: bool) -> Result<bo
 
     #[cfg(not(target_os = "windows"))]
     {
-        // 非 Windows：暂不支持沉浸式全屏
-        let _ = (window, enter);
-        Err("当前平台不支持沉浸式全屏".to_string())
+        // Linux：走窗口管理器的全屏协议（覆盖面板/任务栏），几何由 WM 记忆与恢复
+        let result = window.set_fullscreen(enter);
+        let _ = result;
+        Ok(enter)
     }
 }
 
@@ -418,7 +423,14 @@ pub fn smart_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = window;
-        Err("当前平台不支持".to_string())
+        // Linux：tao 的 is_maximized 由 WM 直接维护，is_maximized 判断可靠
+        let was_maximized = window.is_maximized().unwrap_or(false);
+        if was_maximized {
+            let _ = window.unmaximize();
+            Ok(false) // 返回还原后的状态
+        } else {
+            let _ = window.maximize();
+            Ok(true)
+        }
     }
 }

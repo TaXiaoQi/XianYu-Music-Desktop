@@ -57,19 +57,28 @@ export async function syncStableDeviceId(): Promise<void> {
   }
 }
 
-/** 从 navigator.userAgent 解析操作系统版本（项目仅支持 Windows） */
+/** 从 navigator.userAgent 解析操作系统版本（优先以 Rust enrichSystemInfo 的结果为准） */
 function parseOsVersion(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const m = ua.match(/Windows NT (\d+\.\d+)/);
   if (m) {
     return `Windows NT ${m[1]}`;
   }
-  return 'Windows';
+  if (/Linux/.test(ua)) {
+    return 'Linux';
+  }
+  if (/Mac OS X (\d+[._]\d+)/.test(ua)) {
+    return 'macOS';
+  }
+  return 'Unknown';
 }
 
 function getDeviceModel(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-  const arch = /WOW64|Win64|x64/.test(ua) ? 'x64' : 'x86';
+  const arch = /WOW64|Win64|x64|x86_64/.test(ua) ? 'x64' : 'x86';
+  if (/Linux/.test(ua)) {
+    return `Linux PC (${arch})`;
+  }
   return `Windows PC (${arch})`;
 }
 
@@ -105,7 +114,7 @@ export function getDeviceInfo(): DeviceInfo {
 
 function getArch(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-  return /WOW64|Win64|aarch64|arm64/.test(ua) ? 'x64' : 'x86';
+  return /WOW64|Win64|x64|x86_64|aarch64|arm64/.test(ua) ? 'x64' : 'x86';
 }
 
 /**
