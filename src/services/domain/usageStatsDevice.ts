@@ -38,6 +38,25 @@ export function getDeviceId(): string {
   }
 }
 
+/**
+ * 用操作系统/硬件级机器标识覆盖本地缓存的设备 ID（启动时调用一次）。
+ * 数据源为 Rust 侧硬件指纹（SMBIOS 系统UUID/整机/主板/机箱序列号的 SHA-256，
+ * 重装系统不变、仅换主板才变；全空时回退 MachineGuid）。
+ * 老版本存的是本地随机 UUID（卸载即丢），此处一次性覆盖。
+ * 任何失败（非 Tauri 环境/读取异常）静默保留现有 ID。
+ */
+export async function syncStableDeviceId(): Promise<void> {
+  try {
+    const machineGuid = await tauriInvoke('get_machine_id');
+    if (!machineGuid) return;
+    if (localStorage.getItem(DEVICE_ID_KEY) !== machineGuid) {
+      localStorage.setItem(DEVICE_ID_KEY, machineGuid);
+    }
+  } catch {
+    /* 非 Tauri 环境或读取失败时静默，沿用现有 ID */
+  }
+}
+
 /** 从 navigator.userAgent 解析操作系统版本（项目仅支持 Windows） */
 function parseOsVersion(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';

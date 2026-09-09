@@ -1231,6 +1231,8 @@ export interface TauriCommandMap {
   import_lyrics_font: { payload: { sourcePath: string }; response: ImportedLyricsFont };
   get_system_fonts: { payload: undefined; response: string[] };
   get_system_info: { payload: undefined; response: SystemInfoPayload };
+  /** 硬件级机器指纹（SMBIOS 序列号 SHA-256，重装系统不变；全空回退 MachineGuid） */
+  get_machine_id: { payload: undefined; response: string };
   // ============ 歌词解析 ============
   parse_lyrics_text: { payload: { text: string }; response: LyricsPayload };
   get_song_lyrics_payload: { payload: { path: string }; response: LyricsPayload };
