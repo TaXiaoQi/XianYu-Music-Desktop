@@ -14,7 +14,10 @@ releases/
 # Rust 的编译产物，体积极大，包含大量二进制文件
 src-tauri/target/
 # Tauri v2 生成的移动端/Schema 缓存文件
-src-tauri/gen/
+# gen/windows/ 例外：MSIX 商店包的 AppxManifest 模板与 bundle.config.json 需要纳入版本管理
+# （注意必须用 /* 配合否定规则，写成 src-tauri/gen/ 会导致 git 不再进入目录、例外失效）
+src-tauri/gen/*
+!src-tauri/gen/windows
 # 以前版本的构建输出（以防万一）
 src-tauri/bin/
 

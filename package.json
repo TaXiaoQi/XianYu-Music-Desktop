@@ -25,7 +25,8 @@
     "release:minor": "npm version minor --no-git-tag-version --force",
     "release:major": "npm version major --no-git-tag-version --force",
     "release:set": "npm version",
-    "version:check": "node scripts/check-version.js"
+    "version:check": "node scripts/check-version.js",
+    "tauri:build:store:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\""
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.2.0",
@@ -64,6 +65,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@choochmeque/tauri-windows-bundle": "^0.1.29",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2.11.4",

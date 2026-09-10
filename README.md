@@ -89,10 +89,18 @@
   ```
   
 5. 构建生产环境安装包：
-  
+	
   ```bash
   npm run tauri build
   ```
+	
+6. 构建 Microsoft Store 版（MSIX 商店分发包，与官网版互不影响）：
+	
+  ```bash
+  npm run tauri:build:store:msix
+  ```
+	
+  产物输出至 `src-tauri/target/msix/`（未签名 `.msix` 与 `.msixbundle`，Microsoft Store 终审时由微软自动代签，无需自有代码签名证书）。该构建通过 `store-build` 特性禁用应用内自更新，更新由商店接管。上架前需在 `src-tauri/gen/windows/AppxManifest.xml.template` 与 `bundle.config.json` 中，将 Identity 占位值替换为 Partner Center「应用管理 → 应用标识」页分配的 Package/Identity/Name 与 Publisher（`CN=...`），否则商店上传校验不通过。
   
 
 ---
