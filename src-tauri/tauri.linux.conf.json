@@ -5,13 +5,13 @@
     "linux": {
       "deb": {
         "files": {
-          "linux/com.xymusic.desktop.desktop": "/usr/share/applications/com.xymusic.desktop.desktop"
+          "/usr/share/applications/com.xymusic.desktop.desktop": "linux/com.xymusic.desktop.desktop"
         },
         "postInstallScript": "linux/post-install.sh"
       },
       "rpm": {
         "files": {
-          "linux/com.xymusic.desktop.desktop": "/usr/share/applications/com.xymusic.desktop.desktop"
+          "/usr/share/applications/com.xymusic.desktop.desktop": "linux/com.xymusic.desktop.desktop"
         },
         "postInstallScript": "linux/post-install.sh"
       }
