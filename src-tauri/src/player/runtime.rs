@@ -1265,6 +1265,17 @@ fn handle_seek(
                 }
             }
         }
+    } else {
+        // 暂停状态下 Pause 已释放音频设备（current_sink 置 None），无法对 sink seek。
+        // 但必须把进度记录推进到目标位置：Resume 重建播放链时以 progress_duration
+        // （即 samples_played）为起点续播，若不更新，暂停期间的 seek 会被静默丢弃
+        // ——表现为「暂停时拖动歌词/进度条，进度 UI 已到新位置，继续播放却回到旧位置」。
+        let rate = progress.sample_rate.load(Ordering::Relaxed);
+        let channels = progress.channels.load(Ordering::Relaxed);
+        let samples_at_target = (clamped_time * rate as f64 * channels as f64).round() as u64;
+        progress
+            .samples_played
+            .store(samples_at_target, Ordering::Relaxed);
     }
 
     let _ = app.emit(
