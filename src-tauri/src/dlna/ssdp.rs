@@ -116,13 +116,16 @@ impl SsdpAdvertiser {
     /// 启动 alive 广播 + M-SEARCH 单播应答。
     ///
     /// socket 与常驻任务均在专用 runtime 上创建/运行（IO 资源与创建它的
-    /// runtime 绑定，不能跨 runtime 迁移），结果经 oneshot 回传调用方。
+    /// runtime 绑定，不能跨 runtime 迁移），「组播 socket 绑定结果」经 oneshot
+    /// 回传调用方。
+    ///
+    /// 注意：ready 信号必须在广播循环**进入前**回传。循环只在 shutdown 时退出，
+    /// 若等循环结束才回传，`start().await`（如 `enable_renderer`）会永久挂起。
     pub async fn start(cfg: AdvertiseConfig) -> Result<Self, String> {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         super::spawn::spawn_persistent(async move {
-            let result = run_advertiser(cfg, shutdown_rx).await;
-            let _ = ready_tx.send(result);
+            let _ = run_advertiser(cfg, shutdown_rx, ready_tx).await;
         });
         ready_rx
             .await
@@ -136,14 +139,26 @@ impl SsdpAdvertiser {
     }
 }
 
-async fn run_advertiser(cfg: AdvertiseConfig, mut shutdown_rx: watch::Receiver<bool>) -> Result<(), String> {
+async fn run_advertiser(
+    cfg: AdvertiseConfig,
+    mut shutdown_rx: watch::Receiver<bool>,
+    ready_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+) -> Result<(), String> {
     let sock = match bind_multicast_socket() {
         Ok(s) => match tokio_udp_from_socket(s) {
             Ok(s) => s,
-            Err(e) => return Err(format!("convert SSDP socket failed: {e}")),
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("convert SSDP socket failed: {e}")));
+                return Err(format!("convert SSDP socket failed: {e}"));
+            }
         },
-        Err(e) => return Err(format!("bind SSDP 1900 failed: {e}")),
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("bind SSDP 1900 failed: {e}")));
+            return Err(format!("bind SSDP 1900 failed: {e}"));
+        }
     };
+    // socket 绑定成功即视为就绪，回传调用方；广播任务继续在专用 runtime 上常驻。
+    let _ = ready_tx.send(Ok(()));
     let sock = Arc::new(sock);
 
     let udn = cfg.udn.clone();

@@ -2678,7 +2678,12 @@ mod tests {
         ));
     }
 
+    /// 手动调试用：解码一个 B 站 m4s 分段音频，打印 rodio 解码信息。
+    /// 依赖本地临时文件（默认路径是一次性调试残留，已被系统清理），不作为
+    /// 回归测试运行。需要时设置 `XY_M4S_PATH` 后执行：
+    /// `cargo test -- --ignored debug_decode_bilibili_m4s`
     #[test]
+    #[ignore = "依赖本地 m4s 临时文件（XY_M4S_PATH 可指定），手动 --ignored 运行"]
     fn debug_decode_bilibili_m4s() {
         let path = std::env::var("XY_M4S_PATH").unwrap_or_else(|_| {
             "C:\\Users\\小奇\\AppData\\Local\\Temp\\xy_music_1787144280366.m4s".to_string()

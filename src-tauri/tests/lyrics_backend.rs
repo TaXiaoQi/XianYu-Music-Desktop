@@ -62,7 +62,9 @@ fn parses_yrc_fixture_payload() {
         include_str!("../src/music/fixtures/lyrics/if_back_then.yrc").to_string(),
     );
 
-    assert_eq!(payload.display_lines.len(), 2);
+    // 「词：许嵩」是制作信息行（is_credit_line），按设计排除出主歌词，
+    // 不作为可演唱歌词进入 display_lines。
+    assert_eq!(payload.display_lines.len(), 1);
     assert_eq!(payload.display_lines[0].text, "如果当时 - 许嵩");
     assert_eq!(
         payload.display_lines[0]
@@ -75,7 +77,6 @@ fn parses_yrc_fixture_payload() {
             .unwrap_or_default(),
         vec!["如", "果", "当", "时", " ", "-", " ", "许", "嵩"]
     );
-    assert_eq!(payload.display_lines[1].text, "词：许嵩");
 }
 
 #[test]
@@ -220,8 +221,10 @@ fn preserves_inline_english_main_lines_inside_japanese_song() {
     assert_eq!(japanese_line.translation, "独属于我的蒙娜丽莎");
 
     let english_line = find_display_line_by_time(&payload, 47.751).expect("english line exists");
-    assert_eq!(english_line.text, "(Can you give me one last kiss?)");
-    assert_eq!(english_line.translation, "(可以给我最后一个吻吗?)");
+    // 整行括号包裹的行按背景和声行处理（lyrics.rs 第一遍标注，不受对唱门控
+    // 约束），展示文本剥掉外层括号，并标注 is_bg。
+    assert_eq!(english_line.text, "Can you give me one last kiss?");
+    assert!(english_line.is_bg, "整行括号包裹的行应标注为背景和声");
     assert!(english_line.romaji.is_empty());
 
     let projector_line =
