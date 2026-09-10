@@ -128,13 +128,14 @@ use toolbox::{
     download_update_file, download_wallpaper, delete_wallpaper_file, is_store_build,
     fetch_image_bytes, file_exists, finalize_download_extras, open_external_program,
     preview_rename, probe_url_size, read_download_history, read_state_json, refresh_folder_songs,
-    resolve_download_full_path, resolve_download_path, run_installer, save_download_bytes,
-    save_download_lyrics, set_gpu_acceleration, write_download_history, write_state_json,
+    resolve_download_path, resolve_download_full_path, run_installer, save_download_bytes,
+    save_download_lyrics, set_gpu_acceleration, should_disable_gpu_for_startup, write_download_history,
+    write_state_json,
     write_text_file,
 };
 
 #[cfg(target_os = "windows")]
-use toolbox::{append_webview2_browser_arg, should_disable_gpu_for_startup};
+use toolbox::append_webview2_browser_arg;
 use window_boundary::set_mini_boundary_enabled;
 use window_fullscreen::{
     refresh_immersive_fullscreen, save_window_placement, set_immersive_fullscreen,
@@ -170,10 +171,16 @@ pub fn run() {
             let app_id: Vec<u16> = "com.xymusic.desktop\0".encode_utf16().collect();
             let _ = SetCurrentProcessExplicitAppUserModelID(app_id.as_ptr());
         }
+    }
 
-        if should_disable_gpu_for_startup() {
-            append_webview2_browser_arg("--disable-gpu");
-        }
+    // GPU 加速开关（双平台共用 gpu_config.json）：必须在窗口创建前生效。
+    // Windows 走 WebView2 附加参数禁用 GPU；Linux 设 WebKitGTK 环境变量回退
+    // 软件合成（部分 NVIDIA/混合显卡驱动下 DMABUF 渲染会出现黑屏/花屏）。
+    if should_disable_gpu_for_startup() {
+        #[cfg(target_os = "windows")]
+        append_webview2_browser_arg("--disable-gpu");
+        #[cfg(not(target_os = "windows"))]
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
 
     tauri::Builder::default()
