@@ -147,11 +147,46 @@ mod platform {
     }
 }
 
-/// macOS 等其余平台尚未适配，维持空操作。
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+/// macOS：用系统自带的 caffeinate 持有「防止系统睡眠」断言（IOPMAssertion
+/// 的命令行封装，零 IOKit 绑定）。`-i` 防 idle 睡眠，`-w <pid>` 让 caffeinate
+/// 常驻直到指定进程退出——传本进程 PID，应用被强杀时断言也会随之自动失效，
+/// 不会残留。UnInhibit 即 kill 子进程。
+#[cfg(target_os = "macos")]
 mod platform {
-    pub fn set(_active: bool) -> Result<(), String> {
-        Ok(())
+    use std::process::{Child, Command};
+    use std::sync::{Mutex, OnceLock};
+
+    static CAFFEINATE: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
+    fn child_slot() -> &'static Mutex<Option<Child>> {
+        CAFFEINATE.get_or_init(|| Mutex::new(None))
+    }
+
+    pub fn set(active: bool) -> Result<(), String> {
+        let slot = child_slot();
+        let mut child = slot.lock().unwrap_or_else(|e| e.into_inner());
+
+        if active {
+            // 已在防休眠中则幂等返回，避免重复起 caffeinate 进程
+            if child.is_some() {
+                return Ok(());
+            }
+            let process = Command::new("caffeinate")
+                .arg("-i")
+                .arg("-w")
+                .arg(std::process::id().to_string())
+                .spawn()
+                .map_err(|e| format!("caffeinate 启动失败: {e}"))?;
+            *child = Some(process);
+            Ok(())
+        } else {
+            if let Some(mut process) = child.take() {
+                // 退出码非 0 不影响语义：进程可能已被应用退出连带终止
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+            Ok(())
+        }
     }
 }
 

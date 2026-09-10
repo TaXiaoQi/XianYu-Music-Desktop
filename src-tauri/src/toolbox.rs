@@ -751,6 +751,8 @@ pub async fn download_update_file(
         "XianYu.Player_Setup.rpm"
     } else if url_lower.contains(".appimage") {
         "XianYu.Player_Setup.AppImage"
+    } else if url_lower.contains(".dmg") {
+        "XianYu.Player_Setup.dmg"
     } else {
         "XianYu.Player_Setup.msi"
     };
@@ -1615,7 +1617,8 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
 
     let validated = path_validator::validate_path_in_dir(&path, &download_dir)?;
 
-    // 扩展名白名单（按平台）：Windows 仅 .msi/.exe；Linux 仅 .deb/.rpm/.AppImage
+    // 扩展名白名单（按平台）：Windows 仅 .msi/.exe；Linux 仅 .deb/.rpm/.AppImage；
+    // macOS 仅 .dmg（挂载后自动拷贝 .app 到 /Applications）
     let ext = validated
         .extension()
         .and_then(|e| e.to_str())
@@ -1626,12 +1629,14 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
     let ext_allowed = ext == "msi" || ext == "exe";
     #[cfg(target_os = "linux")]
     let ext_allowed = ext == "deb" || ext == "rpm" || ext == "appimage";
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    let ext_allowed = ext == "dmg";
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     let ext_allowed = false;
 
     if !ext_allowed {
         return Err(format!(
-            "仅允许运行当前平台支持的安装包（Windows: .msi/.exe；Linux: .deb/.rpm/.AppImage），当前扩展名: .{ext}"
+            "仅允许运行当前平台支持的安装包（Windows: .msi/.exe；Linux: .deb/.rpm/.AppImage；macOS: .dmg），当前扩展名: .{ext}"
         ));
     }
 
@@ -1686,7 +1691,42 @@ pub fn run_installer(app_handle: tauri::AppHandle, path: String) -> Result<(), S
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        // macOS：挂载 dmg → 拷贝 .app 到 /Applications → 卸载 → 启动新版本。
+        // 覆盖运行中的 .app 需先退出应用，所以把安装动作写成独立 shell 脚本
+        // spawn（sleep 等应用退出），dmg 路径经 argv 传递（脚本固定文本，无注入面）。
+        let script = "#!/bin/sh\n\
+            # XY-Music 应用内更新安装脚本（参数: $1=dmg 路径）\n\
+            sleep 2\n\
+            MOUNT=$(hdiutil attach -nobrowse -readonly \"$1\" | grep -o '/Volumes/.*' | head -1)\n\
+            if [ -z \"$MOUNT\" ]; then\n\
+              exit 1\n\
+            fi\n\
+            APP=$(find \"$MOUNT\" -maxdepth 2 -name '*.app' -print | head -1)\n\
+            if [ -n \"$APP\" ]; then\n\
+              TARGET=\"/Applications/$(basename \"$APP\")\"\n\
+              rm -rf \"$TARGET\"\n\
+              cp -R \"$APP\" \"/Applications/\"\n\
+              open \"$TARGET\"\n\
+            fi\n\
+            hdiutil detach \"$MOUNT\" >/dev/null 2>&1 || true\n";
+        let script_path = std::env::temp_dir().join("xianyu_update_install.sh");
+        std::fs::write(&script_path, script)
+            .map_err(|e| format!("写入安装脚本失败: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755));
+        }
+        Command::new("/bin/sh")
+            .arg(&script_path)
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("启动更新脚本失败: {e}"))?;
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = &ext;
         let _ = &path_str;

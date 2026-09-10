@@ -395,7 +395,9 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
     let controls = Arc::new(Mutex::new(None));
 
     // Linux：MPRIS（D-Bus）不需要窗口句柄，直接在会话总线上注册。
-    #[cfg(target_os = "linux")]
+    // macOS：souvlaki 走系统 MediaRemote/MPNowPlayingInfoCenter（菜单栏
+    // 「正在播放」与控制中心），同样不需要窗口句柄，配置与 Linux 完全一致。
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let config = PlatformConfig {
             dbus_name: "xy_music",
@@ -412,7 +414,7 @@ fn initialize_media_controls(app: &AppHandle) -> Arc<Mutex<Option<MediaControls>
         }
     }
 
-    // Windows：SMTC 需要 hwnd；其余平台（Linux 已在上方处理）无需窗口分支。
+    // Windows：SMTC 需要 hwnd；Linux/macOS 已在上方分支处理。
     #[cfg(target_os = "windows")]
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(handle) = window.window_handle() {

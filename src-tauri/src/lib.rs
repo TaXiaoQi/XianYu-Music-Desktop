@@ -173,13 +173,14 @@ pub fn run() {
         }
     }
 
-    // GPU 加速开关（双平台共用 gpu_config.json）：必须在窗口创建前生效。
+    // GPU 加速开关（共用 gpu_config.json）：必须在窗口创建前生效。
     // Windows 走 WebView2 附加参数禁用 GPU；Linux 设 WebKitGTK 环境变量回退
-    // 软件合成（部分 NVIDIA/混合显卡驱动下 DMABUF 渲染会出现黑屏/花屏）。
+    // 软件合成（部分 NVIDIA/混合显卡驱动下 DMABUF 渲染会出现黑屏/花屏）；
+    // macOS WKWebView 由系统统一管理 GPU，无进程级禁用开关，跳过。
     if should_disable_gpu_for_startup() {
         #[cfg(target_os = "windows")]
         append_webview2_browser_arg("--disable-gpu");
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
 

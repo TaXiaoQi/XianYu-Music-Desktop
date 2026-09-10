@@ -101,6 +101,22 @@
   ```
 	
   产物输出至 `src-tauri/target/msix/`（未签名 `.msix` 与 `.msixbundle`，Microsoft Store 终审时由微软自动代签，无需自有代码签名证书）。该构建通过 `store-build` 特性禁用应用内自更新，更新由商店接管。上架前需在 `src-tauri/gen/windows/AppxManifest.xml.template` 与 `bundle.config.json` 中，将 Identity 占位值替换为 Partner Center「应用管理 → 应用标识」页分配的 Package/Identity/Name 与 Publisher（`CN=...`），否则商店上传校验不通过。
+
+7. 构建 Linux 版（.deb / .rpm / .AppImage，仅可在 Linux 上构建，无法交叉编译）：
+
+  ```bash
+  npm run tauri:build:linux
+  ```
+
+  前置依赖：`libwebkit2gtk-4.1-dev`、`build-essential`、`curl`、`wget`、`libssl-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libasound2-dev`（Ubuntu/Debian 包名）。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .deb/.rpm/.AppImage 包，服务端未提供对应格式时自动引导官网。
+
+8. 构建 macOS 版（.app / .dmg，仅可在 macOS 上构建，无法交叉编译）：
+
+  ```bash
+  npm run tauri:build:mac
+  ```
+
+  前置依赖：Xcode Command Line Tools（`xcode-select --install`）与 Rust aarch64/x86_64-apple-darwin 工具链。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .dmg 包（挂载后自动拷贝 .app 至 /Applications），未发布时引导官网；系统媒体控制走 MediaRemote（菜单栏「正在播放」/控制中心），凭据存钥匙串，防休眠经 caffeinate。分发需签名与公证（`tauri.conf.json` 的 bundle.macOS 配置 signingIdentity），未签名包首次打开需右键绕过 Gatekeeper。
   
 
 ---

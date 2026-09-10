@@ -39,7 +39,7 @@ pub fn get_machine_id() -> String {
         }
         return imp::read_reg_string(r"Software\Microsoft\Cryptography", "MachineGuid");
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
         if let Some(id) = hardware_id() {
             return id;
@@ -47,6 +47,12 @@ pub fn get_machine_id() -> String {
         read_machine_id_file("/etc/machine-id")
             .or_else(|| read_machine_id_file("/var/lib/dbus/machine-id"))
             .unwrap_or_default()
+    }
+    // macOS：hardware_id() 读 IOPlatformUUID/IOPlatformSerialNumber（几乎必成功）；
+    // 读不到（极端沙盒/异常环境）回退空串，前端回退本地缓存 ID。
+    #[cfg(target_os = "macos")]
+    {
+        hardware_id().unwrap_or_default()
     }
 }
 
@@ -92,7 +98,7 @@ pub fn get_system_info() -> SystemInfo {
             machine_name,
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
         let manufacturer = read_first_line("/sys/class/dmi/id/sys_vendor");
         let product_name = read_first_line("/sys/class/dmi/id/product_name");
@@ -136,6 +142,20 @@ pub fn get_system_info() -> SystemInfo {
             device_model: model,
             os_version: get_os_version(),
             architecture,
+            machine_name,
+        }
+    }
+    // macOS：品牌固定 Apple，机型取 sysctl hw.model（如 "Mac16,2"），
+    // 电脑名取 scutil ComputerName（与「系统设置 > 通用 > 关于本机」一致）。
+    #[cfg(target_os = "macos")]
+    {
+        let machine_name = mac_computer_name();
+        let model = mac_model();
+        SystemInfo {
+            device_brand: "Apple".to_string(),
+            device_model: if model.is_empty() { "Mac".to_string() } else { model },
+            os_version: get_os_version(),
+            architecture: std::env::consts::ARCH.to_string(),
             machine_name,
         }
     }
@@ -407,7 +427,7 @@ fn plausible_serial(v: &str) -> bool {
 /// Linux 硬件指纹：读取 DMI 序列号字段（与 Windows 分支同一 payload 格式，
 /// 保证双端 ID 算法一致）。多数发行版这些文件仅 root 可读（0400），
 /// 普通用户运行时读取失败得到空串 → 全空返回 None（由调用方回退 machine-id）。
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn hardware_id() -> Option<String> {
     let field = |path: &str| -> String {
         let v = read_first_line(path);
@@ -427,8 +447,102 @@ fn hardware_id() -> Option<String> {
     Some(hex::encode(Sha256::digest(payload.as_bytes())))
 }
 
+// ============ macOS 实现 ============
+
+/// macOS 硬件指纹：IOPlatformUUID + IOPlatformSerialNumber（ioreg 读取）。
+/// IOPlatformUUID 即主板级系统 UUID（重装系统不变、仅换主板才变，与 Windows
+/// SMBIOS/换硬盘不变策略同语义），序列号同理。payload 格式与 Windows/Linux
+/// 分支一致（board/chassis 在 mac 无独立对应字段，留空）。
+#[cfg(target_os = "macos")]
+fn hardware_id() -> Option<String> {
+    let sys_uuid = read_ioreg_value("IOPlatformUUID");
+    let system = read_ioreg_value("IOPlatformSerialNumber");
+
+    if sys_uuid.is_empty() && system.is_empty() {
+        return None;
+    }
+    let payload = format!("xyhw1|sys={sys_uuid}|sn={system}|board=|chassis=");
+    use sha2::{Digest, Sha256};
+    Some(hex::encode(Sha256::digest(payload.as_bytes())))
+}
+
+/// 解析 `ioreg -rd1 -c IOPlatformExpertDevice` 输出中指定 key 的字符串值
+/// （行形如 `    "IOPlatformUUID" = "8C10-..."`，key 前有缩进）。
+#[cfg(target_os = "macos")]
+fn read_ioreg_value(key: &str) -> String {
+    let Ok(output) = std::process::Command::new("ioreg")
+        .arg("-rd1")
+        .arg("-c")
+        .arg("IOPlatformExpertDevice")
+        .output()
+    else {
+        return String::new();
+    };
+    if !output.status.success() {
+        return String::new();
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let prefix = format!("\"{key}\" = \"");
+    for line in stdout.lines() {
+        if let Some(idx) = line.find(&prefix) {
+            let rest = &line[idx + prefix.len()..];
+            if let Some(end) = rest.find('"') {
+                return rest[..end].to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// mac 电脑名：scutil --get ComputerName（与「系统设置 > 通用 > 关于本机」一致），
+/// 失败回退 hostname 命令。
+#[cfg(target_os = "macos")]
+fn mac_computer_name() -> String {
+    if let Ok(output) = std::process::Command::new("scutil")
+        .arg("--get")
+        .arg("ComputerName")
+        .output()
+    {
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !name.is_empty() {
+            return name;
+        }
+    }
+    if let Ok(output) = std::process::Command::new("hostname").output() {
+        return String::from_utf8_lossy(&output.stdout).trim().to_string();
+    }
+    String::new()
+}
+
+/// mac 机型标识：sysctl -n hw.model（如 "Mac16,2"，ioreg 的 model 字段是
+/// data 类型解析麻烦，sysctl 直接给型号标识）。
+#[cfg(target_os = "macos")]
+fn mac_model() -> String {
+    std::process::Command::new("sysctl")
+        .arg("-n")
+        .arg("hw.model")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// macOS OS 版本：sw_vers -productVersion（如 "15.6.1"），统一补 "macOS " 前缀。
+#[cfg(target_os = "macos")]
+fn get_os_version() -> String {
+    if let Ok(output) = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+    {
+        let v = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !v.is_empty() {
+            return format!("macOS {v}");
+        }
+    }
+    "macOS".to_string()
+}
+
 /// 读取文本文件首行并 trim；文件不存在/不可读时返回空串。
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn read_first_line(path: &str) -> String {
     std::fs::read_to_string(path)
         .ok()
@@ -437,14 +551,14 @@ fn read_first_line(path: &str) -> String {
 }
 
 /// 读取 machine-id 文件（32 位十六进制小写）；空内容视为不存在。
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn read_machine_id_file(path: &str) -> Option<String> {
     let raw = read_first_line(path);
     if raw.is_empty() { None } else { Some(raw) }
 }
 
 /// Linux OS 版本：/etc/os-release 的 PRETTY_NAME（如 "Ubuntu 24.04.1 LTS"）。
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 fn get_os_version() -> String {
     let content = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
     for line in content.lines() {
