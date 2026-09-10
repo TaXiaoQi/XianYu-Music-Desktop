@@ -147,17 +147,6 @@ async function getLxCover(songInfo: LxUrlSongInfoContract): Promise<string | nul
 }
 
 /**
- * 按音质候选列表解析落雪歌曲直链（带降级）
- * 后端 command: resolve_lx_with_quality_fallback
- */
-async function resolveLxWithQualityFallback(
-  songInfo: LxUrlSongInfoContract,
-  qualities: string[],
-) {
-  return tauriInvoke('resolve_lx_with_quality_fallback', { songInfo, qualities });
-}
-
-/**
  * 查找替代的落雪音源
  * 后端 command: find_alternative_lx_source
  */
@@ -166,14 +155,12 @@ async function findAlternativeLxSource(
   songArtist: string,
   songDuration: number,
   failedSources: string[],
-  qualities: string[],
 ): Promise<AlternativeSourceResultContract | null> {
   return tauriInvoke('find_alternative_lx_source', {
     songName,
     songArtist,
     songDuration,
     failedSources,
-    qualities,
   });
 }
 
@@ -189,6 +176,5 @@ export const pluginApi = {
   downloadVideoToCache,
   removeCachedBackgroundVideo,
   getLxCover,
-  resolveLxWithQualityFallback,
   findAlternativeLxSource,
 };

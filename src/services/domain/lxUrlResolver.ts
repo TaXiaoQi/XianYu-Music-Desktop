@@ -1,14 +1,16 @@
 /**
  * LX（落雪）URL 统一解析器
  *
- * 统一封装"插件优先 + Rust 兜底"的 LX 歌曲直链解析策略，
- * 消除原先散落在 onlinePlaybackResolver / downloadService / lxMusicSdk 的重复逻辑。
+ * 统一封装"插件直链解析 + 10 分钟缓存"的 LX 歌曲解析策略（对齐移动端
+ * plugin_engine.resolveLxUrl），消除原先散落在 onlinePlaybackResolver /
+ * downloadService / lxMusicSdk 的重复逻辑。
+ * 原"Rust 公共 API 代理"兜底已 403/503 失效，2026-09-10 移除。
  *
  * 核心职责：
  *   1. 解析 lx://source/songmid 协议字符串
  *   2. 构造 LX 插件所需的 songInfo（合并缓存数据）
  *   3. 定位匹配的 LX 插件
- *   4. 按音质候选列表解析直链（插件优先，Rust 兜底）
+ *   4. 按音质候选列表解析直链（插件），带 TTL 缓存与并发去重
  *
  * 调用方：
  *   - onlinePlaybackResolver.ts（在线播放）
@@ -24,11 +26,9 @@ import {
 import type { PluginSource } from '../../types';
 import { getCachedLxSong } from './lxSongCache';
 import type { LxSearchResultItem } from './lxMusicSdk';
-import { toUrlSongInfo } from './lxMusicSdk';
 import { ensureLxPluginInstance, lxPluginGetMusicUrl } from './lxPluginEngine';
 import { isSongLevelError } from './lxPluginEngine';
 import { getStoredPlugins } from './pluginEngine';
-import { pluginApi } from '../tauri/pluginApi';
 
 // ==================== 协议解析 ====================
 
@@ -182,42 +182,61 @@ export interface LxUrlResolveResult {
   url: string;
   /** 实际命中的音质 */
   quality: QualityKey;
-  /** 来源：插件或 Rust 后端 */
-  source: 'plugin' | 'rust';
+  /** 来源：插件 */
+  source: 'plugin';
 }
 
-/**
- * 通过 Rust 后端批量音质回退解析直链
- *
- * 单次 IPC 调用完成多音质回退，避免循环调用。
- * Rust 端会按 qualities 顺序依次尝试，返回第一个可用的 URL。
- *
- * @param cachedInfo 缓存的歌曲元信息
- * @param qualities 音质候选列表（从高到低）
- * @returns 解析结果，失败返回 null
- */
-export async function resolveLxUrlViaRust(
-  cachedInfo: LxSearchResultItem,
-  qualities: QualityKey[],
-): Promise<LxUrlResolveResult | null> {
-  try {
-    const urlResult = await pluginApi.resolveLxWithQualityFallback(
-      toUrlSongInfo(cachedInfo),
-      qualities,
-    );
-    if (urlResult?.url && /^https?:/.test(urlResult.url)) {
-      const quality = normalizeQualityKey(urlResult.quality) ?? qualities[0];
-      return {
-        url: urlResult.url,
-        quality,
-        source: 'rust',
-      };
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.warn(`[LXUrlResolver] Rust 批量音质回退失败: ${msg}`);
+// ==================== 直链缓存（对齐移动端 plugin_engine.resolveLxUrl） ====================
+// 原 Rust URL_CACHE 移除后缓存职责上移到本层：TTL 10 分钟、硬上限 500 条
+// （超限时先清过期项，再按插入序淘汰）。key 为 source/songmid/quality，
+// 不含插件 ID：更换插件后同歌同档位仍可命中缓存。
+
+const LX_URL_CACHE_TTL_MS = 10 * 60 * 1000;
+const LX_URL_CACHE_MAX = 500;
+const _lxUrlCache = new Map<
+  string,
+  { url: string; quality: QualityKey; expiresAt: number }
+>();
+
+function buildLxUrlCacheKey(
+  lxSource: string,
+  songInfo: Record<string, unknown>,
+  quality: QualityKey,
+): string {
+  const songId = String(songInfo?.songmid ?? songInfo?.hash ?? '');
+  return `${lxSource}\u0001${songId}\u0001${quality}`;
+}
+
+function getLxUrlCacheHit(
+  key: string,
+): { url: string; quality: QualityKey } | null {
+  const hit = _lxUrlCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    _lxUrlCache.delete(key);
+    return null;
   }
-  return null;
+  return { url: hit.url, quality: hit.quality };
+}
+
+function setLxUrlCache(key: string, url: string, quality: QualityKey): void {
+  if (_lxUrlCache.size >= LX_URL_CACHE_MAX) {
+    const now = Date.now();
+    for (const [k, v] of _lxUrlCache) {
+      if (v.expiresAt <= now) _lxUrlCache.delete(k);
+    }
+    while (_lxUrlCache.size >= LX_URL_CACHE_MAX) {
+      // JS Map 保插入序：淘汰最早插入条目
+      const oldest = _lxUrlCache.keys().next().value;
+      if (oldest === undefined) break;
+      _lxUrlCache.delete(oldest);
+    }
+  }
+  _lxUrlCache.set(key, {
+    url,
+    quality,
+    expiresAt: Date.now() + LX_URL_CACHE_TTL_MS,
+  });
 }
 
 /**
@@ -241,6 +260,12 @@ export async function resolveLxUrlViaPlugin(
   await ensureLxPluginInstance(plugin);
 
   for (const quality of qualities) {
+    // 缓存命中（同源同歌同档位）直接返回
+    const cacheKey = buildLxUrlCacheKey(lxSource, songInfo, quality);
+    const cached = getLxUrlCacheHit(cacheKey);
+    if (cached) {
+      return { url: cached.url, quality: cached.quality, source: 'plugin' };
+    }
     try {
       const pluginQuality = qualityKeyToLxQuality(quality);
       const urlResult = await lxPluginGetMusicUrl(
@@ -255,7 +280,9 @@ export async function resolveLxUrlViaPlugin(
         // 插件对某首歌可能静默降级（如请求 flac 实际只给 320k），
         // 若不采用其报告的档位，底部栏会显示一个高于实际播放的音质。
         const reported = normalizeQualityKey(urlResult?.type);
-        return { url: musicUrl, quality: reported ?? quality, source: 'plugin' };
+        const hitQuality = reported ?? quality;
+        setLxUrlCache(cacheKey, musicUrl, hitQuality);
+        return { url: musicUrl, quality: hitQuality, source: 'plugin' };
       }
     } catch (urlErr) {
       // LxSongLevelError 表示歌曲本身不可用（无版权/已下架等），换音质无法解决
@@ -321,6 +348,13 @@ export async function resolveLxUrlForSingleQuality(
   songInfo: Record<string, unknown>,
   quality: QualityKey,
 ): Promise<LxSingleQualityResolveResult | null> {
+  // [缓存] 同源同歌同档位命中直接返回（与播放链路共享同一份缓存）
+  const cacheKey = buildLxUrlCacheKey(lxSource, songInfo, quality);
+  const cached = getLxUrlCacheHit(cacheKey);
+  if (cached) {
+    return { url: cached.url, quality: cached.quality };
+  }
+
   // [同歌去重] 并发/连发的多路请求共享同一份解析结果
   const dedupKey = buildLxUrlDedupKey(plugin, songInfo, quality);
   const now = Date.now();
@@ -330,7 +364,7 @@ export async function resolveLxUrlForSingleQuality(
   }
   if (hit) _dedupLxUrl.delete(dedupKey);
 
-  const p = runResolveLxUrlForSingleQuality(plugin, lxSource, songInfo, quality);
+  const p = runResolveLxUrlForSingleQuality(plugin, lxSource, songInfo, quality, cacheKey);
   _dedupLxUrl.set(dedupKey, { at: now, p });
   p.then(
     () => {
@@ -350,6 +384,7 @@ async function runResolveLxUrlForSingleQuality(
   lxSource: string,
   songInfo: Record<string, unknown>,
   quality: QualityKey,
+  cacheKey: string,
 ): Promise<LxSingleQualityResolveResult | null> {
   const urlResult = await lxPluginGetMusicUrl(
     plugin,
@@ -360,16 +395,17 @@ async function runResolveLxUrlForSingleQuality(
   const url = urlResult?.url;
   if (!url || !/^https?:/.test(url)) return null;
   const reported = normalizeQualityKey(urlResult?.type);
-  return { url, quality: reported ?? quality };
+  const hitQuality = reported ?? quality;
+  setLxUrlCache(cacheKey, url, hitQuality);
+  return { url, quality: hitQuality };
 }
 
 /**
- * 统一的 LX URL 解析入口（插件优先 + Rust 兜底）
+ * 统一的 LX URL 解析入口（插件解析，带 10 分钟缓存）
  *
  * 策略：
- *   1. 定位 LX 插件，无插件时直接走 Rust
- *   2. 有插件时先尝试插件解析（按音质候选列表逐档）
- *   3. 插件解析失败后回退到 Rust 批量音质解析
+ *   1. 定位 LX 插件，无可用插件时直接失败
+ *   2. 按音质候选列表逐档走插件解析（各档先查缓存）
  *
  * @param song 当前歌曲
  * @param lxSource LX 音源标识
@@ -396,33 +432,9 @@ export async function resolveLxUrl(
 
   const cachedInfo = resolveLxCachedInfo(song, lxSource, songmid);
   const matchedPlugin = findLxPluginForSource(lxSource);
+  if (!matchedPlugin || !cachedInfo) return null;
 
-  // 无 LX 插件时，直接走 Rust 批量音质解析
-  if (!matchedPlugin) {
-    if (!cachedInfo) return null;
-    return resolveLxUrlViaRust(cachedInfo, tryQualities);
-  }
-
-  // 插件优先
+  // 插件解析（各档命中缓存直接返回）
   const songInfo = buildLxSongInfo(song, songmid, lxSource, cachedInfo);
-  const pluginResult = await resolveLxUrlViaPlugin(
-    matchedPlugin,
-    lxSource,
-    songInfo,
-    tryQualities,
-  );
-  if (pluginResult) return pluginResult;
-
-  console.warn(
-    `[LXUrlResolver] 插件解析失败，回退到 Rust: lx://${lxSource}/${songmid}, tried=${JSON.stringify(tryQualities)}`,
-  );
-
-  // Rust 兜底
-  if (!cachedInfo) return null;
-  const rustResult = await resolveLxUrlViaRust(cachedInfo, tryQualities);
-  if (rustResult) {
-    return rustResult;
-  }
-
-  return null;
+  return resolveLxUrlViaPlugin(matchedPlugin, lxSource, songInfo, tryQualities);
 }

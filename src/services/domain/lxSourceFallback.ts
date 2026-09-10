@@ -4,8 +4,9 @@
  * 当 lx:// 歌曲在某个音源起播失败时，由 Rust 后端在其余落雪平台搜索同名同歌手的歌曲，
  * 构造新的 Song 对象返回，供 playerPlayback 递归调用 playSong 重试。
  *
- * [项4 源回退集中] 搜索、匹配、URL 解析均由 Rust 后端完成，前端只上报失败集和参数。
- * Rust 后端自带搜索结果缓存（5 分钟）+ URL 缓存（10 分钟）+ 主备 API 自动切换。
+ * [项4 源回退集中] 搜索与匹配由 Rust 后端完成（find_alternative_lx_source，
+ * 自带 5 分钟搜索缓存），直链解析由前端插件编排层 lxUrlResolver.ts 按其
+ * 缓存与回退策略完成。
  */
 
 import type { Song } from '../../types';
@@ -102,18 +103,17 @@ function cacheLxItemFromRustResult(result: AlternativeSourceResultContract): voi
 /**
  * 查找替代落雪音源
  *
- * [项4 源回退集中] 搜索、匹配、URL 解析全部由 Rust 后端完成。
- * 前端只上报失败源集合和音质候选列表，Rust 负责串行搜索 → 匹配 → URL 解析。
+ * [项4 源回退集中 · 双端通用] 搜索与匹配由 Rust 后端完成（带搜索结果缓存），
+ * 直链解析由插件编排层（resolveLxUrl）按缓存与回退策略进行。
+ * 前端只上报失败源集合。
  *
  * @param song 失败的原歌曲
  * @param failedSources 已失败的音源集合（包含当前音源）
- * @param qualities 音质候选列表（从高到低），传给 Rust 一并解析 URL
  * @returns 新的 Song 对象，或 null（未找到匹配）
  */
 export async function findAlternativeLxSource(
   song: Song,
   failedSources: Set<string>,
-  qualities: string[] = [],
 ): Promise<Song | null> {
   // 提取歌手名用于搜索关键词
   const artistStr = song.effective_artist_names?.length
@@ -126,7 +126,6 @@ export async function findAlternativeLxSource(
       artistStr,
       song.duration || 0,
       Array.from(failedSources),
-      qualities,
     );
 
     if (!result) return null;

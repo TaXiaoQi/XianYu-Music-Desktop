@@ -217,7 +217,6 @@ commands.allow = [
   "fetch_lyric_from_source",
   "get_lx_cover",
   "find_alternative_lx_source",
-  "resolve_lx_with_quality_fallback",
   "resolve_download_path",
   "resolve_download_full_path",
   "build_download_basename",
@@ -233,7 +232,6 @@ commands.allow = [
   "save_window_placement",
   "set_taskbar_fullscreen_flag",
   "recognize_with_pcm",
-  "resolve_lx_music_url",
   "clear_lx_url_cache",
   "clear_lx_all_cache",
   "dlna_search_devices",
@@ -250,6 +248,7 @@ commands.allow = [
   "dlna_renderer_status",
   "prefetch_audio_head",
   "get_system_info",
+  "get_machine_id",
 ]
 
 # 辅助窗口（桌面歌词、迷你播放器、托盘菜单、任务栏播控、音量弹窗）专用命令集。

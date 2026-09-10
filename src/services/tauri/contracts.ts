@@ -1159,10 +1159,6 @@ export interface TauriCommandMap {
     payload: { source: string; songInfo: LyricSongInfoContract };
     response: LyricResultContract | null;
   };
-  resolve_lx_music_url: {
-    payload: { songInfo: LxUrlSongInfoContract; quality: string };
-    response: ResolvedUrlContract | null;
-  };
   get_lx_cover: {
     payload: { songInfo: LxUrlSongInfoContract };
     response: string | null;
@@ -1174,15 +1170,11 @@ export interface TauriCommandMap {
       songArtist: string;
       songDuration: number;
       failedSources: string[];
-      qualities: string[];
     };
     response: AlternativeSourceResultContract | null;
   };
-  resolve_lx_with_quality_fallback: {
-    payload: { songInfo: LxUrlSongInfoContract; qualities: string[] };
-    response: ResolvedUrlContract | null;
-  };
   clear_lx_all_cache: { payload: undefined; response: void };
+
   save_playback_session: {
     payload: { session: PlaybackSessionDataContract };
     response: void;
@@ -1364,11 +1356,6 @@ export interface LxUrlSongInfoContract {
   _types?: Record<string, { size?: string | null; hash?: string }>;
 }
 
-interface ResolvedUrlContract {
-  url: string;
-  quality: string;
-}
-
 export interface AlternativeSourceResultContract {
   source: string;
   songmid: string;
@@ -1384,8 +1371,6 @@ export interface AlternativeSourceResultContract {
   strMediaMid?: string | null;
   songId?: string | number;
   lxTypes?: Record<string, { size?: string | null; hash?: string }>;
-  resolvedUrl?: string | null;
-  resolvedQuality?: string | null;
 }
 
 interface LyricSongInfoContract {

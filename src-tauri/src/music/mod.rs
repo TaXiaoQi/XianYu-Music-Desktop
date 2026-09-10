@@ -41,7 +41,4 @@ pub use scanner::{
     get_folder_first_song, parse_audio_files, parse_music_folder, scan_folder_as_playlists,
     scan_music_folder,
 };
-pub use url_resolver::{
-    clear_lx_url_cache, find_alternative_lx_source, get_lx_cover, resolve_lx_music_url,
-    resolve_lx_with_quality_fallback,
-};
+pub use url_resolver::{clear_lx_url_cache, find_alternative_lx_source, get_lx_cover};
