@@ -765,9 +765,12 @@ static SPEAKER_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
 static PARENTHETICAL_VOCAL_RE: OnceLock<Regex> = OnceLock::new();
 
 /// 制作信息行（作词/作曲/编曲/演唱/混音等），不是可演唱歌词，应排除出主歌词。
+/// (?i)：英文标签大小写不敏感；「词/曲」「作词/作曲」等斜杠组合写法一并覆盖。
+/// 标签与冒号之间允许 ≤4 个字符的修饰语（「音乐总监：」「后期混音：」「Lyrics by:」），
+/// 防复合 credit 标签漏网被误判成对唱角色。
 fn is_credit_line(text: &str) -> bool {
     let re = CREDIT_LINE_RE.get_or_init(|| {
-        Regex::new(r"^(?:(?:作)?词|(?:作)?詞|曲|作曲|编曲|編曲|词曲|詞曲|原唱|演唱|歌手|制作(?:人)?|製作(?:人)?|出品|发行|發行|策划|策劃|统筹|統籌|监制|監製|导演|導演|混音|母带|母帶|录音|錄音|和声|和聲|翻唱|原曲|歌名|歌曲|专辑|專輯|标题|標題|调教|調教|调声|調聲|曲绘|曲繪|曲絵|绘图|繪圖|画师|畫師|视频|視頻|映像|动画|動畫|written\s+by|vocal|lyrics?|lyricist|composer|music|arrange(?:r|ment)?|producer|produced\s+by|mix|master(?:ing)?|recording|staff|pv|mv|movie|video|animation|illustration|illustrator)\s*[:：]").unwrap()
+        Regex::new(r"(?i)^(?:(?:作)?词|(?:作)?詞|曲|作曲|编曲|編曲|词曲|詞曲|(?:作)?[词詞]\s*[/、&＆]\s*曲|原唱|演唱|主唱|领唱|領唱|和音|和声|和聲|歌手|歌词|歌詞|制作|製作|出品|发行|發行|策划|策劃|统筹|統籌|监制|監製|导演|導演|混音|母带|母帶|录音|錄音|翻译|翻譯|譯|字幕|后期|後期|压制|壓制|来源|來源|出处|封面|美工|鸣谢|鳴謝|感谢|感謝|宣传|宣傳|赞助|贊助|吉他|贝斯|貝斯|贝司|貝司|鼓|键盘|鍵盤|钢琴|鋼琴|提琴|二胡|琵琶|古筝|古箏|笛子|箫|簫|口琴|萨克斯|薩克斯|小号|小號|长笛|長笛|竖琴|豎琴|lyrics?|lyricist|compos(?:er|ed)|music|arrang(?:er|ement|ed)|produc(?:er|ed|tion)|mix(?:ed|ing)?|master(?:ed|ing)?|record(?:ed|ing)?|vocal(?:s|ist)?|guitar|bass|drums?|piano|keyboard|violin|cello|viola|strings|brass|flute|trumpet|sax(?:ophone)?|translator|subtitle|cover|artwork|design|copyright|staff|pv|mv|movie|video|animation|illustration|illustrator|thanks|written|wrote)[^:：\r\n]{0,4}\s*[:：]").unwrap()
     });
     re.is_match(text.trim())
 }
@@ -791,7 +794,7 @@ fn detect_speaker_prefix(text: &str) -> (Option<String>, String) {
     }
 
     let non_speaker = NON_SPEAKER_LABEL_RE.get_or_init(|| {
-        Regex::new(r"^(?:制作|出品|发行|發行|策划|策劃|监制|監製|混音|母带|母帶|录音|錄音|和声|和聲|翻唱|原曲|歌名|歌曲|专辑|專輯|标题|標題|调教|調教|调声|調聲|曲绘|曲繪|曲絵|绘图|繪圖|画师|畫師|视频|視頻|映像|动画|動畫|artist|album|title|producer|produced\s+by|mix|master(?:ing)?|staff|pv|mv|movie|video|animation|illustration|illustrator)$").unwrap()
+        Regex::new(r"(?i)^(?:作词|作詞|作曲|填词|填詞|制作|出品|发行|發行|策划|策劃|监制|監製|混音|母带|母帶|录音|錄音|和声|和聲|翻唱|原曲|歌名|歌曲|专辑|專輯|标题|標題|调教|調教|调声|調聲|曲绘|曲繪|绘图|繪圖|画师|畫師|视频|視頻|映像|动画|動畫|演唱|主唱|领唱|領唱|和音|歌词|歌詞|词曲|詞曲|原唱|翻译|翻譯|字幕|后期|後期|压制|壓制|来源|來源|封面|美工|吉他|贝斯|貝斯|鼓|键盘|鍵盤|钢琴|鋼琴|提琴|笛子|口琴|artist|album|title|producer|mix|master(?:ing)?|staff|pv|mv|movie|video|animation|illustration|illustrator|lyrics?|lyricist|composer|music|arranger|vocal(?:s|ist)?|guitar|bass|drums?|piano|keyboard|violin|cello|viola|strings|brass|flute|trumpet|sax(?:ophone)?|translator|subtitle|cover|artwork|design|copyright|thanks)$").unwrap()
     });
     if non_speaker.is_match(name) {
         return (None, trimmed.to_string());
@@ -901,14 +904,34 @@ fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> {
 
 /// 判断歌词是否呈现对唱/和声证据：存在演唱者标签前缀，或出现多个不同的括号和声段。
 /// 近似 BakaMusic 的"双歌手"门控——无对唱证据时不拆分括号，避免误伤普通括号歌词。
+/// 演唱者前缀直接从文本统计（不依赖已标注的 speaker 字段），使本函数可先于
+/// speaker 标注执行，为下方的 speaker 判定提供统一门控。
+///
+/// 前缀证据带结构化校验：真对唱的标签前缀贯穿全曲——要么出现在首个无前缀
+/// 正文行之后，要么全曲正文都带前缀。仅集中在开头的连续前缀块是制作信息
+/// （「Lyrics by:」「Music by:」「吉他：」等 is_credit_line 未覆盖的写法），
+/// 不是对唱；否则这些行会被标注 is_duet，AMLL 渲染成右偏。
 fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
     let mut speaker_count = 0;
+    let mut plain_line_seen = false;
+    let mut prefix_after_plain_seen = false;
     let mut vocal_contents = std::collections::HashSet::new();
     let re = PARENTHETICAL_VOCAL_RE
         .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
     for line in lines {
-        if line.speaker.is_some() {
+        // 背景行（整行括号包裹）不参与前缀统计，避免结尾孤立 (和声) 行
+        // 干扰"全曲正文都带前缀"的判定。
+        if line.is_bg {
+            continue;
+        }
+        let (speaker, _) = detect_speaker_prefix(&line.text);
+        if speaker.is_some() {
             speaker_count += 1;
+            if plain_line_seen {
+                prefix_after_plain_seen = true;
+            }
+        } else if !line.text.trim().is_empty() {
+            plain_line_seen = true;
         }
         for caps in re.captures_iter(&line.text) {
             let content = caps.get(1).unwrap().as_str().trim();
@@ -920,31 +943,43 @@ fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
             }
         }
     }
-    speaker_count >= 2 || vocal_contents.len() >= 2
+    (speaker_count >= 2 && (!plain_line_seen || prefix_after_plain_seen))
+        || vocal_contents.len() >= 2
 }
 
 /// 对解析出的行做演唱者/和声标注：整行背景和声、演唱者前缀、括号和声拆分。
 fn annotate_line_vocals(lines: &mut Vec<ParsedLine>) {
-    let mut expanded = Vec::with_capacity(lines.len());
-    for mut line in lines.drain(..) {
+    // 第一遍：整行括号包裹 → 背景和声行（无对唱歧义，不受门控约束）
+    for line in lines.iter_mut() {
         if let Some(inner) = strip_whole_wrapped(&line.text) {
             line.is_bg = true;
             line.text = inner;
         }
-
-        let (speaker, rest) = detect_speaker_prefix(&line.text);
-        if let Some(speaker) = speaker {
-            line.speaker = Some(speaker);
-            line.text = rest;
-            line.is_duet = true;
-        }
-
-        expanded.push(line);
     }
-    *lines = expanded;
+
+    // 演唱者前缀标注需要统一门控：歌词开头孤立的 credit 变体（「词/曲：XXX」
+    // 「主唱：XXX」「Lyrics by: XXX」「吉他：XXX」等 is_credit_line 未覆盖的
+    // 写法）不应被判成对唱角色——AMLL 会把 duet 行右偏渲染，表现为开头几行
+    // 歌词"往右偏"。真对唱歌词（A:/B: 等前缀贯穿全曲）经 has_duet_vocal_evidence
+    // 的结构化校验（前缀出现在首个无前缀正文行之后，或全曲正文都带前缀）
+    // 仍会正常标注。
+    // 证据在 speaker 标注前一次性统计并复用：标注会剥掉前缀文本，之后重算
+    // speaker_count 会归零，导致括号和声拆分被错误跳过。
+    let duet_evidence = has_duet_vocal_evidence(lines);
+
+    if duet_evidence {
+        for line in lines.iter_mut() {
+            let (speaker, rest) = detect_speaker_prefix(&line.text);
+            if let Some(speaker) = speaker {
+                line.speaker = Some(speaker);
+                line.text = rest;
+                line.is_duet = true;
+            }
+        }
+    }
 
     // 括号和声拆分仅在歌词存在对唱证据时进行（近似 BakaMusic 的双歌手门控）。
-    if !has_duet_vocal_evidence(lines) {
+    if !duet_evidence {
         return;
     }
     let mut split = Vec::with_capacity(lines.len());
@@ -4370,6 +4405,137 @@ mod tests {
         build_structured_lyrics_payload, parse_raw_lyrics, score_romanized_latin_text,
         ENHANCED_TRAILING_WORD_DURATION_MS, ParsedLineSourceFormat,
     };
+
+    /// 回归：开头 credit 变体（is_credit_line 未覆盖的「词/曲：」「主唱：」写法）
+    /// 不得被误判成对唱角色——AMLL 会把 duet 行右偏渲染，表现为开头几行歌词往右偏。
+    #[test]
+    fn credit_variant_lines_at_head_are_not_duet() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:01.000]词/曲：某某某",
+                "[00:02.000]主唱：某某某",
+                "[00:03.000]第一句歌词",
+                "[00:04.000]第二句歌词",
+            ]
+            .join("\n"),
+        );
+
+        assert!(
+            payload.display_lines.iter().all(|line| !line.is_duet),
+            "开头 credit 变体不应被标注为对唱行: {:?}",
+            payload
+                .display_lines
+                .iter()
+                .filter(|l| l.is_duet)
+                .map(|l| &l.text)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// 防回归：真正的对唱歌词（演唱者前缀贯穿全曲）仍要标注 is_duet。
+    #[test]
+    fn real_duet_speaker_prefixes_are_still_annotated() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:01.000]A:第一句",
+                "[00:02.000]B:第二句",
+                "[00:03.000]A:第三句",
+                "[00:04.000]B:第四句",
+            ]
+            .join("\n"),
+        );
+
+        assert!(
+            payload.display_lines.iter().any(|line| line.is_duet),
+            "真对唱歌词应有对唱行标注"
+        );
+    }
+
+    /// 回归：开头英文 credit 变体（「Lyrics by:」「Music by:」等 is_credit_line
+    /// 旧版未覆盖的写法）恰好两行即可凑出对唱证据，AMLL 渲染成右偏。
+    #[test]
+    fn by_variant_credits_at_head_are_not_duet() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:01.000]Lyrics by: 某某某",
+                "[00:02.000]Music by: 某某某",
+                "[00:03.000]第一句歌词",
+                "[00:04.000]第二句歌词",
+            ]
+            .join("\n"),
+        );
+
+        assert!(
+            payload.display_lines.iter().all(|line| !line.is_duet),
+            "开头 by 类 credit 不应被标注为对唱行: {:?}",
+            payload
+                .display_lines
+                .iter()
+                .filter(|l| l.is_duet)
+                .map(|l| &l.text)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// 回归：演唱者前缀仅集中在开头的连续块、之后不再出现 → 是制作信息块
+    /// （如歌词来源署名），不是对唱，不得标注 is_duet。
+    #[test]
+    fn head_only_prefix_block_is_not_duet() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:01.000]A: 某某某",
+                "[00:02.000]B: 某某某",
+                "[00:03.000]第一句歌词",
+                "[00:04.000]第二句歌词",
+            ]
+            .join("\n"),
+        );
+
+        assert!(
+            payload.display_lines.iter().all(|line| !line.is_duet),
+            "仅出现在开头的前缀块不应被标注为对唱行: {:?}",
+            payload
+                .display_lines
+                .iter()
+                .filter(|l| l.is_duet)
+                .map(|l| &l.text)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// 回归：开头乐器演奏 credit（「吉他：」「贝斯：」）与真对唱前缀并存时，
+    /// credit 行不得标注 is_duet，真对唱行仍要标注。
+    #[test]
+    fn instrument_credits_at_head_are_excluded_from_duet() {
+        let payload = build_structured_lyrics_payload(
+            [
+                "[00:01.000]吉他：某某某",
+                "[00:02.000]贝斯：某某某",
+                "[00:03.000]A:第一句",
+                "[00:04.000]第二句",
+                "[00:05.000]B:第三句",
+            ]
+            .join("\n"),
+        );
+
+        let credit_lines = ["吉他：某某某", "贝斯：某某某"];
+        for line in &payload.display_lines {
+            if credit_lines.contains(&line.text.as_str()) {
+                assert!(
+                    !line.is_duet,
+                    "乐器 credit 行不应被标注为对唱行: {line:?}"
+                );
+            }
+        }
+        assert!(
+            payload
+                .display_lines
+                .iter()
+                .any(|l| l.is_duet && l.text == "第一句"),
+            "真对唱行仍应标注 is_duet: {:?}",
+            payload.display_lines
+        );
+    }
 
     #[test]
     fn parses_inline_timestamp_lrc_into_word_timed_lines() {

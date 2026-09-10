@@ -1200,6 +1200,14 @@ watch(() => props.coverHidden, async () => {
   order: 1;
 }
 
+/* AMLL 对唱行默认右偏渲染：_hasDuetLine 下 duet 行 padding-left:15%、
+   其余行 padding-right:15%。本应用歌词为统一水平对齐且不展示演唱者标签，
+   该缩进只会把开头 credit/误判行顶向右侧（"开头歌词往右偏"），整体禁用。 */
+.amll-host :deep(.amll-lyric-player[class*="_hasDuetLine_"] [class*="_lyricLine_"]) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .lyrics-align-left {
   --lyrics-text-align: left;
   --lyrics-line-transform-origin: 0%;
