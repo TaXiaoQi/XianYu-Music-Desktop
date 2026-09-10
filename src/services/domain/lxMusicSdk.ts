@@ -47,4 +47,4 @@ export {
 } from './lxMusicSdkTracks';
 
 // Note: LX 音乐 URL 解析已统一到 lxUrlResolver.ts（resolveLxUrl），
-// 旧函数 lxGetMusicUrl 已删除。如需单次解析请使用 resolveLxUrl / resolveLxUrlViaRust。
+// 旧函数 lxGetMusicUrl 已删除。如需单次解析请使用 resolveLxUrl（lxUrlResolver.ts）。

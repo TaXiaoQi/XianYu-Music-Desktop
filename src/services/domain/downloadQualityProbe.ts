@@ -11,11 +11,6 @@ import type { QualityKey, Song } from '../../types';
 import { ALL_QUALITY_KEYS } from '../../types';
 import { isBakaPlugin } from './pluginEngine';
 import {
-  parseLxPath,
-  resolveLxCachedInfo,
-  resolveLxUrlViaRust,
-} from './lxUrlResolver';
-import {
   isDownloadableOnlineSong,
   isPluginSong,
 } from './downloadFormat';
@@ -177,21 +172,6 @@ export async function probeDownloadableQualities(
   await Promise.all(Array.from({ length: concurrency }, worker));
 
   if (options?.signal?.aborted) return empty;
-
-  // [lx:// 协议 Rust 兜底] LX 协议歌曲单档解析全部失败时，回退到 Rust 后端
-  // 批量音质解析，避免 JS 引擎异常导致探测显示 0 档可用。
-  if (!isPlugin && Object.keys(resolvedUrls).length === 0) {
-    const path = song.cue_source_path || song.path;
-    const pathInfo = parseLxPath(path || '');
-    const cachedInfo = pathInfo ? resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid) : null;
-    if (cachedInfo) {
-      const rustResult = await resolveLxUrlViaRust(cachedInfo, targets);
-      if (rustResult?.url) {
-        resolvedUrls[rustResult.quality] = rustResult.url;
-        options?.onProgress?.(rustResult.url, rustResult.quality);
-      }
-    }
-  }
 
   // [QQ/网易云插件原生适配] 插件全部档位解析失败时不借用 LX 音源兜底：
   // 探测结果如实反映插件自身能力，解析失败原因由插件错误透出。

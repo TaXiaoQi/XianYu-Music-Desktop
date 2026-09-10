@@ -40,7 +40,6 @@ import {
   findLxPluginForSource,
   buildLxSongInfo,
   resolveLxUrlForSingleQuality,
-  resolveLxUrlViaRust,
 } from './lxUrlResolver';
 import { sanitizeMediaUrl } from '../../utils/mediaUrl';
 import { healDanglingPluginId } from './pluginIdHeal';
@@ -322,27 +321,6 @@ export async function resolveOnlineQualityUrl(
       ? await resolvePluginAudioForQuality(ctx as PluginResolveContext, q, options?.includePlaybackExtras)
       : await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
     if (resolved?.url) return resolved;
-  }
-
-  // [LX 播放兜底] 插件解析全部失败时回退到 Rust 后端批量音质解析。
-  // 播放链路此前只走插件，插件沙箱/直链解析失败会导致整首歌无法播放；
-  // Rust 侧走独立的音源实现，往往能解析出插件拿不到的直链。
-  if (!isPlugin && ctx) {
-    const path = song.cue_source_path || song.path;
-    const pathInfo = parseLxPath(path || '');
-    const cachedInfo = pathInfo ? resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid) : null;
-    if (cachedInfo) {
-      const rustResult = await resolveLxUrlViaRust(cachedInfo, candidates);
-      if (rustResult?.url) {
-        return {
-          quality: rustResult.quality,
-          url: rustResult.url,
-          headers: null,
-          ekey: undefined,
-          cek: undefined,
-        };
-      }
-    }
   }
 
   // [QQ/网易云插件原生适配] 不再借用 LX 音源兜底：插件自身的 getMediaSource

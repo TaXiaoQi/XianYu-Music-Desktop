@@ -18,11 +18,6 @@ import {
 } from './audioQualityVerify';
 import { usePlaybackStore } from '../../features/playback/store';
 import {
-  parseLxPath,
-  resolveLxCachedInfo,
-  resolveLxUrlViaRust,
-} from './lxUrlResolver';
-import {
   ResolvedOnlineQualityUrl,
   ResolveDownloadContext,
   PluginResolveContext,
@@ -318,36 +313,6 @@ export async function downloadSong(
       errors.push(`${q}: 下载失败 ${msg}`);
       console.warn(`[Download] ${q} 档位下载失败，尝试回退更低音质:`, msg);
       options.onProgress?.(0);
-    }
-  }
-
-  // [Rust 兜底] 所有插件档位均失败时，回退到 Rust 后端批量音质解析。
-  // 与播放路径（resolveLxUrl）保持一致：插件解析失败不代表歌曲不可下载，
-  // Rust 侧走独立的音源实现，往往能解析出插件拿不到的直链。
-  if ((!filePath || !hitQuality) && !isPlugin) {
-    const lxCtx = ctx as ResolveDownloadContext;
-    const path = song.cue_source_path || song.path;
-    const pathInfo = parseLxPath(path || '');
-    if (pathInfo) {
-      const cachedInfo = resolveLxCachedInfo(song, pathInfo.source, pathInfo.songmid);
-      if (cachedInfo) {
-        const rustResult = await resolveLxUrlViaRust(cachedInfo, lxCtx.candidates);
-        if (rustResult) {
-          const q = rustResult.quality;
-          const destPath = await resolveDownloadFullPath(song, rustResult.url, q, options);
-          try {
-            filePath = await downloadFromUrl(rustResult.url, destPath, options.onProgress);
-            hitQuality = q;
-          } catch (e: any) {
-            const msg = typeof e === 'string' ? e : (e?.message || String(e));
-            errors.push(`Rust 兜底(${q}): 下载失败 ${msg}`);
-            console.warn('[Download] Rust 兜底下载失败:', msg);
-            options.onProgress?.(0);
-          }
-        } else {
-          errors.push('Rust 兜底: 无可用直链');
-        }
-      }
     }
   }
 

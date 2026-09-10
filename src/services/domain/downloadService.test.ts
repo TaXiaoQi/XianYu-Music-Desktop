@@ -61,7 +61,6 @@ vi.mock('./lxUrlResolver', async (importOriginal) => {
       songmid,
     })),
     resolveLxUrlForSingleQuality: mockResolveLxUrlForSingleQuality,
-    resolveLxUrlViaRust: vi.fn().mockResolvedValue(null),
     resolveLxUrl: mockResolveLxUrl,
   };
 });
