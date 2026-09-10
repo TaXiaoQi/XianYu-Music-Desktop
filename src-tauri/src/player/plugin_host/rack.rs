@@ -40,6 +40,15 @@ pub(crate) const BLOCK_SIZE: usize = 512;
 const DEFAULT_CHANNELS: u16 = 2;
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 
+/// 关闭指定槽位的编辑器窗口（不阻塞等待）。编辑器原生窗口仅 Windows 实现
+/// （editor_window 模块 cfg 门控），非 Windows 平台为空操作。
+fn close_editor_blocking(format: &str, unique_id: &str) {
+    #[cfg(target_os = "windows")]
+    super::editor_window::close_editor_blocking(format, unique_id);
+    #[cfg(not(target_os = "windows"))]
+    let _ = (format, unique_id);
+}
+
 /// 机架中已加载的插件实例（链或 retired 中）。
 pub(crate) struct RackSlot {
     pub format: String,
@@ -230,7 +239,7 @@ impl SharedRack {
         // 1. 关闭被移除槽位的编辑器（实例仍在链上，编辑器线程能找到并 close）
         for key in &current_keys {
             if !target_keys.contains(key) {
-                super::editor_window::close_editor_blocking(&key.0, &key.1);
+                close_editor_blocking(&key.0, &key.1);
             }
         }
 
@@ -327,7 +336,7 @@ impl SharedRack {
     /// 退役一个实例：编辑器若开着先关（等编辑器线程退出），再 deactivate，
     /// 移入 retired 等待 sweep drop。必须在命令线程调用。
     fn retire_slot(&self, slot: RackSlot) {
-        super::editor_window::close_editor_blocking(&slot.format, &slot.unique_id);
+        close_editor_blocking(&slot.format, &slot.unique_id);
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let mut slot = slot;
         slot.instance.deactivate();
@@ -348,7 +357,7 @@ impl SharedRack {
                 }
                 state.retired.remove(0)
             };
-            super::editor_window::close_editor_blocking(&slot.format, &slot.unique_id);
+            close_editor_blocking(&slot.format, &slot.unique_id);
             drop(slot);
         }
     }

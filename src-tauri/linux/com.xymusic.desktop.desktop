@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=弦予音乐
+Comment=弦予音乐播放器
+Exec=/usr/bin/弦予音乐 %u
+Icon=弦予音乐
+Terminal=false
+NoDisplay=false
+Categories=Audio;Music;Player;AudioVideo;
+MimeType=x-scheme-handler/xianyu;

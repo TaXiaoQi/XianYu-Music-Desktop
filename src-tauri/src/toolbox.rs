@@ -565,7 +565,24 @@ pub fn gpu_config_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "APPDATA environment variable not found".to_string())
 }
 
-#[cfg(target_os = "windows")]
+/// Linux 版 GPU 配置路径，与 `set_gpu_acceleration` 写入端（Tauri app_data_dir）
+/// 保持同一目录约定：`$XDG_DATA_HOME/com.xymusic.desktop/gpu_config.json`，
+/// XDG_DATA_HOME 未设置时回退 `~/.local/share`（与 Tauri 推导一致）。
+#[cfg(not(target_os = "windows"))]
+pub fn gpu_config_path() -> Result<PathBuf, String> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".local").join("share"))
+        })
+        .ok_or_else(|| "XDG_DATA_HOME/HOME environment variable not found".to_string())?;
+    Ok(base.join(APP_IDENTIFIER).join(GPU_CONFIG_FILE))
+}
+
+/// 启动早期读取 GPU 加速开关（双平台共用；路径由各平台 gpu_config_path 提供）。
 pub fn should_disable_gpu_for_startup() -> bool {
     let Ok(path) = gpu_config_path() else {
         return false;

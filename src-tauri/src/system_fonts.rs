@@ -177,8 +177,35 @@ mod imp {
 
 #[cfg(not(target_os = "windows"))]
 mod imp {
+    use super::sanitize_font_names;
+    use std::collections::BTreeSet;
+    use std::process::Command;
+
+    /// 通过 fontconfig 的 fc-list 枚举系统字体 family（主流发行版预装）。
+    /// `--format '%{family}\n'` 每行输出一个字体的 family 集合，同一字体的
+    /// 多个别名/本地化名以逗号分隔（含中文名，如 "思源黑体,Source Han Sans SC"）。
+    /// fc-list 不存在或失败时返回空列表（前端回退默认字体选择）。
     pub fn get_system_fonts() -> Result<Vec<String>, String> {
-        Ok(Vec::new())
+        let Ok(output) = Command::new("fc-list")
+            .arg("--format")
+            .arg("%{family}\n")
+            .output()
+        else {
+            return Ok(Vec::new());
+        };
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for line in stdout.lines() {
+            for family in line.split(',') {
+                sanitize_font_names(family, &mut names);
+            }
+        }
+        Ok(names.into_iter().collect())
     }
 }
 
