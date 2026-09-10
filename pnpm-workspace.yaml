@@ -4,5 +4,6 @@ allowBuilds:
   '@applemusic-like-lyrics/vue': true
   '@swc/core': true
   esbuild: true
+  # skia-canvas（图像库可选依赖）无 postinstall 构建脚本，无需加入 allowBuilds
 patchedDependencies:
   vite-plugin-top-level-await@1.6.0: patches/vite-plugin-top-level-await@1.6.0.patch

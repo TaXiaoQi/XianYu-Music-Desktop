@@ -1,0 +1,22 @@
+{
+  "publisher": "CN=TODO-REPLACE-WITH-PARTNER-CENTER-PUBLISHER",
+  "publisherDisplayName": "弦予音乐",
+  "capabilities": {
+    "general": [
+      "internetClient"
+    ]
+  },
+  "extensions": {
+    "shareTarget": false,
+    "fileAssociations": [],
+    "protocolHandlers": []
+  },
+  "signing": {
+    "pfx": null,
+    "pfxPassword": null
+  },
+  "resourceIndex": {
+    "enabled": false,
+    "keepConfig": false
+  }
+}
