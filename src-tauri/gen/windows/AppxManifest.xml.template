@@ -8,14 +8,14 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
 
   <!--
-    Identity.Name 已从 {{PACKAGE_NAME}}（即 identifier）改为硬编码占位值：
-    上架 Partner Center 时必须替换为「应用管理 → 应用标识」页分配的
-    Package/Identity/Name，且 Publisher 必须与该页的 Publisher（CN=...）完全一致。
+    Identity 值来自 Partner Center「弦予音乐」产品（Store ID 9NGDZXD62JQ7）
+    的「应用管理 → 应用标识」页，2026-09-10 替换。Publisher 经 {{PUBLISHER}}
+    由 bundle.config.json 注入，两处必须与商店分配值完全一致，否则上传校验不通过。
     不要改回 {{PACKAGE_NAME}}：identifier 参与桌面端应用数据目录命名，
     改动会使官网版用户的数据路径失效。
   -->
   <Identity
-    Name="XianYuMusic.StorePlaceholderIdentity"
+    Name="38C5265B.3202792ACC237"
     Publisher="{{PUBLISHER}}"
     Version="{{VERSION}}"
     ProcessorArchitecture="{{ARCH}}" />

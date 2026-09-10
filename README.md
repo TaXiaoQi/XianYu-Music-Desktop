@@ -33,7 +33,7 @@
   - **安全并发控制**：在 Rust 后端扫描大型音乐库时，采用信号量（Semaphore）对元数据和封面处理进行节流，有效抑制 CPU 突发飙升。
 - 🛠️ **系统原生整合**
   
-  - **系统级集成**：完美支持系统媒体通知控制、Windows 媒体按键响应以及系统托盘快速操作。
+  - **系统级集成**：完美支持系统媒体通知控制（Windows SMTC / Linux MPRIS / macOS 控制中心）、Windows 媒体按键响应以及系统托盘快速操作。
   - **无缝本地管理**：提供高性能的本地音频文件扫描、标签元数据读取和物理文件重命名与整理。
   - **高级交互体验**：自研智能边界检测的上下文菜单，禁用浏览器默认右键行为，提供真正的原生应用质感。
   - **桌面歌词悬浮窗**：轻量化、高性能的桌面浮窗歌词，支持锁定、穿透与自定义样式。
@@ -56,12 +56,18 @@
 
 | 依赖项 | 推荐版本 / 要求 |
 | --- | --- |
-| **Node.js** | `>= 18` |
-| **Rust** | Stable 稳定版最新版本 |
-| **操作系统** | Windows 10 / 11 |
-| **WebView2** | 确保系统已安装 WebView2 运行时 (Windows 11 默认内置) |
+| **Node.js** | `>= 18`（三平台通用） |
+| **Rust** | Stable 稳定版最新版本（三平台通用） |
 
-### 运行与构建步骤
+各平台额外要求：
+
+| 平台 | 操作系统 | 平台依赖 |
+| --- | --- | --- |
+| **Windows** | Windows 10 / 11 | WebView2 运行时（Windows 11 默认内置） |
+| **Linux** | 主流发行版 | `libwebkit2gtk-4.1-dev`、`build-essential`、`curl`、`wget`、`libssl-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libasound2-dev`（Ubuntu/Debian 包名） |
+| **macOS** | macOS 10.15+ | Xcode Command Line Tools（`xcode-select --install`）与 Rust `aarch64-apple-darwin` / `x86_64-apple-darwin` 工具链 |
+
+### 运行与调试（通用）
 
 1. 克隆本仓库：
   
@@ -87,36 +93,40 @@
   ```bash
   npm run dev
   ```
-  
-5. 构建生产环境安装包：
-	
-  ```bash
-  npm run tauri build
-  ```
-	
-6. 构建 Microsoft Store 版（MSIX 商店分发包，与官网版互不影响）：
-	
-  ```bash
-  npm run tauri:build:store:msix
-  ```
-	
-  产物输出至 `src-tauri/target/msix/`（未签名 `.msix` 与 `.msixbundle`，Microsoft Store 终审时由微软自动代签，无需自有代码签名证书）。该构建通过 `store-build` 特性禁用应用内自更新，更新由商店接管。上架前需在 `src-tauri/gen/windows/AppxManifest.xml.template` 与 `bundle.config.json` 中，将 Identity 占位值替换为 Partner Center「应用管理 → 应用标识」页分配的 Package/Identity/Name 与 Publisher（`CN=...`），否则商店上传校验不通过。
 
-7. 构建 Linux 版（.deb / .rpm / .AppImage，仅可在 Linux 上构建，无法交叉编译）：
+### 构建各平台安装包
 
-  ```bash
-  npm run tauri:build:linux
-  ```
+> Tauri 桌面端无法交叉编译：Windows 包需在 Windows 上构建，Linux 包需在 Linux 上构建，macOS 包需在 macOS 上构建。
 
-  前置依赖：`libwebkit2gtk-4.1-dev`、`build-essential`、`curl`、`wget`、`libssl-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libasound2-dev`（Ubuntu/Debian 包名）。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .deb/.rpm/.AppImage 包，服务端未提供对应格式时自动引导官网。
+#### Windows（官网版，.msi / .exe）
 
-8. 构建 macOS 版（.app / .dmg，仅可在 macOS 上构建，无法交叉编译）：
+```bash
+npm run tauri build
+```
 
-  ```bash
-  npm run tauri:build:mac
-  ```
+#### Windows（Microsoft Store 版，MSIX 商店分发包，与官网版互不影响）
 
-  前置依赖：Xcode Command Line Tools（`xcode-select --install`）与 Rust aarch64/x86_64-apple-darwin 工具链。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .dmg 包（挂载后自动拷贝 .app 至 /Applications），未发布时引导官网；系统媒体控制走 MediaRemote（菜单栏「正在播放」/控制中心），凭据存钥匙串，防休眠经 caffeinate。分发需签名与公证（`tauri.conf.json` 的 bundle.macOS 配置 signingIdentity），未签名包首次打开需右键绕过 Gatekeeper。
+```bash
+npm run tauri:build:store:msix
+```
+
+产物经 `scripts/move-msix.js` 自动归集至 `releases/`（未签名 `.msix` 与 `.msixbundle`，Microsoft Store 终审时由微软自动代签，无需自有代码签名证书）。该构建通过 `store-build` 特性禁用应用内自更新，更新由商店接管。Identity 已配置为 Partner Center「弦予音乐」产品（Store ID `9NGDZXD62JQ7`）分配的正式值（`AppxManifest.xml.template` 的 Name 与 `bundle.config.json` 的 Publisher），改动会导致商店上传校验失败；版本号必须为纯数字四段正式版（无 beta 段），否则 MSIX 打包直接失败。
+
+#### Linux（.deb / .rpm / .AppImage）
+
+```bash
+npm run tauri:build:linux
+```
+
+前置依赖见上方环境要求表。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .deb/.rpm/.AppImage 包，服务端未提供对应格式时自动引导官网。
+
+#### macOS（.app / .dmg）
+
+```bash
+npm run tauri:build:mac
+```
+
+前置依赖见上方环境要求表。产物输出至 `src-tauri/target/release/bundle/`。应用内自更新支持 .dmg 包（挂载后自动拷贝 .app 至 /Applications），未发布时引导官网；系统媒体控制走 MediaRemote（菜单栏「正在播放」/控制中心），凭据存钥匙串，防休眠经 caffeinate。分发需签名与公证（`tauri.conf.json` 的 bundle.macOS 配置 signingIdentity），未签名包首次打开需右键绕过 Gatekeeper。
   
 
 ---
