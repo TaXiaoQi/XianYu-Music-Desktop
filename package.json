@@ -1,7 +1,7 @@
 {
   "name": "xianyu-music",
   "private": true,
-  "version": "2.0.1-beta1",
+  "version": "2.0.1",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -27,7 +27,7 @@
     "release:major": "npm version major --no-git-tag-version --force",
     "release:set": "npm version",
     "version:check": "node scripts/check-version.js",
-    "tauri:build:store:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\""
+    "tauri:build:store:msix": "node scripts/sync-version.js && tauri-windows-bundle build --runner \"node scripts/msix-bridge.js\" && node scripts/move-msix.js"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.2.0",
