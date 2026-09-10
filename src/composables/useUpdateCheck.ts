@@ -19,12 +19,16 @@ const isCheckingUpdate = ref(false);
 
 /**
  * 下载地址是否匹配当前桌面平台的安装包格式。
- * 服务端 desktop 渠道目前只配置 Windows 安装包（.msi/.exe），
- * Linux 端（WebKitGTK UA 含 "Linux"）只在出现 .deb/.rpm/.AppImage 包时才允许应用内更新。
+ * 服务端渠道未配置当前平台安装包时（如 Linux/mac 端拿到 .msi），
+ * 引导用户前往官网下载页。
  */
 function installerMatchesPlatform(url: string): boolean {
-  const isLinux = typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent);
-  if (isLinux) {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  // macOS：只在出现 .dmg/.app 包时才允许应用内更新（".appimage" 不匹配 ".app" 边界）
+  if (/Macintosh|Mac OS X/.test(ua)) {
+    return /\.(dmg|app)(?:[?#]|$)/i.test(url);
+  }
+  if (/Linux/.test(ua)) {
     return /\.(deb|rpm|appimage)(?:[?#]|$)/i.test(url);
   }
   return /\.(msi|exe)(?:[?#]|$)/i.test(url);

@@ -76,6 +76,9 @@ function parseOsVersion(): string {
 function getDeviceModel(): string {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const arch = /WOW64|Win64|x64|x86_64/.test(ua) ? 'x64' : 'x86';
+  if (/Macintosh|Mac OS X/.test(ua)) {
+    return `Mac (${arch})`;
+  }
   if (/Linux/.test(ua)) {
     return `Linux PC (${arch})`;
   }

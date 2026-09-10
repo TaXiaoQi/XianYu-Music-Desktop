@@ -175,7 +175,7 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 mod imp {
     use super::sanitize_font_names;
     use std::collections::BTreeSet;
@@ -204,6 +204,24 @@ mod imp {
             for family in line.split(',') {
                 sanitize_font_names(family, &mut names);
             }
+        }
+        Ok(names.into_iter().collect())
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::sanitize_font_names;
+    use std::collections::BTreeSet;
+
+    /// 通过 CoreText 枚举系统字体 family（含系统字体、/Library/Fonts 与
+    /// ~/Library/Fonts 用户字体），与「字体册」App 的 family 列表一致。
+    /// 枚举失败时返回空列表（前端回退默认字体选择）。
+    pub fn get_system_fonts() -> Result<Vec<String>, String> {
+        let collection = core_text::font_collection::create_for_all_families();
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for descriptor in collection.font_descriptors() {
+            sanitize_font_names(&descriptor.family_name(), &mut names);
         }
         Ok(names.into_iter().collect())
     }

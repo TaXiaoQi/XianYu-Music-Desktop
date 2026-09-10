@@ -99,6 +99,14 @@ wasapi = "0.23"
 souvlaki = { version = "0.7", default-features = false, features = ["use_zbus"] }
 keyring = { version = "3", features = ["async-secret-service", "crypto-rust"] }
 
+# macOS 桌面端依赖（仅能在 macOS 上构建，无法交叉编译）。
+# souvlaki 走系统 MediaRemote/MPNowPlayingInfoCenter（无 feature 要求）；
+# keyring 走 Security framework（钥匙串）；core-text 用于系统字体 family 枚举
+# （CoreText 纯绑定，reqwest native-tls 在 mac 同样走 security-framework，无 OpenSSL）。
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+core-text = "20"
+
 [patch.crates-io]
 rodio = { path = "vendor/rodio-0.20.1" }
 
