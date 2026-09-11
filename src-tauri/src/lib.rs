@@ -458,6 +458,18 @@ pub fn run() {
             get_install_language,
             set_install_language,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS：Finder/「打开方式」把文件交给应用走 Apple Events（odoc），
+            // Tauri 以 RunEvent::Opened 抛出（该变体仅 macos/ios/android 存在，
+            // Windows/Linux 编译期无此变体）；Windows/Linux 的文件经 argv，
+            // 由 setup_app / handle_single_instance 处理，不经过这里。
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                crate::app_runtime::handle_opened_urls(app_handle, urls);
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+            let _ = (app_handle, event);
+        });
 }

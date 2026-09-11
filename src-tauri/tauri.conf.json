@@ -62,6 +62,12 @@
         "name": "XY-Music Audio",
         "description": "XY-Music Audio File",
         "role": "Viewer"
+      },
+      {
+        "ext": ["js"],
+        "name": "XY-Music Plugin Script",
+        "description": "XY-Music Plugin Script",
+        "role": "Viewer"
       }
     ],
     "icon": [

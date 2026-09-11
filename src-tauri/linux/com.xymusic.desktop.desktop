@@ -7,4 +7,7 @@ Icon=弦予音乐
 Terminal=false
 NoDisplay=false
 Categories=Audio;Music;Player;AudioVideo;
-MimeType=x-scheme-handler/xianyu;
+# MimeType 与各平台文件关联对齐（tauri.conf.json fileAssociations）：
+# xianyu:// 深链 + 插件脚本 .js + 音频格式（与 Windows 注册表同集合），
+# post-install.sh 的 update-desktop-database 会让本行立即生效。
+MimeType=x-scheme-handler/xianyu;application/javascript;text/javascript;audio/mpeg;audio/flac;audio/x-flac;audio/x-wav;audio/wav;audio/ogg;audio/aac;audio/aiff;audio/mp4;video/mp4;

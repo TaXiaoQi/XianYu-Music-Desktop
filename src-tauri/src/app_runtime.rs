@@ -476,6 +476,35 @@ pub(crate) fn handle_single_instance<R: tauri::Runtime>(
     reveal_main_window(app);
 }
 
+/// macOS：Finder 双击/「打开方式」把文件交给应用走 Apple Events（odoc），
+/// Tauri 以 `RunEvent::Opened` 事件抛出（该变体仅 macos/ios/android 编译存在），
+/// 与 Windows/Linux 的 argv 管线不同。这里把文件 URL 物化为本地路径并入既有
+/// PendingOpenPaths 队列并通知前端（前端消费时按扩展名分流：.js/.json 进插件
+/// 导入，音频进音乐库），补齐 macOS 连音频双击都无法接收的缺口。
+// 非移动/macOS 目标上该变体不存在、本函数无调用方：保留编译检查但免 dead_code。
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "ios", target_os = "android")),
+    allow(dead_code)
+)]
+pub(crate) fn handle_opened_urls<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    urls: Vec<tauri::Url>,
+) {
+    let paths: Vec<String> = urls
+        .iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| path.exists())
+        .map(|path| crate::music::utils::normalize_path(path.to_string_lossy().as_ref()))
+        .filter(|normalized| !normalized.is_empty())
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+    queue_open_paths(app, paths);
+    let _ = app.emit("app:open-paths", ());
+    reveal_main_window(app);
+}
+
 pub(crate) fn setup_app(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {

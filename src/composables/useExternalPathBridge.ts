@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { onMounted, onUnmounted, ref } from 'vue';
 import { appApi } from '../services/tauri/appApi';
+import { importPluginScriptsFromPaths } from '../services/domain/pluginImport';
 import { usePlaybackStore } from '../features/playback/store';
 import { modalDragInterceptActive } from './dragState';
 
@@ -10,6 +11,10 @@ type ExternalPathSource = 'drop' | 'open';
 /** 带 scheme 的 URL（如 xianyu:// 深链）绝不可能是本地文件路径：
     过滤掉，避免深链被误当「外部打开的文件」，触发导入失败提示。 */
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** 插件脚本（.js/.json）：系统「打开方式」（文件关联）进来的路径走插件导入
+    管线，不进音乐库（音乐库解析 .js 会报「没有找到可导入的音乐文件」）。 */
+const PLUGIN_SCRIPT_RE = /\.(js|json)$/i;
 
 interface UseExternalPathBridgeOptions {
   handleExternalPaths: (paths: string[], options?: { source?: ExternalPathSource }) => Promise<void>;
@@ -66,10 +71,19 @@ export function useExternalPathBridge({
       // 过滤带 scheme 的 URL：深链等协议参数不是本地文件，直接放行到深链通道消费
       const localPaths = paths.filter((p) => !URL_SCHEME_RE.test((p || '').trim()));
       if (localPaths.length > 0) {
-        if (options.startup) {
-          playbackStore.markExternalStartupFile();
+        // 插件脚本与音频分流：脚本走插件导入（对齐移动端「用客户端打开导入」），
+        // 其余交给音乐库外部路径处理。
+        const pluginScripts = localPaths.filter((p) => PLUGIN_SCRIPT_RE.test((p || '').trim()));
+        const audioPaths = localPaths.filter((p) => !PLUGIN_SCRIPT_RE.test((p || '').trim()));
+        if (pluginScripts.length > 0) {
+          await importPluginScriptsFromPaths(pluginScripts);
         }
-        await enqueueExternalPaths(localPaths, 'open');
+        if (audioPaths.length > 0) {
+          if (options.startup) {
+            playbackStore.markExternalStartupFile();
+          }
+          await enqueueExternalPaths(audioPaths, 'open');
+        }
       }
     } catch (error) {
       console.error('Failed to consume pending open paths:', error);
