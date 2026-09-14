@@ -65,10 +65,28 @@ if (files.length === 0) {
   process.exit(0);
 }
 
+// 归档命名对齐移动端/腕上端标准：弦予音乐v<版本>-<平台>[后缀].<扩展名>
+// 版本号以 version.ts 为唯一源头（构建前 sync-version 已同步到各处）；
+// NSIS 安装器与 MSI 同为 Windows 产物，用 -Setup 后缀区分，其余格式直接用扩展名。
+function readAppVersion() {
+  const content = fs.readFileSync(path.join(rootDir, 'version.ts'), 'utf8');
+  const match = content.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : null;
+}
+
+function archiveName(originalName) {
+  const ext = path.extname(originalName).toLowerCase();
+  const version = readAppVersion();
+  if (!version) return originalName; // 兜底：读不到版本号就保留原名
+  const suffix = ext === '.exe' ? '-Setup' : '';
+  return `弦予音乐v${version}-Desktop${suffix}${ext}`;
+}
+
 console.log('[move-bundles] 正在移动构建产物到 releases/ ...');
 for (const file of files) {
   const fileName = path.basename(file);
-  const destPath = path.join(releasesDir, fileName);
+  const destName = archiveName(fileName);
+  const destPath = path.join(releasesDir, destName);
   // 优先使用 rename（同盘原子操作），失败则回退到复制+删除
   try {
     fs.renameSync(file, destPath);
@@ -76,7 +94,9 @@ for (const file of files) {
     fs.copyFileSync(file, destPath);
     fs.rmSync(file, { force: true });
   }
-  console.log(`[move-bundles] 已移动: ${fileName}`);
+  console.log(destName === fileName
+    ? `[move-bundles] 已移动: ${fileName}`
+    : `[move-bundles] 已归档: ${fileName} -> ${destName}`);
 }
 
 // 清理 bundle 目录下剩余的空文件夹（msi/wix 等）

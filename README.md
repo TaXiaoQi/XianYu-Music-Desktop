@@ -97,6 +97,8 @@
 ### 构建各平台安装包
 
 > Tauri 桌面端无法交叉编译：Windows 包需在 Windows 上构建，Linux 包需在 Linux 上构建，macOS 包需在 macOS 上构建。
+>
+> 官网版产物构建后由 `scripts/move-bundles.js`（npm posttauri 钩子）自动归档到 `releases/`，统一命名 `弦予音乐v<版本>-Desktop[-Setup].<扩展名>`（NSIS 安装器加 `-Setup` 后缀；预发布版本自带 `-betaN` 段），与移动端/腕上端命名标准一致。版本号以 `version.ts` 为唯一源头。
 
 #### Windows（官网版，.msi / .exe）
 
