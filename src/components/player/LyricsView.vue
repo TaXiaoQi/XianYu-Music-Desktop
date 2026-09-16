@@ -1139,8 +1139,16 @@ watch(() => props.coverHidden, async () => {
 
 .lyrics-mask-shell {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
+  /* mask 区域严格等于本元素盒子，盒子之外的像素 alpha 为 0，会把放大后
+     超出的字形笔画整条竖着切掉。把盒子左右各外扩 --lyrics-mask-bleed，
+     再用等量负外边距抵消，歌词内容宽度与位置保持不变。 */
+  --lyrics-mask-bleed: 1.5em;
+  box-sizing: border-box;
+  width: calc(100% + var(--lyrics-mask-bleed) * 2) !important;
+  margin-inline: calc(-1 * var(--lyrics-mask-bleed));
+  padding-inline: var(--lyrics-mask-bleed);
   --lyrics-edge-fade: 12%;
   --lyrics-edge-softness: 8%;
   -webkit-mask-image: linear-gradient(
@@ -1182,14 +1190,31 @@ watch(() => props.coverHidden, async () => {
   --amll-lp-color: rgba(255, 255, 255, 0.95);
   --amll-lp-bg-color: transparent;
   --amll-lp-font-size: calc(max(max(5vh, 2.5vw), 12px) * var(--lyrics-font-scale, 1));
+  /* AMLL 容器默认会裁切行内容；正在播放的行放大后，粗体字形左侧的外伸像素
+     会因此被切掉。保留原有行宽，只开放绘制边界，避免改变歌词排版和换行。 */
+  overflow: visible !important;
+  contain: none !important;
   font-family: var(--lyrics-font-family, system-ui, sans-serif);
 }
 
+/* transform-origin 用 !important 覆盖 PatchedLyricPlayer 每帧写入的内联样式，
+   保证左/中/右对齐时歌词从对应锚点放大，不向容器外侧扩张。 */
 .amll-host :deep(.amll-lyric-player [class*="_lyricLine_"]) {
   text-align: var(--lyrics-text-align, left);
-  transform-origin: var(--lyrics-line-transform-origin, 0%) center;
+  transform-origin: var(--lyrics-line-transform-origin, 0%) center !important;
   display: flex;
   flex-direction: column;
+}
+
+/* AMLL 还会在主歌词层设置 contain: content paint，同样会裁掉字形外伸像素。 */
+.amll-host :deep(.amll-lyric-player [class*="_lyricMainLine_"]) {
+  contain: none !important;
+  overflow: visible !important;
+}
+
+.lyrics-align-right :deep(.amll-lyric-player [class*="_lyricLine_"]) {
+  right: 0;
+  left: auto;
 }
 
 .amll-host :deep(.amll-lyric-player [class*="_lyricLine_"] > :nth-child(2)) {
@@ -1202,10 +1227,12 @@ watch(() => props.coverHidden, async () => {
 
 /* AMLL 对唱行默认右偏渲染：_hasDuetLine 下 duet 行 padding-left:15%、
    其余行 padding-right:15%。本应用歌词为统一水平对齐且不展示演唱者标签，
-   该缩进只会把开头 credit/误判行顶向右侧（"开头歌词往右偏"），整体禁用。 */
+   该缩进只会把开头 credit/误判行顶向右侧（"开头歌词往右偏"），整体禁用。
+   但要还原成核心默认的 1em 而不是 0：这段内边距同时是字形外伸像素的安全区，
+   清零会让首字（如"商"）的左侧笔画正好压在行的边界上被切掉。 */
 .amll-host :deep(.amll-lyric-player[class*="_hasDuetLine_"] [class*="_lyricLine_"]) {
-  padding-left: 0;
-  padding-right: 0;
+  padding-left: 1em;
+  padding-right: 1em;
 }
 
 .lyrics-align-left {
