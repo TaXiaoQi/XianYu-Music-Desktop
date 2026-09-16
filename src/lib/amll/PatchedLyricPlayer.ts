@@ -346,6 +346,31 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
     });
   }
 
+  // [修复] 核心 lineObj.enable() 会无条件 play() 该行的逐字动画
+  // （elementAnimations / maskAnimations），不检查当前是否暂停。
+  // 暂停态点击歌词跳转时，这会让逐字扫光自行走动，看起来像"歌词以为在播放"；
+  // 之后点播放键触发 resume()+calcLayout() 重新同步，位置又被拉回正确处。
+  // 这里在 enable 之后按当前播放态补一次 pause，让暂停时扫光停在目标位置。
+  private enableLineRespectingPlayState(index: number) {
+    const lineObj = this.currentLyricLineObjects[index] as unknown as {
+      enable?: (time: number) => void | Promise<void>;
+      pause?: () => void | Promise<void>;
+    } | undefined;
+
+    if (!lineObj?.enable) return;
+
+    const enableResult = lineObj.enable(this.currentTime);
+
+    if (this.isPlaying || typeof lineObj.pause !== 'function') return;
+
+    // enable() 内部 await waitMaskImageUpdated() 后才 play()，因此必须等它落定
+    // 再 pause，否则 pause 先执行、随后的 play 仍会让动画继续跑。
+    void Promise.resolve(enableResult).then(() => {
+      if (this.isPlaying) return;
+      void lineObj.pause?.();
+    });
+  }
+
   alignScrollToSeekTarget(lineIndex?: number) {
     let explicitIndex: number | undefined;
     if (
@@ -368,13 +393,13 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
 
       this.hotLines.add(targetIndex);
       this.bufferedLines.add(targetIndex);
-      this.currentLyricLineObjects[targetIndex]?.enable(this.currentTime);
+      this.enableLineRespectingPlayState(targetIndex);
 
       const backgroundIndex = targetIndex + 1;
       if (this.currentLyricLineObjects[backgroundIndex]?.getLine().isBG) {
         this.hotLines.add(backgroundIndex);
         this.bufferedLines.add(backgroundIndex);
-        this.currentLyricLineObjects[backgroundIndex]?.enable(this.currentTime);
+        this.enableLineRespectingPlayState(backgroundIndex);
       }
 
       this.currentLyricLineObjects.forEach((lineObj, index) => {
