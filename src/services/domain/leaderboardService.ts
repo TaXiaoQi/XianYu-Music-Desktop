@@ -21,6 +21,7 @@ export type {
 
 export {
   getLocalListenDurations,
+  getListenStatsDisplay,
   checkForResetSignal,
 } from './leaderboardReport';
 

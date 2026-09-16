@@ -282,3 +282,29 @@ export function reloadPluginInstance(pluginId: string) {
 export function getLastPluginError(): string {
   return String((globalThis as any).__lastPluginError || '').trim();
 }
+
+// ==================== 可播能力判定 ====================
+
+/**
+ * 可播能力判定（对齐移动端 engine.canPlayMusic）：插件启用且声明了播放能力。
+ * - musicfree：实例方法表含 getMediaSource（含 _availableMethods 元数据回退）
+ * - lx：已声明音源即可（LX 协议音乐源必有 musicUrl action）
+ * 注意：仅判定声明能力，不代表接口运行时可用（服务器宕机/密钥失效无法预知）。
+ */
+export async function canPlayMusic(source: import('../../types').PluginSource): Promise<boolean> {
+  if (!source.enabled) return false;
+  try {
+    if (source.format === 'lx') {
+      return (source.sources?.length ?? 0) > 0;
+    }
+    const inst = await ensurePluginInstance(source);
+    if (!inst?.instance) return false;
+    const fn = inst.instance as unknown as Record<string, unknown>;
+    if (typeof fn.getMediaSource === 'function') return true;
+    // 回退：沙箱元数据 _availableMethods（函数代理晚挂载的场景）
+    const meta = (inst.instance as unknown as { _availableMethods?: unknown })._availableMethods;
+    return Array.isArray(meta) && meta.includes('getMediaSource');
+  } catch {
+    return false;
+  }
+}

@@ -6,7 +6,8 @@
  * 整理出当日推荐歌曲板块。
  */
 
-import { getStoredPlugins, pluginSearch } from './pluginEngine';
+import { getStoredPlugins, pluginSearch, canPlayMusic, pluginGetMusicInfo } from './pluginEngine';
+import { resolveLxUrlForSingleQuality } from './lxUrlResolver';
 import { signedRequest, getStoredAuth } from '../auth/authService';
 import type { PluginSource } from '../../types';
 import { DailyRecommendError } from './dailyRecommendTypes';
@@ -123,9 +124,14 @@ export async function executeDailyRecommend(
   algorithm: DailyRecommendAlgorithm,
   batch = 0,
 ): Promise<DailyRecommendItem[]> {
-  const plugins = getStoredPlugins()
+  const enabled = getStoredPlugins()
     .filter(p => p.enabled && p.format === 'musicfree')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  // 活体探测：声明可播 ≠ 接口活着（服务器宕机/密钥 401 是运行时状态）。
+  // 并行跑最小链路（search 1 条 + 低档直链），死插件剔除出候选池。
+  const probeKeyword = algorithm.strategies.find(s => s.queries.length > 0)?.queries[0] ?? '热门音乐';
+  const alive = await Promise.all(enabled.map(p => probePluginAlive(p, probeKeyword)));
+  const plugins: PluginSource[] = enabled.filter((_, i) => alive[i]);
   if (plugins.length === 0) {
     return [];
   }
@@ -182,4 +188,66 @@ export async function executeDailyRecommend(
   }
 
   return candidates.slice(0, Math.min(MAX_CANDIDATES, candidates.length));
+}
+
+// ==================== 插件活体探测 ====================
+// 声明级判定之外的最小运行时证明：search(1 条) → 低档直链解析。
+// search 通只证明宿主代取/搜索接口活着（如聆澜系 search 正常但 musicUrl 401），
+// 必须完成直链解析才算「能播」。结果 TTL 缓存，日推重生成不重复探测。
+
+const ALIVE_PROBE_TTL_MS = 15 * 60_000;
+const ALIVE_PROBE_TIMEOUT_MS = 4_000;
+const _aliveProbes = new Map<string, { alive: boolean; at: number }>();
+
+function withProbeTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('alive probe timeout')), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
+
+/**
+ * 活体探测：最小链路验证插件接口连通且鉴权有效。
+ * 超时/异常/直链为空 → 判死；搜索通但无结果 → 视为活着（接口通，仅无数据）。
+ */
+export async function probePluginAlive(source: PluginSource, keyword: string): Promise<boolean> {
+  const cached = _aliveProbes.get(source.id);
+  if (cached && Date.now() - cached.at < ALIVE_PROBE_TTL_MS) return cached.alive;
+  let alive = false;
+  try {
+    if (!(await canPlayMusic(source))) throw new Error('not playable');
+    const hits = await withProbeTimeout(pluginSearch(source, keyword, 1, 1), ALIVE_PROBE_TIMEOUT_MS);
+    if (!hits?.length) {
+      alive = true;
+    } else if (source.format === 'lx') {
+      // LX：宿主代取搜索活着不代表插件本体 musicUrl 活着，直链必须实测
+      const first = hits[0];
+      const lxSource = first.platform || source.sources[0] || 'kw';
+      const songInfo = (first.rawData && first.rawData.source === lxSource
+        ? first.rawData
+        : null) ?? {
+        songId: first.id,
+        songmid: first.id,
+        name: first.title,
+        singer: first.artist,
+        source: lxSource,
+        types: [],
+      };
+      const r = await withProbeTimeout(
+        resolveLxUrlForSingleQuality(source, lxSource, songInfo, '128k'),
+        ALIVE_PROBE_TIMEOUT_MS,
+      );
+      alive = Boolean(r?.url);
+    } else {
+      const info = await withProbeTimeout(
+        pluginGetMusicInfo(source, hits[0], '128k', 'lower'),
+        ALIVE_PROBE_TIMEOUT_MS,
+      );
+      alive = Boolean(info?.url);
+    }
+  } catch {
+    alive = false;
+  }
+  _aliveProbes.set(source.id, { alive, at: Date.now() });
+  return alive;
 }

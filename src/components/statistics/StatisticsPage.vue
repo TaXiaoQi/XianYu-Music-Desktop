@@ -8,7 +8,7 @@ import { useSettings } from '../../features/settings/useSettings';
 import { useLibraryBrowse } from '../../features/library/useLibraryBrowse';
 import { useI18n } from '../../features/i18n';
 import { openOnlineDetail } from '../../features/onlineDetail/store';
-import { fetchAllLeaderboards, getLocalListenDurations, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/domain/leaderboardService';
+import { fetchAllLeaderboards, getListenStatsDisplay, type LeaderboardData, type LeaderboardEntry, type LeaderboardPeriod } from '../../services/domain/leaderboardService';
 import { normalizePath } from '../../utils/path';
 import { formatFileSize } from '../../utils/format';
 import SongContextMenu from '../overlays/SongContextMenu.vue';
@@ -55,6 +55,7 @@ const hasCustomBackground = computed(() => (
 
 const TEXT = computed(() => isEnglish.value ? {
   totalListenDuration: 'Total Listening Time',
+  todayListenDuration: "Today's Listening Time",
   songTotalDuration: 'Library Duration',
   librarySize: 'Library Size',
   losslessRatio: 'Lossless Ratio',
@@ -81,6 +82,7 @@ const TEXT = computed(() => isEnglish.value ? {
   goToLogin: 'Sign In',
 } : {
   totalListenDuration: '总听歌时长',
+  todayListenDuration: '今日听歌时长',
   songTotalDuration: '歌曲总时长',
   librarySize: '库大小',
   losslessRatio: '无损占比',
@@ -112,6 +114,16 @@ const leaderboardLoading = ref(true);
 const leaderboardError = ref<string | null>(null);
 const currentPeriod = ref<LeaderboardPeriod>('daily');
 let leaderboardRequestId = 0;
+
+/** 多端一致的听歌时长显示值（服务端真源 + 本端未上报增量；未登录回退本地） */
+const listenDisplay = ref<{ daily: number; weekly: number; total: number }>({ daily: 0, weekly: 0, total: 0 });
+const refreshListenDisplay = async () => {
+  try {
+    listenDisplay.value = await getListenStatsDisplay();
+  } catch {
+    // 获取失败时保留旧值，不影响页面展示
+  }
+};
 
 /** 崩溃诊断埋点：记录排行榜每次状态流转，致命错误时随 localStorage 一并导出 */
 const lbTrace: string[] = [];
@@ -154,23 +166,13 @@ async function loadLeaderboard(silent = false, period: LeaderboardPeriod = curre
     leaderboardError.value = null;
   }
   try {
-    // 获取日/周/总三个周期的听歌时长，上报到后端用于分周期排行榜
-    const durations = await getLocalListenDurations();
-    if (requestId !== leaderboardRequestId) return;
     // 一次性请求日/周/总三榜（period=all，单次往返）并全部缓存，切换周期秒开。
-    // 上报带 30s 节流：频繁刷新时只有第一次真正上报，其余直接拉取。
-    const all = await fetchAllLeaderboards(15, durations);
+    // 上报（delta 增量）带 30s 节流：频繁刷新时只有第一次真正上报，其余直接拉取。
+    const all = await fetchAllLeaderboards(15);
     if (requestId !== leaderboardRequestId) return;
     const resetApplied = Boolean(all.resetApplied);
-    // 上报时若云端累计总时长更长，本地已被覆盖抬高，需刷新行为统计展示
-    // （"总听歌时长"读取本地 global_stats，合并后必须重取才能显示云端对齐值）
-    if (all.cloudMerged) {
-      try {
-        await statisticsStore.refreshBehaviorOnly('All');
-      } catch {
-        // 刷新失败静默，不影响排行榜展示
-      }
-    }
+    // 上报完成后服务端快照已更新，重取多端一致的时长显示（累计/今日）
+    await refreshListenDisplay();
     const results: Record<LeaderboardPeriod, LeaderboardData> = {
       daily: all.daily,
       weekly: all.weekly,
@@ -331,7 +333,8 @@ onMounted(async () => {
   if (!statisticsStore.stats) {
     await statisticsStore.ensureLoaded('All');
   }
-  // 统计数据加载完成后，再加载排行榜（需要 total_duration 上报到后端）
+  // 先展示上次同步的时长快照，再加载排行榜（内部含 delta 上报，完成后会刷新显示）
+  void refreshListenDisplay();
   isLeaderboardReady.value = true;
   void loadLeaderboard();
 
@@ -462,10 +465,13 @@ const losslessRatio = computed(() => {
           <div class="grid grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1.3fr] gap-x-[clamp(0.75rem,2vw,2rem)]">
             <div class="col-span-2 md:col-span-1 min-w-0">
               <p class="text-black dark:text-white text-[clamp(0.9rem,1.25vw,1.125rem)] font-light tracking-wider mb-2">{{ TEXT.totalListenDuration }}</p>
-              <p class="text-black dark:text-white text-[clamp(1.375rem,2.75vw,1.75rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatStatisticsDuration(behaviorStats.total_duration) }}</p>
+              <p class="text-black dark:text-white text-[clamp(1.375rem,2.75vw,1.75rem)] font-black tracking-tight leading-none whitespace-nowrap">{{ formatStatisticsDuration(listenDisplay.total) }}</p>
             </div>
-            <!-- 桌面端列占位：与「歌曲总时长」同列，保持网格对齐 -->
-            <div class="hidden md:block" aria-hidden="true"></div>
+            <!-- 今日听歌时长：服务端真源 + 本端未上报增量，与移动端/腕上端一致 -->
+            <div class="hidden md:flex flex-col justify-end min-w-0" aria-hidden="false">
+              <p class="text-black/70 dark:text-white/70 text-[clamp(0.7rem,0.9vw,0.875rem)] font-light tracking-wider mb-1">{{ TEXT.todayListenDuration }}</p>
+              <p class="text-black dark:text-white text-[clamp(1rem,1.8vw,1.25rem)] font-black tracking-tight leading-none">{{ formatStatisticsDuration(listenDisplay.daily) }}</p>
+            </div>
             <div class="col-span-2 md:col-span-1 min-w-0">
               <p class="text-black dark:text-white text-[clamp(0.8rem,1.1vw,1rem)] font-light tracking-wider mb-2">{{ TEXT.playCount }}</p>
               <p class="text-black dark:text-white text-[clamp(1.25rem,2.5vw,1.625rem)] font-black tracking-tight leading-none">{{ behaviorStats.total_plays }}</p>
