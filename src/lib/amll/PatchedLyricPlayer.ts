@@ -93,6 +93,13 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
 
       // Packaged WebView2 builds sometimes skip AMLL's internal transform writeback.
       lineElement.style.transform = `translateY(${posY.toFixed(3)}px) scale(${scale.toFixed(4)})`;
+      // [修复] 核心对 active 行「未扫光部分」的 mask 透明度只给 0.2+t*0.2（满放大时 0.4），
+      // 浅色模糊背景下 40% 白字几乎不可见，被感知为「放大时左侧被挡住/裁切」。
+      // 这里沿用核心 0.97→1.0 的 scale 斜坡，把未点亮透明度拉到 1.0（完全可见）：
+      // 放大态整句清晰可读；扫光层次由已点亮高亮本身体现，不再有任何 dim 残留。
+      // 非 active 行（scale=0.97）保持核心默认 0.2。
+      const sweepT = this.clamp(0, (scale - 0.97) / 0.03, 1);
+      lineElement.style.setProperty('--dark-mask-alpha', (0.2 + sweepT * 0.8).toFixed(3));
       // [修复防御]: 低性能模式跳过 blur filter 写入，仅保留 transform；will-change 也只保留 transform
       if (!this.disableBlurFilter) {
         const clampedBlur = Math.min(32, blur);
@@ -207,7 +214,10 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       lineElement.style.minHeight = `${Math.max(32, this.baseFontSize * 1.8)}px`;
       lineElement.style.top = '0';
       lineElement.style.left = '0';
-      lineElement.style.contain = 'layout style paint';
+      // 歌词行会从 0.97 放大到 1；paint containment 会按放大前的行边界裁切
+      // 字形自身的左侧外伸像素（粗体中文尤其明显），因此只保留布局与样式隔离。
+      lineElement.style.contain = 'layout style';
+      lineElement.style.overflow = 'visible';
       lineElement.style.contentVisibility = 'visible';
     }
   }
