@@ -67,7 +67,7 @@ const {
   showLyricsPlayerSettingsPanel,
   rawLyrics,
 } = useLyrics();
-const { seekTo, currentTime, isPlaying, currentSongPath } = usePlayer();
+const { seekTo, currentTime, isPlaying, currentSongPath, togglePlay } = usePlayer();
 const { audioDelay } = storeToRefs(useSettingsStore());
 const { showToast } = useToast();
 
@@ -528,7 +528,15 @@ async function handleLineClick(event: LyricLineMouseEvent) {
   amlPlayerRef.value?.syncSeekLayout(lineStartTimeMs, event.lineIndex);
 
   const targetSeconds = getPlaybackSeekSecondsForAmlLine(lineStartTimeMs, audioDelay.value);
+  // seekTo 会沿用当前播放态（seekAudio 传入 isPlaying），暂停时点击歌词只定位不出声。
+  // 这里记录点击前的播放态，定位完成后若仍处于暂停则从该行起播。
+  const wasPaused = !isPlaying.value;
   await seekTo(targetSeconds);
+
+  // 期间用户可能已自行点了播放键，再次确认避免把刚起播的音频又切回暂停。
+  if (wasPaused && !isPlaying.value) {
+    await togglePlay();
+  }
 }
 
 onMounted(() => {
