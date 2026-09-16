@@ -9,6 +9,10 @@ import { useLibraryCollectionSongPathCache } from '../../composables/useLibraryC
 import { useLibraryDetailSongPathCache } from '../../composables/useLibraryDetailSongPathCache';
 import { useLibraryFolderSongPathCache } from '../../composables/useLibraryFolderSongPathCache';
 import type { AlbumDetailSortMode, FolderSortMode, LocalSortMode, PlaylistSortMode } from '../../services/storage/playerStorage';
+import { parseIntervalToSeconds } from '../../utils/remoteSong';
+import { cacheLxSong, getCachedLxSong } from '../../services/domain/lxSongCache';
+import { lxSearch, txBatchTrackInterval } from '../../services/domain/lxMusicSdk';
+import type { LxSourceId } from '../../services/domain/lxMusicSdkTypes';
 import type { HistoryItem, Playlist, Song } from '../../types';
 import { sortItemsByAlphabetIndex } from '../../utils/alphabetIndex';
 import {
@@ -885,6 +889,274 @@ export function useLibraryCurrentViewSongs({
   };
 
   const currentViewSongCount = computed(() => currentViewSongPaths.value.length);
+
+  // ── 在线歌曲时长补全工具 ──
+  // isOnlineSongPath 已在上方定义，直接复用
+
+  /** 从 song.rawData 或 lxSongCache 中提取时长（秒），无法提取时返回 0 */
+  const extractDurationFromSong = (song: Song): number => {
+    // 1. lx:// 歌曲：从 lxSongCache 中查 interval
+    if (song.path?.startsWith('lx://')) {
+      const sourceKey = song.path.slice('lx://'.length).split('/')[0];
+      const songmid = song.path.slice('lx://'.length).split('/')[1] ?? '';
+      if (sourceKey && songmid) {
+        const cached = getCachedLxSong(sourceKey, songmid);
+        if (cached?.interval) {
+          return parseIntervalToSeconds(cached.interval);
+        }
+      }
+      // 也从 rawData 中尝试 —— 覆盖多种字段名（含大写/KG 特有 Duration）
+      const raw = song.rawData;
+      if (raw) {
+        const rawInterval = raw.interval ?? raw.Interval ?? raw.dt ?? raw.Dt ?? raw.timelength ?? raw.Timelength;
+        if (rawInterval) {
+          const s = parseIntervalToSeconds(String(rawInterval));
+          if (s > 0) return s;
+        }
+        // KG/腾讯/网易等平台 rawData 里可能直接给 Duration 毫秒数
+        const ms = raw.duration ?? raw.Duration ?? raw.durationMs ?? raw.duration_ms;
+        if (typeof ms === 'number' && ms > 0) {
+          return ms > 1000 ? Math.floor(ms / 1000) : ms;
+        }
+      }
+    }
+
+    // 2. plugin:// 歌曲：从 rawData 中提取
+    if (song.path?.startsWith('plugin://')) {
+      const raw = song.rawData;
+      if (raw) {
+        // 尝试多种字段名（含大写）
+        const dt = raw.duration ?? raw.Duration ?? raw.dt ?? raw.interval ?? raw.intervalSeconds ?? raw.timelength;
+        if (typeof dt === 'number' && dt > 0) {
+          return dt > 1000 ? Math.floor(dt / 1000) : dt;
+        }
+        if (typeof dt === 'string') {
+          const parsed = parseIntervalToSeconds(dt);
+          if (parsed > 0) return parsed;
+        }
+      }
+    }
+
+    // 3. remote:// 歌曲：从 rawData 中提取
+    if (song.path?.startsWith('remote://')) {
+      const raw = song.rawData;
+      if (raw) {
+        const dt = raw.duration ?? raw.Duration ?? raw.dt ?? raw.interval;
+        if (typeof dt === 'number' && dt > 0) {
+          return dt > 1000 ? Math.floor(dt / 1000) : dt;
+        }
+      }
+    }
+
+    return 0;
+  };
+
+  /** 延迟获取 collectionsStore（避免循环依赖） */
+  let _collectionsStore: any = null;
+  const getCollectionsStore = async () => {
+    if (_collectionsStore) return _collectionsStore;
+    try {
+      const mod = await import('../../features/collections/store');
+      _collectionsStore = mod.useCollectionsStore();
+      return _collectionsStore;
+    } catch {
+      return null;
+    }
+  };
+
+  // ── 歌单视图：自动检测并补全在线歌曲时长为 0 的条目 ──
+  // 打开歌单时扫描所有歌曲，对 duration===0 的在线歌曲（lx://、plugin://、remote://）做分层兜底：
+  //   0) 同步从 lxSongCache / rawData 直接提取 interval/duration；
+  //   1) TX 源 → txBatchTrackInterval 按 songid 批量 50 首一次，不走搜索接口不受风控（朋友写的！）；
+  //   2) 其他源（KG/WY/MG/KW）→ 队列式 lxSearch 重查 interval，并发 3 个。
+  let lastProbedPlaylistId = '';
+  /** 正在 probe 中的 lx:// path（防重复） */
+  const probingLxPaths = new Set<string>();
+  /** 队列节流：一次最多并发 CONCURRENCY 个请求 */
+  const PROBE_CONCURRENCY = 3;
+  let activeProbes = 0;
+  const probeQueue: Song[] = [];
+
+  /** 统一更新三处：libraryStore / playlist.songs / favoriteSongMeta */
+  const patchSongDurationAll = async (path: string, duration: number) => {
+    libraryStore.patchSongMeta(path, { duration });
+    const playlist = playlists.value.find(p => p.id === filterCondition.value);
+    if (playlist?.songs) {
+      playlist.songs = playlist.songs.map(s =>
+        s.path === path ? { ...s, duration } : s,
+      );
+    }
+    void getCollectionsStore().then(collectionsStore => {
+      if (!collectionsStore) return;
+      const meta = collectionsStore.favoriteSongMeta[path];
+      if (meta && meta.duration === 0) {
+        collectionsStore.setFavoriteSongMeta(path, { ...meta, duration });
+      }
+    });
+  };
+
+  /** 消费 probe 队列，并发槽空出时自动补上 */
+  const drainProbeQueue = () => {
+    while (activeProbes < PROBE_CONCURRENCY && probeQueue.length > 0) {
+      const song = probeQueue.shift()!;
+      void probeLxSongDuration(song).finally(() => {
+        activeProbes--;
+        drainProbeQueue();
+      });
+      activeProbes++;
+    }
+  };
+
+  /** 异步：通过 lxSearch 获取一首歌的 interval 并更新；原源失败时自动换源 fallback */
+  const probeLxSongDuration = async (song: Song) => {
+    if (!song.path?.startsWith('lx://')) return;
+    if (probingLxPaths.has(song.path)) return;
+    probingLxPaths.add(song.path);
+
+    try {
+      const originalSource = song.path.slice('lx://'.length).split('/')[0] as LxSourceId;
+      if (!originalSource || !['kg', 'tx', 'wy', 'mg', 'kw'].includes(originalSource)) return;
+
+      // 换源 fallback 顺序：原源稳定则只查原源；原源不稳定（WY/MG）时按 KG → KW → TX 依次尝试
+      const STABLE_SOURCES = ['kg', 'tx', 'kw'] as const;
+      const sourceCandidates: LxSourceId[] =
+        STABLE_SOURCES.includes(originalSource as any)
+          ? [originalSource]
+          : [...STABLE_SOURCES]; // WY/MG 跳过自己的源，直接换源
+
+      const keyword = song.name || song.title || '';
+      let matched: { interval: string; source: string; songmid?: string | number } | null = null;
+
+      for (const trySource of sourceCandidates) {
+        let list: Array<{ songmid: string | number; name: string; singer?: string; interval: string }> = [];
+        // 限流(406/429)重试 2 次；404/403/405 等不可恢复错误直接放弃该源
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await lxSearch(trySource, keyword, 1, 10);
+            list = r?.list ?? [];
+            break;
+          } catch (e: any) {
+            const msg = String(e?.message ?? e ?? '');
+            if (/404|403|405|not found|forbidden|method not allowed/i.test(msg)) {
+              list = []; // 这个源彻底不行，换下一个源
+              break;
+            }
+            if (/406|429|限流|频率|frequent|denied/i.test(msg) && attempt < 2) {
+              await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+              continue;
+            }
+            list = [];
+            break;
+          }
+        }
+        if (!list.length) continue;
+
+        // 优先按 songmid 精确匹配（只对原源），其次按歌名+歌手模糊匹配（换源场景只能模糊）
+        if (trySource === originalSource) {
+          const songmid = song.path.slice('lx://'.length).split('/')[1];
+          const item = list.find(i => String(i.songmid) === String(songmid)) ?? null;
+          if (item) matched = { ...item, source: trySource };
+        }
+        if (!matched) {
+          const item = list.find(
+            i => i.name === song.name && (i.singer || '').includes(song.artist || ''),
+          ) ?? null;
+          if (item) matched = { ...item, source: trySource };
+        }
+        if (matched) break; // 找到就停
+      }
+
+      if (!matched) return;
+
+      const duration = parseIntervalToSeconds(matched.interval);
+      if (duration <= 0) return;
+
+      // 同步更新 songPool，同时把换源搜到的 interval 缓存进去便于后续复用
+      cacheLxSong({ interval: matched.interval, songmid: matched.songmid || '', source: matched.source } as any);
+
+      libraryStore.patchSongMeta(song.path, { duration });
+      const playlist = playlists.value.find(p => p.id === filterCondition.value);
+      if (playlist?.songs) {
+        playlist.songs = playlist.songs.map(s =>
+          s.path === song.path ? { ...s, duration } : s,
+        );
+      }
+      void getCollectionsStore().then(collectionsStore => {
+        if (!collectionsStore) return;
+        const meta = collectionsStore.favoriteSongMeta[song.path];
+        if (meta && meta.duration === 0) {
+          collectionsStore.setFavoriteSongMeta(song.path, { ...meta, duration });
+        }
+      });
+    } catch { /* 静默忽略 */ }
+    finally { probingLxPaths.delete(song.path); }
+  };
+
+  watch(
+    [currentViewMode, filterCondition] as const,
+    ([mode, playlistId]) => {
+      if (mode !== 'playlist' || !playlistId || playlistId === lastProbedPlaylistId) return;
+      lastProbedPlaylistId = playlistId;
+
+      const playlist = playlists.value.find(item => item.id === playlistId);
+      if (!playlist) return;
+
+      // 收集所有 duration=0 的在线歌曲
+      const songsToFix: Song[] = [];
+      for (const path of playlist.songPaths) {
+        const song = songLookup.value.get(path) ?? playlist.songs?.find(s => s.path === path);
+        if (song && song.duration === 0 && isOnlineSongPath(song.path)) {
+          songsToFix.push(song);
+        }
+      }
+      if (songsToFix.length === 0) return;
+
+      // 0) 同步：从 lxSongCache / rawData 直接提取
+      const patches: Array<[string, number]> = [];
+      // 分类：TX 源走批量接口；其他 lx:// 源统一进队列（probeLxSongDuration 内部自动换源 fallback）
+      const txSongs: Song[] = [];
+      const queueableLxSongs: Song[] = [];
+
+      for (const song of songsToFix) {
+        const duration = extractDurationFromSong(song);
+        if (duration > 0) {
+          patches.push([song.path, duration]);
+        } else if (song.path?.startsWith('lx://')) {
+          const src = song.path.slice('lx://'.length).split('/')[0];
+          if (src === 'tx') txSongs.push(song);
+          else queueableLxSongs.push(song); // 所有非 TX 的 lx:// 都进队列，probeLxSongDuration 内部换源
+        }
+      }
+
+      // 同步批量更新（来自缓存/rawData）
+      for (const [path, duration] of patches) {
+        void patchSongDurationAll(path, duration);
+      }
+
+      // 1) TX 源：用朋友写的 txBatchTrackInterval！按 songid 批量 50 首一次，不走搜索接口不受风控
+      if (txSongs.length > 0) {
+        const songIds = txSongs
+          .map(s => s.rawData?.id ?? s.path.slice('lx://tx/'.length).split('/')[1])
+          .filter(Boolean) as string[];
+        void txBatchTrackInterval(songIds).then(durationMap => {
+          if (!durationMap.size) return;
+          for (const song of txSongs) {
+            const songmid = song.path.slice('lx://tx/'.length).split('/')[1];
+            const seconds = durationMap.get(String(songmid));
+            if (seconds && seconds > 0) {
+              void patchSongDurationAll(song.path, seconds);
+            }
+          }
+        });
+      }
+
+      // 2) KG/KW：进入 lxSearch 队列（并发 3，限流退避）
+      probeQueue.length = 0;
+      probeQueue.push(...queueableLxSongs);
+      drainProbeQueue();
+    },
+    { immediate: true },
+  );
 
   return {
     currentViewSongPaths,
