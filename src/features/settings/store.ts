@@ -176,7 +176,6 @@ export const defaultAudioSettings: AudioSettings = {
   streamCacheDir: '',
   fadeInOutEnabled: true,
   fadeInOutDurationMs: 500,
-  autoSwitchSourceOnFailure: false,
   mvDefaultQuality: '720P',
 };
 
@@ -545,7 +544,8 @@ export const mergeAudioSettings = (
       : base.outputMode ?? 'shared';
 
   const VALID_ONLINE_QUALITIES = ALL_QUALITY_KEYS;
-  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop'];
+  // autoswitch（自动换源）已并入起播失败行为（对齐移动端），不再有独立开关
+  const VALID_FAILURE_BEHAVIORS = ['skip', 'stop', 'autoswitch'];
   const VALID_QUALITY_FALLBACK_BEHAVIORS = ['pause', 'lower', 'higher'];
 
   return {
@@ -572,9 +572,17 @@ export const mergeAudioSettings = (
     onlineDefaultQuality: VALID_ONLINE_QUALITIES.includes(patch.onlineDefaultQuality as any)
       ? (patch.onlineDefaultQuality as AudioSettings['onlineDefaultQuality'])
       : base.onlineDefaultQuality ?? '320k',
-    onlineFailureBehavior: VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)
-      ? (patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'])
-      : base.onlineFailureBehavior ?? 'skip',
+    onlineFailureBehavior: (() => {
+      if (VALID_FAILURE_BEHAVIORS.includes(patch.onlineFailureBehavior as string)) {
+        return patch.onlineFailureBehavior as AudioSettings['onlineFailureBehavior'];
+      }
+      // 存量迁移：旧版「播放失败自动换源」独立开关已并入起播失败行为，
+      // 开关为 true 的存量用户提升为 autoswitch；关闭/未设置时维持原读取链。
+      if ((base as unknown as Record<string, unknown>).autoSwitchSourceOnFailure === true) {
+        return 'autoswitch';
+      }
+      return base.onlineFailureBehavior ?? 'skip';
+    })(),
     onlineQualityFallbackBehavior: VALID_QUALITY_FALLBACK_BEHAVIORS.includes(patch.onlineQualityFallbackBehavior as string)
       ? (patch.onlineQualityFallbackBehavior as AudioSettings['onlineQualityFallbackBehavior'])
       : base.onlineQualityFallbackBehavior ?? 'lower',
@@ -590,9 +598,6 @@ export const mergeAudioSettings = (
     fadeInOutDurationMs: Number.isFinite(patch.fadeInOutDurationMs) && patch.fadeInOutDurationMs! > 0
       ? Math.max(100, Math.min(2000, Math.round(patch.fadeInOutDurationMs!)))
       : base.fadeInOutDurationMs ?? 1000,
-    autoSwitchSourceOnFailure: typeof patch.autoSwitchSourceOnFailure === 'boolean'
-      ? patch.autoSwitchSourceOnFailure
-      : base.autoSwitchSourceOnFailure ?? true,
     mvDefaultQuality: MV_QUALITY_KEYS.includes(patch.mvDefaultQuality as MvQualityKey)
       ? (patch.mvDefaultQuality as MvQualityKey)
       : base.mvDefaultQuality ?? '720P',

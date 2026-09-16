@@ -179,9 +179,11 @@ const showShareFailureBehaviorModal = ref(false);
 const FAILURE_BEHAVIOR_OPTIONS = computed<{ label: string; description: string; value: OnlineFailureBehavior }[]>(() => isEnglish.value ? [
   { label: 'Skip to Next Track', description: 'Automatically play the next track in the queue', value: 'skip' },
   { label: 'Stop Playback', description: 'Stop playback and wait for manual action', value: 'stop' },
+  { label: 'Auto Switch Source', description: 'Retry via sibling plugins / alternative sources for the same song; falls back to stop when exhausted', value: 'autoswitch' },
 ] : [
   { label: '跳到下一首', description: '自动播放队列中的下一首歌曲', value: 'skip' },
   { label: '停止播放',   description: '停止播放，等待用户手动操作', value: 'stop' },
+  { label: '自动换源',   description: '同平台插件重试 + 跨平台换源重播同一首歌，全部无果后停止', value: 'autoswitch' },
 ]);
 
 const QUALITY_FALLBACK_OPTIONS = computed<{ label: string; description: string; value: OnlineQualityFallbackBehavior }[]>(() => isEnglish.value ? [
@@ -291,16 +293,6 @@ const patchQualityFallback = (value: OnlineQualityFallbackBehavior) => {
   if (isPlayingOnlineSong()) {
     showToast(isEnglish.value ? 'The fallback behavior will apply to the next track' : '回退行为将在下一首歌曲生效', 'info');
   }
-};
-
-/** 切换「播放失败自动换源」开关 */
-const toggleAutoSwitchSource = () => {
-  patchSettings({
-    audio: {
-      ...settings.value.audio,
-      autoSwitchSourceOnFailure: !settings.value.audio.autoSwitchSourceOnFailure,
-    },
-  });
 };
 
 // --- 播放设置 ---
@@ -777,28 +769,12 @@ onScopeDispose(() => {
           </button>
         </div>
 
-        <!-- 播放失败自动换源 -->
-        <div class="desktop-setting-row">
-          <div class="min-w-0 flex-1 space-y-1 pr-3">
-            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">播放失败自动换源</div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              在线播放失败时，自动尝试其他落雪音源播放同一首歌（仅落雪歌曲生效）。
-            </div>
-          </div>
-          <button
-            type="button"
-            class="glass-switch"
-            :class="{ 'is-checked': settings.audio.autoSwitchSourceOnFailure }"
-            @click="toggleAutoSwitchSource"
-          ></button>
-        </div>
-
-        <!-- 起播失败行为 -->
+        <!-- 起播失败行为（自动换源已并入该选项，对齐移动端） -->
         <div class="desktop-setting-row">
           <div class="min-w-0 flex-1 space-y-1 pr-3">
             <div class="text-sm font-medium text-gray-800 dark:text-gray-200">起播失败行为</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 max-w-xl">
-              在线引擎完全无法生效时的处理方式。
+              在线歌曲起播失败时的处理方式；选「自动换源」时按同平台插件重试与跨平台换源重播同一首歌（全插件通用）。
             </div>
           </div>
           <button

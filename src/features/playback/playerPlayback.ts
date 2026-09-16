@@ -19,6 +19,7 @@ import {useAuthStore} from '../auth/store';
 import {preloadAmlLyricPlayer} from '../../components/player/amlLyricPlayerLoader';
 import {consumeFlyCoverPromise} from '../../composables/useFlyingCover';
 import {getStoredPlugins, getLastPluginError, pluginGetLyric} from '../../services/domain/pluginEngine';
+import {describePlatform, findMatchingPlugin} from '../../services/domain/pluginBackupSong';
 import {checkDownloadExists} from '../../services/domain/downloadHistory';
 import {getOnlineAvailableQualities, resolveOnlineAudio} from './onlinePlaybackResolver';
 import {scheduleOnlinePrecache} from './onlinePrecache';
@@ -59,6 +60,8 @@ interface PlaySongOptions {
     originKey: string;
     failedSources: Set<string>;
   };
+  /** [内部] 自动换源阶段一：已尝试过的同平台插件 id 集合，递归时传递防死循环 */
+  _siblingTriedPluginIds?: Set<string>;
 }
 
 interface SeekCompletedPayload {
@@ -686,11 +689,59 @@ const dlnaCast = useDlnaCastStore();
   };
 
   /**
-   * 统一处理在线播放失败：状态清理 + 自动换源（lx://）+ onlineFailureBehavior
+   * [自动换源 · 阶段一] plugin:// 歌曲同平台插件重试（对齐移动端 switchViaSibling）。
+   * 按搜索结果/路径中的平台标签在已装同格式插件中重匹配，命中未试过的插件后
+   * 变更绑定（rawData 为 markRaw 对象可直接变更，同步 plugin_id，对齐 pluginIdHeal）
+   * 并重播同一首歌：歌曲身份不变，仅换解析插件。解析结果由播放失败链路递归验证，
+   * 已试插件沿 _siblingTriedPluginIds 传递防止死循环。返回 true 表示已发起重播。
+   */
+  const trySiblingPluginPlayback = async (
+    song: Song,
+    options: PlaySongOptions,
+    requestId: number,
+  ): Promise<boolean> => {
+    try {
+      const searchResult = song.rawData as { pluginId?: string; platform?: string } | undefined;
+      if (!searchResult?.pluginId) return false;
+
+      // 平台标签：搜索结果自带 platform 优先，其次从路径段解码（plugin://<平台名>/<id>）
+      let platformLabel = searchResult.platform || '';
+      if (!platformLabel.trim()) {
+        const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
+        try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
+      }
+      if (!platformLabel.trim()) return false;
+
+      const tried = options._siblingTriedPluginIds ?? new Set<string>();
+      tried.add(searchResult.pluginId);
+      const candidates = getStoredPlugins().filter(p => p.enabled && !tried.has(p.id));
+      const sibling = findMatchingPlugin(describePlatform(platformLabel), candidates, 'musicfree');
+      if (!sibling) return false;
+
+      // 竞态检查：匹配期间用户可能已切歌
+      if (requestId !== playRequestId || currentSong.value?.path !== song.path) return false;
+
+      console.info(`[Audio] 自动换源 · 同平台插件重试: ${sibling.name} (${sibling.id.slice(0, 8)}…)`);
+      searchResult.pluginId = sibling.id;
+      song.plugin_id = sibling.id;
+      await playSong(song, {
+        preserveQueue: true,
+        _sourceSwitchCtx: options._sourceSwitchCtx,
+        _siblingTriedPluginIds: tried,
+      });
+      return true;
+    } catch (error) {
+      console.warn(`[Audio] 同平台插件重试异常: ${getErrorMessage(error)}`);
+      return false;
+    }
+  };
+
+  /**
+   * 统一处理在线播放失败：状态清理 + 自动换源（lx:// 与 plugin://）+ onlineFailureBehavior
    *
    * 触发场景：
-   * 1. lx:// URL 解析失败（插件获取直链失败，token 过期/无权限/接口异常等），
-   *    audioFilePath 仍是 lx:// 开头，无法走在线或本地播放
+   * 1. lx:// / plugin:// URL 解析失败（插件获取直链失败，token 过期/无权限/接口异常等），
+   *    audioFilePath 仍是 lx:// 或 plugin:// 开头，无法走在线或本地播放
    * 2. 在线直链走 Rust 后端起播探测失败（403/不支持Range/解码失败/超时）
    *
    * @returns 调用方应在调用后立即 return（已处理完所有失败后续）
@@ -740,26 +791,47 @@ const dlnaCast = useDlnaCastStore();
       return;
     }
 
-    // [自动换源] lx:// 歌曲起播失败时，尝试其他落雪音源播放同一首歌。
+    // [自动换源] 起播失败时自动换源重播同一首歌（全插件通用，对齐移动端）：
+    //   阶段一（plugin://）：同平台其他已装插件重试（仅换解析插件，歌曲身份不变）
+    //   阶段二：跨平台公共音源（Rust find_alternative_lx_source，lx:// 与 plugin:// 通用）
     // 分享链接播放失败行为：pause（默认）→ 本次失败直接停止，不走换源/切歌；
-    // replace → 强制走插件换源重播同一首歌（绕过通用 autoSwitchSourceOnFailure 开关）。
+    // replace → 强制换源（绕过通用 autoswitch 行为开关）。
     const isSharePlayback = shareLinkPlaybackActive;
     const shareFailureBehavior = settingsStore.settings.sharePlaybackFailureBehavior ?? 'pause';
     if (isSharePlayback && song.path.startsWith('lx://') && shareFailureBehavior === 'pause') {
       showToast('分享歌曲播放失败，已暂停', 'error');
       return;
     }
-    const autoSwitchEnabled = settingsStore.settings.audio.autoSwitchSourceOnFailure ?? true;
-    const allowAutoSwitch = song.path.startsWith('lx://')
+    const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+    const autoSwitchEnabled = failureBehavior === 'autoswitch';
+    const isPluginSong = song.path.startsWith('plugin://');
+    const allowAutoSwitch = (song.path.startsWith('lx://') || isPluginSong)
       && (autoSwitchEnabled || (isSharePlayback && shareFailureBehavior === 'replace'));
     if (allowAutoSwitch) {
-      const currentSource = song.path.slice('lx://'.length).split('/')[0];
+      // 阶段一：plugin:// 同平台插件重试（命中后直接重播，失败走递归失败处理）
+      if (isPluginSong) {
+        const switched = await trySiblingPluginPlayback(song, options, requestId);
+        if (switched) return;
+        if (requestId !== playRequestId || currentSong.value?.path !== song.path) return;
+      }
+
       // 复用或初始化换源上下文：failedSources 单调增长，防止递归死循环
       const switchCtx = options._sourceSwitchCtx ?? {
         originKey: `${song.name}|${song.artist}`,
         failedSources: new Set<string>(),
       };
-      switchCtx.failedSources.add(currentSource);
+      // 失败源集合：lx:// 记源码；plugin:// 把平台显示名映射到 LX 源码（无映射记 'plugin'）
+      if (song.path.startsWith('lx://')) {
+        switchCtx.failedSources.add(song.path.slice('lx://'.length).split('/')[0]);
+      } else {
+        const searchResult = song.rawData as { platform?: string } | undefined;
+        let platformLabel = searchResult?.platform || '';
+        if (!platformLabel.trim()) {
+          const segment = (song.cue_source_path || song.path || '').slice('plugin://'.length).split('/')[0] || '';
+          try { platformLabel = decodeURIComponent(segment); } catch { platformLabel = segment; }
+        }
+        switchCtx.failedSources.add(describePlatform(platformLabel).lxSource ?? 'plugin');
+      }
 
       let alternativeSong: Song | null = null;
       try {
@@ -787,10 +859,11 @@ const dlnaCast = useDlnaCastStore();
         await playSong(alternativeSong, {
           preserveQueue: true,
           _sourceSwitchCtx: switchCtx,
+          _siblingTriedPluginIds: options._siblingTriedPluginIds,
         });
         return;
       }
-      // alternativeSong 为 null：所有源穷尽或均未匹配，继续走下方 onlineFailureBehavior
+      // alternativeSong 为 null：所有源穷尽或均未匹配，落入下方失败行为处理
     }
 
     // [分享链接] 替换播放模式下仍未换到可用音源 → 停止（不回退到通用 skip 切歌）
@@ -799,7 +872,12 @@ const dlnaCast = useDlnaCastStore();
       return;
     }
 
-    const failureBehavior = settingsStore.settings.audio.onlineFailureBehavior ?? 'skip';
+    // [autoswitch 等价 stop] 换源已尝试但无果：提示并停止，不回退到 skip 切歌（对齐移动端）
+    if (allowAutoSwitch) {
+      showToast('已自动换源无果，请重试或更换音源', 'error');
+      return;
+    }
+
     if (failureBehavior === 'skip') {
       // [plugin:// 失败前缀标记] 当 plugin:// 歌曲播放失败时，提取其路径前缀
       //（plugin://<pluginId>/），将其加入已知失败前缀集合，后续扫描队列时批量跳过
