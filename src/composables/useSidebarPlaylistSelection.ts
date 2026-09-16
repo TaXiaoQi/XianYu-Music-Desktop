@@ -31,9 +31,10 @@ export function useSidebarPlaylistSelection({
   };
 
   const handlePlaylistClick = (event: MouseEvent, id: string) => {
-    event.stopPropagation();
+    event?.stopPropagation();
     void openHomePlaylist(id);
 
+    if (!event) return;
     if (event.shiftKey && lastSelectedPlaylistId.value) {
       const lastIndex = playlists.value.findIndex(
         playlist => playlist.id === lastSelectedPlaylistId.value,
@@ -62,7 +63,8 @@ export function useSidebarPlaylistSelection({
     selectSinglePlaylist(id);
   };
 
-  const handleBackgroundClick = () => {
+  const handleBackgroundClick = (event?: MouseEvent) => {
+    event?.stopPropagation();
     if (currentViewMode.value === 'playlist' && filterCondition.value) {
       selectSinglePlaylist(filterCondition.value);
     }

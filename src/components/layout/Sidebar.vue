@@ -23,6 +23,9 @@ import type { PlaylistImportResult } from '../../services/domain/playlistImport'
 import { matchSongsToLocalLibrary, type ImportedPlaylist } from '../../services/domain/backupImport';
 import type { PreparedPluginBackupImport } from '../../services/domain/pluginBackupImport';
 import { cacheLxSong } from '../../services/domain/lxSongCache';
+import { storeToRefs } from 'pinia';
+import { useCollectionsStore, type FavoriteCollectionEntry } from '../../features/collections/store';
+import { openOnlineDetail } from '../../features/onlineDetail/store';
 import SidebarBrand from './SidebarBrand.vue';
 import SidebarNavigation from './SidebarNavigation.vue';
 import SidebarPlaylists from './SidebarPlaylists.vue';
@@ -51,6 +54,35 @@ const {
   reorderPlaylists,
   getSongsFromPlaylist,
 } = useLibraryCollections();
+
+const collectionsStore = useCollectionsStore();
+const { favoriteCollections } = storeToRefs(collectionsStore);
+
+const handleFavoriteCollectionClick = (entry: FavoriteCollectionEntry) => {
+  setSearch('');
+  const localId = entry.localPlaylistId || (entry.key.startsWith('local:playlist:') ? entry.key.replace('local:playlist:', '') : '');
+  
+  if (localId) {
+    const playlist = collectionsStore.getPlaylistById(localId);
+    if (!playlist) {
+      collectionsStore.removeFavoriteCollection(entry.key);
+      showToast('原本地歌单已被删除', 'info');
+      return;
+    }
+    void openHomePlaylist(playlist.id);
+    handleSidebarPlaylistClick(undefined as any, playlist.id);
+    return;
+  }
+  
+  if (entry.onlineContext) {
+    openOnlineDetail({ ...entry.onlineContext });
+  }
+};
+
+const handleRemoveFavoriteCollection = (key: string) => {
+  collectionsStore.removeFavoriteCollection(key);
+  showToast('已取消收藏歌单', 'success');
+};
 
 const route = useRoute();
 const router = useRouter();
@@ -512,6 +544,7 @@ onBeforeUnmount(() => {
       <SidebarPlaylists
         v-model:isOpen="isPlaylistOpen"
         :playlists="playlists"
+        :favoriteCollections="favoriteCollections"
         :selectedPlaylistIds="selectedPlaylistIds"
         :playlistCoverCacheVersion="playlistCoverCacheVersion"
         :getPlaylistCover="getPlaylistCover"
@@ -525,6 +558,8 @@ onBeforeUnmount(() => {
         @playlistClick="handleSidebarPlaylistClick"
         @playlistContextMenu="handlePlaylistContextMenu"
         @deletePlaylist="handleDeletePlaylist"
+        @favoriteCollectionClick="handleFavoriteCollectionClick"
+        @removeFavoriteCollection="handleRemoveFavoriteCollection"
       />
     </nav>
 

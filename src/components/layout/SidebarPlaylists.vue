@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Download } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { Download, Heart } from 'lucide-vue-next';
 
 import type { Playlist } from '../../types';
+import type { FavoriteCollectionEntry } from '../../features/collections/store';
+import { getDisplayCoverUrl } from '../../utils/coverProxy';
 
 interface DragState {
   active: boolean;
@@ -14,6 +16,7 @@ interface DragState {
 interface Props {
   isOpen: boolean;
   playlists: Playlist[];
+  favoriteCollections?: FavoriteCollectionEntry[];
   selectedPlaylistIds: Set<string>;
   playlistCoverCacheVersion: number;
   getPlaylistCover: (playlistId: string) => string | undefined;
@@ -33,7 +36,11 @@ const emit = defineEmits<{
   (event: 'playlistClick', nativeEvent: MouseEvent, id: string): void;
   (event: 'playlistContextMenu', nativeEvent: MouseEvent, playlist: Playlist): void;
   (event: 'deletePlaylist', id: string, name: string): void;
+  (event: 'favoriteCollectionClick', entry: FavoriteCollectionEntry): void;
+  (event: 'removeFavoriteCollection', key: string): void;
 }>();
+
+const isFavOpen = ref(true);
 
 const isOpenModel = computed({
   get: () => props.isOpen,
@@ -43,6 +50,17 @@ const isOpenModel = computed({
 const getPlaylistCover = (playlistId: string) => {
   void props.playlistCoverCacheVersion;
   return props.getPlaylistCover(playlistId);
+};
+
+const getCollectionCover = (entry: FavoriteCollectionEntry): string => {
+  if (entry.localPlaylistId) {
+    const localCover = getPlaylistCover(entry.localPlaylistId);
+    if (localCover) return localCover;
+  }
+  if (entry.coverUrl) {
+    return getDisplayCoverUrl(entry.coverUrl, () => {});
+  }
+  return '';
 };
 </script>
 
@@ -94,6 +112,43 @@ const getPlaylistCover = (playlistId: string) => {
         </TransitionGroup>
       </ul>
     </Transition>
+
+    <!-- 收藏的歌单分组（若有已收藏的歌单/专辑时显示） -->
+    <div v-if="favoriteCollections && favoriteCollections.length > 0" class="mt-5">
+      <div class="px-4 pr-3 py-2 flex items-center justify-between group">
+        <div class="flex items-center gap-1 cursor-pointer text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors" @click.stop="isFavOpen = !isFavOpen">
+          <svg xmlns="http://www.w3.org/2000/svg" :class="['h-3 w-3 transition-transform duration-200', isFavOpen ? 'rotate-90' : '']" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          <span class="text-xs font-bold tracking-wide">收藏的歌单</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400 font-normal ml-0.5">{{ favoriteCollections.length }}</span>
+        </div>
+      </div>
+
+      <Transition name="playlist-list">
+        <ul v-show="isFavOpen" class="space-y-0.5 mt-1 overflow-hidden">
+          <TransitionGroup name="playlist-item">
+            <li
+              v-for="entry in favoriteCollections"
+              :key="entry.key"
+              @click.stop="$emit('favoriteCollectionClick', entry)"
+              class="px-3 py-2 mx-2 rounded-md cursor-pointer flex items-center transition-all duration-300 group relative select-none hover:bg-black/5 dark:hover:bg-white/5 text-gray-600 dark:text-gray-300 hover:translate-x-1 active:scale-[0.98]"
+            >
+              <div class="w-9 h-9 rounded bg-gray-200/50 border border-gray-100/50 shrink-0 overflow-hidden mr-3 flex items-center justify-center relative group-hover:scale-110 transition-transform duration-300">
+                <img v-if="getCollectionCover(entry)" :src="getCollectionCover(entry)" class="w-full h-full object-cover" alt="Cover" loading="lazy" decoding="async" />
+                <Heart v-else class="h-4 w-4 text-[#EC4141]" fill="currentColor" />
+              </div>
+              <div class="flex-1 min-w-0 flex flex-col justify-center">
+                <span class="text-sm truncate leading-tight mb-0.5 flex items-center gap-1">
+                  <span class="truncate">{{ entry.title }}</span>
+                  <span class="text-[10px] text-[#EC4141] shrink-0 font-normal">♥</span>
+                </span>
+                <span class="text-[10px] text-gray-600 dark:text-gray-300 leading-tight truncate">{{ entry.subtitle }}</span>
+              </div>
+              <button @click.stop="$emit('removeFavoriteCollection', entry.key)" class="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 dark:text-white/60 hover:text-red-500 transition-all p-1" title="取消收藏歌单"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+            </li>
+          </TransitionGroup>
+        </ul>
+      </Transition>
+    </div>
   </div>
 </template>
 
