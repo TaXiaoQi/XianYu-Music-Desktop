@@ -121,9 +121,9 @@ export interface FallbackHostCtx {
   };
 
   config: {
-    /** 读取用户设置（只读，dot 路径如 'audio.autoSwitchSourceOnFailure'） */
+    /** 读取用户设置（只读，dot 路径如 'audio.onlineFailureBehavior'） */
     get(key: string): unknown;
-  };
+  },
 
   utils: {
     /** "04:30" → 270 */

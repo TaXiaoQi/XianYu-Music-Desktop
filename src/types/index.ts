@@ -596,8 +596,8 @@ export function qualityKeyToLxQuality(q: QualityKey): string {
 /** 在线播放默认音质档位（对应落雪/插件引擎的音质标识） */
 /** 现在使用统一的 QualityKey */
 export type OnlineDefaultQuality = QualityKey;
-/** 在线歌曲起播失败时的行为 */
-export type OnlineFailureBehavior = 'skip' | 'stop';
+/** 在线歌曲起播失败时的行为：autoswitch = 自动换源（失败后等价 stop，对齐移动端） */
+export type OnlineFailureBehavior = 'skip' | 'stop' | 'autoswitch';
 /** 在线歌曲默认音质播放失败时的音质回退行为 */
 export type OnlineQualityFallbackBehavior = 'pause' | 'lower' | 'higher';
 
@@ -735,8 +735,6 @@ export interface AudioSettings {
   fadeInOutEnabled: boolean;
   /** 渐入渐出时长（毫秒），默认 1000ms，范围 100-2000ms */
   fadeInOutDurationMs: number;
-  /** 在线播放失败时自动切换到其他落雪音源（仅 lx:// 歌曲），默认 true */
-  autoSwitchSourceOnFailure: boolean;
   /** MV 背景视频默认画质（播放），默认 '720P' */
   mvDefaultQuality?: MvQualityKey;
   /** MV 画面手动校准偏移（毫秒）：正值画面提前、负值画面延后 */
