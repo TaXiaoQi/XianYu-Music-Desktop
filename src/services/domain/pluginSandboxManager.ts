@@ -249,6 +249,42 @@ function toCloneableArgs(args: any[]): any[] {
   });
 }
 
+// ==================== 插件鉴权失效熔断 ====================
+// 插件 API 密钥失效（401/API密钥不存在或已被禁用）时重试毫无意义，
+// 且批量播放（专辑页"播放所有"）会对同一死 API 连环扫射上百请求，
+// 导致源站封 IP。按插件粒度熔断：连续 2 次鉴权错误 → 5 分钟内所有
+// 请求直接本地失败（零 HTTP），到期自动恢复重试（密钥续期无需重启）。
+// 与移动端 plugin_engine.dart 同款；桌面端队列级 knownFailedPluginPrefixes
+// 负责跳过队列扫描，本熔断在网络层补齐 lx:// 等未被前缀标记覆盖的场景。
+const _authBannedUntil = new Map<string, number>();
+const _authFailStreak = new Map<string, number>();
+const AUTH_BAN_TTL_MS = 5 * 60 * 1000;
+const AUTH_BAN_THRESHOLD = 2;
+
+function isAuthError(msg: string): boolean {
+  return /API密钥|API\s*key|api[_\s-]?secret|401/i.test(msg);
+}
+
+export function isPluginAuthBanned(pluginId: string): boolean {
+  const until = _authBannedUntil.get(pluginId);
+  if (until === undefined) return false;
+  if (Date.now() > until) {
+    _authBannedUntil.delete(pluginId);
+    _authFailStreak.set(pluginId, 0);
+    return false;
+  }
+  return true;
+}
+
+function markAuthFailure(pluginId: string, msg: string): void {
+  const streak = (_authFailStreak.get(pluginId) ?? 0) + 1;
+  _authFailStreak.set(pluginId, streak);
+  if (streak >= AUTH_BAN_THRESHOLD) {
+    _authBannedUntil.set(pluginId, Date.now() + AUTH_BAN_TTL_MS);
+    console.warn(`[plugin] ${pluginId} 鉴权连续失败 ${streak} 次，熔断 5 分钟: ${msg}`);
+  }
+}
+
 /**
  * 在后端引擎中调用插件方法
  *
@@ -272,6 +308,10 @@ export async function callSandboxMethod(
   if (!entry.ready) {
     throw new Error(`沙箱未就绪: ${pluginId}`);
   }
+  // 鉴权熔断：密钥失效插件的请求直接本地失败，不打源站（防封 IP）
+  if (method === 'request' && isPluginAuthBanned(sandboxId)) {
+    throw new Error(`音源鉴权失效已临时熔断（5 分钟后自动重试）: ${sandboxId}`);
+  }
 
   // 用户变量按调用方传入的 pluginId 查询（与原 Worker 版一致，
   // 调用方可能传别名，也可能传实际 hash ID）
@@ -286,8 +326,13 @@ export async function callSandboxMethod(
   });
   emitEngineLogs(result.logs);
   if (!result.ok) {
-    throw new Error(result.error || '方法调用失败');
+    const err = result.error || '方法调用失败';
+    if (method === 'request' && isAuthError(err)) {
+      markAuthFailure(sandboxId, err);
+    }
+    throw new Error(err);
   }
+  if (method === 'request') _authFailStreak.set(sandboxId, 0);
   return result.data;
 }
 
