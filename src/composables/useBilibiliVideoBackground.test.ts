@@ -209,7 +209,7 @@ describe('Bilibili player-detail video background', () => {
   });
 
   it('falls back to Bilibili parsing when the installed plugin has no video extension', async () => {
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     pluginHttpRequestMock
       .mockResolvedValueOnce({
         status: 200,
@@ -257,7 +257,7 @@ describe('Bilibili player-detail video background', () => {
   });
 
   it('clears the pending state when both plugin and compatibility parsing fail', async () => {
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     pluginHttpRequestMock.mockResolvedValueOnce({
       status: 200,
       body: JSON.stringify({ code: -400, message: '请求错误' }),
@@ -295,7 +295,7 @@ describe('Bilibili player-detail video background', () => {
 
   it('resolves Kugou MV via the host fallback when the plugin route yields nothing', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     pluginHttpRequestMock.mockResolvedValueOnce({
       status: 200,
       body: JSON.stringify({
@@ -332,7 +332,7 @@ describe('Bilibili player-detail video background', () => {
 
   it('falls back to an exact Kugou quality match when requested', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     pluginHttpRequestMock.mockResolvedValueOnce({
       status: 200,
       body: JSON.stringify({
@@ -356,7 +356,7 @@ describe('Bilibili player-detail video background', () => {
 
   it('rejects with a cleared state when both plugin and Kugou host fallback fail', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     pluginHttpRequestMock.mockResolvedValueOnce({
       status: 200,
       body: JSON.stringify({ status: 0 }),
@@ -369,7 +369,7 @@ describe('Bilibili player-detail video background', () => {
 
   it('skips the Kugou host request when the song carries no usable mvHash', async () => {
     getStoredPluginsMock.mockReturnValue([{ id: 'kg-plugin', name: '酷狗音乐' }]);
-    pluginGetVideoSourceMock.mockResolvedValueOnce(null);
+    pluginGetVideoSourceMock.mockResolvedValue(null);
     const song = makeKugouSong({
       rawData: {
         id: 'abc123',

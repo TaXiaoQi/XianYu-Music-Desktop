@@ -7,10 +7,12 @@ import { usePlaybackController } from '../../features/playback/usePlaybackContro
 import { isDownloadableOnlineSong } from '../../services/domain/downloadService';
 import {
   ensureSharedQualityProbe,
+  ensureProbeRequestedUrls,
   onSharedProbeUpdate,
   sharedProbeAvailable,
   getSongKey,
 } from '../../services/domain/qualitySharedProbe';
+import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import { checkDownloadExists, type DownloadRecord } from '../../services/domain/downloadHistory';
 import { downloadApi } from '../../services/tauri/downloadApi';
@@ -602,22 +604,16 @@ const footerQualityExtraText = (key: string) => {
 };
 
 const probeFooterQualitySizes = async (
-  urls: Partial<Record<QualityKey, string>>,
+  song: Song,
+  keys: QualityKey[],
+  urlFor: (q: QualityKey) => string | undefined,
 ) => {
-  const entries = Object.entries(urls) as Array<[QualityKey, string]>;
-  await Promise.all(entries.map(async ([key, url]) => {
-    // 只对尚未探过体积的档位请求，避免增量更新时对同一档位重复请求
-    if (footerQualitySizesProbed.has(key)) return;
-    footerQualitySizesProbed.add(key);
-    try {
-      const info = await downloadApi.probeUrlSize(url);
-      if (typeof info?.size === 'number' && info.size > 0) {
-        footerQualitySizes.value = { ...footerQualitySizes.value, [key]: info.size };
-      }
-    } catch (e: any) {
-      console.warn(`[PlayerFooter] ${key} 体积探测失败:`, e?.message || e);
-    }
-  }));
+  // 只对尚未探过体积的档位请求，避免增量更新时对同一档位重复请求
+  const targets = keys.filter(k => !footerQualitySizesProbed.has(k));
+  targets.forEach(k => footerQualitySizesProbed.add(k));
+  await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
+    footerQualitySizes.value = { ...footerQualitySizes.value, [q]: bytes };
+  });
 };
 
 const ensureFooterQualityInfo = async () => {
@@ -659,9 +655,14 @@ const ensureFooterQualityInfo = async () => {
   }
 
   const apply = () => {
-    footerAvailableQualityKeys.value = sharedProbeAvailable(probe);
+    // 展示档 = Baka 信任模式声明档全量 + 实测档（对齐移动端菜单）；体积表按
+    // 展示档按键：直链取补解析的请求档键，缺失时回退实际档键。
+    const shown = sharedProbeAvailable(probe);
+    footerAvailableQualityKeys.value = shown;
     footerQualityUrls.value = { ...probe.resolvedUrls };
-    void probeFooterQualitySizes(probe.resolvedUrls);
+    void ensureProbeRequestedUrls(probe, song, shown);
+    const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
+    void probeFooterQualitySizes(song, shown, urlFor);
     if (probe.done) {
       isFooterQualityInfoProbing.value = false;
       releaseFooterSharedProbe();

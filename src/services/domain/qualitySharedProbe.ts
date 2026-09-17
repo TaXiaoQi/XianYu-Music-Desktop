@@ -16,6 +16,15 @@ import {
   isDownloadableOnlineSong,
   probeDownloadableQualities,
 } from './downloadService';
+import { isPluginSong } from './downloadFormat';
+import {
+  ResolveDownloadContext,
+  PluginResolveContext,
+  prepareResolveContext,
+  preparePluginResolveContext,
+  resolveLxAudioForQuality,
+  resolvePluginAudioForQuality,
+} from './downloadQualityResolver';
 
 /** 一轮共享探测的运行时状态 */
 export interface SharedQualityProbe {
@@ -33,6 +42,13 @@ export interface SharedQualityProbe {
   startAt: number;
   /** 全档探测失败的时刻（resolvedUrls 为空时在 finally 中打点），用于失败冷却 */
   failAt: number | null;
+  /** [Baka 信任模式] 采纳的声明档位（最高档实测未降级时全量可信）：
+   *  菜单按「声明档全量 + 实测档」展示，对齐移动端 trustDeclared */
+  trustedDeclared?: QualityKey[];
+  /** 补解析记录：请求档 → 直链（实际档可能低于请求档），体积表按展示档按键 */
+  requestedUrls?: Partial<Record<QualityKey, string>>;
+  /** 内部：补解析中的请求档（幂等去重） */
+  _requestedPending?: Set<QualityKey>;
   /** 内部：订阅者（增量通知） */
   _subscribers: Set<() => void>;
   /** 内部：本轮探测的中止控制 */
@@ -83,6 +99,10 @@ function launchProbeRound(
         signal: probe._controller.signal,
         onProgress: (url, quality) => {
           probe.resolvedUrls[quality] = url;
+          notifyProbeListeners(probe);
+        },
+        onTrust: (declared) => {
+          probe.trustedDeclared = declared;
           notifyProbeListeners(probe);
         },
       });
@@ -212,9 +232,72 @@ export function onSharedProbeUpdate(
   return () => { probe._subscribers.delete(fn); };
 }
 
-/** 当前已实测可用的档位（按 rank 升序，与菜单展示顺序一致） */
+/** 当前可展示的档位（按 rank 升序，与菜单展示顺序一致）：
+ *  Baka 信任模式下为「声明档全量 + 实测档」并集（对齐移动端 availableQualities =
+ *  trustDeclared + resolved）；逐档实测路径仍只展示实测档（声明不可信时不虚高） */
 export function sharedProbeAvailable(probe: SharedQualityProbe): QualityKey[] {
-  return ALL_QUALITY_KEYS.filter(k => Boolean(probe.resolvedUrls[k]));
+  const measured = ALL_QUALITY_KEYS.filter(k => Boolean(probe.resolvedUrls[k]));
+  const trusted = probe.trustedDeclared?.length ? probe.trustedDeclared : null;
+  if (!trusted) return measured;
+  const set = new Set([...measured, ...trusted]);
+  return ALL_QUALITY_KEYS.filter(k => set.has(k));
+}
+
+/**
+ * 补解析展示档中尚无直链的档位（对齐移动端 qualitySizes 的 missing 补探测）：
+ * Baka 信任模式下菜单展示声明档全量，但只实测过最高档，其余声明档没有直链，
+ * 体积表读不到 → 这里逐档补解析，结果写入 requestedUrls（请求档键）与
+ * resolvedUrls（实际档键），供体积表按展示档按键、下载复用直链。
+ * 幂等：同一探针同一档只补解析一次；补解析失败不影响菜单展示。
+ */
+export async function ensureProbeRequestedUrls(
+  probe: SharedQualityProbe,
+  song: Song,
+  shown: QualityKey[],
+): Promise<void> {
+  const pending = probe._requestedPending ?? (probe._requestedPending = new Set());
+  const need = shown.filter(q =>
+    !probe.resolvedUrls[q]
+    && !probe.requestedUrls?.[q]
+    && !pending.has(q),
+  );
+  if (!need.length) return;
+  need.forEach(q => pending.add(q));
+  try {
+    const isPlugin = isPluginSong(song);
+    let ctx: ResolveDownloadContext | PluginResolveContext | null = null;
+    try {
+      ctx = isPlugin
+        ? await preparePluginResolveContext(song, '320k')
+        : await prepareResolveContext(song, '320k');
+    } catch {
+      return;
+    }
+    if (!ctx) return;
+    const queue = [...need];
+    const concurrency = 2;
+    await Promise.all(Array.from({ length: concurrency }, async () => {
+      for (;;) {
+        const q = queue.shift();
+        if (!q) return;
+        try {
+          const r = isPlugin
+            ? await resolvePluginAudioForQuality(ctx as PluginResolveContext, q)
+            : await resolveLxAudioForQuality(ctx as ResolveDownloadContext, q);
+          if (!r?.url) continue;
+          probe.requestedUrls = { ...probe.requestedUrls, [q]: r.url };
+          if (!probe.resolvedUrls[r.quality]) {
+            probe.resolvedUrls[r.quality] = r.url;
+          }
+          notifyProbeListeners(probe);
+        } catch (e: any) {
+          console.warn(`[SharedProbe] 补解析 ${q} 失败:`, e?.message || e);
+        }
+      }
+    }));
+  } finally {
+    need.forEach(q => pending.delete(q));
+  }
 }
 
 /**

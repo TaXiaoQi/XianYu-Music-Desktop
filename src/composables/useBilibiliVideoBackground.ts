@@ -37,6 +37,14 @@ const BILIBILI_IDENTITY_PATTERN = /bilibili|哔哩哔哩|哔哩|b站/i;
 const DEFAULT_MV_QUALITY = '720P';
 const BILIBILI_720P_QUALITY_ID = 64;
 
+/** 目标画质起步的降档候选（对齐 BakaMusic 多画质候选语义） */
+const MV_QUALITY_LADDER = ['4K', '1080P', '720P', '480P', '360P'];
+function mvQualityLadder(quality: string): string[] {
+  const idx = MV_QUALITY_LADDER.indexOf(quality);
+  const start = idx < 0 ? 2 : idx;
+  return MV_QUALITY_LADDER.slice(start, start + 3);
+}
+
 /** B 站兜底解析支持的画质档位（未登录账号一般最高 1080P） */
 const BILIBILI_QUALITY_PRESETS: Array<PluginVideoQuality & { qn: number }> = [
   { key: '360P', label: '360P 流畅', qn: 16 },
@@ -411,7 +419,13 @@ async function resolveMvVideoSource(song: Song, quality: string): Promise<{
   if (!source) {
     throw new Error('未找到当前歌曲对应的插件');
   }
-  let resolved = await pluginGetVideoSource(source, toPluginSearchResult(song), quality);
+  // 插件 getMvSource 按目标画质起步，失败后降档重试（对齐 BakaMusic
+  // declaredCandidates 多档候选：优先档不支持时自动试更低档）。
+  let resolved: PluginVideoSource | null = null;
+  for (const q of mvQualityLadder(quality)) {
+    resolved = await pluginGetVideoSource(source, toPluginSearchResult(song), q);
+    if (resolved?.url) break;
+  }
   if (!resolved?.url && !isBili && isKugouPluginSong(song)) {
     const mvHash = extractKugouMvHash(song);
     if (mvHash) {

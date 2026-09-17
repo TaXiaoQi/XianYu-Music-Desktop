@@ -8,10 +8,11 @@ import { usePlaybackStore } from '../../features/playback/store';
 import { getOnlineAvailableQualities } from '../../features/playback/onlinePlaybackResolver';
 import {
   ensureSharedQualityProbe,
+  ensureProbeRequestedUrls,
   onSharedProbeUpdate,
   sharedProbeAvailable,
 } from '../../services/domain/qualitySharedProbe';
-import { downloadApi } from '../../services/tauri/downloadApi';
+import { probeSizesForKeys } from '../../services/domain/qualitySizeMeta';
 import { formatFileSize } from '../../utils/format';
 import { ALL_QUALITY_KEYS, QUALITY_META } from '../../types';
 import type { Song, DownloadFileNameStyle, DownloadQuality, QualityKey } from '../../types';
@@ -154,23 +155,17 @@ const releaseDownloadProbe = () => {
 /** 已在本弹窗探过体积的档位集合，避免增量更新时对同一档位重复请求 */
 const probedSizesSet = new Set<QualityKey>();
 
-/** 增量探测各直链的文件体积（仅对新增档位请求） */
+/** 增量探测各直链的文件体积（仅对新增档位请求；直链实测失败回退元数据体积） */
 const probeQualitySizesIncremental = async (
-  urls: Partial<Record<QualityKey, string>>,
+  song: Song,
+  keys: QualityKey[],
+  urlFor: (q: QualityKey) => string | undefined,
 ) => {
-  const entries = Object.entries(urls) as Array<[QualityKey, string]>;
-  await Promise.all(entries.map(async ([key, url]) => {
-    if (probedSizesSet.has(key)) return;
-    probedSizesSet.add(key);
-    try {
-      const info = await downloadApi.probeUrlSize(url);
-      if (typeof info?.size === 'number' && info.size > 0) {
-        qualitySizes.value = { ...qualitySizes.value, [key]: info.size };
-      }
-    } catch (e: any) {
-      console.warn(`[DownloadDialog] ${key} 体积探测失败:`, e?.message || e);
-    }
-  }));
+  const targets = keys.filter(k => !probedSizesSet.has(k));
+  targets.forEach(k => probedSizesSet.add(k));
+  await probeSizesForKeys(song, targets, urlFor, (q, bytes) => {
+    qualitySizes.value = { ...qualitySizes.value, [q]: bytes };
+  });
 };
 
 /** 主区展示的档位：探测中显示声明列表（骨架），探测后显示实测可用列表 */
@@ -271,9 +266,14 @@ const probeQualities = async (song: Song) => {
   }
 
   const apply = () => {
-    availableQualities.value = probe.done ? sharedProbeAvailable(probe) : null;
+    // 展示档 = Baka 信任模式声明档全量 + 实测档（对齐移动端菜单）；体积表按
+    // 展示档按键：直链取补解析的请求档键，缺失时回退实际档键。
+    const shown = sharedProbeAvailable(probe);
+    availableQualities.value = probe.done ? shown : null;
     probedUrls.value = { ...probe.resolvedUrls };
-    probeQualitySizesIncremental(probe.resolvedUrls);
+    void ensureProbeRequestedUrls(probe, props.song!, shown);
+    const urlFor = (q: QualityKey) => probe.requestedUrls?.[q] ?? probe.resolvedUrls[q];
+    void probeQualitySizesIncremental(props.song!, shown, urlFor);
     if (probe.done) {
       isProbing.value = false;
       const avail = sharedProbeAvailable(probe);
