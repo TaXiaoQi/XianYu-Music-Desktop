@@ -42,6 +42,8 @@ export interface ProbeQualityOptions {
   concurrency?: number;
   /** 每档实测完成的增量回调：起播与菜单可实时消费已解析直链，无需等待整轮探测结束 */
   onProgress?: (url: string, quality: QualityKey) => void;
+  /** [Baka 信任模式] 采纳声明档位全量时的增量回调：菜单按「声明档全量 + 实测档」展示 */
+  onTrust?: (declared: QualityKey[]) => void;
 }
 
 /**
@@ -120,6 +122,7 @@ export async function probeDownloadableQualities(
           if (topResolved.quality === bakaTopKey) {
             resolvedUrls[topResolved.quality] = topResolved.url;
             options?.onProgress?.(topResolved.url, topResolved.quality);
+            options?.onTrust?.(targets);
             return { available: targets, resolvedUrls };
           }
           console.warn(`[Probe] Baka 插件最高档 ${bakaTopKey} 实际返回 ${topResolved.quality}，回退逐档实测`);
