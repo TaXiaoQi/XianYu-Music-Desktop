@@ -442,16 +442,22 @@ export async function pluginGetVideoSource(
       : undefined;
     const availableVideoQualities = Array.isArray(result.availableVideoQualities)
       ? result.availableVideoQualities
-          .filter((entry: any): entry is Record<string, unknown> => !!entry && typeof entry === 'object'
-            && typeof entry.quality === 'string' && entry.quality.trim())
-          .map((entry: Record<string, unknown>) => ({
-            key: String(entry.quality).trim(),
-            label: typeof entry.label === 'string' ? entry.label : undefined,
-            height: Number.isFinite(Number(entry.height)) ? Number(entry.height) : undefined,
-            bitrate: Number.isFinite(Number(entry.bitrate)) ? Number(entry.bitrate) : undefined,
-            size: Number.isFinite(Number(entry.size)) ? Number(entry.size) : undefined,
-            codec: typeof entry.codec === 'string' ? entry.codec : undefined,
-          }))
+          .filter((entry: any): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+          .map((entry: Record<string, unknown>) => {
+            // Baka 插件（qq.js/kg.js）档位元素字段是 key；quality 为旧约定兜底
+            const key = typeof entry.key === 'string' && entry.key.trim()
+              ? entry.key.trim()
+              : (typeof entry.quality === 'string' ? entry.quality.trim() : '');
+            return {
+              key,
+              label: typeof entry.label === 'string' ? entry.label : undefined,
+              height: Number.isFinite(Number(entry.height)) ? Number(entry.height) : undefined,
+              bitrate: Number.isFinite(Number(entry.bitrate)) ? Number(entry.bitrate) : undefined,
+              size: Number.isFinite(Number(entry.size)) ? Number(entry.size) : undefined,
+              codec: typeof entry.codec === 'string' ? entry.codec : undefined,
+            };
+          })
+          .filter((entry: { key: string }) => entry.key)
           .slice(0, 12)
       : undefined;
 
