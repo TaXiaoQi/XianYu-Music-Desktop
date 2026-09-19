@@ -70,8 +70,6 @@ export class PatchedLyricPlayer extends DomLyricPlayer {
       const blur = (lineObj as unknown as { blur?: number }).blur ?? 0;
 
       lineElement.style.transform = `translateY(${posY.toFixed(3)}px) scale(${scale.toFixed(4)})`;
-      const sweepT = this.clamp(0, (scale - 0.97) / 0.03, 1);
-      lineElement.style.setProperty('--dark-mask-alpha', (0.2 + sweepT * 0.8).toFixed(3));
       if (!this.disableBlurFilter) {
         const clampedBlur = Math.min(32, blur);
         const lineKey = lineObj as unknown as object;
