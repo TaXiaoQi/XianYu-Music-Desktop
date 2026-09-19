@@ -1665,11 +1665,19 @@
       : (animeMeta && animeMeta.platform ? [animeMeta.platform] : null);
     mfInstance = isAnime ? makeAnimeAdapter(instance, animeMeta) : instance;
 
+    // anime 插件的方法枚举仍基于原始实例（只有 call）：
+    // 桌面端 TS 侧靠 availableMethods 区分路由，若把适配器的
+    // search/getMediaSource 暴露出去，anime 插件会被误当 musicfree 插件
+    // 走通用搜索路径，与 animePluginEngine 双重适配导致搜索异常
     var sourceInstance = mfInstance;
     var availableMethods = [];
+    var methodEnumTarget = isAnime ? instance : sourceInstance;
     for (var i = 0; i < MF_ALL_METHOD_NAMES.length; i++) {
       var m = MF_ALL_METHOD_NAMES[i];
-      if (typeof sourceInstance[m] === 'function') availableMethods.push(m);
+      if (typeof methodEnumTarget[m] === 'function') availableMethods.push(m);
+    }
+    if (isAnime && typeof instance.call === 'function' && availableMethods.indexOf('call') < 0) {
+      availableMethods.push('call');
     }
 
     return JSON.stringify({
