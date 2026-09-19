@@ -1,8 +1,8 @@
 <div align="center">
   <img src="logo.png" width="120" height="120" alt="XianYue Logo" style="border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
 
-# 弦予音乐
-## (XianYu-Music)
+# 弦予音乐· 桌面端
+## (XianYu-Music-Desktop)
 
 弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化在线音源，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、AMLL 逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。
 
@@ -98,50 +98,12 @@ npm run tauri:build:mac          # macOS（.app / .dmg）
 
 ```mermaid
 graph TD
-    subgraph Frontend [前端 UI 层 · Vue 3 / TypeScript]
-        direction TB
-        A[main.ts 入口<br/>多窗口分发 + 错误恢复] --> B[Vue Router<br/>11 条懒加载路由]
-        A --> C[Features 功能模块<br/>playback / library / settings<br/>collections / statistics / ...]
-        A --> D[Components 组件层<br/>layout / player / settings / overlays]
-        C --> E[Pinia Store<br/>13 个 Feature Store + 3 个 Shared Store]
-        E --> F[Services 服务层<br/>pluginEngine / lxPluginEngine<br/>tauri API / downloadService]
-    end
+    A[前端 · Vue 3 + TypeScript<br/>features 模块 + Pinia + 组件层] <-->|Tauri IPC<br/>invoke 命令 · emit/listen 事件| B[Rust 后端 · Tauri 2.x<br/>player / music / database<br/>remote / toolbox / plugin_host]
+    A -. 6 窗口 .-> C[主窗口 / 桌面歌词 / 迷你播放器<br/>任务栏 / 托盘菜单 / 音量浮窗]
 
-    subgraph IPC [Tauri IPC 跨进程通信]
-        direction LR
-        G[命令式 invoke<br/>180+ 个自定义命令] <--> H[Rust invoke_handler]
-        I[事件式 emit / listen<br/>多窗口状态同步] <--> J[Tauri Event Bus]
-    end
-
-    subgraph Backend [Rust 后端服务层]
-        direction TB
-        K[player 模块<br/>单音频线程 + 8 层 Source 链<br/>WASAPI 独占 / 共享模式<br/>30+ 种音效 DSP]
-        L[music 模块<br/>rayon 并行扫描<br/>lofty + symphonia 双引擎]
-        M[database 模块<br/>SQLite WAL · 14 张表]
-        N[remote 模块<br/>WebDAV + 流式缓存]
-        O[toolbox 模块<br/>下载 / 更新 / 重命名 / 识曲]
-        V[plugin_host 模块<br/>VST3 / CLAP 插件机架<br/>多槽位串联进播放链]
-        H --> K & L & M & N & O
-        K --> V
-    end
-
-    subgraph Windows [多窗口架构 · 6 窗口]
-        direction LR
-        P[main 主窗口] <-.-> Q[desktop-lyrics 桌面歌词]
-        P <-.-> R[mini-player 迷你播放器]
-        P <-.-> S[taskbar-player 任务栏]
-        P <-.-> T[tray-menu 托盘菜单]
-        R <-.-> U[volume-popover 音量浮窗]
-    end
-
-    F --> G
-    I --> Windows
-    K --> N
-
-    style Frontend fill:#f5faff,stroke:#3178C6,stroke-width:2px;
-    style IPC fill:#fff7e6,stroke:#ffa940,stroke-width:2px;
-    style Backend fill:#f6ffed,stroke:#52c41a,stroke-width:2px;
-    style Windows fill:#fff0f6,stroke:#eb2f96,stroke-width:2px;
+    style A fill:#f5faff,stroke:#3178C6;
+    style B fill:#f6ffed,stroke:#52c41a;
+    style C fill:#fff0f6,stroke:#eb2f96;
 ```
 
 ### 前端架构
