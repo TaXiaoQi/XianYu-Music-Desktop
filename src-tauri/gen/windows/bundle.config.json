@@ -16,7 +16,7 @@
     "pfxPassword": null
   },
   "resourceIndex": {
-    "enabled": false,
+    "enabled": true,
     "keepConfig": false
   }
 }

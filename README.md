@@ -4,7 +4,7 @@
 # 弦予音乐· 桌面端
 ## (XianYu-Music-Desktop)
 
-弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化在线音源，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、AMLL 逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。
+弦予音乐的桌面端（Windows / Linux / macOS）：本地音乐库管理 + 插件化音源扩展，**VST3 / CLAP 第三方音频插件机架**、液态玻璃 UI、AMLL 逐字歌词、桌面歌词、迷你播放器与任务栏控制条，桌面听歌的全功能形态。软件不内置音乐内容，插件由用户自行安装。
 
  [](https://tauri.app/)
  [](https://vuejs.org/)
@@ -86,7 +86,7 @@ npm run tauri:build:linux        # Linux（.deb / .rpm / .AppImage）
 npm run tauri:build:mac          # macOS（.app / .dmg）
 ```
 
-- 产物自动归档到 `releases/`：`弦予音乐v<版本>-Desktop[-Setup].<扩展名>`（NSIS 安装器加 `-Setup` 后缀，版本号取自 `version.ts`）
+- 产物自动归档到 `releases/windows/`：`弦予音乐v<版本>-Desktop[-Setup].<扩展名>`（NSIS 安装器加 `-Setup` 后缀，版本号取自 `version.ts`）
 - MSIX 版通过 `store-build` 特性禁用应用内自更新（商店接管），版本号必须为纯数字四段正式版，Identity 与 Partner Center 配置绑定勿改
 - macOS 分发需签名与公证，未签名包首次打开右键绕过 Gatekeeper
 
@@ -115,7 +115,7 @@ graph TD
 | 层级 | 说明 |
 | --- | --- |
 | **入口 `main.ts`** | 创建 Vue 应用，安装 Pinia + Router；通过 `getCurrentWindow().label` 分发到 6 个窗口的独立渲染逻辑；三重错误捕获 + 动态导入失败自动刷新恢复 |
-| **路由 `router/`** | 11 条懒加载路由（首页 / 收藏 / 最近 / 歌手 / 专辑 / 插件 / 设置 / 认证 / 搜索 / 在线详情 / 引导），含 onboarding 路由守卫 |
+| **路由 `router/`** | 11 条懒加载路由（首页 / 收藏 / 最近 / 歌手 / 专辑 / 插件 / 设置 / 认证 / 搜索 / 插件详情 / 引导），含 onboarding 路由守卫 |
 | **功能模块 `features/`** | 13 个自包含模块：`playback`（播放+音效双 Store）、`library`（音乐库 songPool + intern pool 高性能设计）、`settings`（全局设置中心）、`collections`（收藏歌单）、`desktopLyrics` / `miniPlayer` / `taskbarPlayer` / `tray`（窗口纯逻辑模块）、`download` / `auth` / `onlineDetail` / `lyricsSettings` / `statistics` |
 | **共享 Store `shared/stores/`** | 跨功能状态：`ui`（面板可见性）、`navigation`（导航/搜索历史）、`audioExport`（导出进度） |
 | **组件 `components/`** | 按域划分：`layout`（Shell/侧边栏/底栏/标题栏）、`player`（播放详情/歌词/可视化/队列）、`settings`（15 个设置面板）、`overlays`（右键菜单/弹窗）、`home` / `song-list` / `statistics` |
