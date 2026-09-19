@@ -154,7 +154,6 @@ const runBetaGate = async () => {
 };
 
 const handleOnboardingComplete = () => {
-  console.log('[Announcement][debug] handleOnboardingComplete 被调用');
   completeOnboarding();
   void runBetaGate().then(() => {
     checkAnnouncement();
