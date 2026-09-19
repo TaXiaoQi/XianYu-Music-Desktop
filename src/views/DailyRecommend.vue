@@ -113,6 +113,7 @@
             :isBatchMode="isBatchMode"
             :selectedPaths="selectedPaths"
             :memoryScopeKey="memoryScopeKey"
+            :songReasons="songReasons"
             @play="handlePlaySong"
             @contextmenu="handleContextMenu"
             @update:selectedPaths="selectedPaths = $event"
@@ -201,7 +202,15 @@ const dateLabel = computed(() => {
 
 const subtitleText = computed(() => {
   const profile = algorithm.value?.profile;
-  if (!profile || profile.total_plays < 10) {
+  if (!profile) {
+    return '每天为你挑选新鲜歌单，多听听歌推荐会更懂你';
+  }
+  const artistNames = profile.top_artists.map(a => a.name).filter(Boolean);
+  if (artistNames.length > 0) {
+    const shown = artistNames.slice(0, 3).join('、');
+    return `根据你常听的 ${shown}${artistNames.length > 3 ? '等' : ''} 生成`;
+  }
+  if (profile.total_plays < 10) {
     return '每天为你挑选新鲜歌单，多听听歌推荐会更懂你';
   }
   return `根据你近 90 天 ${profile.total_plays} 次播放记录生成`;
@@ -360,6 +369,16 @@ function recommendItemToSong(item: DailyRecommendItem): Song {
 }
 
 const songList = computed<Song[]>(() => items.value.map(recommendItemToSong));
+
+const songReasons = computed(() => {
+  const map = new Map<string, string>();
+  items.value.forEach((item, index) => {
+    const reason = item.reason?.trim();
+    const song = songList.value[index];
+    if (reason && song?.path) map.set(song.path, reason);
+  });
+  return map;
+});
 
 const memoryScopeKey = computed(
   () => `daily-recommend::${algorithm.value?.date ?? ''}::b${batch.value}`,

@@ -1388,7 +1388,7 @@ pub async fn finalize_download_extras(
                         } else {
                             ".jpg"
                         };
-                        let name_str = name.to_string_lossy().to_string();
+                        let name_str = name;
                         let final_name = if name_str.ends_with(".jpg") && actual_ext == ".png" {
                             format!("{}.png", &name_str[..name_str.len() - 4])
                         } else if name_str.ends_with(".png") && actual_ext == ".jpg" {

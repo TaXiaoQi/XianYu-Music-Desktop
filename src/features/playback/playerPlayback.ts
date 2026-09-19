@@ -91,6 +91,13 @@ let lastHandledOnlineFailure: {
 } | null = null;
 const recentOnlineFailurePaths = new Map<string, number>();
 const knownFailedPluginPrefixes = new Set<string>();
+// 最近一次在线 Rust 起播上下文：后端流下载中途失败事件（online-stream-failed）用它定位当前歌曲并触发换源
+let onlineStreamFailureCtx: {
+  url: string;
+  song: Song;
+  options: PlaySongOptions;
+  requestId: number;
+} | null = null;
 let shareLinkPlaybackActive = false;
 let latestSeekRequestId = 0;
 let playbackAnchorTime = 0;
@@ -184,6 +191,18 @@ const dlnaCast = useDlnaCastStore();
     playbackStore.activeOutputMode = event.payload.active_output_mode;
     syncStatisticsValidity();
   }).then(fn => { deviceStatusUnlisten = fn; }).catch(() => {});
+
+  // 在线音频流播放中途下载失败（对齐移动/腕上端中断换源）：后端表现为自然播完，这里显式接管并尝试换源
+  listen<{ url: string; reason?: string }>('online-stream-failed', async (event) => {
+    const ctx = onlineStreamFailureCtx;
+    if (!ctx || !currentSong.value || !isPlaying.value) return;
+    if (currentSong.value.path !== ctx.song.path) return;
+    const failUrl = String(event.payload.url || '');
+    if (failUrl !== ctx.url && sanitizeMediaUrl(failUrl) !== sanitizeMediaUrl(ctx.url)) return;
+    onlineStreamFailureCtx = null;
+    console.warn(`[Audio] 在线音频流播放中断，尝试自动换源: ${event.payload.reason || '未知原因'}`);
+    await handleOnlinePlaybackFailure(ctx.song, ctx.options, ctx.requestId, false);
+  }).catch(() => {});
 
   playbackApi.getCurrentOutputDevice()
     .then(status => {
@@ -1426,6 +1445,7 @@ const dlnaCast = useDlnaCastStore();
             dsdNativePassthrough: settingsStore.settings.audio.dsdNativePassthrough,
             outputBitPerfect: settingsStore.settings.audio.outputBitPerfect,
           });
+          onlineStreamFailureCtx = { url: finalAudioPath, song, options, requestId };
         } catch (error) {
           console.warn('[Audio] 在线直链 playAudio 调用失败:', getErrorMessage(error));
           return false;
