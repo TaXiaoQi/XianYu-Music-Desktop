@@ -49,6 +49,9 @@ truce-rack = { path = "vendor/truce-rack/crates/truce-rack" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 urlencoding = "2"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
+# 本地搜索归一化：NFKC/NFKD（全角半角、变音符）+ 繁转简（对齐 BakaMusic search-matcher）
+unicode-normalization = "0.1"
+fast2s = "0.3"
 sha2 = "0.10.9"
 hex = "0.4.3"
 tokio = { version = "1.48.0", features = ["full"] }
