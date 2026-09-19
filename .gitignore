@@ -1,5 +1,6 @@
 # --- 📦 依赖包 (体积巨大，必须忽略) ---
 node_modules/
+/tools/appimage/
 
 # --- 🏗️ 前端构建输出 ---
 dist/
