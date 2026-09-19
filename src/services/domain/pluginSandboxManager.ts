@@ -56,7 +56,7 @@ function emitEngineLogs(logs: PluginEngineLogContract[] | null | undefined): voi
     if (level === 'error') console.error(msg);
     else if (level === 'warn') console.warn(msg);
     else console.log(msg);
-    if (msg.includes('获取播放源错误') || msg.includes('PlayAuth') || msg.includes('playauth')) {
+    if (msg.includes('播放源错误') || msg.includes('播放链接失败') || msg.includes('PlayAuth') || msg.includes('playauth')) {
       _lastSandboxError = msg;
     }
     try { _logCallback?.(msg); } catch { /* ignore */ }
@@ -194,8 +194,9 @@ const _authFailStreak = new Map<string, number>();
 const AUTH_BAN_TTL_MS = 5 * 60 * 1000;
 const AUTH_BAN_THRESHOLD = 2;
 
+// 三端统一鉴权失效关键词（同 downloadQualityProbe.AUTH_FAIL_RE / 移动端 isAuthFailureMessage）
 function isAuthError(msg: string): boolean {
-  return /API密钥|API\s*key|api[_\s-]?secret|\b40[13]\b/i.test(msg);
+  return /API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断/i.test(msg);
 }
 
 export function isPluginAuthBanned(pluginId: string): boolean {

@@ -1,6 +1,8 @@
 
 export {
   exportAppBackup,
+  isEncryptedBackupJson,
+  decryptBackupJson,
 } from './appBackupExport';
 
 export {

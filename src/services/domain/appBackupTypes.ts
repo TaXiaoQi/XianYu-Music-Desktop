@@ -17,6 +17,8 @@ export interface BackupPlaylistEntry {
 export interface BackupPluginEntry {
   source: PluginSource;
   script: string;
+  /** 用户变量值（如卡密），随备份迁移到其他端；缺失视为旧版备份 */
+  userVariables?: Record<string, string>;
 }
 
 export interface AppBackupData {
@@ -24,6 +26,21 @@ export interface AppBackupData {
   favorites?: Song[];
   plugins: BackupPluginEntry[];
   settings: AppSettings | null;
+}
+
+export interface AppBackupSummary {
+  playlistCount: number;
+  localPlaylistCount: number;
+  onlinePlaylistCount: number;
+  mixedPlaylistCount: number;
+  totalSongs: number;
+  localSongs: number;
+  onlineSongs: number;
+  favoriteCount: number;
+  pluginCount: number;
+  hasSettings: boolean;
+  /** 备份文件是否已加密 */
+  encrypted?: boolean;
 }
 
 export interface AppBackup {

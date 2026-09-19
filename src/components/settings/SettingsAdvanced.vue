@@ -20,6 +20,8 @@ import {
   exportAppBackup,
   parseAppBackup,
   importAppBackup,
+  isEncryptedBackupJson,
+  decryptBackupJson,
   type AppBackupImportResult,
 } from '../../services/domain/appBackup';
 import { readPluginFile, readFileBytes } from '../../services/tauri/pluginApi';
@@ -71,6 +73,10 @@ const showImportModal = ref(false);
 const importMode = ref<'app' | 'plugin'>('app');
 const isDragOver = ref(false);
 const importModalBusy = ref(false);
+// 加密备份导入：等待用户输入密码
+const showBackupPasswordModal = ref(false);
+const backupPassword = ref('');
+let pendingEncryptedRaw: unknown = null;
 let unlistenDragDrop: UnlistenFn | null = null;
 let unlistenDragOver: UnlistenFn | null = null;
 let unlistenDragLeave: UnlistenFn | null = null;
@@ -102,6 +108,7 @@ const handleExportAppBackup = async (selection: ExportSelection) => {
         songMeta: collectionsStore.favoriteSongMeta,
       },
       resolveSongsByPaths: libraryStore.resolveSongsByPaths,
+      encryptionPassword: selection.encrypted ? selection.password : undefined,
     });
 
     const savedPath = await debugApi.writeLogExport(
@@ -116,6 +123,7 @@ const handleExportAppBackup = async (selection: ExportSelection) => {
     if (summary.pluginCount > 0) parts.push(`${summary.pluginCount} 个插件`);
     if (parts.length === 0) parts.push('无数据');
     if (summary.hasSettings) parts.push('设置');
+    if (summary.encrypted) parts.push('已加密');
     showToast(
       `已导出${parts.join('、')}`,
       'success',
@@ -165,6 +173,58 @@ async function handleImportFilePick() {
   }
 }
 
+async function runAppBackupImport(backup: Parameters<typeof importAppBackup>[0]) {
+  const result = await importAppBackup(backup, collectionsStore, libraryStore, {
+    patchSettings,
+    replaceSettings,
+  }, {
+    includePlaylists: true,
+    includeFavorites: true,
+    includePlugins: true,
+    includeSettings: true,
+  });
+
+  appBackupResult.value = result;
+  showAppBackupResult.value = true;
+
+  const parts: string[] = [];
+  if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
+  if (result.importedFavorites > 0) parts.push(`收藏 ${result.importedFavorites} 首`);
+  if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
+  if (result.settingsApplied) parts.push('设置');
+  if (parts.length > 0) {
+    showToast(`已导入 ${parts.join('、')}`, 'success');
+  } else {
+    showToast('备份中无新数据可导入', 'info');
+  }
+}
+
+async function confirmBackupPassword() {
+  if (!backupPassword.value || pendingEncryptedRaw === null) return;
+  showBackupPasswordModal.value = false;
+  importModalBusy.value = true;
+  importingAppBackup.value = true;
+  try {
+    const decrypted = await decryptBackupJson(pendingEncryptedRaw, backupPassword.value);
+    await runAppBackupImport(parseAppBackup(decrypted));
+    showImportModal.value = false;
+    modalDragInterceptActive.value = false;
+  } catch (error: any) {
+    showToast(`导入失败：密码错误或备份已损坏（${error?.message || error}）`, 'error');
+  } finally {
+    pendingEncryptedRaw = null;
+    backupPassword.value = '';
+    importModalBusy.value = false;
+    importingAppBackup.value = false;
+  }
+}
+
+function cancelBackupPassword() {
+  showBackupPasswordModal.value = false;
+  pendingEncryptedRaw = null;
+  backupPassword.value = '';
+}
+
 async function processImportFile(filePath: string) {
   if (importModalBusy.value) return;
   importModalBusy.value = true;
@@ -190,30 +250,19 @@ async function processImportFile(filePath: string) {
     }
 
     if (importMode.value === 'app') {
-      const backup = parseAppBackup(jsonContent);
-      const result = await importAppBackup(backup, collectionsStore, libraryStore, {
-        patchSettings,
-        replaceSettings,
-      }, {
-        includePlaylists: true,
-        includeFavorites: true,
-        includePlugins: true,
-        includeSettings: true,
-      });
-
-      appBackupResult.value = result;
-      showAppBackupResult.value = true;
-
-      const parts: string[] = [];
-      if (result.importedPlaylists > 0) parts.push(`${result.importedPlaylists} 个歌单`);
-      if (result.importedFavorites > 0) parts.push(`收藏 ${result.importedFavorites} 首`);
-      if (result.importedPlugins > 0) parts.push(`${result.importedPlugins} 个插件`);
-      if (result.settingsApplied) parts.push('设置');
-      if (parts.length > 0) {
-        showToast(`已导入 ${parts.join('、')}`, 'success');
-      } else {
-        showToast('备份中无新数据可导入', 'info');
+      if (isEncryptedBackupJson(jsonContent)) {
+        // 加密备份：暂存原文，弹出密码输入后继续
+        try {
+          pendingEncryptedRaw = JSON.parse(jsonContent);
+        } catch {
+          throw new Error('备份文件不是有效的 JSON');
+        }
+        importModalBusy.value = false;
+        importingAppBackup.value = false;
+        showBackupPasswordModal.value = true;
+        return;
       }
+      await runAppBackupImport(parseAppBackup(jsonContent));
     } else {
       const prepared = await preparePluginBackupImport(jsonContent, getStoredPlugins());
       let created = 0;
@@ -423,6 +472,48 @@ onUnmounted(() => {
       @close="showExportDialog = false"
       @confirm="handleExportAppBackup"
     />
+
+    <Teleport to="body">
+      <transition name="modal-fade">
+        <div
+          v-if="showBackupPasswordModal"
+          class="fixed inset-0 z-[400] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+          @click.self="cancelBackupPassword"
+        >
+          <div class="w-[min(92vw,380px)] rounded-2xl bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl shadow-2xl p-6">
+            <h3 class="text-base font-bold text-gray-800 dark:text-gray-100 mb-2">加密备份</h3>
+            <p class="text-[0.82rem] text-gray-500 dark:text-gray-400 mb-4">
+              该备份文件已加密，请输入导出时设置的密码。
+            </p>
+            <input
+              v-model="backupPassword"
+              type="password"
+              class="w-full h-10 px-4 rounded-xl border border-gray-300/60 dark:border-white/15 bg-white dark:bg-white/5 text-sm text-gray-800 dark:text-gray-100 outline-none focus:border-[#EC4141]/60 focus:ring-3 focus:ring-[#EC4141]/12 mb-4"
+              placeholder="备份密码"
+              autocomplete="off"
+              @keyup.enter="confirmBackupPassword"
+            />
+            <div class="flex gap-3">
+              <button
+                type="button"
+                class="flex-1 h-10 rounded-full border border-gray-300/40 dark:border-white/12 text-sm font-semibold text-gray-500 dark:text-gray-300 hover:bg-black/4 dark:hover:bg-white/6 transition-colors"
+                @click="cancelBackupPassword"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                :disabled="!backupPassword"
+                class="flex-1 h-10 rounded-full bg-[#EC4141] text-white text-sm font-semibold transition-colors hover:bg-[#d63a3a] disabled:opacity-40 disabled:cursor-not-allowed"
+                @click="confirmBackupPassword"
+              >
+                解密并导入
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
 
     <Teleport to="body">
       <transition name="modal-fade">
